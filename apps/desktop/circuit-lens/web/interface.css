@@ -1,0 +1,27 @@
+.interface-dialog{width:min(1140px,calc(100vw - 48px));max-width:none;padding:0;border:1px solid #dce1eb;border-radius:16px;color:#202733;box-shadow:0 24px 90px #1d284433;overflow:hidden}
+.interface-dialog::backdrop{background:#17223545}
+.interface-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 26px 18px;border-bottom:1px solid #e8ebf1}
+.interface-eyebrow{font-size:11px;letter-spacing:.1em;color:#748198}.interface-dialog h2{font-size:20px;margin:6px 0}.interface-dialog h3{font-size:13px;margin:0 0 10px}.interface-dialog p{font-size:12px;color:#748198;line-height:1.6;margin:4px 0}
+.interface-workspace{display:grid;grid-template-columns:minmax(0,1fr) 365px;max-height:calc(100vh - 240px);min-height:520px;overflow:auto}
+.interface-drawing{min-width:0;background:#f8faff;display:flex;flex-direction:column}.interface-toolbar{display:flex;gap:6px;padding:12px 16px}.interface-toolbar button:nth-last-child(2){margin-left:auto}
+.interface-dialog button{border:1px solid #dfe4ee;background:white;border-radius:7px;padding:7px 11px;color:inherit;font:inherit;font-size:12px;cursor:pointer}.interface-dialog button:hover{background:#f1f4ff}.interface-dialog button:active{background:#e8edff}.interface-dialog button:disabled{opacity:.45;cursor:default}.interface-dialog .primary-button{background:#4664e9;color:white;border-color:#4664e9}
+#interfaceCanvas{width:100%;height:330px;min-height:240px;flex:1;touch-action:none;outline-offset:-3px}#interfaceCanvas:focus-visible{outline:2px solid #617dec}.symbol-port{cursor:grab;fill:#fff;stroke:#4567d8;stroke-width:1.5}.symbol-port circle:first-child{stroke:none;fill:transparent}.symbol-selected{filter:drop-shadow(0 0 2px #4569ff)}.symbol-port.symbol-selected{fill:#4569ff;stroke:#244abf}
+.interface-hint{padding:0 20px 12px}.interface-properties{background:white;border-top:1px solid #e6eaf1;padding:14px 20px;min-height:128px}.interface-property-fields{display:flex;flex-wrap:wrap;gap:10px}.interface-properties label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:#748198}.interface-properties input{width:75px}.interface-properties input[aria-label="文字内容"]{width:230px}.interface-dialog input,.interface-dialog select{border:1px solid #dae0ec;border-radius:6px;padding:6px 8px;background:white;color:#253146;font:inherit;font-size:12px;min-width:0}.interface-dialog input:focus,.interface-dialog select:focus{outline:2px solid #bbc8ff;border-color:#5978f2}
+.interface-ports{padding:20px 14px;border-left:1px solid #e6eaf1;overflow:auto}.interface-ports>header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.interface-ports h3{margin:0}.interface-port-row{display:grid;grid-template-columns:24px minmax(80px,1fr) 64px 46px 24px;gap:5px;padding:10px 5px;border-radius:8px}.interface-port-row.is-selected{background:#edf1ff}.interface-port-row label{font-size:0;display:flex;min-width:0}.interface-port-row input,.interface-port-row select{width:100%;padding:6px}.interface-port-row button{padding:0;border:0;background:transparent}.interface-port-remove{color:#909bb0!important}.interface-port-remove:hover{color:#b64040!important}
+#interfaceImpact{border-top:1px solid #e6eaf1;margin-top:18px;padding-top:16px}#interfaceImpact:empty{display:none}#interfaceError{margin:12px 24px 0;padding:10px 12px;background:#fff3ef;color:#a13d2c;border-radius:8px;font-size:13px;max-height:85px;overflow:auto;white-space:pre-wrap}
+.interface-dialog>footer{display:flex;align-items:center;gap:10px;border-top:1px solid #e6eaf1;padding:16px 24px}.interface-dialog>footer span{font-size:12px;color:#748198;flex:1}.interface-dialog.is-busy .interface-workspace{pointer-events:none;opacity:.65}
+@media(max-width:850px){.interface-workspace{grid-template-columns:minmax(0,1fr);min-height:0}.interface-ports{border-left:0;border-top:1px solid #e6eaf1}.interface-dialog{width:calc(100vw - 20px)}#interfaceCanvas{height:280px;flex:none}}
+
+/* Drawing canvases do not inherit the shell's icon defaults. */
+#interfaceCanvas{stroke:none;fill:none;flex:1 1 0;min-height:200px;height:100%}
+#interfaceArtwork text{stroke:none}
+.interface-workspace{height:min(650px,calc(100vh - 220px));max-height:none;min-height:0;overflow:hidden}
+.interface-drawing{min-height:0}
+.interface-properties{height:156px;min-height:0;flex:0 0 auto;overflow:auto}
+.interface-port-columns{display:grid;grid-template-columns:24px minmax(80px,1fr) 64px 46px 24px;gap:5px;padding:0 5px 4px;color:#748198;font-size:11px}
+.interface-dialog[open]{display:flex;flex-direction:column;max-height:calc(100vh - 32px)}
+.interface-dialog>header,.interface-dialog>footer,#interfaceError{flex-shrink:0}
+.interface-workspace{flex:1 1 auto}
+@media(max-width:850px){.interface-workspace{height:auto;max-height:calc(100vh - 220px);overflow:auto}#interfaceCanvas{height:280px;flex:none}.interface-ports{overflow:visible}}
+
+.interface-properties:empty{display:none}

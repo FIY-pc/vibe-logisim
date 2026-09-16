@@ -1,0 +1,24 @@
+/* Simulation actions live in one menu. The canvas tray is only for observed signals. */
+.simulation-menu{position:fixed;inset:auto;margin:0;width:268px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);box-shadow:0 8px 32px #20242b22;font-size:12px}
+.simulation-menu:not(:popover-open){display:none}
+.simulation-menu-heading{display:flex;flex-direction:column;gap:4px;padding:10px 12px 12px;border-bottom:1px solid var(--line);margin-bottom:5px}
+.simulation-menu-heading strong{font-size:12px;overflow-wrap:anywhere}
+.simulation-menu-heading span{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.simulation-menu button{display:flex;align-items:center;gap:18px;width:100%;min-height:34px;padding:7px 12px 7px 28px;border-radius:5px;text-align:left;position:relative;font-size:12px}
+.simulation-menu button:hover:not(:disabled),.simulation-menu button:focus-visible{background:var(--accent-soft,#eef1ff);color:var(--accent);outline:none}
+.simulation-menu button:disabled{color:var(--muted);opacity:.48;cursor:default}
+.simulation-menu button[aria-checked="true"]::before{content:'✓';position:absolute;left:10px;font-size:11px}
+.simulation-menu kbd{margin-left:auto;color:var(--muted);font:11px var(--sans);white-space:nowrap}
+.simulation-menu hr{border:0;border-top:1px solid var(--line);margin:5px 6px}
+#simulationMenuButton[data-running="true"]{color:var(--accent)}
+.simulation-options{width:min(380px,calc(100vw - 32px));padding:22px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:0 16px 56px #20242b22}
+.simulation-options::backdrop{background:#20242b30}
+.simulation-options header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.simulation-options h2{margin:0;font-size:16px}
+.simulation-options .frequency-field{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:13px}
+.simulation-options .frequency-field span{color:var(--muted);font-size:12px;white-space:nowrap}
+.simulation-options input{width:90px;border:1px solid var(--line);border-radius:6px;padding:8px;color:var(--ink);background:var(--paper);font:13px var(--mono)}
+.simulation-options p{font-size:12px;line-height:1.7;color:var(--muted);margin:12px 0}
+.simulation-options footer{display:flex;justify-content:flex-end;gap:12px;margin-top:24px}
+#simulationSettingsError{color:var(--warning)}
+.simulation-error{padding:10px 12px}

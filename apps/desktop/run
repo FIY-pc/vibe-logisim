@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+desktop_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+electron_bin="$desktop_dir/node_modules/.bin/electron"
+
+if [ ! -x "$electron_bin" ]; then
+  echo "Desktop runtime is not installed. Run: npm --prefix '$desktop_dir' install" >&2
+  exit 69
+fi
+
+exec "$electron_bin" "$desktop_dir" "$@"

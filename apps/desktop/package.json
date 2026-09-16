@@ -1,0 +1,22 @@
+{
+  "name": "vibe-logisim-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native desktop shell for the Vibe Logisim Circuit Lens",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test:e2e": "node test/e2e-workspace.cjs",
+    "vendor:ui": "node ../../scripts/ui/vendor.cjs",
+    "postinstall": "npm run vendor:ui"
+  },
+  "devDependencies": {
+    "electron": "44.2.0",
+    "playwright": "1.62.1"
+  },
+  "dependencies": {
+    "dompurify": "3.4.15",
+    "lucide": "1.46.0",
+    "marked": "18.0.13"
+  }
+}

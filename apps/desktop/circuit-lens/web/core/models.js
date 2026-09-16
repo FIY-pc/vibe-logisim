@@ -1,0 +1,78 @@
+// Each state has its own lifetime; runtime observations never become document edits.
+export function createModels() {
+  return {
+    project: {
+      folder: null,
+      session: null,
+      circuit: null,
+      circuitName: null,
+      circuitRequestEpoch: 0,
+      projectBusy: false,
+      circuits: [],
+      revision: null,
+      capabilities: {},
+      runtime: null,
+      capabilityState: "idle",
+      sourceChanged: false,
+      staleKind: "source",
+      demoAllowed: false,
+      isDemo: false,
+    },
+    run: {
+      simulation: null,
+      simulationBusy: false,
+      simulationBusyAction: null,
+      simulationPolling: false,
+      simulationFrame: null,
+      simulationQueue: Promise.resolve(),
+      simulationEpoch: 0,
+      simulationPendingSequence: 0,
+      simulationLastPoll: 0,
+      watchKeys: new Set(),
+      watchCircuit: null,
+    },
+    candidates: {
+      candidates: [],
+    },
+    focus: {
+      selection: null,
+      selectionEpoch: 0,
+      selectionCommittedEpoch: -1,
+      selectionRequest: null,
+      selectionWriteQueue: Promise.resolve(),
+      selectedComponentIds: new Set(),
+      selectedNetIds: new Set(),
+      selectedWireIds: new Set(),
+      selectionRectangle: null,
+    },
+    review: {
+      review: null,
+      reviewSignature: "",
+      reviewTimer: null,
+      polling: false,
+    },
+    canvas: {
+      mode: "select",
+      heldSpace: false,
+      pointer: null,
+      wireStart: null,
+      wirePoints: [],
+      camera: { x: 0, y: 0, width: 1000, height: 700 },
+      fitCameraWidth: 1000,
+      worldBounds: { x: 0, y: 0, width: 1000, height: 700 },
+    },
+    shell: {
+      toastTimer: null,
+    },
+    agent: {
+      enabled: Boolean(window.vibeDesktop?.agent),
+      status: window.vibeDesktop?.agent ? "starting" : "absent",
+      busy: false,
+      submitting: false,
+      unsubscribe: null,
+    },
+    memory: {
+      memory: null,
+    },
+  };
+}

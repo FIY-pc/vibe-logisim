@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta
+      name="description"
+      content="Vibe Logisim Circuit Lens：与 AI 一起设计、理解、修改和运行电路。"
+    />
+    <title>Vibe Logisim</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="workspace-layout.css" />
+    <link rel="stylesheet" href="project-info.css" />
+    <link rel="stylesheet" href="comparison.css" />
+    <link rel="stylesheet" href="interface.css" />
+    <link rel="stylesheet" href="moments.css" />
+    <link rel="stylesheet" href="conversation.css" />
+    <link rel="stylesheet" href="materials.css" />
+    <link rel="stylesheet" href="simulation.css" />
+  <link rel="stylesheet" href="/files.css" />
+  <link rel="stylesheet" href="/components.css" />
+</head>
+  <body>
+    <div class="app-shell" id="appShell">
+      <header class="instrument-bar">
+        <button class="icon-button panel-toggle" id="toggleCircuits" aria-label="收起项目栏" aria-controls="circuitRail" aria-expanded="true"></button>
+        <div class="wordmark" aria-label="Vibe Logisim Circuit Lens">
+          <svg aria-hidden="true" viewBox="0 0 38 38">
+            <path d="M4 10h10v9h10v9h10" />
+            <circle cx="4" cy="10" r="2.3" />
+            <circle cx="14" cy="19" r="2.3" />
+            <circle cx="24" cy="28" r="2.3" />
+            <circle cx="34" cy="28" r="2.3" />
+          </svg>
+          <span>Vibe Logisim</span>
+          <strong>电路工作区</strong>
+        </div>
+
+
+        <div class="bar-actions">
+          <button id="simulationMenuButton" class="bar-button" popovertarget="simulationMenu" aria-haspopup="menu" aria-expanded="false">仿真 <span aria-hidden="true">⌄</span></button>
+          <button id="projectInfo" class="bar-button" aria-haspopup="dialog" disabled>工程信息</button>
+          <span id="saveStatus" class="save-status" aria-live="polite"></span>
+          <button class="icon-button" id="undoButton" aria-label="撤销" title="撤销上一步改动（Ctrl+Z）" disabled>↶</button>
+          <button class="bar-button" id="saveButton" disabled title="保存到当前 .circ 文件（Ctrl+S）">保存</button>
+          <button class="bar-button" id="openButton">
+            <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 6h5l2-2h7v12H3z" /></svg>
+            打开文件夹
+          </button>
+          <button class="icon-button panel-toggle" id="toggleReview" aria-label="收起工作栏" aria-controls="reviewPanel" aria-expanded="true"></button>
+        </div>
+      </header>
+
+      <div class="stale-banner" id="staleBanner" hidden role="alert">
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 2 18 17H2zM10 7v5M10 15v.2" /></svg>
+        <div>
+          <strong>源文件已改变</strong>
+          <span>读取磁盘版本后，当前改动仍可从历史恢复。</span>
+        </div>
+        <button id="reloadRevisionButton">重新载入新版本</button>
+      </div>
+
+      <div class="stale-banner" id="connectionWarning" hidden role="status">
+        工程进度已保留，但外部工具连接信息暂时无法更新；正在重试。你可以继续编辑。
+      </div>
+
+      <main class="workbench" id="workbench">
+        <aside class="circuit-rail" id="circuitRail" aria-label="项目栏">
+          <section id="fileExplorer" class="file-explorer" aria-label="工作区文件">
+            <header class="file-heading">
+              <button id="collapseFiles" class="section-toggle" aria-expanded="true" aria-controls="filesPane componentsPane"><span id="folderName">文件</span></button>
+              <div id="fileActions" class="file-actions" hidden>
+                <button id="locateCurrentFile" class="icon-button" aria-label="定位当前电路文件" title="定位当前电路文件"></button>
+                <button id="newFileMenu" class="icon-button" aria-label="新建" title="新建" aria-haspopup="menu"></button>
+                <button id="fileOptions" class="icon-button" aria-label="文件区选项" title="文件区选项" aria-haspopup="menu"></button>
+              </div>
+            </header>
+            <p id="folderError" class="folder-error" hidden></p>
+            <div id="resourceTabs" class="resource-tabs" role="tablist" aria-label="项目资源">
+              <button id="filesTab" role="tab" aria-selected="true" aria-controls="filesPane">文件</button>
+              <button id="componentsTab" role="tab" aria-selected="false" aria-controls="componentsPane" tabindex="-1">元件</button>
+            </div>
+            <div id="filesPane" class="resource-pane" role="tabpanel" aria-labelledby="filesTab"><nav id="fileTree" role="tree" aria-label="工作区文件树" tabindex="0"></nav></div>
+            <section id="componentsPane" class="resource-pane" role="tabpanel" aria-labelledby="componentsTab" hidden>
+              <label class="component-search"><span class="sr-only">搜索元件</span><input id="componentSearch" type="search" placeholder="搜索元件…" autocomplete="off" spellcheck="false"></label>
+              <div id="componentLibrary" class="component-library" aria-label="元件库"></div>
+            </section>
+          </section>
+          <div id="filesResize" class="row-resizer" role="separator" tabindex="0" aria-label="调整文件区高度" aria-orientation="horizontal"></div>
+          <section id="circuitNavigator" class="circuit-navigator" aria-label="当前电路">
+          <div class="rail-heading">
+            <div>
+              <button id="collapseNavigator" class="section-toggle" aria-expanded="true" aria-controls="circuitList">当前电路</button>
+              <h1 id="workspaceName">没有打开的电路</h1>
+            </div>
+            <span class="circuit-count" id="circuitCount">0</span>
+          </div>
+
+          <label class="circuit-search">
+            <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5" /><path d="m12 12 4 4" /></svg>
+            <span class="sr-only">搜索电路</span>
+            <input id="circuitSearch" type="search" placeholder="查找电路" autocomplete="off" />
+            <kbd>/</kbd>
+          </label>
+
+          <nav class="circuit-list" id="circuitList" aria-label="电路列表"></nav>
+          </section>
+          <div id="inspectorResize" class="row-resizer" role="separator" tabindex="0" aria-label="调整当前电路与属性的高度" aria-orientation="horizontal" aria-controls="circuitNavigator inspectorSection"></div>
+          <section class="inspector-section" id="inspectorSection" aria-label="对象属性">
+            <header class="inspector-section-heading"><button id="collapseInspector" class="section-toggle" aria-expanded="true" aria-controls="objectInspector">属性与接口</button><button id="clearObjectSelection" class="quiet-button" title="取消当前选择">取消选择</button></header>
+            <div id="objectInspector" class="object-inspector"></div>
+          </section>
+          <div id="railResize" class="panel-resizer rail-resizer" role="separator" tabindex="0" aria-label="调整工程栏宽度" aria-orientation="vertical" aria-controls="circuitRail"></div>
+
+
+        </aside>
+
+        <section class="canvas-stage" id="canvasStage" aria-label="电路画布"><div class="document-bar"><button class="icon-button" id="circuitBack" aria-label="返回父电路" disabled>‹</button><nav id="circuitBreadcrumbs" aria-label="电路层级"><strong id="currentCircuitName">电路工作区</strong></nav><span id="definitionContext" hidden></span><button class="quiet-button" id="editInterface">封装与接口</button><button class="quiet-button find-object" id="findObject" title="查找当前电路中的元件和信号（Ctrl / ⌘ F）">查找元件 <kbd>⌘ / Ctrl F</kbd></button><button id="renderStatus" class="quiet-button" hidden></button><span id="documentKind"></span></div>
+          <div class="canvas-toolbar" aria-label="画布工具">
+            <div class="segmented-control" role="group" aria-label="画布操作方式">
+              <button id="selectTool" class="is-active" data-mode="select" aria-pressed="true" title="框选（V）">
+                <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m5 3 9 8-5 .5-2.5 4.5z" /></svg>
+                选择
+              </button>
+              <button id="pokeTool" data-mode="poke" aria-pressed="false" title="直接操作输入（P）">交互</button>
+              <button id="panTool" data-mode="pan" aria-pressed="false" title="平移（H 或空格）">
+                <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M7 10V5a1 1 0 0 1 2 0v4-6a1 1 0 0 1 2 0v6-5a1 1 0 0 1 2 0v5-3a1 1 0 0 1 2 0v6c0 3-2 5-5 5H9c-2 0-3-1-4-3l-1-2a1 1 0 0 1 2-1l1 1z" /></svg>
+                平移
+              </button>
+            </div>
+            <button id="addComponentTool" class="tool-button add-component-tool" title="添加元件（A）" aria-label="添加元件" aria-controls="componentsPane" aria-expanded="false"><span>＋</span> 元件</button>
+            <span class="tool-divider"></span>
+            <button class="tool-button" id="zoomOutButton" aria-label="缩小">−</button>
+            <output class="zoom-readout" id="zoomReadout" aria-label="缩放比例">100%</output>
+            <button class="tool-button" id="zoomInButton" aria-label="放大">＋</button>
+            <button class="tool-button fit-button" id="fitButton" title="适合窗口（F）">
+              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 8V3h5M12 3h5v5M17 12v5h-5M8 17H3v-5" /></svg>
+              适合
+            </button>
+            <button class="tool-button" id="deleteSelectionButton" aria-label="删除选中对象" title="删除选中对象（Backspace / Delete）" aria-keyshortcuts="Backspace Delete" disabled>⌫</button>
+          </div>
+
+          <div class="placement-toolbar" id="placementToolbar" hidden></div>
+          <div class="canvas-status" id="canvasStatus" hidden></div>
+
+          <svg
+            class="circuit-canvas"
+            id="circuitCanvas"
+            tabindex="0"
+            role="application"
+            aria-label="可平移、缩放和框选的电路画布"
+          >
+            <defs>
+              <pattern id="placementGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="0.65" fill="#cbd5e6" /></pattern>
+              <pattern id="minorGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+                <path d="M10 0H0V10" class="minor-grid-line" />
+              </pattern>
+              <pattern id="majorGrid" width="50" height="50" patternUnits="userSpaceOnUse">
+                <rect width="50" height="50" fill="url(#minorGrid)" />
+                <path d="M50 0H0V50" class="major-grid-line" />
+              </pattern>
+              <filter id="selectionGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+            <rect class="grid-plane" id="gridPlane" x="-10000" y="-10000" width="20000" height="20000" />
+            <g id="nativeArtwork" pointer-events="none"><g id="runtimeLayer"></g><g id="detailLayer"></g></g><g id="wireLayer"></g>
+            <g id="componentLayer"></g>
+            <g id="interactionLayer"></g><g id="placementLayer" pointer-events="none"></g>
+          </svg>
+
+          <section class="simulation-dock" id="simulationDock" aria-label="观察信号" hidden>
+            <div id="simulationWatches" class="simulation-watches" hidden></div>
+            <p id="simulationError" class="simulation-error" role="status" hidden></p>
+          </section>
+          <section id="memoryPanel" class="memory-panel" aria-label="存储器内容" hidden>
+            <header class="memory-heading"><button id="memoryOwner" class="memory-owner" title="定位画布上的存储器"></button><span id="memoryKind"></span><button id="memoryClose" class="icon-button" aria-label="关闭存储器">×</button></header>
+            <div class="memory-navigation">
+              <form id="memoryJump"><label>地址 <input id="memoryAddress" aria-label="跳转到字地址（十六进制）" value="0000" spellcheck="false" autocomplete="off"></label></form>
+              <span id="memoryGeometry"></span>
+              <button id="memoryPrev" aria-label="上一页地址">‹</button><button id="memoryNext" aria-label="下一页地址">›</button>
+              <button id="memoryRefresh">刷新</button>
+            </div>
+            <div id="memoryContent" class="memory-content"></div>
+            <footer><span id="memorySelection">选择一个存储单元</span><span id="memoryState"></span></footer>
+            <p id="memoryError" role="status" hidden></p>
+          </section>
+          <div class="empty-state" id="emptyState">
+            <div class="empty-symbol" aria-hidden="true">
+              <svg viewBox="0 0 180 120">
+                <path class="trace" d="M9 74h38V34h34v61h39V54h50" />
+                <g class="nodes"><circle cx="9" cy="74" r="5" /><circle cx="47" cy="34" r="5" /><circle cx="81" cy="95" r="5" /><circle cx="120" cy="54" r="5" /><circle cx="170" cy="54" r="5" /></g>
+                <path class="selection-corner" d="M28 16H12v16M152 104h16V88" />
+              </svg>
+            </div>
+            <h2>把电路放到工作台上</h2>
+            <p>打开一份 Logisim <code>.circ</code>，开始查看、编辑或与 AI 讨论。</p>
+            <div class="empty-actions">
+              <button class="primary-button" id="emptyOpenButton">选择 .circ 文件</button>
+              <button class="quiet-button" id="demoButton" hidden>载入演示电路</button>
+            </div>
+            <p class="empty-hint" id="emptyHint">兼容课程 Logisim 电路与组件库</p>
+          </div>
+
+        </section>
+
+        <aside class="review-panel" id="reviewPanel" aria-label="对话、连接与改动">
+          <div id="reviewResize" class="panel-resizer review-resizer" role="separator" tabindex="0" aria-label="调整对话栏宽度" aria-orientation="vertical" aria-controls="reviewPanel"></div>
+          <div class="review-tabs" role="tablist" aria-label="工作栏">
+            <button id="agentTab" role="tab" aria-selected="false" aria-controls="agentPane" hidden>
+              <span class="tab-glyph" aria-hidden="true">✦</span> 对话
+              <span class="agent-tab-light" id="agentTabLight" data-state="idle" aria-hidden="true"></span>
+            </button>
+            <button id="evidenceTab" role="tab" aria-selected="true" aria-controls="evidencePane">连接</button>
+            <button id="proposalTab" role="tab" aria-selected="false" aria-controls="proposalPane">
+              改动
+              <span class="tab-count" id="proposalCount" hidden>0</span>
+            </button>
+          </div>
+
+          <section class="review-pane agent-pane" id="agentPane" role="tabpanel" aria-labelledby="agentTab" hidden>
+            <div class="agent-header">
+              <div class="agent-identity">
+                <span class="agent-status-light" id="agentStatusLight" data-state="idle" aria-hidden="true"></span>
+                <div>
+                  <strong>电路助手</strong>
+                  <span id="agentStatusText">正在连接本机 Codex…</span>
+                </div>
+              </div>
+              <button id="agentSettings" class="chat-action" aria-label="AI 设置" title="AI 设置" aria-haspopup="dialog"></button>
+            </div>
+            <aside class="agent-notice" id="agentNotice" hidden>
+              <div role="status"><strong id="agentNoticeTitle"></strong><p id="agentNoticeText"></p></div>
+              <div class="agent-notice-actions"><button class="quiet-button" id="agentReconnect">重新连接</button><button class="quiet-button" id="agentReviewChanges">查看已生成改动</button></div>
+              <details><summary>错误详情</summary><pre id="agentNoticeDetails"></pre></details>
+            </aside>
+            <div class="agent-timeline" id="agentTimeline" tabindex="0" role="log" aria-live="polite" aria-relevant="additions text">
+              <div class="agent-empty" id="agentEmpty">
+                <span class="chat-empty-mark" aria-hidden="true"></span>
+                <strong>一起做电路</strong><p>描述你的想法，或选中图中的对象继续讨论。</p>
+
+              </div>
+            </div>
+            <button id="conversationLatest" class="conversation-latest" hidden>回到最新消息</button>
+          </section>
+
+          <section class="review-pane is-active" id="evidencePane" role="tabpanel" aria-labelledby="evidenceTab">
+            <header class="connections-heading"><h2 id="evidenceTitle">连接</h2><p id="connectionsSummary"></p></header>
+            <div id="connectionList" class="connection-list"></div>
+          </section>
+
+          <section class="review-pane" id="proposalPane" role="tabpanel" aria-labelledby="proposalTab" hidden>
+            <div class="change-navigation"><div class="segmented-control" role="group" aria-label="工程改动">
+              <button id="pendingChangesButton" class="is-active" aria-pressed="true">待应用</button>
+              <button id="projectHistoryButton" aria-pressed="false">历史</button>
+            </div></div>
+            <div id="pendingChanges"><div id="candidateList" class="candidate-list"></div><div id="proposalContent"></div></div>
+            <div id="projectHistory" class="project-history" hidden></div>
+          </section>
+
+          <div class="selection-dock" id="selectionDock" hidden>
+            <div class="selection-reference">
+              <span class="reference-mark" aria-hidden="true">⌖</span>
+              <div>
+                <span class="selection-label">发送时包含</span>
+                <strong id="selectionSummary">整个当前电路</strong>
+              </div>
+              <code id="selectionRevision">—</code><button id="clearComposerContext" class="icon-button" aria-label="取消选区，讨论整个电路" title="取消选区，讨论整个电路">×</button>
+            </div>
+            <button class="copy-button" id="copyReferenceButton">
+              <svg aria-hidden="true" viewBox="0 0 20 20"><rect x="6" y="6" width="10" height="10" /><path d="M4 13H3V3h10v1" /></svg>
+              复制上下文
+            </button>
+            <div id="momentAttachments" class="moment-attachments" aria-label="随问题发送的观察" hidden></div>
+            <div id="materialAttachments" class="material-attachments" aria-label="随问题引用的资料" hidden></div>
+            <label class="question-input">
+              <span class="sr-only">关于当前电路的问题</span>
+              <textarea id="questionInput" rows="2" maxlength="4000" placeholder="描述要做的电路，或问一个问题…"></textarea>
+            </label>
+            <div class="composer-options" id="composerOptions" hidden>
+              <div id="composerPreferences" class="composer-preferences">
+                <button id="agentModel" class="preference-trigger model-trigger" aria-label="选择模型" aria-haspopup="dialog" aria-expanded="false" aria-controls="modelDialog">选择模型</button>
+                <button id="agentEffort" class="preference-trigger" aria-label="思考深度" aria-haspopup="menu" aria-controls="effortMenu" aria-expanded="false">思考深度</button>
+              </div>
+              <button class="stop-button" id="interruptButton" aria-label="停止回答" title="停止回答" hidden></button>
+              <button class="ask-button" id="askButton" aria-label="发送问题" title="发送问题"></button>
+            </div>
+            <div id="draftError" class="draft-error" role="alert" hidden><span id="draftErrorText"></span><div><button id="draftRetry" type="button">重试</button><button id="draftCopy" type="button">复制草稿</button></div></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <dialog id="projectDialog" class="project-dialog" aria-labelledby="projectInfoTitle">
+      <header><h2 id="projectInfoTitle">工程信息</h2><button id="projectInfoClose" class="icon-button" aria-label="关闭工程信息" autofocus></button></header>
+      <div class="project-file"><strong id="projectFileName"></strong><span id="projectContents"></span></div>
+      <dl class="project-facts">
+        <div><dt>文件位置</dt><dd class="project-location"><span id="projectSource"></span><button id="projectCopyPath" class="icon-button" aria-label="复制完整文件路径" title="复制完整文件路径"></button></dd></div>
+        <div><dt>运行环境</dt><dd id="projectRuntime"></dd></div>
+        <div><dt>组件库</dt><dd id="projectLibraries"></dd></div>
+      </dl>
+      <p id="projectIssue" class="project-issue" hidden></p>
+      <footer class="project-export">
+        <div><p id="projectExportNote"></p><p class="project-export-scope">包含当前电路及其组件库；工作区其他文件和对话保留在原处。</p></div>
+        <button id="exportProject" class="bar-button">导出电路包…</button>
+      </footer>
+      <p id="projectInfoError" class="project-info-error" role="alert" hidden></p>
+    </dialog>
+    <div id="simulationMenu" class="simulation-menu" popover role="menu" aria-label="仿真">
+      <div class="simulation-menu-heading" role="presentation"><strong id="simulationOwner"></strong><span id="simulationStatus"></span></div>
+      <button id="simulationReturn" role="menuitem" hidden>返回运行电路</button>
+      <button id="simulationStart" role="menuitem">开始交互仿真</button>
+      <button id="simulationPlay" role="menuitem"><span>运行时钟</span></button>
+      <button id="simulationTick" role="menuitem"><span>时钟一步</span></button>
+      <hr role="separator">
+      <button id="simulationAutomatic" role="menuitemcheckbox" aria-checked="true"><span>自动传播</span></button>
+      <button id="simulationStep" role="menuitem"><span>传播一步</span></button>
+      <button id="simulationReset" role="menuitem"><span>复位仿真</span></button>
+      <hr role="separator">
+      <button id="momentCapture" role="menuitem" title="F6 · 留存当前显示的画面和信号，仿真继续运行">留存此刻</button>
+      <button id="momentOpen" role="menuitem">留存观察</button>
+      <hr role="separator">
+      <button id="simulationSettings" role="menuitem">仿真设置…</button>
+      <button id="simulationStop" role="menuitem" title="清除本次运行的输入和状态，电路设计与留存观察会保留">结束本次仿真</button>
+    </div>
+    <dialog id="simulationOptions" class="simulation-options" aria-labelledby="simulationSettingsTitle">
+      <header><h2 id="simulationSettingsTitle">仿真设置</h2><button id="simulationSettingsClose" class="icon-button" aria-label="关闭仿真设置">×</button></header>
+      <form id="simulationSettingsForm">
+        <label class="frequency-field" for="simulationFrequency">时钟频率 <span><input id="simulationFrequency" name="frequency" type="number" min="0.25" max="4096" step="any" required value="2"> tick/s</span></label>
+        <p>高、低电平各 1 tick 时，2 tick/s 为每秒一个完整周期。</p>
+        <p id="simulationRate" class="simulation-rate" hidden></p>
+        <p id="simulationSettingsError" role="alert" hidden></p>
+        <footer><button id="simulationSettingsCancel" type="button" class="quiet-button">取消</button><button id="simulationSettingsApply" type="submit" class="primary-button">应用</button></footer>
+      </form>
+    </dialog>
+    <div id="fileMenu" popover="manual" role="menu" aria-label="文件操作"></div>
+    <dialog id="fileChanges" class="file-changes-dialog"><header><h2>文件改动</h2><button id="fileChangesClose" class="icon-button" aria-label="关闭文件改动">×</button></header><div class="file-changes-body"><div id="fileChangeList"></div><div id="fileDiff"></div></div></dialog>
+    <dialog id="materialsDialog" class="materials-dialog workspace-file" aria-labelledby="materialsTitle">
+      <header class="materials-header"><h2 id="materialsTitle">文件预览</h2><button id="filePreviewExternal" class="quiet-button" type="button">用系统应用打开</button><button id="materialsClose" class="chat-action" aria-label="关闭文件预览"></button></header>
+      <div id="materialsError" class="materials-notice" role="alert" hidden></div>
+      <div class="materials-body"><section class="materials-detail" aria-label="文件预览"><div class="materials-detail-head"><div><h3 id="materialsName"></h3><p id="materialsMeta"></p></div></div><div id="materialsPreview" class="materials-preview" tabindex="0"></div><footer id="materialsFooter" class="materials-footer" hidden><div class="material-pager"><button id="materialPrev" class="chat-action" aria-label="上一页"></button><span id="materialPage"></span><button id="materialNext" class="chat-action" aria-label="下一页"></button></div><button id="materialImageMode" class="quiet-button">原页</button><button id="materialTextMode" class="quiet-button">文字</button><button id="materialQuote" class="primary-button">引用到问题</button></footer></section></div>
+      <p class="materials-hint">选中文字可引用摘录；未选中时引用整份文件或当前 PDF 页。</p>
+    </dialog>
+    <div id="effortMenu" class="preference-menu effort-menu" popover role="menu" aria-label="思考深度">
+      <h2>思考深度</h2><div id="effortOptions"></div><p id="effortError" class="preference-error" role="alert" hidden></p>
+    </div>
+    <dialog id="modelDialog" class="model-dialog" aria-labelledby="modelTitle">
+      <header><h2 id="modelTitle">选择模型</h2><button id="modelClose" class="chat-action" aria-label="关闭模型设置"></button></header>
+      <div class="model-search"><input id="modelSearch" type="search" placeholder="搜索模型" aria-label="搜索模型" autocomplete="off" /></div>
+      <p id="modelLoading" role="status" hidden>正在读取可用模型…</p>
+      <div id="modelChoice" class="model-list" role="listbox" aria-label="可用模型"></div>
+      <p id="modelDescription" class="model-description"></p>
+      <p id="modelBusy" class="model-description" hidden>回答进行中，完成或停止后可以切换模型。</p>
+      <p id="modelError" class="model-error" role="alert" hidden></p>
+      <footer><button id="modelRefresh" class="quiet-button">刷新列表</button><span>选择后用于下一次回答</span></footer>
+    </dialog>
+    <dialog id="connectionDialog" class="connection-dialog" aria-labelledby="connectionTitle">
+      <header><div><h2 id="connectionTitle">AI 设置</h2><p>当前工程的智能助手</p></div><button id="connectionClose" class="chat-action" aria-label="关闭 AI 设置"></button></header>
+      <section class="model-connection"><div><strong id="modelConnection">本机 Codex</strong><span id="modelConnectionStatus"></span></div><button class="quiet-button" id="modelReconnect">重新连接</button></section>
+      <dl class="connection-facts"><div><dt>当前模型</dt><dd><span id="connectionModel"></span> <button id="connectionChooseModel" class="quiet-button">更改</button></dd></div><div><dt>模型偏好</dt><dd id="connectionPreference"></dd></div></dl>
+      <section class="connection-help"><h3>连接来源</h3><p>沿用本机 Codex 的服务配置与登录。模型偏好保存在 Vibe Logisim 中，对话和电路会继续保留。</p><details><summary>登录失效时怎么恢复</summary><p>在本机终端运行 <code>codex login</code> 完成登录，再点击上方“重新连接”。</p></details></section>
+      <p id="connectionError" class="model-error" role="alert" hidden></p>
+    </dialog>
+    <dialog id="finderDialog" class="finder-dialog" aria-labelledby="finderTitle">
+      <header><div><strong id="finderTitle">查找元件与信号</strong><span id="finderScope"></span></div><button class="icon-button" id="finderClose" aria-label="关闭查找">×</button></header>
+      <input id="finderInput" type="text" role="combobox" aria-expanded="true" aria-controls="finderResults" aria-autocomplete="list" aria-label="元件名称或类型" autocomplete="off" placeholder="输入名称或类型，如 ID.PC 寄存器" />
+      <div id="finderResults" role="listbox" aria-label="匹配的元件"></div>
+      <footer><span id="finderStatus" role="status"></span><small>↑↓ 选择 · Enter 定位 · Esc 关闭</small></footer>
+    </dialog>
+    <dialog id="comparisonDialog" class="comparison-dialog" aria-labelledby="comparisonTitle">
+      <header><div><span id="comparisonKind">电路改动</span><h2 id="comparisonTitle"></h2></div><a id="comparisonDownload" class="quiet-button">导出工程包</a><button id="comparisonNative" class="quiet-button" title="用 Logisim 打开隔离副本，不改变当前工程" hidden>Logisim 副本</button><button id="comparisonEvidence" class="quiet-button">运行记录</button><button id="comparisonPrimary" class="primary-button">应用改动</button><button id="comparisonClose" class="icon-button" aria-label="关闭改动对照">×</button></header>
+      <p id="comparisonError" class="project-action-error" role="alert" hidden></p>
+      <div class="comparison-toolbar"><select id="comparisonModule" aria-label="对照电路"></select><select id="comparisonMode" aria-label="历史对照方式" hidden><option value="change">这次修改</option><option value="current">与当前工程比较</option></select><div class="segmented-control" role="group" aria-label="对照版本"><button id="comparisonBefore" aria-pressed="false">修改前</button><button id="comparisonAfter" aria-pressed="true">修改后</button></div><span id="comparisonSummary"></span><button id="comparisonReload" class="quiet-button">重载画面</button></div>
+      <div id="comparisonScope" class="comparison-scope"></div>
+      <div class="comparison-body"><aside class="comparison-sidebar"><div id="comparisonFilters" class="comparison-filters" role="group" aria-label="改动类别"></div><input id="comparisonSearch" type="search" aria-label="查找改动" placeholder="查找元件、接口或信号"/><div id="comparisonRows" class="comparison-rows"></div></aside>
+        <section class="comparison-preview" aria-label="原生电路对照"><div class="comparison-viewbar"><span>选择清单或图中标记查看改动</span><button id="comparisonZoomOut" aria-label="缩小对照">−</button><output id="comparisonZoom">100%</output><button id="comparisonZoomIn" aria-label="放大对照">＋</button><button id="comparisonFit">全图</button></div><p id="comparisonImageStatus" role="status"></p><div id="comparisonStage" class="comparison-stage"><div id="comparisonSheet" class="comparison-sheet"><img id="comparisonImage" alt="所选版本的原生电路图"/><svg id="comparisonOverlay" aria-label="所选版本的改动标记"><image id="comparisonDetailImage" pointer-events="none"/><g id="comparisonMarks"></g></svg></div></div><div id="comparisonDetails" class="comparison-details"></div></section>
+      </div><footer><span>对照显示结构与连接变化；运行记录可按需查看。</span><button id="comparisonLocate" class="primary-button" disabled>在当前工程中定位</button></footer>
+    </dialog>
+    <dialog id="candidateEvidenceDialog" class="candidate-dialog" aria-labelledby="candidateEvidenceTitle">
+      <header><h2 id="candidateEvidenceTitle">候选运行记录</h2><button id="evidenceBack" class="quiet-button">返回改动</button><button id="closeCandidateEvidence" class="icon-button" aria-label="关闭运行记录">×</button></header>
+      <div class="candidate-controls"><select id="evidenceModule" aria-label="运行记录电路"></select><button id="evidenceVectors">输入输出检查</button><button id="evidenceTrace">时钟记录</button></div><div id="evidenceResults" class="candidate-checks"></div>
+    </dialog>
+    <dialog id="interfaceDialog" class="interface-dialog" aria-labelledby="interfaceTitle">
+      <header><div><span class="interface-eyebrow">子电路设计</span><h2 id="interfaceTitle">封装与接口</h2><p id="interfaceScope"></p></div><button id="interfaceClose" class="quiet-button">取消</button></header>
+      <div id="interfaceError" role="status" hidden></div>
+      <div class="interface-workspace">
+        <section class="interface-drawing" aria-label="封装外观">
+          <div class="interface-toolbar"><button id="interfaceAddRect">矩形</button><button id="interfaceAddText">文字</button><button id="interfaceUndo">撤销草稿</button><button id="interfaceFit">适合</button></div>
+          <svg id="interfaceCanvas" aria-label="编辑封装外观"><g id="interfaceArtwork"></g></svg>
+          <p class="interface-hint">拖动端口调整接点 · 点选图形编辑 · 方向键微调 · Esc 取消拖动</p>
+          <div id="interfaceProperties" class="interface-properties"></div>
+        </section>
+        <section class="interface-ports" aria-label="模块接口"><header><h3>接口</h3><button id="interfaceAddPort">＋ 添加端口</button></header><div class="interface-port-columns" aria-hidden="true"><span></span><span>名称</span><span>方向</span><span>位宽</span><span></span></div><div id="interfacePortList"></div><div id="interfaceImpact" aria-live="polite"></div></section>
+      </div>
+      <footer><span id="interfaceDraftStatus">正在读取封装…</span><button id="interfacePreview">预览影响</button><button id="interfaceApply" class="primary-button">应用修改</button></footer>
+    </dialog>
+    <dialog id="saveDialog" class="save-dialog" aria-labelledby="saveTitle">
+      <h2 id="saveTitle">保存到当前文件</h2><p id="saveFileName" class="save-file-name"></p>
+      <p>如果这个文件正在 Logisim 中打开，请先保存并关闭它，再继续。</p>
+      <p id="saveActionError" class="project-action-error" role="alert" hidden></p>
+      <div class="save-actions"><button id="cancelSave" class="quiet-button">取消</button><button id="confirmSave" class="primary-button">保存文件</button></div>
+    </dialog>
+    <input id="fileInput" type="file" accept=".circ,application/xml,text/xml" hidden />
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="momentDialog" class="moment-dialog" aria-labelledby="momentHeading">
+      <header class="moment-heading"><div><h2 id="momentHeading">留存观察</h2><p>保留想讨论的时刻，也可以选择两个时刻比较。</p></div><button id="momentClose" class="icon-button" aria-label="关闭留存观察">×</button></header>
+      <div class="moment-body"><div id="momentList" class="moment-list" aria-label="观察列表"></div><div id="momentViewer" class="moment-viewer"></div></div>
+      <footer class="moment-footer"><button id="momentAttach" class="primary-button" disabled>附到问题</button></footer>
+    </dialog>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

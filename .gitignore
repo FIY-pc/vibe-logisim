@@ -1,0 +1,42 @@
+# Dependencies and generated files
+node_modules/
+__pycache__/
+*.py[cod]
+*.class
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+wheels/
+*.egg-info/
+tmp/
+.DS_Store
+
+# Local credentials and application state
+.env
+.env.*
+!.env.example
+.codex/
+auth.json
+*.pem
+*.key
+
+# External runtimes and course libraries are installed locally
+*.jar
+*.exe
+/Logisim/
+
+# Personal circuits, course materials, old prototypes, and recovery records
+/*.circ
+/archive/
+/workspaces/
+/projects/
+/exports/
+/examples/
+/experiments/
+/docs/recovery/
+/apps/desktop/workspaces/
+/apps/desktop/docs/
+**/evidence/

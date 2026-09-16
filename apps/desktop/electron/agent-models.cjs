@@ -1,0 +1,73 @@
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+
+// Model discovery and local preferences are separate from conversation transport.
+// The catalog comes from the same app-server that will execute the next turn.
+class AgentModels {
+  constructor({request, preferencesPath}) {
+    this.request = request;
+    this.preferencesPath = preferencesPath;
+    this.catalog = null;
+    this.loading = null;
+    this.selection = null;
+    try {
+      const saved = JSON.parse(fs.readFileSync(preferencesPath, "utf8"));
+      if (typeof saved.model === "string" && saved.model.length <= 160 &&
+          typeof saved.effort === "string" && saved.effort.length <= 30) this.selection = {model:saved.model, effort:saved.effort};
+    } catch (_) { /* No preference means inherit the configured connection. */ }
+  }
+
+  invalidate() { this.catalog = null; this.loading = null; }
+
+  async list({refresh = false} = {}) {
+    if (!refresh && this.catalog) return this.catalog;
+    if (this.loading) return this.loading;
+    const loading = (async () => {
+      const models = new Map(), seen = new Set();
+      let cursor = null;
+      do {
+        const result = await this.request("model/list", {limit:100, includeHidden:false, ...(cursor ? {cursor} : {})});
+        if (!Array.isArray(result?.data)) throw new Error("模型目录返回格式不正确");
+        for (const model of result.data) {
+          if (model.hidden || typeof model.model !== "string") continue;
+          models.set(model.model, {
+            model:model.model, name:model.displayName || model.model, description:model.description || "",
+            isDefault:Boolean(model.isDefault),
+            defaultEffort:model.defaultReasoningEffort,
+            efforts:(model.supportedReasoningEfforts || []).map(e=>({value:e.reasoningEffort,description:e.description || ""})),
+          });
+        }
+        cursor = result.nextCursor;
+        if (cursor && seen.has(cursor)) throw new Error("模型目录分页重复，请重新连接后刷新");
+        seen.add(cursor);
+      } while (cursor);
+      const catalog = [...models.values()];
+      if (this.loading === loading) this.catalog = catalog;
+      return catalog;
+    })();
+    this.loading = loading;
+    try { return await loading; }
+    finally { if (this.loading === loading) this.loading = null; }
+  }
+
+  async validate(selection) {
+    if (selection === null) return null;
+    if (!selection || typeof selection.model !== "string" || typeof selection.effort !== "string") throw new Error("请选择模型和思考深度");
+    const model = (await this.list()).find(m=>m.model===selection.model);
+    if (!model) throw new Error("这个模型不在当前连接的目录中，请刷新后重新选择");
+    if (!model.efforts.some(e=>e.value===selection.effort)) throw new Error("这个模型不支持所选思考深度");
+    return {model:model.model,effort:selection.effort};
+  }
+
+  save(selection) {
+    if (this.preferencesPath) {
+      fs.mkdirSync(path.dirname(this.preferencesPath), {recursive:true});
+      const temporary = `${this.preferencesPath}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify(selection), {mode:0o600});
+      fs.renameSync(temporary, this.preferencesPath);
+    }
+    this.selection = selection;
+  }
+}
+module.exports = {AgentModels};
