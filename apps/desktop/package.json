@@ -8,7 +8,9 @@
     "start": "electron .",
     "test:e2e": "node test/e2e-workspace.cjs",
     "vendor:ui": "node ../../scripts/ui/vendor.cjs",
-    "postinstall": "npm run vendor:ui"
+    "postinstall": "npm run vendor:ui",
+    "package:linux": "python3 ../../scripts/distribution/build.py",
+    "test:packaged": "node test/e2e-packaged.cjs"
   },
   "devDependencies": {
     "electron": "44.2.0",
@@ -17,6 +19,7 @@
   "dependencies": {
     "dompurify": "3.4.15",
     "lucide": "1.46.0",
-    "marked": "18.0.13"
+    "marked": "18.0.13",
+    "pdfjs-dist": "6.3.289"
   }
 }

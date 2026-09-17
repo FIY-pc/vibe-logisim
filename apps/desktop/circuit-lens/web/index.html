@@ -359,7 +359,7 @@
       <header><div><h2 id="connectionTitle">AI 设置</h2><p>当前工程的智能助手</p></div><button id="connectionClose" class="chat-action" aria-label="关闭 AI 设置"></button></header>
       <section class="model-connection"><div><strong id="modelConnection">本机 Codex</strong><span id="modelConnectionStatus"></span></div><button class="quiet-button" id="modelReconnect">重新连接</button></section>
       <dl class="connection-facts"><div><dt>当前模型</dt><dd><span id="connectionModel"></span> <button id="connectionChooseModel" class="quiet-button">更改</button></dd></div><div><dt>模型偏好</dt><dd id="connectionPreference"></dd></div></dl>
-      <section class="connection-help"><h3>连接来源</h3><p>沿用本机 Codex 的服务配置与登录。模型偏好保存在 Vibe Logisim 中，对话和电路会继续保留。</p><details><summary>登录失效时怎么恢复</summary><p>在本机终端运行 <code>codex login</code> 完成登录，再点击上方“重新连接”。</p></details></section>
+      <section class="connection-help"><p id="connectionHelp"></p><button id="connectionLogout" class="quiet-button" hidden>退出登录</button></section>
       <p id="connectionError" class="model-error" role="alert" hidden></p>
     </dialog>
     <dialog id="finderDialog" class="finder-dialog" aria-labelledby="finderTitle">

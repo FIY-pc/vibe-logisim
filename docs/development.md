@@ -4,7 +4,7 @@
 
 当前桌面开发版在 Linux 上使用。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
 
-内嵌 AI 需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。没有这些条件时不能完整使用 AI 对话。PDF 预览还使用 Poppler 的 `pdftotext`、`pdftoppm` 和 `pdfinfo`。
+开发启动的内嵌 AI 需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包已内置这些程序和 Python、Java、Logisim，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
 
 ## Logisim 运行文件
 
@@ -61,4 +61,4 @@ node apps/desktop/test/e2e-without-agent.cjs
 
 此脚本在独立临时目录启动真实 Electron，故意指定不存在的 Codex 路径，经界面新建电路、放置元件、保存并重开，也检查无效目录不会覆盖当前文件。只替换系统文件选择器的返回路径，不模拟文件服务或电路引擎；不需要个人课设文件，不发送模型请求。它验证的是文件与人工编辑路径，不包含 AI 协作或仿真正确性的验收。
 
-当前没有打包安装器、跨平台验收或完整自动化发布流程；这一提交提供可继续开发的源码基线。
+已提供 Linux 独立应用包构建及打包程序的鼠标/键盘验收入口，见 [分发与验收](distribution.md)。当前产物限本地验收，尚无公开安装器、跨平台验收或自动发布流程。

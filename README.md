@@ -11,9 +11,13 @@
 - 原生 Logisim 渲染与仿真、实例信号观察、画面留存，以及大画布按视野重绘。
 - 本地 Codex 对话、模型与思考深度选择、会话和草稿恢复；AI 直接修改工作区文件。
 
-这是仍在打磨的开发版本。大电路编辑延迟、交互细节和环境安装还需要改进；已有功能不等于所有电路或课程任务都能自动完成。
+这是仍在打磨的开发版本。大电路编辑延迟和交互细节还需要改进；已有功能不等于所有电路或课程任务都能自动完成。
 
 ## 启动
+
+已加入 Linux 独立应用包构建：解压后直接打开程序，内置电路运行环境和 Codex，AI 面板可登录 ChatGPT，PDF 无需外部工具。完整包目前用于本地验收，尚未公开发布；构建与使用边界见 [独立应用包](docs/distribution.md)。
+
+以下是源码开发启动方式：
 
 当前支持 Linux 开发环境，需要 Node.js 22+、npm、Python 3.11+、JDK 17+。内嵌 AI 还依赖本机可用的 Codex、`codex-code-mode-host` 和 systemd 用户服务。
 
@@ -39,5 +43,6 @@ apps/desktop/run
 | `apps/desktop/circuit-knowledge/` | 可选的电路设计参考 |
 | `apps/desktop/test/` | 桌面操作及服务验证脚本 |
 | `scripts/ui/` | 本地 UI 依赖资源生成 |
+| `scripts/distribution/` | 固定运行环境、校验下载和独立应用包构建 |
 
 继续开发前阅读 [架构说明](docs/architecture.md)。第三方运行文件及前端依赖见 [THIRD_PARTY.md](THIRD_PARTY.md)。当前尚未选定本项目源码的开源许可证。

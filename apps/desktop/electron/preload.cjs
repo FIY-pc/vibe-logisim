@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld(
       listModels: refresh => ipcRenderer.invoke("vibe-logisim:agent-models", refresh),
       selectModel: selection => ipcRenderer.invoke("vibe-logisim:agent-model-select", selection),
       reconnect: () => ipcRenderer.invoke("vibe-logisim:agent-reconnect"),
+      account: action => ipcRenderer.invoke('vibe-logisim:agent-account', action),
       getRecoveries: () => ipcRenderer.invoke("vibe-logisim:agent-recoveries"),
       reviewRecovery: request => ipcRenderer.invoke("vibe-logisim:review-recovery", request),
       ask: (request) => ipcRenderer.invoke("vibe-logisim:agent-ask", request),

@@ -50,6 +50,7 @@ const THREAD_CONFIG = Object.freeze({
 
 const { dynamicTools } = require("./circuit-tools.cjs");
 const { writeProvider } = require("./provider-config.cjs");
+const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
 const { TurnHealth } = require("./turn-health.cjs");
 const DEVELOPER_INSTRUCTIONS = `You are the circuit design and learning agent inside Vibe Logisim Desktop.
@@ -94,23 +95,6 @@ function workspaceChangedError() {
   return error;
 }
 
-function resolveExecutable(command) {
-  const candidates = command.includes(path.sep)
-    ? [path.resolve(command)]
-    : String(process.env.PATH || "/usr/bin:/bin")
-      .split(path.delimiter)
-      .filter(Boolean)
-      .map((directory) => path.join(directory, command));
-  for (const candidate of candidates) {
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return fs.realpathSync(candidate);
-    } catch (_) {
-      // Keep looking through PATH.
-    }
-  }
-  throw new Error(`找不到可执行文件：${command}`);
-}
 
 
 function itemActivity(item) {
@@ -141,6 +125,7 @@ class CodexBackend extends EventEmitter {
   constructor({
     codex = process.env.VIBE_LOGISIM_CODEX || "codex",
     workDir,
+    runtimeRoot = null,
     profileDir,
     sessionStorePath,
     version = "0.1.0",
@@ -152,6 +137,8 @@ class CodexBackend extends EventEmitter {
   }) {
     super();
     this.codex = codex;
+    this.runtimeRoot = runtimeRoot;
+    this.loginId = null;
     this.workDir = path.resolve(workDir);
     this.runtimeWorkDir = "/workspace";
     this.profileDir = path.resolve(profileDir || path.join(workDir, "codex-home"));
@@ -223,6 +210,8 @@ class CodexBackend extends EventEmitter {
       transmission: this.health.snapshot(),
       canReconnect: this.canReconnect(),
       isolation: "systemd-linux",
+      accountMode: this.runtimeRoot ? "application" : "shared",
+      signingIn: Boolean(this.loginId),
       messages: this.history.slice(-60),
     };
   }
@@ -264,7 +253,7 @@ class CodexBackend extends EventEmitter {
       "allow_login_shell=false",
     );
     const generation = ++this.childEpoch;
-    const spawnSpec = this.#isolatedSpawn(args);
+    const spawnSpec = isolatedSpawn(this, args, this.#childEnvironment());
     this.isolationUnit = spawnSpec.unit;
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: spawnSpec.cwd,
@@ -332,6 +321,19 @@ class CodexBackend extends EventEmitter {
       // Windows and some mounted filesystems do not expose POSIX modes.
     }
 
+    if (this.runtimeRoot) {
+      // A standalone installation owns its login. Never import or duplicate
+      // another Codex installation's rotating credentials or private config.
+      this.sharedAuthPath = null;
+      const provider = writeProvider(path.join(this.profileDir, "provider.toml"), this.profileDir);
+      this.inheritedModel = provider.model || null;
+      this.inheritedEffort = provider.effort || null;
+      this.model = this.modelSettings.selection?.model || this.inheritedModel;
+      this.effort = this.modelSettings.selection?.effort || this.inheritedEffort;
+      this.providerName = provider.name || "OpenAI";
+      this.providerEnvironment = provider.environment;
+      return;
+    }
     const sourceRoot = path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
     const configPath = path.join(sourceRoot, "config.toml");
     const targetRoot = path.resolve(this.profileDir);
@@ -384,6 +386,49 @@ class CodexBackend extends EventEmitter {
   async listModels(refresh = false) {
     await this.start();
     return {models:await this.modelSettings.list({refresh}), state:this.snapshot()};
+  }
+
+  async login() {
+    await this.start();
+    if (!this.runtimeRoot) throw new Error('当前开发环境沿用本机 Codex 登录；独立应用使用应用内登录。');
+    if (this.snapshot().busy) throw new Error('请先停止当前回答，再登录。');
+    if (this.loginId) await this.cancelLogin();
+    const generation = this.childEpoch;
+    const result = await this.#request('account/login/start', {type: 'chatgpt'});
+    if (generation !== this.childEpoch) throw new Error('连接已变化，请重新登录。');
+    this.loginId = result.loginId;
+    this.#setStatus('auth-required');
+    return {authUrl: result.authUrl};
+  }
+
+  async cancelLogin() {
+    const loginId = this.loginId;
+    this.loginId = null;
+    if (loginId) await this.#request('account/login/cancel', {loginId});
+    this.#setStatus(this.account ? 'ready' : 'auth-required');
+    return this.snapshot();
+  }
+
+  async logout() {
+    if (!this.runtimeRoot || this.snapshot().busy) throw new Error('当前无法退出登录。');
+    await this.cancelLogin();
+    await this.#request('account/logout', {});
+    this.account = null;
+    this.modelSettings.invalidate();
+    this.#setStatus('auth-required');
+    return this.snapshot();
+  }
+
+  async #refreshAccount() {
+    const generation = this.childEpoch;
+    try {
+      const state = await this.#request('account/read', {refreshToken: false});
+      if (generation !== this.childEpoch || this.stopping) return;
+      this.account = state.account || null;
+      if (!this.snapshot().busy) this.#setStatus(!this.account && state.requiresOpenaiAuth ? 'auth-required' : 'ready');
+    } catch (error) {
+      if (generation === this.childEpoch && !this.stopping) this.#setStatus('auth-required', plainError(error));
+    }
   }
 
   async selectModel(selection) {
@@ -442,102 +487,6 @@ class CodexBackend extends EventEmitter {
     return environment;
   }
 
-  #isolatedSpawn(codexArgs) {
-    if (process.platform !== "linux") {
-      throw new Error("当前开发版只在 Linux 上提供本地 Circuit Agent 隔离；其他平台暂不裸跑 Codex。");
-    }
-    const systemdRun = resolveExecutable("systemd-run");
-    const codex = resolveExecutable(this.codex);
-    const codeModeHost = resolveExecutable("codex-code-mode-host");
-    const sandboxProfile = "/tmp/codex";
-    const sandboxWork = "/tmp/workspace";
-    this.runtimeWorkDir = sandboxWork;
-    const unit = `vibe-logisim-agent-${process.pid}-${Date.now().toString(36)}.service`;
-    let sandboxCodex = codex;
-    let sandboxCodeModeHost = codeModeHost;
-    const bindProperties = [
-      `${this.profileDir}:${sandboxProfile}`,
-      `${this.workDir}:${sandboxWork}`,
-    ];
-    if (!(codex === "/usr" || codex.startsWith("/usr/"))) {
-      sandboxCodex = "/tmp/vibe-logisim-codex";
-      bindProperties.push(`${codex}:${sandboxCodex}`);
-    }
-    if (!codeModeHost.startsWith("/usr/")) {
-      sandboxCodeModeHost = "/tmp/codex-code-mode-host";
-      bindProperties.push(`${codeModeHost}:${sandboxCodeModeHost}`);
-    }
-    if (this.sharedAuthPath) {
-      // Authentication is the sole deliberate shared state. It must remain one
-      // writable file so rotating refresh tokens are never forked into two
-      // independently refreshed copies.
-      bindProperties.push(`${this.sharedAuthPath}:${sandboxProfile}/auth.json`);
-    }
-    const args = [
-      "--user",
-      "--pipe",
-      "--quiet",
-      "--collect",
-      "--service-type=exec",
-      `--unit=${unit}`,
-      "--property=ProtectSystem=strict",
-      "--property=ProtectHome=tmpfs",
-      "--property=PrivateTmp=yes",
-      "--property=PrivateDevices=yes",
-      "--property=PrivateIPC=yes",
-      "--property=ProtectProc=invisible",
-      "--property=ProcSubset=pid",
-      "--property=InaccessiblePaths=/run /var -/opt -/srv -/media -/mnt -/boot -/sys -/.snapshots",
-      `--property=BindPaths=${bindProperties.join(" ")}`,
-      "--property=NoNewPrivileges=yes",
-      "--property=RestrictSUIDSGID=yes",
-      "--property=LockPersonality=yes",
-      "--property=RestrictRealtime=yes",
-      "--property=ProtectKernelTunables=yes",
-      "--property=ProtectKernelModules=yes",
-      "--property=ProtectKernelLogs=yes",
-      "--property=ProtectControlGroups=yes",
-      "--property=ProtectClock=yes",
-      "--property=ProtectHostname=yes",
-      "--property=CapabilityBoundingSet=",
-      "--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
-      // The writable staging project is the execution workspace. System paths
-      // remain read-only; do not prohibit Python, shell or generated programs.
-      "--property=UMask=0077",
-      "--property=MemoryMax=2147483648",
-      // App Server plus the V8 tool host each create a worker pool. A 64-task
-      // combined cap can prevent the host from starting on multi-core machines.
-      "--property=TasksMax=256",
-      "--property=CPUQuota=200%",
-      `--working-directory=${sandboxWork}`,
-    ];
-    // systemd copies these values from its environment; values never appear
-    // in argv, generated TOML, or another active authentication profile.
-    for (const key of Object.keys(this.providerEnvironment || {})) args.push(`--setenv=${key}`);
-    args.push(
-      "/usr/bin/env",
-      `HOME=${sandboxProfile}`,
-      `CODEX_HOME=${sandboxProfile}`,
-      "PATH=/tmp:/usr/bin",
-      "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
-      `LANG=${process.env.LANG || "C.UTF-8"}`,
-      `LC_ALL=${process.env.LC_ALL || "C.UTF-8"}`,
-      "NO_COLOR=1",
-      "/usr/bin/python3",
-      "-c",
-      "import os,sys; os.execvpe(sys.argv[2],sys.argv[2:],{k:os.environ[k] for k in sys.argv[1].split(',') if k in os.environ})",
-      ["HOME", "CODEX_HOME", "PATH", "SSL_CERT_FILE", "LANG", "LC_ALL", "NO_COLOR", ...Object.keys(this.providerEnvironment || {})].join(","),
-      sandboxCodex,
-      ...codexArgs,
-    );
-    return {
-      command: systemdRun,
-      args,
-      cwd: "/",
-      env: this.#childEnvironment(),
-      unit,
-    };
-  }
 
   async ask({ question, context, workspaceKey }) {
     if (this.finalizing || this.turnStarting || this.activeTurnId || this.workspaceTransitioning) {
@@ -586,7 +535,7 @@ class CodexBackend extends EventEmitter {
       generation = this.childEpoch;
       this.#assertWorkspace(requestEpoch, generation);
       if (this.status === "auth-required") {
-        throw new Error("Codex 尚未登录。请先在终端运行 codex login。");
+        throw new Error("请先在 AI 设置中登录 ChatGPT。");
       }
       if (!this.child || !["ready", "busy"].includes(this.status)) {
         throw new Error("Codex App Server 当前不可用。");
@@ -764,6 +713,7 @@ class CodexBackend extends EventEmitter {
   }
 
   async stop() {
+    this.loginId = null;
     const child = this.child;
     if (!child) {
       this.startPromise = null;
@@ -1136,6 +1086,14 @@ class CodexBackend extends EventEmitter {
   }
 
   #handleNotification(method, params) {
+    if (method === 'account/login/completed') {
+      if (params.loginId !== this.loginId) return;
+      this.loginId = null;
+      if (params.success) { this.modelSettings.invalidate(); void this.#refreshAccount(); }
+      else this.#setStatus('auth-required', params.error || '登录未完成，可以重试。');
+      return;
+    }
+    if (method === 'account/updated') { void this.#refreshAccount(); return; }
     // Opt-in observers receive actual per-thread counters and completed work,
     // not account-wide quota percentages or estimates from displayed text.
     if (["thread/tokenUsage/updated", "item/completed", "turn/started", "turn/completed"].includes(method)) {

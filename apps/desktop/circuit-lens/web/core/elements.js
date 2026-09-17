@@ -71,7 +71,7 @@ export const ui = Object.fromEntries(
       "agentStatusLight",
       "agentStatusText",
       "agentNotice", "agentNoticeTitle", "agentNoticeText", "agentNoticeDetails", "agentReconnect", "agentReviewChanges",
-      "modelDialog", "modelClose", "modelConnection", "modelConnectionStatus", "modelReconnect", "modelChoice", "modelDescription",   "modelRefresh",  "modelError", "modelLoading", "modelBusy",
+      "modelDialog", "modelClose", "modelConnection", "modelConnectionStatus", "modelReconnect", "modelChoice", "modelDescription",   "modelRefresh",  "modelError", "modelLoading", "modelBusy", "connectionHelp", "connectionLogout",
       "agentTimeline",
       "agentEmpty",
       "conversationStarters",

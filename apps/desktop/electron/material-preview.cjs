@@ -1,8 +1,6 @@
 "use strict";
-const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const {execFile}=require('node:child_process');
-const {promisify}=require('node:util');
-const run=promisify(execFile);
+const path=require('node:path');
+const {renderPdf}=require('./pdf-preview.cjs');
 const TEXT=new Set(['.txt','.md','.csv','.tsv','.json','.xml','.circ','.v','.sv','.vh','.asm','.s','.hex','.log','.py','.c','.h','.yaml','.yml']);
 
 // A bounded read-only preview. Never execute an attachment or render its HTML.
@@ -26,22 +24,7 @@ async function previewMaterial(store,projectId,id,page=1,nativeImage) {
     return {...result,kind:'image',data:image.toDataURL(),note:`${size.width} × ${size.height}${ext==='.gif'?' · 静态预览':''}`};
   }
   if(ext!=='.pdf')return result;
-  const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-material-preview-'));
-  try {
-    const file=path.join(temporary,'document.pdf');fs.writeFileSync(file,bytes,{mode:0o600});
-    const options={timeout:15000,maxBuffer:2*1024*1024,env:{...process.env,LC_ALL:'C'}};
-    const info=await run('pdfinfo',[file],options),pages=Number(info.stdout.match(/^Pages:\s+(\d+)/m)?.[1]);
-    if(!pages)throw new Error('无法读取 PDF 页数');
-    if(page>pages){const error=new Error(`这份 PDF 只有 ${pages} 页，引用的第 ${page} 页不存在`);error.code='PAGE_NOT_FOUND';throw error;}
-    const actual=page;
-    const output=await run('pdftotext',['-f',String(actual),'-l',String(actual),'-layout',file,'-'],options);
-    const text=output.stdout.trim().slice(0,30000);
-    await run('pdftoppm',['-f',String(actual),'-l',String(actual),'-singlefile','-scale-to','1400','-png',file,path.join(temporary,'page')],options);
-    return {...result,kind:'pdf',page:actual,pages,text,data:'data:image/png;base64,'+fs.readFileSync(path.join(temporary,'page.png')).toString('base64'),note:text?'PDF 原页与可选文字':'PDF 原页 · 此页没有可提取文字'};
-  }catch(error) {
-    if(error.code==='PAGE_NOT_FOUND')throw error;
-    if(error.code==='ENOENT')throw new Error('PDF 预览需要本机 Poppler（pdfinfo、pdftotext、pdftoppm），文件已保存且仍可被 AI 读取');
-    throw new Error('PDF 预览失败，文件已保留；可重试或选择其他资料');
-  }finally{fs.rmSync(temporary,{recursive:true,force:true});}
+  const rendered=await renderPdf(bytes,page);
+  return {...result,...rendered,kind:'pdf',note:rendered.text?'PDF 原页与可选文字':'PDF 原页 · 此页没有可提取文字'};
 }
 module.exports={previewMaterial};

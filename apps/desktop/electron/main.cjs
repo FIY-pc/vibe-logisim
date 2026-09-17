@@ -30,9 +30,10 @@ process.stderr.on("error", (error) => {
   if (error.code !== "EPIPE") process.nextTick(() => { throw error; });
 });
 
-const repoRoot = path.resolve(__dirname, "..", "..", "..");
+const {repoRoot, runtimeRoot} = require('./runtime-paths.cjs').configureRuntime(app);
 const preloadPath = path.join(__dirname, "preload.cjs");
-const backend = new LensBackend({ repoRoot });
+const backend = new LensBackend({ repoRoot,
+  stateDir: process.env.VIBE_LOGISIM_STATE_DIR || (runtimeRoot ? path.join(app.getPath('userData'), 'circuit-state') : null) });
 
 let mainWindow = null;
 let codex = null;
@@ -207,6 +208,7 @@ async function startApplication() {
   agentWorkspace = new DirectAgentWorkspace(desktopWorkspace);
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
   codex = new CodexBackend({
+    runtimeRoot,
     workDir: desktopWorkspace.folder.current?.root || path.join(agentRoot, "workspace"),
     profileDir: path.join(agentRoot, "codex-home"),
     sessionStorePath: path.join(agentRoot, "sessions.json"),
@@ -412,6 +414,20 @@ function registerIpc() {
       }
       return codex.snapshot();
     } finally { workspaceTransitioning = false; }
+  });
+  ipcMain.handle('vibe-logisim:agent-account', async (event, action) => {
+    if (!isTrustedRenderer(event)) throw new Error('Untrusted renderer.');
+    if (workspaceTransitioning) throw workspaceChangedError();
+    if (action === 'cancel') return codex.cancelLogin();
+    if (action === 'logout') return codex.logout();
+    if (action !== 'login') throw new Error('无效的登录操作。');
+    const {authUrl} = await codex.login();
+    try {
+      const url = new URL(authUrl);
+      if (url.protocol !== 'https:' || url.hostname !== 'auth.openai.com') throw new Error('登录地址无效。');
+      await shell.openExternal(url.href);
+      return codex.snapshot();
+    } catch (error) { await codex.cancelLogin().catch(() => {}); throw error; }
   });
   ipcMain.handle("vibe-logisim:review-recovery", async (event, request) => {
     if (!isTrustedRenderer(event)) throw new Error("Untrusted renderer.");

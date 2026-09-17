@@ -14,6 +14,7 @@
 | Studio runtime | 原生加载、常驻 worker、渲染、连接观察和仿真实例 |
 | Studio domain / infrastructure | 领域值与几何；文件操作和状态目录归属锁 |
 | Native / observer Java | 对匹配 Logisim 的元件、连接、封装、渲染与运行进行桥接 |
+| Distribution / runtime paths | 固定包内工具、可移动资源路径；开发环境与独立应用的数据边界 |
 
 依赖方向为 `transport → application → project/runtime/collaboration → infrastructure`，共享领域契约位于 `domain`。`core/composition.js` 组合前端控制器；Electron IPC 与服务 HTTP 是传输边界。
 
@@ -28,3 +29,5 @@
 - 草稿、历史、资料与恢复记录各自持久化，不用某一个当前电路版本代替所有身份。
 
 当前模块已经分开，但还有历史兼容入口及实现耦合。分目录本身不证明架构或交互成熟；以后按具体用户阻碍选择需要继续收敛的边界。
+
+独立包的目录与进程约定见 [分发说明](distribution.md)。`runtime-paths.cjs` 选择包内环境，`agent-process.cjs` 提供外部隔离，PDF 预览在独立受限渲染进程运行。应用资源不承担用户工作区或可写状态的职责。
