@@ -1,3 +1,4 @@
+import {inputControl} from '../core/simulation-inputs.js';
 import { asArray, componentId, componentPoint, displayName, firstDefined, netId, normalizeBounds, normalizePoint, wireId, wirePoints } from '../core/values.js';
 import { makeSvg } from '../core/dom.js';
 import { wirePath } from '../core/wire-path.js';
@@ -171,6 +172,7 @@ function renderComponent(component, index, bounds, point) {
       "aria-label": `${label}，${factory}`,
     });
     group.dataset.bounds = JSON.stringify(bounds);
+    group.dataset.operable = String(Boolean(inputControl(component)) || ['RAM', 'ROM'].includes(factory));
     ports.bindSelectionDrag(group,{componentId:id});
 
     const x = bounds.x;
@@ -256,9 +258,9 @@ function renderComponent(component, index, bounds, point) {
     if (["RAM", "ROM"].includes(factory)) group.addEventListener("dblclick", event => { event.stopPropagation(); ports.openMemory(component); });
     if (factory === "Button") {
       group.addEventListener("pointerdown", event => {
-        if (canvasState.mode !== "poke" || canvasState.heldSpace || event.button !== 0 || !ports.activeObservation()) return;
+        if (canvasState.mode !== "poke" || canvasState.heldSpace || event.button !== 0) return;
         event.stopPropagation(); group.setPointerCapture(event.pointerId); ports.selectComponent(id, false, false);
-        ports.pressButton(id);
+        ports.pressButton(component);
       });
       group.addEventListener("pointerup", ports.releaseButton);
       group.addEventListener("pointercancel", ports.releaseButton);

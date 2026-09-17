@@ -80,7 +80,10 @@ kbd{font:11px var(--sans);color:#9ba1ad}
 .document-bar>span{font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap}
 #circuitBack{font-size:23px;width:22px}
 .circuit-canvas{width:100%;height:calc(100% - 46px - var(--run-height, 0px) - var(--memory-height, 0px));position:absolute;top:46px;left:0;outline:none;touch-action:none;user-select:none}
-.circuit-canvas[data-mode="poke"] .circuit-component{cursor:pointer}
+.circuit-canvas[data-mode="poke"] .circuit-component{cursor:default}
+.circuit-canvas[data-mode="poke"] .circuit-component[data-operable="true"]{cursor:pointer}
+.circuit-canvas[data-mode="poke"][data-simulation-busy="true"] .circuit-component[data-operable="true"]{cursor:progress}
+.circuit-canvas[data-mode="poke"] .wire-port-hit{display:none}
 .circuit-canvas[data-mode="pan"]{cursor:grab}
 .circuit-canvas.is-dragging{cursor:grabbing}
 .grid-plane{fill:url(#majorGrid)}

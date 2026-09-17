@@ -2,7 +2,7 @@ import { firstDefined } from '../core/values.js';
 
 export const modelDependencies = ["project", "canvas", "agent", "shell"];
 
-export const dependencies = ["cancelPlacement","renderProjectInfo","setWorkspacePanel","closeWorkspaceDrawers","renderConnections","hasSelection","queryIntent","updateComposerState"];
+export const dependencies = ["renderWirePreview","cancelPlacement","renderProjectInfo","setWorkspacePanel","closeWorkspaceDrawers","renderConnections","hasSelection","queryIntent","updateComposerState"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState, agent: agentState, shell: shellState} = models;
@@ -60,6 +60,10 @@ function setCanvasStatus(message, kind = "warning") {
 
 function setMode(mode) {
     if(mode!=="place")ports.cancelPlacement();
+    if (mode !== 'select' && canvasState.wireStart) {
+      canvasState.wireStart = null; canvasState.wirePoints = [];
+      ports.renderWirePreview(); setCanvasStatus('');
+    }
     canvasState.mode = mode;
     ui.circuitCanvas.dataset.mode = mode;
     [ui.selectTool, ui.pokeTool, ui.panTool].forEach((button) => {

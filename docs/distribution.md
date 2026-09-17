@@ -14,7 +14,7 @@ python3 scripts/distribution/build.py \
   --course-runtime workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe
 ```
 
-输出是 `vibe-logisim-0.1.0-linux-x64.tar.gz` 和 SHA-256 文件。默认缓存 `/tmp/vibe-distribution-cache`，可用 `--cache` 更改；`--unpacked` 只生成应用目录，便于先验收再压缩。构建拒绝覆盖已有产物。
+输出是 `vibe-logisim-0.1.1-linux-x64.tar.gz` 和 SHA-256 文件。默认缓存 `/tmp/vibe-distribution-cache`，可用 `--cache` 更改；`--unpacked` 只生成应用目录，便于先验收再压缩。构建拒绝覆盖已有产物。
 
 构建器只选择产品目录中的源码和明确列出的第三方文件，不复制整个仓库、开发机的环境、账户、会话或个人电路。`runtime-lock.json` 是运行环境输入清单，npm 锁文件固定 Electron、PDF.js；产物另有版本来源和文件摘要清单。当前锁定的 Logisim-ITA 发布物与开发机已有运行文件摘要一致。
 
@@ -40,7 +40,7 @@ PDF.js 在没有 Node 权限、无远程网络的独立 Chromium 进程里渲染
 解压后运行：
 
 ```sh
-node apps/desktop/test/e2e-packaged.cjs /path/to/vibe-logisim-0.1.0-linux-x64/vibe-logisim
+node apps/desktop/test/e2e-packaged.cjs /path/to/vibe-logisim-0.1.1-linux-x64/vibe-logisim
 ```
 
 脚本在仓库外、全新应用状态和包含空格的文件夹运行真正的打包程序。将系统 Python、Java、Codex、Poppler 命令设为调用即失败；从 UI 放元件、连线、切换输入、核对与门四种真值、关闭重开，再从文件树打开两页 PDF 并检查图像和文字。还通过真实内置 App Server 发起/取消登录，仅拦截浏览器打开，不提交凭据或发起模型生成。报告和截图留在脚本返回的临时目录。

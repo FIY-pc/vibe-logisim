@@ -1,14 +1,16 @@
 import { formatInput, formatSignal } from '../core/values.js';
 import { makeElement, makeSvg } from '../core/dom.js';
+import {inputControl} from '../core/simulation-inputs.js';
 
 export const modelDependencies = ["project", "run"];
 
-export const dependencies = ["renderSimulationControls","updateMomentCapture","runtimeNavigationStarted","renderNavigation","setRenderingLive","loadCircuit","showToast","openMemory","openReviewPanel","renderInspector","selectComponent","switchReviewTab","updateMemoryFromSimulation"];
+export const dependencies = ["startSimulation","renderSimulationControls","updateMomentCapture","runtimeNavigationStarted","renderNavigation","setRenderingLive","loadCircuit","showToast","openMemory","openReviewPanel","renderInspector","selectComponent","switchReviewTab","updateMemoryFromSimulation"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, run: runState} = models;
   const request = client.request;
   let pollingToken = 0;
+  let startingSimulation = null;
 function simulationStatus() {
     const s = runState.simulation;
     return Object.freeze({ exists: Boolean(s?.session), running: Boolean(s?.running), automatic: s?.automatic !== false,
@@ -19,6 +21,7 @@ function simulationStatus() {
 function invalidateSimulationFrame() { runState.simulationFrame = null; }
 
 function invalidateSimulation() {
+    startingSimulation = null;
     pollingToken++;
     runState.simulationEpoch++;
     runState.simulation = null;
@@ -45,12 +48,16 @@ function toggleWatch(key) {
     return isWatched(key);
   }
 
-function pressButton(id) {
-    if (!activeObservation()) return;
+function pressButton(component) {
     releaseButton();
-    const held = {id, session: runState.simulation.session.id, viewId:runState.displayedView?.id};
+    const held = {id: component.componentId, session: null, viewId: null};
     runState.heldButton = held;
-    held.pressed = simulationAction("button", {componentId: id, value: "1"});
+    held.pressed = prepareSimulationInput(component).then(control => {
+      if (control?.control !== 'pulse') return false;
+      held.session = runState.simulation.session.id;
+      held.viewId = runState.displayedView?.id;
+      return simulationAction('button', {componentId: held.id, value: '1'});
+    });
   }
 
 function activeObservation() {
@@ -91,6 +98,7 @@ function updateLiveValues() {
       node.title = port ? `${port.bits} · ${port.width} bit` : "此电路当前没有运行状态";
     });
     document.querySelectorAll("[data-live-input]").forEach(node => {
+      if (!sample) return;
       if (node !== document.activeElement && !node.disabled && node.value === node.dataset.committed) {
         const id = node.dataset.liveInput.split(":")[0];
         const c = sample?.components.find(c => c.componentId === id);
@@ -100,15 +108,39 @@ function updateLiveValues() {
     });
   }
 
-function pokeComponent(component, point = null) {
+async function prepareSimulationInput(component) {
+    if (!inputControl(component)) return null;
+    if (projectState.projectBusy || projectState.sourceChanged || projectState.capabilityState !== 'exact') {
+      ports.showToast('当前电路尚未就绪，请等待载入或处理文件变化后重试'); return null;
+    }
+    const origin = {projectId: projectState.session?.workspace?.id, revision: projectState.revision,
+      circuit: projectState.circuitName, navigation: projectState.circuitRequestEpoch};
+    if (!runState.simulation?.session && !await ports.startSimulation()) return null;
+    if (origin.projectId !== projectState.session?.workspace?.id || origin.revision !== projectState.revision ||
+        origin.circuit !== projectState.circuitName || origin.navigation !== projectState.circuitRequestEpoch) return null;
+    const sample = activeObservation();
+    if (!sample) { ports.showToast('当前画面不是运行中的实例，请从仿真菜单返回运行画面'); return null; }
+    const control = sample.components.find(c => c.componentId === component.componentId);
+    if (control?.control === 'parent-input') { ports.showToast('此输入由父电路驱动，请返回父图调整'); return null; }
+    return control;
+  }
+
+async function setInputValue(component, value) {
+    const control = await prepareSimulationInput(component);
+    return control?.control === 'input' ? simulationAction('input', {componentId: component.componentId, value}) : false;
+  }
+
+async function pokeComponent(component, point = null) {
     if (["RAM", "ROM"].includes(component.factory)) { ports.openMemory(component); return; }
-    const c = activeObservation()?.components.find(c => c.componentId === component.componentId);
+    const c = await prepareSimulationInput(component);
     if (!c?.control) return;
-    if(c.control==='parent-input'){ports.showToast('此输入由父电路驱动，请返回父图调整');return;}
     if (c.control === "pulse") simulationAction("pulse", {componentId: c.componentId});
     else if (point || c.control === "clock" || c.ports[0]?.width === 1) {
       const b = component.bounds;
-      const at = point || {x: b.x + b.width / 2, y: b.y + b.height / 2};
+      // One-bit inputs act as a whole switch, including a click at their edge.
+      // Multi-bit inputs retain native per-digit hit testing.
+      const at = c.control === 'input' && c.ports[0]?.width === 1 ? {x: b.x + b.width / 2, y: b.y + b.height / 2}
+        : point || {x: b.x + b.width / 2, y: b.y + b.height / 2};
       simulationAction("poke", {componentId: c.componentId, x: at.x, y: at.y});
     }
     else ui.objectInspector.querySelector('[aria-label="输入值"]')?.focus();
@@ -126,6 +158,7 @@ function releaseButton() {
   }
 
 function simulationAction(action, extra = {}) {
+    if (action === 'start' && startingSimulation) return startingSimulation;
     if (!projectState.session?.workspace) return Promise.resolve(false);
     const lifecycle = action === "start" || action === "stop";
     if (lifecycle && runState.simulationBusy) return Promise.resolve(false);
@@ -166,7 +199,7 @@ function simulationAction(action, extra = {}) {
     // Ordered commands, not a busy flag that discards the next click.
     const promise = runState.simulationQueue.then(execute, execute);
     runState.simulationQueue = promise.catch(() => false);
-    return promise.then(async result => {
+    const completed = promise.then(async result => {
       if (!result) return false;
       if(action==='view')return result;
       // Wait outside the command queue: opening RAM cannot hold up button release.
@@ -182,6 +215,10 @@ function simulationAction(action, extra = {}) {
       }
       return true;
     });
+    if (action !== 'start') return completed;
+    const starting = completed.finally(() => { if (startingSimulation === starting) startingSimulation = null; });
+    startingSimulation = starting;
+    return starting;
   }
 
 async function acceptSimulation(result, epoch) {
@@ -294,5 +331,5 @@ function configureSimulationViewport({sessionId,viewId,viewport}) {
   return simulationAction('viewport',{viewport});
 }
 
-  return Object.freeze({configureSimulationViewport,runningInstance:()=>({session:structuredClone(runState.simulation?.session||null),view:displayedSimulationView()}),watchedSignals:()=>[...runState.watchKeys],displayedSimulationView,prepareCircuitNavigation,activateSimulationView,simulationStatus, invalidateSimulation, invalidateSimulationFrame, isWatched, toggleWatch, pressButton, mountSimulationRuntime, returnToSimulation, activeObservation, updateLiveValues, pokeComponent, releaseButton, simulationAction, acceptSimulation, pollSimulation, renderSimulation});
+  return Object.freeze({setInputValue,configureSimulationViewport,runningInstance:()=>({session:structuredClone(runState.simulation?.session||null),view:displayedSimulationView()}),watchedSignals:()=>[...runState.watchKeys],displayedSimulationView,prepareCircuitNavigation,activateSimulationView,simulationStatus, invalidateSimulation, invalidateSimulationFrame, isWatched, toggleWatch, pressButton, mountSimulationRuntime, returnToSimulation, activeObservation, updateLiveValues, pokeComponent, releaseButton, simulationAction, acceptSimulation, pollSimulation, renderSimulation});
 }

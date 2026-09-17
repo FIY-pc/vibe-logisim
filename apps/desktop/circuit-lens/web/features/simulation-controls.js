@@ -65,6 +65,9 @@ export function createController({models: {project}, ui, ports}) {
 
   function renderSimulationControls() {
     const s = ports.simulationStatus();
+    ui.circuitCanvas.dataset.simulationBusy = String(s.busy);
+    ui.pokeTool.setAttribute('aria-busy', String(s.busy));
+    ui.pokeTool.title = s.busy ? '正在准备仿真，点击的输入会随后生效' : '操作输入、按钮和时钟（P）；首次点击自动启动仿真';
     const status = s.busy ? (s.busyAction === 'stop' ? '正在结束仿真…' : '正在准备仿真…') : !s.exists ? '尚未开始' :
       `${s.running ? '时钟运行' : '时钟暂停'}${s.automatic ? '' : ' · 自动传播已暂停'}`;
     ui.simulationOwner.textContent = s.circuit || project.circuitName || '尚未打开电路';
@@ -162,5 +165,5 @@ export function createController({models: {project}, ui, ports}) {
     ports.mountSimulationRuntime();
     renderSimulationControls();
   }
-  return {mountSimulationControls, renderSimulationControls};
+  return {mountSimulationControls, renderSimulationControls, startSimulation: () => dispatch('start')};
 }

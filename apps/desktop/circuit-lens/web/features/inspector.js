@@ -1,3 +1,4 @@
+import {inputControl} from '../core/simulation-inputs.js';
 import {propertyLabels as labels,optionLabels} from '../core/component-labels.js';
 import {portName} from '../core/connection-values.js';
 import { componentId, displayName, firstDefined, formatInput } from '../core/values.js';
@@ -5,7 +6,7 @@ import { makeElement } from '../core/dom.js';
 
 export const modelDependencies = ["project", "agent"];
 
-export const dependencies = ["renderPlacementInspector","appendDraftText","openInterfaces","selectionSnapshot","captureViewport","restoreViewport","isWatched","toggleWatch","activeObservation","enterCircuit","openMemory","openReviewPanel","performProjectAction","resizeQuestion","selectComponent","showToast","simulationAction","switchReviewTab","updateComposerState","updateLiveValues"];
+export const dependencies = ["setInputValue","renderPlacementInspector","appendDraftText","openInterfaces","selectionSnapshot","captureViewport","restoreViewport","isWatched","toggleWatch","activeObservation","enterCircuit","openMemory","openReviewPanel","performProjectAction","resizeQuestion","selectComponent","showToast","simulationAction","switchReviewTab","updateComposerState","updateLiveValues"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, agent: agentState} = models;
@@ -105,7 +106,12 @@ function renderPropertyEditor(component) {
       destination.append(form);
       return input;
     }
-    if (live?.control === "input") field("输入值", formatInput(live.input || live.ports[0]), value => ports.simulationAction("input", { componentId: component.componentId, value })).dataset.liveInput = `${component.componentId}:0`;
+    if (live?.control === "input" || (!live && inputControl(component) === 'input')) {
+      const input = field("输入值", live ? formatInput(live.input || live.ports[0]) : '', value => ports.setInputValue(component, value));
+      input.dataset.liveInput = `${component.componentId}:0`;
+      input.placeholder = '未运行';
+      input.title = '输入运行值并按 Enter；未运行时自动启动仿真';
+    }
     if (live?.control === "parent-input") ui.objectInspector.append(makeElement('p','parent-driven-input','此输入由父电路驱动，可返回父图调整。'));
     if (["RAM", "ROM"].includes(component.factory)) {
       const memory = makeElement("button", "object-memory", "存储内容");
