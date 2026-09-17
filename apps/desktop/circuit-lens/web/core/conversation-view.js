@@ -49,7 +49,7 @@ export class ConversationView {
     if(role==='user') footer.append(action('放回输入框','ArrowUp',()=>this.reuse(message.text)));
     else {
       const status=makeElement('small','message-branch-status');status.hidden=true;status.setAttribute('role','status');
-      const branch=action('分支到新聊天','GitBranch',async()=>{
+      const branch=action('分支到新聊天','Split',async()=>{
         branch.disabled=true;branch.setAttribute('aria-busy','true');status.hidden=false;status.textContent='正在创建分支…';
         try {await this.fork(id);status.hidden=true;}
         catch(error){status.textContent=String(error.message||error).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,'');}
