@@ -83,7 +83,7 @@ function queryToReview(payload, question, queryKind = "") {
   }
 
 async function loadReview({ quiet = false } = {}) {
-    if (projectState.isDemo || !projectState.session) return;
+    if (!projectState.session) return;
     try {
       const payload = await request(API.review);
       if (!payload || payload.empty) return;
@@ -108,7 +108,7 @@ async function loadReview({ quiet = false } = {}) {
 function startReviewPolling() {
     if (reviewState.reviewTimer) window.clearInterval(reviewState.reviewTimer);
     reviewState.reviewTimer = window.setInterval(async () => {
-      if (document.hidden || !projectState.session || projectState.isDemo || reviewState.polling || projectState.projectBusy) return;
+      if (document.hidden || !projectState.session || reviewState.polling || projectState.projectBusy) return;
       reviewState.polling = true;
       try {
         const current = await ports.pollSessionState();

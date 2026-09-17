@@ -15,8 +15,6 @@ export function createModels() {
       capabilityState: "idle",
       sourceChanged: false,
       staleKind: "source",
-      demoAllowed: false,
-      isDemo: false,
     },
     run: {
       simulation: null,

@@ -9,7 +9,7 @@ export function createController({models, ui}) {
   const project = models.project;
   const scope = createRequestScope(project);
   let openedProject = null, download = null;
-  const available = () => Boolean(project.session?.workspace?.id && project.revision && !project.isDemo);
+  const available = () => Boolean(project.session?.workspace?.id && project.revision);
 
   function showError(message) {
     ui.projectInfoError.textContent = message;

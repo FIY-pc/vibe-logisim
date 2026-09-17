@@ -34,8 +34,7 @@ import * as agent from './features/agent.js';
 import * as agentPreferences from './features/agent-preferences.js';
 import * as agentConnection from './features/agent-connection.js';
 import * as review from './features/review.js';
-import * as demo from './features/demo.js';
 import * as events from './features/events.js';
 
-const workspace = compose({files, components, placement, project, projectInfo, connections, shell, layout, finder, navigation, rendering, canvas,manipulation, focus, inspector, run, simulationControls, draft, materials, moments, references, memory, history, comparison, candidateEvidence, interfaces, changes, candidates, agent, agentConnection, agentPreferences, review, demo, events}, {models: createModels(), ui, client: createStudioClient()});
+const workspace = compose({files, components, placement, project, projectInfo, connections, shell, layout, finder, navigation, rendering, canvas,manipulation, focus, inspector, run, simulationControls, draft, materials, moments, references, memory, history, comparison, candidateEvidence, interfaces, changes, candidates, agent, agentConnection, agentPreferences, review, events}, {models: createModels(), ui, client: createStudioClient()});
 workspace.events.mount();

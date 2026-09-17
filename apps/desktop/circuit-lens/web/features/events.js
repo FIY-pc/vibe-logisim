@@ -2,7 +2,7 @@
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","applyCamera","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","useDemo","zoomAt"];
+export const dependencies = ["mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","applyCamera","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
@@ -41,7 +41,6 @@ function bindEvents() {
     ui.openButton.addEventListener("click", ports.chooseCircuitFile);
     ui.emptyOpenButton.addEventListener("click", ports.chooseCircuitFile);
     ui.fileInput.addEventListener("change", () => ports.openFile(ui.fileInput.files[0]));
-    ui.demoButton.addEventListener("click", ports.useDemo);
     ui.reloadRevisionButton.addEventListener("click", ports.handleStaleAction);
     ui.circuitSearch.addEventListener("input", ports.renderCircuitList);
     ui.selectTool.addEventListener("click", () => ports.setMode("select"));

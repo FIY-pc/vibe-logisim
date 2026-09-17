@@ -275,7 +275,7 @@ function renderSimulation(force = false) {
       updateLiveValues();
       ports.updateMemoryFromSimulation();
     }
-    ui.simulationDock.hidden = projectState.isDemo || (ui.simulationWatches.hidden && ui.simulationError.hidden);
+    ui.simulationDock.hidden = ui.simulationWatches.hidden && ui.simulationError.hidden;
   }
 async function returnToSimulation() {
   const view=await activateSimulationView(runState.simulation?.view?.instancePath||[]);

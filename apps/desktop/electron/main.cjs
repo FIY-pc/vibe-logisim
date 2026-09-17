@@ -240,7 +240,10 @@ async function openFolder(root, activeFile = null) {
     } finally {
       codex.workDir = desktopWorkspace.folder.current?.root || codex.workDir;
       codex.currentCwd = null;
-      await codex.start();
+      // The folder has its own lifecycle. Agent startup reports its failure in
+      // the conversation pane; it must not turn a successful folder open into
+      // an error or mask a filesystem failure from the operation above.
+      await codex.start().catch(error => console.error(`[codex] ${error.message}`));
     }
   });
   await restoreAgentConversation();

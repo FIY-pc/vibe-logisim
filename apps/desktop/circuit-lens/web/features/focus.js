@@ -262,7 +262,7 @@ async function postSelection(snapshot = selectionSnapshot(), expectedEpoch = foc
       && snapshot.revisionId === projectState.revision && snapshot.circuit === projectState.circuitName;
     const persist = async () => {
       if (!isCurrent()) return null;
-      if ((!snapshot.componentIds.length && !snapshot.netIds.length && !(snapshot.wireIds || []).length && !snapshot.rectangle) || projectState.isDemo) {
+      if (!snapshot.componentIds.length && !snapshot.netIds.length && !(snapshot.wireIds || []).length && !snapshot.rectangle) {
         if (!isCurrent()) return null;
         focusState.selection = localSelectionResponse(snapshot);
         focusState.selectionCommittedEpoch = expectedEpoch;
@@ -320,7 +320,6 @@ async function postSelection(snapshot = selectionSnapshot(), expectedEpoch = foc
   }
 
 async function loadSelection() {
-    if (projectState.isDemo) return;
     const expectedEpoch = focusState.selectionEpoch;
     const expectedProject = projectState.session?.workspace?.id;
     const expectedRevision = projectState.revision;
@@ -404,7 +403,7 @@ function clearSelection({ notifyServer = false } = {}) {
     updateSelectionClasses();
     updateSelectionDock();
     ports.clearReview();
-    if (notifyServer && !projectState.isDemo) void postSelection(selectionSnapshot(), focusState.selectionEpoch);
+    if (notifyServer) void postSelection(selectionSnapshot(), focusState.selectionEpoch);
   }
 
 function copyReferenceText() {
@@ -480,18 +479,6 @@ async function querySelection() {
     ui.askButton.disabled = true;
     ui.askButton.textContent = "正在查询…";
     try {
-      if (projectState.isDemo) {
-        const selectedComponents = projectState.circuit.components.filter((component, index) =>
-          focusState.selectedComponentIds.has(componentId(component, index)),
-        );
-        const selectedNets = projectState.circuit.nets.filter((net, index) => focusState.selectedNetIds.has(netId(net, index)));
-        reviewState.review = ports.normalizeReview(ports.queryToReview({ requestedComponents: selectedComponents, nets: selectedNets }, question, query.kind), question);
-        reviewState.reviewSignature = JSON.stringify(reviewState.review);
-        ports.renderReview();
-        ports.switchReviewTab("evidence");
-        ports.openReviewPanel();
-        return;
-      }
       const payload = await request(API.query, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

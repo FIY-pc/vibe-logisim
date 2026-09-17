@@ -45,7 +45,6 @@ export const ui = Object.fromEntries(
       "interactionLayer",
       "emptyState",
       "emptyHint",
-      "demoButton",
       "selectionDock",
       "selectionSummary",
       "selectionRevision",

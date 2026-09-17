@@ -20,7 +20,7 @@ export function createController({models: {project}, ui, ports}) {
   const scope = () => ({projectId: project.session?.workspace?.id, revision: project.revision,
     circuit: project.circuitName, navigation: project.circuitRequestEpoch});
   const sameDocument = s => s.projectId === project.session?.workspace?.id && s.revision === project.revision;
-  const canRun = () => Boolean(project.circuit && project.capabilityState === 'exact' && !project.isDemo && !project.projectBusy && !project.sourceChanged);
+  const canRun = () => Boolean(project.circuit && project.capabilityState === 'exact' && !project.projectBusy && !project.sourceChanged);
   const allowed = action => {
     const s = ports.simulationStatus();
     return canRun() || (s.exists && (action === 'stop' || (action === 'toggle-clock' && s.running)));
@@ -75,7 +75,7 @@ export function createController({models: {project}, ui, ports}) {
     for (const command of commands) if (command.action !== 'capture') ui[command.id].disabled = !allowed(command.action) || (command.action === 'stop' && !s.exists);
     ui.simulationReturn.hidden = !s.exists || s.visible;
     ui.simulationReturn.disabled = s.viewBusy;
-    ui.simulationSettings.disabled = !project.circuit || project.isDemo;
+    ui.simulationSettings.disabled = !project.circuit;
     ui.simulationReset.title = `复位 ${s.circuit || project.circuitName} 及其所有内部模块的运行状态`;
     ui.simulationRate.hidden = !s.running;
     ui.simulationRate.textContent = `当前实测 ${(s.actualFrequency || 0).toFixed(1)} tick/s`;

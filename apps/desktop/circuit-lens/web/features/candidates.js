@@ -13,7 +13,7 @@ async function loadCandidates() {
     const isCurrent = listRequests.begin();
     const revision = projectState.revision;
     const projectId = projectState.session?.workspace?.id;
-    if (!revision || projectState.isDemo) return;
+    if (!revision) return;
     try {
       const response = await request("/api/candidates");
       const recoveries = await window.vibeDesktop?.agent?.getRecoveries?.() || [];

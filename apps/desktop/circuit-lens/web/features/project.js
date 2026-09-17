@@ -21,17 +21,6 @@ function sessionHasWorkspace(session) {
     );
   }
 
-function sessionSaysNoWorkspace(session) {
-    return Boolean(
-      session === null ||
-      session?.workspace === null ||
-        (session?.revision === null && session?.project === null) ||
-        session?.hasWorkspace === false ||
-        session?.status === "no-workspace" ||
-        session?.code === "NO_WORKSPACE",
-    );
-  }
-
 async function bootstrap({ preserveStale = false, circuit = null } = {}) {
     const token=++bootstrapEpoch;
     ports.setCanvasStatus("正在读取本地电路工作区…", "loading");
@@ -51,7 +40,7 @@ async function bootstrap({ preserveStale = false, circuit = null } = {}) {
     projectState.folder=session.folder||null;
     ports.workspaceFolderChanged(projectState.folder);
     if (!sessionHasWorkspace(session)) {
-      showEmptyWorkspace(sessionSaysNoWorkspace(session));
+      showEmptyWorkspace();
       return;
     }
 
@@ -63,8 +52,6 @@ async function bootstrap({ preserveStale = false, circuit = null } = {}) {
 
     }
     projectState.session = session;
-    projectState.demoAllowed = false;
-    projectState.isDemo = false;
 
     projectState.revision = revision;
     const draftFocus = await ports.openDraftProject();
@@ -112,14 +99,12 @@ async function bootstrap({ preserveStale = false, circuit = null } = {}) {
       await loadCircuit(displayName(preferred), { clearSelection: !preserveStale, navigation: {kind:"refresh"}, draftFocus:!sameProject?draftFocus:null });
       if(token!==bootstrapEpoch)return;
     } else {
-      showEmptyWorkspace(true, "这份项目没有可读取的电路定义。");
+      showEmptyWorkspace("这份项目没有可读取的电路定义。");
     }
     ports.startReviewPolling();
   }
 
 function showNoServer(error) {
-    projectState.demoAllowed = false;
-    ui.demoButton.hidden = true;
     ui.emptyState.hidden = false;
     ui.emptyState.querySelector("h2").textContent = "本地观察器没有响应";
     ui.emptyState.querySelector("p").textContent = "先启动 Circuit Lens 本地服务，再打开电路。离线页面不会把文件发送到网络。";
@@ -127,7 +112,7 @@ function showNoServer(error) {
     ports.setCanvasStatus("", "idle");
   }
 
-function showEmptyWorkspace(allowDemo, detail) {
+function showEmptyWorkspace(detail) {
     ports.invalidateSimulation();
     ++projectState.circuitRequestEpoch;
     ports.resetRendering();
@@ -143,18 +128,15 @@ function showEmptyWorkspace(allowDemo, detail) {
     projectState.capabilityState = "idle";
     projectState.sourceChanged = false;
     projectState.staleKind = "source";
-    projectState.demoAllowed = Boolean(allowDemo);
-    projectState.isDemo = false;
     projectState.circuits = [];
     ports.clearSelection({ notifyServer: false });
     renderCircuitList();
     ui.emptyState.hidden = false;
     ui.emptyState.querySelector("h2").textContent = projectState.folder ? "选择一份电路，或一起创建" : "打开文件夹，开始构建";
-    ui.emptyState.querySelector("p").innerHTML = projectState.folder ? "从左侧选择 .circ 文件查看电路；也可以直接和右侧 AI 讨论，让它在这里创建文件。" : "把电路、任务书和参考文件放在同一个文件夹，与 AI 一起工作。";
+    ui.emptyState.querySelector("p").textContent = projectState.folder ? "从左侧打开或新建 .circ 文件，也可以和右侧 AI 讨论构思。" : "把电路、任务书和参考文件放在同一个文件夹，与 AI 一起工作。";
     ui.emptyOpenButton.textContent = "打开文件夹";
     ui.emptyOpenButton.hidden = Boolean(projectState.folder);
     ui.emptyHint.textContent = detail || "";
-    ui.demoButton.hidden = true;
     ui.workspaceName.textContent = "尚未选择 .circ";
     ports.placementContextChanged();
     ports.componentsContextChanged();
@@ -440,5 +422,5 @@ function chooseCircuitFile() {
     }
     ui.fileInput.click();
   }
-  return Object.freeze({sessionHasWorkspace, sessionSaysNoWorkspace, bootstrap, refreshEditedProject, showNoServer, showEmptyWorkspace, updateSessionChrome, normalizeCircuitResponse, loadCircuit, renderCircuitList, pollSessionState, markStale, reloadRevision, handleStaleAction, openFile, openDesktopFile, chooseCircuitFile});
+  return Object.freeze({sessionHasWorkspace, bootstrap, refreshEditedProject, showNoServer, showEmptyWorkspace, updateSessionChrome, normalizeCircuitResponse, loadCircuit, renderCircuitList, pollSessionState, markStale, reloadRevision, handleStaleAction, openFile, openDesktopFile, chooseCircuitFile});
 }
