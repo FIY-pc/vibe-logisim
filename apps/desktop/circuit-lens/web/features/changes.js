@@ -77,7 +77,7 @@ async function performProjectAction(action, extra = {}, circuit = projectState.c
         }
       }
       ports.updateSessionChrome();
-      if(action!=="place")ports.showToast(action === "save" ? "已保存到当前文件" : action === "restore" ? "已恢复电路，对话和历史保留" : action === "undo" ? "已撤销上一步改动" : projectState.folder ? "已写入当前文件" : "改动已应用，尚未保存到文件");
+      if(!["place", "delete"].includes(action))ports.showToast(action === "save" ? "已保存到当前文件" : action === "restore" ? "已恢复电路，对话和历史保留" : action === "undo" ? "已撤销上一步改动" : projectState.folder ? "已写入当前文件" : "改动已应用，尚未保存到文件");
       return true;
     } catch (error) {
       const message = `${applied ? "操作已完成，但界面刷新失败" : "操作未完成"}：${error.message}`;
