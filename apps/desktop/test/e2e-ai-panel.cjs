@@ -108,8 +108,11 @@ fs.mkdirSync(out,{recursive:true});
     await page.locator('#interruptButton').click();assert.equal(await app.evaluate(()=>global.__panelInterrupted),true);
     assert.equal(await page.locator('#questionInput').inputValue(),'这是写到一半的下一条问题');
     await page.locator('#conversationLatest').click();
-    await answer.getByRole('button',{name:'引用到问题',exact:true}).click();
-    assert.ok((await page.locator('#questionInput').inputValue()).startsWith('这是写到一半的下一条问题\n\n> **界面验收回放'));
+    assert.equal(await answer.getByRole('button',{name:'引用到问题',exact:true}).count(),0);
+    await answer.getByRole('button',{name:'分支到新聊天',exact:true}).waitFor();
+    // Native branching and original-draft preservation are exercised by
+    // e2e-conversation-fork.cjs; these replayed messages have no native thread.
+    assert.equal(await page.locator('#questionInput').inputValue(),'这是写到一半的下一条问题');
     const copied=await app.evaluate(({clipboard})=>clipboard.readText());
     try{await answer.getByRole('button',{name:'复制代码',exact:true}).click();await answer.locator('.chat-code [data-copied=true]').waitFor();assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),'RST=0\nFETCH.EN=0\n');}
     finally{await app.evaluate(({clipboard},value)=>clipboard.writeText(value),copied);}

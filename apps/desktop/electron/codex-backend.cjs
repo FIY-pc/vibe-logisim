@@ -12,6 +12,7 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const GRACEFUL_STOP_MS = 1_500;
 const FORCED_STOP_MS = 2_000;
 const {ConversationStore}=require('./conversation-store.cjs');
+const {forkThroughReply}=require('./conversation-fork.cjs');
 const {splitContext,keptObservationContext,materialContext}=require("./conversation-context.cjs");
 const MAX_CONTEXT_BYTES = 512 * 1024;
 const DISABLED_CODEX_FEATURES = [
@@ -963,7 +964,22 @@ class CodexBackend extends EventEmitter {
       return await this.#queueWorkspaceOperation(async () => {
         if (epoch !== this.workspaceEpoch) throw workspaceChangedError();
         const previous = this.conversations.active(workspaceKey)?.id;
-        const state = this.conversations.change(workspaceKey, action, request);
+        let state;
+        if (action === 'fork') {
+          const source = this.conversations.get(workspaceKey, previous);
+          await this.start();
+          const generation = this.childEpoch;
+          this.#assertWorkspace(epoch, generation);
+          if (this.status === 'auth-required') throw new Error('请先登录，再创建对话分支');
+          const fork = await forkThroughReply({source, messageId:request.messageId,
+            request:(method, params) => this.#request(method, params), assertCurrent:() => this.#assertWorkspace(epoch, generation),
+            options:{cwd:this.currentCwd || this.runtimeWorkDir, approvalPolicy:'never', sandbox:'danger-full-access',
+              config:THREAD_CONFIG, developerInstructions:this.developerInstructions, ...(this.model ? {model:this.model} : {})}});
+          this.#assertWorkspace(epoch, generation);
+          state = this.conversations.fork(workspaceKey, {sourceId:source.id, sourceThreadId:source.threadId,
+            messageId:request.messageId, turnId:fork.turnId, threadId:fork.thread.id, messageContexts:fork.messageContexts,
+            messages:this.#historyFromThread(fork.thread, fork.messageContexts)});
+        } else state = this.conversations.change(workspaceKey, action, request);
         const activate = state.activeId !== previous || this.workspaceKey !== workspaceKey;
         if (activate) {
           await this.#resetWorkspaceNow('conversation-changed', epoch, false);

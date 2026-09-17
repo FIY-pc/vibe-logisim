@@ -75,10 +75,11 @@ export function createController({models:{project, agent}, ui, ports}) {
       const next = await api({action:command, folderId:project.folder.id, activeId:state.activeId, ...values});
       if (scope !== folderKey()) return;
       receiveConversationState(next); editing = null;
-      if (command === 'new' || command === 'select') {
+      if (command === 'new' || command === 'select' || command === 'fork') {
         close(); ports.switchReviewTab('agent'); ports.openReviewPanel();
       }
     } catch (error) {
+      if (command === 'fork') throw error;
       if (scope === folderKey()) {showError(error); if (!opened()) ui.conversationMenu.showPopover(); position();}
     } finally {
       busy = false; renderConversationHeader(); renderList();
@@ -160,5 +161,6 @@ export function createController({models:{project, agent}, ui, ports}) {
     window.addEventListener('resize', position); new ResizeObserver(position).observe(ui.reviewPanel);
     renderConversationHeader();
   }
-  return {mountConversations, ensureConversations, conversationBinding, receiveConversationState, renderConversationHeader};
+  const forkConversation = messageId => manage('fork', {messageId});
+  return {mountConversations, ensureConversations, conversationBinding, receiveConversationState, renderConversationHeader, forkConversation};
 }

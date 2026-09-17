@@ -5,20 +5,19 @@ import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas", "review", "agent"];
 
-export const dependencies = ["conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
+export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
 
 export function createController({models, ui, client, ports}) {
   let workspaceEpoch = 0;
   const {project: projectState, canvas: canvasState, review: reviewState, agent: agentState} = models;
-  const conversation=new ConversationView(ui,{followReference:ports.followConversationReference,appendMoments:ports.appendMomentReferences,appendMaterials:ports.appendMaterialReferences,notify:ports.showToast,quote:(text,quoted)=>{
-    const addition=quoted?text.split('\n').map(line=>'> '+line).join('\n')+'\n\n':text;
-    ports.appendDraftText(addition);
-  }});
+  const conversation=new ConversationView(ui,{followReference:ports.followConversationReference,appendMoments:ports.appendMomentReferences,appendMaterials:ports.appendMaterialReferences,
+    notify:ports.showToast,reuse:ports.appendDraftText,fork:ports.forkConversation});
   const appendAgentSystem=(text,kind)=>conversation.system(text,kind);
   const scrollAgentTimeline=()=>conversation.scroll();
   const clearAgentTimeline=()=>conversation.clear();
   const renderAgentHistory=messages=>conversation.history(messages);
 function updateComposerState() {
+    conversation.setBusy(agentState.busy || agentState.submitting || ports.conversationBinding().busy);
     ports.updateMaterialState();
     ports.renderConversationStarters();
     if (!agentState.enabled) {

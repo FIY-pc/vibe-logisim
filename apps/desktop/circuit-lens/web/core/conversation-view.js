@@ -5,8 +5,8 @@ import {renderMarkdown} from './chat-markdown.js';
 // Owns message DOM, reading position and transient progress only. Transport,
 // projects, draft submission and structural changes belong to other owners.
 export class ConversationView {
-  constructor(ui,{followReference,appendMoments,appendMaterials,quote,notify}) {
-    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,quote,notify});
+  constructor(ui,{followReference,appendMoments,appendMaterials,reuse,fork,notify}) {
+    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,reuse,fork,notify});
     this.messages=new Map();this.activities=new Map();this.follow=true;
     this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();
   }
@@ -45,8 +45,19 @@ export class ConversationView {
     const body=makeElement('div','agent-message-body');const footer=makeElement('div','message-actions');
     const message={node,body,footer,text,phase:null};
     const copy=action('复制消息','Copy',()=>copyText(message.text,copy,this.notify));
-    const quote=action(role==='user'?'放回输入框':'引用到问题',role==='user'?'ArrowUp':'Quote',()=>this.quote(message.text,role==='assistant'));
-    footer.append(copy,quote);node.append(header,body,footer);this.ui.agentTimeline.append(node);
+    footer.append(copy);
+    if(role==='user') footer.append(action('放回输入框','ArrowUp',()=>this.reuse(message.text)));
+    else {
+      const status=makeElement('small','message-branch-status');status.hidden=true;status.setAttribute('role','status');
+      const branch=action('分支到新聊天','GitBranch',async()=>{
+        branch.disabled=true;branch.setAttribute('aria-busy','true');status.hidden=false;status.textContent='正在创建分支…';
+        try {await this.fork(id);status.hidden=true;}
+        catch(error){status.textContent=String(error.message||error).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,'');}
+        finally{branch.disabled=this.busy;branch.removeAttribute('aria-busy');}
+      });
+      branch.classList.add('message-branch');branch.disabled=Boolean(this.busy);footer.append(branch,status);
+    }
+    node.append(header,body,footer);this.ui.agentTimeline.append(node);
     this.messages.set(String(id),message);this.render(message);return message;
   }
   render(message) {
@@ -104,6 +115,10 @@ export class ConversationView {
       if(m.type==='assistant')this.assistant(m.id,m.text,m.phase);
     }
     if(this.work)this.updateWork('查看工作过程');this.scroll();
+  }
+  setBusy(value) {
+    this.busy=value;
+    this.ui.agentTimeline.querySelectorAll('.message-branch').forEach(button=>button.disabled=value);
   }
   scroll() {
     if(this.frame!==null)return;

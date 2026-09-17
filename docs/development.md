@@ -87,3 +87,13 @@ node apps/desktop/test/e2e-conversations.cjs
 ```
 
 窗口脚本在临时文件夹打开真实 Electron，经鼠标和键盘新建、搜索、重命名、归档和恢复，核对不同会话的文字与引用、跨文件夹隔离、切电路保留会话、重开恢复和电路文件未改变；历史消息使用明确标注的本地夹具，回答中状态也为回放。单元验证另覆盖旧索引备份迁移、延迟草稿保存、损坏记录保留，以及协议回放下不同会话续接各自原生线程。两者均不调用模型，不证明真实模型回答质量。
+
+“分支到新聊天”额外使用真实 Codex 原生协议验收，需要本机 Codex 可以启动：
+
+```sh
+node --test apps/desktop/electron/conversation-fork.test.cjs
+node apps/desktop/test/e2e-conversation-fork.cjs
+node apps/desktop/test/e2e-conversation-fork.cjs --legacy
+```
+
+脚本只向隔离的测试配置写入合成历史，不复制个人会话或认证；在真实窗口点击早期回复的分支按钮，核对新线程的上下文只到所选位置、保留此前工具结果、原聊天和草稿不变、重开续接新线程。默认覆盖原生分页会话格式，`--legacy` 覆盖旧格式；不发送模型回合。单元回放另检查下一次发送使用子线程，以及失败、错误终点和过期响应不会替换原对话。

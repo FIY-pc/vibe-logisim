@@ -48,6 +48,7 @@
 .message-table{max-width:100%;overflow:auto;white-space:normal;margin:15px 0;border:1px solid var(--line);border-radius:8px;scrollbar-width:thin}
 .message-table table{font-size:12px;line-height:1.6;border-collapse:collapse;width:100%;min-width:280px}.message-table th,.message-table td{text-align:left;border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top}.message-table th{font-weight:600;background:#f6f7f9}.message-table tr:last-child td{border-bottom:0}
 .message-actions{display:flex;gap:2px;margin-top:10px}.message-actions .chat-action{width:28px;height:26px}.message-actions .chat-icon{width:14px;height:14px}
+.message-actions .message-branch-status{align-self:center;min-width:0;margin-left:5px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
 .agent-message[data-role=user] .message-actions{position:absolute;right:8px;bottom:-15px;opacity:0;background:white;border:1px solid var(--line);border-radius:7px;padding:1px;box-shadow:0 2px 5px #17244008}
 .agent-message[data-role=user]:hover .message-actions,.agent-message[data-role=user]:focus-within .message-actions{opacity:1}
 .agent-message-context{display:block;margin-top:10px;color:var(--muted);font-size:11px;line-height:1.5}

@@ -107,6 +107,20 @@ class ConversationStore {
     }
     record.updatedAt = new Date().toISOString(); this.write(data);
   }
+  fork(key, {sourceId, sourceThreadId, messageId, turnId, threadId, messages, messageContexts}) {
+    const data = this.read(), w = this.workspace(data, key), source = w.conversations[w.activeId];
+    if (source.id !== sourceId || source.threadId !== sourceThreadId || !threadId || threadId === sourceThreadId) {
+      throw new Error('原对话已变化，未切换到新分支');
+    }
+    const base = source.title.slice(0, 80) + ' · 分支';
+    const titles = new Set(Object.values(w.conversations).map(c => c.title));
+    let title = base, n = 2;
+    while (titles.has(title)) title = base + ' ' + n++;
+    const child = {...this.blank(), title, titleGenerated:true, threadId, messages, messageContexts,
+      forkedFrom:{conversationId:sourceId, threadId:sourceThreadId, messageId, turnId}};
+    w.conversations[child.id] = child; w.activeId = child.id;
+    this.write(data); return this.state(key);
+  }
 }
 
 module.exports = {ConversationStore};
