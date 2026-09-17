@@ -4,9 +4,10 @@ import {hasFileDrag,isEntryDrag,draggedEntry,readFileDrag} from './file-drag.js'
 // targets that directory, a file row its parent, and the heading targets root.
 export function createFileDrop({element,folder,api,onImported,fail,canMove=()=>true}) {
   let target=null,busy=false,hoverTimer,scrollFrame=0,scrollSpeed=0;
-  const tree=element.querySelector('#fileTree'),heading=element.querySelector('.file-heading');
+  const tree=element.querySelector('#fileTree');
   function scroll(){if(!scrollSpeed)return;tree.scrollTop+=scrollSpeed;scrollFrame=requestAnimationFrame(scroll);}
   function clear(){
+    element.classList.remove('is-root-drop');
     target=null;clearTimeout(hoverTimer);cancelAnimationFrame(scrollFrame);scrollFrame=0;scrollSpeed=0;
     element.querySelectorAll('.is-drop-target').forEach(row=>row.classList.remove('is-drop-target'));
   }
@@ -25,9 +26,10 @@ export function createFileDrop({element,folder,api,onImported,fail,canMove=()=>t
     event.dataTransfer.dropEffect=internal?'move':'copy';
     if(path!==target){
       clearTimeout(hoverTimer);target=path;
+      element.classList.toggle('is-root-drop',path==='');
       element.querySelectorAll('.is-drop-target').forEach(row=>row.classList.remove('is-drop-target'));
       const directory=[...element.querySelectorAll('.file-row')].find(row=>row.dataset.path===path&&row.dataset.kind==='folder');
-      (path?directory:heading)?.classList.add('is-drop-target');
+      directory?.classList.add('is-drop-target');
       if(directory?.getAttribute('aria-expanded')==='false')hoverTimer=setTimeout(()=>directory.click(),650);
     }
     if(document.getElementById('filesTab').getAttribute('aria-selected')!=='true')document.getElementById('filesTab').click();
