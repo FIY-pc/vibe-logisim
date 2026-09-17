@@ -1,17 +1,16 @@
 import {hasFileDrag,isEntryDrag,draggedEntry,readFileDrag} from './file-drag.js';
 
-export function createReferenceDrop({element,folder,ready,receipt,count,api,attach,fail}) {
+export function createReferenceDrop({element,target,folder,ready,receipt,count,api,attach,fail}) {
   let busy=false;
-  const hint=document.createElement('div');hint.className='reference-drop-hint';hint.hidden=true;hint.setAttribute('role','status');element.append(hint);
-  function clear(){element.classList.remove('is-reference-drop');if(!busy)hint.hidden=true;}
+  // The pane accepts drops; the composer shows where the reference will go.
+  function clear(){target.classList.remove('is-reference-drop');}
   function over(event){
     if(!hasFileDrag(event))return;
     event.preventDefault();event.stopPropagation();
     const entry=isEntryDrag(event)?draggedEntry():null;
     const accepted=folder()&&ready()&&!busy&&(!isEntryDrag(event)||entry?.folderId===folder().id&&entry.kind!=='directory');
     event.dataTransfer.dropEffect=accepted?'copy':'none';
-    element.classList.toggle('is-reference-drop',Boolean(accepted));hint.hidden=false;
-    hint.textContent=entry?.kind==='directory'?'请拖入要引用的文件':!folder()?'先打开工作区文件夹':!ready()?'对话正在加载，请稍后再拖入':busy?'正在添加文件…':entry?'引用 '+entry.path.split('/').at(-1):'复制到工作区并引用';
+    target.classList.toggle('is-reference-drop',Boolean(accepted));
     return accepted;
   }
   element.addEventListener('dragenter',over);element.addEventListener('dragover',over);
@@ -20,7 +19,7 @@ export function createReferenceDrop({element,folder,ready,receipt,count,api,atta
     if(!hasFileDrag(event))return;
     const accepted=over(event),binding=folder(),draft=receipt(),internal=isEntryDrag(event),files=Array.from(event.dataTransfer.files);
     clear();if(!accepted)return;
-    busy=true;hint.hidden=false;hint.textContent='正在添加文件…';
+    busy=true;
     try {
       let references;
       if(internal){const entry=readFileDrag(event);if(entry.folderId!==binding.id||entry.kind==='directory')throw new Error('请拖入当前工作区中的文件');references=[{id:entry.path,pathVersion:entry.pathVersion}];}

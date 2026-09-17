@@ -100,7 +100,7 @@ export function createController({models,ui,ports}) {
     ports.switchReviewTab('agent');ports.openReviewPanel();ui.questionInput.focus();
   }
   function mountMaterials(){
-    if(api)createReferenceDrop({element:document.getElementById('reviewPanel'),folder:()=>models.project.folder,ready:()=>ports.draftReady(),receipt:()=>ports.draftReceipt(),count:()=>refs().length,api,attach:attachWorkspaceFiles,fail:e=>ports.showToast(String(e.message||e).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,''))});
+    if(api)createReferenceDrop({element:document.getElementById('reviewPanel'),target:ui.selectionDock,folder:()=>models.project.folder,ready:()=>ports.draftReady(),receipt:()=>ports.draftReceipt(),count:()=>refs().length,api,attach:attachWorkspaceFiles,fail:e=>ports.showToast(String(e.message||e).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,''))});
     for(const [button,name] of [[ui.materialsClose,'X'],[ui.materialPrev,'ChevronLeft'],[ui.materialNext,'ChevronRight']])button.replaceChildren(icon(name));
     document.getElementById('filePreviewExternal').addEventListener('click',()=>api['open-system'](request({path:preview?.item.path||selected})).then(message=>{if(message)error(message);}).catch(error));
     ui.materialsClose.addEventListener('click',()=>ui.materialsDialog.close());
