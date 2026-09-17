@@ -66,12 +66,17 @@ class DesktopControl:
                     "Desktop control schema does not match this service.",
                 )
             method = request.get("method")
-            if method not in {"open-path", "reload", "agent-bundle", "set-folder"}:
+            if method not in {"open-path", "reload", "agent-bundle", "set-folder", "move-path"}:
                 raise LensError(
                     HTTPStatus.NOT_FOUND,
                     "UNKNOWN_DESKTOP_CONTROL_METHOD",
                     "The desktop channel only supports open-path and reload.",
                 )
+            if method == "move-path":
+                from studio.project.relocation import move_workspace_path
+                result = move_workspace_path(self.server.app, request.get("folderId"), request.get("from"), request.get("to"))
+                self.send({"id": request_id, "ok": True, "result": result})
+                return
             if method == "set-folder":
                 result = self.server.app.set_folder(request.get("folder"), request.get("clear", False))
                 self.send({"id": request_id, "ok": True, "result": result})

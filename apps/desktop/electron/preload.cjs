@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld(
       open:()=>ipcRenderer.invoke('vibe-logisim:folder-open'),
       state:()=>ipcRenderer.invoke('vibe-logisim:folder-state'),
       importFiles:(request, files)=>ipcRenderer.invoke('vibe-logisim:folder-import', {...request, sources:files.map(file=>webUtils.getPathForFile(file))}),
-      ...Object.fromEntries(['list','view','select','preview','reveal','open-system','create','history','diff','undo'].map(name=>[name,request=>ipcRenderer.invoke('vibe-logisim:folder-'+name,request)])),
+      ...Object.fromEntries(['list','view','select','move','trash','reference','preview','reveal','open-system','create','history','diff','undo'].map(name=>[name,request=>ipcRenderer.invoke('vibe-logisim:folder-'+name,request)])),
       onEvent:callback=>{const listener=(_event,value)=>callback(value);ipcRenderer.on('vibe-logisim:folder-event',listener);return()=>ipcRenderer.removeListener('vibe-logisim:folder-event',listener);},
     }),
     openCircuit: () => ipcRenderer.invoke("vibe-logisim:open-circuit"),

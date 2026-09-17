@@ -6,7 +6,7 @@ const ignored=new Set(['.git','node_modules','.venv','__pycache__','.codex','.ss
 function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const temp=file+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2),{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{fs.rmSync(temp,{force:true});}}
 
 // A folder is the collaboration identity. Document identities and revisions
-// remain with Circuit Lens; this owner never rewrites existing user files.
+// remain with Circuit Lens; this owner never rewrites existing file contents.
 class FolderWorkspace extends EventEmitter {
   constructor(stateRoot){super();this.stateRoot=path.resolve(stateRoot);this.current=null;this.watcher=null;this.timer=null;this.poller=null;this.listed=new Set(['']);this.lastSignature='';}
   recordFile(id){return path.join(this.stateRoot,id,'workspace.json');}
@@ -63,7 +63,30 @@ class FolderWorkspace extends EventEmitter {
     }
     this.changed();
   }
-  rename(relative,name){if(!name||name!==path.basename(name)||name==='.'||name==='..')throw new Error('请输入有效名称');const from=this.resolve(relative),to=this.resolve(path.join(path.dirname(relative),name),{exists:false});if(from===this.current.root||fs.existsSync(to))throw new Error('目标名称已存在');fs.renameSync(from,to);if(this.current.activeFile===relative)this.current.activeFile=path.relative(this.current.root,to);this.persist();this.changed();return path.relative(this.current.root,to);}
+  referencePath(relative, version=0) {
+    const legacy=this.current.legacyReferences?.[relative];
+    if(legacy)return legacy;
+    const moves=this.current.moves||[];
+    if(!Number.isSafeInteger(version)||version<0||version>moves.length)throw new Error('文件引用版本无效');
+    for(const move of moves.slice(version))relative=remapPath(relative,move.from,move.to);
+    return relative;
+  }
+  reference(ref) {
+    const relative=this.referencePath(ref.id,ref.pathVersion??0),file=this.resolve(relative),stat=fs.statSync(file);
+    if(!stat.isFile())throw new Error('请选择文件；文件夹可以在问题中按路径说明');
+    return {id:relative,path:relative,name:path.basename(relative),size:stat.size,modifiedAt:stat.mtimeMs,pathVersion:(this.current.moves||[]).length};
+  }
+  moved(from,to) {
+    const previous=this.current,record=structuredClone(previous),remap=p=>remapPath(p,from,to);
+    record.activeFile=record.activeFile?remap(record.activeFile):null;
+    if(record.explorer){record.explorer.selected=remap(record.explorer.selected);record.explorer.expanded=record.explorer.expanded.map(remap);}
+    for(const id of Object.keys(record.legacyReferences||{}))record.legacyReferences[id]=remap(record.legacyReferences[id]);
+    record.moves=[...(record.moves||[]),{from,to}];
+    this.current=record;
+    try{this.persist();}catch(error){this.current=previous;throw error;}
+    this.listed=new Set([...this.listed].map(remap));
+  }
+
   changed(){clearTimeout(this.timer);this.timer=setTimeout(()=>this.emit('changed',this.snapshot()),200);this.timer.unref?.();}
   watch(){
     try{this.watcher=fs.watch(this.current.root,{recursive:true},(_,filename)=>{if(filename&&!filename.toString().split(path.sep).some(p=>ignored.has(p)))this.changed();});this.watcher.on('error',()=>{});}catch{/* Poll listed directories on systems without recursive watching. */}
@@ -72,4 +95,5 @@ class FolderWorkspace extends EventEmitter {
   }
   close(){this.watcher?.close();clearTimeout(this.timer);clearInterval(this.poller);this.watcher=null;this.current=null;}
 }
-module.exports={FolderWorkspace,atomic,hash,ignored};
+function remapPath(value,from,to){return value===from||value?.startsWith(from+'/')?to+value.slice(from.length):value;}
+module.exports={FolderWorkspace,atomic,hash,ignored,remapPath};

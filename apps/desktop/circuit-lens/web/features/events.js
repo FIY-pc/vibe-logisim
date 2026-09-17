@@ -147,7 +147,7 @@ function bindEvents() {
 
     // Desktop file drops belong to the explorer. Prevent Chromium navigation
     // elsewhere without intercepting ordinary text drags or covering the app.
-    const hasFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+    const hasFiles = event => Array.from(event.dataTransfer?.types || []).some(type=>['Files','application/x-vibe-workspace-entry'].includes(type));
     document.addEventListener('dragover', event => {
       if (!hasFiles(event)) return;
       event.preventDefault();

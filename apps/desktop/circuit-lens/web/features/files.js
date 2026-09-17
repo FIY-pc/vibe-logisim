@@ -2,11 +2,12 @@ import {makeElement} from '../core/dom.js';
 import {icon,action} from '../core/chat-dom.js';
 import {createFileTree,parentPath,fileAppearance} from './file-tree.js';
 import {createFileMenu} from './file-menu.js';
+import {beginFileDrag} from './file-drag.js';
 import {createFileDrop} from './file-drop.js';
 import {createFileHistory} from './file-history.js';
 
 export const modelDependencies=['project'];
-export const dependencies=['updateComposerState','bootstrap','showToast','openWorkspaceFile'];
+export const dependencies=['updateComposerState','bootstrap','showToast','openWorkspaceFile','attachWorkspaceFiles','renderMaterialAttachments'];
 
 export function createController({models,ports}) {
   const api=window.vibeDesktop?.folder;
@@ -26,7 +27,7 @@ export function createController({models,ports}) {
   };
   let drop;
   const tree=createFileTree({element,onOpen:guarded(openEntry),onToggle:guarded(toggle),onContext:openContext,
-    onSelect:path=>{if(selected!==path){selected=path;persist();}},onCreate:guarded(startCreate),onRefresh:guarded(refreshFiles),onCopy:guarded(path=>window.vibeDesktop.copyText(path))});
+    onSelect:path=>{if(selected!==path){selected=path;persist();}},onCreate:guarded(startCreate),onRefresh:guarded(refreshFiles),onCopy:guarded(path=>window.vibeDesktop.copyText(path)),onDelete:guarded(deleteEntry),onDragStart:(event,entry)=>beginFileDrag(event,entry,folder)});
   function expandParents(path) {
     for(let parent=parentPath(path);parent;parent=parentPath(parent))expanded.add(parent);
     if(path.split('/').some(part=>part.startsWith('.')))showHidden=true;
@@ -97,8 +98,12 @@ export function createController({models,ports}) {
     {label:'新建文件夹',icon:'FolderPlus',shortcut:'Ctrl+Shift+N',run:()=>startCreate('directory',parent)},
   ];
   function contextParent(entry) {return entry?.kind==='directory'?entry.path:parentPath(entry?.path||'');}
+  async function deleteEntry(entry,binding=request()) {
+    if(models.project.projectBusy)throw new Error('正在保存画布编辑，请稍后再试');
+    await api.trash({...binding,path:entry.path});
+  }
   function openContext(entry,anchor,x,y) {
-    const binding=request(),path=entry?.path||'';
+    const binding=request(),path=entry?.path||'',pathVersion=(folder.moves||[]).length;
     const reveal={label:'在文件管理器中显示',icon:'FolderOpen',run:()=>api.reveal({...binding,path})};
     const items=[];
     if(entry)items.push({label:entry.kind==='directory'?(expanded.has(path)?'收起文件夹':'展开文件夹'):'打开',icon:entry.kind==='directory'?'FolderOpen':'ExternalLink',shortcut:'Enter',run:()=>openEntry(entry)});
@@ -106,6 +111,8 @@ export function createController({models,ports}) {
     if(entry?.kind!=='directory'&&entry)items.push({label:'用系统应用打开',icon:'ExternalLink',run:async()=>{const result=await api['open-system']({...binding,path});if(result)throw new Error(result);}},null);
     items.push(reveal,{label:'复制相对路径',icon:'Copy',shortcut:'Ctrl+C',run:()=>window.vibeDesktop.copyText(path||'.')},
       {label:'复制完整路径',icon:'Copy',run:()=>window.vibeDesktop.copyText(folder.root+(path?'/'+path:''))});
+    if(entry?.kind==='file')items.push(null,{label:'添加到对话',icon:'MessageSquarePlus',run:()=>ports.attachWorkspaceFiles([{id:path,pathVersion}],binding.folderId)});
+    if(entry)items.push(null,{label:'删除（移到回收站）',icon:'Trash2',shortcut:'Delete',run:()=>deleteEntry(entry,binding)});
     menu.open(items,anchor,{x,y,title:entry?.name||folder?.name});
   }
   function showOptions() {
@@ -163,7 +170,7 @@ export function createController({models,ports}) {
   }
   function mountFiles() {
     if(!api)return;
-    drop=createFileDrop({element:node('fileExplorer'),folder:()=>folder,api,fail,
+    drop=createFileDrop({element:node('fileExplorer'),folder:()=>folder,api,fail,canMove:()=>!models.project.projectBusy,
       onImported:async(items,parent)=>{
         if(parent)expanded.add(parent);
         for(const item of items)expandParents(item.path);
@@ -175,7 +182,13 @@ export function createController({models,ports}) {
     }
     api.onEvent(event=>{
       if(event.folder?.id!==folder?.id)return;
+      if(event.move){
+        const {from,to}=event.move,remap=p=>p===from||p.startsWith(from+'/')?to+p.slice(from.length):p;
+        selected=remap(selected);const next=[...expanded].map(remap);expanded.clear();next.forEach(p=>expanded.add(p));
+        clearTimeout(viewTimer);
+      }
       folder=event.folder;models.project.folder=folder;
+      ports.renderMaterialAttachments();
       node('folderError').textContent=event.error||'';node('folderError').hidden=!event.error;
       if(event.error&&folder?.activeFile){models.project.sourceChanged=true;ports.updateComposerState();}
       node('locateCurrentFile').disabled=!folder?.activeFile;

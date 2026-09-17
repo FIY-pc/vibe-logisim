@@ -521,7 +521,7 @@ class CodexBackend extends EventEmitter {
       projectId:context.projectId,
       folderId:context.folder?.id,
       moments:(context.keptMoments||[]).map(m=>({id:m.id,projectId:m.projectId,title:m.title})),
-      materials:(context.materials||[]).map(m=>({id:m.id,name:m.name,page:m.page,quote:m.quote,reference:m.reference})),
+      materials:(context.materials||[]).map(m=>({id:m.id,name:m.name,pathVersion:m.pathVersion,page:m.page,quote:m.quote,reference:m.reference})),
       revisionId,
       selectionId: context.selectionId || null,
       circuit: context.circuit || null,

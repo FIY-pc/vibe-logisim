@@ -46,7 +46,7 @@ apps/desktop/run
 不消耗模型额度、也不需要课程电路的文件夹行为验证：
 
 ```sh
-node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electron/folder-import.test.cjs
+node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electron/folder-import.test.cjs apps/desktop/electron/folder-operations.test.cjs
 ```
 
 `apps/desktop/test/` 保存桌面和原生运行验证脚本。许多历史脚本依赖本地 `exports/`、`archive/` 下的课程样本；它们没有随仓库分发，不能把干净检出直接运行这些脚本的缺样本失败解释成产品回归。现有 `npm run test:e2e` 也是需要样本的浏览器服务验证，不覆盖完整 Electron 体验。
@@ -97,3 +97,13 @@ node apps/desktop/test/e2e-conversation-fork.cjs --legacy
 ```
 
 脚本只向隔离的测试配置写入合成历史，不复制个人会话或认证；在真实窗口点击早期回复的分支按钮，核对新线程的上下文只到所选位置、保留此前工具结果、原聊天和草稿不变、重开续接新线程。默认覆盖原生分页会话格式，`--legacy` 覆盖旧格式；不发送模型回合。单元回放另检查下一次发送使用子线程，以及失败、错误终点和过期响应不会替换原对话。
+
+### 文件拖动、删除和引用
+
+```sh
+node apps/desktop/test/e2e-file-operations.cjs
+```
+
+在真实 Electron 中用鼠标拖动文件/文件夹与右栏引用，悬停展开目录，拒绝向自身子目录移动和覆盖同名文件；经界面放置元件、移动当前电路、继续编辑和撤销移动，核对原文档身份、编辑历史及新保存位置。右键和 Backspace 删除调用真实系统回收站，核对回收站内容及历史恢复；引用经移动、对话切换和重开继续可用。系统文件拖入使用 Chromium 的原生文件拖动协议，走真实复制与引用服务。
+
+夹具保存在 `~/.cache/vibe-logisim-e2e/file-operations-*`，使用独立配置、状态和 XDG 回收站；某些 Linux 系统拒绝对 `/tmp` 的内部挂载执行回收站操作，因此不把删除验收放在 `/tmp`。不启动 Codex，不消耗模型额度。该验证覆盖文件操作与引用传递，不代表模型已阅读这些资料并完成电路任务。

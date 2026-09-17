@@ -16,7 +16,7 @@ async function validate(source) {
   return stat;
 }
 
-async function importFiles(folder, {folderId, path:relative = '', sources}) {
+async function importFiles(folder, {folderId, path:relative = '', sources, filesOnly=false}) {
   folder.assert(folderId);
   if (!Array.isArray(sources) || !sources.length || sources.some(p => typeof p !== 'string' || !path.isAbsolute(p))) {
     throw new Error('请从系统文件管理器拖入文件或文件夹');
@@ -28,6 +28,7 @@ async function importFiles(folder, {folderId, path:relative = '', sources}) {
     const real = await fsp.realpath(source);
     // Check before traversing: never copy a directory into itself.
     if (destination === real || destination.startsWith(real + path.sep)) throw new Error('不能把文件夹复制到它自己里面');
+    if(filesOnly&&!(await fsp.lstat(source)).isFile())throw new Error('请拖入要引用的文件；文件夹可以拖入左侧文件列表');
     const stat = await validate(source);
     inputs.push({source, name:path.basename(source), directory:stat.isDirectory()});
   }
@@ -58,7 +59,7 @@ async function importFiles(folder, {folderId, path:relative = '', sources}) {
         break;
       }
     }
-    return {items};
+    return {items,pathVersion:(folder.current.moves||[]).length};
   } catch (error) {
     // Already published files are kept. Never roll back by deleting paths a
     // user or another application may have started editing in the meantime.

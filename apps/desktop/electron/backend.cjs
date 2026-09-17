@@ -121,6 +121,8 @@ class LensBackend extends EventEmitter {
     return this.#request("open-path", { path: absolute });
   }
 
+  async movePath(folderId, from, to) { return this.#request("move-path", {folderId, from, to}); }
+
   async setFolder(folder, clear=false) { return this.#request("set-folder", {folder, clear}); }
 
   async reload() {

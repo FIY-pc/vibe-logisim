@@ -25,18 +25,18 @@ class FolderHistory {
       manifest[relative]=value;this.cache.set(relative,{signature,value});
     }};walk('');return manifest;
   }
-  checkpoint(title='文件改动',{force=false,document=null}={}){
+  checkpoint(title='文件改动',{force=false,document=null,operation=null}={}){
     const next=this.scan(force),previous=this.record.head,files=[];
     for(const file of new Set([...Object.keys(previous),...Object.keys(next)])){
       if(JSON.stringify(previous[file])===JSON.stringify(next[file]))continue;
       files.push({path:file,before:previous[file]||null,after:next[file]||null,kind:!previous[file]?'added':!next[file]?'deleted':'modified'});
     }
-    if(!files.length)return null;
-    const entry={id:'file-change-'+crypto.randomUUID(),title,at:new Date().toISOString(),files,document};
+    if(!files.length&&!operation)return null;
+    const entry={id:'file-change-'+crypto.randomUUID(),title,at:new Date().toISOString(),files,document,operation};
     const record={head:next,entries:[entry,...this.record.entries]};
     atomic(this.index,record);this.record=record;return entry;
   }
-  list(){return this.record.entries.slice(0,100).map(({files,...entry})=>({...entry,files:files.map(({path,kind,before,after})=>({path,kind,binary:!isText(path),undoable:(!before||before.stored)&&(!after||after.stored)}))}));}
+  list(){return this.record.entries.slice(0,100).map(({files,...entry})=>({...entry,files:files.map(({path,kind,before,after})=>({path,kind,binary:!isText(path),undoable:entry.operation?.kind==='move'||(!before||before.stored)&&(!after||after.stored)}))}));}
   entry(id){const e=this.record.entries.find(e=>e.id===id);if(!e)throw new Error('这项改动不存在');return e;}
   detail(id,relative) {
     const entry=this.entry(id),file=entry.files.find(f=>f.path===relative);

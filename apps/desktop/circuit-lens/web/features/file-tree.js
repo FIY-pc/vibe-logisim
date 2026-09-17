@@ -1,3 +1,4 @@
+import {draggedEntry} from './file-drag.js';
 import {makeElement} from '../core/dom.js';
 import {icon} from '../core/chat-dom.js';
 
@@ -17,8 +18,8 @@ export function fileAppearance(entry,expanded=false) {
 
 // DOM/focus owner only. Loading, workspace identity and file operations stay
 // in files.js; arrow navigation never opens documents as a side effect.
-export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCreate,onRefresh,onCopy}) {
-  let entries=[],selected='',activeFile=null,expanded=new Set(),prefix='',typedAt=0;
+export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCreate,onRefresh,onCopy,onDelete,onDragStart}) {
+  let entries=[],selected='',activeFile=null,dropTarget=null,expanded=new Set(),prefix='',typedAt=0;
   const rows=()=>[...element.querySelectorAll('.file-row')];
   const find=path=>rows().find(row=>row.dataset.path===path);
   function select(path,{focus=false,scroll=false}={}) {
@@ -35,6 +36,7 @@ export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCre
   }
   function rowFor(entry) {
     const row=makeElement('button','file-row');row.type='button';row.dataset.path=entry.path;
+    if(dropTarget===entry.path)row.classList.add('is-drop-target');
     row.style.setProperty('--depth',entry.depth);row.setAttribute('role','treeitem');
     row.setAttribute('aria-level',entry.depth+1);row.setAttribute('aria-posinset',entry.position);row.setAttribute('aria-setsize',entry.count);
     row.title=entry.path;row.setAttribute('aria-label',entry.name);
@@ -47,6 +49,7 @@ export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCre
       row.setAttribute('aria-current','true');row.append(makeElement('span','file-current','当前'));
       row.title+=' · 当前电路';
     }
+    row.draggable=true;row.addEventListener('dragstart',event=>onDragStart(event,entry));
     row.addEventListener('focus',()=>select(entry.path));
     row.addEventListener('click',()=>{select(entry.path);onOpen(entry);});
     row.addEventListener('contextmenu',event=>{event.preventDefault();select(entry.path,{focus:true});onContext(entry,row,event.clientX,event.clientY);});
@@ -55,9 +58,10 @@ export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCre
   function render(items,options) {
     const focused=element.contains(document.activeElement),scroll=element.scrollTop;
     entries=items;expanded=options.expanded;activeFile=options.activeFile;
+    dropTarget=element.querySelector('.is-drop-target')?.dataset.path;
     const fragment=document.createDocumentFragment();
     for(const entry of entries) {
-      fragment.append(rowFor(entry));
+      fragment.append(draggedEntry()?.path===entry.path?find(entry.path)?.cloneNode(true)||rowFor(entry):rowFor(entry));
       if(entry.kind==='directory'&&expanded.has(entry.path)&&entry.empty) {
         const empty=makeElement('div','file-empty-branch','空文件夹');empty.setAttribute('role','none');empty.style.setProperty('--depth',entry.depth+1);fragment.append(empty);
       }
@@ -66,7 +70,15 @@ export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCre
         error.append(makeElement('span','',entry.error));const retry=makeElement('button','','重试');retry.type='button';retry.addEventListener('click',onRefresh);error.append(retry);fragment.append(error);
       }
     }
-    element.replaceChildren(fragment);element.scrollTop=scroll;
+    const source=draggedEntry()?.path,live=source?find(source):null;
+    if(live){
+      const children=[...fragment.childNodes].map(child=>child.dataset?.path===source?live:child);
+      let cursor=element.firstChild;
+      for(const child of children){if(child===cursor)cursor=cursor.nextSibling;else element.insertBefore(child,cursor);}
+      const retained=new Set(children);
+      for(const child of [...element.childNodes])if(!retained.has(child))child.remove();
+    }else element.replaceChildren(fragment);
+    element.scrollTop=scroll;
     let path=options.selected;
     while(path&&!entries.some(entry=>entry.path===path))path=parentPath(path);
     select(path||entries.find(entry=>entry.path===activeFile)?.path||entries[0]?.path||'',{focus:focused});
@@ -100,7 +112,8 @@ export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCre
     } else if(event.key==='F5')onRefresh();
     else if((event.ctrlKey||event.metaKey)&&event.shiftKey&&event.key.toLowerCase()==='n')onCreate('directory');
     else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='c'&&entry)onCopy(entry.path);
-    else if(['Delete','Backspace','Escape'].includes(event.key)||(event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z') { /* No canvas actions while browsing files. */ }
+    else if(['Delete','Backspace'].includes(event.key)&&entry){if(!event.repeat)onDelete(entry);}
+    else if(['Escape'].includes(event.key)||(event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z') { /* No canvas actions while browsing files. */ }
     else if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.length===1) {
       const now=Date.now(),character=event.key.toLocaleLowerCase();
       prefix=now-typedAt<800?prefix+character:character;typedAt=now;

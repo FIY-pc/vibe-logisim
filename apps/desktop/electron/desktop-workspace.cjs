@@ -77,9 +77,9 @@ class DesktopWorkspace extends EventEmitter {
   references(refs = []) {
     if(!Array.isArray(refs)||refs.length>8)throw new Error('每条问题最多引用 8 处文件');
     return refs.map(ref => {
-      const {item} = this.folder.read(this.folder.current.legacyReferences?.[ref.id]||ref.id);
+      const item = this.folder.reference(ref);
       if(typeof ref.quote!=='string'||ref.quote.length>2000)throw new Error('文件摘录无效');
-      return {...item,page:ref.page||null,quote:ref.quote,reference:'workspace://file?'+new URLSearchParams({folderId:this.folder.current.id,path:item.path,...(ref.page?{page:ref.page}:{})})};
+      return {...item,page:ref.page||null,quote:ref.quote,reference:'workspace://file?'+new URLSearchParams({folderId:this.folder.current.id,path:item.path,pathVersion:item.pathVersion,...(ref.page?{page:ref.page}:{})})};
     });
   }
 }
