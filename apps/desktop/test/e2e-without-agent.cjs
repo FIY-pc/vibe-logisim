@@ -45,6 +45,9 @@ async function pickFolder(file) {
     await launch();
     phase = 'open folder without AI';
     await page.locator('#emptyOpenButton').waitFor();
+    await page.waitForFunction(() => document.querySelector('#agentStatusLight').dataset.state === 'unavailable');
+    assert.equal(await page.locator('#conversationStarters button').count(), 3);
+    assert.equal(await page.locator('#conversationStarters button:enabled').count(), 0);
     await pickFolder(folder);
     await page.getByRole('button', {name: '新建电路', exact: true}).click();
     assert.equal((await session()).folder.root, folder);

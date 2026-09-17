@@ -40,7 +40,7 @@ async function bootstrap({ preserveStale = false, circuit = null } = {}) {
     projectState.folder=session.folder||null;
     ports.workspaceFolderChanged(projectState.folder);
     if (!sessionHasWorkspace(session)) {
-      showEmptyWorkspace();
+      await showEmptyWorkspace();
       return;
     }
 
@@ -99,7 +99,7 @@ async function bootstrap({ preserveStale = false, circuit = null } = {}) {
       await loadCircuit(displayName(preferred), { clearSelection: !preserveStale, navigation: {kind:"refresh"}, draftFocus:!sameProject?draftFocus:null });
       if(token!==bootstrapEpoch)return;
     } else {
-      showEmptyWorkspace("这份项目没有可读取的电路定义。");
+      await showEmptyWorkspace("这份项目没有可读取的电路定义。");
     }
     ports.startReviewPolling();
   }
@@ -121,7 +121,7 @@ function showEmptyWorkspace(detail) {
     projectState.circuit = null;
     projectState.circuitName = null;
     projectState.revision = null;
-    ports.openDraftProject();
+    const draftLoading = ports.openDraftProject();
     ports.momentsProjectChanged();
     ports.materialsProjectChanged();
     projectState.capabilities = {};
@@ -143,6 +143,7 @@ function showEmptyWorkspace(detail) {
     ports.renderProjectInfo();
     ui.staleBanner.hidden = true;
     ports.setCanvasStatus("", "idle");
+    return draftLoading;
   }
 
 function updateSessionChrome() {
@@ -401,7 +402,7 @@ async function openDesktopFile() {
       const result = await window.vibeDesktop.folder.open();
       if (result?.canceled) {
         ports.setCanvasStatus("", "idle");
-        return;
+        return false;
       }
       projectState.sourceChanged = false;
       ui.staleBanner.hidden = true;
@@ -409,9 +410,11 @@ async function openDesktopFile() {
       reviewState.review = null;
       reviewState.reviewSignature = "";
       await bootstrap();
+      return true;
     } catch (error) {
       ports.setCanvasStatus(`无法打开电路：${error.message}`, "error");
       ports.showToast(`打开失败：${error.message}`);
+      return false;
     }
   }
 

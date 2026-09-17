@@ -5,7 +5,7 @@ import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas", "review", "agent"];
 
-export const dependencies = ["draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
+export const dependencies = ["renderConversationStarters","draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
 
 export function createController({models, ui, client, ports}) {
   let workspaceEpoch = 0;
@@ -20,6 +20,7 @@ export function createController({models, ui, client, ports}) {
   const renderAgentHistory=messages=>conversation.history(messages);
 function updateComposerState() {
     ports.updateMaterialState();
+    ports.renderConversationStarters();
     if (!agentState.enabled) {
       ui.copyReferenceButton.hidden = false;
       ui.composerOptions.hidden = false;

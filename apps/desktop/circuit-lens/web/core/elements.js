@@ -74,6 +74,7 @@ export const ui = Object.fromEntries(
       "modelDialog", "modelClose", "modelConnection", "modelConnectionStatus", "modelReconnect", "modelChoice", "modelDescription",   "modelRefresh",  "modelError", "modelLoading", "modelBusy",
       "agentTimeline",
       "agentEmpty",
+      "conversationStarters",
       "proposalPane",
       "evidenceTitle",
       "proposalContent",

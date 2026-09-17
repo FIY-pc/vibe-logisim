@@ -2,7 +2,7 @@
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","applyCamera","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
+export const dependencies = ["mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","applyCamera","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
@@ -13,6 +13,7 @@ function bindEvents() {
     ports.mountProjectInfo();
     ports.mountMoments();
     ports.mountDraft();
+    ports.mountConversationStarters();
     ports.mountMaterials();
     ports.mountInterfaces();
     ports.mountManipulation();
