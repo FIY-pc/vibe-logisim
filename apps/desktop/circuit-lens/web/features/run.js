@@ -4,7 +4,7 @@ import {inputControl} from '../core/simulation-inputs.js';
 
 export const modelDependencies = ["project", "run"];
 
-export const dependencies = ["startSimulation","renderSimulationControls","updateMomentCapture","runtimeNavigationStarted","renderNavigation","setRenderingLive","loadCircuit","showToast","openMemory","openReviewPanel","renderInspector","selectComponent","switchReviewTab","updateMemoryFromSimulation"];
+export const dependencies = ["staticCircuitRender","startSimulation","renderSimulationControls","updateMomentCapture","runtimeNavigationStarted","renderNavigation","setRenderingLive","loadCircuit","showToast","openMemory","openReviewPanel","renderInspector","selectComponent","switchReviewTab","updateMemoryFromSimulation"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, run: runState} = models;
@@ -278,7 +278,7 @@ function renderSimulation(force = false) {
     const frame = sample?.id || `${projectState.revision}:${projectState.circuitName}:static`;
     if (frame !== runState.simulationFrame || force) {
       runState.simulationFrame = frame;
-      const render = sample?.render || projectState.circuit.render;
+      const render = sample?.render || ports.staticCircuitRender();
       if (render) {
         let image = ui.runtimeLayer.querySelector("image");
         if (!image) { image = makeSvg("image"); ui.runtimeLayer.replaceChildren(image); }

@@ -7,6 +7,7 @@ export function createController({models, ui, ports}) {
   const {project} = models;
   let epoch = 0, timer, pending = null, wanted = null, shown = null, failed = null;
   let live = false, imageUrl = null, mounted = false;
+  let staticFrame = null;
 
   function clearDetail() {
     ui.detailLayer.replaceChildren();
@@ -19,10 +20,9 @@ export function createController({models, ui, ports}) {
     pending?.abort(); clearDetail(); ui.renderStatus.hidden = true;
   }
 
-  function viewRequest() {
-    const render = project.circuit?.render;
-    const observation = ports.activeObservation();
-    if (!render?.viewportUrl || render.revisionId !== project.revision) return null;
+  function viewRequest({render = project.circuit?.render, observation = ports.activeObservation(),
+    revision = project.revision, circuit = project.circuitName, staticOnly = false} = {}) {
+    if (!render?.viewportUrl || render.revisionId !== revision) return null;
     const svg = ui.circuitCanvas, rect = svg.getBoundingClientRect(), matrix = svg.getScreenCTM();
     if (!matrix || !rect.width || !rect.height) return null;
     const ratio = Math.min(window.devicePixelRatio || 1, 3);
@@ -39,17 +39,73 @@ export function createController({models, ui, ports}) {
     if (observation) return {bounds,scale,live:true,sessionId:observation.sessionId,viewId:observation.viewId,
       projectId:project.session?.workspace?.id,circuit:project.circuitName,revision:project.revision,
       key:JSON.stringify([observation.sessionId,observation.viewId,bounds,scale])};
-    if (live) return null;
-    const query = new URLSearchParams({revisionId:project.revision, profileId:render.profileId,
-      name:project.circuitName, ...bounds, scale});
+    if (live && !staticOnly) return null;
+    const query = new URLSearchParams({revisionId:revision, profileId:render.profileId,
+      name:circuit, ...bounds, scale});
     const url = `${render.viewportUrl}?${query}`;
     return {bounds, scale, url, key:`${project.session?.workspace?.id}:${url}`,
-      projectId:project.session?.workspace?.id, circuit:project.circuitName, revision:project.revision};
+      projectId:project.session?.workspace?.id, circuit, revision};
+  }
+
+  async function decodeImage(url, signal) {
+    const response = await fetch(url, {signal});
+    if (!response.ok) throw new Error(`电路图像不可用（${response.status}）`);
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const decoded = new Image(); decoded.src = objectUrl;
+    try { await decoded.decode(); return {url:objectUrl, width:decoded.naturalWidth, height:decoded.naturalHeight}; }
+    catch (error) { URL.revokeObjectURL(objectUrl); throw error; }
+  }
+
+  // A document edit keeps its previous artwork and provisional components until
+  // both replacement resolutions can be presented in the same browser frame.
+  async function prepareCircuitRendering(circuit, {revision, preserveCamera = false}) {
+    if (!circuit.render) return null;
+    const projectId = project.session?.workspace?.id;
+    const detail = preserveCamera ? viewRequest({render:circuit.render, observation:null, revision,
+      circuit:circuit.name, staticOnly:true}) : null;
+    const results = await Promise.allSettled([decodeImage(circuit.render.url), detail ? decodeImage(detail.url) : null]);
+    if (results.some(result => result.status === 'rejected')) {
+      for (const result of results) if (result.status === 'fulfilled' && result.value) URL.revokeObjectURL(result.value.url);
+      throw results.find(result => result.status === 'rejected').reason;
+    }
+    return {projectId, revision, circuit:circuit.name,
+      base:{...circuit.render, url:results[0].value.url}, detail:detail && {...detail, image:results[1].value}};
+  }
+
+  function discardCircuitRendering(frame) {
+    if (frame?.base) URL.revokeObjectURL(frame.base.url);
+    if (frame?.detail) URL.revokeObjectURL(frame.detail.image.url);
+  }
+
+  function detailNode(request, decoded) {
+    return makeSvg('image', {href:decoded.url, ...request.bounds,
+      width:decoded.width/request.scale, height:decoded.height/request.scale, preserveAspectRatio:'none',
+      'data-circuit':request.circuit, 'data-revision':request.revision, 'data-scale':request.scale,
+      'data-pixel-width':decoded.width, 'data-pixel-height':decoded.height});
+  }
+
+  function commitCircuitRendering(frame) {
+    resetRendering();
+    if (staticFrame) URL.revokeObjectURL(staticFrame.base.url);
+    staticFrame = frame; live = false;
+    ui.runtimeLayer.replaceChildren();
+    if (!frame) return;
+    ui.runtimeLayer.append(makeSvg('image', {href:frame.base.url, ...frame.base.bounds, preserveAspectRatio:'none'}));
+    if (frame.detail) {
+      imageUrl = frame.detail.image.url;
+      ui.detailLayer.append(detailNode(frame.detail, frame.detail.image)); shown = frame.detail.key;
+      frame.detail = null; // Detail lifetime is now owned by clearDetail().
+    }
+  }
+
+  function staticCircuitRender() {
+    return staticFrame?.projectId === project.session?.workspace?.id && staticFrame.revision === project.circuit?.render?.revisionId &&
+      staticFrame.circuit === project.circuitName ? staticFrame.base : project.circuit?.render;
   }
 
   function scheduleRendering() {
     wanted = viewRequest(); clearTimeout(timer);
-    if (!wanted) {clearDetail(); ui.renderStatus.hidden = true; return;}
+    if (!wanted) {if (!project.projectBusy) clearDetail(); ui.renderStatus.hidden = true; return;}
     if (wanted.key === shown) {ui.renderStatus.hidden = true; return;}
     if (wanted.key === failed) return;
     ui.renderStatus.hidden = true;
@@ -81,17 +137,10 @@ export function createController({models, ui, ports}) {
         shown=request.key;failed=null;ui.renderStatus.hidden=true;
         return;
       }
-      const response = await fetch(request.url, {signal:controller.signal, cache:'no-store'});
-      if (!response.ok) throw new Error(`局部绘图不可用（${response.status}）`);
-      const blob = await response.blob();
+      const decoded = await decodeImage(request.url, controller.signal);
+      nextUrl = decoded.url;
       if (!isCurrent()) return;
-      nextUrl = URL.createObjectURL(blob);
-      const decoded = new Image(); decoded.src = nextUrl; await decoded.decode();
-      if (!isCurrent()) return;
-      const node = makeSvg('image', {href:nextUrl, ...request.bounds,
-        width:decoded.naturalWidth/request.scale, height:decoded.naturalHeight/request.scale, preserveAspectRatio:'none',
-        'data-circuit':request.circuit, 'data-revision':request.revision, 'data-scale':request.scale,
-        'data-pixel-width':decoded.naturalWidth, 'data-pixel-height':decoded.naturalHeight});
+      const node = detailNode(request, decoded);
       clearDetail(); imageUrl = nextUrl; nextUrl = null;
       ui.detailLayer.append(node); shown = request.key; failed = null;
       ui.renderStatus.hidden = true;
@@ -142,5 +191,6 @@ export function createController({models, ui, ports}) {
     ui.renderStatus.addEventListener('click', () => {failed = null; scheduleRendering();});
     window.addEventListener('pagehide', () => {clearInterval(densityTimer);resetRendering();});
   }
-  return Object.freeze({resetRendering, scheduleRendering, setRenderingLive, mountRendering});
+  return Object.freeze({prepareCircuitRendering, discardCircuitRendering, commitCircuitRendering, staticCircuitRender,
+    resetRendering, scheduleRendering, setRenderingLive, mountRendering});
 }

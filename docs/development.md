@@ -70,3 +70,11 @@ node apps/desktop/test/e2e-simulation-inputs.cjs /path/to/full_adder.circ
 ```
 
 原文件会复制到临时工作区。脚本直接点输入，核对八种组合，检查启动中快速点击、未运行时填值、总线、按钮松开、启动失败重试及切换文件后的旧点击隔离。可追加独立包可执行文件路径，改为验收打包版本。
+
+放置时的图面连续性可用同一份全加器验证：
+
+```sh
+node apps/desktop/test/e2e-placement-rendering.cjs /path/to/full_adder.circ
+```
+
+通过真实鼠标在放大和普通视野放置，延迟真实高清图响应，检查等待期间原图和新组件持续存在、后续点击保留、视野稳定、切换文件后丢弃旧图。记录逐帧状态与 Chromium 实际绘制的 PNG，便于检查局部闪烁；不替换原生电路结果，不消耗模型额度。

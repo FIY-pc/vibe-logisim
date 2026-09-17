@@ -5,7 +5,7 @@ import { wirePath } from '../core/wire-path.js';
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["placementViewportChanged","bindSelectionDrag","resetManipulation","selectionSnapshot","invalidateSimulationFrame","pressButton","activeObservation","clearSelection","enterCircuit","resetRendering","scheduleRendering","openMemory","performProjectAction","pokeComponent","releaseButton","selectComponent","selectRectangle","selectWire","setCanvasStatus","updateCapabilityState","updateSelectionClasses","renderInspector"];
+export const dependencies = ["commitCircuitRendering","placementViewportChanged","bindSelectionDrag","resetManipulation","selectionSnapshot","invalidateSimulationFrame","pressButton","activeObservation","clearSelection","enterCircuit","scheduleRendering","openMemory","performProjectAction","pokeComponent","releaseButton","selectComponent","selectRectangle","selectWire","setCanvasStatus","updateCapabilityState","updateSelectionClasses","renderInspector"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
@@ -41,30 +41,29 @@ function buildWireNetLookup() {
 
 let componentNodes = new Map(), componentContext = null;
 const optimisticNodes = new Map();
-function renderCircuit({preserveCamera = false} = {}) {
+function renderCircuit({preserveCamera = false, preparedFrame = null} = {}) {
     ports.resetManipulation();
     ports.invalidateSimulationFrame();
     canvasState.wireStart = null;
     canvasState.wirePoints = [];
     ui.circuitCanvas.querySelectorAll('.wire-port-hit.is-wire-start').forEach(node=>node.classList.remove('is-wire-start'));
-    ports.resetRendering();
-    ui.runtimeLayer.replaceChildren();
+    ports.commitCircuitRendering(preparedFrame);
     ui.wireLayer.replaceChildren();
-
-    for (const node of optimisticNodes.values()) node.remove();
-    optimisticNodes.clear();
 
     ui.interactionLayer.replaceChildren();
     const context = `${projectState.session?.workspace?.id}:${projectState.circuitName}:${!!projectState.circuit?.render}`;
+    for (const [id, entry] of optimisticNodes) {
+      const confirmed = projectState.circuit?.components.some(c => !c.optimistic &&
+        c.factory === entry.component.factory && c.location.x === entry.component.location.x && c.location.y === entry.component.location.y);
+      if (context !== componentContext || !projectState.circuit || confirmed) {
+        entry.node.remove(); optimisticNodes.delete(id);
+      }
+    }
     if (context !== componentContext || !projectState.circuit) {
       componentContext = context; componentNodes.clear(); ui.componentLayer.replaceChildren();
     }
     if (!projectState.circuit) return;
     ui.circuitCanvas.classList.toggle("is-native", Boolean(projectState.circuit.render));
-    if (projectState.circuit.render) {
-      const render = projectState.circuit.render;
-      ui.runtimeLayer.append(makeSvg("image", { href: render.url, ...render.bounds }));
-    }
     const wireNetLookup = buildWireNetLookup();
     const geometry = [];
     const exactConnectivity = projectState.capabilityState === "exact";
@@ -140,6 +139,12 @@ function renderCircuit({preserveCamera = false} = {}) {
 
     for (const [id, entry] of componentNodes) if (retained.get(id)?.node !== entry.node) entry.node.remove();
     componentNodes = retained;
+    // Clicks arriving while the committed image loads still belong to the next
+    // queued edit. Keep their already usable component and artwork on screen.
+    for (const {component, node} of optimisticNodes.values()) {
+      if (!projectState.circuit.components.some(c => c.componentId === component.componentId)) projectState.circuit.components.push(component);
+      ui.componentLayer.append(node);
+    }
 
     if (!projectState.circuit.components.length && !projectState.circuit.wires.length) {
       canvasState.worldBounds = {x:0,y:0,width:900,height:650};
@@ -314,15 +319,15 @@ function appendOptimisticComponent(component) {
     node.classList.add('is-optimistic');
     node.dataset.optimistic = 'true';
     ui.componentLayer.append(node);
-    optimisticNodes.set(component.componentId, node);
+    optimisticNodes.set(component.componentId, {component, node});
     ports.updateSelectionClasses();
     ports.renderInspector();
     return true;
 }
 
 function removeOptimisticComponent(componentId) {
-    const node = optimisticNodes.get(componentId);
-    node?.remove();
+    const entry = optimisticNodes.get(componentId);
+    entry?.node.remove();
     optimisticNodes.delete(componentId);
     if (projectState.circuit) {
       projectState.circuit.components = projectState.circuit.components.filter(component => component.componentId !== componentId);

@@ -4,7 +4,7 @@ import { API } from '../core/endpoints.js';
 
 export const modelDependencies = ["project", "review"];
 
-export const dependencies = ["cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
+export const dependencies = ["prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
@@ -219,12 +219,19 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       const payload = await request(`${API.circuit}?name=${encodeURIComponent(name)}`);
       if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
 
+      const nextCircuit = normalizeCircuitResponse(payload);
+      const nextRevision = firstDefined(responseRevision(payload), projectState.revision);
+      const preparedFrame = await ports.prepareCircuitRendering(nextCircuit, {revision:nextRevision, preserveCamera:editing});
+      if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) {
+        ports.discardCircuitRendering(preparedFrame); return;
+      }
+
       projectState.circuitName = name;
       ports.closeMemory();
       ui.currentCircuitName.textContent = name;
 
-      projectState.circuit = normalizeCircuitResponse(payload);
-      projectState.revision = firstDefined(responseRevision(payload), projectState.revision);
+      projectState.circuit = nextCircuit;
+      projectState.revision = nextRevision;
       projectState.capabilities = payload?.capabilities || projectState.capabilities || {};
       projectState.runtime = payload?.runtime || projectState.runtime;
       projectState.sourceChanged = Boolean(firstDefined(
@@ -237,7 +244,7 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       ports.updateCapabilityState(payload);
       updateSessionChrome();
       renderCircuitList();
-      ports.renderCircuit({preserveCamera:editing});
+      ports.renderCircuit({preserveCamera:editing, preparedFrame});
       ports.placementContextChanged();
       ports.componentsContextChanged();
       const returnEntry = ports.didNavigateCircuit(name, navigation);
