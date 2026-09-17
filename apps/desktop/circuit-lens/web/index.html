@@ -142,6 +142,7 @@
               <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 8V3h5M12 3h5v5M17 12v5h-5M8 17H3v-5" /></svg>
               适合
             </button>
+            <button class="tool-button" id="gridToggle" type="button" aria-label="网格" aria-pressed="false" aria-keyshortcuts="G" title="显示网格（G）"></button>
             <button class="tool-button" id="deleteSelectionButton" aria-label="删除选中对象" title="删除选中对象（Backspace / Delete）" aria-keyshortcuts="Backspace Delete" disabled>⌫</button>
           </div>
 
@@ -156,11 +157,10 @@
             aria-label="可平移、缩放和框选的电路画布"
           >
             <defs>
-              <pattern id="placementGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="0.65" fill="#cbd5e6" /></pattern>
-              <pattern id="minorGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <pattern id="minorGrid" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
                 <path d="M10 0H0V10" class="minor-grid-line" />
               </pattern>
-              <pattern id="majorGrid" width="50" height="50" patternUnits="userSpaceOnUse">
+              <pattern id="majorGrid" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
                 <rect width="50" height="50" fill="url(#minorGrid)" />
                 <path d="M50 0H0V50" class="major-grid-line" />
               </pattern>
@@ -169,9 +169,9 @@
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
             </defs>
-            <rect class="grid-plane" id="gridPlane" x="-10000" y="-10000" width="20000" height="20000" />
-            <g id="nativeArtwork" pointer-events="none"><g id="runtimeLayer"></g><g id="detailLayer"></g></g><g id="wireLayer"></g>
-            <g id="componentLayer"></g>
+            <g id="nativeArtwork" pointer-events="none"><g id="runtimeLayer"></g><g id="detailLayer"></g></g>
+            <rect class="grid-plane" id="gridPlane" aria-hidden="true" pointer-events="none" />
+            <g id="wireLayer"></g><g id="componentLayer"></g>
             <g id="interactionLayer"></g><g id="placementLayer" pointer-events="none"></g>
           </svg>
 

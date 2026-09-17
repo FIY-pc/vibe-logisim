@@ -37,6 +37,10 @@ contextBridge.exposeInMainWorld(
     reloadCircuit: () => ipcRenderer.invoke("vibe-logisim:reload-circuit"),
     openCandidate: (request) => ipcRenderer.invoke("vibe-logisim:open-candidate", request),
     projectAction: (action, request) => ipcRenderer.invoke("vibe-logisim:project-action", action, request),
+    canvasPreferences:Object.freeze({
+      read:()=>ipcRenderer.invoke('vibe-logisim:canvas-preferences-read'),
+      write:value=>ipcRenderer.invoke('vibe-logisim:canvas-preferences-write',value),
+    }),
     getLayout: () => ipcRenderer.invoke("vibe-logisim:layout-read"),
     setLayout: value => ipcRenderer.invoke("vibe-logisim:layout-write", value),
     getAppInfo: () => ipcRenderer.invoke("vibe-logisim:app-info"),

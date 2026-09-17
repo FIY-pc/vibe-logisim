@@ -5,7 +5,7 @@ import { wirePath } from '../core/wire-path.js';
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["commitCircuitRendering","placementViewportChanged","bindSelectionDrag","resetManipulation","selectionSnapshot","invalidateSimulationFrame","pressButton","activeObservation","clearSelection","enterCircuit","scheduleRendering","openMemory","performProjectAction","pokeComponent","releaseButton","selectComponent","selectRectangle","selectWire","setCanvasStatus","updateCapabilityState","updateSelectionClasses","renderInspector"];
+export const dependencies = ["gridViewportChanged","commitCircuitRendering","placementViewportChanged","bindSelectionDrag","resetManipulation","selectionSnapshot","invalidateSimulationFrame","pressButton","activeObservation","clearSelection","enterCircuit","scheduleRendering","openMemory","performProjectAction","pokeComponent","releaseButton","selectComponent","selectRectangle","selectWire","setCanvasStatus","updateCapabilityState","updateSelectionClasses","renderInspector"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
@@ -380,6 +380,7 @@ function applyCamera() {
     ui.circuitCanvas.setAttribute("viewBox", `${camera.x} ${camera.y} ${camera.width} ${camera.height}`);
     const percent = Math.round((canvasState.fitCameraWidth / camera.width) * 100);
     ui.zoomReadout.textContent = `${Math.max(1, percent)}%`;
+    ports.gridViewportChanged();
     ports.scheduleRendering();
     ports.placementViewportChanged();
   }

@@ -256,6 +256,7 @@ async function selectFolderCircuit(relative) {
   return transitionWorkspace('document-selected', () => desktopWorkspace.run(() => desktopWorkspace.select(relative)), {preserveConversation:true});
 }
 function registerIpc() {
+  require('./canvas-preferences.cjs').registerCanvasPreferences({ipcMain,userData:app.getPath('userData'),trusted:isTrustedRenderer});
   registerFolderIpc({ipcMain,dialog,shell,nativeImage,workspace:desktopWorkspace,trusted:isTrustedRenderer,window:()=>mainWindow,open:openFolder,select:selectFolderCircuit,mutate:operation=>{
     if(workspaceTransitioning)throw workspaceChangedError();
     if(codex.snapshot().busy||desktopWorkspace.turnActive)throw new Error('请先停止 AI 回答，再移动或删除文件');

@@ -14,6 +14,7 @@ import * as finder from './features/finder.js';
 import * as navigation from './features/navigation.js';
 import * as rendering from './features/rendering.js';
 import * as canvas from './features/canvas.js';
+import * as grid from './features/grid.js';
 import * as manipulation from './features/manipulation.js';
 import * as focus from './features/focus.js';
 import * as inspector from './features/inspector.js';
@@ -38,5 +39,5 @@ import * as agentConnection from './features/agent-connection.js';
 import * as review from './features/review.js';
 import * as events from './features/events.js';
 
-const workspace = compose({files, components, placement, project, projectInfo, connections, shell, layout, finder, navigation, rendering, canvas,manipulation, focus, inspector, run, simulationControls, conversations, draft, materials, moments, references, memory, history, comparison, candidateEvidence, interfaces, changes, candidates, agent, conversationStarters, agentConnection, agentPreferences, review, events}, {models: createModels(), ui, client: createStudioClient()});
+const workspace = compose({files, components, placement, project, projectInfo, connections, shell, layout, finder, navigation, rendering, canvas, grid,manipulation, focus, inspector, run, simulationControls, conversations, draft, materials, moments, references, memory, history, comparison, candidateEvidence, interfaces, changes, candidates, agent, conversationStarters, agentConnection, agentPreferences, review, events}, {models: createModels(), ui, client: createStudioClient()});
 workspace.events.mount();
