@@ -63,7 +63,7 @@ export function createFileTree({element,onOpen,onToggle,onContext,onSelect,onCre
     for(const entry of entries) {
       fragment.append(draggedEntry()?.path===entry.path?find(entry.path)?.cloneNode(true)||rowFor(entry):rowFor(entry));
       if(entry.kind==='directory'&&expanded.has(entry.path)&&entry.empty) {
-        const empty=makeElement('div','file-empty-branch','空文件夹');empty.setAttribute('role','none');empty.style.setProperty('--depth',entry.depth+1);fragment.append(empty);
+        const empty=makeElement('div','file-empty-branch','空文件夹');empty.setAttribute('role','none');empty.dataset.path=entry.path;empty.style.setProperty('--depth',entry.depth+1);fragment.append(empty);
       }
       if(entry.error) {
         const error=makeElement('div','file-branch-error');error.setAttribute('role','none');error.style.setProperty('--depth',entry.depth+1);

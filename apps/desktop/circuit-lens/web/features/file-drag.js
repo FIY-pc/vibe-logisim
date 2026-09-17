@@ -12,6 +12,14 @@ export function beginFileDrag(event,entry,folder) {
   event.dataTransfer.effectAllowed='copyMove';
   event.dataTransfer.setData(entryType,JSON.stringify(active));
   event.dataTransfer.setData('text/plain',entry.path);
+  // A whole-row drag image hides the destination. Carry just the file's icon
+  // and name, below the pointer so the receiving row stays visible.
+  const preview=document.createElement('div');preview.className='file-drag-preview';preview.setAttribute('aria-hidden','true');
+  const glyph=event.currentTarget.querySelector(':scope > svg')?.cloneNode(true);
+  if(glyph)preview.append(glyph);
+  const name=document.createElement('span');name.textContent=entry.name;preview.append(name);document.body.append(preview);
+  event.dataTransfer.setDragImage(preview,-14,-18);
+  requestAnimationFrame(()=>preview.remove());
 }
 export function readFileDrag(event) {
   try {

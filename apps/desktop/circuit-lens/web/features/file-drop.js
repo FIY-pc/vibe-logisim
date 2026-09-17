@@ -4,15 +4,11 @@ import {hasFileDrag,isEntryDrag,draggedEntry,readFileDrag} from './file-drag.js'
 // targets that directory, a file row its parent, and the heading targets root.
 export function createFileDrop({element,folder,api,onImported,fail,canMove=()=>true}) {
   let target=null,busy=false,hoverTimer,scrollFrame=0,scrollSpeed=0;
-  const hint=document.createElement('div');
-  hint.className='file-drop-hint';hint.hidden=true;hint.setAttribute('role','status');element.append(hint);
-  const tree=element.querySelector('#fileTree');
+  const tree=element.querySelector('#fileTree'),heading=element.querySelector('.file-heading');
   function scroll(){if(!scrollSpeed)return;tree.scrollTop+=scrollSpeed;scrollFrame=requestAnimationFrame(scroll);}
   function clear(){
     target=null;clearTimeout(hoverTimer);cancelAnimationFrame(scrollFrame);scrollFrame=0;scrollSpeed=0;
-    element.classList.remove('is-file-drop');
     element.querySelectorAll('.is-drop-target').forEach(row=>row.classList.remove('is-drop-target'));
-    if(!busy)hint.hidden=true;
   }
   function valid(entry,path){
     return folder()&&!busy&&(!entry||(entry.folderId===folder().id&&canMove()
@@ -22,7 +18,8 @@ export function createFileDrop({element,folder,api,onImported,fail,canMove=()=>t
   function over(event){
     if(!hasFileDrag(event))return;
     event.preventDefault();event.stopPropagation();
-    const row=event.target.closest('.file-row'),path=row?.dataset.kind==='folder'?row.dataset.path:(row?.dataset.path||'').split('/').slice(0,-1).join('/');
+    const row=event.target.closest('.file-row'),empty=event.target.closest('.file-empty-branch');
+    const path=row?.dataset.kind==='folder'?row.dataset.path:empty?.dataset.path??(row?.dataset.path||'').split('/').slice(0,-1).join('/');
     const internal=isEntryDrag(event),entry=internal?draggedEntry():null;
     if(!valid(entry,path)||(internal&&!entry)) {event.dataTransfer.dropEffect='none';clear();return;}
     event.dataTransfer.dropEffect=internal?'move':'copy';
@@ -30,11 +27,9 @@ export function createFileDrop({element,folder,api,onImported,fail,canMove=()=>t
       clearTimeout(hoverTimer);target=path;
       element.querySelectorAll('.is-drop-target').forEach(row=>row.classList.remove('is-drop-target'));
       const directory=[...element.querySelectorAll('.file-row')].find(row=>row.dataset.path===path&&row.dataset.kind==='folder');
-      directory?.classList.add('is-drop-target');
+      (path?directory:heading)?.classList.add('is-drop-target');
       if(directory?.getAttribute('aria-expanded')==='false')hoverTimer=setTimeout(()=>directory.click(),650);
     }
-    element.classList.add('is-file-drop');hint.hidden=false;
-    hint.textContent=(internal?'移动到 ':'复制到 ')+(path?path.split('/').at(-1):folder().name);
     if(document.getElementById('filesTab').getAttribute('aria-selected')!=='true')document.getElementById('filesTab').click();
     const collapse=document.getElementById('collapseFiles');if(collapse.getAttribute('aria-expanded')==='false')collapse.click();
     const bounds=tree.getBoundingClientRect();scrollSpeed=event.clientY<bounds.top+24?-6:event.clientY>bounds.bottom-24?6:0;
@@ -48,7 +43,7 @@ export function createFileDrop({element,folder,api,onImported,fail,canMove=()=>t
     const binding=folder(),destination=target,files=Array.from(event.dataTransfer.files),internal=isEntryDrag(event);
     clear();
     if(!binding||busy||destination===null)return;
-    busy=true;hint.hidden=false;hint.textContent=internal?'正在移动…':'正在复制…';
+    busy=true;
     try {
       let result;
       if(internal){

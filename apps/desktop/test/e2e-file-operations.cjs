@@ -25,7 +25,7 @@ async function drag(source,target,{hover=0}={}){
  let a,b;await waitUntil(async()=>{a=await source.boundingBox();b=await target.boundingBox();return a&&b;});
  await page.mouse.move(a.x+a.width/2,a.y+a.height/2);await page.mouse.down();await page.mouse.move(a.x+a.width/2+8,a.y+a.height/2,{steps:4});
  await page.mouse.move(b.x+b.width/2,b.y+b.height/2,{steps:12});
- if(hover){await new Promise(resolve=>setTimeout(resolve,hover));assert.equal(await target.getAttribute('aria-expanded'),'true');assert.match(await target.getAttribute('class'),/is-drop-target/);}
+ if(hover){await new Promise(resolve=>setTimeout(resolve,hover));assert.equal(await target.getAttribute('aria-expanded'),'true');assert.match(await target.getAttribute('class'),/is-drop-target/);assert.equal(await page.locator('#fileExplorer .is-drop-target').count(),1);assert.equal(await page.locator('#fileExplorer.is-file-drop,.file-drop-hint').count(),0);await page.screenshot({path:root+'/directory-drag.png'});}
  await page.mouse.move(b.x+b.width/2+1,b.y+b.height/2,{steps:2});await page.mouse.up();
 }
 async function preview(text){await page.locator('.material-chip-label').first().click();await waitUntil(async()=> (await page.locator('#materialsPreview').innerText()).includes(text));await page.locator('#materialsClose').click();}
