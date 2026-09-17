@@ -62,6 +62,7 @@ export const ui = Object.fromEntries(
       "evidenceTab",
       "agentTab",
       "agentTabLight",
+      "conversationPicker","conversationTitle","conversationNew","conversationMenu","conversationSearch","conversationError","conversationBusy","conversationList","conversationArchive","conversationFolder",
       "agentSettings","connectionDialog","connectionClose","connectionModel","connectionPreference","connectionError","modelSearch",
       "composerPreferences", "agentMode", "agentModel", "agentEffort", "modeMenu", "modeOptions", "modeError", "effortMenu", "effortOptions", "effortError", "attachMaterials",  
       "proposalTab",

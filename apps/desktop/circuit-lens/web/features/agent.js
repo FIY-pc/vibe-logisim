@@ -5,7 +5,7 @@ import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas", "review", "agent"];
 
-export const dependencies = ["renderConversationStarters","draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
+export const dependencies = ["conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
 
 export function createController({models, ui, client, ports}) {
   let workspaceEpoch = 0;
@@ -112,6 +112,7 @@ async function askAgent() {
       const query = snapshot ? ports.queryIntent(snapshot) : {kind:"overview",ids:[]};
       const result = await window.vibeDesktop.agent.ask({
         question,
+        conversationId: ports.conversationBinding().id,
         folderId: projectState.folder?.id,
         revisionId: includeCircuit ? submittedRevision : null,
         selectionId: selection.id,
@@ -207,11 +208,13 @@ function applyAgentState(snapshot = {}) {
     ui.agentTabLight.dataset.state = lightState;
     ui.agentStatusText.textContent = labels[agentState.status] || "本机 Codex 状态未知";
     ports.updateAgentConnection(snapshot);
+    ports.renderConversationHeader();
     updateComposerState();
   }
 
 function handleAgentEvent(event) {
     if (!event || typeof event !== "object") return;
+    if (event.type === 'conversations-changed') {ports.receiveConversationState(event); return;}
     if (event.type === "candidate-ready") { ports.loadCandidates(); return; }
     if (event.type === "circuit-change") {
       const card = makeElement("div", "agent-change");

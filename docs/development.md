@@ -78,3 +78,12 @@ node apps/desktop/test/e2e-placement-rendering.cjs /path/to/full_adder.circ
 ```
 
 通过真实鼠标在放大和普通视野放置，延迟真实高清图响应，检查等待期间原图和新组件持续存在、后续点击保留、视野稳定、切换文件后丢弃旧图。记录逐帧状态与 Chromium 实际绘制的 PNG，便于检查局部闪烁；不替换原生电路结果，不消耗模型额度。
+
+对话管理与草稿归属的验收：
+
+```sh
+node --test apps/desktop/electron/conversations.test.cjs apps/desktop/electron/conversation-drafts.test.cjs
+node apps/desktop/test/e2e-conversations.cjs
+```
+
+窗口脚本在临时文件夹打开真实 Electron，经鼠标和键盘新建、搜索、重命名、归档和恢复，核对不同会话的文字与引用、跨文件夹隔离、切电路保留会话、重开恢复和电路文件未改变；历史消息使用明确标注的本地夹具，回答中状态也为回放。单元验证另覆盖旧索引备份迁移、延迟草稿保存、损坏记录保留，以及协议回放下不同会话续接各自原生线程。两者均不调用模型，不证明真实模型回答质量。

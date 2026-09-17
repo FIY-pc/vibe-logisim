@@ -11,6 +11,7 @@ const START_TIMEOUT_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 60_000;
 const GRACEFUL_STOP_MS = 1_500;
 const FORCED_STOP_MS = 2_000;
+const {ConversationStore}=require('./conversation-store.cjs');
 const {splitContext,keptObservationContext,materialContext}=require("./conversation-context.cjs");
 const MAX_CONTEXT_BYTES = 512 * 1024;
 const DISABLED_CODEX_FEATURES = [
@@ -144,6 +145,8 @@ class CodexBackend extends EventEmitter {
     this.runtimeWorkDir = "/workspace";
     this.profileDir = path.resolve(profileDir || path.join(workDir, "codex-home"));
     this.sessionStorePath = sessionStorePath;
+    this.conversations = new ConversationStore(sessionStorePath);
+    this.conversationId = null;
     this.version = version;
     this.ephemeral = ephemeral;
     this.circuitTool = circuitTool;
@@ -198,6 +201,7 @@ class CodexBackend extends EventEmitter {
         ? { type: this.account.type || "unknown", planType: this.account.planType || null }
         : null,
       threadId: this.threadId,
+      conversationId: this.conversationId,
       revisionId: this.threadRevisionId,
       turnId: this.activeTurnId,
       busy: this.finalizing || this.workspaceTransitioning || this.turnStarting || Boolean(this.activeTurnId) || Boolean(this.reconnecting),
@@ -662,7 +666,16 @@ class CodexBackend extends EventEmitter {
 
   async resumeWorkspace({ workspaceKey, revisionId }) {
     // Restore visible conversation without fabricating a new user turn.
-    if (this.ephemeral || !this.#readSessionStore()?.workspaces?.[workspaceKey]?.threadId) return { resumed: false };
+    if (this.ephemeral) return {resumed:false};
+    const saved = this.conversations.ensure(workspaceKey);
+    if (this.workspaceKey !== workspaceKey || this.conversationId !== saved.id) {
+      if (this.threadId) throw workspaceChangedError();
+      this.workspaceKey = workspaceKey; this.conversationId = saved.id;
+      this.history = saved.messages || [];
+      this.emit('event', {type:'conversations-changed', activate:true, workspaceKey, ...this.conversations.state(workspaceKey)});
+    }
+    if (this.threadId) return {resumed:true, threadId:this.threadId};
+    if (!saved.threadId) return {resumed:false};
     const epoch = this.workspaceEpoch;
     await this.start();
     const generation = this.childEpoch;
@@ -728,6 +741,7 @@ class CodexBackend extends EventEmitter {
     this.activeTurnEpoch = null;
     this.threadId = null;
     this.workspaceKey = null;
+    this.conversationId = null;
     this.threadRevisionId = null;
     const processGroupId = this.processGroupId;
     this.stopping = true;
@@ -775,9 +789,8 @@ class CodexBackend extends EventEmitter {
       if (this.workspaceKey !== workspaceKey) throw workspaceChangedError();
       return;
     }
-    const savedWorkspace = this.ephemeral
-      ? null
-      : this.#readSessionStore()?.workspaces?.[workspaceKey];
+    const savedWorkspace = this.ephemeral ? null : this.conversations.ensure(workspaceKey);
+    this.conversationId = savedWorkspace?.id || null;
     const savedThreadId = savedWorkspace?.threadId;
     let result = null;
     let provisionalThreadId = null;
@@ -796,7 +809,7 @@ class CodexBackend extends EventEmitter {
           });
         } catch (error) {
           if (!isMissingThreadError(error)) throw error;
-          this.emit("log", "Saved circuit thread belongs to another isolated profile; starting a new one.");
+          throw new Error("这条对话的原始会话暂时不可用，已有记录仍保留。可重试连接，或新建对话继续。");
         }
       }
       provisionalThreadId = result?.thread?.id || null;
@@ -833,7 +846,8 @@ class CodexBackend extends EventEmitter {
       this.threadRevisionId = revisionId;
       provisionalThreadId = null;
       const restoredContexts = savedThreadId === threadId ? savedWorkspace?.messageContexts : null;
-      this.history = this.#historyFromThread(result.thread, restoredContexts);
+      const restoredHistory = this.#historyFromThread(result.thread, restoredContexts);
+      this.history = restoredHistory.length ? restoredHistory : savedWorkspace?.messages || [];
       if (!this.ephemeral) this.#rememberThread(workspaceKey, threadId);
       this.emit("event", { type: "thread-started", threadId, revisionId });
       if (this.history.length) {
@@ -860,6 +874,7 @@ class CodexBackend extends EventEmitter {
 
     this.threadId = null;
     this.workspaceKey = null;
+    this.conversationId = null;
     this.threadRevisionId = null;
     this.activeTurnId = null;
     this.activeTurnEpoch = null;
@@ -935,57 +950,48 @@ class CodexBackend extends EventEmitter {
     );
   }
 
-  #readSessionStore() {
-    if (!this.sessionStorePath) return { schema: "vibe-logisim.codex-sessions/v0", workspaces: {} };
+  conversationState(workspaceKey) {
+    if (!this.conversations.active(workspaceKey)) this.conversations.ensure(workspaceKey);
+    return {workspaceKey, ...this.conversations.state(workspaceKey)};
+  }
+
+  async changeConversation(workspaceKey, action, request) {
+    if (this.snapshot().busy) throw new Error('请先停止当前回答，再管理对话');
+    this.workspaceTransitioning = true;
+    const epoch = ++this.workspaceEpoch;
     try {
-      const value = JSON.parse(fs.readFileSync(this.sessionStorePath, "utf8"));
-      if (value?.schema === "vibe-logisim.codex-sessions/v0" && value.workspaces) return value;
-    } catch (_) {
-      // A missing or corrupt convenience index must not block a new thread.
+      return await this.#queueWorkspaceOperation(async () => {
+        if (epoch !== this.workspaceEpoch) throw workspaceChangedError();
+        const previous = this.conversations.active(workspaceKey)?.id;
+        const state = this.conversations.change(workspaceKey, action, request);
+        const activate = state.activeId !== previous || this.workspaceKey !== workspaceKey;
+        if (activate) {
+          await this.#resetWorkspaceNow('conversation-changed', epoch, false);
+          if (epoch !== this.workspaceEpoch) throw workspaceChangedError();
+          this.workspaceKey = workspaceKey; this.conversationId = state.activeId;
+          this.history = state.conversation.messages || [];
+        }
+        const result = {workspaceKey, ...state};
+        this.emit('event', {type:'conversations-changed', activate, ...result});
+        return result;
+      });
+    } finally {
+      if (epoch === this.workspaceEpoch) {
+        this.workspaceTransitioning = false;
+        if (['ready', 'busy'].includes(this.status)) this.#restoreLiveStatus(this.childEpoch, epoch);
+      }
     }
-    return { schema: "vibe-logisim.codex-sessions/v0", workspaces: {} };
   }
 
   #rememberThread(workspaceKey, threadId) {
-    if (!this.sessionStorePath) return;
-    const store = this.#readSessionStore();
-    const previous = store.workspaces[workspaceKey];
-    store.workspaces[workspaceKey] = {
-      threadId,
-      updatedAt: new Date().toISOString(),
-      messageContexts: previous?.threadId === threadId && previous.messageContexts
-        ? previous.messageContexts
-        : {},
-    };
-    this.#writeSessionStore(store);
+    this.conversations.remember(workspaceKey, {threadId, messages:this.history});
+    this.emit('event', {type:'conversations-changed', workspaceKey, ...this.conversations.state(workspaceKey)});
   }
 
   #rememberMessageContext(workspaceKey, messageId, context) {
-    if (!this.sessionStorePath || !this.threadId) return;
-    const store = this.#readSessionStore();
-    const previous = store.workspaces[workspaceKey];
-    const messageContexts = previous?.threadId === this.threadId && previous.messageContexts
-      ? { ...previous.messageContexts }
-      : {};
-    messageContexts[messageId] = context;
-    const messageIds = Object.keys(messageContexts);
-    for (const staleId of messageIds.slice(0, Math.max(0, messageIds.length - 120))) {
-      delete messageContexts[staleId];
-    }
-    store.workspaces[workspaceKey] = {
-      threadId: this.threadId,
-      updatedAt: new Date().toISOString(),
-      messageContexts,
-    };
-    this.#writeSessionStore(store);
-  }
-
-  #writeSessionStore(store) {
-    const parent = path.dirname(this.sessionStorePath);
-    fs.mkdirSync(parent, { recursive: true });
-    const temporary = `${this.sessionStorePath}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
-    fs.renameSync(temporary, this.sessionStorePath);
+    if (!this.threadId) return;
+    this.conversations.remember(workspaceKey, {threadId:this.threadId, messages:this.history, messageId, context});
+    this.emit('event', {type:'conversations-changed', workspaceKey, ...this.conversations.state(workspaceKey)});
   }
 
   #historyFromThread(thread, messageContexts = null) {
@@ -1168,6 +1174,10 @@ class CodexBackend extends EventEmitter {
           };
           if (existing) Object.assign(existing, complete);
           else this.history.push(complete);
+          if (!this.ephemeral && this.workspaceKey) {
+            try { this.conversations.remember(this.workspaceKey, {threadId:this.threadId, messages:this.history}); }
+            catch (error) { this.emit('event', {type:'warning', message:error.message}); }
+          }
         }
         this.emit("event", {
           type: method === "item/started" ? "assistant-started" : "assistant-completed",
@@ -1338,6 +1348,7 @@ class CodexBackend extends EventEmitter {
     this.threadId = null;
     this.workspaceKey = null;
     this.threadRevisionId = null;
+    this.conversationId = null;
     this.#rejectPending(new Error("Codex App Server exited."));
     if (expected) {
       this.#setStatus("stopped");

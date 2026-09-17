@@ -21,6 +21,7 @@ const {DesktopWorkspace} = require("./desktop-workspace.cjs");
 const {registerFolderIpc} = require("./folder-ipc.cjs");
 const {MaterialStore}=require('./material-store.cjs');
 const {registerMaterialIpc}=require('./material-ipc.cjs');
+const {registerConversationIpc}=require('./conversation-ipc.cjs');
 const {ConversationDraftStore}=require('./conversation-drafts.cjs');
 const {registerDraftIpc}=require('./draft-ipc.cjs');
 
@@ -256,7 +257,9 @@ async function selectFolderCircuit(relative) {
 }
 function registerIpc() {
   registerFolderIpc({ipcMain,dialog,shell,nativeImage,workspace:desktopWorkspace,trusted:isTrustedRenderer,window:()=>mainWindow,open:openFolder,select:selectFolderCircuit});
-  registerDraftIpc({ipcMain,store:new ConversationDraftStore(path.join(app.getPath('userData'),'conversation-drafts')),backend,trusted:isTrustedRenderer,transitioning:()=>workspaceTransitioning,generation:()=>workspaceGeneration,dialog,window:()=>mainWindow});
+  registerConversationIpc({ipcMain,backend,codex,trusted:isTrustedRenderer,transitioning:()=>workspaceTransitioning,
+    generation:()=>workspaceGeneration,begin:()=>{workspaceTransitioning=true;return ++workspaceGeneration;},end:token=>{if(token===workspaceGeneration)workspaceTransitioning=false;}});
+  registerDraftIpc({ipcMain,codex,store:new ConversationDraftStore(path.join(app.getPath('userData'),'conversation-drafts')),backend,trusted:isTrustedRenderer,transitioning:()=>workspaceTransitioning,generation:()=>workspaceGeneration,dialog,window:()=>mainWindow});
   registerMaterialIpc({ipcMain,dialog,nativeImage,store:materials,backend,codex:()=>codex,trusted:isTrustedRenderer,window:()=>mainWindow,transitioning:()=>workspaceTransitioning,generation:()=>workspaceGeneration});
   const layoutPath = path.join(app.getPath("userData"), "workspace-layout.json");
   ipcMain.handle("vibe-logisim:layout-read", event => {
@@ -457,6 +460,7 @@ function registerIpc() {
     if (workspaceTransitioning || expectedGeneration !== workspaceGeneration) {
       throw workspaceChangedError();
     }
+    if (rawRequest.conversationId && rawRequest.conversationId !== codex.conversationState(resolved.workspaceKey).activeId) throw new Error('对话已切换，问题仍保留在原对话');
     const accepted = await codex.ask({
       question: request.question,
       context: {...resolved.context,materials:desktopWorkspace.references(request.materialRefs)},

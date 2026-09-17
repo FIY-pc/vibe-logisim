@@ -5,9 +5,10 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const pendingDrafts=new Map();
 const draftErrors=new Set();
 function saveDraft(request) {
-  pendingDrafts.set(request.projectId,request);
+  const key=request.projectId+':'+(request.conversationId||'legacy');
+  pendingDrafts.set(key,request);
   return ipcRenderer.invoke('vibe-logisim:draft-save',request).then(result=>{
-    if(pendingDrafts.get(request.projectId)?.sequence<=result.sequence)pendingDrafts.delete(request.projectId);
+    if(pendingDrafts.get(key)?.sequence<=result.sequence)pendingDrafts.delete(key);
     return result;
   });
 }
@@ -17,7 +18,7 @@ window.addEventListener('beforeunload',event=>{
   if(result.ok)pendingDrafts.clear();
   else if(!result.discard) {
     event.preventDefault();event.returnValue=false;
-    for(const listener of draftErrors)listener({projectId:result.projectId,message:result.error});
+    for(const listener of draftErrors)listener({projectId:result.projectId,conversationId:result.conversationId,message:result.error});
   }
 });
 
@@ -53,6 +54,7 @@ contextBridge.exposeInMainWorld(
       remove: request => ipcRenderer.invoke('vibe-logisim:materials-remove',request),
     }),
     agent: Object.freeze({
+      conversations: request => ipcRenderer.invoke("vibe-logisim:conversations", request),
       getState: () => ipcRenderer.invoke("vibe-logisim:agent-state"),
       listModels: refresh => ipcRenderer.invoke("vibe-logisim:agent-models", refresh),
       selectModel: selection => ipcRenderer.invoke("vibe-logisim:agent-model-select", selection),

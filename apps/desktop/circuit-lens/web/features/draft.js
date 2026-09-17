@@ -1,13 +1,14 @@
 import {ConversationDraft} from '../core/conversation-draft.js';
 
 export const modelDependencies=['project'];
-export const dependencies=['selectionSnapshot','restoreDraftSelection','renderMaterialAttachments','renderMomentAttachments','resizeQuestion','updateComposerState','showToast'];
+export const dependencies=['ensureConversations','conversationBinding','selectionSnapshot','restoreDraftSelection','renderMaterialAttachments','renderMomentAttachments','resizeQuestion','updateComposerState','showToast'];
 
 export function createController({models,ui,ports}) {
   const api=window.vibeDesktop?.drafts,entries=new Map();
   let active=null,epoch=0,loading=false,loadError='';
   const projectId=()=>models.project.folder?.id||models.project.session?.workspace?.id||null;
-  const available=()=>Boolean(active&&active.projectId===projectId()&&!loading);
+  const scopeKey=()=>projectId()+':'+(ports.conversationBinding().id||'legacy');
+  const available=()=>Boolean(active&&active.key===scopeKey()&&!loading&&!ports.conversationBinding().busy);
   const failedEntry=()=>active?.error?active:[...entries.values()].find(entry=>entry.error);
   const message=error=>String(error?.message||error).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,'');
   function renderError() {
@@ -18,7 +19,8 @@ export function createController({models,ui,ports}) {
   }
   function render() {
     ui.questionInput.dataset.workspaceId=active?.projectId||'';
-    ui.questionInput.value=available()?active.model.value.text:'';
+    ui.questionInput.dataset.conversationId=active?.conversationId||'';
+    ui.questionInput.value=active?.key===scopeKey()&&!loading?active.model.value.text:'';
     ports.renderMaterialAttachments();ports.renderMomentAttachments();
     ports.resizeQuestion();renderError();ports.updateComposerState();
   }
@@ -27,7 +29,7 @@ export function createController({models,ui,ports}) {
     renderError();
     if(!api){entry.saved=sequence;return;}
     try {
-      await api.save({projectId:entry.projectId,writer:entry.writer,sequence,draft:entry.model.value});
+      await api.save({projectId:entry.projectId,conversationId:entry.conversationId,writer:entry.writer,sequence,draft:entry.model.value});
       entry.saved=Math.max(entry.saved,sequence);
       if(entry.sequence===sequence)entry.error='';
     }catch(error){if(entry.sequence===sequence)entry.error=message(error);}
@@ -39,20 +41,23 @@ export function createController({models,ui,ports}) {
     persist(active);renderError();ports.updateComposerState();
   }
   async function openDraftProject({retry=false}={}) {
-    const id=projectId();
-    if(!retry&&id===active?.projectId)return structuredClone(active.model.value.focus);
+    const expectedProject=projectId();
+    await ports.ensureConversations();
+    if(expectedProject!==projectId())return null;
+    const id=projectId(),conversationId=ports.conversationBinding().id||'legacy',key=scopeKey();
+    if(!retry&&key===active?.key)return structuredClone(active.model.value.focus);
     const token=++epoch;loading=Boolean(id);loadError='';active=null;render();
     if(!id){loading=false;render();return null;}
-    let entry=entries.get(id);
+    let entry=entries.get(key);
     if(!entry) {
       try {
-        const result=api?await api.open({projectId:id}):{};
-        if(token!==epoch||id!==projectId())return null;
-        entry={projectId:id,name:models.project.folder?.name||models.project.session?.workspace?.name||'另一份工程',writer:result.writer,model:new ConversationDraft(result.draft),sequence:0,saved:0,error:''};
-        entries.set(id,entry);
+        const result=api?await api.open({projectId:id,conversationId}):{};
+        if(token!==epoch||key!==scopeKey())return null;
+        entry={key,projectId:id,conversationId,name:models.project.folder?.name||models.project.session?.workspace?.name||'另一份工程',writer:result.writer,model:new ConversationDraft(result.draft),sequence:0,saved:0,error:''};
+        entries.set(key,entry);
       }catch(error){if(token===epoch){loading=false;loadError=message(error);render();}return null;}
     }
-    if(token!==epoch||id!==projectId())return null;
+    if(token!==epoch||key!==scopeKey())return null;
     active=entry;loading=false;render();return structuredClone(entry.model.value.focus);
   }
   function draftReferences(kind){return available()?structuredClone(active.model.value[kind]):[];}
@@ -74,6 +79,7 @@ export function createController({models,ui,ports}) {
   }
   function restoreDraftFocus(focus) {
     if(!focus||!available()||!active.model.hasContent)return;
+    if(!focus.rectangle&&![focus.componentIds,focus.netIds,focus.wireIds].some(ids=>ids?.length))return;
     if(!ports.restoreDraftSelection(focus))ports.showToast('草稿已恢复；电路已变化，请重新选择要讨论的部分');
   }
   function mountDraft() {
@@ -94,7 +100,7 @@ export function createController({models,ui,ports}) {
       catch(error){ports.showToast(message(error));}
     });
     api?.onError(error=>{
-      const entry=entries.get(error.projectId);
+      const entry=entries.get(error.projectId+':'+(error.conversationId||'legacy'));
       if(entry)entry.error=message(error);
       renderError();ports.showToast('草稿尚未保留，窗口继续保持打开。可重试或复制内容。');
     });

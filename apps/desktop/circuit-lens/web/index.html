@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="interface.css" />
     <link rel="stylesheet" href="moments.css" />
     <link rel="stylesheet" href="conversation.css" />
+    <link rel="stylesheet" href="conversations.css" />
     <link rel="stylesheet" href="materials.css" />
     <link rel="stylesheet" href="simulation.css" />
   <link rel="stylesheet" href="/files.css" />
@@ -227,10 +228,11 @@
               <div class="agent-identity">
                 <span class="agent-status-light" id="agentStatusLight" data-state="idle" aria-hidden="true"></span>
                 <div>
-                  <strong>电路助手</strong>
+                  <button id="conversationPicker" class="conversation-picker" aria-label="切换对话" aria-haspopup="dialog" aria-expanded="false"><strong id="conversationTitle">电路助手</strong></button>
                   <span id="agentStatusText">正在连接本机 Codex…</span>
                 </div>
               </div>
+              <button id="conversationNew" class="chat-action" aria-label="新对话" aria-keyshortcuts="Control+Shift+O Meta+Shift+O" title="新对话"></button>
               <button id="agentSettings" class="chat-action" aria-label="AI 设置" title="AI 设置" aria-haspopup="dialog"></button>
             </div>
             <aside class="agent-notice" id="agentNotice" hidden>
@@ -405,6 +407,14 @@
       <div class="save-actions"><button id="cancelSave" class="quiet-button">取消</button><button id="confirmSave" class="primary-button">保存文件</button></div>
     </dialog>
     <input id="fileInput" type="file" accept=".circ,application/xml,text/xml" hidden />
+    <section id="conversationMenu" class="conversation-menu" popover role="dialog" aria-label="对话历史">
+      <header><strong>对话</strong><span id="conversationFolder"></span></header>
+      <input id="conversationSearch" type="search" placeholder="搜索对话" aria-label="搜索对话" autocomplete="off" />
+      <p id="conversationError" class="conversation-error" role="alert" hidden></p>
+      <p id="conversationBusy" class="conversation-list-hint" hidden></p>
+      <div id="conversationList" class="conversation-list" aria-label="对话列表"></div>
+      <footer><button id="conversationArchive" class="quiet-button" aria-pressed="false">已归档</button></footer>
+    </section>
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <dialog id="momentDialog" class="moment-dialog" aria-labelledby="momentHeading">
       <header class="moment-heading"><div><h2 id="momentHeading">留存观察</h2><p>保留想讨论的时刻，也可以选择两个时刻比较。</p></div><button id="momentClose" class="icon-button" aria-label="关闭留存观察">×</button></header>

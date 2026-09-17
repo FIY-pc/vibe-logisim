@@ -27,14 +27,16 @@ function validateDraft(value) {
 // model's writable workspace. Each open renderer gets a sequenced writer lease.
 class ConversationDraftStore {
   constructor(root){this.root=path.resolve(root);this.writers=new Map();}
-  file(projectId) {
+  key(projectId, conversationId = 'legacy') { return projectId + ':' + conversationId; }
+  file(projectId, conversationId = 'legacy') {
     if(!/^(project|folder)-[a-f0-9]{16}$/.test(projectId||''))throw new Error('请先打开工程');
+    if(conversationId!=='legacy'&&!/^[a-f0-9-]{36}$/.test(conversationId))throw new Error('对话标识无效');
     fs.mkdirSync(this.root,{recursive:true});
     if(fs.realpathSync(this.root)!==this.root)throw new Error('草稿目录发生了重定向');
-    return path.join(this.root,projectId+'.json');
+    return path.join(this.root,projectId+(conversationId==='legacy'?'':'.'+conversationId)+'.json');
   }
-  open(projectId,owner) {
-    const file=this.file(projectId);let draft=null;
+  open(projectId,owner,conversationId='legacy') {
+    const file=this.file(projectId,conversationId);let draft=null;
     try {
       const fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
       try {
@@ -44,15 +46,15 @@ class ConversationDraftStore {
         draft=validateDraft(record.draft);
       }finally{fs.closeSync(fd);}
     }catch(error){if(error.code!=='ENOENT')throw new Error('无法恢复草稿，原记录仍保留。请重试');}
-    const writer=randomUUID();this.writers.set(projectId,{writer,owner,sequence:0});
-    return {projectId,writer,draft};
+    const writer=randomUUID();this.writers.set(this.key(projectId,conversationId),{writer,owner,sequence:0});
+    return {projectId,conversationId,writer,draft};
   }
   save(request,owner) {
-    const {projectId,writer,sequence}=request||{},lease=this.writers.get(projectId);
+    const {projectId,conversationId='legacy',writer,sequence}=request||{},lease=this.writers.get(this.key(projectId,conversationId));
     if(!lease||lease.writer!==writer||lease.owner!==owner)throw new Error('草稿窗口已变化，请重新打开工程');
     if(!Number.isSafeInteger(sequence)||sequence<1)throw new Error('草稿顺序无效');
     if(sequence<=lease.sequence)return {sequence:lease.sequence};
-    const draft=validateDraft(request.draft),file=this.file(projectId),tmp=file+'.'+randomUUID()+'.tmp';
+    const draft=validateDraft(request.draft),file=this.file(projectId,conversationId),tmp=file+'.'+randomUUID()+'.tmp';
     try {
       fs.writeFileSync(tmp,JSON.stringify({version:1,draft}),{flag:'wx',mode:0o600});
       fs.renameSync(tmp,file);lease.sequence=sequence;
