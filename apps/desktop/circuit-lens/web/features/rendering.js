@@ -5,19 +5,41 @@ export const dependencies = ['activeObservation', 'configureSimulationViewport']
 
 export function createController({models, ui, ports}) {
   const {project} = models;
-  let epoch = 0, timer, pending = null, wanted = null, shown = null, failed = null;
+  let epoch = 0, timer, pending = null, pendingKey = null, wanted = null, shown = null, failed = null;
   let live = false, imageUrls = [], mounted = false;
   let staticFrame = null;
+  const tileCache = new Map();
 
   // Keep each request below the native renderer's 4096px/8MP limits while
   // allowing static detail to retain the full screen density. The overlap
   // hides antialiasing seams where two independently rendered tiles meet.
-  const detailTilePixels = 1536, detailTileOverlap = 2;
+  const detailTilePixels = 1536, detailTileOverlap = 2, detailTileCacheLimit = 24;
 
   function clearDetail() {
     ui.detailLayer.replaceChildren();
-    for (const url of imageUrls) URL.revokeObjectURL(url);
     imageUrls = []; shown = null;
+  }
+
+  function touchCachedTile(url, image) {
+    tileCache.delete(url);
+    tileCache.set(url, {image});
+    let scanned = 0;
+    while (tileCache.size > detailTileCacheLimit) {
+      const oldest = tileCache.entries().next().value;
+      if (!oldest) break;
+      const [oldestUrl, entry] = oldest;
+      if (imageUrls.includes(entry.image.url)) {
+        tileCache.delete(oldestUrl); tileCache.set(oldestUrl, entry);
+        if (++scanned >= tileCache.size) break;
+        continue;
+      }
+      tileCache.delete(oldestUrl); URL.revokeObjectURL(entry.image.url); scanned = 0;
+    }
+  }
+
+  function clearTileCache() {
+    for (const {image} of tileCache.values()) URL.revokeObjectURL(image.url);
+    tileCache.clear();
   }
 
   function resetRendering() {
@@ -50,13 +72,15 @@ export function createController({models, ui, ports}) {
     if (live && !staticOnly) return null;
     const endX = bounds.x + bounds.width, endY = bounds.y + bounds.height;
     const tileWorld = Math.max(1, Math.floor(detailTilePixels / scale));
+    // Align the grid to world coordinates instead of the current viewport.
+    // A small pan then keeps the same tile URLs and can use the local cache.
+    const firstX = Math.floor(bounds.x/tileWorld)*tileWorld;
+    const firstY = Math.floor(bounds.y/tileWorld)*tileWorld;
     const tiles = [];
-    for (let y = bounds.y; y < endY; y += tileWorld) {
-      for (let x = bounds.x; x < endX; x += tileWorld) {
+    for (let y = firstY; y < endY; y += tileWorld) {
+      for (let x = firstX; x < endX; x += tileWorld) {
         const tileX = x - detailTileOverlap, tileY = y - detailTileOverlap;
-        const right = Math.min(endX, x + tileWorld) + detailTileOverlap;
-        const bottom = Math.min(endY, y + tileWorld) + detailTileOverlap;
-        const tileBounds = {x:tileX, y:tileY, width:Math.ceil(right-tileX), height:Math.ceil(bottom-tileY)};
+        const tileBounds = {x:tileX, y:tileY, width:tileWorld+detailTileOverlap*2, height:tileWorld+detailTileOverlap*2};
         const query = new URLSearchParams({revisionId:revision, profileId:render.profileId,
           name:circuit, ...tileBounds, scale});
         tiles.push({bounds:tileBounds, scale, url:`${render.viewportUrl}?${query}`, circuit, revision});
@@ -66,27 +90,30 @@ export function createController({models, ui, ports}) {
       projectId:project.session?.workspace?.id, circuit, revision};
   }
 
-  async function decodeImage(url, signal) {
+  async function decodeImage(url, signal, cacheTile = false) {
+    const cached = cacheTile && tileCache.get(url);
+    if (cached) {
+      touchCachedTile(url, cached.image);
+      return cached.image;
+    }
     const response = await fetch(url, {signal});
     if (!response.ok) throw new Error(`电路图像不可用（${response.status}）`);
     const objectUrl = URL.createObjectURL(await response.blob());
     const decoded = new Image(); decoded.src = objectUrl;
-    try { await decoded.decode(); return {url:objectUrl, width:decoded.naturalWidth, height:decoded.naturalHeight}; }
+    try {
+      await decoded.decode();
+      const image = {url:objectUrl, width:decoded.naturalWidth, height:decoded.naturalHeight};
+      if (cacheTile) touchCachedTile(url, image);
+      return image;
+    }
     catch (error) { URL.revokeObjectURL(objectUrl); throw error; }
   }
 
   async function decodeTiles(tiles, signal) {
-    const results = await Promise.allSettled(tiles.map(tile => decodeImage(tile.url, signal)));
+    const results = await Promise.allSettled(tiles.map(tile => decodeImage(tile.url, signal, true)));
     const failedResult = results.find(result => result.status === 'rejected');
-    if (failedResult) {
-      for (const result of results) if (result.status === 'fulfilled') URL.revokeObjectURL(result.value.url);
-      throw failedResult.reason;
-    }
+    if (failedResult) throw failedResult.reason;
     return tiles.map((tile, index) => ({tile, image:results[index].value}));
-  }
-
-  function revokeTiles(decodedTiles) {
-    for (const {image} of decodedTiles || []) URL.revokeObjectURL(image.url);
   }
 
   // A document edit keeps its previous artwork and provisional components until
@@ -100,8 +127,7 @@ export function createController({models, ui, ports}) {
     if (results.some(result => result.status === 'rejected')) {
       for (const result of results) {
         if (result.status !== 'fulfilled' || !result.value) continue;
-        if (Array.isArray(result.value)) revokeTiles(result.value);
-        else URL.revokeObjectURL(result.value.url);
+        if (!Array.isArray(result.value)) URL.revokeObjectURL(result.value.url);
       }
       throw results.find(result => result.status === 'rejected').reason;
     }
@@ -111,14 +137,13 @@ export function createController({models, ui, ports}) {
 
   function discardCircuitRendering(frame) {
     if (frame?.base) URL.revokeObjectURL(frame.base.url);
-    if (frame?.detail) revokeTiles(frame.detail.images);
   }
 
   function detailNode(request, decoded) {
     return makeSvg('image', {href:decoded.url, ...request.bounds,
       width:decoded.width/request.scale, height:decoded.height/request.scale, preserveAspectRatio:'none',
       'data-circuit':request.circuit, 'data-revision':request.revision, 'data-scale':request.scale,
-      'data-pixel-width':decoded.width, 'data-pixel-height':decoded.height});
+      'data-pixel-width':decoded.width, 'data-pixel-height':decoded.height, 'data-tile-url':request.url});
   }
 
   function commitCircuitRendering(frame) {
@@ -142,7 +167,9 @@ export function createController({models, ui, ports}) {
   }
 
   function scheduleRendering() {
-    wanted = viewRequest(); clearTimeout(timer);
+    const nextWanted = viewRequest();
+    if (pending && pendingKey !== nextWanted?.key) pending.abort();
+    wanted = nextWanted; clearTimeout(timer);
     if (!wanted) {if (!project.projectBusy) clearDetail(); ui.renderStatus.hidden = true; return;}
     if (wanted.key === shown) {ui.renderStatus.hidden = true; return;}
     if (wanted.key === failed) return;
@@ -153,7 +180,7 @@ export function createController({models, ui, ports}) {
   async function draw() {
     if (pending || !wanted || wanted.key === shown || wanted.key === failed) return;
     const request = wanted, generation = epoch, controller = new AbortController();
-    pending = controller;
+    pending = controller; pendingKey = request.key;
     const isCurrent = () => generation === epoch && wanted?.key === request.key &&
       project.session?.workspace?.id === request.projectId && project.revision === request.revision &&
       project.circuitName === request.circuit && (request.live
@@ -190,8 +217,7 @@ export function createController({models, ui, ports}) {
       }
     } finally {
       clearTimeout(loading);
-      revokeTiles(nextTiles);
-      if (pending === controller) pending = null;
+      if (pending === controller) {pending = null; pendingKey = null;}
       // Discard intermediate views and render only the last requested viewport.
       scheduleRendering();
     }
@@ -227,7 +253,7 @@ export function createController({models, ui, ports}) {
       if(!document.hidden && window.devicePixelRatio!==density)watchResolution();
     },250);
     ui.renderStatus.addEventListener('click', () => {failed = null; scheduleRendering();});
-    window.addEventListener('pagehide', () => {clearInterval(densityTimer);resetRendering();});
+    window.addEventListener('pagehide', () => {clearInterval(densityTimer);resetRendering();clearTileCache();});
   }
   return Object.freeze({prepareCircuitRendering, discardCircuitRendering, commitCircuitRendering, staticCircuitRender,
     resetRendering, scheduleRendering, setRenderingLive, mountRendering});

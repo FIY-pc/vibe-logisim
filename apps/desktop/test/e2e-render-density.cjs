@@ -23,7 +23,7 @@ function visibleDetail() {
     right:Number(image.getAttribute('x')) + Number(image.getAttribute('width')),
     bottom:Number(image.getAttribute('y')) + Number(image.getAttribute('height')),
     pixels:[Number(image.dataset.pixelWidth), Number(image.dataset.pixelHeight)],
-    scale:Number(image.dataset.scale)
+    scale:Number(image.dataset.scale), tileUrl:image.dataset.tileUrl
   }));
   if (!images.length) return {count:0, covers:false, images, dpr:devicePixelRatio};
   return {count:images.length, covers:
@@ -92,8 +92,8 @@ async function main() {
     await page.locator('#fitButton').click();
     for (let i=0; i<14; i++) await page.locator('#zoomInButton').click();
     const beforePan = await waitForDetail('wide baseline detail', 2);
-    const panStartRequests = requests.length;
-    const beforeUrls = new Set(requests.slice(0, panStartRequests).map(request=>request.url));
+    const panStartResponses = responses.length;
+    const beforeUrls = new Set(beforePan.images.map(image=>image.tileUrl));
     const beforeViewBox = beforePan.viewBox;
     const box = await page.locator('#circuitCanvas').boundingBox();
     await page.locator('#panTool').click();
@@ -103,11 +103,13 @@ async function main() {
     await page.mouse.up();
     const afterPan = await waitUntil(async()=>{
       const detail = await page.evaluate(visibleDetail);
-      return requests.length > panStartRequests && detail.count >= 2 && detail.covers && detail.viewBox !== beforeViewBox ? detail : false;
+      return detail.count >= 2 && detail.covers && detail.viewBox !== beforeViewBox ? detail : false;
     }, {timeout:60000, label:'small panned detail'});
     await new Promise(resolve=>setTimeout(resolve,400));
-    const panUrls = new Set(requests.slice(panStartRequests).map(request=>request.url));
-    const reusedUrls = [...beforeUrls].filter(url=>panUrls.has(url));
+    const afterUrls = new Set(afterPan.images.map(image=>image.tileUrl));
+    const reusedUrls = [...beforeUrls].filter(url=>afterUrls.has(url));
+    const panRequestUrls = new Set(responses.slice(panStartResponses).map(response=>response.url));
+    const reusedRequestUrls = reusedUrls.filter(url=>panRequestUrls.has(url));
 
     // Hold one real native request, then change the camera several times. If
     // the controller aborts in-flight work, the held route is released by the
@@ -128,11 +130,14 @@ async function main() {
     await waitUntil(()=>heldUrl, {timeout:30000, label:'held viewport request'});
     for (let i=0; i<6; i++) await page.locator('#zoomInButton').click();
     await new Promise(resolve=>setTimeout(resolve,400));
-    const heldWhileCameraChanged = !heldReleased;
+    const heldRequestAborted = failures.some(failure=>failure.url===heldUrl);
     const requestsWhileHeld = requests.length-requestStart;
     releaseHeld();
     await page.unroute('**/api/render/viewport?**', {behavior:'wait'});
     const finalDetail = await waitForDetail('final rapid-zoom detail', 1);
+    assert.ok(reusedUrls.length > 0, 'small panning keeps at least one world-aligned tile');
+    assert.equal(reusedRequestUrls.length, 0, 'reused tiles do not make another viewport request');
+    assert.equal(heldRequestAborted, true, 'camera changes abort the held viewport request');
     assert.equal(finalDetail.covers, true);
     assert.deepEqual(fs.readFileSync(source), original, 'rendering did not mutate the circuit source');
     assert.deepEqual(errors, []);
@@ -140,8 +145,8 @@ async function main() {
       narrow:{dpr:narrow.dpr,tileCount:narrow.count,maxTilePixels:Math.max(...narrow.images.flatMap(image=>image.pixels))},
       hidpi2:{dpr:hidpi2.dpr,tileCount:hidpi2.count,maxTilePixels:Math.max(...hidpi2.images.flatMap(image=>image.pixels))},
       hidpi3:{dpr:hidpi3.dpr,tileCount:hidpi3.count,maxTilePixels:Math.max(...hidpi3.images.flatMap(image=>image.pixels))},
-      pan:{beforeTileCount:beforePan.count,afterTileCount:afterPan.count,requests:requests.length,reusedTileUrls:reusedUrls.length},
-      rapidZoom:{requestsWhileHeld,heldRequestStillInFlight:heldWhileCameraChanged,failedRequests:failures.length,finalTileCount:finalDetail.count},
+      pan:{beforeTileCount:beforePan.count,afterTileCount:afterPan.count,requests:requests.length,reusedTileUrls:reusedUrls.length,reusedRequestUrls:reusedRequestUrls.length},
+      rapidZoom:{requestsWhileHeld,heldRequestAborted,abortedRequestCount:failures.length,finalTileCount:finalDetail.count},
       sourceUnchanged:true,errors}, null, 2));
   } finally {
     await app.close();

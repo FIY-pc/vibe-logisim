@@ -51,7 +51,7 @@ async function holdNextDetail() {
     await page.waitForFunction(() => document.querySelector('#currentCircuitName').textContent === 'FullAdder' && document.querySelector('#canvasStatus').hidden);
     const count = await page.locator('.circuit-component').count();
     for (let i = 0; i < 8; i++) await page.locator('#zoomInButton').click();
-    await page.locator('#detailLayer image').waitFor();
+    await page.locator('#detailLayer image').first().waitFor();
     await page.locator('#addComponentTool').click(); await page.locator('#componentSearch').fill('与门');
     await page.getByRole('button', {name:'与门', exact:true}).click();
     await page.waitForFunction(() => document.querySelector('#objectInspector [data-attribute]') && !document.querySelector('#placementToolbar .placement-loading'));
@@ -76,9 +76,9 @@ async function holdNextDetail() {
     await cdp.send('Page.startScreencast', {format:'png', everyNthFrame:1});
 
     phase = 'two clicks while replacement images are held';
-    const before = await page.locator('#detailLayer image').getAttribute('href');
+    const before = await page.locator('#detailLayer image').first().getAttribute('href');
     const first = await holdNextDetail(); await place(.77, .25); await waitUntil(first.arrived);
-    assert.equal(await page.locator('#detailLayer image').getAttribute('href'), before);
+    assert.equal(await page.locator('#detailLayer image').first().getAttribute('href'), before);
     assert.equal(await page.locator('[data-optimistic=true]').count(), 1);
     await place(.5, .65);
     assert.equal(await page.locator('[data-optimistic=true]').count(), 2);
@@ -109,7 +109,7 @@ async function holdNextDetail() {
 
     phase = 'navigation before an image finishes';
     for (let i = 0; i < 8; i++) await page.locator('#zoomInButton').click();
-    await page.locator('#detailLayer image').waitFor();
+    await page.locator('#detailLayer image').first().waitFor();
     const late = await holdNextDetail(); await place(.8, .4); await waitUntil(late.arrived);
     await page.locator('#filesTab').click(); await page.locator('.file-row').filter({hasText:'other.circ'}).click();
     await page.waitForFunction(() => document.querySelector('#currentCircuitName').textContent === 'Other' && document.querySelector('#canvasStatus').hidden);

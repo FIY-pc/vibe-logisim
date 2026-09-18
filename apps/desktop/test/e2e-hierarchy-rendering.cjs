@@ -38,9 +38,9 @@ async function main() {
       return;
     }
     const detail = page.locator('#detailLayer image');
-    await detail.waitFor({timeout:60000});
-    assert.equal(await detail.getAttribute('data-circuit'),'◇气泡流水线');
-    const sharp = await detail.evaluate(n=>Object.fromEntries([...n.attributes].map(a=>[a.name,a.value]).filter(([name])=>name!=='href')));
+    await detail.first().waitFor({timeout:60000});
+    assert.equal(await detail.first().getAttribute('data-circuit'),'◇气泡流水线');
+    const sharp = await detail.first().evaluate(n=>Object.fromEntries([...n.attributes].map(a=>[a.name,a.value]).filter(([name])=>name!=='href')));
     assert.ok(Number(sharp['data-pixel-width'])>=page.viewportSize().width/2);
     await page.screenshot({path:output+'/02-native-detail.png'});
     await page.locator('.circuit-component.is-selected').dblclick();
@@ -62,7 +62,7 @@ async function main() {
     await waitUntil(()=>session().then(s=>s.revision.id===initial.revision.id),{timeout:45000,label:'undo'});await idle();
     await page.locator('#findObject').click();await page.locator('#finderInput').fill('ID.PC Register');await page.locator('#finderInput').press('Enter');
     await page.locator('#zoomInButton').click();
-    await detail.waitFor({timeout:30000});
+    await detail.first().waitFor({timeout:30000});
     const register=page.getByRole('button',{name:'ID.PC，Register',exact:true});
     const box=await register.boundingBox(), scale=await page.locator('#circuitCanvas').evaluate(n=>n.getScreenCTM().a);
     const pointer={x:box.x+box.width/2,y:box.y+box.height/2};
@@ -74,7 +74,7 @@ async function main() {
     assert.equal(await page.locator('#nativeArtwork').evaluate(n=>n.style.opacity),'');
     // On this desktop captureScreenshot can emit lostpointercapture. Capture
     // after release so collecting evidence cannot cancel the user's gesture.
-    await detail.waitFor({timeout:30000});
+    await detail.first().waitFor({timeout:30000});
     await page.screenshot({path:output+'/06-zoomed-drag.png'});
     await page.locator('#undoButton').click();
     await waitUntil(()=>session().then(s=>s.revision.id===initial.revision.id),{timeout:45000,label:'undo zoomed move'});await idle();
@@ -84,7 +84,7 @@ async function main() {
     assert.equal(await page.locator('#circuitCanvas').getAttribute('viewBox'),parent,'return restores the parent camera after edits');
     assert.match(await page.locator('.circuit-component.is-selected').getAttribute('aria-label'),/IF_ID/);
     assert.equal(await page.locator('#questionInput').inputValue(),'我在看 IF 到 ID 的边界，先整理内部命名，再回上层。');
-    await detail.waitFor({timeout:30000});
+    await detail.first().waitFor({timeout:30000});
     await page.screenshot({path:output+'/04-return-to-parent.png'});
 
     // Delay an actual native response, then leave the circuit while it is in flight.
@@ -123,7 +123,7 @@ async function main() {
     assert.equal(await detail.count(),0);
     await simulationMenu(page,'simulationStop');
     await page.waitForFunction(()=>document.querySelector('#documentKind').textContent==='电路定义');
-    await detail.waitFor({timeout:30000});
+    await detail.first().waitFor({timeout:30000});
     await page.route('**/api/render/viewport?**', route=>route.fulfill({status:503,body:'injected drawing failure'}),{times:1});
     await page.locator('#zoomInButton').click();
     await page.getByRole('button',{name:'细节未加载 · 重试',exact:true}).waitFor();

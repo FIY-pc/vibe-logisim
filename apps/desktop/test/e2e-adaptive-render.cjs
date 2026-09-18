@@ -31,7 +31,7 @@ async function shot(name){await page.screenshot({path:out+'/'+name+'.png'});}
  const scene=await page.evaluate(()=>fetch('/api/circuit?name='+encodeURIComponent('◇气泡流水线')).then(r=>r.json()));assert.ok(scene.circuit.bounds.height>19000);
  await page.locator('#questionInput').fill('看清数码管和流水线控制信号，再一起讨论。');
  for(let i=0;i<20;i++)await page.locator('#zoomInButton').click();await find('Hex Digit Display');
- await page.locator('#detailLayer image').waitFor();await shot('01-static-detail');
+ await page.locator('#detailLayer image').first().waitFor();await shot('01-static-detail');
  await key('e');await sharp();const paused=await sim(),pausedGeometry=await geometry();const owner=paused.session.id;
  assert.equal(paused.running,false);assert.equal(paused.observation.ticks,0);assert.equal(await page.locator('#detailLayer image').count(),0);
  result.coursePaused=pausedGeometry;await shot('02-live-paused');

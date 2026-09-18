@@ -55,7 +55,7 @@ async function main(){
     assert.equal(await page.locator('#questionInput').inputValue(),'把 IF_ID 的封装整理清楚，父图继续保持原有连接。');
     assert.equal((await scene('IF_ID')).components.find(c=>c.factory==='Pin'&&c.label==='DECODE.PC').ends[0].width,32);
     await circuit('◇气泡流水线');await page.locator('#findObject').click();await page.locator('#finderInput').fill('IF_ID');
-    await page.locator('#finderInput').press('Enter');await page.locator('#detailLayer image[data-circuit="◇气泡流水线"]').waitFor({timeout:60000});await page.screenshot({path:output+'/03-parent-reconnected.png'});
+    await page.locator('#finderInput').press('Enter');await page.locator('#detailLayer image[data-circuit="◇气泡流水线"]').first().waitFor({timeout:60000});await page.screenshot({path:output+'/03-parent-reconnected.png'});
     await page.locator('#undoButton').click();await changed(applied.revision.id);assert.equal((await session()).revision.id,initial.revision.id);
     // Reapply by editing the child from its parent inspector, then save/reopen.
     await page.locator('#findObject').click();await page.locator('#finderInput').fill('IF_ID');await page.locator('#finderInput').press('Enter');
