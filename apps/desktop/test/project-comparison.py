@@ -80,7 +80,7 @@ class FrozenReview(unittest.TestCase):
             def binding():return {'projectId':w.history.record['id'],'revisionId':w.revision_id}
             try:
                 w.application.open_path(a);initial=binding()
-                candidate=w.application.agent_tool({**initial,'tool':'submit_circuit','arguments':{
+                candidate=w.application.agent_tool({**initial,'tool':'import_candidate','arguments':{
                     'circuitXml':original.decode().replace('val="sum"','val="result"'),'title':'Rename output'}})
                 request={**initial,'kind':'candidate','id':candidate['id'],'circuit':'main'}
                 result=w.comparison.describe(request)

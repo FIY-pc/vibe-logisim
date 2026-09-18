@@ -50,7 +50,7 @@ const THREAD_CONFIG = Object.freeze({
   allow_login_shell: false,
 });
 
-const { circuitPlugin, circuitToolRegistry } = require("./circuit-tools.cjs");
+const { CircuitPlugin } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
@@ -100,7 +100,7 @@ function workspaceChangedError() {
 
 
 
-function itemActivity(item) {
+function itemActivity(item, circuitRegistry) {
   if (!item || typeof item !== "object") return null;
   if (item.type === "reasoning") {
     return { kind: "reasoning", label: "正在分析电路" };
@@ -112,8 +112,7 @@ function itemActivity(item) {
     return { kind: "tool", label: `${shortText(item.server, 80)} / ${shortText(item.tool, 100)}` };
   }
   if (item.type === "dynamicToolCall") {
-  const labels = { submit_circuit: "提交电路改动", checkout_candidate: "继续编辑候选", inspect_circuit: "查看电路", read_project_resource: "查阅课程资料", build_candidate: "构建候选电路", wire_candidate: "批量连接电路", simulate_circuit: "检查输入输出", trace_circuit: "观察时钟执行", harness_run: "运行电路检查", evaluate_circuit: "比较测试规格" };
-    return { kind: "tool", label: labels[item.tool] || shortText(item.tool, 160) || "调用工具" };
+    return { kind: "tool", label: circuitRegistry?.label(item.tool) || shortText(item.tool, 160) || "调用工具" };
   }
   if (item.type === "webSearch") {
     return { kind: "web", label: "检索资料" };
@@ -134,6 +133,7 @@ class CodexBackend extends EventEmitter {
     version = "0.1.0",
     ephemeral = false,
     circuitTool = null,
+    circuitManifest = null,
     agentWorkspace = null,
     developerInstructions = DEVELOPER_INSTRUCTIONS,
     includeCircuitContext = true,
@@ -151,7 +151,13 @@ class CodexBackend extends EventEmitter {
     this.version = version;
     this.ephemeral = ephemeral;
     this.circuitTool = circuitTool;
+    this.circuitManifest = circuitManifest;
+    this.circuitManifestState = null;
     this.agentWorkspace = agentWorkspace;
+    this.circuitTools = new CircuitPlugin({
+      invoke: payload => this.circuitTool?.(payload),
+      workspace: this.agentWorkspace,
+    });
     // Controlled comparisons can reuse the identical transport/isolation without
     // exposing the circuit application's instructions to a generic baseline.
     this.developerInstructions = developerInstructions;
@@ -187,7 +193,6 @@ class CodexBackend extends EventEmitter {
     this.workspaceOperation = Promise.resolve();
     // Native circuit calls are serialized like a host-side tool executor. A
     // stopped or superseded turn is checked again when its queued call starts.
-    this.circuitOperation = Promise.resolve();
     this.circuitGeneration = 0;
     this.completedTurnIds = new Set();
     this.history = [];
@@ -585,6 +590,7 @@ class CodexBackend extends EventEmitter {
           threadId,
           clientMessageId,
           turnId: null,
+          projectId: work?.projectId || context.projectId || null,
           revisionId,
           observationId: context?.displayedSimulation?.id || null,
           work,
@@ -794,6 +800,13 @@ class CodexBackend extends EventEmitter {
       this.model = fallback?.model || null;
       this.effort ||= fallback?.defaultEffort || null;
     }
+    if (this.circuitTool) {
+      if (!this.circuitManifest) throw new Error("电路插件 manifest 不可用，已拒绝启动 Codex 电路会话");
+      const manifest = await this.circuitManifest();
+      this.#assertWorkspace(expectedEpoch, generation);
+      const registry = this.circuitTools.configure(manifest, {live: Boolean(this.threadId)});
+      this.circuitManifestState = {...registry.identity, signature: registry.signature};
+    }
     if (this.threadId) {
       if (this.workspaceKey !== workspaceKey) throw workspaceChangedError();
       return;
@@ -812,7 +825,7 @@ class CodexBackend extends EventEmitter {
             approvalPolicy: "never",
             sandbox: "danger-full-access",
             ...(this.model ? {model:this.model} : {}),
-            dynamicTools: this.circuitTool ? circuitPlugin.tools : [],
+            dynamicTools: this.circuitTool ? this.circuitTools.registry.tools : [],
             config: THREAD_CONFIG,
             developerInstructions: this.developerInstructions,
           });
@@ -833,7 +846,7 @@ class CodexBackend extends EventEmitter {
           serviceName: "vibe_logisim",
           ephemeral: this.ephemeral,
           developerInstructions: this.developerInstructions,
-          dynamicTools: this.circuitTool ? circuitPlugin.tools : [],
+          dynamicTools: this.circuitTool ? this.circuitTools.registry.tools : [],
         });
         provisionalThreadId = result?.thread?.id || null;
       }
@@ -1212,7 +1225,7 @@ class CodexBackend extends EventEmitter {
         });
         return;
       }
-      const activity = itemActivity(item);
+      const activity = itemActivity(item, this.circuitTools.registry);
       if (activity) {
         this.emit("event", {
           type: "activity",
@@ -1249,71 +1262,49 @@ class CodexBackend extends EventEmitter {
       const epoch = this.workspaceEpoch;
       const generation = this.childEpoch;
       const circuitGeneration = this.circuitGeneration;
-      let revisionId = this.pendingTurn?.revisionId || this.threadRevisionId;
-      const allowed = this.circuitTool && this.#matchesCurrentTurn(params)
-        && circuitToolRegistry.isModelCallable(params.tool);
+      const request = {
+        ...params,
+        threadId: params.threadId || this.pendingTurn?.threadId || null,
+        callId: params.callId || params.itemId || String(message.id),
+        turnId: params.turnId || this.pendingTurn?.turnId || null,
+      };
+      const current = () => generation === this.childEpoch && epoch === this.workspaceEpoch
+        && circuitGeneration === this.circuitGeneration
+        && this.#matchesCurrentTurn(request);
+      const allowed = Boolean(this.circuitTool && this.circuitTools.registry
+        && this.circuitTools.registry.get(params.tool) && current());
       const invoke = async () => {
-        const current = () => generation === this.childEpoch && epoch === this.workspaceEpoch
-          && circuitGeneration === this.circuitGeneration
-          && this.#matchesCurrentTurn({ ...params, turnId: params.turnId || this.pendingTurn?.turnId });
         if (!allowed || !current()) throw new Error("电路工具调用已过期或未授权");
         const pending = this.pendingTurn;
-        const work = pending?.work;
-        let result;
-        if (this.agentWorkspace?.synchronize && work) {
-          const session = await this.agentWorkspace.synchronize(work, params.tool === 'open_circuit' ? params.arguments?.path : null);
-          if (!current()) throw new Error("电路工具调用已过期");
-          revisionId = session.revision?.id;
-          if (!this.pendingTurn || this.pendingTurn !== pending) throw new Error("电路工具调用已过期");
-          this.pendingTurn.revisionId = revisionId;
-          this.threadRevisionId = revisionId;
-          if(params.tool === 'open_circuit') {
-            if (!current()) throw new Error("电路工具调用已过期");
-            return {contentItems:[{type:'inputText',text:JSON.stringify(session)}],success:true};
-          }
-        }
-        if (params.tool === "submit_circuit" && work) {
-          result = await this.agentWorkspace.submit(work, params.arguments?.title);
-        } else if (params.tool === "checkout_candidate" && work) {
-          result = await this.agentWorkspace.checkout(work, params.arguments?.candidateId);
-        } else {
-          result = await this.circuitTool({
-            projectId: work?.projectId || null,
-            revisionId,
-            observationId: pending?.observationId,
-            threadId: params.threadId || pending?.threadId || this.threadId,
-            turnId: params.turnId || pending?.turnId || null,
-            callId: params.callId || params.itemId || String(message.id),
-            tool: params.tool,
-            arguments: params.arguments,
-          });
-          // Specialized tools participate in exactly the same acceptance path.
-          if (work && ["build_candidate", "wire_candidate"].includes(params.tool) && result.id) work.candidate = result;
-        }
-        if (!current()) throw new Error("工程已切换，结果不属于当前工作区");
-        if (result?.id?.startsWith("candidate-")) {
-          this.emit("event", {type:"candidate-ready", candidateId:result.id, title:result.title});
-          result = {...result, changes:result.changes.map(({diff, beforeRender, render, ...change}) => ({...change, difference:diff?.counts})), nativeCoverage:result.nativeCoverage};
-        }
-        if (["harness_run", "evaluate_circuit"].includes(params.tool) && result?.feedback) {
-          this.emit("event", {type:"harness-result", itemId:params.itemId || null,
-            turnId:params.turnId || null, session:result.session, binding:result.binding || null,
-            run:result.run || null, feedback:result.feedback});
-        }
-        return { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true };
+        const scope = {
+          pending,
+          assertCurrent: () => {
+            if (!current() || this.pendingTurn !== pending) throw new Error("电路工具调用已过期");
+          },
+          updateBinding: session => {
+            const revisionId = session?.revision?.id;
+            const projectId = session?.workspace?.id || null;
+            if (this.pendingTurn !== pending) return;
+            if (pending.projectId !== projectId || pending.revisionId !== revisionId) pending.observationId = null;
+            pending.projectId = projectId;
+            pending.revisionId = revisionId;
+            this.threadRevisionId = revisionId;
+          },
+          emit: event => this.emit("event", event),
+        };
+        const result = await this.circuitTools.call(request, scope);
+        scope.assertCurrent();
+        return {contentItems: [{type: "inputText", text: JSON.stringify(result)}], success: true};
       };
-      const operation = this.circuitOperation.then(invoke, invoke)
-        .catch((error) => ({ contentItems: [{ type: "inputText", text: plainError(error) }], success: false }))
-        .then((result) => {
-          // A native operation may finish after its originating process was stopped.
-          if (generation === this.childEpoch && circuitGeneration === this.circuitGeneration
-              && this.#matchesCurrentTurn(params) && this.child?.stdin?.writable) {
-            this.#write({ id: message.id, result });
+      Promise.resolve().then(invoke)
+        .catch(error => ({contentItems: [{type: "inputText", text: plainError(error)}], success: false}))
+        .then(result => {
+          // An interrupted, switched or restarted turn has no response target.
+          if (current() && this.child?.stdin?.writable) {
+            this.#write({id: message.id, result});
           }
-        });
-      this.circuitOperation = operation.catch((error) => {
-        this.emit("log", `Circuit tool response dropped: ${plainError(error)}`);
-      });
+        })
+        .catch(error => this.emit("log", "Circuit tool response dropped: " + plainError(error)));
       return;
     }
     if (method === "item/tool/requestUserInput" && this.#matchesCurrentTurn(params)) {
@@ -1327,15 +1318,10 @@ class CodexBackend extends EventEmitter {
       reason: shortText(params.reason, 300) || null,
     };
     if (!params.threadId || this.#matchesCurrentTurn(params)) {
-      this.emit("event", {
-        type: "blocked-request",
-        requestId: String(message.id),
-        method,
-        scope,
-      });
+      this.emit("event", {type:"blocked-request", requestId:String(message.id), method, scope});
     }
     if (method === "item/commandExecution/requestApproval" || method === "item/fileChange/requestApproval") {
-      this.#write({ id: message.id, result: { decision: "decline" } });
+      this.#write({id:message.id, result:{decision:"decline"}});
       return;
     }
     if (method === "item/tool/requestUserInput") {

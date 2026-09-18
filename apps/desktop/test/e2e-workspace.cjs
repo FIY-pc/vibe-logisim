@@ -71,7 +71,7 @@ async function main() {
     assert.notEqual(changed, original);
     const session = await (await page.request.get(`${url}/api/session`)).json();
     const submission = await page.request.post(`${url}/api/agent/tool`, { data: {
-      projectId: session.workspace.id, revisionId: before, tool: "submit_circuit",
+      projectId: session.workspace.id, revisionId: before, tool: "import_candidate",
       arguments: { circuitXml: changed, title: "Rename sum" },
     } });
     assert.equal(submission.ok(), true, await submission.text());

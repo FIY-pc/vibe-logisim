@@ -57,7 +57,7 @@ class NativeCircuitRuntime:
             'targets': targets,
             'connectivity': connectivity,
             'firstFailure': failures[0] if failures else None,
-            'nextActions': ['inspect_circuit 查看相关端口和位网', 'harness_run 以更窄的输入或观察点重跑', 'submit_circuit 提交修复后的工程'],
+            'nextActions': ['inspect_circuit 查看相关端口和位网', 'harness_run 以更窄的输入或观察点重跑', 'submit_circuit 刷新修复后的当前文件'],
             'note': 'Harness 提供真实运行反馈，不规定下一步必须验证还是继续构建。',
         }
         artifact_sha = report.get('artifactSha256') or self.workspace.artifact_sha256

@@ -25,7 +25,7 @@ class Workbench:
             "read_kept_observation": self._read_kept_observation,
             "inspect_circuit": self._inspect_circuit,
             "read_project_resource": self._read_project_resource,
-            "submit_circuit": self._submit_circuit,
+            "import_candidate": self._import_candidate,
             "build_candidate": self._build_candidate,
             "wire_candidate": self._wire_candidate,
             "trace_circuit": self._trace_circuit,
@@ -33,6 +33,9 @@ class Workbench:
             "harness_run": self._harness_run,
             "evaluate_circuit": self._evaluate_circuit,
         }
+        expected = {name for name, spec in specs.items() if spec.owner == "studio"}
+        if set(handlers) != expected:
+            raise ValueError("电路工具定义和执行器清单不一致")
         for name, handler in handlers.items():
             self.plugin.register(specs[name], handler)
 
@@ -91,7 +94,7 @@ class Workbench:
     def _read_project_resource(self, call):
         return self.resource(call.arguments)
 
-    def _submit_circuit(self, call):
+    def _import_candidate(self, call):
         if self.workspace.source_status().get("stale"):
             raise ValueError("源工程已变化，请先处理外部改动")
         from studio.collaboration.bundle import import_circuit
@@ -146,12 +149,7 @@ class Workbench:
 
     def plugin_manifest(self):
         manifest = plugin_manifest(self.workspace)
-        manifest["tools"] = self.plugin.manifest_tools()
         manifest["registeredToolNames"] = list(self.plugin.names())
-        manifest["hostTools"] = [
-            item["name"] for item in manifest["capabilities"]
-            if item["name"] not in self.plugin.names()
-        ]
         return manifest
 
     def _native(self, *args, **kwargs):

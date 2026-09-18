@@ -215,6 +215,7 @@ async function startApplication() {
     sessionStorePath: path.join(agentRoot, "sessions.json"),
     version: app.getVersion(),
     circuitTool: (payload) => backend.circuitTool(payload),
+    circuitManifest: () => backend.circuitPlugin(),
     agentWorkspace,
   });
   codex.on("log", (message) => console.error(`[codex] ${message}`));

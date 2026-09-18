@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from studio.domain.plugin import CAPABILITIES
+from studio.domain.plugin import tool_definitions
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,13 +24,18 @@ class CircuitToolSpec:
     name: str
     description: str
     category: str
+    input_schema: dict[str, Any]
+    owner: str
     exposure: str = "direct"
     source_mutation: bool = False
     candidate: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "type": "function",
             "name": self.name,
+            "inputSchema": self.input_schema,
+            "owner": self.owner,
             "description": self.description,
             "category": self.category,
             "exposure": self.exposure,
@@ -72,14 +77,45 @@ class CircuitPlugin:
     def manifest_tools(self) -> list[dict[str, Any]]:
         return [item.spec.as_dict() for item in self._tools.values()]
 
+    @staticmethod
+    def _validate_arguments(spec: CircuitToolSpec, arguments: dict[str, Any]) -> None:
+        schema = spec.input_schema
+        properties = schema.get("properties", {})
+        missing = [name for name in schema.get("required", []) if name not in arguments]
+        if missing:
+            raise ValueError(f"工具缺少必填参数: {', '.join(missing)}")
+        if schema.get("additionalProperties") is False:
+            unknown = sorted(set(arguments) - set(properties))
+            if unknown:
+                raise ValueError(f"工具包含未声明的参数: {', '.join(unknown)}")
+        for name, value in arguments.items():
+            expected = properties.get(name, {}).get("type")
+            valid = {
+                "string": isinstance(value, str),
+                "object": isinstance(value, dict),
+                "array": isinstance(value, list),
+                "boolean": isinstance(value, bool),
+                "integer": isinstance(value, int) and not isinstance(value, bool),
+                "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+            }.get(expected, True)
+            if not valid:
+                raise ValueError(f"工具参数类型错误: {name} 应为 {expected}")
+            enum = properties.get(name, {}).get("enum")
+            if enum is not None and value not in enum:
+                raise ValueError(f"工具参数取值无效: {name}")
+
     def invoke(self, invocation: CircuitInvocation) -> dict[str, Any]:
         if not isinstance(invocation.arguments, dict):
             raise ValueError("工具参数必须为对象")
         registered = self._tools.get(invocation.tool)
         if registered is None:
             raise ValueError("Unknown circuit tool")
+        record = self.workspace.history.record
+        if invocation.project_id is not None and (not record or invocation.project_id != record["id"]):
+            raise ValueError("工程身份已变化，请重新发起操作")
         if invocation.revision_id != self.workspace.revision_id:
             raise ValueError("工程版本已变化，请重新发起操作")
+        self._validate_arguments(registered.spec, invocation.arguments)
         result = registered.handler(invocation)
         if isinstance(result, dict):
             result.setdefault("invocation", {
@@ -95,12 +131,10 @@ class CircuitPlugin:
 
 def default_specs() -> dict[str, CircuitToolSpec]:
     return {
-        item.name: CircuitToolSpec(
-            name=item.name,
-            description=item.description,
-            category=item.category,
-            source_mutation=item.source_mutation,
-            candidate=item.candidate,
+        item["name"]: CircuitToolSpec(
+            name=item["name"], description=item["description"], category=item["category"],
+            input_schema=item["inputSchema"], owner=item["owner"], exposure=item["exposure"],
+            source_mutation=item["sourceMutation"], candidate=item["candidate"],
         )
-        for item in CAPABILITIES
+        for item in tool_definitions()
     }

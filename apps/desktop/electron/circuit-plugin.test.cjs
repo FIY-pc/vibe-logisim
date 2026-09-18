@@ -1,26 +1,33 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { circuitPlugin, circuitToolRegistry } = require("./circuit-tools.cjs");
+const catalog = require("../circuit-lens/studio/domain/circuit-plugin.json");
+const {CircuitToolRegistry, CONTRACT} = require("./circuit-tools.cjs");
+const {CircuitPlugin} = require("./circuit-plugin.cjs");
 
-const names = circuitPlugin.tools.map(tool => tool.name);
-assert.equal(circuitPlugin.schema, "vibe-logisim.circuit-plugin/v1");
-assert.equal(circuitPlugin.resultSchema, "vibe-logisim.circuit-plugin.result/v1");
-assert.equal(circuitPlugin.id, "vibe-logisim.circuit");
-assert.equal(circuitToolRegistry.names.length, circuitPlugin.tools.length);
-assert.equal(circuitToolRegistry.isModelCallable("harness_run"), true);
-assert.equal(circuitToolRegistry.isModelCallable("unknown_tool"), false);
-assert.equal(new Set(names).size, names.length, "plugin tool names must be unique");
-assert.deepEqual(
-  circuitPlugin.capabilities.map(capability => capability.name),
-  names,
-  "every model-visible tool must have a capability descriptor",
-);
-assert.equal(circuitPlugin.capabilities.find(item => item.name === "checkout_candidate").sourceMutation, true);
-assert.equal(circuitPlugin.capabilities.find(item => item.name === "harness_run").category, "evaluate");
+const plugin = new CircuitPlugin({invoke: async () => ({}), workspace: null});
+const hostExecutors = plugin.hostExecutors;
+const registry = new CircuitToolRegistry(catalog, hostExecutors);
+const directNames = registry.tools.map(tool => tool.name);
+
+assert.equal(CONTRACT.schema, "vibe-logisim.circuit-plugin/v1");
+assert.equal(CONTRACT.resultSchema, "vibe-logisim.circuit-plugin.result/v1");
+assert.equal(registry.identity.version, catalog.version);
+assert.equal(new Set(directNames).size, directNames.length);
+assert.equal(registry.get("harness_run").category, "observe");
+assert.equal(registry.get("import_candidate"), null, "internal candidate import must stay hidden");
+plugin.configure(catalog);
+assert.throws(() => plugin.configure({...catalog, version: "9.0.0"}), /版本/);
+assert.throws(() => plugin.configure({...catalog, hostTools: catalog.hostTools.slice(1)}), /归属/);
+const updated = {...catalog, version:"1.2.0"};
+assert.throws(() => plugin.configure(updated, {live:true}), /重新连接/);
+assert.equal(plugin.registry.identity.version, catalog.version, 'failed handshake must preserve the active contract');
+plugin.configure(updated);
+assert.equal(plugin.registry.identity.version, '1.2.0', 'a new native thread may register the updated contract');
+
 console.log(JSON.stringify({
-  plugin: circuitPlugin.id,
-  version: circuitPlugin.version,
-  capabilityCount: circuitPlugin.capabilities.length,
-  sourceMutationTools: circuitPlugin.capabilities.filter(item => item.sourceMutation).map(item => item.name),
+  plugin: registry.identity.id,
+  version: registry.identity.version,
+  directToolCount: directNames.length,
+  hiddenToolCount: catalog.tools.length - directNames.length,
 }));

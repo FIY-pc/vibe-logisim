@@ -79,7 +79,7 @@ class CandidateLifecycle(unittest.TestCase):
                 changed = original.decode().replace('val="sum"', 'val="result"')
                 self.assertNotEqual(changed.encode(), original)
                 candidate = w.application.agent_tool({
-                    **binding(w), 'tool': 'submit_circuit',
+                    **binding(w), 'tool': 'import_candidate',
                     'arguments': {'circuitXml': changed, 'title': 'Rename sum'},
                 })
                 identifier = candidate['id']

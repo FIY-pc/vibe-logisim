@@ -13,7 +13,7 @@ for name in ['stage6-if-id.circ', 'cs3410.jar', 'riscv-probe.jar']:
 w = Workspace(REPO, root/'state', REPO/'apps/desktop/circuit-lens/lensctl.py', 'comparison-e2e')
 try:
     w.application.open_path(root/'stage6-if-id.circ')
-    candidate = w.workbench.call(w.revision_id, 'submit_circuit', {
+    candidate = w.workbench.call(w.revision_id, 'import_candidate', {
         'title':'IF_ID 布局与控制线整理（已有电路版本）',
         'circuitXml':(REPO/'exports/branch-editing/stage6-if-id.circ').read_text()})
     (root/'fixture.json').write_text(json.dumps({'candidateId':candidate['id'], 'projectId':w.history.record['id'], 'revisionId':w.revision_id}))

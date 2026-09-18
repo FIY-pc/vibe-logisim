@@ -40,7 +40,7 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertTrue(manifest["availability"]["workspaceOpen"])
                 self.assertIn("harness_run", {item["name"] for item in manifest["capabilities"]})
                 self.assertIn("harness_run", manifest["registeredToolNames"])
-                self.assertEqual(set(manifest["hostTools"]), {"open_circuit", "checkout_candidate"})
+                self.assertEqual(set(manifest["hostTools"]), {"open_circuit", "submit_circuit", "checkout_candidate"})
 
                 revision = workspace.revision_id
                 result = workspace.application.agent_tool({
@@ -76,6 +76,9 @@ class CircuitPluginContract(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, "工程版本已变化"):
                     workspace.workbench.call("0" * 64, "harness_run", {})
+
+                with self.assertRaisesRegex(ValueError, "缺少必填参数"):
+                    workspace.workbench.call(revision, "read_project_resource", {})
 
                 evaluation = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],

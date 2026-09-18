@@ -25,7 +25,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 ## 插件契约
 
-插件描述位于 `studio.domain.plugin`，可执行注册位于 `studio.application.circuit_plugin.CircuitPlugin`；Electron 侧的传输注册位于 `electron/circuit-tools.cjs`。后者只负责把模型协议规格和暴露策略送入 Codex，前者负责真正执行 Studio 工具。两侧保持相同的插件 ID、版本和能力名称：
+插件的唯一目录位于 `studio/domain/circuit-plugin.json`。Studio 的可执行注册位于 `studio.application.circuit_plugin.CircuitPlugin`；Electron 通过 `electron/circuit-tools.cjs` 加载并校验同一份目录，再由 `electron/circuit-plugin.cjs` 负责宿主执行器、串行调用和失效检查。没有第二份手写工具清单：目录描述协议，两个运行时分别验证自己拥有的执行边界。两侧保持相同的插件 ID、版本和能力名称：
 
 | 字段 | 作用 |
 | --- | --- |
@@ -73,8 +73,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 ## 当前实现边界
 
 - Codex thread/turn 与工作区文件能力由 [`codex-backend.cjs`](../apps/desktop/electron/codex-backend.cjs) 负责。
-- 插件的模型可见协议规格和暴露策略由 [`circuit-tools.cjs`](../apps/desktop/electron/circuit-tools.cjs) 的 `circuitToolRegistry` 负责；调用执行会带着 `threadId`、`turnId` 和 `callId` 穿过宿主边界。
-- Studio 的可执行插件注册和调用身份由 [`circuit_plugin.py`](../apps/desktop/circuit-lens/studio/application/circuit_plugin.py) 负责；`Workbench` 不再用一个按字符串展开的总分派器。
+- 插件的模型可见协议规格和暴露策略由 [`circuit-plugin.json`](../apps/desktop/circuit-lens/studio/domain/circuit-plugin.json) 声明，由 [`circuit-tools.cjs`](../apps/desktop/electron/circuit-tools.cjs) 校验和投影；[`circuit-plugin.cjs`](../apps/desktop/electron/circuit-plugin.cjs) 只执行宿主工具并串行化共享画布操作。调用执行会带着 `threadId`、`turnId` 和 `callId` 穿过宿主边界。
+- Studio 的可执行插件注册和调用身份由 [`circuit_plugin.py`](../apps/desktop/circuit-lens/studio/application/circuit_plugin.py) 负责；`Workbench` 不再用一个按字符串展开的总分派器。目录中的 `import_candidate` 是隐藏的 Studio 内部能力，供候选生命周期测试使用，不会进入 Codex 的动态工具列表；模型看到的 `submit_circuit` 只刷新用户正在编辑的实际 `.circ` 文件。
 - 真实 Logisim 仿真和 trace 由 [`harness.py`](../apps/desktop/circuit-lens/studio/runtime/harness.py) 的 `NativeCircuitRuntime` 调用 native runtime 完成；显式规格比较由 [`evaluation.py`](../apps/desktop/circuit-lens/studio/runtime/evaluation.py) 独立完成。
 - 插件描述通过 `/api/agent/plugin` 暴露，桌面宿主在发送上下文时将其作为 application context 注入模型绑定。
 
@@ -87,7 +87,7 @@ Codex dynamic tool call
   -> Electron admission + circuit operation queue
   -> /api/agent/tool
   -> CircuitInvocation(project, revision, thread, turn, call)
-  -> registered executor
+  -> catalog-validated host or Studio executor
   -> native observation / evaluation result
 ```
 
