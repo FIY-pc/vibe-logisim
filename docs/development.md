@@ -55,6 +55,12 @@ node scripts/bench/rendering.cjs /path/to/circuit.circ "电路名"
 node apps/desktop/test/e2e-render-tiles.cjs
 ```
 
+高 DPI、窄视口、瓦片复用和连续缩放基线（真实 Electron、不启动 Codex）：
+
+```sh
+node apps/desktop/test/e2e-render-density.cjs
+```
+
 测量解释和后续渲染架构见 [画布渲染方向](rendering.md)。
 
 不消耗模型额度、也不需要课程电路的文件夹行为验证：
