@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from studio.domain.plugin import tool_definitions
+from studio.domain.tool_errors import CircuitToolError, tool_error_from_exception
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,11 +84,13 @@ class CircuitPlugin:
         properties = schema.get("properties", {})
         missing = [name for name in schema.get("required", []) if name not in arguments]
         if missing:
-            raise ValueError(f"工具缺少必填参数: {', '.join(missing)}")
+            raise CircuitToolError("INVALID_ARGUMENT", f"工具缺少必填参数: {', '.join(missing)}",
+                                   hint="补齐 required 中的参数后重新调用。", context={"required": missing})
         if schema.get("additionalProperties") is False:
             unknown = sorted(set(arguments) - set(properties))
             if unknown:
-                raise ValueError(f"工具包含未声明的参数: {', '.join(unknown)}")
+                raise CircuitToolError("INVALID_ARGUMENT", f"工具包含未声明的参数: {', '.join(unknown)}",
+                                       hint="使用当前工具声明中的参数名。", context={"allowed": list(properties)})
         for name, value in arguments.items():
             expected = properties.get(name, {}).get("type")
             valid = {
@@ -99,24 +102,29 @@ class CircuitPlugin:
                 "number": isinstance(value, (int, float)) and not isinstance(value, bool),
             }.get(expected, True)
             if not valid:
-                raise ValueError(f"工具参数类型错误: {name} 应为 {expected}")
+                raise CircuitToolError("INVALID_ARGUMENT", f"工具参数类型错误: {name} 应为 {expected}")
             enum = properties.get(name, {}).get("enum")
             if enum is not None and value not in enum:
-                raise ValueError(f"工具参数取值无效: {name}")
+                raise CircuitToolError("INVALID_ARGUMENT", f"工具参数取值无效: {name}", context={"allowed": enum})
 
     def invoke(self, invocation: CircuitInvocation) -> dict[str, Any]:
-        if not isinstance(invocation.arguments, dict):
-            raise ValueError("工具参数必须为对象")
-        registered = self._tools.get(invocation.tool)
-        if registered is None:
-            raise ValueError("Unknown circuit tool")
-        record = self.workspace.history.record
-        if invocation.project_id is not None and (not record or invocation.project_id != record["id"]):
-            raise ValueError("工程身份已变化，请重新发起操作")
-        if invocation.revision_id != self.workspace.revision_id:
-            raise ValueError("工程版本已变化，请重新发起操作")
-        self._validate_arguments(registered.spec, invocation.arguments)
-        result = registered.handler(invocation)
+        try:
+            if not isinstance(invocation.arguments, dict):
+                raise CircuitToolError("INVALID_ARGUMENT", "工具参数必须为对象")
+            registered = self._tools.get(invocation.tool)
+            if registered is None:
+                raise CircuitToolError("UNKNOWN_TOOL", "Unknown circuit tool", context={"availableTools": list(self.names())})
+            record = self.workspace.history.record
+            if invocation.project_id is not None and (not record or invocation.project_id != record["id"]):
+                raise CircuitToolError("STALE_PROJECT", "工程身份已变化，请重新发起操作")
+            if invocation.revision_id != self.workspace.revision_id:
+                raise CircuitToolError("STALE_REVISION", "工程版本已变化，请重新发起操作")
+            self._validate_arguments(registered.spec, invocation.arguments)
+            result = registered.handler(invocation)
+        except CircuitToolError:
+            raise
+        except Exception as error:
+            raise tool_error_from_exception(invocation.tool, error) from error
         if isinstance(result, dict):
             result.setdefault("invocation", {
                 "projectId": invocation.project_id,

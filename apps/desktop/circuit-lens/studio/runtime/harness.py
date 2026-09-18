@@ -7,6 +7,7 @@ import json
 import time
 import uuid
 import xml.etree.ElementTree as ET
+from studio.domain.tool_errors import CircuitToolError
 from studio.domain.plugin import PLUGIN_ID, PLUGIN_VERSION, RESULT_SCHEMA, binding_for, result_envelope
 from studio.runtime.evaluation import EvaluationService
 
@@ -103,10 +104,14 @@ class NativeCircuitRuntime:
         artifact_sha = self._artifact_sha(artifact)
         started_at = datetime.now(timezone.utc).isoformat()
         started = time.perf_counter()
+        inspected = self.tools.inspect({'circuit': name, 'candidateId': candidate_id} if candidate_id else {'circuit': name})
+        available = [item.get('label') for item in inspected.get('stimulusSchema') or [] if item.get('label')]
         request = ET.Element('simulate', circuit=name)
         for vector in vectors:
             row = ET.SubElement(request, 'vector')
-            for pin, value in self._values(vector.get('inputs', {}), '输入').items():
+            inputs = self._values(vector.get('inputs', {}), '输入')
+            self._assert_known_inputs(inputs, available)
+            for pin, value in inputs.items():
                 ET.SubElement(row, 'input', name=pin, value=str(value))
             self._values(vector.get('expected'), '期望输出', allow_none=True)
         response = self.tools._native(artifact, request)
@@ -185,7 +190,12 @@ class NativeCircuitRuntime:
         if unknown:
             shown = ', '.join(available[:24])
             suffix = ' …' if len(available) > 24 else ''
-            raise ValueError(f'找不到输入引脚 {", ".join(unknown)}；当前可用输入：{shown}{suffix}。请先 inspect_circuit 再填写 inputs')
+            raise CircuitToolError(
+                'UNKNOWN_INPUT',
+                f'找不到输入引脚 {", ".join(unknown)}；当前可用输入：{shown}{suffix}。',
+                hint='使用当前 inspect_circuit 返回的 stimulusSchema.label 作为 inputs 或 inputEvents 的 name。',
+                available_inputs=available,
+            )
 
     @staticmethod
     def _values(values, label, allow_none=False):

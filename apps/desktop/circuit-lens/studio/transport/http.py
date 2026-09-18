@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
 import xml.etree.ElementTree as ET
 from studio.domain.errors import LensError, MAX_UPLOAD_BYTES
+from studio.domain.tool_errors import tool_error_from_exception
 from studio.infrastructure.files import sha256_bytes
 
 class LensHTTPServer(ThreadingHTTPServer):
@@ -333,8 +334,11 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._read_json()
                 try:
                     result = self.server.app.application.agent_tool(body)
-                except ValueError as error:
-                    raise LensError(HTTPStatus.UNPROCESSABLE_ENTITY, "CIRCUIT_TOOL_REJECTED", str(error)) from error
+                except Exception as error:
+                    failure = tool_error_from_exception(body.get("tool") if isinstance(body, dict) else None, error)
+                    status = HTTPStatus.INTERNAL_SERVER_ERROR if failure.code == "TOOL_FAILED" else HTTPStatus.UNPROCESSABLE_ENTITY
+                    self._json(status, failure.as_json())
+                    return
                 self._json(HTTPStatus.OK, result)
             elif parsed.path == "/api/memory":
                 from studio.runtime.simulation import memory_page

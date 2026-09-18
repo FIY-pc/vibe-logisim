@@ -69,6 +69,7 @@ To trace the current working circuit (rather than a candidate), pass candidateId
 When displayedSimulation is supplied, it is the exact frozen running state the user saw when asking, even if clocks have since advanced. rootCircuit and instancePath identify the precise running instance, including nested copies of the same definition. inspect_circuit on the observed circuit returns this frozen instance observation, not a newer live state. Other definitions or instances do not inherit these values. Unknown/error bits are not zero. A tick advances native clocks, not necessarily a full cycle or retired instruction. trace_circuit starts a separate execution and cannot explain the displayed state by itself; use rowStart/rowLimit when a long run needs a later sample window. Manual property edits end the old live session; never imply its registers survive an edit.
 User-kept moments, when supplied, are observations the user deliberately attached. Brief signal tables are sent separately from general circuit evidence. read_kept_observation can read their original component ports, even after editing or restarting; use it whenever the brief table or truncated context does not contain what you need. They may belong to earlier revisions or separate sessions; never treat them as current live values or infer unobserved transitions. Signal references and objectReferences are clickable canvas links. When naming an important component or wire in your answer, use a supplied reference as a Markdown link [human-readable label](circuit://object?...). inspect_circuit supplies references for small results or an objectReferenceTemplate; substitute a verified componentId for COMPONENT_ID. Use these links when they help explain, without filling prose with IDs. Users can read earlier moments after editing; historical object links cannot select an unrelated current component.
 When explaining how to operate the shared canvas, use its actual controls: 操作输入 (P) switches input values, presses buttons and toggles clocks; the first input operation starts simulation automatically. Users can also select an input and enter its 输入值 in the inspector. These are temporary running values and do not edit the circuit file. Do not describe another Logisim application's toolbar as this workspace's UI.
+When a circuit tool fails, its result contains a structured error with code, message, retryable, and sometimes hint or availableInputs. Use that feedback to correct the next call instead of repeating the same invalid arguments.
 Explain design choices, changes and actual check coverage briefly. Keep available tools optional; use the approach that helps the user complete and understand their circuit.`;
 
 function delay(milliseconds, value) {
@@ -109,7 +110,12 @@ function itemErrorText(item) {
   const content = Array.isArray(item?.contentItems)
     ? item.contentItems.map((entry) => entry?.text || entry?.message || "").filter(Boolean).join("\n")
     : "";
-  return shortText(item?.error?.message || content || item?.message || "这次操作没有完成", 500);
+  let structured = null;
+  try {
+    const parsed = JSON.parse(content);
+    structured = parsed?.error || null;
+  } catch {}
+  return shortText(item?.error?.message || structured?.message || content || item?.message || "这次操作没有完成", 500);
 }
 
 function isMissingThreadError(error) {
@@ -1351,7 +1357,17 @@ class CodexBackend extends EventEmitter {
         return {contentItems: [{type: "inputText", text: JSON.stringify(result)}], success: true};
       };
       Promise.resolve().then(invoke)
-        .catch(error => ({contentItems: [{type: "inputText", text: plainError(error)}], success: false}))
+        .catch(error => ({
+          contentItems: [{type: "inputText", text: JSON.stringify({
+            error: error.toolError || {
+              code: error.code || "CIRCUIT_TOOL_FAILED",
+              message: plainError(error),
+              retryable: false,
+              hint: "检查当前工作区和连接状态后再决定是否重试。",
+            },
+          })}],
+          success: false,
+        }))
         .then(result => {
           // An interrupted, switched or restarted turn has no response target.
           if (current() && this.child?.stdin?.writable) {

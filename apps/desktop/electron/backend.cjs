@@ -348,6 +348,9 @@ class LensBackend extends EventEmitter {
         );
         error.code = payload?.code || payload?.error?.code || null;
         error.status = response.status;
+        if (payload?.schema === "vibe-logisim.circuit-plugin.error/v1" && payload.error) {
+          error.toolError = payload.error;
+        }
         throw error;
       }
       return payload;

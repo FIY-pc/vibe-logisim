@@ -59,6 +59,22 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `evaluate_circuit` 是独立的评测能力。组合模式要求每个输入向量带 `expected`；时序模式要求 `expectedRows`，每行指定 tick 和观察信号。它返回 `evaluation` 对象并保留底层 native observation：`passed` 表示规格覆盖的案例全部匹配，`failed` 表示至少一个明确不匹配，`unknown` 表示运行结果中有未确定信号或缺失样本。
 
+### 工具失败反馈
+
+工具失败使用 `vibe-logisim.circuit-plugin.error/v1`，错误对象至少包含：
+
+```json
+{
+  "code": "UNKNOWN_INPUT",
+  "message": "找不到输入引脚 Cin。",
+  "retryable": false,
+  "hint": "使用 availableInputs 中的标签；组件 ID 不是输入名。",
+  "availableInputs": ["A", "B"]
+}
+```
+
+`retryable` 表示原参数不变时是否适合直接重试；参数错误、未知输入和过期修订通常为 `false`，模型应先根据 `hint`、`context` 或 `availableInputs` 修正调用。错误从 Studio 生成，经 HTTP 和 Electron 透传到 Codex 工具结果，不由 UI 改写成成功，也不要求用户进入固定验证流程。
+
 ## 身份与证据
 
 每次 native 仿真至少绑定：

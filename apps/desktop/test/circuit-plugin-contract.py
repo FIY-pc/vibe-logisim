@@ -10,11 +10,13 @@ import sys
 import tempfile
 import threading
 import unittest
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
 
+from studio.domain.tool_errors import CircuitToolError
 from studio.application.workspace import Workspace
 from studio.transport.http import Handler, LensHTTPServer
 
@@ -74,11 +76,27 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(result["invocation"]["callId"], "call-contract")
                 self.assertEqual(result["invocation"]["turnId"], "turn-contract")
 
+                with self.assertRaisesRegex(CircuitToolError, "找不到输入引脚") as unknown_input:
+                    workspace.application.agent_tool({
+                        "projectId": workspace.history.record["id"],
+                        "revisionId": revision,
+                        "tool": "simulate_circuit",
+                        "arguments": {
+                            "circuit": "main",
+                            "vectors": [{"inputs": {"wrong": 1}}],
+                        },
+                    })
+                self.assertEqual(unknown_input.exception.code, "UNKNOWN_INPUT")
+                self.assertEqual(unknown_input.exception.available_inputs, ["a", "b"])
+
                 with self.assertRaisesRegex(ValueError, "工程版本已变化"):
                     workspace.workbench.call("0" * 64, "harness_run", {})
 
-                with self.assertRaisesRegex(ValueError, "缺少必填参数"):
+                with self.assertRaisesRegex(CircuitToolError, "缺少必填参数") as missing:
                     workspace.workbench.call(revision, "read_project_resource", {})
+                self.assertEqual(missing.exception.code, "INVALID_ARGUMENT")
+                self.assertFalse(missing.exception.retryable)
+                self.assertIn("required", missing.exception.hint)
 
                 evaluation = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],
@@ -145,6 +163,28 @@ class CircuitPluginContract(unittest.TestCase):
                     manifest = json.loads(response.read())
                 self.assertEqual(manifest["id"], "vibe-logisim.circuit")
                 self.assertEqual(manifest["schema"], "vibe-logisim.circuit-plugin/v1")
+
+                invalid_body = {
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": workspace.revision_id,
+                    "tool": "read_project_resource",
+                    "arguments": {},
+                }
+                invalid_request = Request(
+                    f"{base}/api/agent/tool",
+                    data=json.dumps(invalid_body).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as rejected:
+                    urlopen(invalid_request)
+                with rejected.exception as response:
+                    error_payload = json.loads(response.read())
+                self.assertEqual(error_payload["schema"], "vibe-logisim.circuit-plugin.error/v1")
+                error_detail = error_payload["error"]
+                self.assertEqual(error_detail["code"], "INVALID_ARGUMENT")
+                self.assertFalse(error_detail["retryable"])
+                self.assertIn("补齐", error_detail["hint"])
 
                 body = {
                     "projectId": workspace.history.record["id"],
