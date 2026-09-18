@@ -163,14 +163,41 @@ class NativeCircuitRuntime:
         return hashlib.sha256(artifact.read_bytes()).hexdigest()
 
     @staticmethod
+    def _input_labels(components):
+        labels = []
+        for component in components.values() if isinstance(components, dict) else components:
+            if component.get('factoryName') != 'Pin':
+                continue
+            ends = component.get('ends') or []
+            if not any(end.get('direction') == 'output' for end in ends):
+                continue
+            selector = component.get('selector') or {}
+            label = selector.get('label') or component.get('label')
+            if isinstance(label, str) and label.strip():
+                labels.append(label)
+        return sorted(set(labels))
+
+    @staticmethod
+    def _assert_known_inputs(values, available):
+        if not available:
+            return
+        unknown = sorted(name for name in values if name not in available)
+        if unknown:
+            shown = ', '.join(available[:24])
+            suffix = ' …' if len(available) > 24 else ''
+            raise ValueError(f'找不到输入引脚 {", ".join(unknown)}；当前可用输入：{shown}{suffix}。请先 inspect_circuit 再填写 inputs')
+
+    @staticmethod
     def _values(values, label, allow_none=False):
         if values is None and allow_none:
             return {}
         if not isinstance(values, dict):
             raise ValueError(f'{label}必须是对象')
         for name, value in values.items():
-            if not isinstance(name, str) or not name or not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 4294967295:
-                raise ValueError(f'{label}必须为无符号整数')
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f'{label}的输入名不能为空，请使用 inspect_circuit 返回的引脚标签')
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 4294967295:
+                raise ValueError(f'{label}“{name}”必须为 32 位无符号整数')
         return values
 
     def trace(self, args):
@@ -205,9 +232,9 @@ class NativeCircuitRuntime:
                 raise ValueError('观察名称必须唯一，端口需来自此候选的原生观察')
             seen.add(label)
             select('watch', watch, name=label, port=str(port))
-        for pin, value in inputs.items():
-            if type(value) is not int or not 0 <= value <= 4294967295:
-                raise ValueError('输入必须为 32 位无符号整数')
+        normalized_inputs = self._values(inputs, '输入')
+        self._assert_known_inputs(normalized_inputs, self._input_labels(observation['focus']['components']))
+        for pin, value in normalized_inputs.items():
             ET.SubElement(request, 'input', name=pin, value=str(value))
         program = args.get('program')
         if args.get('resetButton'):
@@ -228,8 +255,9 @@ class NativeCircuitRuntime:
         for event in input_events:
             if not isinstance(event, dict) or type(event.get('tick')) is not int or (not 0 <= event['tick'] <= ticks):
                 raise ValueError('输入事件需要范围内的 tick')
-            if not isinstance(event.get('name'), str) or type(event.get('value')) is not int or (not 0 <= event['value'] <= 4294967295):
+            if not isinstance(event.get('name'), str) or not event['name'].strip() or type(event.get('value')) is not int or (not 0 <= event['value'] <= 4294967295):
                 raise ValueError('输入事件目标或数值无效')
+            self._assert_known_inputs({event['name']: event['value']}, self._input_labels(observation['focus']['components']))
             ET.SubElement(request, 'input-event', name=event['name'], tick=str(event['tick']), value=str(event['value']))
         if program is not None:
             words = program.get('words')

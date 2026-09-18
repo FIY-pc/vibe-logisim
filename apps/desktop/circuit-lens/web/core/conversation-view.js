@@ -145,25 +145,59 @@ export class ConversationView {
     return this.work;
   }
   start() {this.group().dataset.status='running';this.updateWork('正在思考');this.scroll();}
-  updateWork(label) {this.group().querySelector('summary span').textContent=label;}
-  activity(id,label,status='running',kind='tool') {
+  updateWork(fallback=null) {
+    const work=this.group(),summary=work.querySelector('summary span');
+    const running=[...work.querySelectorAll('.agent-activity[data-status="running"]')].at(-1);
+    if(running) {summary.textContent=`正在${running.querySelector('.agent-activity-label')?.textContent || '处理'}…`;return;}
+    if(work.dataset.status==='running') {summary.textContent=fallback || '正在整理结果';return;}
+    if(!work.dataset.status && fallback) {summary.textContent=fallback;return;}
+    if(work.dataset.status==='completed') {
+      const count=work.querySelectorAll('.agent-activity').length;
+      const failed=work.querySelectorAll('.agent-activity[data-status="failed"]:not([data-recovered="true"])').length;
+      if(failed) {summary.textContent=`回答完成 · ${failed} 个步骤未完成 · 查看工作过程`;return;}
+      summary.textContent=count ? `已完成 · ${count} 个工作步骤 · 查看工作过程` : '已完成 · 查看工作过程';return;
+    }
+    if(work.dataset.status==='interrupted') {summary.textContent='已停止 · 查看工作过程';return;}
+    summary.textContent='未完成 · 查看工作过程';
+  }
+  activity(id,label,status='running',kind='tool',detail=null,activityKey=null) {
     if(!id)return;this.ui.agentEmpty.hidden=true;
     let node=this.activities.get(String(id));
+    const retryKey=String(activityKey||'');
+    const priorFailed=status==='completed' && retryKey
+      ? [...this.group().querySelectorAll('.agent-activity[data-status="failed"]')].find(item=>item!==node&&item.dataset.activityKey===retryKey)
+      : null;
     if(!node) {
       node=makeElement('div','agent-activity');node.append(makeElement('span','agent-activity-label'),makeElement('span','agent-activity-status'));
       this.group().append(node);this.activities.set(String(id),node);
     }
+    const previous=node.dataset.status;
+    const recovered=previous==='failed' && status==='completed' && node.dataset.activityKey===retryKey;
+    if(activityKey)node.dataset.activityKey=String(activityKey);
     node.dataset.status=status;
+    if(recovered)node.dataset.recovered='true';
+    if(priorFailed) {
+      priorFailed.dataset.recovered='true';
+      priorFailed.querySelector('.agent-activity-status').textContent='已恢复';
+    }
     const text=String(label||'正在处理').replace(/\s+/g,' ').trim();
     node.querySelector('.agent-activity-label').textContent=kind==='reasoning'?'分析电路与问题':text;
-    node.querySelector('.agent-activity-status').textContent=status==='running'?'进行中':status==='failed'?'未完成':'完成';
-    this.updateWork(status==='running'?(kind==='command'?'正在执行本地操作':kind==='reasoning'?'正在思考':text.slice(0,50)):'正在整理结果');
+    node.querySelector('.agent-activity-status').textContent=status==='running'?'进行中':status==='failed'?(recovered?'已恢复':'未完成'):'完成';
+    if(detail) {
+      node.title=String(detail);
+      if(status==='failed') {
+        let error=node.querySelector('.agent-activity-detail');
+        if(!error){error=makeElement('small','agent-activity-detail');node.append(error);}
+        error.textContent=String(detail);
+      }
+    }
+    this.updateWork();
     this.scroll();
   }
   finish(status='completed') {
     for(const message of this.pending)this.render(message);this.pending.clear();
     this.ui.agentTimeline.querySelectorAll('.is-streaming').forEach(node=>{node.classList.remove('is-streaming');node.setAttribute('aria-busy','false');const m=this.messages.get(node.dataset.itemId);if(m)m.footer.hidden=m.phase==='commentary';});
-    if(this.work){this.work.dataset.status=status;this.updateWork(status==='completed'?'查看工作过程':status==='interrupted'?'已停止 · 查看过程':'未完成 · 查看过程');}
+    if(this.work){this.work.dataset.status=status;this.updateWork();}
     this.scroll();
   }
   system(text,kind='warning') {

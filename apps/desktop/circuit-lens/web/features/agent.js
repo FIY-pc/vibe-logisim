@@ -318,11 +318,11 @@ function handleAgentEvent(event) {
       return;
     }
     if (event.type === "reasoning-delta") {
-      conversation.activity(event.itemId, event.delta || "正在分析选区证据", "running", "reasoning");
+      conversation.activity(event.itemId, event.delta || "正在分析选区证据", "running", "reasoning", null, "reasoning");
       return;
     }
     if (event.type === "activity") {
-      conversation.activity(event.itemId, event.label, event.status, event.kind);
+      conversation.activity(event.itemId, event.label, event.status, event.kind, event.detail, event.activityKey);
       return;
     }
     if (event.type === "harness-result") {
@@ -334,7 +334,7 @@ function handleAgentEvent(event) {
         : Number.isInteger(failure?.rowIndex) ? ` · 首个异常输入第 ${failure.rowIndex + 1} 组` : "";
       const scope = session.candidateId ? " · 候选电路"
         : session.revisionId !== projectState.revision ? " · 历史版本" : "";
-      conversation.activity(event.itemId || session.id, `${session.circuit || "电路"} · ${status}${position}${scope}`, event.feedback?.status === "failed" ? "failed" : "completed");
+      conversation.activity(event.itemId || session.id, `${session.circuit || "电路"} · ${status}${position}${scope}`, event.feedback?.status === "failed" ? "failed" : "completed", "tool", null, `harness:${session.circuit || "circuit"}`);
       if (failure) {
         const actual = JSON.stringify(failure.outputs || failure.actual || {});
         const expected = JSON.stringify(failure.expected || {});

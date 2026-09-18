@@ -89,6 +89,29 @@ function shortText(value, limit = 240) {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
+function commandActivityLabel(command) {
+  const value = String(command ?? "").trim();
+  if (!value) return "执行本地操作";
+  if (/\b(rg|grep|find|ls|fd|cat|head|tail|sed|awk|pwd|sha256sum|git\s+(?:status|diff|log|show))\b/.test(value)) {
+    return "查阅工程资料";
+  }
+  if (/\b(?:node|npm|npx|python(?:3)?|pytest|javac|java|cargo|go)\b/.test(value)) {
+    return "运行本地检查";
+  }
+  if (/\bgit\s+(?:add|commit|checkout|restore)\b/.test(value)) {
+    return "处理工程改动";
+  }
+  return "执行本地操作";
+}
+
+function itemErrorText(item) {
+  if (item?.success !== false && item?.status !== "failed") return null;
+  const content = Array.isArray(item?.contentItems)
+    ? item.contentItems.map((entry) => entry?.text || entry?.message || "").filter(Boolean).join("\n")
+    : "";
+  return shortText(item?.error?.message || content || item?.message || "这次操作没有完成", 500);
+}
+
 function isMissingThreadError(error) {
   return Number(error?.code) === -32600 && /no rollout found|thread.+not found|unknown thread/i.test(error.message || "");
 }
@@ -104,22 +127,23 @@ function workspaceChangedError() {
 function itemActivity(item, circuitRegistry) {
   if (!item || typeof item !== "object") return null;
   if (item.type === "reasoning") {
-    return { kind: "reasoning", label: "正在分析电路" };
+    return { kind: "reasoning", label: "分析电路与问题", activityKey: "reasoning" };
   }
   if (item.type === "commandExecution") {
-    return { kind: "command", label: shortText(item.command) || "执行本地命令" };
+    const label = commandActivityLabel(item.command);
+    return { kind: "command", label, activityKey: `command:${label}`, detail: shortText(item.command, 500) };
   }
   if (item.type === "mcpToolCall") {
-    return { kind: "tool", label: `${shortText(item.server, 80)} / ${shortText(item.tool, 100)}` };
+    return { kind: "tool", label: "调用外部工具", activityKey: `mcp:${item.server || "unknown"}:${item.tool || "unknown"}`, detail: `${shortText(item.server, 80)} / ${shortText(item.tool, 100)}` };
   }
   if (item.type === "dynamicToolCall") {
-    return { kind: "tool", label: circuitRegistry?.label(item.tool) || shortText(item.tool, 160) || "调用工具" };
+    return { kind: "tool", label: circuitRegistry?.label(item.tool) || "使用电路工具", activityKey: `circuit:${item.tool || "unknown"}`, detail: item.tool || null };
   }
   if (item.type === "webSearch") {
-    return { kind: "web", label: "检索资料" };
+    return { kind: "web", label: "检索资料", activityKey: "web-search" };
   }
   if (item.type === "fileChange") {
-    return { kind: "file", label: "请求文件变更" };
+    return { kind: "file", label: "处理工程改动", activityKey: "file-change" };
   }
   return null;
 }
@@ -1253,11 +1277,15 @@ class CodexBackend extends EventEmitter {
       }
       const activity = itemActivity(item, this.circuitTools.registry);
       if (activity) {
+        const status = method === "item/started"
+          ? "running"
+          : (item.status === "failed" || item.success === false ? "failed" : (item.status || "completed"));
         this.emit("event", {
           type: "activity",
           itemId: item.id,
           turnId: params.turnId,
-          status: method === "item/started" ? "running" : (item.status || "completed"),
+          status,
+          detail: method === "item/completed" ? itemErrorText(item) || activity.detail || null : null,
           ...activity,
         });
       }
