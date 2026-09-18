@@ -42,6 +42,7 @@ export const ui = Object.fromEntries(
          
       "wireLayer",
       "componentLayer",
+      "optimisticDeletionLayer",
       "interactionLayer",
       "emptyState",
       "emptyHint",

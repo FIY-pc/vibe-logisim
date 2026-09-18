@@ -2,7 +2,7 @@ import {wireOverlaps} from '../core/selection-geometry.js';
 
 export const modelDependencies = ["project", "review"];
 
-export const dependencies = ["selectWire","closeComparison","clearComparisonError","comparisonActionError","refreshEditedProject","clearSelection","selectComponent","pollSessionState","showToast","setCanvasStatus","updateSessionChrome"];
+export const dependencies = ["selectWire","closeComparison","clearComparisonError","comparisonActionError","refreshEditedProject","clearSelection","selectComponent","pollSessionState","showToast","setCanvasStatus","updateSessionChrome","beginOptimisticDeletion","rollbackOptimisticDeletion"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
@@ -46,6 +46,7 @@ async function performProjectAction(action, extra = {}, circuit = projectState.c
     ui.saveActionError.hidden = true;
     ports.clearComparisonError();
     ports.updateSessionChrome();
+    const optimisticDelete = action === "delete" && ports.beginOptimisticDeletion(extra);
     let applied = false;
     try {
       const payload = { projectId: projectState.session.workspace.id, revisionId: projectState.revision, ...extra };
@@ -80,6 +81,7 @@ async function performProjectAction(action, extra = {}, circuit = projectState.c
       if(!["place", "delete"].includes(action))ports.showToast(action === "save" ? "已保存到当前文件" : action === "restore" ? "已恢复电路，对话和历史保留" : action === "undo" ? "已撤销上一步改动" : projectState.folder ? "已写入当前文件" : "改动已应用，尚未保存到文件");
       return true;
     } catch (error) {
+      if (optimisticDelete) ports.rollbackOptimisticDeletion();
       const message = `${applied ? "操作已完成，但界面刷新失败" : "操作未完成"}：${error.message}`;
       const errorNode = ui.saveDialog.open ? ui.saveActionError : null;
       if (errorNode) { errorNode.textContent = message; errorNode.hidden = false; }

@@ -99,6 +99,15 @@ node apps/desktop/test/e2e-placement-rendering.cjs /path/to/full_adder.circ
 
 通过真实鼠标在放大和普通视野放置，延迟真实高清图响应，检查等待期间原图和新组件持续存在、后续点击保留、视野稳定、切换文件后丢弃旧图。记录逐帧状态与 Chromium 实际绘制的 PNG，便于检查局部闪烁；不替换原生电路结果，不消耗模型额度。
 
+放置与删除的即时反馈和失败恢复可用临时全加器及空电路验证：
+
+```sh
+node apps/desktop/test/e2e-place-delete-latency.cjs
+node apps/desktop/test/e2e-delete-recovery.cjs
+```
+
+两者都用真实 Electron 鼠标和键盘操作，不启动 Codex。前者记录单次放置、连续放置和 Backspace 删除从输入到画面可见的时间，并确认后台仍写入临时文件；后者让第一次删除故意失败，确认元件和画面覆盖层恢复、文件内容不变。它们测量的是本地即时反馈与恢复边界，不把后台写入耗时冒充用户已经看到结果的时间。
+
 对话管理与草稿归属的验收：
 
 ```sh

@@ -41,13 +41,86 @@ function buildWireNetLookup() {
 
 let componentNodes = new Map(), componentContext = null;
 const optimisticNodes = new Map();
+let optimisticDeletion = null;
+
+function clearOptimisticDeletion() {
+    if (!optimisticDeletion) return;
+    const groups = new Map();
+    for (const entry of optimisticDeletion.detached) {
+      const entries = groups.get(entry.parent) || [];
+      entries.push(entry);
+      groups.set(entry.parent, entries);
+    }
+    for (const entries of groups.values()) for (const entry of entries.sort((a, b) => a.index - b.index)) {
+      if (!entry.parent || entry.node.parentNode) continue;
+      entry.parent.insertBefore(entry.node, entry.parent.children[entry.index] || null);
+    }
+    optimisticDeletion.cover.remove();
+    optimisticDeletion = null;
+}
+
+function beginOptimisticDeletion(selection = {}) {
+    clearOptimisticDeletion();
+    if (!projectState.circuit || !ui.optimisticDeletionLayer) return false;
+    const componentIds = new Set((selection.componentIds || []).map(String));
+    const wireIds = new Set((selection.wireIds || []).map(String));
+    if (!componentIds.size && !wireIds.size) return false;
+
+    const components = projectState.circuit.components
+      .map((component, index) => ({component, id: componentId(component, index), bounds: normalizeBounds(component.bounds, componentPoint(component))}))
+      .filter(entry => componentIds.has(entry.id));
+    const wires = projectState.circuit.wires
+      .map((wire, index) => ({wire, id: wireId(wire, index), points: wirePoints(wire)}))
+      .filter(entry => entry.points.length >= 2 && (wireIds.has(entry.id) || components.some(component =>
+        entry.points.some(point => point.x >= component.bounds.x - 4 && point.x <= component.bounds.x + component.bounds.width + 4 &&
+          point.y >= component.bounds.y - 4 && point.y <= component.bounds.y + component.bounds.height + 4))));
+    const detached = [];
+    for (const id of componentIds) {
+      const node = ui.componentLayer.querySelector(`.circuit-component[data-object-id="${CSS.escape(id)}"]`);
+      if (!node) continue;
+      detached.push({node, parent: node.parentNode, index: [...node.parentNode.children].indexOf(node)});
+      node.remove();
+    }
+    for (const {id} of wires) {
+      const node = ui.wireLayer.querySelector(`.wire-group[data-wire-id="${CSS.escape(id)}"]`);
+      if (!node) continue;
+      detached.push({node, parent: node.parentNode, index: [...node.parentNode.children].indexOf(node)});
+      node.remove();
+    }
+    const cover = makeSvg("g", {class: "optimistic-delete-cover"});
+    for (const {bounds} of components) {
+      cover.append(makeSvg("rect", {
+        x: bounds.x - 5, y: bounds.y - 5,
+        width: bounds.width + 10, height: bounds.height + 10,
+        rx: 2, class: "optimistic-delete-fill",
+      }));
+    }
+    for (const {points} of wires) {
+      cover.append(makeSvg("polyline", {
+        points: wirePath(points).map(point => `${point.x},${point.y}`).join(" "),
+        class: "optimistic-delete-wire",
+      }));
+    }
+    ui.optimisticDeletionLayer.replaceChildren(cover);
+    optimisticDeletion = {detached, cover};
+    return true;
+}
+
+function rollbackOptimisticDeletion() {
+    clearOptimisticDeletion();
+    ports.updateSelectionClasses();
+    ports.renderInspector();
+}
+
 function renderCircuit({preserveCamera = false, preparedFrame = null} = {}) {
+    clearOptimisticDeletion();
     ports.resetManipulation();
     ports.invalidateSimulationFrame();
     canvasState.wireStart = null;
     canvasState.wirePoints = [];
     ui.circuitCanvas.querySelectorAll('.wire-port-hit.is-wire-start').forEach(node=>node.classList.remove('is-wire-start'));
     ports.commitCircuitRendering(preparedFrame);
+    ui.optimisticDeletionLayer?.replaceChildren();
     ui.wireLayer.replaceChildren();
 
     ui.interactionLayer.replaceChildren();
@@ -503,5 +576,5 @@ function onPointerUp(event) {
     applyCamera();
   }
 
-  return Object.freeze({focusComponents, captureViewport, restoreViewport, renderWirePreview, buildWireNetLookup, renderCircuit, renderComponent, appendOptimisticComponent, removeOptimisticComponent, fitCircuit, applyCamera, zoomAt, clientToWorld, onPointerDown, onPointerMove, onPointerUp});
+  return Object.freeze({focusComponents, captureViewport, restoreViewport, renderWirePreview, buildWireNetLookup, renderCircuit, renderComponent, appendOptimisticComponent, removeOptimisticComponent, beginOptimisticDeletion, rollbackOptimisticDeletion, fitCircuit, applyCamera, zoomAt, clientToWorld, onPointerDown, onPointerMove, onPointerUp});
 }
