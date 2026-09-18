@@ -32,7 +32,8 @@ export class ConversationView {
     message.context=context;
     if(context) {
       const path=context.simulationInstancePath?.map(p=>p.label)||[];
-      const label=[context.circuit,...path,context.observationId?'运行时刻':null].filter(Boolean).join(' › ');
+      const showCircuit=context.circuit && (context.circuit!=='main'||path.length>0||context.observationId);
+      const label=[showCircuit?context.circuit:null,...path,context.observationId?'运行时刻':null].filter(Boolean).join(' › ');
       if(label){const ref=makeElement('small','agent-message-context',label);ref.title=context.summary||'';message.node.append(ref);}
       this.appendMoments(message.node,context);
       this.appendMaterials(message.node,context);
