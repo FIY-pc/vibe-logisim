@@ -21,6 +21,12 @@ Vibe Logisim 使用 Codex 作为基础 Agent Harness，并通过 Circuit Plugin 
 
 Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作目录、上下文、工具调用、权限、事件流和历史等生命周期。电路插件不创建第二套 thread、turn、审批或模型循环，它只提供模型在电路世界中的可调用能力。
 
+### Native Codex connection
+
+开发环境的 Codex 连接以启动时的本机 `CODEX_HOME/config.toml` 为默认配置。宿主只建立隔离的运行 profile，并镜像 provider、当前模型、思考深度和 `model_catalog_json` 指向的本地 catalog；认证仍沿用本机登录状态，不复制另一份轮换凭据。这样隔离的是运行目录和工作目录，配置语义仍来自本机 Codex。
+
+模型列表始终从同一个 app-server 的 `model/list` 读取。Vibe Logisim 保存的模型选择只是当前应用的可选覆盖，必须同时通过该 catalog 的模型 ID 和 supported reasoning efforts 校验后才能进入 `thread/start` 或 `turn/start`。失效的旧选择会被清除并回到本机配置；没有应用覆盖时不自行挑选 catalog 默认模型。界面中的“轻度 / 中 / 高 / 极高 / 最高 / Ultra”只是 native effort ID 的显示翻译，选项集合和可用深度由 catalog 决定。
+
 插件能力是用户驱动的。模型可以直接编辑工作目录中的 `.circ` 文件，之后请求观察；也可以使用候选构建工具；可以先完成整张电路再运行实验。插件提供可靠动作和证据，不规定动作顺序。
 
 ## 插件契约

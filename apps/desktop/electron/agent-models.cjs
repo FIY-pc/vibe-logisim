@@ -11,14 +11,48 @@ class AgentModels {
     this.catalog = null;
     this.loading = null;
     this.selection = null;
+    this.savedSelection = null;
     try {
       const saved = JSON.parse(fs.readFileSync(preferencesPath, "utf8"));
       if (typeof saved.model === "string" && saved.model.length <= 160 &&
-          typeof saved.effort === "string" && saved.effort.length <= 30) this.selection = {model:saved.model, effort:saved.effort};
+          (saved.effort === null || typeof saved.effort === "string") &&
+          (saved.effort === null || saved.effort.length <= 30)) this.savedSelection = {model:saved.model, effort:saved.effort ?? null};
     } catch (_) { /* No preference means inherit the configured connection. */ }
   }
 
-  invalidate() { this.catalog = null; this.loading = null; }
+  invalidate() {
+    this.catalog = null;
+    this.loading = null;
+    this.selection = null;
+  }
+
+  #write(selection) {
+    if (!this.preferencesPath) return;
+    fs.mkdirSync(path.dirname(this.preferencesPath), {recursive:true});
+    const temporary = `${this.preferencesPath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(selection), {mode:0o600});
+    fs.renameSync(temporary, this.preferencesPath);
+  }
+
+  #synchronizeSelection(catalog) {
+    const candidate = this.savedSelection;
+    if (!candidate) {
+      this.selection = null;
+      return;
+    }
+    const model = catalog.find(item => item.model === candidate.model);
+    const valid = model && (candidate.effort === null || model.efforts.some(item => item.value === candidate.effort));
+    if (valid) {
+      this.selection = {model:model.model, effort:candidate.effort};
+      return;
+    }
+    // A model catalog is connection-scoped. An old app preference must never
+    // become an unverified turn/start override after reconnecting to another
+    // provider or after Codex changes its model identifiers.
+    this.#write(null);
+    this.savedSelection = null;
+    this.selection = null;
+  }
 
   async list({refresh = false} = {}) {
     if (!refresh && this.catalog) return this.catalog;
@@ -43,7 +77,10 @@ class AgentModels {
         seen.add(cursor);
       } while (cursor);
       const catalog = [...models.values()];
-      if (this.loading === loading) this.catalog = catalog;
+      if (this.loading === loading) {
+        this.catalog = catalog;
+        this.#synchronizeSelection(catalog);
+      }
       return catalog;
     })();
     this.loading = loading;
@@ -53,20 +90,17 @@ class AgentModels {
 
   async validate(selection) {
     if (selection === null) return null;
-    if (!selection || typeof selection.model !== "string" || typeof selection.effort !== "string") throw new Error("请选择模型和思考深度");
+    if (!selection || typeof selection.model !== "string" ||
+        !(selection.effort === null || typeof selection.effort === "string")) throw new Error("请选择模型和思考深度");
     const model = (await this.list()).find(m=>m.model===selection.model);
     if (!model) throw new Error("这个模型不在当前连接的目录中，请刷新后重新选择");
-    if (!model.efforts.some(e=>e.value===selection.effort)) throw new Error("这个模型不支持所选思考深度");
-    return {model:model.model,effort:selection.effort};
+    if (selection.effort !== null && !model.efforts.some(e=>e.value===selection.effort)) throw new Error("这个模型不支持所选思考深度");
+    return {model:model.model,effort:selection.effort ?? null};
   }
 
   save(selection) {
-    if (this.preferencesPath) {
-      fs.mkdirSync(path.dirname(this.preferencesPath), {recursive:true});
-      const temporary = `${this.preferencesPath}.${process.pid}.tmp`;
-      fs.writeFileSync(temporary, JSON.stringify(selection), {mode:0o600});
-      fs.renameSync(temporary, this.preferencesPath);
-    }
+    this.#write(selection);
+    this.savedSelection = selection;
     this.selection = selection;
   }
 }

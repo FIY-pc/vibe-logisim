@@ -316,6 +316,19 @@ class CodexBackend extends EventEmitter {
       } else {
         this.#setStatus("ready");
       }
+      // The native Codex config is the default. An app-level preference may
+      // override it only after the current app-server catalog validates it.
+      // This prevents an old model identifier from reaching turn/start.
+      try {
+        await this.modelSettings.list();
+        const selected = this.modelSettings.selection;
+        this.model = selected?.model || this.inheritedModel || null;
+        this.effort = selected ? selected.effort : (this.inheritedEffort || null);
+        this.#setStatus(this.status);
+      } catch (_) {
+        // The inherited configuration remains usable if catalog refresh is
+        // temporarily unavailable; the picker will expose the error later.
+      }
       return this.snapshot();
     } catch (error) {
       if (generation !== this.childEpoch) throw error;
@@ -343,8 +356,8 @@ class CodexBackend extends EventEmitter {
       const provider = writeProvider(path.join(this.profileDir, "provider.toml"), this.profileDir);
       this.inheritedModel = provider.model || null;
       this.inheritedEffort = provider.effort || null;
-      this.model = this.modelSettings.selection?.model || this.inheritedModel;
-      this.effort = this.modelSettings.selection?.effort || this.inheritedEffort;
+      this.model = this.inheritedModel;
+      this.effort = this.inheritedEffort;
       this.providerName = provider.name || "OpenAI";
       this.providerEnvironment = provider.environment;
       return;
@@ -392,8 +405,8 @@ class CodexBackend extends EventEmitter {
     const provider = writeProvider(configPath, targetRoot);
     this.inheritedModel = process.env.VIBE_LOGISIM_MODEL || provider.model || null;
     this.inheritedEffort = process.env.VIBE_LOGISIM_EFFORT || provider.effort || null;
-    this.model = this.modelSettings.selection?.model || this.inheritedModel;
-    this.effort = this.modelSettings.selection?.effort || this.inheritedEffort;
+    this.model = this.inheritedModel;
+    this.effort = this.inheritedEffort;
     this.providerName = provider.name || "OpenAI";
     this.providerEnvironment = provider.environment;
   }
@@ -450,11 +463,10 @@ class CodexBackend extends EventEmitter {
     if (this.snapshot().busy) throw new Error("请先停止当前回答，再切换模型");
     const generation = this.childEpoch;
     const selected = await this.modelSettings.validate(selection);
-    const fallback = !selected && !this.inheritedModel ? (await this.modelSettings.list()).find(m=>m.isDefault) : null;
     if (generation !== this.childEpoch || this.snapshot().busy) throw new Error("连接或回答状态已变化，请重新选择");
     this.modelSettings.save(selected);
-    this.model = selected?.model || this.inheritedModel || fallback?.model || null;
-    this.effort = selected?.effort || this.inheritedEffort || fallback?.defaultEffort || null;
+    this.model = selected?.model || this.inheritedModel || null;
+    this.effort = selected ? selected.effort : (this.inheritedEffort || null);
     this.#setStatus(this.status);
     return this.snapshot();
   }
@@ -794,12 +806,6 @@ class CodexBackend extends EventEmitter {
   }
 
   async #ensureThread(workspaceKey, revisionId, expectedEpoch, generation) {
-    if (!this.model) {
-      const fallback = (await this.modelSettings.list()).find(m=>m.isDefault);
-      this.#assertWorkspace(expectedEpoch, generation);
-      this.model = fallback?.model || null;
-      this.effort ||= fallback?.defaultEffort || null;
-    }
     if (this.circuitTool) {
       if (!this.circuitManifest) throw new Error("电路插件 manifest 不可用，已拒绝启动 Codex 电路会话");
       const manifest = await this.circuitManifest();

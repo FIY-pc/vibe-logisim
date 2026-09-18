@@ -11,12 +11,23 @@ test('selection survives reopening, is validated by catalog, and inherits withou
  const settings=new AgentModels({request,preferencesPath});
  const selection=await settings.validate({model:'second',effort:'high'});settings.save(selection);
  assert.equal(requests.length,2);assert.ok(requests.every(r=>r.method==='model/list'));
- const reopened=new AgentModels({request,preferencesPath});assert.deepEqual(reopened.selection,selection);
+ const reopened=new AgentModels({request,preferencesPath});assert.equal(reopened.selection,null);
+ await reopened.list();assert.deepEqual(reopened.selection,selection);
  await assert.rejects(()=>settings.validate({model:'second',effort:'ultra'}),/不支持/);
  await assert.rejects(()=>settings.validate({model:'made-up',effort:'low'}),/目录/);
- assert.deepEqual(new AgentModels({request,preferencesPath}).selection,selection);
+ const reopenedAgain=new AgentModels({request,preferencesPath});await reopenedAgain.list();assert.deepEqual(reopenedAgain.selection,selection);
  settings.save(await settings.validate(null));assert.equal(new AgentModels({request,preferencesPath}).selection,null);
  assert.deepEqual(fs.readdirSync(root),['selection.json']);
+});
+
+test('stale app preference is cleared after the current catalog is known',async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-models-stale-')),preferencesPath=root+'/selection.json';
+ fs.writeFileSync(preferencesPath,JSON.stringify({model:'gpt-5.6-sol',effort:'xhigh'}));
+ const settings=new AgentModels({preferencesPath,request:async()=>({data:[{model:'gpt-6-astra',supportedReasoningEfforts:[{reasoningEffort:'max'}]}],nextCursor:null})});
+ assert.equal(settings.selection,null);
+ await settings.list();
+ assert.equal(settings.selection,null);
+ assert.equal(fs.readFileSync(preferencesPath,'utf8'),'null');
 });
 
 test('reconnected model catalog cannot be overwritten by an old connection response',async()=>{

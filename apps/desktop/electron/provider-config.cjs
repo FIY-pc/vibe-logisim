@@ -5,13 +5,13 @@ const path = require("node:path");
 const {execFileSync} = require("node:child_process");
 
 // Python is already required by the circuit authority; use its TOML parser.
-function readProvider(configPath, environment = process.env) {
+function readProvider(configPath, environment = process.env, options = {}) {
   if (!fs.existsSync(configPath)) return {environment: {}, toml: ""};
   const program = [
     "import json,sys,tomllib",
     "with open(sys.argv[1], 'rb') as f: c=tomllib.load(f)",
     "name=c.get('model_provider', 'openai')",
-    "print(json.dumps({'model':c.get('model'), 'effort':c.get('model_reasoning_effort'), 'name':name, 'provider':c.get('model_providers', {}).get(name)}))",
+    "print(json.dumps({'model':c.get('model'), 'effort':c.get('model_reasoning_effort'), 'modelCatalogJson':c.get('model_catalog_json'), 'name':name, 'provider':c.get('model_providers', {}).get(name)}))",
   ].join("\n");
   let config;
   try {
@@ -46,6 +46,24 @@ function readProvider(configPath, environment = process.env) {
   }
   const fields = [];
   if (config.model) fields.push("model = " + JSON.stringify(config.model));
+  let modelCatalogJson = typeof config.modelCatalogJson === "string" && config.modelCatalogJson
+    ? config.modelCatalogJson : null;
+  if (modelCatalogJson && options.profileDir) {
+    const catalogSource = path.resolve(path.dirname(configPath), config.modelCatalogJson);
+    const catalogName = path.basename(config.modelCatalogJson);
+    const catalogTarget = path.join(options.profileDir, catalogName);
+    try {
+      if (fs.statSync(catalogSource).isFile()) {
+        fs.copyFileSync(catalogSource, catalogTarget);
+        modelCatalogJson = catalogName;
+      }
+    } catch (_) {
+      // Codex can refresh the catalog from the configured provider when the
+      // local cache is absent. Do not make connection startup depend on it.
+      modelCatalogJson = null;
+    }
+  }
+  if (modelCatalogJson) fields.push("model_catalog_json = " + JSON.stringify(modelCatalogJson));
   if (config.effort) fields.push("model_reasoning_effort = " + JSON.stringify(config.effort));
   if (provider) {
     fields.push("model_provider = " + JSON.stringify(config.name));
@@ -54,7 +72,7 @@ function readProvider(configPath, environment = process.env) {
       "query_params", "env_http_headers", "request_max_retries", "stream_max_retries", "stream_idle_timeout_ms", "supports_websockets"];
     for (const key of allowed) if (provider[key] !== undefined) fields.push(key + " = " + tomlValue(provider[key]));
   }
-  return {name: config.name, model: config.model, effort: config.effort, environment: forwarded, toml: fields.join("\n") + "\n"};
+  return {name: config.name, model: config.model, effort: config.effort, modelCatalogJson, environment: forwarded, toml: fields.join("\n") + "\n"};
 }
 
 function tomlValue(value) {
@@ -66,7 +84,7 @@ function tomlValue(value) {
 }
 
 function writeProvider(configPath, profileDir) {
-  const settings = readProvider(configPath);
+  const settings = readProvider(configPath, process.env, {profileDir});
   fs.writeFileSync(path.join(profileDir, "config.toml"), settings.toml, {mode: 0o600});
   return settings;
 }
