@@ -5,43 +5,42 @@ import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas", "review", "agent"];
 
-export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","appendDraftText","replaceDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
+export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
 
 export function createController({models, ui, client, ports}) {
-  let workspaceEpoch = 0, editingMessageId = null, draftBeforeEdit = "";
+  let workspaceEpoch = 0, editingMessageId = null;
   const {project: projectState, canvas: canvasState, review: reviewState, agent: agentState} = models;
   const conversation=new ConversationView(ui,{followReference:ports.followConversationReference,appendMoments:ports.appendMomentReferences,appendMaterials:ports.appendMaterialReferences,
-    notify:ports.showToast,edit:beginMessageEdit,fork:ports.forkConversation});
+    notify:ports.showToast,edit:beginMessageEdit,submitEdit:submitMessageEdit,cancelEdit:cancelMessageEdit,fork:ports.forkConversation});
   const appendAgentSystem=(text,kind)=>conversation.system(text,kind);
   const scrollAgentTimeline=()=>conversation.scroll();
-  const clearAgentTimeline=()=>conversation.clear();
-  const renderAgentHistory=messages=>conversation.history(messages);
-function renderEditState() {
-    ui.editingDraftBar.hidden = !editingMessageId;
+  const clearAgentTimeline=()=>{editingMessageId=null;conversation.clear();};
+  const renderAgentHistory=messages=>{editingMessageId=null;conversation.history(messages);};
+function clearMessageEdit() {
+    const id=editingMessageId;
+    editingMessageId=null;
+    conversation.closeEditor(id);
+    updateComposerState();
   }
-function clearMessageEdit({restore=false}={}) {
-    const previous = draftBeforeEdit;
-    editingMessageId = null;
-    draftBeforeEdit = "";
-    conversation.setEditing(null);
-    renderEditState();
-    if (restore && previous !== ui.questionInput.value) ports.replaceDraftText(previous);
+function cancelMessageEdit({id}) {
+    if(editingMessageId!=null&&String(editingMessageId)===String(id))clearMessageEdit();
   }
 function beginMessageEdit(message) {
     if (!message || agentState.busy || agentState.submitting) return;
-    if (editingMessageId === message.id) {ui.questionInput.focus();ui.questionInput.select();return;}
-    draftBeforeEdit = ui.questionInput.value;
+    if (editingMessageId === message.id) {conversation.openEditor(message.id);return;}
+    if(editingMessageId!=null)clearMessageEdit();
     editingMessageId = message.id;
-    conversation.setEditing(message.id);
-    renderEditState();
-    ports.replaceDraftText(message.text);
-    ui.questionInput.focus();ui.questionInput.select();
+    conversation.openEditor(message.id);
+    updateComposerState();
+  }
+function submitMessageEdit({id,text,context}) {
+    if(editingMessageId==null||String(editingMessageId)!==String(id))return Promise.resolve(false);
+    return askAgent({questionOverride:text,editMessageIdOverride:id,inlineEdit:true,editContext:context});
   }
 function updateComposerState() {
     conversation.setBusy(agentState.busy || agentState.submitting || ports.conversationBinding().busy);
     ports.updateMaterialState();
     ports.renderConversationStarters();
-    renderEditState();
     if (!agentState.enabled) {
       ui.copyReferenceButton.hidden = false;
       ui.composerOptions.hidden = false;
@@ -58,7 +57,7 @@ function updateComposerState() {
     ui.askButton.hidden = busy;
     ui.interruptButton.disabled = agentState.submitting && !agentState.busy;
     ui.questionInput.disabled = !projectState.session || !ports.draftReady();
-    ui.questionInput.placeholder = editingMessageId ? "修改这条问题后发送…" : busy ? "继续写下你的想法…" : "一起构思、修改，或问一个问题…";
+    ui.questionInput.placeholder = busy ? "继续写下你的想法…" : "一起构思、修改，或问一个问题…";
     ui.askButton.replaceChildren(icon("ArrowUp"));
     ui.askButton.disabled = busy || projectState.projectBusy || !ready || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged) || !ui.questionInput.value.trim();
     if (projectState.sourceChanged) {
@@ -106,23 +105,23 @@ async function ensureAgentSelection() {
     return { selection, snapshot: ports.intentSnapshot(selection, snapshot) };
   }
 
-async function askAgent() {
+async function askAgent({questionOverride=null,editMessageIdOverride=null,inlineEdit=false,editContext=null}={}) {
     if (projectState.projectBusy || agentState.busy || agentState.submitting || (agentState.enabled && agentState.status !== "ready")) return;
     if (!agentState.enabled) {
       await ports.querySelection();
       return;
     }
-    const question = ui.questionInput.value.trim();
-    if (!question || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged)) return;
-    const receipt = ports.draftReceipt();
-    const editMessageId = editingMessageId;
+    const question = (typeof questionOverride === "string" ? questionOverride : ui.questionInput.value).trim();
+    if (!question || (!inlineEdit && !ports.draftReady()) || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged)) return false;
+    const receipt = inlineEdit ? null : ports.draftReceipt();
+    const editMessageId = inlineEdit ? editMessageIdOverride : null;
     const submittedRevision = projectState.revision;
     const includeCircuit=Boolean(projectState.circuit&&!projectState.sourceChanged);
     const submittedProject = projectState.session?.workspace?.id;
     const submittedEpoch = workspaceEpoch;
     const observationId = ports.activeObservation()?.id || null;
-    const moments = ports.momentAttachments();
-    const materials = ports.materialAttachments();
+    const moments = inlineEdit ? {ids:[],refs:editContext?.moments||[]} : ports.momentAttachments();
+    const materials = inlineEdit ? {refs:editContext?.materials||[]} : ports.materialAttachments();
     agentState.submitting = true;
     updateComposerState();
     ports.switchReviewTab("agent");
@@ -166,10 +165,12 @@ async function askAgent() {
       }
       ports.acknowledgeDraft(receipt);
       clearMessageEdit();
+      return true;
     } catch (error) {
       if (backendSubmissionStarted) clearMessageEdit();
       if (submittedEpoch === workspaceEpoch && projectState.session?.workspace?.id === submittedProject)
         ports.reportAgentError(`没有开始回答：${error.message}`);
+      return false;
     } finally {
       if(submittedEpoch===workspaceEpoch)agentState.submitting = false;
       updateComposerState();
@@ -200,7 +201,6 @@ function initializeAgent() {
     ui.reviewPanel.classList.add("has-agent");
     ui.composerOptions.hidden = false;
     for(const [button,name] of [[ui.askButton,'ArrowUp'],[ui.interruptButton,'Square'],[ui.agentSettings,'Settings']])button.replaceChildren(icon(name));
-    ui.cancelEditingDraft.addEventListener("click", () => clearMessageEdit({restore:true}));
     ui.agentEmpty.querySelector('.chat-empty-mark').append(icon('MessageSquare'));
     conversation.mount();
     ui.agentTab.hidden = false;

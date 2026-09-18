@@ -52,7 +52,16 @@
 .message-actions .message-branch-status{align-self:center;min-width:0;margin-left:5px;font-size:11px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
 .agent-message[data-role=user] .message-actions{position:absolute;right:8px;bottom:-15px;opacity:0;background:white;border:1px solid var(--line);border-radius:7px;padding:1px;box-shadow:0 2px 5px #17244008}
 .agent-message[data-role=user]:hover .message-actions,.agent-message[data-role=user]:focus-within .message-actions{opacity:1}
-.agent-message[data-role=user].is-editing{border-color:#6b83f5;box-shadow:0 0 0 2px #315efb12}
+.agent-message[data-role=user].is-editing{margin-left:0;padding:12px;border-color:transparent;border-radius:18px}
+.agent-message.is-editing>.agent-message-header{display:none}
+.message-edit-form{display:flex;flex-direction:column;gap:12px;min-width:0;margin:0;white-space:normal}
+.message-edit-input{display:block;box-sizing:border-box;width:100%;min-height:46px;max-height:240px;resize:none;border:0;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:13px;line-height:1.8;padding:0;overflow:auto;scrollbar-width:thin}
+.message-edit-input::placeholder{color:#8a93a3}
+.message-edit-actions{display:flex;justify-content:flex-end;gap:6px}
+.message-edit-actions button{min-width:52px;height:30px;padding:0 12px;border:1px solid #d8deea;border-radius:8px;background:transparent;color:var(--ink);font-family:inherit;font-size:12px;cursor:pointer}
+.message-edit-actions button:hover:not(:disabled){border-color:#b9c7df;background:#f7f9fc;color:var(--ink)}
+.message-edit-actions .message-edit-submit{border-color:#334c79;background:#334c79;color:#fff}.message-edit-actions .message-edit-submit:hover:not(:disabled){border-color:#263c62;background:#263c62;color:#fff}
+.message-edit-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.message-edit-actions button:disabled{opacity:.5;cursor:default}
 .agent-message-context{display:block;margin-top:10px;color:var(--muted);font-size:11px;line-height:1.5}
 .agent-message .moment-message-link{padding:6px 0 0;font-size:11px;line-height:1.5}
 .agent-work{font-size:12px;color:var(--muted);margin:0 0 16px}
@@ -65,7 +74,6 @@
 .has-agent .selection-dock{margin:4px 12px 12px;border:1px solid #d7dce6;border-radius:14px;padding:11px 11px 6px;background:white;box-shadow:0 3px 12px #182c5006;flex:none;position:relative}
 .has-agent .selection-dock:focus-within{border-color:#9aaccd;box-shadow:0 0 0 3px #315efb06}
 .has-agent .selection-reference{gap:6px;padding:0 3px 7px}.has-agent .selection-reference>div{min-width:0;flex:1}.has-agent .selection-reference strong{font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.has-agent .reference-mark{font-size:13px;color:#6d7f9b}.has-agent #clearComposerContext{width:24px;height:24px}.has-agent .selection-label,.has-agent #selectionRevision{display:none}
-.editing-draft{display:flex;align-items:center;gap:8px;padding:2px 3px 7px;color:#536cae;font-size:11px;line-height:1.5}.editing-draft span{flex:1;min-width:0}.editing-draft button{border:0;background:none;color:#71809a;padding:2px 4px;cursor:pointer;font:inherit}.editing-draft button:hover{color:var(--ink)}.editing-draft button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .question-input{display:block}.has-agent .question-input textarea{width:100%;border:0;resize:none;outline:none;min-height:82px;max-height:28vh;font-size:14px;line-height:1.75;padding:5px 3px 10px;margin:0;background:transparent;color:var(--ink)}.has-agent .question-input textarea::placeholder{color:#8a93a3}
 .has-agent .composer-options{display:flex;align-items:flex-end;gap:4px;min-width:0;margin:0;padding:3px 0;border:0}
 .composer-preferences{display:flex;align-items:center;flex-wrap:wrap;gap:2px;flex:1;min-width:0}

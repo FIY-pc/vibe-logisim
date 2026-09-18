@@ -5,10 +5,10 @@ import {renderMarkdown} from './chat-markdown.js';
 // Owns message DOM, reading position and transient progress only. Transport,
 // projects, draft submission and structural changes belong to other owners.
 export class ConversationView {
-  constructor(ui,{followReference,appendMoments,appendMaterials,edit,fork,notify}) {
-    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,edit,fork,notify});
+  constructor(ui,{followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify}) {
+    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify});
     this.messages=new Map();this.activities=new Map();this.follow=true;
-    this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();
+    this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();this.editing=null;this.editingFollow=null;
   }
   mount() {
     const {agentTimeline:node,conversationLatest:latest}=this.ui;
@@ -23,12 +23,13 @@ export class ConversationView {
     latest.addEventListener('click',()=>{this.follow=true;this.scroll();});
   }
   clear() {
-    this.messages.clear();this.activities.clear();this.pending.clear();this.work=null;this.follow=true;this.scrollTop=null;
+    this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.work=null;this.follow=true;this.scrollTop=null;
     this.ui.conversationLatest.hidden=true;this.ui.agentTimeline.replaceChildren(this.ui.agentEmpty);this.ui.agentEmpty.hidden=false;
   }
   user(id,text,context) {
     this.follow=true;this.work=null;
     const message=this.create('user',id,text);
+    message.context=context;
     if(context) {
       const path=context.simulationInstancePath?.map(p=>p.label)||[];
       const label=[context.circuit,...path,context.observationId?'运行时刻':null].filter(Boolean).join(' › ');
@@ -66,6 +67,62 @@ export class ConversationView {
   render(message) {
     if(message.node.dataset.role==='assistant')renderMarkdown(message.body,message.text,{followReference:this.followReference,notify:this.notify});
     else message.body.textContent=message.text;
+  }
+  openEditor(id) {
+    const message=this.messages.get(String(id));
+    if(!message || message.node.dataset.role!=='user')return;
+    if(this.editing && this.editing!==message)this.closeEditor(this.editing.id);
+    if(message.editForm){message.editInput.focus();message.editInput.select();return;}
+    this.editingFollow=this.follow;this.follow=false;this.scrollTop=null;
+    this.editing=message;message.node.classList.add('is-editing');message.footer.hidden=true;
+    const form=makeElement('form','message-edit-form');form.noValidate=true;
+    const input=makeElement('textarea','message-edit-input');
+    input.setAttribute('aria-label','编辑消息');input.setAttribute('placeholder','编辑消息');input.maxLength=4000;input.value=message.text;
+    const actions=makeElement('div','message-edit-actions');
+    const cancel=makeElement('button','message-edit-cancel','取消');cancel.type='button';
+    const submit=makeElement('button','message-edit-submit','发送');submit.type='submit';
+    actions.append(cancel,submit);form.append(input,actions);message.body.replaceChildren(form);
+    message.editForm=form;message.editInput=input;message.editCancel=cancel;message.editSubmit=submit;message.editSubmitting=false;
+    const resize=()=>{input.style.height='auto';input.style.height=`${Math.min(input.scrollHeight,240)}px`;};
+    input.addEventListener('input',()=>{resize();this.updateEditControls(message);});
+    input.addEventListener('keydown',event=>{
+      if(event.isComposing||event.keyCode===229)return;
+      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();cancel.click();return;}
+      if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();event.stopPropagation();form.requestSubmit();}
+    });
+    cancel.addEventListener('click',()=>{
+      this.cancelEdit({id:message.id});
+      message.footer.querySelector('.message-edit')?.focus({preventScroll:true});
+    });
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const text=input.value.trim();
+      if(!text || this.busy || message.editSubmitting)return;
+      message.editSubmitting=true;this.updateEditControls(message);
+      try {await this.submitEdit({id:message.id,text,context:message.context});}
+      catch(error){this.notify(`没有发送：${error.message||error}`);}
+      finally {if(message.editForm){message.editSubmitting=false;this.updateEditControls(message);}}
+    });
+    requestAnimationFrame(()=>{
+      if(this.editing!==message||!form.isConnected)return;
+      resize();input.focus({preventScroll:true});input.setSelectionRange(input.value.length,input.value.length);
+      form.scrollIntoView({block:'nearest'});
+    });
+    this.updateEditControls(message);
+  }
+  updateEditControls(message) {
+    if(!message.editForm)return;
+    const disabled=Boolean(this.busy||message.editSubmitting);
+    message.editInput.disabled=disabled;message.editCancel.disabled=disabled;message.editSubmit.disabled=disabled||!message.editInput.value.trim();
+    message.editSubmit.setAttribute('aria-busy',String(Boolean(message.editSubmitting)));
+  }
+  closeEditor(id) {
+    const message=this.editing;
+    if(!message || (id!=null && String(message.id)!==String(id)))return;
+    message.editForm=null;message.editInput=null;message.editCancel=null;message.editSubmit=null;message.editSubmitting=false;
+    message.node.classList.remove('is-editing');message.footer.hidden=false;this.editing=null;
+    if(this.editingFollow!==null){this.follow=this.editingFollow;this.editingFollow=null;}
+    this.render(message);this.scroll();
   }
   assistant(id,text='',phase=null,streaming=false,delta=false) {
     const key=String(id);let m=this.messages.get(key);
@@ -122,12 +179,7 @@ export class ConversationView {
   setBusy(value) {
     this.busy=value;
     this.ui.agentTimeline.querySelectorAll('.message-branch,.message-edit').forEach(button=>button.disabled=value);
-  }
-  setEditing(id) {
-    const key=id == null ? null : String(id);
-    for (const message of this.messages.values()) {
-      message.node.classList.toggle('is-editing', key !== null && String(message.id) === key);
-    }
+    if(this.editing)this.updateEditControls(this.editing);
   }
   scroll() {
     if(this.frame!==null)return;
