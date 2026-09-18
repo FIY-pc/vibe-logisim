@@ -18,6 +18,8 @@
 
 依赖方向为 `transport → application → project/runtime/collaboration → infrastructure`，共享领域契约位于 `domain`。`core/composition.js` 组合前端控制器；Electron IPC 与服务 HTTP 是传输边界。
 
+面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；Circuit Plugin 负责电路上下文、观察、操作、原生运行及可选评测。电路运行反馈不规定模型必须遵循的工作流。
+
 ## 需要保持的边界
 
 - 文件夹拥有多条会话、上次选中的会话及资料；每条会话拥有自己的输入草稿和引用。电路文档拥有自己的结构状态和历史。切电路不切会话。

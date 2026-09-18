@@ -46,5 +46,54 @@ const dynamicTools = [
       watches: {type:"array",minItems:1,maxItems:24,items:object({name:string,component:string,port:{type:"integer",minimum:0}},["name","component","port"])},
       vectors: {type:"array",minItems:1,maxItems:1024,items:object({inputs:values,expected:values},["inputs"])}
     },["circuit","mode"]) },
+  { type: "function", name: "evaluate_circuit",
+    description: "Compare an explicit test specification with the actual Logisim runtime. Use mode simulate with vectors that include expected outputs, or mode trace with expectedRows containing tick and expected values for watched signals. Returns passed, failed or unknown as a test judgment plus the underlying native observation. This is optional and user-directed; no workflow is imposed and no source file is changed.",
+    inputSchema: object({ circuit: string, candidateId: string, mode: { type: "string", enum: ["trace", "simulate"] }, ticks: {type:"integer",minimum:1,maximum:10000}, inputs: values,
+      inputEvents: {type:"array",maxItems:1000,items:object({tick:{type:"integer",minimum:0},name:string,value:{type:"integer",minimum:0,maximum:4294967295}},["tick","name","value"])},
+      buttonEvents: {type:"array",maxItems:1000,items:object({component:string,tick:{type:"integer",minimum:0},pressed:{type:"boolean"}},["component","tick","pressed"])},
+      resetButton: string,
+      watches: {type:"array",minItems:1,maxItems:24,items:object({name:string,component:string,port:{type:"integer",minimum:0}},["name","component","port"])},
+      vectors: {type:"array",minItems:1,maxItems:1024,items:object({inputs:values,expected:values},["inputs"])},
+      expectedRows: {type:"array",maxItems:10000,items:object({tick:{type:"integer",minimum:0},values:values},["tick","values"])},
+    },["circuit","mode"]) },
 ];
-module.exports = { dynamicTools };
+
+// This is the host-side half of the circuit plugin contract.  Codex owns the
+// thread/turn loop; the plugin only declares model-visible capabilities and
+// forwards calls to the domain service.
+const capabilityKinds = {
+  open_circuit: ["context", false, false],
+  inspect_circuit: ["observe", false, false],
+  read_kept_observation: ["observe", false, false],
+  read_project_resource: ["observe", false, false],
+  build_candidate: ["construct", false, true],
+  wire_candidate: ["construct", false, true],
+  submit_circuit: ["construct", false, true],
+  checkout_candidate: ["mutate", true, false],
+  simulate_circuit: ["observe", false, false],
+  trace_circuit: ["observe", false, false],
+  harness_run: ["evaluate", false, false],
+  evaluate_circuit: ["evaluate", false, false],
+};
+
+const circuitPlugin = Object.freeze({
+  schema: "vibe-logisim.circuit-plugin/v1",
+  resultSchema: "vibe-logisim.circuit-plugin.result/v1",
+  id: "vibe-logisim.circuit",
+  version: "1.0.0",
+  displayName: "Vibe Logisim Circuit Plugin",
+  workflow: "user-directed",
+  tools: dynamicTools,
+  capabilities: Object.freeze(dynamicTools.map(tool => {
+    const [category, sourceMutation, candidate] = capabilityKinds[tool.name] || ["observe", false, false];
+    return Object.freeze({
+      name: tool.name,
+      category,
+      description: tool.description,
+      sourceMutation,
+      candidate,
+    });
+  })),
+});
+
+module.exports = { dynamicTools, circuitPlugin };

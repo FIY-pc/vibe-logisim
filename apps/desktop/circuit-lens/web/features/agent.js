@@ -297,7 +297,8 @@ function handleAgentEvent(event) {
     }
     if (event.type === "harness-result") {
       const session = event.session || {};
-      const status = event.feedback?.status === "failed" ? "有异常" : "已观察";
+      const status = event.feedback?.status === "failed" ? "有异常"
+        : event.feedback?.status === "passed" ? "通过" : "已观察";
       const failure = event.feedback?.firstFailure;
       const position = failure?.tick != null ? ` · 首个异常 tick ${failure.tick}`
         : Number.isInteger(failure?.rowIndex) ? ` · 首个异常输入第 ${failure.rowIndex + 1} 组` : "";
@@ -305,7 +306,7 @@ function handleAgentEvent(event) {
         : session.revisionId !== projectState.revision ? " · 历史版本" : "";
       conversation.activity(event.itemId || session.id, `${session.circuit || "电路"} · ${status}${position}${scope}`, event.feedback?.status === "failed" ? "failed" : "completed");
       if (failure) {
-        const actual = JSON.stringify(failure.outputs || {});
+        const actual = JSON.stringify(failure.outputs || failure.actual || {});
         const expected = JSON.stringify(failure.expected || {});
         const notice=appendAgentSystem(`${session.circuit || "电路"} 的运行结果与预期不一致${position}${scope}`, "warning");
         const details=makeElement('details');details.append(makeElement('summary','','查看输入与输出'),makeElement('pre','',`输入 ${JSON.stringify(failure.inputs || {})}\n实际 ${actual}\n预期 ${expected}`));notice.append(details);

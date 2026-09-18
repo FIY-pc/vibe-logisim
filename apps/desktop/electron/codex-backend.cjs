@@ -50,7 +50,7 @@ const THREAD_CONFIG = Object.freeze({
   allow_login_shell: false,
 });
 
-const { dynamicTools } = require("./circuit-tools.cjs");
+const { circuitPlugin } = require("./circuit-tools.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
@@ -112,7 +112,7 @@ function itemActivity(item) {
     return { kind: "tool", label: `${shortText(item.server, 80)} / ${shortText(item.tool, 100)}` };
   }
   if (item.type === "dynamicToolCall") {
-  const labels = { submit_circuit: "提交电路改动", checkout_candidate: "继续编辑候选", inspect_circuit: "查看电路", read_project_resource: "查阅课程资料", build_candidate: "构建候选电路", wire_candidate: "批量连接电路", simulate_circuit: "检查输入输出", trace_circuit: "观察时钟执行", harness_run: "运行电路检查" };
+  const labels = { submit_circuit: "提交电路改动", checkout_candidate: "继续编辑候选", inspect_circuit: "查看电路", read_project_resource: "查阅课程资料", build_candidate: "构建候选电路", wire_candidate: "批量连接电路", simulate_circuit: "检查输入输出", trace_circuit: "观察时钟执行", harness_run: "运行电路检查", evaluate_circuit: "比较测试规格" };
     return { kind: "tool", label: labels[item.tool] || shortText(item.tool, 160) || "调用工具" };
   }
   if (item.type === "webSearch") {
@@ -519,6 +519,7 @@ class CodexBackend extends EventEmitter {
     const clientMessageId = `vibe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const frozenContext = {
       projectId:context.projectId,
+      plugin: context.plugin ? {id:context.plugin.id, version:context.plugin.version} : null,
       folderId:context.folder?.id,
       moments:(context.keptMoments||[]).map(m=>({id:m.id,projectId:m.projectId,title:m.title})),
       materials:(context.materials||[]).map(m=>({id:m.id,name:m.name,pathVersion:m.pathVersion,page:m.page,quote:m.quote,reference:m.reference})),
@@ -804,7 +805,7 @@ class CodexBackend extends EventEmitter {
             approvalPolicy: "never",
             sandbox: "danger-full-access",
             ...(this.model ? {model:this.model} : {}),
-            dynamicTools: this.circuitTool ? dynamicTools : [],
+            dynamicTools: this.circuitTool ? circuitPlugin.tools : [],
             config: THREAD_CONFIG,
             developerInstructions: this.developerInstructions,
           });
@@ -825,7 +826,7 @@ class CodexBackend extends EventEmitter {
           serviceName: "vibe_logisim",
           ephemeral: this.ephemeral,
           developerInstructions: this.developerInstructions,
-          dynamicTools: this.circuitTool ? dynamicTools : [],
+          dynamicTools: this.circuitTool ? circuitPlugin.tools : [],
         });
         provisionalThreadId = result?.thread?.id || null;
       }
@@ -1242,7 +1243,7 @@ class CodexBackend extends EventEmitter {
       const generation = this.childEpoch;
       let revisionId = this.pendingTurn?.revisionId || this.threadRevisionId;
       const allowed = this.circuitTool && this.#matchesCurrentTurn(params)
-        && dynamicTools.some((tool) => tool.name === params.tool);
+        && circuitPlugin.tools.some((tool) => tool.name === params.tool);
       Promise.resolve().then(async () => {
         if (!allowed || epoch !== this.workspaceEpoch) throw new Error("电路工具调用已过期或未授权");
         const work = this.pendingTurn?.work;
@@ -1268,9 +1269,10 @@ class CodexBackend extends EventEmitter {
           this.emit("event", {type:"candidate-ready", candidateId:result.id, title:result.title});
           result = {...result, changes:result.changes.map(({diff, beforeRender, render, ...change}) => ({...change, difference:diff?.counts})), nativeCoverage:result.nativeCoverage};
         }
-        if (params.tool === "harness_run" && result?.feedback) {
+        if (["harness_run", "evaluate_circuit"].includes(params.tool) && result?.feedback) {
           this.emit("event", {type:"harness-result", itemId:params.itemId || null,
-            turnId:params.turnId || null, session:result.session, feedback:result.feedback});
+            turnId:params.turnId || null, session:result.session, binding:result.binding || null,
+            run:result.run || null, feedback:result.feedback});
         }
         return { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true };
       }).catch((error) => ({ contentItems: [{ type: "inputText", text: plainError(error) }], success: false }))

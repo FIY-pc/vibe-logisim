@@ -142,6 +142,10 @@ class LensBackend extends EventEmitter {
     return this.#requestJson("/api/agent/tool", { method: "POST", body: payload });
   }
 
+  async circuitPlugin() {
+    return this.#requestJson("/api/agent/plugin");
+  }
+
   async agentBundle(revisionId, candidateId = null) {
     return this.#request("agent-bundle", { revisionId, candidateId });
   }
@@ -169,11 +173,12 @@ class LensBackend extends EventEmitter {
 
   async agentContext({ revisionId, selectionId, kind, ids, question, observationId, momentIds = [] }) {
     const queryIds = Array.isArray(ids) ? ids : [];
-    const [session, selection] = await Promise.all([
+    const [session, selection, plugin] = await Promise.all([
       this.#requestJson("/api/session"),
       this.#requestJson(
         `/api/selection?revisionId=${encodeURIComponent(revisionId)}&selectionId=${encodeURIComponent(selectionId)}`,
       ),
+      this.circuitPlugin(),
     ]);
     if (session?.revision?.id !== revisionId) {
       throw new Error("当前 Circuit Lens revision 已经变化，请重新建立选区。");
@@ -233,6 +238,7 @@ class LensBackend extends EventEmitter {
         workspaceKey,
         context: {
           schema: "vibe-logisim.agent-context/v0",
+          plugin,
           ...projectContext,
           authority: "exact-runtime",
           revisionId,
@@ -281,6 +287,7 @@ class LensBackend extends EventEmitter {
       }));
     const context = {
       schema: "vibe-logisim.agent-context/v0",
+      plugin,
       ...projectContext,
       authority: "geometry-only",
       revisionId,

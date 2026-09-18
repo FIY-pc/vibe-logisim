@@ -7,6 +7,13 @@ function splitContext(context) {
   return {
     binding: {
       schema: context?.schema,
+      plugin: context?.plugin ? {
+        schema: context.plugin.schema,
+        id: context.plugin.id,
+        version: context.plugin.version,
+        workflow: context.plugin.workflow,
+        capabilities: context.plugin.capabilities,
+      } : null,
       authority: context?.authority,
       projectId: context?.projectId,
       revisionId: context?.revisionId,

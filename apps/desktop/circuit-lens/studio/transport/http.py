@@ -173,6 +173,8 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError as error:raise LensError(HTTPStatus.CONFLICT,'MOMENT_UNAVAILABLE',str(error)) from error
             elif parsed.path == "/api/health":
                 self._json(HTTPStatus.OK, self.server.app.health())
+            elif parsed.path == "/api/agent/plugin":
+                self._json(HTTPStatus.OK, self.server.app.workbench.plugin_manifest())
             elif parsed.path == "/api/render/viewport":
                 values = {key: value[0] for key, value in parse_qs(parsed.query).items()}
                 data = self.server.app.circuits_service.render_viewport(values)
@@ -451,4 +453,3 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if not head_only:
             self.wfile.write(data)
-

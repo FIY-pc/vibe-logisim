@@ -5,6 +5,7 @@ from studio.domain.references import object_link
 from studio.project.candidates import CandidateService
 from studio.runtime.harness import HarnessService
 from studio.runtime.native import NativeOperations
+from studio.domain.plugin import plugin_manifest
 
 
 class Workbench:
@@ -85,13 +86,27 @@ class Workbench:
                         "note": "Counts cover all vectors. Rows are bounded samples prioritizing failures and unknowns. Candidate review/export retains every row; rerun a narrower input set to investigate."}
             if tool == "harness_run":
                 return self.harness_run(arguments)
+            if tool == "evaluate_circuit":
+                return self.evaluate_circuit(arguments)
             raise ValueError("Unknown circuit tool")
+
+    def plugin_manifest(self):
+        """Describe the circuit plugin without starting a model turn.
+
+        The host can discover this independently from the dynamic tool list;
+        keeping discovery separate lets the model use the same plugin through
+        another transport later.
+        """
+        return plugin_manifest(self.workspace)
 
     def _native(self, *args, **kwargs):
         return self.native._native(*args, **kwargs)
 
     def harness_run(self, *args, **kwargs):
         return self.harness.harness_run(*args, **kwargs)
+
+    def evaluate_circuit(self, *args, **kwargs):
+        return self.harness.evaluate(*args, **kwargs)
 
     def simulate(self, *args, **kwargs):
         return self.harness.simulate(*args, **kwargs)
@@ -128,4 +143,3 @@ class Workbench:
 
     def resource(self, *args, **kwargs):
         return self.inspection.resource(*args, **kwargs)
-
