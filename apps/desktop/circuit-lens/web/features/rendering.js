@@ -6,13 +6,18 @@ export const dependencies = ['activeObservation', 'configureSimulationViewport']
 export function createController({models, ui, ports}) {
   const {project} = models;
   let epoch = 0, timer, pending = null, wanted = null, shown = null, failed = null;
-  let live = false, imageUrl = null, mounted = false;
+  let live = false, imageUrls = [], mounted = false;
   let staticFrame = null;
+
+  // Keep each request below the native renderer's 4096px/8MP limits while
+  // allowing static detail to retain the full screen density. The overlap
+  // hides antialiasing seams where two independently rendered tiles meet.
+  const detailTilePixels = 1536, detailTileOverlap = 2;
 
   function clearDetail() {
     ui.detailLayer.replaceChildren();
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    imageUrl = null; shown = null;
+    for (const url of imageUrls) URL.revokeObjectURL(url);
+    imageUrls = []; shown = null;
   }
 
   function resetRendering() {
@@ -32,18 +37,32 @@ export function createController({models, ui, ports}) {
     const margin = 64 / matrix.a;
     const bounds = {x:Math.floor(a.x-margin), y:Math.floor(a.y-margin),
       width:Math.ceil(b.x-a.x+margin*2)+1, height:Math.ceil(b.y-a.y+margin*2)+1};
-    // Bound both pixel dimensions and area; this is resolution, never topology.
-    const scale = Math.min(matrix.a*ratio, 32, 4095/bounds.width, 4095/bounds.height,
-      Math.sqrt(7_900_000/(bounds.width*bounds.height)));
+    // Static detail is split into bounded tiles below. Live simulation still
+    // uses one native frame, so retain the backend's dimension and area caps.
+    const scale = observation
+      ? Math.min(matrix.a*ratio, 32, 4095/bounds.width, 4095/bounds.height,
+        Math.sqrt(7_900_000/(bounds.width*bounds.height)))
+      : Math.min(matrix.a*ratio, 32);
     if (!observation && scale <= render.scale) return null;
     if (observation) return {bounds,scale,live:true,sessionId:observation.sessionId,viewId:observation.viewId,
       projectId:project.session?.workspace?.id,circuit:project.circuitName,revision:project.revision,
       key:JSON.stringify([observation.sessionId,observation.viewId,bounds,scale])};
     if (live && !staticOnly) return null;
-    const query = new URLSearchParams({revisionId:revision, profileId:render.profileId,
-      name:circuit, ...bounds, scale});
-    const url = `${render.viewportUrl}?${query}`;
-    return {bounds, scale, url, key:`${project.session?.workspace?.id}:${url}`,
+    const endX = bounds.x + bounds.width, endY = bounds.y + bounds.height;
+    const tileWorld = Math.max(1, Math.floor(detailTilePixels / scale));
+    const tiles = [];
+    for (let y = bounds.y; y < endY; y += tileWorld) {
+      for (let x = bounds.x; x < endX; x += tileWorld) {
+        const tileX = x - detailTileOverlap, tileY = y - detailTileOverlap;
+        const right = Math.min(endX, x + tileWorld) + detailTileOverlap;
+        const bottom = Math.min(endY, y + tileWorld) + detailTileOverlap;
+        const tileBounds = {x:tileX, y:tileY, width:Math.ceil(right-tileX), height:Math.ceil(bottom-tileY)};
+        const query = new URLSearchParams({revisionId:revision, profileId:render.profileId,
+          name:circuit, ...tileBounds, scale});
+        tiles.push({bounds:tileBounds, scale, url:`${render.viewportUrl}?${query}`, circuit, revision});
+      }
+    }
+    return {bounds, scale, tiles, key:`${project.session?.workspace?.id}:${tiles.map(tile=>tile.url).join('|')}`,
       projectId:project.session?.workspace?.id, circuit, revision};
   }
 
@@ -56,6 +75,20 @@ export function createController({models, ui, ports}) {
     catch (error) { URL.revokeObjectURL(objectUrl); throw error; }
   }
 
+  async function decodeTiles(tiles, signal) {
+    const results = await Promise.allSettled(tiles.map(tile => decodeImage(tile.url, signal)));
+    const failedResult = results.find(result => result.status === 'rejected');
+    if (failedResult) {
+      for (const result of results) if (result.status === 'fulfilled') URL.revokeObjectURL(result.value.url);
+      throw failedResult.reason;
+    }
+    return tiles.map((tile, index) => ({tile, image:results[index].value}));
+  }
+
+  function revokeTiles(decodedTiles) {
+    for (const {image} of decodedTiles || []) URL.revokeObjectURL(image.url);
+  }
+
   // A document edit keeps its previous artwork and provisional components until
   // both replacement resolutions can be presented in the same browser frame.
   async function prepareCircuitRendering(circuit, {revision, preserveCamera = false}) {
@@ -63,18 +96,22 @@ export function createController({models, ui, ports}) {
     const projectId = project.session?.workspace?.id;
     const detail = preserveCamera ? viewRequest({render:circuit.render, observation:null, revision,
       circuit:circuit.name, staticOnly:true}) : null;
-    const results = await Promise.allSettled([decodeImage(circuit.render.url), detail ? decodeImage(detail.url) : null]);
+    const results = await Promise.allSettled([decodeImage(circuit.render.url), detail ? decodeTiles(detail.tiles) : null]);
     if (results.some(result => result.status === 'rejected')) {
-      for (const result of results) if (result.status === 'fulfilled' && result.value) URL.revokeObjectURL(result.value.url);
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        if (Array.isArray(result.value)) revokeTiles(result.value);
+        else URL.revokeObjectURL(result.value.url);
+      }
       throw results.find(result => result.status === 'rejected').reason;
     }
     return {projectId, revision, circuit:circuit.name,
-      base:{...circuit.render, url:results[0].value.url}, detail:detail && {...detail, image:results[1].value}};
+      base:{...circuit.render, url:results[0].value.url}, detail:detail && {...detail, images:results[1].value}};
   }
 
   function discardCircuitRendering(frame) {
     if (frame?.base) URL.revokeObjectURL(frame.base.url);
-    if (frame?.detail) URL.revokeObjectURL(frame.detail.image.url);
+    if (frame?.detail) revokeTiles(frame.detail.images);
   }
 
   function detailNode(request, decoded) {
@@ -92,8 +129,9 @@ export function createController({models, ui, ports}) {
     if (!frame) return;
     ui.runtimeLayer.append(makeSvg('image', {href:frame.base.url, ...frame.base.bounds, preserveAspectRatio:'none'}));
     if (frame.detail) {
-      imageUrl = frame.detail.image.url;
-      ui.detailLayer.append(detailNode(frame.detail, frame.detail.image)); shown = frame.detail.key;
+      imageUrls = frame.detail.images.map(({image}) => image.url);
+      for (const {tile, image} of frame.detail.images) ui.detailLayer.append(detailNode(tile, image));
+      shown = frame.detail.key;
       frame.detail = null; // Detail lifetime is now owned by clearDetail().
     }
   }
@@ -125,7 +163,7 @@ export function createController({models, ui, ports}) {
       if (!isCurrent()) return;
       ui.renderStatus.textContent = '正在细化画面…'; ui.renderStatus.disabled = true; ui.renderStatus.hidden = false;
     }, 350);
-    let nextUrl;
+    let nextTiles = [];
     try {
       if (request.live) {
         const ok=await ports.configureSimulationViewport({sessionId:request.sessionId,viewId:request.viewId,
@@ -137,12 +175,12 @@ export function createController({models, ui, ports}) {
         shown=request.key;failed=null;ui.renderStatus.hidden=true;
         return;
       }
-      const decoded = await decodeImage(request.url, controller.signal);
-      nextUrl = decoded.url;
+      nextTiles = await decodeTiles(request.tiles, controller.signal);
       if (!isCurrent()) return;
-      const node = detailNode(request, decoded);
-      clearDetail(); imageUrl = nextUrl; nextUrl = null;
-      ui.detailLayer.append(node); shown = request.key; failed = null;
+      clearDetail(); imageUrls = nextTiles.map(({image}) => image.url);
+      for (const {tile, image} of nextTiles) ui.detailLayer.append(detailNode(tile, image));
+      nextTiles = []; // Ownership transferred to clearDetail().
+      shown = request.key; failed = null;
       ui.renderStatus.hidden = true;
     } catch (error) {
       if (error.name !== 'AbortError' && isCurrent()) {
@@ -152,7 +190,7 @@ export function createController({models, ui, ports}) {
       }
     } finally {
       clearTimeout(loading);
-      if (nextUrl) URL.revokeObjectURL(nextUrl);
+      revokeTiles(nextTiles);
       if (pending === controller) pending = null;
       // Discard intermediate views and render only the last requested viewport.
       scheduleRendering();

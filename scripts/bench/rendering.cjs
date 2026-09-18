@@ -20,7 +20,11 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let app,page,phase='launch';
 (async()=>{try{
   app=await _electron.launch({executablePath:require(path.join(desktop,'node_modules/electron')),args:[desktop,path.join(folder,path.basename(source)),'--no-sandbox'],env});
-  page=await app.firstWindow();page.setDefaultTimeout(60000);await page.setViewportSize({width:1500,height:960});
+  page=await app.firstWindow();page.setDefaultTimeout(60000);
+  // A wide real viewport makes the detail layer cross the 1536px tile seam.
+  // This keeps the benchmark useful for the large-canvas case without
+  // changing the product's runtime configuration.
+  await page.setViewportSize({width:3000,height:960});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.waitForFunction(()=>document.querySelector('.circuit-item')&&document.querySelector('#canvasStatus').hidden);
   if(name&&(await page.locator('#currentCircuitName').innerText())!==name){
@@ -39,11 +43,14 @@ let app,page,phase='launch';
   await page.mouse.move(box.x+box.width*.45,box.y+box.height*.45);
   const targetScale=Math.max(1.5,(scene.payload.circuit.render?.scale||1)*1.5);
   for(let i=0;i<60&&(await geometry()).scale<targetScale;i++)await page.mouse.wheel(0,-120);
-  await page.locator('#detailLayer image').waitFor();await sleep(500);
+  await page.locator('#detailLayer image').first().waitFor();await sleep(500);
   await page.locator('#panTool').click();
   await page.evaluate(()=>{
-    window.renderBench={frames:[],commits:[],events:[],longTasks:[],running:true};
-    new MutationObserver(()=>window.renderBench.commits.push(performance.now())).observe(document.querySelector('#detailLayer'),{childList:true});
+    window.renderBench={frames:[],commits:[],tileCounts:[],events:[],longTasks:[],running:true};
+    new MutationObserver(()=>{
+      window.renderBench.commits.push(performance.now());
+      window.renderBench.tileCounts.push({at:performance.now(),count:document.querySelectorAll('#detailLayer image').length});
+    }).observe(document.querySelector('#detailLayer'),{childList:true});
     new PerformanceObserver(list=>window.renderBench.longTasks.push(...list.getEntries().map(x=>({start:x.startTime,duration:x.duration})))).observe({type:'longtask'});
     for(const type of ['pointerdown','pointermove','pointerup'])document.querySelector('#circuitCanvas').addEventListener(type,e=>window.renderBench.events.push({type,at:performance.now()}));
     const frame=t=>{if(window.renderBench.running){window.renderBench.frames.push(t);requestAnimationFrame(frame);}};requestAnimationFrame(frame);
@@ -61,8 +68,11 @@ let app,page,phase='launch';
     // Wait for the FINAL camera, not an intermediate response from mid-gesture.
     await page.waitForFunction(()=>{
       const svg=document.querySelector('#circuitCanvas'),m=svg.getScreenCTM(),r=svg.getBoundingClientRect();
-      const p=new DOMPoint(r.left,r.top).matrixTransform(m.inverse()),img=document.querySelector('#detailLayer image');
-      return img&&Number(img.getAttribute('x'))===Math.floor(p.x-64/m.a)&&Number(img.getAttribute('y'))===Math.floor(p.y-64/m.a);
+      const p=new DOMPoint(r.left,r.top).matrixTransform(m.inverse()),q=new DOMPoint(r.right,r.bottom).matrixTransform(m.inverse());
+      const images=[...document.querySelectorAll('#detailLayer image')].map(img=>({x:Number(img.getAttribute('x')),y:Number(img.getAttribute('y')),right:Number(img.getAttribute('x'))+Number(img.getAttribute('width')),bottom:Number(img.getAttribute('y'))+Number(img.getAttribute('height'))}));
+      if(!images.length)return false;
+      return Math.min(...images.map(img=>img.x))<=p.x-64/m.a && Math.max(...images.map(img=>img.right))>=q.x+64/m.a &&
+        Math.min(...images.map(img=>img.y))<=p.y-64/m.a && Math.max(...images.map(img=>img.bottom))>=q.y+64/m.a;
     });
     const committed=await page.evaluate(()=>window.renderBench.commits.at(-1));
     pans.push({trial,releaseToDetailCommitMs:committed-up});await sleep(120);
@@ -79,7 +89,7 @@ let app,page,phase='launch';
     readableView:await geometry(),gpu:await app.evaluate(({app})=>app.getGPUFeatureStatus()),
     animationCallbackIntervalMs:{median:percentile(frames,.5),p95:percentile(frames,.95),max:Math.max(...frames)},
     detailCommitMs:{median:percentile(pans.map(x=>x.releaseToDetailCommitMs),.5),p95:percentile(pans.map(x=>x.releaseToDetailCommitMs),.95)},
-    viewportRequests:log.requests.length,requestIncludingServerMs:{median:percentile(log.requests.map(x=>x.duration),.5),p95:percentile(log.requests.map(x=>x.duration),.95)},longTasks:log.longTasks,metricDelta,errors,
+    viewportRequests:log.requests.length,detailTileCount:log.tileCounts.at(-1)?.count||0,requestIncludingServerMs:{median:percentile(log.requests.map(x=>x.duration),.5),p95:percentile(log.requests.map(x=>x.duration),.95)},longTasks:log.longTasks,metricDelta,errors,
     limitations:['Animation callbacks are not presented-frame or GPU timings.','Five pans at one viewport and DPR; no claim about all circuits or high-DPI monitors.','Resource timing includes server queue/drawing/encoding/transport.']};
   fs.writeFileSync(root+'/scene.json',JSON.stringify(scene.payload));fs.writeFileSync(root+'/trace.json',JSON.stringify({pans,...log},null,2));fs.writeFileSync(root+'/result.json',JSON.stringify(result,null,2));
   await page.screenshot({path:root+'/readable.png'});console.log(JSON.stringify(result,null,2));
