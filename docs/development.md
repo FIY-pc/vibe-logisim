@@ -43,6 +43,14 @@ apps/desktop/run
 
 ## 有针对性的验证
 
+渲染性能和清晰度基准（真实 Electron、临时工作区、不启动 Codex）：
+
+```sh
+node scripts/bench/rendering.cjs /path/to/circuit.circ "电路名"
+```
+
+测量解释和后续渲染架构见 [画布渲染方向](rendering.md)。
+
 不消耗模型额度、也不需要课程电路的文件夹行为验证：
 
 ```sh
