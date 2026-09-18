@@ -471,6 +471,7 @@ function registerIpc() {
       question: request.question,
       context: {...resolved.context,materials:desktopWorkspace.references(request.materialRefs)},
       workspaceKey: resolved.workspaceKey,
+      editMessageId: request.editMessageId || null,
     });
     if (workspaceTransitioning || expectedGeneration !== workspaceGeneration) {
       throw workspaceChangedError();
@@ -525,7 +526,9 @@ function validateAgentAsk(value) {
   if (observationId != null && !/^live-[a-f0-9]{16}$/.test(observationId)) throw new Error("Invalid simulation observation.");
   const momentIds=value.momentIds || [];
   if(!Array.isArray(momentIds)||momentIds.length>2||momentIds.some(id=>typeof id!=="string"||!/^live-[a-f0-9]{16}$/.test(id)))throw new Error("Invalid kept observations.");
-  return { question, revisionId, selectionId, kind, ids, observationId, momentIds:[...new Set(momentIds)],materialRefs:value.materialRefs||[] };
+  const editMessageId = typeof value.editMessageId === "string" ? value.editMessageId.trim() : "";
+  if (editMessageId.length > 512) throw new Error("Invalid edited message.");
+  return { question, revisionId, selectionId, kind, ids, observationId, editMessageId, momentIds:[...new Set(momentIds)],materialRefs:value.materialRefs||[] };
 }
 
 function createWindow(baseUrl) {

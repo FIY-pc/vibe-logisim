@@ -107,6 +107,18 @@ class ConversationStore {
     }
     record.updatedAt = new Date().toISOString(); this.write(data);
   }
+  replaceHistory(key, {threadId, messages, messageContexts = {}}) {
+    const data = this.read(), w = this.workspace(data, key), record = w.conversations[w.activeId];
+    if (record.threadId && threadId && record.threadId !== threadId) throw new Error('当前对话已变化，未覆盖旧记录');
+    if (threadId) record.threadId = threadId;
+    record.messages = structuredClone(messages || []);
+    record.messageContexts = structuredClone(messageContexts || {});
+    if (!record.customTitle && !record.titleGenerated) {
+      const first = record.messages.find(m => m.type === 'user')?.text;
+      if (first) {record.title = first.replace(/\s+/g, ' ').trim().slice(0, 60);record.titleGenerated = true;}
+    }
+    record.updatedAt = new Date().toISOString(); this.write(data);
+  }
   fork(key, {sourceId, sourceThreadId, messageId, turnId, threadId, messages, messageContexts}) {
     const data = this.read(), w = this.workspace(data, key), source = w.conversations[w.activeId];
     if (source.id !== sourceId || source.threadId !== sourceThreadId || !threadId || threadId === sourceThreadId) {

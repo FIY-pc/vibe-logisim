@@ -77,6 +77,7 @@ export const ui = Object.fromEntries(
       "agentTimeline",
       "agentEmpty",
       "conversationStarters",
+      "editingDraftBar", "cancelEditingDraft",
       "proposalPane",
       "evidenceTitle",
       "proposalContent",

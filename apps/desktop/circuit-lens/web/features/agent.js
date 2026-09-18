@@ -5,21 +5,43 @@ import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas", "review", "agent"];
 
-export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","appendDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
+export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","appendDraftText","replaceDraftText","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
 
 export function createController({models, ui, client, ports}) {
-  let workspaceEpoch = 0;
+  let workspaceEpoch = 0, editingMessageId = null, draftBeforeEdit = "";
   const {project: projectState, canvas: canvasState, review: reviewState, agent: agentState} = models;
   const conversation=new ConversationView(ui,{followReference:ports.followConversationReference,appendMoments:ports.appendMomentReferences,appendMaterials:ports.appendMaterialReferences,
-    notify:ports.showToast,reuse:ports.appendDraftText,fork:ports.forkConversation});
+    notify:ports.showToast,edit:beginMessageEdit,fork:ports.forkConversation});
   const appendAgentSystem=(text,kind)=>conversation.system(text,kind);
   const scrollAgentTimeline=()=>conversation.scroll();
   const clearAgentTimeline=()=>conversation.clear();
   const renderAgentHistory=messages=>conversation.history(messages);
+function renderEditState() {
+    ui.editingDraftBar.hidden = !editingMessageId;
+  }
+function clearMessageEdit({restore=false}={}) {
+    const previous = draftBeforeEdit;
+    editingMessageId = null;
+    draftBeforeEdit = "";
+    conversation.setEditing(null);
+    renderEditState();
+    if (restore && previous !== ui.questionInput.value) ports.replaceDraftText(previous);
+  }
+function beginMessageEdit(message) {
+    if (!message || agentState.busy || agentState.submitting) return;
+    if (editingMessageId === message.id) {ui.questionInput.focus();ui.questionInput.select();return;}
+    draftBeforeEdit = ui.questionInput.value;
+    editingMessageId = message.id;
+    conversation.setEditing(message.id);
+    renderEditState();
+    ports.replaceDraftText(message.text);
+    ui.questionInput.focus();ui.questionInput.select();
+  }
 function updateComposerState() {
     conversation.setBusy(agentState.busy || agentState.submitting || ports.conversationBinding().busy);
     ports.updateMaterialState();
     ports.renderConversationStarters();
+    renderEditState();
     if (!agentState.enabled) {
       ui.copyReferenceButton.hidden = false;
       ui.composerOptions.hidden = false;
@@ -36,7 +58,7 @@ function updateComposerState() {
     ui.askButton.hidden = busy;
     ui.interruptButton.disabled = agentState.submitting && !agentState.busy;
     ui.questionInput.disabled = !projectState.session || !ports.draftReady();
-    ui.questionInput.placeholder = busy ? "继续写下你的想法…" : "一起构思、修改，或问一个问题…";
+    ui.questionInput.placeholder = editingMessageId ? "修改这条问题后发送…" : busy ? "继续写下你的想法…" : "一起构思、修改，或问一个问题…";
     ui.askButton.replaceChildren(icon("ArrowUp"));
     ui.askButton.disabled = busy || projectState.projectBusy || !ready || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged) || !ui.questionInput.value.trim();
     if (projectState.sourceChanged) {
@@ -93,6 +115,7 @@ async function askAgent() {
     const question = ui.questionInput.value.trim();
     if (!question || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged)) return;
     const receipt = ports.draftReceipt();
+    const editMessageId = editingMessageId;
     const submittedRevision = projectState.revision;
     const includeCircuit=Boolean(projectState.circuit&&!projectState.sourceChanged);
     const submittedProject = projectState.session?.workspace?.id;
@@ -104,11 +127,13 @@ async function askAgent() {
     updateComposerState();
     ports.switchReviewTab("agent");
     ports.openReviewPanel();
+    let backendSubmissionStarted = false;
     try {
       const { selection, snapshot } = includeCircuit ? await ensureAgentSelection() : {selection:{id:null},snapshot:null};
       if(submittedEpoch!==workspaceEpoch||submittedProject!==projectState.session?.workspace?.id||submittedRevision!==projectState.revision)throw new Error('工程在发送前发生了变化，问题仍保留在原工程草稿中');
       const expectedEpoch = ports.selectionStatus().selectionEpoch;
       const query = snapshot ? ports.queryIntent(snapshot) : {kind:"overview",ids:[]};
+      backendSubmissionStarted = true;
       const result = await window.vibeDesktop.agent.ask({
         question,
         conversationId: ports.conversationBinding().id,
@@ -121,6 +146,7 @@ async function askAgent() {
         momentIds:moments.ids,
         momentRefs:moments.refs,
         materialRefs:materials.refs,
+        editMessageId,
       });
       if (
         submittedEpoch === workspaceEpoch &&
@@ -139,7 +165,9 @@ async function askAgent() {
         ports.renderReview();
       }
       ports.acknowledgeDraft(receipt);
+      clearMessageEdit();
     } catch (error) {
+      if (backendSubmissionStarted) clearMessageEdit();
       if (submittedEpoch === workspaceEpoch && projectState.session?.workspace?.id === submittedProject)
         ports.reportAgentError(`没有开始回答：${error.message}`);
     } finally {
@@ -172,6 +200,7 @@ function initializeAgent() {
     ui.reviewPanel.classList.add("has-agent");
     ui.composerOptions.hidden = false;
     for(const [button,name] of [[ui.askButton,'ArrowUp'],[ui.interruptButton,'Square'],[ui.agentSettings,'Settings']])button.replaceChildren(icon(name));
+    ui.cancelEditingDraft.addEventListener("click", () => clearMessageEdit({restore:true}));
     ui.agentEmpty.querySelector('.chat-empty-mark').append(icon('MessageSquare'));
     conversation.mount();
     ui.agentTab.hidden = false;
@@ -213,7 +242,7 @@ function applyAgentState(snapshot = {}) {
 
 function handleAgentEvent(event) {
     if (!event || typeof event !== "object") return;
-    if (event.type === 'conversations-changed') {ports.receiveConversationState(event); return;}
+    if (event.type === 'conversations-changed') {if (event.activate) clearMessageEdit(); ports.receiveConversationState(event); return;}
     if (event.type === "candidate-ready") { ports.loadCandidates(); return; }
     if (event.type === "circuit-change") {
       const card = makeElement("div", "agent-change");
@@ -260,6 +289,7 @@ function handleAgentEvent(event) {
     if (event.type === "workspace-reset") {
       workspaceEpoch++;
       agentState.submitting=false;
+      clearMessageEdit();
       clearAgentTimeline();
       ports.updateAgentConnection({transmission:null});
       return;

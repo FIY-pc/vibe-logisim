@@ -71,6 +71,12 @@ export function createController({models,ui,ports}) {
     if(next.length>ui.questionInput.maxLength){ports.showToast('内容较长，可以复制后选取需要的部分');return;}
     active.model.text(next);changed();render();ui.questionInput.focus();
   }
+  function replaceDraftText(text) {
+    if(!available())return;
+    const next=String(text ?? '');
+    if(next.length>ui.questionInput.maxLength){ports.showToast('内容较长，可以复制后选取需要的部分');return;}
+    active.model.text(next);changed();render();ui.questionInput.focus();ui.questionInput.setSelectionRange(0,next.length);
+  }
   function draftReceipt(){return available()?{entry:active,snapshot:active.model.snapshot()}:null;}
   function acknowledgeDraft(receipt) {
     if(!receipt)return;
@@ -106,5 +112,5 @@ export function createController({models,ui,ports}) {
     });
     renderError();
   }
-  return Object.freeze({mountDraft,openDraftProject,draftReady:available,draftReferences,setDraftReferences,appendDraftText,draftReceipt,acknowledgeDraft,restoreDraftFocus});
+  return Object.freeze({mountDraft,openDraftProject,draftReady:available,draftReferences,setDraftReferences,appendDraftText,replaceDraftText,draftReceipt,acknowledgeDraft,restoreDraftFocus});
 }

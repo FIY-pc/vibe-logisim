@@ -5,8 +5,8 @@ import {renderMarkdown} from './chat-markdown.js';
 // Owns message DOM, reading position and transient progress only. Transport,
 // projects, draft submission and structural changes belong to other owners.
 export class ConversationView {
-  constructor(ui,{followReference,appendMoments,appendMaterials,reuse,fork,notify}) {
-    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,reuse,fork,notify});
+  constructor(ui,{followReference,appendMoments,appendMaterials,edit,fork,notify}) {
+    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,edit,fork,notify});
     this.messages=new Map();this.activities=new Map();this.follow=true;
     this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();
   }
@@ -43,10 +43,13 @@ export class ConversationView {
     const node=makeElement('article','agent-message');node.dataset.role=role;node.dataset.itemId=id;
     const header=makeElement('div','agent-message-header');header.append(makeElement('strong','',role==='user'?'你':'Codex'));
     const body=makeElement('div','agent-message-body');const footer=makeElement('div','message-actions');
-    const message={node,body,footer,text,phase:null};
+    const message={node,body,footer,text,phase:null,id};
     const copy=action('复制消息','Copy',()=>copyText(message.text,copy,this.notify));
     footer.append(copy);
-    if(role==='user') footer.append(action('放回输入框','ArrowUp',()=>this.reuse(message.text)));
+    if(role==='user') {
+      const edit=action('编辑此问题','Pencil',()=>this.edit({id:message.id,text:message.text,node:message.node}));
+      edit.classList.add('message-edit');edit.disabled=Boolean(this.busy);footer.append(edit);
+    }
     else {
       const status=makeElement('small','message-branch-status');status.hidden=true;status.setAttribute('role','status');
       const branch=action('分支到新聊天','Split',async()=>{
@@ -118,7 +121,13 @@ export class ConversationView {
   }
   setBusy(value) {
     this.busy=value;
-    this.ui.agentTimeline.querySelectorAll('.message-branch').forEach(button=>button.disabled=value);
+    this.ui.agentTimeline.querySelectorAll('.message-branch,.message-edit').forEach(button=>button.disabled=value);
+  }
+  setEditing(id) {
+    const key=id == null ? null : String(id);
+    for (const message of this.messages.values()) {
+      message.node.classList.toggle('is-editing', key !== null && String(message.id) === key);
+    }
   }
   scroll() {
     if(this.frame!==null)return;
