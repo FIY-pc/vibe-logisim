@@ -88,6 +88,7 @@ class AgentModels {
           seen.add(cursor);
         } while (cursor);
         const catalog = [...models.values()];
+        if (!catalog.length) throw new Error("当前连接没有返回模型");
         if (this.loading === loading) {
           this.catalog = catalog;
           this.catalogError = null;

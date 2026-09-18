@@ -8,14 +8,17 @@ export function createController({ui,ports}) {
   function updateAgentConnection(snapshot) {
     state = {...state, ...snapshot};
     ports.updateAgentPreferences(state);
+    const modelIssue = state.modelCatalog?.error;
     ui.modelConnection.textContent=`${state.providerName||'本机 Codex'} · ${state.account?.type==='chatgpt'?'ChatGPT 登录':state.account?.type==='apiKey'?'API 连接':'本机配置'}`;
-    ui.modelConnectionStatus.textContent=state.status==='ready'?'已连接':state.status==='busy'?'正在处理问题':state.status==='auth-required'?'需要登录':'连接尚未就绪';
+    ui.modelConnectionStatus.textContent=modelIssue?'模型目录不可用':state.status==='ready'?'已连接':state.status==='busy'?'正在处理问题':state.status==='auth-required'?'需要登录':'连接尚未就绪';
     ui.connectionModel.textContent=state.model||'尚未选择';
     ui.connectionPreference.textContent=state.modelSelection?'本应用单独设置':state.accountMode==='application'?'默认设置':'跟随本机配置';
     ui.connectionHelp.textContent=state.accountMode==='application'?'登录后即可和 AI 一起构建电路。登录保存在本应用中；未登录也可以编辑和仿真。':'当前开发环境沿用本机 Codex 的服务配置与登录。模型偏好、对话和电路保存在 Vibe Logisim 中。';
     ui.connectionLogout.hidden=state.accountMode!=='application'||!state.account;
     ui.connectionLogout.disabled=accountPending||state.busy;
     ui.modelReconnect.disabled=accountPending||reconnecting||state.canReconnect===false;
+    if(modelIssue){ui.connectionError.textContent=`模型目录：${modelIssue.message}`;ui.connectionError.hidden=false;}
+    else if(ui.connectionError.textContent.startsWith('模型目录：')){ui.connectionError.textContent='';ui.connectionError.hidden=true;}
     ui.modelReconnect.textContent=accountPending?'正在处理…':state.signingIn?'取消登录':state.status==='auth-required'&&state.accountMode==='application'?'登录 ChatGPT':reconnecting?'正在连接…':state.transmission?.phase==='retrying'?'停止并重新连接':'重新连接';
     renderNotice();
   }

@@ -107,6 +107,7 @@ export function createController({ui, ports}) {
       if (epoch !== loadEpoch) return;
       if (!Array.isArray(result.models) || !result.models.length) throw new Error('当前连接没有返回模型');
       models = result.models;
+      if (result.state) ports.applyAgentState(result.state);
     } catch (error) {
       if (epoch !== loadEpoch) return;
       for (const node of [ui.modelError, ui.effortError]) { node.textContent = '无法读取模型：' + error.message; node.hidden = false; }
