@@ -1,6 +1,7 @@
 import {makeElement} from './dom.js';
 import {icon,action,copyText} from './chat-dom.js';
 import {renderMarkdown} from './chat-markdown.js';
+import {AgentOutputProjection} from './agent-output-projection.js';
 
 // Owns message DOM, reading position and transient progress only. Transport,
 // projects, draft submission and structural changes belong to other owners.
@@ -8,6 +9,7 @@ export class ConversationView {
   constructor(ui,{followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify}) {
     Object.assign(this,{ui,followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify});
     this.messages=new Map();this.activities=new Map();this.follow=true;
+    this.output=new AgentOutputProjection();
     this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();this.editing=null;this.editingFollow=null;
   }
   mount() {
@@ -23,7 +25,7 @@ export class ConversationView {
     latest.addEventListener('click',()=>{this.follow=true;this.scroll();});
   }
   clear() {
-    this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.work=null;this.follow=true;this.scrollTop=null;
+    this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.output.clear();this.work=null;this.follow=true;this.scrollTop=null;
     this.ui.conversationLatest.hidden=true;this.ui.agentTimeline.replaceChildren(this.ui.agentEmpty);this.ui.agentEmpty.hidden=false;
   }
   user(id,text,context) {
@@ -144,51 +146,41 @@ export class ConversationView {
     }
     return this.work;
   }
-  start() {this.group().dataset.status='running';this.updateWork('正在思考');this.scroll();}
+  start() {this.group().dataset.status='running';this.output.start();this.updateWork('正在思考');this.scroll();}
   updateWork(fallback=null) {
-    const work=this.group(),summary=work.querySelector('summary span');
-    const running=[...work.querySelectorAll('.agent-activity[data-status="running"]')].at(-1);
-    if(running) {summary.textContent=`正在${running.querySelector('.agent-activity-label')?.textContent || '处理'}…`;return;}
-    if(work.dataset.status==='running') {summary.textContent=fallback || '正在整理结果';return;}
-    if(!work.dataset.status && fallback) {summary.textContent=fallback;return;}
-    if(work.dataset.status==='completed') {
-      const count=work.querySelectorAll('.agent-activity').length;
-      const failed=work.querySelectorAll('.agent-activity[data-status="failed"]:not([data-recovered="true"])').length;
-      if(failed) {summary.textContent=`回答完成 · ${failed} 个步骤未完成 · 查看工作过程`;return;}
-      summary.textContent=count ? `已完成 · ${count} 个工作步骤 · 查看工作过程` : '已完成 · 查看工作过程';return;
-    }
-    if(work.dataset.status==='interrupted') {summary.textContent='已停止 · 查看工作过程';return;}
-    summary.textContent='未完成 · 查看工作过程';
+    const summary=this.group().querySelector('summary span');
+    summary.textContent=this.output.summary(fallback)||fallback||'工作过程';
   }
   activity(id,label,status='running',kind='tool',detail=null,activityKey=null) {
     if(!id)return;this.ui.agentEmpty.hidden=true;
+    const projected=this.output.activity({id,label,status,kind,detail,activityKey});
+    if(!projected)return;
     let node=this.activities.get(String(id));
-    const retryKey=String(activityKey||'');
-    const priorFailed=status==='completed' && retryKey
-      ? [...this.group().querySelectorAll('.agent-activity[data-status="failed"]')].find(item=>item!==node&&item.dataset.activityKey===retryKey)
-      : null;
     if(!node) {
       node=makeElement('div','agent-activity');node.append(makeElement('span','agent-activity-label'),makeElement('span','agent-activity-status'));
       this.group().append(node);this.activities.set(String(id),node);
     }
-    const previous=node.dataset.status;
-    const recovered=previous==='failed' && status==='completed' && node.dataset.activityKey===retryKey;
-    if(activityKey)node.dataset.activityKey=String(activityKey);
-    node.dataset.status=status;
-    if(recovered)node.dataset.recovered='true';
-    if(priorFailed) {
-      priorFailed.dataset.recovered='true';
-      priorFailed.querySelector('.agent-activity-status').textContent='已恢复';
+    const item=projected.item;
+    node.dataset.status=item.status;
+    if(item.activityKey)node.dataset.activityKey=item.activityKey;
+    if(item.recovered)node.dataset.recovered='true';
+    if(projected.priorFailed) {
+      const priorNode=this.activities.get(projected.priorFailed.id);
+      if(priorNode) {
+        priorNode.dataset.recovered='true';
+        priorNode.querySelector('.agent-activity-status').textContent='已恢复';
+      }
     }
-    const text=String(label||'正在处理').replace(/\s+/g,' ').trim();
+    const recovered=item.recovered;
+    const text=item.label;
     node.querySelector('.agent-activity-label').textContent=kind==='reasoning'?'分析电路与问题':text;
-    node.querySelector('.agent-activity-status').textContent=status==='running'?'进行中':status==='failed'?(recovered?'已恢复':'未完成'):'完成';
-    if(detail) {
-      node.title=String(detail);
-      if(status==='failed') {
+    node.querySelector('.agent-activity-status').textContent=item.status==='running'?'进行中':item.status==='failed'?(recovered?'已恢复':'未完成'):'完成';
+    if(item.detail) {
+      node.title=item.detail;
+      if(item.status==='failed') {
         let error=node.querySelector('.agent-activity-detail');
         if(!error){error=makeElement('small','agent-activity-detail');node.append(error);}
-        error.textContent=String(detail);
+        error.textContent=item.detail;
       }
     }
     this.updateWork();
@@ -197,7 +189,7 @@ export class ConversationView {
   finish(status='completed') {
     for(const message of this.pending)this.render(message);this.pending.clear();
     this.ui.agentTimeline.querySelectorAll('.is-streaming').forEach(node=>{node.classList.remove('is-streaming');node.setAttribute('aria-busy','false');const m=this.messages.get(node.dataset.itemId);if(m)m.footer.hidden=m.phase==='commentary';});
-    if(this.work){this.work.dataset.status=status;this.updateWork();}
+    if(this.work){this.work.dataset.status=status;this.output.finish(status);this.updateWork();}
     this.scroll();
   }
   system(text,kind='warning') {
