@@ -8,11 +8,19 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 from studio.domain.plugin import PLUGIN_ID, PLUGIN_VERSION, RESULT_SCHEMA, binding_for, result_envelope
+from studio.runtime.evaluation import EvaluationService
 
-class HarnessService:
+class NativeCircuitRuntime:
+    """Execute native Logisim observations for the circuit plugin.
+
+    Codex thread/turn orchestration is outside this class. Evaluation is also
+    delegated to EvaluationService so runtime rows and test interpretation
+    cannot silently become one verdict-producing state machine.
+    """
     def __init__(self, workspace, tools):
         self.workspace = workspace
         self.tools = tools
+        self.evaluator = EvaluationService(self)
 
     def harness_run(self, args):
         """Run a real native experiment while keeping the workflow user-directed."""
@@ -77,98 +85,7 @@ class HarnessService:
         return envelope
 
     def evaluate(self, args):
-        """Compare a native observation with an explicit test specification."""
-        if not isinstance(args, dict):
-            raise ValueError('评测参数必须为对象')
-        mode = args.get('mode')
-        if mode not in {'simulate', 'trace'}:
-            raise ValueError('评测模式必须为 simulate 或 trace')
-
-        if mode == 'simulate':
-            vectors = args.get('vectors')
-            if not isinstance(vectors, list) or not vectors or any(
-                not isinstance(vector, dict) or not vector.get('expected') for vector in vectors
-            ):
-                raise ValueError('组合评测的每个向量都必须提供 expected 输出')
-            report = self.simulate(args)
-            cases = []
-            for index, row in enumerate(report.get('rows', [])):
-                if row.get('passed') is True:
-                    case_status = 'passed'
-                elif row.get('passed') is False:
-                    case_status = 'failed'
-                else:
-                    case_status = 'unknown'
-                cases.append({'index': index, 'status': case_status, 'expected': row.get('expected'), 'actual': row.get('outputs')})
-        else:
-            expected_rows = args.get('expectedRows')
-            if not isinstance(expected_rows, list) or not expected_rows:
-                raise ValueError('时序评测必须提供 expectedRows')
-            for expected in expected_rows:
-                if not isinstance(expected, dict) or type(expected.get('tick')) is not int or expected['tick'] < 0:
-                    raise ValueError('expectedRows 需要非负 tick')
-                self._values(expected.get('values'), '期望信号')
-            report = self.trace(args)
-            actual_by_tick = {row.get('tick'): row for row in report.get('rows', [])}
-            cases = []
-            for expected in expected_rows:
-                actual_row = actual_by_tick.get(expected['tick'])
-                actual_values = actual_row.get('values') if actual_row else None
-                if actual_values is None or any(actual_values.get(name) is None for name in expected['values']):
-                    case_status = 'unknown'
-                elif all(actual_values.get(name) == value for name, value in expected['values'].items()):
-                    case_status = 'passed'
-                else:
-                    case_status = 'failed'
-                cases.append({'tick': expected['tick'], 'status': case_status, 'expected': expected['values'], 'actual': actual_values})
-
-        failed = [case for case in cases if case['status'] == 'failed']
-        unknown = [case for case in cases if case['status'] == 'unknown']
-        status = 'failed' if failed else ('unknown' if unknown else 'passed')
-        evaluation = {
-            'status': status,
-            'caseCount': len(cases),
-            'passedCount': sum(case['status'] == 'passed' for case in cases),
-            'failedCount': len(failed),
-            'unknownCount': len(unknown),
-            'cases': cases,
-            'spec': {
-                'mode': mode,
-                'stimulusSha256': report.get('stimulusSha256'),
-            },
-        }
-        artifact_sha = report.get('artifactSha256') or self.workspace.artifact_sha256
-        binding = binding_for(self.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha)
-        feedback = {
-            'status': status,
-            'rowCount': len(report.get('rows', [])),
-            'checkedCount': len(cases) - len(unknown),
-            'failureCount': len(failed),
-            'unknownCount': len(unknown),
-            'firstFailure': failed[0] if failed else None,
-            'note': '评测只比较本次显式提供的测试规格；它不声明未覆盖的行为。',
-        }
-        run = {
-            'id': report.get('runId'),
-            'kind': 'evaluation',
-            'mode': mode,
-            'status': 'completed',
-            'authority': report.get('authority', 'Logisim native clock and propagation'),
-            'runtimeProfileId': report.get('runtimeProfileId'),
-            'stimulusSha256': report.get('stimulusSha256'),
-            'rowCount': len(report.get('rows', [])),
-        }
-        envelope = result_envelope(binding=binding, run=run, observation=report, feedback=feedback)
-        envelope['evaluation'] = evaluation
-        envelope['session'] = {
-            'revisionId': self.workspace.revision_id,
-            'circuit': args.get('circuit'),
-            'candidateId': args.get('candidateId') or None,
-            'artifactSha256': artifact_sha,
-            'mode': mode,
-            'authority': report.get('authority', 'Logisim native clock and propagation'),
-        }
-        return envelope
+        return self.evaluator.evaluate(args)
 
     def simulate(self, args):
         name, vectors = (args.get('circuit'), args.get('vectors'))
@@ -356,3 +273,7 @@ class HarnessService:
             report['programScope'] = 'In-memory stimulus only; working circuit ROM is unchanged' if program else 'Working circuit ROM contents'
             self._record_observation(report, 'clock-trace')
         return report
+
+
+# Kept for small local integrations while callers move to the precise name.
+HarnessService = NativeCircuitRuntime

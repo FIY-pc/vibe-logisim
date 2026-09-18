@@ -25,7 +25,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 ## 插件契约
 
-插件描述位于 `studio.domain.plugin`，JS 宿主侧的模型可见注册位于 `electron/circuit-tools.cjs`。两侧保持相同的插件 ID、版本和能力名称：
+插件描述位于 `studio.domain.plugin`，可执行注册位于 `studio.application.circuit_plugin.CircuitPlugin`；Electron 侧的传输注册位于 `electron/circuit-tools.cjs`。后者只负责把模型协议规格和暴露策略送入 Codex，前者负责真正执行 Studio 工具。两侧保持相同的插件 ID、版本和能力名称：
 
 | 字段 | 作用 |
 | --- | --- |
@@ -33,6 +33,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 | `id` / `version` | 能力来源和兼容边界 |
 | `capabilities` | 能力名称、类别、是否写源文件、是否产生候选 |
 | `availability` | 当前工作区、native runtime 和源文件状态 |
+| `tools` / `hostTools` | Studio 可执行工具和由 Electron 工作区宿主执行的工具 |
 | `binding` | 工程、修订、电路、候选、artifact 和运行时 profile 身份 |
 | `run` | 本次执行的 ID、类型、状态、authority 和 stimulus 摘要 |
 | `result` | 原始观察或运行报告 |
@@ -65,14 +66,29 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 }
 ```
 
+工具调用本身还带有 `threadId`、`turnId` 和 `callId`。它们用于宿主在异步 native 操作返回时判断结果是否仍属于原回合；它们不是电路正确性的额外结论。
+
 运行报告还记录 `runId`、`stimulusSha256`、开始时间、耗时和 authority。候选运行使用候选 artifact 的真实 hash，不能回退到基础工作区 hash。仿真输入、时钟和按钮事件仍属于本次运行的 transient stimulus，不写入电路结构。
 
 ## 当前实现边界
 
 - Codex thread/turn 与工作区文件能力由 [`codex-backend.cjs`](../apps/desktop/electron/codex-backend.cjs) 负责。
-- 插件的模型可见工具和能力注册由 [`circuit-tools.cjs`](../apps/desktop/electron/circuit-tools.cjs) 负责。
-- Studio 的领域路由由 [`tools.py`](../apps/desktop/circuit-lens/studio/application/tools.py) 负责。
-- 真实 Logisim 仿真和 trace 由 [`harness.py`](../apps/desktop/circuit-lens/studio/runtime/harness.py) 调用 native runtime 完成。
+- 插件的模型可见协议规格和暴露策略由 [`circuit-tools.cjs`](../apps/desktop/electron/circuit-tools.cjs) 的 `circuitToolRegistry` 负责；调用执行会带着 `threadId`、`turnId` 和 `callId` 穿过宿主边界。
+- Studio 的可执行插件注册和调用身份由 [`circuit_plugin.py`](../apps/desktop/circuit-lens/studio/application/circuit_plugin.py) 负责；`Workbench` 不再用一个按字符串展开的总分派器。
+- 真实 Logisim 仿真和 trace 由 [`harness.py`](../apps/desktop/circuit-lens/studio/runtime/harness.py) 的 `NativeCircuitRuntime` 调用 native runtime 完成；显式规格比较由 [`evaluation.py`](../apps/desktop/circuit-lens/studio/runtime/evaluation.py) 独立完成。
 - 插件描述通过 `/api/agent/plugin` 暴露，桌面宿主在发送上下文时将其作为 application context 注入模型绑定。
 
-`HarnessService` 是电路插件中的运行能力实现，不是整个 Agent Harness。以后增加课程测试集、时序断言或其他领域能力时，优先扩展插件能力和结果协议，保持 Codex 的代理生命周期不变。
+`NativeCircuitRuntime` 是电路插件中的原生执行能力，不是整个 Agent Harness。真正的 Base Harness 仍然是 Codex backend 及其 thread/turn、上下文、工具调用、权限、事件流和停止恢复边界。以后增加课程测试集、时序断言或其他领域能力时，优先注册新的插件 executor 或扩展独立 evaluator，保持 Codex 的代理生命周期不变。
+
+一次调用的最小身份链是：
+
+```text
+Codex dynamic tool call
+  -> Electron admission + circuit operation queue
+  -> /api/agent/tool
+  -> CircuitInvocation(project, revision, thread, turn, call)
+  -> registered executor
+  -> native observation / evaluation result
+```
+
+工作区切换、版本变化、停止回合和 Codex 进程重连都会使排队调用失效。Native 进程可能仍在结束，但其结果不会再写回旧回合。

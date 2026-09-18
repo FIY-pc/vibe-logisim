@@ -3,119 +3,174 @@ from __future__ import annotations
 from studio.application.inspection import InspectionService
 from studio.domain.references import object_link
 from studio.project.candidates import CandidateService
-from studio.runtime.harness import HarnessService
+from studio.runtime.harness import NativeCircuitRuntime
 from studio.runtime.native import NativeOperations
 from studio.domain.plugin import plugin_manifest
+from studio.application.circuit_plugin import CircuitInvocation, CircuitPlugin, default_specs
 
 
 class Workbench:
     def __init__(self, workspace):
         self.workspace = workspace
         self.native = NativeOperations(workspace, self)
-        self.harness = HarnessService(workspace, self)
+        self.runtime = NativeCircuitRuntime(workspace, self)
         self.candidate = CandidateService(workspace, self)
         self.inspection = InspectionService(workspace, self)
+        self.plugin = CircuitPlugin(workspace)
+        self._register_plugin_tools()
 
-    def call(self, revision: str, tool: str, arguments: dict, observation_id=None):
-        # Serialize binding check and action with workspace transitions. No model-chosen filesystem paths.
+    def _register_plugin_tools(self):
+        specs = default_specs()
+        handlers = {
+            "read_kept_observation": self._read_kept_observation,
+            "inspect_circuit": self._inspect_circuit,
+            "read_project_resource": self._read_project_resource,
+            "submit_circuit": self._submit_circuit,
+            "build_candidate": self._build_candidate,
+            "wire_candidate": self._wire_candidate,
+            "trace_circuit": self._trace_circuit,
+            "simulate_circuit": self._simulate_circuit,
+            "harness_run": self._harness_run,
+            "evaluate_circuit": self._evaluate_circuit,
+        }
+        for name, handler in handlers.items():
+            self.plugin.register(specs[name], handler)
+
+    def call(self, revision: str, tool: str, arguments: dict, observation_id=None, *, project_id=None,
+             thread_id=None, turn_id=None, call_id=None):
+        invocation = CircuitInvocation(
+            project_id=project_id,
+            revision_id=revision,
+            tool=tool,
+            arguments=arguments,
+            observation_id=observation_id,
+            thread_id=thread_id,
+            turn_id=turn_id,
+            call_id=call_id,
+        )
         with self.workspace.lock:
-            if revision != self.workspace.revision_id:
-                raise ValueError("工程版本已变化，请重新发起操作")
-            if not isinstance(arguments, dict):
-                raise ValueError("工具参数必须为对象")
-            if tool == "read_kept_observation":
-                return self.workspace.application.moments.inspect(arguments)
-            if tool == "inspect_circuit":
-                result = self.inspect(arguments)
-                if not arguments.get('candidateId') and arguments.get('circuit'):
-                    result['objectReferenceTemplate']=object_link(self.workspace.history.record['id'],revision,arguments['circuit'],'COMPONENT_ID')
-                    if len(result.get('components',[]))<=64:
-                        for component in result.get('components',[]):
-                            component['reference']=object_link(self.workspace.history.record['id'],revision,arguments['circuit'],component['componentId'])
-                if observation_id and not arguments.get("candidateId"):
-                    sample = self.workspace.simulation.observation(revision, observation_id)
-                    if arguments.get("circuit") == sample["circuit"]:
-                        ids = arguments.get("componentIds") or []
-                        if ids:
-                            sample["components"] = [c for c in sample["components"] if c["componentId"] in ids]
-                        result["displayedSimulation"] = sample
-                        for component in result.get('components',[]):
-                            component['reference']=object_link(self.workspace.history.record['id'],revision,sample['circuit'],component['componentId'],sample)
-                    else:
-                        result["simulationScope"] = {"id": sample["id"], "rootCircuit": sample.get("rootCircuit",sample["circuit"]),
-                            "circuit":sample['circuit'], 'instancePath':sample['instancePath'],
-                            "note": "Live values belong only to this observed instance and moment."}
-                return result
-            if tool == "read_project_resource":
-                return self.resource(arguments)
-            if tool == "submit_circuit":
-                if self.workspace.source_status().get("stale"):
-                    raise ValueError("源工程已变化，请先处理外部改动")
-                from studio.collaboration.bundle import import_circuit
-                return import_circuit(self, arguments)
-            if tool == "build_candidate":
-                if self.workspace.source_status().get("stale"):
-                    raise ValueError("源工程已变化，请先重新载入")
-                return self.build(arguments)
-            if tool == "wire_candidate":
-                if self.workspace.source_status().get("stale"):
-                    raise ValueError("源工程已变化，请先重新载入")
-                from studio.runtime.wiring import wire_candidate
-                return wire_candidate(self, arguments)
-            if tool == "trace_circuit":
-                report = self.trace(arguments)
-                row_start = arguments.get("rowStart", 0)
-                row_limit = arguments.get("rowLimit", 32)
-                if type(row_start) is not int or row_start < 0 or type(row_limit) is not int or not 1 <= row_limit <= 256:
-                    raise ValueError("rowStart 必须为非负整数，rowLimit 必须在 1–256 之间")
-                rows = report["rows"]
-                selected = rows[row_start:row_start + row_limit]
-                return {**report, "rows": selected, "rowCount": len(rows), "rowStart": row_start,
-                        "rowLimit": row_limit, "rowsTruncated": len(selected) != len(rows)}
-            if tool == "simulate_circuit":
-                report = self.simulate(arguments)
-                if len(report["rows"]) <= 32:
-                    return report
-                # Keep the full report with the candidate, not in every model turn.
-                # Failures and unknowns have priority; totals still cover every vector.
-                chosen = []
-                for status, limit in ((False, 12), (None, 12), (True, 8)):
-                    chosen.extend((i, row) for i, row in list((i, r) for i, r in enumerate(report["rows"]) if r["passed"] is status)[:limit])
-                return {**report, "rowCount": len(report["rows"]),
-                        "rows": [{"index": i, **row} for i, row in sorted(chosen)], "rowsTruncated": True,
-                        "note": "Counts cover all vectors. Rows are bounded samples prioritizing failures and unknowns. Candidate review/export retains every row; rerun a narrower input set to investigate."}
-            if tool == "harness_run":
-                return self.harness_run(arguments)
-            if tool == "evaluate_circuit":
-                return self.evaluate_circuit(arguments)
-            raise ValueError("Unknown circuit tool")
+            return self.plugin.invoke(invocation)
+
+    def _read_kept_observation(self, call):
+        return self.workspace.application.moments.inspect(call.arguments)
+
+    def _inspect_circuit(self, call):
+        arguments, revision = call.arguments, call.revision_id
+        result = self.inspect(arguments)
+        if not arguments.get("candidateId") and arguments.get("circuit"):
+            result["objectReferenceTemplate"] = object_link(
+                self.workspace.history.record["id"], revision, arguments["circuit"], "COMPONENT_ID"
+            )
+            if len(result.get("components", [])) <= 64:
+                for component in result.get("components", []):
+                    component["reference"] = object_link(
+                        self.workspace.history.record["id"], revision, arguments["circuit"], component["componentId"]
+                    )
+        if call.observation_id and not arguments.get("candidateId"):
+            sample = self.workspace.simulation.observation(revision, call.observation_id)
+            if arguments.get("circuit") == sample["circuit"]:
+                ids = arguments.get("componentIds") or []
+                if ids:
+                    sample["components"] = [c for c in sample["components"] if c["componentId"] in ids]
+                result["displayedSimulation"] = sample
+                for component in result.get("components", []):
+                    component["reference"] = object_link(
+                        self.workspace.history.record["id"], revision,
+                        sample["circuit"], component["componentId"], sample
+                    )
+            else:
+                result["simulationScope"] = {
+                    "id": sample["id"],
+                    "rootCircuit": sample.get("rootCircuit", sample["circuit"]),
+                    "circuit": sample["circuit"],
+                    "instancePath": sample["instancePath"],
+                    "note": "Live values belong only to this observed instance and moment.",
+                }
+        return result
+
+    def _read_project_resource(self, call):
+        return self.resource(call.arguments)
+
+    def _submit_circuit(self, call):
+        if self.workspace.source_status().get("stale"):
+            raise ValueError("源工程已变化，请先处理外部改动")
+        from studio.collaboration.bundle import import_circuit
+        return import_circuit(self, call.arguments)
+
+    def _build_candidate(self, call):
+        if self.workspace.source_status().get("stale"):
+            raise ValueError("源工程已变化，请先重新载入")
+        return self.build(call.arguments)
+
+    def _wire_candidate(self, call):
+        if self.workspace.source_status().get("stale"):
+            raise ValueError("源工程已变化，请先重新载入")
+        from studio.runtime.wiring import wire_candidate
+        return wire_candidate(self, call.arguments)
+
+    def _trace_circuit(self, call):
+        report = self.trace(call.arguments)
+        row_start = call.arguments.get("rowStart", 0)
+        row_limit = call.arguments.get("rowLimit", 32)
+        if type(row_start) is not int or row_start < 0 or type(row_limit) is not int or not 1 <= row_limit <= 256:
+            raise ValueError("rowStart 必须为非负整数，rowLimit 必须在 1–256 之间")
+        rows = report["rows"]
+        selected = rows[row_start:row_start + row_limit]
+        return {
+            **report, "rows": selected, "rowCount": len(rows), "rowStart": row_start,
+            "rowLimit": row_limit, "rowsTruncated": len(selected) != len(rows),
+        }
+
+    def _simulate_circuit(self, call):
+        report = self.simulate(call.arguments)
+        if len(report["rows"]) <= 32:
+            return report
+        chosen = []
+        for status, limit in ((False, 12), (None, 12), (True, 8)):
+            chosen.extend(
+                (i, row)
+                for i, row in list((i, r) for i, r in enumerate(report["rows"]) if r["passed"] is status)[:limit]
+            )
+        return {
+            **report, "rowCount": len(report["rows"]),
+            "rows": [{"index": i, **row} for i, row in sorted(chosen)],
+            "rowsTruncated": True,
+            "note": "Counts cover all vectors. Rows are bounded samples prioritizing failures and unknowns. Candidate review/export retains every row; rerun a narrower input set to investigate.",
+        }
+
+    def _harness_run(self, call):
+        return self.harness_run(call.arguments)
+
+    def _evaluate_circuit(self, call):
+        return self.evaluate_circuit(call.arguments)
 
     def plugin_manifest(self):
-        """Describe the circuit plugin without starting a model turn.
-
-        The host can discover this independently from the dynamic tool list;
-        keeping discovery separate lets the model use the same plugin through
-        another transport later.
-        """
-        return plugin_manifest(self.workspace)
+        manifest = plugin_manifest(self.workspace)
+        manifest["tools"] = self.plugin.manifest_tools()
+        manifest["registeredToolNames"] = list(self.plugin.names())
+        manifest["hostTools"] = [
+            item["name"] for item in manifest["capabilities"]
+            if item["name"] not in self.plugin.names()
+        ]
+        return manifest
 
     def _native(self, *args, **kwargs):
         return self.native._native(*args, **kwargs)
 
     def harness_run(self, *args, **kwargs):
-        return self.harness.harness_run(*args, **kwargs)
+        return self.runtime.harness_run(*args, **kwargs)
 
     def evaluate_circuit(self, *args, **kwargs):
-        return self.harness.evaluate(*args, **kwargs)
+        return self.runtime.evaluate(*args, **kwargs)
 
     def simulate(self, *args, **kwargs):
-        return self.harness.simulate(*args, **kwargs)
+        return self.runtime.simulate(*args, **kwargs)
 
     def trace(self, *args, **kwargs):
-        return self.harness.trace(*args, **kwargs)
+        return self.runtime.trace(*args, **kwargs)
 
     def _record_observation(self, *args, **kwargs):
-        return self.harness._record_observation(*args, **kwargs)
+        return self.runtime._record_observation(*args, **kwargs)
 
     def _metadata(self, *args, **kwargs):
         return self.candidate._metadata(*args, **kwargs)

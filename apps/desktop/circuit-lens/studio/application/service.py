@@ -77,7 +77,16 @@ class ApplicationService:
             # bind a project to distinguish projects sharing identical bytes.
             if body.get("projectId") is not None:
                 self._revision(body)
-            return self.workspace.workbench.call(body.get("revisionId"), body.get("tool"), body.get("arguments"), body.get("observationId"))
+            return self.workspace.workbench.call(
+                body.get("revisionId"),
+                body.get("tool"),
+                body.get("arguments"),
+                body.get("observationId"),
+                project_id=body.get("projectId"),
+                thread_id=body.get("threadId"),
+                turn_id=body.get("turnId"),
+                call_id=body.get("callId"),
+            )
 
     def simulation_action(self, body):
         with self.workspace.lock:

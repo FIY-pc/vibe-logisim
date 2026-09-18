@@ -39,11 +39,16 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(manifest["id"], "vibe-logisim.circuit")
                 self.assertTrue(manifest["availability"]["workspaceOpen"])
                 self.assertIn("harness_run", {item["name"] for item in manifest["capabilities"]})
+                self.assertIn("harness_run", manifest["registeredToolNames"])
+                self.assertEqual(set(manifest["hostTools"]), {"open_circuit", "checkout_candidate"})
 
                 revision = workspace.revision_id
                 result = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],
                     "revisionId": revision,
+                    "threadId": "thread-contract",
+                    "turnId": "turn-contract",
+                    "callId": "call-contract",
                     "tool": "harness_run",
                     "arguments": {
                         "mode": "simulate",
@@ -66,6 +71,11 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(result["feedback"]["status"], "passed")
                 self.assertEqual(result["feedback"]["checkedCount"], 4)
                 self.assertEqual(result["result"]["passed"], 4)
+                self.assertEqual(result["invocation"]["callId"], "call-contract")
+                self.assertEqual(result["invocation"]["turnId"], "turn-contract")
+
+                with self.assertRaisesRegex(ValueError, "工程版本已变化"):
+                    workspace.workbench.call("0" * 64, "harness_run", {})
 
                 evaluation = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],

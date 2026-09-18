@@ -50,7 +50,7 @@ const THREAD_CONFIG = Object.freeze({
   allow_login_shell: false,
 });
 
-const { circuitPlugin } = require("./circuit-tools.cjs");
+const { circuitPlugin, circuitToolRegistry } = require("./circuit-tools.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
@@ -185,6 +185,10 @@ class CodexBackend extends EventEmitter {
     this.workspaceTransitioning = false;
     this.workspaceEpoch = 0;
     this.workspaceOperation = Promise.resolve();
+    // Native circuit calls are serialized like a host-side tool executor. A
+    // stopped or superseded turn is checked again when its queued call starts.
+    this.circuitOperation = Promise.resolve();
+    this.circuitGeneration = 0;
     this.completedTurnIds = new Set();
     this.history = [];
     this.health = new TurnHealth();
@@ -640,6 +644,9 @@ class CodexBackend extends EventEmitter {
     const threadId = this.threadId;
     const turnId = this.activeTurnId || this.pendingTurn?.turnId;
     if (!threadId || !turnId) return { interrupted: false };
+    // A native call may still be finishing in the host. Its result must not
+    // be delivered to Codex after the user stopped this turn.
+    this.circuitGeneration += 1;
     await this.#request("turn/interrupt", { threadId, turnId });
     return { interrupted: true, turnId };
   }
@@ -1241,30 +1248,49 @@ class CodexBackend extends EventEmitter {
     if (method === "item/tool/call") {
       const epoch = this.workspaceEpoch;
       const generation = this.childEpoch;
+      const circuitGeneration = this.circuitGeneration;
       let revisionId = this.pendingTurn?.revisionId || this.threadRevisionId;
       const allowed = this.circuitTool && this.#matchesCurrentTurn(params)
-        && circuitPlugin.tools.some((tool) => tool.name === params.tool);
-      Promise.resolve().then(async () => {
-        if (!allowed || epoch !== this.workspaceEpoch) throw new Error("电路工具调用已过期或未授权");
-        const work = this.pendingTurn?.work;
+        && circuitToolRegistry.isModelCallable(params.tool);
+      const invoke = async () => {
+        const current = () => generation === this.childEpoch && epoch === this.workspaceEpoch
+          && circuitGeneration === this.circuitGeneration
+          && this.#matchesCurrentTurn({ ...params, turnId: params.turnId || this.pendingTurn?.turnId });
+        if (!allowed || !current()) throw new Error("电路工具调用已过期或未授权");
+        const pending = this.pendingTurn;
+        const work = pending?.work;
         let result;
         if (this.agentWorkspace?.synchronize && work) {
-          const current = await this.agentWorkspace.synchronize(work, params.tool === 'open_circuit' ? params.arguments?.path : null);
-          revisionId = current.revision?.id;
+          const session = await this.agentWorkspace.synchronize(work, params.tool === 'open_circuit' ? params.arguments?.path : null);
+          if (!current()) throw new Error("电路工具调用已过期");
+          revisionId = session.revision?.id;
+          if (!this.pendingTurn || this.pendingTurn !== pending) throw new Error("电路工具调用已过期");
           this.pendingTurn.revisionId = revisionId;
           this.threadRevisionId = revisionId;
-          if(params.tool === 'open_circuit')return {contentItems:[{type:'inputText',text:JSON.stringify(current)}],success:true};
+          if(params.tool === 'open_circuit') {
+            if (!current()) throw new Error("电路工具调用已过期");
+            return {contentItems:[{type:'inputText',text:JSON.stringify(session)}],success:true};
+          }
         }
         if (params.tool === "submit_circuit" && work) {
           result = await this.agentWorkspace.submit(work, params.arguments?.title);
         } else if (params.tool === "checkout_candidate" && work) {
           result = await this.agentWorkspace.checkout(work, params.arguments?.candidateId);
         } else {
-          result = await this.circuitTool({ revisionId, observationId: this.pendingTurn?.observationId, tool: params.tool, arguments: params.arguments });
+          result = await this.circuitTool({
+            projectId: work?.projectId || null,
+            revisionId,
+            observationId: pending?.observationId,
+            threadId: params.threadId || pending?.threadId || this.threadId,
+            turnId: params.turnId || pending?.turnId || null,
+            callId: params.callId || params.itemId || String(message.id),
+            tool: params.tool,
+            arguments: params.arguments,
+          });
           // Specialized tools participate in exactly the same acceptance path.
           if (work && ["build_candidate", "wire_candidate"].includes(params.tool) && result.id) work.candidate = result;
         }
-        if (epoch !== this.workspaceEpoch) throw new Error("工程已切换，结果不属于当前工作区");
+        if (!current()) throw new Error("工程已切换，结果不属于当前工作区");
         if (result?.id?.startsWith("candidate-")) {
           this.emit("event", {type:"candidate-ready", candidateId:result.id, title:result.title});
           result = {...result, changes:result.changes.map(({diff, beforeRender, render, ...change}) => ({...change, difference:diff?.counts})), nativeCoverage:result.nativeCoverage};
@@ -1275,11 +1301,19 @@ class CodexBackend extends EventEmitter {
             run:result.run || null, feedback:result.feedback});
         }
         return { contentItems: [{ type: "inputText", text: JSON.stringify(result) }], success: true };
-      }).catch((error) => ({ contentItems: [{ type: "inputText", text: plainError(error) }], success: false }))
+      };
+      const operation = this.circuitOperation.then(invoke, invoke)
+        .catch((error) => ({ contentItems: [{ type: "inputText", text: plainError(error) }], success: false }))
         .then((result) => {
           // A native operation may finish after its originating process was stopped.
-          if (generation === this.childEpoch && this.child?.stdin?.writable) this.#write({ id: message.id, result });
-        }).catch((error) => this.emit("log", `Circuit tool response dropped: ${plainError(error)}`));
+          if (generation === this.childEpoch && circuitGeneration === this.circuitGeneration
+              && this.#matchesCurrentTurn(params) && this.child?.stdin?.writable) {
+            this.#write({ id: message.id, result });
+          }
+        });
+      this.circuitOperation = operation.catch((error) => {
+        this.emit("log", `Circuit tool response dropped: ${plainError(error)}`);
+      });
       return;
     }
     if (method === "item/tool/requestUserInput" && this.#matchesCurrentTurn(params)) {

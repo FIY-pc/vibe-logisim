@@ -58,23 +58,43 @@ const dynamicTools = [
     },["circuit","mode"]) },
 ];
 
-// This is the host-side half of the circuit plugin contract.  Codex owns the
-// thread/turn loop; the plugin only declares model-visible capabilities and
-// forwards calls to the domain service.
-const capabilityKinds = {
-  open_circuit: ["context", false, false],
-  inspect_circuit: ["observe", false, false],
-  read_kept_observation: ["observe", false, false],
-  read_project_resource: ["observe", false, false],
-  build_candidate: ["construct", false, true],
-  wire_candidate: ["construct", false, true],
-  submit_circuit: ["construct", false, true],
-  checkout_candidate: ["mutate", true, false],
-  simulate_circuit: ["observe", false, false],
-  trace_circuit: ["observe", false, false],
-  harness_run: ["evaluate", false, false],
-  evaluate_circuit: ["evaluate", false, false],
-};
+// The transport host keeps the model spec and its exposure policy together.
+// The actual handler lives behind CodexBackend -> Studio, but admission is
+// decided from this registry before a call crosses that boundary.
+const toolMetadata = Object.freeze({
+  open_circuit: {category: "context", sourceMutation: false, candidate: false, exposure: "direct"},
+  inspect_circuit: {category: "observe", sourceMutation: false, candidate: false, exposure: "direct"},
+  read_kept_observation: {category: "observe", sourceMutation: false, candidate: false, exposure: "direct"},
+  read_project_resource: {category: "observe", sourceMutation: false, candidate: false, exposure: "direct"},
+  build_candidate: {category: "construct", sourceMutation: false, candidate: true, exposure: "direct"},
+  wire_candidate: {category: "construct", sourceMutation: false, candidate: true, exposure: "direct"},
+  submit_circuit: {category: "construct", sourceMutation: false, candidate: true, exposure: "direct"},
+  checkout_candidate: {category: "mutate", sourceMutation: true, candidate: false, exposure: "direct"},
+  simulate_circuit: {category: "observe", sourceMutation: false, candidate: false, exposure: "direct"},
+  trace_circuit: {category: "observe", sourceMutation: false, candidate: false, exposure: "direct"},
+  harness_run: {category: "evaluate", sourceMutation: false, candidate: false, exposure: "direct"},
+  evaluate_circuit: {category: "evaluate", sourceMutation: false, candidate: false, exposure: "direct"},
+});
+
+const circuitToolRegistry = Object.freeze({
+  tools: dynamicTools,
+  records: Object.freeze(dynamicTools.map(tool => Object.freeze({
+    spec: tool,
+    ...toolMetadata[tool.name],
+  }))),
+  names: Object.freeze(dynamicTools.map(tool => tool.name)),
+  isModelCallable(name) {
+    const record = this.records.find(item => item.spec.name === name);
+    return Boolean(record && record.exposure === "direct");
+  },
+  describe() {
+    return this.records.map(({spec, ...metadata}) => ({
+      name: spec.name,
+      description: spec.description,
+      ...metadata,
+    }));
+  },
+});
 
 const circuitPlugin = Object.freeze({
   schema: "vibe-logisim.circuit-plugin/v1",
@@ -83,17 +103,11 @@ const circuitPlugin = Object.freeze({
   version: "1.0.0",
   displayName: "Vibe Logisim Circuit Plugin",
   workflow: "user-directed",
-  tools: dynamicTools,
-  capabilities: Object.freeze(dynamicTools.map(tool => {
-    const [category, sourceMutation, candidate] = capabilityKinds[tool.name] || ["observe", false, false];
-    return Object.freeze({
-      name: tool.name,
-      category,
-      description: tool.description,
-      sourceMutation,
-      candidate,
-    });
-  })),
+  tools: circuitToolRegistry.tools,
+  toolRegistry: circuitToolRegistry,
+  capabilities: Object.freeze(circuitToolRegistry.describe().map(({name, description, category, sourceMutation, candidate}) => ({
+    name, category, description, sourceMutation, candidate,
+  }))),
 });
 
-module.exports = { dynamicTools, circuitPlugin };
+module.exports = { dynamicTools, circuitPlugin, circuitToolRegistry };
