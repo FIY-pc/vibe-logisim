@@ -24,6 +24,7 @@ const {registerMaterialIpc}=require('./material-ipc.cjs');
 const {registerConversationIpc}=require('./conversation-ipc.cjs');
 const {ConversationDraftStore}=require('./conversation-drafts.cjs');
 const {registerDraftIpc}=require('./draft-ipc.cjs');
+const {resolveStartupTarget}=require('./startup-target.cjs');
 
 // The desktop launcher may close its diagnostic pipe before child-process
 // shutdown finishes. Losing a log line must not crash the main process.
@@ -41,8 +42,8 @@ let codex = null;
 let agentWorkspace = null;
 let desktopWorkspace = null;
 let materials = null;
-let startupCircuitError = null;
-let pendingOpenPath = circuitArgument(process.argv);
+let startupArgumentError = null;
+let pendingOpenTarget = startupTarget(process.argv);
 let backendReady = false;
 let quitting = false;
 let quitRequested = false;
@@ -57,19 +58,17 @@ if (!instanceLock) {
   registerLifecycle();
 }
 
-function circuitArgument(argv, workingDirectory = process.cwd()) {
-  const candidate = argv.find((value) => typeof value === "string" && value.toLowerCase().endsWith(".circ"));
-  if (!candidate) return null;
-  const candidates = path.isAbsolute(candidate)
-    ? [candidate]
-    : [path.resolve(workingDirectory, candidate), path.resolve(repoRoot, candidate)];
-  const absolute = candidates.find((value) => fs.existsSync(value));
-  if (absolute) return absolute;
-  // A deliberate .circ argument must never silently fall back to the last
-  // project. Keep the failure visible at startup instead of opening the wrong
-  // engineering context.
-  startupCircuitError = `找不到指定的 .circ 文件：${candidates[0]}`;
-  return null;
+function startupTarget(argv, workingDirectory = process.cwd()) {
+  const parsed = resolveStartupTarget(argv.slice(1), {
+    workingDirectory,
+    repoRoot,
+    // In development argv[1] is the Electron app directory; packaged builds
+    // start with the executable at argv[0], so slicing from argv[1] handles
+    // both shapes. The app path is still ignored for safety in dev mode.
+    ignoredPaths: [app.getAppPath(), __dirname],
+  });
+  if (parsed?.error) startupArgumentError = parsed.error;
+  return parsed;
 }
 
 function recentProject() {
@@ -141,8 +140,9 @@ function registerLifecycle() {
   });
 
   app.on("second-instance", (_event, argv, workingDirectory) => {
-    const filePath = circuitArgument(argv, workingDirectory);
-    if (filePath) queueOperatingSystemOpen(filePath);
+    const target = startupTarget(argv, workingDirectory);
+    if (target?.error) dialog.showErrorBox("无法打开启动目标", target.error);
+    else if (target) queueOperatingSystemOpen(target);
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -188,9 +188,12 @@ async function startApplication() {
   });
 
   const hasFolderHistory=fs.existsSync(path.join(app.getPath('userData'),'folder-workspaces','recent.json'));
-  const initialOpenPath = pendingOpenPath || (!hasFolderHistory ? recentProject() : null);
-  pendingOpenPath = null;
-  if (startupCircuitError) throw new Error(startupCircuitError);
+  const initialTarget = pendingOpenTarget;
+  const initialOpenPath = initialTarget?.kind === 'circuit'
+    ? initialTarget.path
+    : (!hasFolderHistory ? recentProject() : null);
+  pendingOpenTarget = null;
+  if (startupArgumentError) throw new Error(startupArgumentError);
   const ready = await backend.start(initialOpenPath);
   // The agent has networking, but only the desktop owner can mutate the
   // accepted project. The credential stays out of renderer JS and agent cwd.
@@ -204,8 +207,11 @@ async function startApplication() {
   materials=new MaterialStore({root:path.join(agentRoot,'materials'),workspaceRoot:path.join(agentRoot,'workspace')});
   desktopWorkspace = new DesktopWorkspace({stateRoot:path.join(app.getPath('userData'),'folder-workspaces'),backend,materials});
   const initialSession = await backend.session();
-  const folderRoot = initialOpenPath ? path.dirname(initialOpenPath) : desktopWorkspace.folder.recent();
-  if(folderRoot)await desktopWorkspace.open(folderRoot,{activeFile:initialOpenPath,conversationKey:initialSession.workspace?.conversationKey});
+  const folderRoot = initialTarget?.kind === 'folder'
+    ? initialTarget.path
+    : initialOpenPath ? path.dirname(initialOpenPath) : desktopWorkspace.folder.recent();
+  const activeFile = initialTarget?.kind === 'circuit' ? initialTarget.path : initialOpenPath;
+  if(folderRoot)await desktopWorkspace.open(folderRoot,{activeFile,conversationKey:initialSession.workspace?.conversationKey});
   agentWorkspace = new DirectAgentWorkspace(desktopWorkspace);
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
   codex = new CodexBackend({
@@ -227,9 +233,9 @@ async function startApplication() {
   registerIpc();
   createWindow(ready.baseUrl);
   codex.start().then(restoreAgentConversation).catch((error) => console.error(`[codex] ${error.message}`));
-  if (pendingOpenPath && pendingOpenPath !== initialOpenPath) {
-    const queued = pendingOpenPath;
-    pendingOpenPath = null;
+  if (pendingOpenTarget) {
+    const queued = pendingOpenTarget;
+    pendingOpenTarget = null;
     await openFromOperatingSystem(queued);
   }
 }
@@ -572,10 +578,12 @@ function createWindow(baseUrl) {
   mainWindow.loadURL(`${baseUrl}/`);
 }
 
-async function openFromOperatingSystem(filePath) {
+async function openFromOperatingSystem(target) {
   try {
-    await openFolder(path.dirname(filePath), filePath);
-    rememberProject(filePath);
+    const root = target.kind === 'folder' ? target.path : path.dirname(target.path);
+    const activeFile = target.kind === 'circuit' ? target.path : null;
+    await openFolder(root, activeFile);
+    if (activeFile) rememberProject(activeFile);
     restoreAgentConversation();
     if (!mainWindow || mainWindow.isDestroyed()) createWindow(backend.baseUrl);
     else mainWindow.webContents.reloadIgnoringCache();
@@ -588,10 +596,11 @@ async function openFromOperatingSystem(filePath) {
   }
 }
 
-function queueOperatingSystemOpen(filePath) {
+function queueOperatingSystemOpen(target) {
+  if (typeof target === 'string') target = {kind: 'circuit', path: target};
   if (!backendReady) {
-    pendingOpenPath = filePath;
+    pendingOpenTarget = target;
     return;
   }
-  openFromOperatingSystem(filePath);
+  openFromOperatingSystem(target);
 }
