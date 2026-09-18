@@ -54,6 +54,7 @@ const { CircuitPlugin } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
+const { classifyModelError } = require("./model-errors.cjs");
 const { TurnHealth } = require("./turn-health.cjs");
 const { revertThroughMessage } = require("./conversation-edit.cjs");
 const DEVELOPER_INSTRUCTIONS = `You are the circuit design and learning agent inside Vibe Logisim Desktop.
@@ -253,6 +254,7 @@ class CodexBackend extends EventEmitter {
       inheritedModel: this.inheritedModel || null,
       inheritedEffort: this.inheritedEffort || null,
       providerName: this.providerName || "本机 Codex",
+      modelCatalog: this.modelSettings.state(),
       transmission: this.health.snapshot(),
       canReconnect: this.canReconnect(),
       isolation: "systemd-linux",
@@ -659,26 +661,36 @@ class CodexBackend extends EventEmitter {
           changeMode: this.changeMode,
         };
         this.#setStatus("busy");
-        const result = await this.#request("turn/start", {
-          threadId,
-          clientUserMessageId: clientMessageId,
-          input: [{ type: "text", text: question, text_elements: [] }],
-          cwd: turnCwd,
-          approvalPolicy: "never",
-          // systemd is the external sandbox. Nesting Codex's bubblewrap here
-          // fails under the service's filesystem namespace on this host.
-          sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
-          ...(this.model ? {model:this.model} : {}),
-          ...(this.effort ? {effort:this.effort} : {}),
-          runtimeWorkspaceRoots: [turnCwd],
-          ...(this.includeCircuitContext ? { additionalContext: {
-            "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
-            "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
-            ...momentContext,
-            ...materialContext(context),
-            "vibe-logisim.workspace": {value: JSON.stringify({cwd:turnCwd, file:context.folder?.activeFile || null, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
-          } } : {}),
-        });
+        let result;
+        try {
+          result = await this.#request("turn/start", {
+            threadId,
+            clientUserMessageId: clientMessageId,
+            input: [{ type: "text", text: question, text_elements: [] }],
+            cwd: turnCwd,
+            approvalPolicy: "never",
+            // systemd is the external sandbox. Nesting Codex's bubblewrap here
+            // fails under the service's filesystem namespace on this host.
+            sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
+            ...(this.model ? {model:this.model} : {}),
+            ...(this.effort ? {effort:this.effort} : {}),
+            runtimeWorkspaceRoots: [turnCwd],
+            ...(this.includeCircuitContext ? { additionalContext: {
+              "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
+              "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
+              ...momentContext,
+              ...materialContext(context),
+              "vibe-logisim.workspace": {value: JSON.stringify({cwd:turnCwd, file:context.folder?.activeFile || null, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
+            } } : {}),
+          });
+        } catch (error) {
+          const modelError = classifyModelError(error, {phase:"turn", model:this.model});
+          if (modelError) {
+            this.#setStatus("unavailable", modelError.message);
+            throw modelError;
+          }
+          throw error;
+        }
         const returnedTurnId = result?.turn?.id || null;
         if (returnedTurnId) this.#bindPendingTurn(returnedTurnId, threadId, true);
         this.#assertWorkspace(requestEpoch, generation);

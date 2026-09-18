@@ -2,6 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {AgentModels}=require('./agent-models.cjs');
+const {classifyModelError}=require('./model-errors.cjs');
 
 test('selection survives reopening, is validated by catalog, and inherits without modifying provider config',async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-models-')),preferencesPath=root+'/selection.json',requests=[];
@@ -36,4 +37,24 @@ test('reconnected model catalog cannot be overwritten by an old connection respo
  const old=settings.list();settings.invalidate();
  await settings.list();release({data:[{model:'old',supportedReasoningEfforts:[]}],nextCursor:null});await old;
  assert.equal((await settings.list())[0].model,'new');
+});
+
+test('catalog failures are retained as connection-scoped model state',async()=>{
+ const settings=new AgentModels({preferencesPath:null,request:async()=>{const error=new Error('The model catalog returned 404 Not Found');error.status=404;throw error;}});
+ await assert.rejects(()=>settings.list(),error=>{
+  assert.equal(error.code,'MODEL_CATALOG_UNAVAILABLE');
+  assert.equal(error.retryable,false);
+  assert.equal(error.phase,'catalog');
+  return true;
+ });
+ assert.deepEqual(settings.state(),{status:'unavailable',error:{code:'MODEL_CATALOG_UNAVAILABLE',message:'当前连接没有可用的模型目录，请检查 provider 配置后刷新。',retryable:false,phase:'catalog'}});
+});
+
+test('turn model errors stop pointless retries and keep the configured model visible',()=>{
+ const error=new Error('The model `gpt-5.6-sol` does not exist or you do not have access to it.');
+ const classified=classifyModelError(error,{phase:'turn',model:'gpt-5.6-sol'});
+ assert.equal(classified.code,'MODEL_UNAVAILABLE');
+ assert.equal(classified.retryable,false);
+ assert.equal(classified.model,'gpt-5.6-sol');
+ assert.match(classified.message,/选择当前连接支持的模型/);
 });

@@ -1,6 +1,7 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
+const {classifyModelError} = require("./model-errors.cjs");
 
 // Model discovery and local preferences are separate from conversation transport.
 // The catalog comes from the same app-server that will execute the next turn.
@@ -12,6 +13,7 @@ class AgentModels {
     this.loading = null;
     this.selection = null;
     this.savedSelection = null;
+    this.catalogError = null;
     try {
       const saved = JSON.parse(fs.readFileSync(preferencesPath, "utf8"));
       if (typeof saved.model === "string" && saved.model.length <= 160 &&
@@ -24,6 +26,14 @@ class AgentModels {
     this.catalog = null;
     this.loading = null;
     this.selection = null;
+    this.catalogError = null;
+  }
+
+  state() {
+    return {
+      status: this.catalog ? "ready" : this.catalogError ? "unavailable" : "unknown",
+      error: this.catalogError,
+    };
   }
 
   #write(selection) {
@@ -58,30 +68,37 @@ class AgentModels {
     if (!refresh && this.catalog) return this.catalog;
     if (this.loading) return this.loading;
     const loading = (async () => {
-      const models = new Map(), seen = new Set();
-      let cursor = null;
-      do {
-        const result = await this.request("model/list", {limit:100, includeHidden:false, ...(cursor ? {cursor} : {})});
-        if (!Array.isArray(result?.data)) throw new Error("模型目录返回格式不正确");
-        for (const model of result.data) {
-          if (model.hidden || typeof model.model !== "string") continue;
-          models.set(model.model, {
-            model:model.model, name:model.displayName || model.model, description:model.description || "",
-            isDefault:Boolean(model.isDefault),
-            defaultEffort:model.defaultReasoningEffort,
-            efforts:(model.supportedReasoningEfforts || []).map(e=>({value:e.reasoningEffort,description:e.description || ""})),
-          });
+      try {
+        const models = new Map(), seen = new Set();
+        let cursor = null;
+        do {
+          const result = await this.request("model/list", {limit:100, includeHidden:false, ...(cursor ? {cursor} : {})});
+          if (!Array.isArray(result?.data)) throw new Error("模型目录返回格式不正确");
+          for (const model of result.data) {
+            if (model.hidden || typeof model.model !== "string") continue;
+            models.set(model.model, {
+              model:model.model, name:model.displayName || model.model, description:model.description || "",
+              isDefault:Boolean(model.isDefault),
+              defaultEffort:model.defaultReasoningEffort,
+              efforts:(model.supportedReasoningEfforts || []).map(e=>({value:e.reasoningEffort,description:e.description || ""})),
+            });
+          }
+          cursor = result.nextCursor;
+          if (cursor && seen.has(cursor)) throw new Error("模型目录分页重复，请重新连接后刷新");
+          seen.add(cursor);
+        } while (cursor);
+        const catalog = [...models.values()];
+        if (this.loading === loading) {
+          this.catalog = catalog;
+          this.catalogError = null;
+          this.#synchronizeSelection(catalog);
         }
-        cursor = result.nextCursor;
-        if (cursor && seen.has(cursor)) throw new Error("模型目录分页重复，请重新连接后刷新");
-        seen.add(cursor);
-      } while (cursor);
-      const catalog = [...models.values()];
-      if (this.loading === loading) {
-        this.catalog = catalog;
-        this.#synchronizeSelection(catalog);
+        return catalog;
+      } catch (error) {
+        const wrapped = classifyModelError(error, {phase:"catalog"});
+        if (this.loading === loading) this.catalogError = wrapped.asJSON();
+        throw wrapped;
       }
-      return catalog;
     })();
     this.loading = loading;
     try { return await loading; }
