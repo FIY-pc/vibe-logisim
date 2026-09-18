@@ -65,7 +65,7 @@
 .agent-message-context{display:block;margin-top:10px;color:var(--muted);font-size:11px;line-height:1.5}
 .agent-message .moment-message-link{padding:6px 0 0;font-size:11px;line-height:1.5}
 .agent-work{font-size:12px;color:var(--muted);margin:0 0 16px}
-.agent-work>summary{display:flex;align-items:center;gap:5px;cursor:pointer;padding:6px 0;list-style:none;line-height:1.6}.agent-work>summary::-webkit-details-marker{display:none}.agent-work>summary .chat-icon{width:13px;height:13px}.agent-work[open]>summary .chat-icon{transform:rotate(90deg)}
+.agent-work>summary{display:flex;align-items:center;gap:5px;cursor:pointer;padding:6px 0;list-style:none;line-height:1.6;user-select:none}.agent-work>summary::-webkit-details-marker{display:none}.agent-work>summary:focus-visible{outline:none;color:var(--ink);text-decoration:underline;text-decoration-color:#b8c5e5;text-underline-offset:4px}.agent-work>summary .chat-icon{width:13px;height:13px}.agent-work[open]>summary .chat-icon{transform:rotate(90deg)}
 .agent-work[data-status=running]>summary span::after{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);margin-left:8px;animation:chat-breathe 1.6s ease-in-out infinite}
 .agent-work>.agent-message[data-phase=commentary]{border-left:1px solid #dfe5ef;padding:6px 0 6px 15px;margin:5px 0 8px;color:#727c8e}.agent-work .agent-message-header{display:none}.agent-work .agent-message-body{font-size:12px;line-height:1.75}
 .agent-activity{display:flex;align-items:baseline;gap:12px;margin:5px 0 5px 15px;padding:5px 0;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.agent-activity-label{flex:1;min-width:0}.agent-activity-status{flex:none;font-size:10px}.agent-activity[data-status=failed]{color:var(--danger)}

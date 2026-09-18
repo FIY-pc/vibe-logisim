@@ -94,10 +94,15 @@ function bindEvents() {
     document.addEventListener("keydown", (event) => {
       if (event.isComposing || event.keyCode === 229) return;
       const inField = event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
+      // Canvas objects are keyboard-operable role=button elements too, so keep
+      // them eligible for Delete and canvas shortcuts. Other controls belong
+      // to the surrounding UI and must never mutate the circuit accidentally.
+      const isUiControl = event.target.closest?.("button, summary, a, input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='tab'], [role='menuitem'], [role='option']");
+      const canControlCanvas = !isUiControl;
       const dialogOpen = document.querySelector("dialog[open]");
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); ports.requestSave(); return; }
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
-        if (inField || dialogOpen) return;
+        if (inField || isUiControl || dialogOpen) return;
         event.preventDefault();
         ports.performProjectAction("undo");
         return;
@@ -106,7 +111,7 @@ function bindEvents() {
         event.preventDefault(); ports.openFinder(); return;
       }
       if (dialogOpen || document.querySelector(":popover-open")) return;
-      if (!inField && event.key === "Escape" && canvasState.wireStart) {
+      if (canControlCanvas && event.key === "Escape" && canvasState.wireStart) {
         event.preventDefault();
         canvasState.wireStart = null;
         canvasState.wirePoints = [];
@@ -115,26 +120,26 @@ function bindEvents() {
         ports.setCanvasStatus("已取消端口连接", "idle");
         return;
       }
-      if (!inField && ["Delete", "Backspace"].includes(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !ui.deleteSelectionButton.disabled) {
+      if (canControlCanvas && ["Delete", "Backspace"].includes(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !ui.deleteSelectionButton.disabled) {
         event.preventDefault();
         ui.deleteSelectionButton.click();
         return;
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (!inField && event.key === "/") {
+      if (canControlCanvas && event.key === "/") {
         event.preventDefault();
         ui.circuitSearch.focus();
       }
-      if (!inField && event.key.toLowerCase() === "v") ports.setMode("select");
-      if (!inField && event.key.toLowerCase() === "p") ports.setMode("poke");
-      if (!inField && event.key.toLowerCase() === "h") ports.setMode("pan");
-      if (!inField && event.key.toLowerCase() === "f") ports.fitCircuit();
-      if (!inField && event.key === "Escape") {
+      if (canControlCanvas && event.key.toLowerCase() === "v") ports.setMode("select");
+      if (canControlCanvas && event.key.toLowerCase() === "p") ports.setMode("poke");
+      if (canControlCanvas && event.key.toLowerCase() === "h") ports.setMode("pan");
+      if (canControlCanvas && event.key.toLowerCase() === "f") ports.fitCircuit();
+      if (canControlCanvas && event.key === "Escape") {
         ports.clearSelection({ notifyServer: false });
         ports.closeMobilePanels();
         ports.updateCapabilityState();
       }
-      if (!inField && event.code === "Space" && !event.repeat) {
+      if (canControlCanvas && event.code === "Space" && !event.repeat) {
         canvasState.heldSpace = true;
         ui.circuitCanvas.dataset.mode = "pan";
       }

@@ -71,6 +71,16 @@ async function pickFolder(file) {
     await waitUntil(async () => (await scene()).circuit?.components.length === 1);
     await waitUntil(() => fs.readFileSync(source, 'utf8').includes('name="AND Gate"'));
     const saved = fs.readFileSync(source);
+
+    phase = 'UI focus does not delete circuit objects';
+    await page.locator('.circuit-component').first().click();
+    await page.waitForFunction(() => !document.querySelector('#deleteSelectionButton').disabled);
+    await page.locator('#fitButton').click();
+    await page.keyboard.press('Backspace');
+    await new Promise(resolve => setTimeout(resolve, 120));
+    assert.equal((await scene()).circuit.components.length, 1);
+    assert.ok(fs.readFileSync(source).equals(saved));
+
     await page.screenshot({path: path.join(root, 'manual-edit-without-ai.png')});
 
     phase = 'invalid folder preserves current workspace';
