@@ -116,7 +116,13 @@ function itemErrorText(item) {
     const parsed = JSON.parse(content);
     structured = parsed?.error || null;
   } catch {}
-  return shortText(item?.error?.message || structured?.message || content || item?.message || "这次操作没有完成", 500);
+  const message = structured?.message || item?.error?.message || content || item?.message || "这次操作没有完成";
+  const details = [message];
+  if (structured?.hint) details.push(`建议：${structured.hint}`);
+  if (Array.isArray(structured?.availableInputs) && structured.availableInputs.length) {
+    details.push(`可用输入：${structured.availableInputs.join("、")}`);
+  }
+  return shortText(details.join(" "), 500);
 }
 
 function isMissingThreadError(error) {
@@ -1548,4 +1554,4 @@ class CodexBackend extends EventEmitter {
   }
 }
 
-module.exports = { CodexBackend };
+module.exports = { CodexBackend, itemErrorText };
