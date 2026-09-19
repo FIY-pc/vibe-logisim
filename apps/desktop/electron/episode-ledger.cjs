@@ -162,9 +162,11 @@ class EpisodeLedger {
   metrics() {
     const activities = [...this.activities.values()];
     const completed = activities.filter(item => item.status && item.status !== 'running');
-    const toolActivities = completed.filter(item => item.kind !== 'reasoning');
+    const toolActivities = completed.filter(item => ['command', 'tool', 'web'].includes(item.kind));
     const circuitActivities = toolActivities.filter(item => item.kind === 'tool' && item.activityKey?.startsWith('circuit:'));
-    const failed = completed.filter(item => item.status === 'failed');
+    const nativeRuns = circuitActivities.filter(item => item.status === 'completed' &&
+      ['circuit:simulate_circuit', 'circuit:trace_circuit', 'circuit:evaluate_circuit'].includes(item.activityKey));
+    const failed = toolActivities.filter(item => item.status === 'failed');
     const recovery = activities.filter(item => item.status === 'completed' &&
       activities.some(failure => failure.activityKey === item.activityKey && failure.failedAt !== null && failure.failedAt < item.lastAt)).length;
     const grounded = this.evidence.find(item => item.groundedAt !== null);
@@ -179,9 +181,14 @@ class EpisodeLedger {
     const oracleStatus = this.final?.oracle?.status || null;
     return {
       taskSuccess: oracleStatus === 'passed' ? true : oracleStatus === 'failed' ? false : null,
+      completedAndVerified: oracleStatus === 'passed' && this.final?.outcome === 'completed',
       timeToFirstGroundedEvidenceMs: grounded ? grounded.at - this.startedAt : null,
       toolCalls: toolActivities.length,
       circuitToolCalls: circuitActivities.length,
+      circuitToolFailures: circuitActivities.filter(item => item.status === 'failed').length,
+      commandFailures: toolActivities.filter(item => item.kind === 'command' && item.status === 'failed').length,
+      fileChangeEvents: completed.filter(item => item.kind === 'file').length,
+      nativeRunCalls: nativeRuns.length,
       invalidCalls: failed.length + this.blockedRequests,
       recoveryCalls: recovery,
       artifactChanges: this.final?.artifact?.changed ?? (this.circuitChanges > 0 ? true : null),

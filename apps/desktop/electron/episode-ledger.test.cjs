@@ -64,6 +64,23 @@ test('a success before a later failure is not counted as recovery', () => {
   assert.equal(ledger.metrics().recoveryCalls,0);
 });
 
+test('reports artifact correctness, conversation completion and native observations separately', () => {
+  const ledger = new EpisodeLedger();
+  ledger.record('event',{type:'activity',itemId:'edit',kind:'file',status:'completed'});
+  ledger.record('event',{type:'activity',itemId:'sim',kind:'tool',activityKey:'circuit:simulate_circuit',status:'completed'});
+  ledger.record('event',{type:'activity',itemId:'shell',kind:'command',status:'failed'});
+  ledger.finalize({outcome:'timeout',oracle:{status:'passed'}});
+  const metrics=ledger.metrics();
+  assert.equal(metrics.taskSuccess,true);
+  assert.equal(metrics.completedAndVerified,false);
+  assert.equal(metrics.fileChangeEvents,1);
+  assert.equal(metrics.toolCalls,2);
+  assert.equal(metrics.nativeRunCalls,1);
+  assert.equal(metrics.commandFailures,1);
+  assert.equal(metrics.circuitToolFailures,0);
+  assert.equal(metrics.verificationCount,0,'native observation is not an explicit verdict');
+});
+
 test('stores token counters and writes an atomic bounded artifact', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-episode-'));
   const ledger = new EpisodeLedger({episodeId: 'episode-3'});
