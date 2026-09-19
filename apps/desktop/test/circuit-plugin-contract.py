@@ -88,6 +88,21 @@ class CircuitPluginContract(unittest.TestCase):
                     })
                 self.assertEqual(unknown_input.exception.code, "UNKNOWN_INPUT")
                 self.assertEqual(unknown_input.exception.available_inputs, ["a", "b"])
+                error_hint = unknown_input.exception.as_dict()
+                self.assertEqual(error_hint["availableInputs"], ["a", "b"])
+                recovered = workspace.application.agent_tool({
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": revision,
+                    "tool": "simulate_circuit",
+                    "arguments": {
+                        "circuit": "main",
+                        "vectors": [{
+                            "inputs": {name: 1 for name in error_hint["availableInputs"]},
+                            "expected": {"sum": 0, "carry": 1},
+                        }],
+                    },
+                })
+                self.assertEqual(recovered["rows"][0]["passed"], True)
 
                 with self.assertRaisesRegex(ValueError, "工程版本已变化"):
                     workspace.workbench.call("0" * 64, "harness_run", {})
