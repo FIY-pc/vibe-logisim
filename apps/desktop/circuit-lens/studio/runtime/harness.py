@@ -11,6 +11,7 @@ from studio.domain.tool_errors import CircuitToolError
 from studio.domain.plugin import PLUGIN_ID, PLUGIN_VERSION, RESULT_SCHEMA, binding_for, result_envelope
 from studio.project.package import ProjectPackage
 from studio.runtime.evaluation import EvaluationService
+from studio.domain.evaluation import compare_sample
 
 class NativeCircuitRuntime:
     """Execute native Logisim observations for the circuit plugin.
@@ -38,7 +39,9 @@ class NativeCircuitRuntime:
         else:
             raise ValueError('Harness mode must be trace or simulate')
         rows = report.get('rows', [])
-        failures = [{**row, 'rowIndex': index} for index, row in enumerate(rows) if row.get('passed') is False or row.get('oscillating')]
+        failures = [{**row, 'rowIndex': index} for index, row in enumerate(rows) if row.get('passed') is False]
+        unknown = [{**row, 'rowIndex': index} for index, row in enumerate(rows)
+                   if row.get('oscillating') or row.get('status') == 'unknown']
         targets = [{'kind': 'component', 'component': watch.get('component'), 'componentId': watch.get('component'), 'port': watch.get('port'), 'name': watch.get('name')} for watch in args.get('watches', []) if isinstance(watch, dict)]
         connectivity = None
         if args.get('candidateId'):
@@ -47,7 +50,7 @@ class NativeCircuitRuntime:
             if proofs:
                 connectivity = proofs
         checked = [row for row in rows if row.get('passed') is not None]
-        status = 'failed' if failures else (
+        status = 'failed' if failures else 'unknown' if unknown else (
             'passed' if checked and len(checked) == len(rows) and all(row.get('passed') is True for row in checked)
             else 'observed'
         )
@@ -56,9 +59,11 @@ class NativeCircuitRuntime:
             'rowCount': len(rows),
             'checkedCount': len(checked),
             'failureCount': len(failures),
+            'unknownCount': len(unknown),
             'targets': targets,
             'connectivity': connectivity,
             'firstFailure': failures[0] if failures else None,
+            'firstUnknown': unknown[0] if unknown else None,
             'nextActions': ['inspect_circuit 查看相关端口和位网', 'harness_run 以更窄的输入或观察点重跑', 'submit_circuit 刷新修复后的当前文件'],
             'note': 'Harness 提供真实运行反馈，不规定下一步必须验证还是继续构建。',
         }
@@ -123,8 +128,12 @@ class NativeCircuitRuntime:
         for i, row in enumerate(response):
             outputs = {o.get('name'): int(o.get('value')) if 'value' in o.attrib else None for o in row}
             expected = vectors[i].get('expected')
-            passed = None if not expected else all((k in outputs and outputs[k] == v for k, v in expected.items())) and row.get('oscillating') == 'false'
-            rows.append({'inputs': vectors[i]['inputs'], 'outputs': outputs, 'bits': {o.get('name'): o.get('bits') for o in row}, 'expected': expected, 'passed': passed, 'oscillating': row.get('oscillating') == 'true'})
+            oscillating = row.get('oscillating') == 'true'
+            status, reason = compare_sample(outputs, expected, oscillating=oscillating) if expected else ('observed', None)
+            passed = {'passed': True, 'failed': False}.get(status)
+            rows.append({'inputs': vectors[i]['inputs'], 'outputs': outputs, 'bits': {o.get('name'): o.get('bits') for o in row},
+                         'expected': expected, 'passed': passed, 'status': status, 'oscillating': oscillating,
+                         **({'reason': reason} if reason else {})})
         report = {
             'schema': RESULT_SCHEMA,
             'plugin': {'id': PLUGIN_ID, 'version': PLUGIN_VERSION},

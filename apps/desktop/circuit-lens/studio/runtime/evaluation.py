@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from studio.domain.plugin import binding_for, result_envelope
+from studio.domain.evaluation import compare_sample
 
 
 class EvaluationService:
@@ -35,7 +36,8 @@ class EvaluationService:
                     case_status = 'failed'
                 else:
                     case_status = 'unknown'
-                cases.append({'index': index, 'status': case_status, 'expected': row.get('expected'), 'actual': row.get('outputs')})
+                cases.append({'index': index, 'status': case_status, 'expected': row.get('expected'), 'actual': row.get('outputs'),
+                              **({'reason': row['reason']} if row.get('reason') else {})})
         else:
             expected_rows = args.get('expectedRows')
             if not isinstance(expected_rows, list) or not expected_rows:
@@ -44,19 +46,18 @@ class EvaluationService:
                 if not isinstance(expected, dict) or type(expected.get('tick')) is not int or expected['tick'] < 0:
                     raise ValueError('expectedRows 需要非负 tick')
                 self.runtime._values(expected.get('values'), '期望信号')
+                if not expected['values']:
+                    raise ValueError('expectedRows 每一行至少需要一个期望信号')
             report = self.runtime.trace(args)
             actual_by_tick = {row.get('tick'): row for row in report.get('rows', [])}
             cases = []
             for expected in expected_rows:
                 actual_row = actual_by_tick.get(expected['tick'])
                 actual_values = actual_row.get('values') if actual_row else None
-                if actual_values is None or any(actual_values.get(name) is None for name in expected['values']):
-                    case_status = 'unknown'
-                elif all(actual_values.get(name) == value for name, value in expected['values'].items()):
-                    case_status = 'passed'
-                else:
-                    case_status = 'failed'
-                cases.append({'tick': expected['tick'], 'status': case_status, 'expected': expected['values'], 'actual': actual_values})
+                case_status, reason = compare_sample(actual_values, expected['values'],
+                                                     oscillating=bool(actual_row and actual_row.get('oscillating')))
+                cases.append({'tick': expected['tick'], 'status': case_status, 'expected': expected['values'], 'actual': actual_values,
+                              **({'reason': reason} if reason else {})})
 
         failed = [case for case in cases if case['status'] == 'failed']
         unknown = [case for case in cases if case['status'] == 'unknown']
@@ -82,6 +83,7 @@ class EvaluationService:
             'failureCount': len(failed),
             'unknownCount': len(unknown),
             'firstFailure': failed[0] if failed else None,
+            'firstUnknown': unknown[0] if unknown else None,
             'note': '评测只比较本次显式提供的测试规格；它不声明未覆盖的行为。',
         }
         run = {
