@@ -130,9 +130,11 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 - 工具调用、无效调用、恢复、阻塞请求和 host error；
 - 第一次绑定到 revision/artifact 的运行证据及验证次数；
 - artifact 是否改变、人工介入次数、token usage 摘要；
-- 最终 workspace-owned oracle 的状态和模型声明与证据是否对齐。
+- 最终独立 oracle 的状态；模型声明语义对齐保留为人工审查项。
 
-问题正文、命令正文、模型回答正文、完整电路输出和认证信息不进入 ledger；需要人工审查时，应由实验 runner 另行保存受控的证据文件。最终 `taskSuccess` 只由 `final.oracle.status === "passed"` 得出，模型回答中的“完成/通过”不能覆盖 `unknown`。
+问题正文、命令正文、模型回答正文、完整电路输出和认证信息不进入 ledger；需要人工审查时，应由实验 runner 另行保存受控的证据文件。最终 `taskSuccess` 在 oracle 为 passed/failed 时分别为 true/false，unknown 时为 null。模型回答中的“完成/通过”不能覆盖 unknown；关键词无法分辨否定、承诺或旧结果，`claimEvidenceAlignment` 默认 not-assessed。
+
+可运行的对照入口见 [实验 005](../experiments/005-harness-effect/README.md)。三组共用当前直接文件工作区、隔离方式、模型配置和原生 JAR，分别比较通用能力、增加工具、增加产品指令及上下文。最终冻结文件由独立 Java 客户端调用上游 Logisim 检查，不复用被测插件的 evaluator。预检不调用模型；真实回合必须显式启用。插件反馈事件统计看不到 A 组自建 shell 验证，因此不能用零次插件事件断言模型没有验证。
 
 评测器可以事后把结构、接口、运行行为和用户目标建成 milestone DAG，允许不同轨迹达到同一结果。它不能把产品变成固定的“先观察、再构建、再验证”向导；用户和模型仍可以先完整构建，再请求验证，或直接编辑文件后运行。
 
