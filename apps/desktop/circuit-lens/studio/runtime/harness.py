@@ -66,6 +66,7 @@ class NativeCircuitRuntime:
         binding = binding_for(self.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha)
         run = {
             'id': report.get('runId'),
+            'label': '原生运行观察',
             'kind': mode,
             'status': 'completed',
             'authority': report.get('authority', 'Logisim native clock and propagation'),
@@ -418,6 +419,7 @@ class NativeCircuitRuntime:
         binding = binding_for(self.workspace, circuit=args.get('circuit'), artifact_sha256=current_sha)
         run = {
             'id': self._run_id(),
+            'label': '历史版本对照',
             'kind': 'comparison',
             'status': 'completed',
             'authority': 'Logisim native clock and propagation',

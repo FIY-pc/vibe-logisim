@@ -258,6 +258,7 @@ class VerificationService:
         binding = binding_for(self.workspace, circuit=args.get("circuit"), artifact_sha256=artifact_sha)
         run = {
             "id": "verify-" + hashlib.sha256((recipe["id"] + started_at).encode()).hexdigest()[:16],
+            "label": recipe["label"],
             "kind": "verification",
             "status": "completed",
             "authority": "workspace-owned verification recipe",

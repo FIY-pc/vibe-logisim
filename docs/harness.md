@@ -49,7 +49,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 | `availability` | 当前工作区、native runtime 和源文件状态 |
 | `tools` / `hostTools` | Studio 可执行工具和由 Electron 工作区宿主执行的工具 |
 | `binding` | 工程、修订、电路、候选、artifact 和运行时 profile 身份 |
-| `run` | 本次执行的 ID、类型、状态、authority 和 stimulus 摘要 |
+| `run` | 本次执行的 ID、用户可读 label、类型、状态、authority 和 stimulus 摘要 |
 | `result` | 原始观察或运行报告 |
 | `feedback` | 有明确期望时的比较结果，没有期望时保持 `observed` |
 
@@ -62,6 +62,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 - `evaluate`：运行用户主动请求的实验，并在存在可比较期望时返回判断。
 
 `harness_run` 的反馈状态只有在每一行都有明确期望、且全部匹配时才是 `passed`；存在不匹配时是 `failed`；没有完整比较条件时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
+
+桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
 
 `inspect_circuit` 在精确运行时观察到端口后，还会返回 `connectivityIssues`：其中 `unconnectedInputs` 列出没有位网的输入端及其原生 tooltip，`widthIncompatibilities` 保留运行时报告的宽度冲突点。这是观察摘要，不替模型决定哪些端口应该连接；它把模型原本需要从大量端口和 net ID 中手工归纳的事实直接暴露出来。
 

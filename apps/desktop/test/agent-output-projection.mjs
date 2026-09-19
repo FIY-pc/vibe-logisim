@@ -21,6 +21,13 @@ assert.match(projection.summary(),/1 个步骤未完成/);
 
 projection.beginTurn();
 projection.start();
+projection.activity({id:'unknown',label:'工作区检查',status:'warning',activityKey:'harness:verification'});
+projection.finish('completed');
+assert.equal(projection.unresolvedWarningCount(),1);
+assert.match(projection.summary(),/1 个结果待确认/);
+
+projection.beginTurn();
+projection.start();
 projection.activity({id:'new-turn',label:'生成回答',status:'completed',activityKey:'assistant:final'});
 projection.finish('completed');
 assert.equal(projection.unresolvedFailureCount(),0);

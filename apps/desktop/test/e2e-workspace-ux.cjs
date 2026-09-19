@@ -110,6 +110,15 @@ try {
   // leave an unexplained Harness banner over the schematic.
   const selectedId=await page.locator('.circuit-component.is-selected').getAttribute('data-object-id');
   const target=await page.evaluate(()=>fetch('/api/circuit?name=IF_ID').then(r=>r.json()).then(r=>r.circuit.components.find(c=>c.label==='ID.IR').componentId));
+  // External verifiers use the result envelope binding/run; they do not have
+  // the native simulation session that the legacy locate action uses.
+  await app.evaluate(({BrowserWindow},data)=>BrowserWindow.getAllWindows()[0].webContents.send('vibe-logisim:agent-event',{
+    type:'harness-result',itemId:'ux-verification-replay',binding:{circuit:'IF_ID',revisionId:data.revision},
+    run:{id:'verify-ux',label:'工作区检查',kind:'verification'},feedback:{status:'failed'},
+    observation:{stderr:'验证器输出回放'}
+  }),{revision:before.revision.id});
+  await page.getByText('工作区检查 · 有异常',{exact:true}).waitFor();
+  await page.getByText('验证器输出回放',{exact:true}).waitFor();
   await app.evaluate(({BrowserWindow},data)=>BrowserWindow.getAllWindows()[0].webContents.send('vibe-logisim:agent-event',{
     type:'harness-result',itemId:'ux-feedback-replay',session:{id:'ux-feedback-replay',circuit:'IF_ID',revisionId:data.revision},
     feedback:{status:'failed',targets:[{componentId:data.target}],firstFailure:{tick:1,inputs:{note:'界面验收回放'},outputs:{Q:0},expected:{Q:1}}}

@@ -53,12 +53,17 @@ export class AgentOutputProjection {
     return [...this.items.values()].filter(item=>item.status==='failed'&&!item.recovered).length;
   }
 
+  unresolvedWarningCount() {
+    return [...this.items.values()].filter(item=>item.status==='warning').length;
+  }
+
   summary(fallback=null) {
     const running=this.runningItem();
     if(this.status==='running')return running?`正在${running.label}…`:fallback||'正在整理结果';
     if(this.status==='completed') {
-      const count=this.items.size,failed=this.unresolvedFailureCount();
+      const count=this.items.size,failed=this.unresolvedFailureCount(),warnings=this.unresolvedWarningCount();
       if(failed)return `回答完成 · ${failed} 个步骤未完成 · 查看工作过程`;
+      if(warnings)return `回答完成 · ${warnings} 个结果待确认 · 查看工作过程`;
       return count?`已完成 · ${count} 个工作步骤 · 查看工作过程`:'已完成 · 查看工作过程';
     }
     if(this.status==='interrupted')return '已停止 · 查看工作过程';

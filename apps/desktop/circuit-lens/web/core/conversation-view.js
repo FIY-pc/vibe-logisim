@@ -182,10 +182,10 @@ export class ConversationView {
     const recovered=item.recovered;
     const text=item.label;
     node.querySelector('.agent-activity-label').textContent=kind==='reasoning'?'分析电路与问题':text;
-    node.querySelector('.agent-activity-status').textContent=item.status==='running'?'进行中':item.status==='failed'?(recovered?'已恢复':'未完成'):'完成';
+    node.querySelector('.agent-activity-status').textContent=item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?(recovered?'已恢复':'未完成'):'完成';
     if(item.detail) {
       node.title=item.detail;
-      if(item.status==='failed') {
+      if(item.status==='failed' || item.status==='warning') {
         let error=node.querySelector('.agent-activity-detail');
         if(!error){error=makeElement('small','agent-activity-detail');node.append(error);}
         error.textContent=item.detail;

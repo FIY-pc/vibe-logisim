@@ -330,19 +330,24 @@ function handleAgentEvent(event) {
       return;
     }
     if (event.type === "harness-result") {
-      const session = event.session || {};
+      const session = event.session || event.binding || {};
+      const run = event.run || {};
+      const observation = event.observation || {};
       const status = event.feedback?.status === "failed" ? "有异常"
-        : event.feedback?.status === "passed" ? "通过" : "已观察";
+        : event.feedback?.status === "passed" ? "通过" : "未确定";
       const failure = event.feedback?.firstFailure;
       const position = failure?.tick != null ? ` · 首个异常 tick ${failure.tick}`
         : Number.isInteger(failure?.rowIndex) ? ` · 首个异常输入第 ${failure.rowIndex + 1} 组` : "";
       const scope = session.candidateId ? " · 候选电路"
-        : session.revisionId !== projectState.revision ? " · 历史版本" : "";
-      conversation.activity(event.itemId || session.id, `${session.circuit || "电路"} · ${status}${position}${scope}`, event.feedback?.status === "failed" ? "failed" : "completed", "tool", null, `harness:${session.circuit || "circuit"}`);
+        : session.revisionId && session.revisionId !== projectState.revision ? " · 历史版本" : "";
+      const label = run.label || observation.label || run.kind || session.circuit || "电路";
+      const output = [observation.error, observation.stderr, observation.stdout].filter(Boolean).join("\n");
+      const eventStatus = event.feedback?.status === "failed" ? "failed" : event.feedback?.status === "unknown" ? "warning" : "completed";
+      conversation.activity(event.itemId || run.id || session.id || `harness-${Date.now()}`, `${label} · ${status}${position}${scope}`, eventStatus, "tool", output || event.feedback?.note || null, `harness:${run.kind || session.circuit || "result"}`);
       if (failure) {
         const actual = JSON.stringify(failure.outputs || failure.actual || {});
         const expected = JSON.stringify(failure.expected || {});
-        const notice=appendAgentSystem(`${session.circuit || "电路"} 的运行结果与预期不一致${position}${scope}`, "warning");
+        const notice=appendAgentSystem(`${label} 的运行结果与预期不一致${position}${scope}`, "warning");
         const details=makeElement('details');details.append(makeElement('summary','','查看输入与输出'),makeElement('pre','',`输入 ${JSON.stringify(failure.inputs || {})}\n实际 ${actual}\n预期 ${expected}`));notice.append(details);
         if(session.revisionId===projectState.revision&&session.circuit===projectState.circuitName&&!session.candidateId&&event.feedback?.targets?.length){
           const locate=makeElement('button','quiet-button','定位异常');locate.addEventListener('click',()=>{if(!ports.focusHarnessTargets(event.feedback,session))ports.showToast('电路已变化，无法在当前图中定位这次运行的对象。');});notice.append(locate);

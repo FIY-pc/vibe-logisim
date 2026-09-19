@@ -1,5 +1,6 @@
 'use strict';
 const {CircuitToolRegistry} = require('./circuit-tools.cjs');
+const {harnessResultEvent} = require('./harness-result.cjs');
 
 // Owns only domain tool execution. Thread admission, stop, reconnect and the
 // model loop remain in CodexBackend. All tools share the selected document, so
@@ -71,8 +72,8 @@ class CircuitPlugin {
         scope.emit({type:'candidate-ready', candidateId:result.id, title:result.title});
         result = {...result, changes:(result.changes || []).map(({diff,beforeRender,render,...change}) => ({...change,difference:diff?.counts}))};
       }
-      if (result.feedback) scope.emit({type:'harness-result', itemId:request.itemId || null,
-        turnId:request.turnId, session:result.session, binding:result.binding || null, run:result.run || null, feedback:result.feedback});
+      const harnessEvent = harnessResultEvent(result, {itemId:request.itemId || null, turnId:request.turnId});
+      if (harnessEvent) scope.emit(harnessEvent);
       return {...result, invocation:finalIdentity};
     };
     const operation = this.queue.then(execute, execute);

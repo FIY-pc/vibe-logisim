@@ -86,6 +86,7 @@ class EvaluationService:
         }
         run = {
             'id': report.get('runId'),
+            'label': '显式测试',
             'kind': 'evaluation',
             'mode': mode,
             'status': 'completed',
