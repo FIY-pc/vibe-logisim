@@ -888,13 +888,20 @@ class CodexBackend extends EventEmitter {
     const savedWorkspace = this.ephemeral ? null : this.conversations.ensure(workspaceKey);
     this.conversationId = savedWorkspace?.id || null;
     const savedThreadId = savedWorkspace?.threadId;
+    const currentToolContract = this.circuitTool ? this.circuitManifestState : null;
+    const compatibleThread = !this.circuitTool || !savedThreadId || (
+      savedWorkspace?.toolContract?.signature &&
+      savedWorkspace.toolContract.signature === currentToolContract?.signature
+    );
+    const resumableThreadId = compatibleThread ? savedThreadId : null;
+    const capabilityReset = Boolean(savedThreadId && !resumableThreadId);
     let result = null;
     let provisionalThreadId = null;
     try {
-      if (typeof savedThreadId === "string" && savedThreadId) {
+      if (typeof resumableThreadId === "string" && resumableThreadId) {
         try {
           result = await this.#request("thread/resume", {
-            threadId: savedThreadId,
+            threadId: resumableThreadId,
             cwd: this.currentCwd || this.runtimeWorkDir,
             approvalPolicy: "never",
             sandbox: "danger-full-access",
@@ -941,11 +948,12 @@ class CodexBackend extends EventEmitter {
       this.workspaceKey = workspaceKey;
       this.threadRevisionId = revisionId;
       provisionalThreadId = null;
-      const restoredContexts = savedThreadId === threadId ? savedWorkspace?.messageContexts : null;
+      const restoredContexts = resumableThreadId === threadId ? savedWorkspace?.messageContexts : null;
       const restoredHistory = this.#historyFromThread(result.thread, restoredContexts);
       this.history = restoredHistory.length ? restoredHistory : savedWorkspace?.messages || [];
-      if (!this.ephemeral) this.#rememberThread(workspaceKey, threadId);
-      this.emit("event", { type: "thread-started", threadId, revisionId });
+      if (!this.ephemeral) this.#rememberThread(workspaceKey, threadId, {rebind:capabilityReset});
+      this.emit("event", { type: "thread-started", threadId, revisionId,
+        resumed: Boolean(resumableThreadId), capabilityReset });
       if (this.history.length) {
         this.emit("event", { type: "history", messages: this.history.slice(-60) });
       }
@@ -1073,7 +1081,7 @@ class CodexBackend extends EventEmitter {
           this.#assertWorkspace(epoch, generation);
           state = this.conversations.fork(workspaceKey, {sourceId:source.id, sourceThreadId:source.threadId,
             messageId:request.messageId, turnId:fork.turnId, threadId:fork.thread.id, messageContexts:fork.messageContexts,
-            messages:this.#historyFromThread(fork.thread, fork.messageContexts)});
+            messages:this.#historyFromThread(fork.thread, fork.messageContexts), toolContract:this.circuitManifestState});
         } else state = this.conversations.change(workspaceKey, action, request);
         const activate = state.activeId !== previous || this.workspaceKey !== workspaceKey;
         if (activate) {
@@ -1094,8 +1102,14 @@ class CodexBackend extends EventEmitter {
     }
   }
 
-  #rememberThread(workspaceKey, threadId) {
-    this.conversations.remember(workspaceKey, {threadId, messages:this.history});
+  #rememberThread(workspaceKey, threadId, {rebind = false} = {}) {
+    if (rebind) {
+      this.conversations.rebind(workspaceKey, {threadId, messages:this.history,
+        toolContract:this.circuitManifestState, reason:'circuit-plugin-capability-updated'});
+    } else {
+      this.conversations.remember(workspaceKey, {threadId, messages:this.history,
+        toolContract:this.circuitManifestState});
+    }
     this.emit('event', {type:'conversations-changed', workspaceKey, ...this.conversations.state(workspaceKey)});
   }
 

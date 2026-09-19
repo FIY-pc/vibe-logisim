@@ -37,7 +37,7 @@ class ConversationStore {
   }
   blank(id = randomUUID()) {
     const now = new Date().toISOString();
-    return {id, title:'新对话', createdAt:now, updatedAt:now, archived:false, threadId:null, messageContexts:{}, messages:[]};
+    return {id, title:'新对话', createdAt:now, updatedAt:now, archived:false, threadId:null, toolContract:null, messageContexts:{}, messages:[]};
   }
   workspace(data, key) {
     if (typeof key !== 'string' || !key) throw new Error('请先打开文件夹');
@@ -95,10 +95,11 @@ class ConversationStore {
     }
     this.write(data); return this.state(key);
   }
-  remember(key, {threadId, messages, messageId, context}) {
+  remember(key, {threadId, messages, messageId, context, toolContract}) {
     const data = this.read(), w = this.workspace(data, key), record = w.conversations[w.activeId];
     if (record.threadId && threadId && record.threadId !== threadId) throw new Error('当前对话已变化，未覆盖旧记录');
     if (threadId) record.threadId = threadId;
+    if (toolContract !== undefined) record.toolContract = structuredClone(toolContract);
     if (messages) record.messages = structuredClone(messages);
     if (messageId) record.messageContexts[messageId] = structuredClone(context);
     if (!record.customTitle && !record.titleGenerated) {
@@ -106,6 +107,20 @@ class ConversationStore {
       if (first) {record.title = first.replace(/\s+/g, ' ').trim().slice(0, 60);record.titleGenerated = true;}
     }
     record.updatedAt = new Date().toISOString(); this.write(data);
+  }
+  rebind(key, {threadId, messages, toolContract, reason = 'capability-updated'}) {
+    const data = this.read(), w = this.workspace(data, key), record = w.conversations[w.activeId];
+    if (!threadId || typeof threadId !== 'string') throw new Error('新的原生会话无效');
+    if (record.threadId && record.threadId !== threadId) {
+      const old = Array.isArray(record.supersededThreadIds) ? record.supersededThreadIds : [];
+      record.supersededThreadIds = [...new Set([...old, record.threadId])].slice(-8);
+    }
+    record.threadId = threadId;
+    record.toolContract = structuredClone(toolContract || null);
+    if (messages) record.messages = structuredClone(messages);
+    record.updatedAt = new Date().toISOString();
+    record.lastRebind = {reason, at:record.updatedAt};
+    this.write(data);
   }
   replaceHistory(key, {threadId, messages, messageContexts = {}}) {
     const data = this.read(), w = this.workspace(data, key), record = w.conversations[w.activeId];
@@ -119,7 +134,7 @@ class ConversationStore {
     }
     record.updatedAt = new Date().toISOString(); this.write(data);
   }
-  fork(key, {sourceId, sourceThreadId, messageId, turnId, threadId, messages, messageContexts}) {
+  fork(key, {sourceId, sourceThreadId, messageId, turnId, threadId, messages, messageContexts, toolContract}) {
     const data = this.read(), w = this.workspace(data, key), source = w.conversations[w.activeId];
     if (source.id !== sourceId || source.threadId !== sourceThreadId || !threadId || threadId === sourceThreadId) {
       throw new Error('原对话已变化，未切换到新分支');
@@ -128,7 +143,7 @@ class ConversationStore {
     const titles = new Set(Object.values(w.conversations).map(c => c.title));
     let title = base, n = 2;
     while (titles.has(title)) title = base + ' ' + n++;
-    const child = {...this.blank(), title, titleGenerated:true, threadId, messages, messageContexts,
+    const child = {...this.blank(), title, titleGenerated:true, threadId, toolContract:structuredClone(toolContract || null), messages, messageContexts,
       forkedFrom:{conversationId:sourceId, threadId:sourceThreadId, messageId, turnId}};
     w.conversations[child.id] = child; w.activeId = child.id;
     this.write(data); return this.state(key);

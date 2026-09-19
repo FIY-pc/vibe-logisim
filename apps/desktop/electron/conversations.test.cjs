@@ -7,6 +7,7 @@ const path = require('node:path');
 const {ConversationStore} = require('./conversation-store.cjs');
 const {ConversationDraftStore} = require('./conversation-drafts.cjs');
 const {CodexBackend} = require('./codex-backend.cjs');
+const pluginManifest = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const makeRoot = t => {const root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-conversations-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root;};
 
 test('legacy thread and references survive migration, separate drafts, archive and restart', t => {
@@ -75,4 +76,35 @@ test('selected conversations resume their own native threads; busy turns and mis
   await assert.rejects(()=>backend.ask({question:'再试',context,workspaceKey:key}),/原始会话暂时不可用/);
   assert.equal(requests.filter(r=>r.method==='thread/start').length,2);
   assert.equal(backend.conversations.get(key,b).threadId,'thread-2');
+});
+
+test('a changed circuit plugin contract starts a capable thread while retaining local conversation history', async t => {
+  const root=makeRoot(t), key='folder:capability-upgrade';
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json',
+    circuitTool:async()=>({}), circuitManifest:async()=>pluginManifest});
+  backend.start=async()=>{backend.status='ready';};
+  const saved=backend.conversationState(key).conversation;
+  backend.conversations.remember(key,{threadId:'thread-old',messages:[
+    {type:'user',id:'u1',text:'保留这段上下文'},
+    {type:'assistant',id:'a1',phase:'final_answer',text:'旧线程回答'},
+  ],toolContract:{id:'vibe-logisim.circuit',version:'1.2.0',signature:'old-signature'}});
+  const requests=[];
+  backend.child={stdin:{destroyed:false,write(line){
+    const request=JSON.parse(line);requests.push(request);if(!request.id)return;
+    const pending=backend.pending.get(String(request.id));clearTimeout(pending.timeout);backend.pending.delete(String(request.id));
+    if(request.method==='thread/resume'){pending.reject(new Error('resume must not be attempted for stale capabilities'));return;}
+    const result=request.method==='thread/start'?{thread:{id:'thread-new',turns:[]}}:
+      request.method==='mcpServerStatus/list'?{data:[]}:{};
+    pending.resolve(result);
+  }}};
+  const events=[];backend.on('event',event=>events.push(event));
+  await backend.resumeWorkspace({workspaceKey:key,revisionId:'revision-current'});
+  const record=backend.conversations.get(key,saved.id);
+  assert.equal(requests.some(request=>request.method==='thread/resume'),false);
+  assert.equal(requests.find(request=>request.method==='thread/start').params.dynamicTools.length>0,true);
+  assert.equal(record.threadId,'thread-new');
+  assert.deepEqual(record.messages.map(message=>message.text),['保留这段上下文','旧线程回答']);
+  assert.deepEqual(record.supersededThreadIds,['thread-old']);
+  assert.equal(record.toolContract.signature,backend.circuitTools.registry.signature);
+  assert.equal(events.find(event=>event.type==='thread-started').capabilityReset,true);
 });

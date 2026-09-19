@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 
 from studio.domain.plugin import binding_for, result_envelope
@@ -117,6 +118,33 @@ class VerificationService:
             return value
         return value[:MAX_OUTPUT] + "\n…(输出已截断)"
 
+    def _materialize(self, root: Path, artifact: Path) -> Path:
+        """Build a disposable input package for this exact revision.
+
+        The frozen circuit lives under Lens' private state directory. Passing
+        that file alone breaks ordinary Logisim tools that resolve a JAR beside
+        the .circ file, so the verifier receives the circuit plus the frozen
+        dependency/resource bytes from the same package. This directory is
+        never published as the workspace source of truth.
+        """
+        package = self.workspace.package
+        package.verify_frozen(self.workspace.revision_dir)
+        materialized = root / (self.workspace.source_name or "artifact.circ")
+        materialized.write_bytes(artifact.read_bytes())
+        materialized.chmod(0o444)
+        for name, payload in package.contents.items():
+            dependency = root / name
+            dependency.write_bytes(payload)
+            dependency.chmod(0o444)
+        resources = root / "resources"
+        for resource in package.resources:
+            resource_id = resource["id"]
+            destination = resources / f"{resource_id}.xlsx"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(package.resource_contents[resource_id])
+            destination.chmod(0o444)
+        return materialized
+
     def run(self, args):
         if not isinstance(args, dict) or not isinstance(args.get("id"), str) or not args["id"].strip():
             raise ValueError("run_verification 需要非空 id")
@@ -127,7 +155,7 @@ class VerificationService:
         if recipe is None:
             raise ValueError(f"找不到验证器 {args['id']}；先调用 list_verifications")
         self.workspace._require()
-        source = Path(self.workspace.source_path).resolve()
+        source_path = Path(self.workspace.source_path).resolve() if self.workspace.source_path else None
         root = manifest.parent.resolve()
         cwd = (root / recipe["cwd"]).resolve()
         if cwd != root and root not in cwd.parents:
@@ -135,45 +163,50 @@ class VerificationService:
         artifact = self.workspace.frozen_path.resolve()
         current_sha = self._sha(artifact)
         circuit = args.get("circuit") or ""
-        variables = {
-            "artifact": str(artifact),
-            "source": str(source),
-            "workspace": str(root),
-            "circuit": circuit,
-            "revision": str(self.workspace.revision_id),
-            "artifactSha256": current_sha,
-        }
-        command = [self._replace(item, variables) for item in recipe["command"]]
         started_at = datetime.now(timezone.utc).isoformat()
         started = time.perf_counter()
-        environment = os.environ.copy()
-        environment.update({
-            "VIBE_LOGISIM_ARTIFACT": str(artifact),
-            "VIBE_LOGISIM_SOURCE": str(source),
-            "VIBE_LOGISIM_WORKSPACE": str(root),
-            "VIBE_LOGISIM_CIRCUIT": circuit,
-            "VIBE_LOGISIM_REVISION": str(self.workspace.revision_id),
-            "VIBE_LOGISIM_ARTIFACT_SHA256": current_sha,
-        })
-        timed_out = False
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=cwd,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=recipe["timeoutSeconds"],
-                check=False,
-            )
-            exit_code = completed.returncode
-            stdout = self._bounded(completed.stdout or "")
-            stderr = self._bounded(completed.stderr or "")
-        except subprocess.TimeoutExpired as error:
-            timed_out = True
-            exit_code = None
-            stdout = self._bounded((error.stdout or "") if isinstance(error.stdout, str) else "")
-            stderr = self._bounded((error.stderr or "") if isinstance(error.stderr, str) else "")
+        with tempfile.TemporaryDirectory(prefix=".vibe-verification-", dir=self.workspace.state_root) as temporary:
+            materialized_root = Path(temporary)
+            materialized_artifact = self._materialize(materialized_root, artifact)
+            variables = {
+                "artifact": str(materialized_artifact),
+                "artifactDir": str(materialized_root),
+                "source": str(source_path) if source_path else str(materialized_artifact),
+                "workspace": str(root),
+                "circuit": circuit,
+                "revision": str(self.workspace.revision_id),
+                "artifactSha256": current_sha,
+            }
+            command = [self._replace(item, variables) for item in recipe["command"]]
+            environment = os.environ.copy()
+            environment.update({
+                "VIBE_LOGISIM_ARTIFACT": str(materialized_artifact),
+                "VIBE_LOGISIM_ARTIFACT_DIR": str(materialized_root),
+                "VIBE_LOGISIM_SOURCE": str(source_path) if source_path else str(materialized_artifact),
+                "VIBE_LOGISIM_WORKSPACE": str(root),
+                "VIBE_LOGISIM_CIRCUIT": circuit,
+                "VIBE_LOGISIM_REVISION": str(self.workspace.revision_id),
+                "VIBE_LOGISIM_ARTIFACT_SHA256": current_sha,
+            })
+            timed_out = False
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=cwd,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=recipe["timeoutSeconds"],
+                    check=False,
+                )
+                exit_code = completed.returncode
+                stdout = self._bounded(completed.stdout or "")
+                stderr = self._bounded(completed.stderr or "")
+            except subprocess.TimeoutExpired as error:
+                timed_out = True
+                exit_code = None
+                stdout = self._bounded((error.stdout or "") if isinstance(error.stdout, str) else "")
+                stderr = self._bounded((error.stderr or "") if isinstance(error.stderr, str) else "")
         finished = time.perf_counter()
         parsed = None
         if recipe["result"] == "json-status" and not timed_out:

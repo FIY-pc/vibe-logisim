@@ -33,6 +33,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 插件能力是用户驱动的。模型可以直接编辑工作目录中的 `.circ` 文件，之后请求观察；也可以使用候选构建工具；可以先完成整张电路再运行实验。插件提供可靠动作和证据，不规定动作顺序。
 
+动态工具能力与原生会话绑定。每条本地对话保存创建线程时的插件契约签名；应用升级插件后，旧签名不会被假装成当前能力继续恢复。宿主会保留本地可见消息，启动带新工具集合的线程并替换绑定，同时记录被替换的线程。这样新增能力是一次明确的会话能力更新，旧线程和旧证据仍可追溯，模型也不会在一个没有新工具的线程里误以为工具存在。
+
 选区是协作焦点，不是每次提问都必须存在的前置条件。用户直接询问当前电路而没有选中对象时，宿主只绑定当前工作区、revision 和当前电路名称，让 Codex 自己通过工作区和 `inspect_circuit` 按需观察；不会为了填充上下文而伪造覆盖整张画布的选区。用户明确选中元件、导线或空间区域时，宿主才冻结 selection 并请求精确的 native 观察。这样大电路的普通问题不会在模型收到问题之前等待一次与用户意图无关的全图观测，同时保留局部问题需要的可追溯证据。
 
 ## 插件契约
@@ -67,7 +69,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `compare_circuit` 是另一条可选路径：它用同一组原生时序激励运行当前版本和当前工程拥有的历史 revision，默认对照紧邻上一版本，也可以传入历史 `referenceRevisionId`。`passed` 只表示所选观察点在这次实验中与历史一致，`failed` 会给出第一个差异，`unknown` 表示缺少样本或发生振荡。它适合做回归检查；历史版本本身不是课程期望，因此这个结果不能替代 `evaluate_circuit` 的显式规格或用户提供的测试脚本。
 
-外部 oracle 通过工作区根目录或当前电路所在目录向上的最近 `vibe-verification.json` 声明。`list_verifications` 只发现声明，`run_verification` 只运行模型明确选择的条目。命令可以使用 `${artifact}`、`${source}`、`${workspace}`、`${circuit}`、`${revision}` 和 `${artifactSha256}`，并会收到同名的 `VIBE_LOGISIM_*` 环境变量；harness 运行的是当前不可变 artifact，结果绑定当前 revision 和 SHA。条目可以按进程退出码判断，也可以返回 `{"status":"passed|failed|unknown"}`。这是一层通用适配协议，课程自测、个人脚本和项目回归都通过同一入口接入，插件不理解脚本的领域语义，也不要求每次任务都运行验证器。
+外部 oracle 通过工作区根目录或当前电路所在目录向上的最近 `vibe-verification.json` 声明。`list_verifications` 只发现声明，`run_verification` 只运行模型明确选择的条目。命令可以使用 `${artifact}`、`${artifactDir}`、`${source}`、`${workspace}`、`${circuit}`、`${revision}` 和 `${artifactSha256}`，并会收到同名的 `VIBE_LOGISIM_*` 环境变量；harness 会在一次性目录中 materialize 当前不可变 artifact 及其冻结的 JAR/资料依赖，`${artifact}` 指向这份输入，`${artifactDir}` 指向其目录，结果绑定当前 revision 和 SHA。条目可以按进程退出码判断，也可以返回 `{"status":"passed|failed|unknown"}`。这是一层通用适配协议，课程自测、个人脚本和项目回归都通过同一入口接入，插件不理解脚本的领域语义，也不要求每次任务都运行验证器。
 
 ### 工具失败反馈
 

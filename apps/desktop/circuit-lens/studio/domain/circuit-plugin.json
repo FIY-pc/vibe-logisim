@@ -920,7 +920,7 @@
     {
       "type": "function",
       "name": "run_verification",
-      "description": "Run one workspace-owned verification recipe from vibe-verification.json against the current immutable circuit artifact. The recipe receives ${artifact}, ${source}, ${workspace}, ${circuit}, ${revision} and ${artifactSha256} placeholders plus matching VIBE_LOGISIM_* environment variables. Returns exit status or a declared JSON status, stdout/stderr, timeout and the exact current artifact binding. This is an optional external oracle; the circuit harness does not interpret its domain meaning or impose when to run it.",
+      "description": "Run one workspace-owned verification recipe from vibe-verification.json against the current immutable circuit artifact. The recipe receives ${artifact}, ${artifactDir}, ${source}, ${workspace}, ${circuit}, ${revision} and ${artifactSha256} placeholders plus matching VIBE_LOGISIM_* environment variables. artifactDir contains the exact circuit and frozen project dependencies as a disposable input package. Returns exit status or a declared JSON status, stdout/stderr, timeout and the exact current artifact binding. This is an optional external oracle; the circuit harness does not interpret its domain meaning or impose when to run it.",
       "inputSchema": {
         "type": "object",
         "properties": {
