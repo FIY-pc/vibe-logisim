@@ -106,6 +106,79 @@ class CircuitPlugin:
             enum = properties.get(name, {}).get("enum")
             if enum is not None and value not in enum:
                 raise CircuitToolError("INVALID_ARGUMENT", f"工具参数取值无效: {name}", context={"allowed": enum})
+        CircuitPlugin._validate_schema_constraints(arguments, schema, "arguments")
+
+    @staticmethod
+    def _validate_schema_constraints(value: Any, schema: dict[str, Any], path: str) -> None:
+        """Enforce the executable limits declared in the shared tool catalog.
+
+        This is deliberately a small JSON Schema subset. The catalog uses
+        these constraints for bounded native observations and generated
+        candidates; validating them at the plugin boundary keeps invalid
+        calls out of Java and workspace-owned commands.
+        """
+        expected = schema.get("type")
+        valid = {
+            "string": isinstance(value, str),
+            "object": isinstance(value, dict),
+            "array": isinstance(value, list),
+            "boolean": isinstance(value, bool),
+            "integer": isinstance(value, int) and not isinstance(value, bool),
+            "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+        }.get(expected, True)
+        if not valid:
+            raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 类型错误，应为 {expected}",
+                                   hint="按照当前工具目录中的 inputSchema 修正参数。", context={"path": path, "expected": expected})
+        if "enum" in schema and value not in schema["enum"]:
+            raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 取值无效",
+                                   hint="使用 inputSchema.enum 中的值。", context={"path": path, "allowed": schema["enum"]})
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if "minimum" in schema and value < schema["minimum"]:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 不能小于 {schema['minimum']}",
+                                       hint=f"将 {path} 调整到不小于 {schema['minimum']}。",
+                                       context={"path": path, "minimum": schema["minimum"]})
+            if "maximum" in schema and value > schema["maximum"]:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 不能大于 {schema['maximum']}",
+                                       hint=f"将 {path} 调整到不大于 {schema['maximum']}。",
+                                       context={"path": path, "maximum": schema["maximum"]})
+        if isinstance(value, str):
+            if "minLength" in schema and len(value) < schema["minLength"]:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 长度不足",
+                                       context={"path": path, "minLength": schema["minLength"]})
+            if "maxLength" in schema and len(value) > schema["maxLength"]:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 长度超过上限",
+                                       context={"path": path, "maxLength": schema["maxLength"]})
+        if isinstance(value, list):
+            if "minItems" in schema and len(value) < schema["minItems"]:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 至少需要 {schema['minItems']} 项",
+                                       context={"path": path, "minItems": schema["minItems"]})
+            if "maxItems" in schema and len(value) > schema["maxItems"]:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 最多允许 {schema['maxItems']} 项",
+                                       hint=f"减少 {path} 的项目数量，或分批读取。",
+                                       context={"path": path, "maxItems": schema["maxItems"]})
+            item_schema = schema.get("items")
+            if isinstance(item_schema, dict):
+                for index, item in enumerate(value):
+                    CircuitPlugin._validate_schema_constraints(item, item_schema, f"{path}[{index}]")
+        if isinstance(value, dict):
+            required = schema.get("required", [])
+            missing = [name for name in required if name not in value]
+            if missing:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 缺少必填字段: {', '.join(missing)}",
+                                       hint="补齐 inputSchema.required 中的字段。", context={"path": path, "required": missing})
+            properties = schema.get("properties", {})
+            additional = schema.get("additionalProperties", True)
+            unknown = sorted(set(value) - set(properties)) if additional is False else []
+            if unknown:
+                raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 包含未声明字段: {', '.join(unknown)}",
+                                       hint="只使用当前工具目录 inputSchema.properties 中的字段。",
+                                       context={"path": path, "allowed": list(properties)})
+            for name, item in value.items():
+                child_schema = properties.get(name)
+                if child_schema is None and isinstance(additional, dict):
+                    child_schema = additional
+                if isinstance(child_schema, dict):
+                    CircuitPlugin._validate_schema_constraints(item, child_schema, f"{path}.{name}")
 
     def invoke(self, invocation: CircuitInvocation) -> dict[str, Any]:
         try:

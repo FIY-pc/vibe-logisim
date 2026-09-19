@@ -89,6 +89,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `retryable` 表示原参数不变时是否适合直接重试；参数错误、未知输入和过期修订通常为 `false`，模型应先根据 `hint`、`context` 或 `availableInputs` 修正调用。错误从 Studio 生成，经 HTTP 和 Electron 透传到 Codex 工具结果，不由 UI 改写成成功，也不要求用户进入固定验证流程。
 
+插件边界还会执行工具目录中声明的 `minimum/maximum/minItems/maxItems` 以及嵌套对象约束。越界参数在进入 native runtime 或工作区命令前就返回带路径的 `INVALID_ARGUMENT`，并给出可修正的边界；目录是约束的唯一来源，执行器不再各自重复维护一套上限。
+
 ## 身份与证据
 
 每次 native 仿真至少绑定：

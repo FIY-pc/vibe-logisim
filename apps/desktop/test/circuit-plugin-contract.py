@@ -124,6 +124,14 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertFalse(missing.exception.retryable)
                 self.assertIn("required", missing.exception.hint)
 
+                with self.assertRaisesRegex(CircuitToolError, "参数 arguments.rowCount 不能大于 60") as bounded:
+                    workspace.workbench.call(revision, "read_project_resource", {
+                        "resourceId": "missing", "rowCount": 61,
+                    })
+                self.assertEqual(bounded.exception.code, "INVALID_ARGUMENT")
+                self.assertEqual(bounded.exception.context["path"], "arguments.rowCount")
+                self.assertEqual(bounded.exception.context["maximum"], 60)
+
                 evaluation = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],
                     "revisionId": revision,
