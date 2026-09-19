@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -178,6 +178,67 @@
       "exposure": "direct",
       "owner": "studio",
       "label": "查看电路"
+    },
+    {
+      "type": "function",
+      "name": "render_circuit",
+      "description": "Read a real native Logisim rendering of a circuit as an optional visual observation. Omit circuit for the project main circuit, or provide a circuit name. Omit viewport for the full drawing; provide x, y, width, height and scale for a bounded region. This shows geometry and labels only: it does not prove connectivity or behavior, and the image may be inspected before or after editing.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "viewport": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer",
+                "minimum": -10000000,
+                "maximum": 10000000
+              },
+              "y": {
+                "type": "integer",
+                "minimum": -10000000,
+                "maximum": 10000000
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 32
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height",
+              "scale"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "category": "observe",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "查看电路图面"
     },
     {
       "type": "function",
@@ -966,6 +1027,7 @@
     "read_kept_observation",
     "read_project_resource",
     "inspect_circuit",
+    "render_circuit",
     "wire_candidate",
     "trace_circuit",
     "build_candidate",

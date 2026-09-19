@@ -5,6 +5,7 @@ without spending a Codex turn.
 """
 from pathlib import Path
 import hashlib
+import base64
 import json
 import sys
 import tempfile
@@ -55,6 +56,37 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertIn("connectivityIssues", inspection)
                 self.assertEqual(inspection["connectivityIssues"]["unconnectedInputs"], [])
                 self.assertEqual(inspection["connectivityIssues"]["widthIncompatibilities"], [])
+
+                rendered = workspace.application.agent_tool({
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": revision,
+                    "threadId": "thread-render",
+                    "turnId": "turn-render",
+                    "callId": "call-render",
+                    "tool": "render_circuit",
+                    "arguments": {"circuit": "main"},
+                })
+                self.assertEqual(rendered["feedback"]["status"], "observed")
+                self.assertEqual(rendered["run"]["kind"], "render")
+                self.assertTrue(rendered["result"]["imageIncluded"])
+                image_item = rendered["modelContentItems"][0]
+                self.assertEqual(image_item["type"], "inputImage")
+                self.assertTrue(base64.b64decode(image_item["imageData"]).startswith(b"\x89PNG\r\n\x1a\n"))
+
+                viewport_render = workspace.application.agent_tool({
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": revision,
+                    "threadId": "thread-render",
+                    "turnId": "turn-render",
+                    "callId": "call-render-viewport",
+                    "tool": "render_circuit",
+                    "arguments": {"circuit": "main", "viewport": {
+                        "x": 0, "y": 0, "width": 600, "height": 400, "scale": 1,
+                    }},
+                })
+                self.assertEqual(viewport_render["result"]["kind"], "viewport")
+                self.assertEqual(viewport_render["result"]["pixelWidth"], 600)
+                self.assertEqual(viewport_render["result"]["pixelHeight"], 400)
 
                 result = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],

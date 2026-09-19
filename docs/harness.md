@@ -120,6 +120,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `NativeCircuitRuntime` 是电路插件中的原生执行能力，不是整个 Agent Harness。真正的 Base Harness 仍然是 Codex backend 及其 thread/turn、上下文、工具调用、权限、事件流和停止恢复边界。以后增加课程测试集、时序断言或其他领域能力时，优先注册新的插件 executor 或扩展独立 evaluator，保持 Codex 的代理生命周期不变。
 
+`render_circuit` 是一个可选的视觉观察工具。它从当前绑定的 revision 和 runtime profile 取得真实 Logisim 图面，返回范围、像素尺寸和来源摘要，并通过 Codex app-server 的 `inputImage` content item 传递 PNG；不会把宿主路径放进模型上下文。默认返回整张电路图，也支持受限 viewport。图像只说明几何和标签，不能替代 `inspect_circuit` 的连接观察或 `simulate_circuit`/`evaluate_circuit` 的行为结果。图像过大时工具返回可操作的分块提示，模型可以自行选择是否继续查看。
+
 ## Episode 级效果评测
 
 工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。

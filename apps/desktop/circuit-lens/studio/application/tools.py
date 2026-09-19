@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import base64
+import uuid
+
 from studio.application.inspection import InspectionService
 from studio.domain.references import object_link
 from studio.project.candidates import CandidateService
 from studio.runtime.harness import NativeCircuitRuntime
 from studio.runtime.native import NativeOperations
 from studio.runtime.verification import VerificationService
-from studio.domain.plugin import plugin_manifest
+from studio.domain.plugin import binding_for, plugin_manifest, result_envelope
 from studio.application.circuit_plugin import CircuitInvocation, CircuitPlugin, default_specs
 
 
@@ -26,6 +29,7 @@ class Workbench:
         handlers = {
             "read_kept_observation": self._read_kept_observation,
             "inspect_circuit": self._inspect_circuit,
+            "render_circuit": self._render_circuit,
             "read_project_resource": self._read_project_resource,
             "import_candidate": self._import_candidate,
             "build_candidate": self._build_candidate,
@@ -94,6 +98,44 @@ class Workbench:
                     "instancePath": sample["instancePath"],
                     "note": "Live values belong only to this observed instance and moment.",
                 }
+        return result
+
+    def _render_circuit(self, call):
+        data, metadata = self.workspace.circuits_service.render_for_agent(call.arguments)
+        binding = binding_for(
+            self.workspace,
+            circuit=metadata['circuit'],
+            artifact_sha256=metadata['artifactSha256'],
+        )
+        run = {
+            'id': 'render-' + uuid.uuid4().hex[:16],
+            'label': '原生电路图面',
+            'kind': 'render',
+            'status': 'completed',
+            'authority': metadata['authority'],
+            'runtimeProfileId': metadata['runtimeProfileId'],
+        }
+        result = result_envelope(
+            binding=binding,
+            run=run,
+            observation={
+                **metadata,
+                'imageIncluded': True,
+                'note': '这是几何和标签观察，不证明连接关系或功能行为。',
+            },
+            feedback={
+                'status': 'observed',
+                'kind': 'visual-render',
+                'note': '图像来自当前 revision 和原生 Logisim；需要用 inspect_circuit 或运行工具判断连接和行为。',
+            },
+        )
+        # This field is consumed by Electron and converted to the native
+        # app-server inputImage content item. It is removed from the text JSON.
+        result['modelContentItems'] = [{
+            'type': 'inputImage',
+            'mimeType': 'image/png',
+            'imageData': base64.b64encode(data).decode('ascii'),
+        }]
         return result
 
     def _read_project_resource(self, call):
