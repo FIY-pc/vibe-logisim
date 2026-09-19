@@ -20,6 +20,8 @@
 
 面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；Circuit Plugin 负责电路上下文、观察、操作、原生运行及可选评测。电路运行反馈不规定模型必须遵循的工作流。
 
+长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；模型返回视图由 `electron/model-result-projection.cjs` 拥有，不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
+
 ## 需要保持的边界
 
 - 文件夹拥有多条会话、上次选中的会话及资料；每条会话拥有自己的输入草稿和引用。电路文档拥有自己的结构状态和历史。切电路不切会话。

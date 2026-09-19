@@ -154,7 +154,7 @@ class CircuitPlugin:
                                        context={"path": path, "minItems": schema["minItems"]})
             if "maxItems" in schema and len(value) > schema["maxItems"]:
                 raise CircuitToolError("INVALID_ARGUMENT", f"参数 {path} 最多允许 {schema['maxItems']} 项",
-                                       hint=f"减少 {path} 的项目数量，或分批读取。",
+                                       hint=f"将 {path} 的项目数量减少到 {schema['maxItems']} 项以内。",
                                        context={"path": path, "maxItems": schema["maxItems"]})
             item_schema = schema.get("items")
             if isinstance(item_schema, dict):
