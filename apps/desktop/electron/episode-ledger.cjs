@@ -164,6 +164,7 @@ class EpisodeLedger {
     const completed = activities.filter(item => item.status && item.status !== 'running');
     const toolActivities = completed.filter(item => ['command', 'tool', 'web'].includes(item.kind));
     const circuitActivities = toolActivities.filter(item => item.kind === 'tool' && item.activityKey?.startsWith('circuit:'));
+    const visualActivities = circuitActivities.filter(item => item.activityKey === 'circuit:render_circuit');
     const nativeRuns = circuitActivities.filter(item => item.status === 'completed' &&
       ['circuit:simulate_circuit', 'circuit:trace_circuit', 'circuit:evaluate_circuit'].includes(item.activityKey));
     const failed = toolActivities.filter(item => item.status === 'failed');
@@ -172,6 +173,8 @@ class EpisodeLedger {
     const grounded = this.evidence.find(item => item.groundedAt !== null);
     const positiveClaim = this.claims.some(item => item.positive);
     const passedEvidence = this.evidence.some(item => item.feedbackStatus === 'passed');
+    const verdictEvidence = this.evidence.filter(item => ['passed', 'failed'].includes(item.feedbackStatus));
+    const visualEvidence = this.evidence.filter(item => item.run?.kind === 'render');
     const tokenTotals = this.usageSamples.map(sample => sample.usage?.total || sample.usage).filter(Boolean);
     const lastUsage = tokenTotals.at(-1) || null;
     const peakInputTokens = this.usageSamples.reduce((peak, sample) => {
@@ -186,13 +189,16 @@ class EpisodeLedger {
       toolCalls: toolActivities.length,
       circuitToolCalls: circuitActivities.length,
       circuitToolFailures: circuitActivities.filter(item => item.status === 'failed').length,
+      visualObservationCalls: visualActivities.length,
+      visualObservationFailures: visualActivities.filter(item => item.status === 'failed').length,
+      visualEvidenceCount: visualEvidence.length,
       commandFailures: toolActivities.filter(item => item.kind === 'command' && item.status === 'failed').length,
       fileChangeEvents: completed.filter(item => item.kind === 'file').length,
       nativeRunCalls: nativeRuns.length,
       invalidCalls: failed.length + this.blockedRequests,
       recoveryCalls: recovery,
       artifactChanges: this.final?.artifact?.changed ?? (this.circuitChanges > 0 ? true : null),
-      verificationCount: this.evidence.length,
+      verificationCount: verdictEvidence.length,
       humanInterventions: this.humanInterventions.length,
       // Keywords cannot distinguish a promise, negation, or a claim about
       // another artifact. Semantic alignment needs an explicit review.
