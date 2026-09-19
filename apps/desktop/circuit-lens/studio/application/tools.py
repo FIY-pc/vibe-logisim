@@ -31,6 +31,7 @@ class Workbench:
             "trace_circuit": self._trace_circuit,
             "simulate_circuit": self._simulate_circuit,
             "harness_run": self._harness_run,
+            "compare_circuit": self._compare_circuit,
             "evaluate_circuit": self._evaluate_circuit,
         }
         expected = {name for name, spec in specs.items() if spec.owner == "studio"}
@@ -143,6 +144,9 @@ class Workbench:
 
     def _harness_run(self, call):
         return self.harness_run(call.arguments)
+
+    def _compare_circuit(self, call):
+        return self.runtime.compare_circuit(call.arguments)
 
     def _evaluate_circuit(self, call):
         return self.evaluate_circuit(call.arguments)

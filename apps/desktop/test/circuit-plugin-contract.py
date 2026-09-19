@@ -41,6 +41,7 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(manifest["id"], "vibe-logisim.circuit")
                 self.assertTrue(manifest["availability"]["workspaceOpen"])
                 self.assertIn("harness_run", {item["name"] for item in manifest["capabilities"]})
+                self.assertIn("compare_circuit", {item["name"] for item in manifest["capabilities"]})
                 self.assertIn("harness_run", manifest["registeredToolNames"])
                 self.assertEqual(set(manifest["hostTools"]), {"open_circuit", "submit_circuit", "checkout_candidate"})
 
@@ -161,6 +162,43 @@ class CircuitPluginContract(unittest.TestCase):
                             "inputEvents": [{"tick": 1, "name": "a", "value": 1}],
                         },
                     })
+            finally:
+                workspace.close()
+
+    def test_historical_trace_comparison_is_native_and_explicit(self):
+        source_bytes = (REPO / "archive/tooling/scripts/fixtures/live-interaction.circ").read_bytes()
+        with tempfile.TemporaryDirectory(prefix="vibe-circuit-compare-") as temporary:
+            root = Path(temporary)
+            source = root / "live-interaction.circ"
+            source.write_bytes(source_bytes)
+            workspace = Workspace(
+                REPO,
+                root / "state",
+                REPO / "apps/desktop/circuit-lens/lensctl.py",
+                "circuit-plugin-compare",
+            )
+            try:
+                workspace.open_path(source)
+                inspection = workspace.workbench.inspect({"circuit": "交互与传播"})
+                clock = next(item["componentId"] for item in inspection["components"] if item["factory"] == "Clock")
+                prepared = workspace.project_store.freeze(source_bytes + b"\n", "path", source.name, source)
+                workspace.history.advance("edit", "保留行为的快照变化", prepared.revision_id, prepared=prepared)
+                result = workspace.application.agent_tool({
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": workspace.revision_id,
+                    "tool": "compare_circuit",
+                    "arguments": {
+                        "mode": "trace",
+                        "circuit": "交互与传播",
+                        "ticks": 2,
+                        "inputs": {"三态输入": 0, "四位输入": 0},
+                        "watches": [{"name": "clock", "component": clock, "port": 0}],
+                    },
+                })
+                self.assertEqual(result["feedback"]["status"], "passed")
+                self.assertEqual(result["comparison"]["caseCount"], 3)
+                self.assertEqual(result["comparison"]["cases"][1]["status"], "passed")
+                self.assertEqual(result["result"]["reference"]["revisionId"], workspace.history.record["history"][0]["revisionId"])
             finally:
                 workspace.close()
 

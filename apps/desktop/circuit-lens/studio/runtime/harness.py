@@ -9,6 +9,7 @@ import uuid
 import xml.etree.ElementTree as ET
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.plugin import PLUGIN_ID, PLUGIN_VERSION, RESULT_SCHEMA, binding_for, result_envelope
+from studio.project.package import ProjectPackage
 from studio.runtime.evaluation import EvaluationService
 
 class NativeCircuitRuntime:
@@ -211,21 +212,43 @@ class NativeCircuitRuntime:
         return values
 
     def trace(self, args):
-        name, candidate_id = (args.get('circuit'), args.get('candidateId'))
+        name, candidate_id = (args.get('circuit'), args.get('candidateId') or None)
         ticks, watches, inputs = (args.get('ticks', 16), args.get('watches', []), args.get('inputs', {}))
-        if not isinstance(name, str) or type(ticks) is not int or (not 1 <= ticks <= 10000) or (not isinstance(watches, list)) or (not 1 <= len(watches) <= 24):
-            raise ValueError('指定电路、1–10000 个原生时钟 tick 和 1–24 个观察端口')
         if candidate_id:
             directory, metadata = self.tools._metadata(candidate_id)
             artifact = directory / 'artifact.circ'
+            runtime_jar = self.workspace.observer.runtime_jar
         else:
             with self.workspace.observation_artifact() as frozen:
                 artifact = frozen
-            metadata = {'artifactSha256': self.workspace.artifact_sha256}
+            metadata = None
+            runtime_jar = self.workspace.observer.runtime_jar
         artifact_sha = self._artifact_sha(artifact)
+        report = self._trace_artifact(args, artifact, artifact_sha, runtime_jar, candidate_id=candidate_id)
+        report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha)
+        if candidate_id:
+            metadata.setdefault('traces', []).append(report)
+            self.tools._save(directory, metadata)
+        else:
+            report['programScope'] = 'In-memory stimulus only; working circuit ROM is unchanged' if args.get('program') else 'Working circuit ROM contents'
+            self._record_observation(report, 'clock-trace')
+        return report
+
+    def _trace_artifact(self, args, artifact, artifact_sha, runtime_jar, *, candidate_id=None):
+        """Trace one immutable artifact without changing the active workspace.
+
+        The public trace tool binds to the current revision or candidate. The
+        comparison tool reuses this path for an owned historical snapshot, so
+        both sides receive exactly the same native stimulus and observation
+        rules.
+        """
+        name, candidate_id = (args.get('circuit'), candidate_id or None)
+        ticks, watches, inputs = (args.get('ticks', 16), args.get('watches', []), args.get('inputs', {}))
+        if not isinstance(name, str) or type(ticks) is not int or (not 1 <= ticks <= 10000) or (not isinstance(watches, list)) or (not 1 <= len(watches) <= 24):
+            raise ValueError('指定电路、1–10000 个原生时钟 tick 和 1–24 个观察端口')
         started_at = datetime.now(timezone.utc).isoformat()
         started = time.perf_counter()
-        observation = self.workspace.observer.run_full(artifact, name)
+        observation = self.workspace.observer.run_full(artifact, name, runtime_jar=runtime_jar)
         components = {c['componentId']: c for c in observation['focus']['components']}
         request = ET.Element('trace', circuit=name, ticks=str(ticks))
 
@@ -276,7 +299,7 @@ class NativeCircuitRuntime:
             element = select('program', program)
             for word in words:
                 ET.SubElement(element, 'word', value=str(word))
-        response = self.tools._native(artifact, request)
+        response = self.tools._native(artifact, request, runtime_jar=runtime_jar)
         finished = time.perf_counter()
         rows = [{'tick': int(row.get('tick')), 'oscillating': row.get('oscillating') == 'true', 'values': {s.get('name'): int(s.get('value')) if 'value' in s.attrib else None for s in row}, 'bits': {s.get('name'): s.get('bits') for s in row}} for row in response]
         report = {
@@ -304,13 +327,123 @@ class NativeCircuitRuntime:
             'note': 'Ticks are clock transitions, not necessarily CPU cycles. Samples are settled after each tick, not instruction-retirement claims.',
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha)
-        if candidate_id:
-            metadata.setdefault('traces', []).append(report)
-            self.tools._save(directory, metadata)
-        else:
-            report['programScope'] = 'In-memory stimulus only; working circuit ROM is unchanged' if program else 'Working circuit ROM contents'
-            self._record_observation(report, 'clock-trace')
         return report
+
+    def _historical_reference(self, args):
+        """Resolve an owned previous revision for an explicit comparison."""
+        record = self.workspace.history.record
+        if not record:
+            raise ValueError('当前工程没有历史版本')
+        requested = args.get('referenceRevisionId')
+        reference_kind = args.get('reference', 'previous_revision')
+        if reference_kind not in {'previous_revision', 'revision'}:
+            raise ValueError('reference 必须为 previous_revision 或 revision')
+        if reference_kind == 'revision' and not requested:
+            raise ValueError('reference=revision 必须提供 referenceRevisionId')
+        entries = record.get('history', [])
+        allowed = {entry.get('revisionId') for entry in entries} | {self.workspace.revision_id}
+        if requested:
+            if requested not in allowed:
+                raise ValueError('referenceRevisionId 不属于当前工程历史')
+            revision_id = requested
+            entry = next((item for item in reversed(entries) if item.get('revisionId') == revision_id), None)
+            title = entry.get('title') if entry else '指定历史版本'
+        else:
+            entry = next((item for item in reversed(entries)
+                          if item.get('revisionId') == self.workspace.revision_id and item.get('beforeRevisionId')), None)
+            if not entry:
+                raise ValueError('当前工程没有可比较的上一版本；请提供 referenceRevisionId')
+            revision_id = entry['beforeRevisionId']
+            title = entry.get('title') or '上一版本'
+        if revision_id == self.workspace.revision_id:
+            raise ValueError('referenceRevisionId 必须指向当前版本之前的历史版本')
+        directory = self.workspace.state_root / 'revisions' / revision_id
+        if not (directory / 'artifact.circ').is_file():
+            raise ValueError('历史版本快照不存在，无法进行原生对照')
+        package = ProjectPackage.from_snapshot(directory, None)
+        package.verify_frozen(directory)
+        return {
+            'revisionId': revision_id,
+            'title': title,
+            'directory': directory,
+            'artifact': directory / 'artifact.circ',
+            'artifactSha256': package.artifact_sha256,
+            'runtimeJar': package.runtime(self.workspace.repo_root),
+        }
+
+    def compare_circuit(self, args):
+        """Compare current native behavior with an owned historical revision.
+
+        This is deliberately a regression observation. Equality means that the
+        selected behavior stayed equal under the supplied experiment; it does
+        not mean the circuit meets an external course specification.
+        """
+        if not isinstance(args, dict) or args.get('mode', 'trace') != 'trace':
+            raise ValueError('历史对照目前只支持 trace 模式')
+        reference = self._historical_reference(args)
+        current_artifact = self.workspace.frozen_path
+        current_sha = self._artifact_sha(current_artifact)
+        current = self._trace_artifact(args, current_artifact, current_sha, self.workspace.observer.runtime_jar)
+        previous = self._trace_artifact(args, reference['artifact'], reference['artifactSha256'], reference['runtimeJar'])
+        current_rows = {row.get('tick'): row for row in current.get('rows', [])}
+        previous_rows = {row.get('tick'): row for row in previous.get('rows', [])}
+        names = [watch.get('name') for watch in args.get('watches', [])]
+        cases = []
+        for tick in sorted(set(current_rows) | set(previous_rows)):
+            left, right = current_rows.get(tick), previous_rows.get(tick)
+            if not left or not right or left.get('oscillating') or right.get('oscillating'):
+                cases.append({'tick': tick, 'status': 'unknown', 'current': left, 'reference': right})
+                continue
+            for name in names:
+                actual = (left.get('values') or {}).get(name)
+                expected = (right.get('values') or {}).get(name)
+                if actual is None or expected is None:
+                    status = 'unknown'
+                else:
+                    status = 'passed' if actual == expected else 'failed'
+                cases.append({'tick': tick, 'signal': name, 'status': status, 'current': actual, 'reference': expected})
+        failed = [case for case in cases if case['status'] == 'failed']
+        unknown = [case for case in cases if case['status'] == 'unknown']
+        status = 'failed' if failed else ('unknown' if unknown else 'passed')
+        first_difference = failed[0] if failed else None
+        feedback = {
+            'status': status,
+            'rowCount': len(current.get('rows', [])),
+            'checkedCount': sum(case['status'] == 'passed' for case in cases),
+            'failureCount': len(failed),
+            'unknownCount': len(unknown),
+            'firstDifference': first_difference,
+            'note': '历史对照只说明两版在本次输入、时钟和观察点下是否一致；通过不等于满足外部课程测试，差异也不自动代表错误。',
+        }
+        binding = binding_for(self.workspace, circuit=args.get('circuit'), artifact_sha256=current_sha)
+        run = {
+            'id': self._run_id(),
+            'kind': 'comparison',
+            'status': 'completed',
+            'authority': 'Logisim native clock and propagation',
+            'runtimeProfileId': current.get('runtimeProfileId'),
+            'rowCount': len(current.get('rows', [])),
+        }
+        observation = {
+            'mode': 'trace',
+            'circuit': args.get('circuit'),
+            'current': {'revisionId': self.workspace.revision_id, 'artifactSha256': current_sha,
+                        'runId': current.get('runId'), 'rowCount': len(current.get('rows', [])),
+                        'oscillating': sum(row.get('oscillating', False) for row in current.get('rows', []))},
+            'reference': {'revisionId': reference['revisionId'], 'title': reference['title'],
+                          'artifactSha256': reference['artifactSha256'], 'runId': previous.get('runId'),
+                          'rowCount': len(previous.get('rows', [])),
+                          'oscillating': sum(row.get('oscillating', False) for row in previous.get('rows', []))},
+            'stimulusSha256': current.get('stimulusSha256'),
+            'signals': names,
+            'ticks': args.get('ticks', 16),
+        }
+        envelope = result_envelope(binding=binding, run=run, observation=observation, feedback=feedback)
+        envelope['comparison'] = {'status': status, 'cases': cases[:256], 'caseCount': len(cases), 'casesTruncated': len(cases) > 256}
+        envelope['session'] = {'revisionId': self.workspace.revision_id, 'circuit': args.get('circuit'),
+                               'artifactSha256': current_sha, 'mode': 'comparison',
+                               'authority': 'Logisim native clock and propagation'}
+        return envelope
 
 
 # Kept for small local integrations while callers move to the precise name.

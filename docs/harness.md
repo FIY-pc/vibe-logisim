@@ -65,6 +65,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `evaluate_circuit` 是独立的评测能力。组合模式要求每个输入向量带 `expected`；时序模式要求 `expectedRows`，每行指定 tick 和观察信号。它返回 `evaluation` 对象并保留底层 native observation：`passed` 表示规格覆盖的案例全部匹配，`failed` 表示至少一个明确不匹配，`unknown` 表示运行结果中有未确定信号或缺失样本。
 
+`compare_circuit` 是另一条可选路径：它用同一组原生时序激励运行当前版本和当前工程拥有的历史 revision，默认对照紧邻上一版本，也可以传入历史 `referenceRevisionId`。`passed` 只表示所选观察点在这次实验中与历史一致，`failed` 会给出第一个差异，`unknown` 表示缺少样本或发生振荡。它适合做回归检查；历史版本本身不是课程期望，因此这个结果不能替代 `evaluate_circuit` 的显式规格或用户提供的测试脚本。
+
 ### 工具失败反馈
 
 工具失败使用 `vibe-logisim.circuit-plugin.error/v1`，错误对象至少包含：

@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -862,6 +862,46 @@
     },
     {
       "type": "function",
+      "name": "compare_circuit",
+      "description": "Compare the current circuit with an owned previous revision under the same native clock experiment. Supply the same circuit, mode trace, watches, inputs and stimulus events used by trace_circuit; reference defaults to the immediately previous revision, or use referenceRevisionId from current project history. Returns passed when selected signals stay equal, failed with the first divergence, or unknown when a row is missing or oscillating. This is regression evidence only: equality with history does not prove an external course specification and does not impose a workflow.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {"type": "string"},
+          "reference": {"type": "string", "enum": ["previous_revision", "revision"]},
+          "referenceRevisionId": {"type": "string"},
+          "mode": {"type": "string", "enum": ["trace"]},
+          "ticks": {"type": "integer", "minimum": 1, "maximum": 10000},
+          "inputs": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 4294967295}},
+          "resetButton": {"type": "string"},
+          "watches": {
+            "type": "array", "minItems": 1, "maxItems": 24,
+            "items": {"type": "object", "properties": {"name": {"type": "string"}, "component": {"type": "string"}, "port": {"type": "integer", "minimum": 0}}, "required": ["name", "component", "port"], "additionalProperties": false}
+          },
+          "inputEvents": {
+            "type": "array", "maxItems": 1000,
+            "items": {"type": "object", "properties": {"tick": {"type": "integer", "minimum": 0}, "name": {"type": "string"}, "value": {"type": "integer", "minimum": 0, "maximum": 4294967295}}, "required": ["tick", "name", "value"], "additionalProperties": false}
+          },
+          "buttonEvents": {
+            "type": "array", "maxItems": 1000,
+            "items": {"type": "object", "properties": {"component": {"type": "string"}, "tick": {"type": "integer", "minimum": 0}, "pressed": {"type": "boolean"}}, "required": ["component", "tick", "pressed"], "additionalProperties": false}
+          },
+          "program": {
+            "type": "object", "properties": {"component": {"type": "string"}, "words": {"type": "array", "minItems": 1, "maxItems": 4096, "items": {"type": "integer", "minimum": 0, "maximum": 4294967295}}}, "required": ["component", "words"], "additionalProperties": false
+          }
+        },
+        "required": ["circuit", "mode", "ticks", "inputs", "watches"],
+        "additionalProperties": false
+      },
+      "category": "observe",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "对照历史版本"
+    },
+    {
+      "type": "function",
       "name": "import_candidate",
       "description": "Import XML as an independent candidate without modifying the source file.",
       "inputSchema": {
@@ -896,6 +936,7 @@
     "build_candidate",
     "simulate_circuit",
     "harness_run",
+    "compare_circuit",
     "evaluate_circuit",
     "import_candidate"
   ],
