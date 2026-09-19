@@ -116,6 +116,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `trace_circuit` 与组合仿真一样，可省略 `candidateId` 表示当前文件；旧调用传空串仍兼容。运行身份说明本次执行使用了什么，不证明测试规格充分，也不是防恶意运行环境的远程证明。
 
+插件 1.7.0 的 `trace_circuit` 暴露 `inputEvents` / `buttonEvents`，与 `evaluate_circuit`、`harness_run` 共用现有执行器。初始化输入传播、可选复位按钮脉冲之后，执行 tick 0 事件再采样；后续每步先推进原生 tick 并传播，再依次执行输入事件、按钮事件和采样。同类事件按列表顺序逐个传播，值持续到下一次修改。原生 Clock 的高低持续时间决定何时翻转，tick 不等于时钟沿；以 Pin 作为时钟时由输入事件驱动。分页参数只选返回行，每次调用都会从新状态重跑，不是继续上一轮。
+
 ## 当前实现边界
 
 - Codex thread/turn 与工作区文件能力由 [`codex-backend.cjs`](../apps/desktop/electron/codex-backend.cjs) 负责。
@@ -164,6 +166,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 v2 将 v1 的 `invalidCalls/recoveryCalls` 改成 `failedCalls/laterSuccessesOfSameActivity`：非零退出可能是帮助输出或主动终止，后续同类命令成功也不能证明修复了此前问题。旧实验保持原始 schema，不倒改历史数据。实验 006 runner 可显式加 `--capture-commands` 保存有界命令和输出，便于受控夹具诊断；默认关闭，不进入产品历史或 ledger。此文件可能包含私有正文，发布实验前需单独审阅。
 
 可运行的对照入口见 [实验 005](../experiments/005-harness-effect/README.md)。三组共用当前直接文件工作区、隔离方式、模型配置和原生 JAR，分别比较通用能力、增加工具、增加产品指令及上下文。最终冻结文件由独立 Java 客户端调用上游 Logisim 检查，不复用被测插件的 evaluator。预检不调用模型；真实回合必须显式启用。插件反馈事件统计看不到 A 组自建 shell 验证，因此不能用零次插件事件断言模型没有验证。
+
+[通用任务 runner](../experiments/lib/README.md)复用生产工作区与 Codex host，可指定 fixture、任务、冻结文件和独立 oracle；[双实例时序任务](../experiments/009-sequential-hierarchy/README-scenario.md)用于跨模块、使能、同步复位及边沿验证。先停止模型再冻结工作区，功能判断不依赖模型自述。受控实验的有界正文记录包含宿主参数拒绝、checkout/submit 和 shell 退出结果，不只记录已进入 Studio 的调用；正文不写入产品历史或 Episode Ledger。
 
 评测器可以事后把结构、接口、运行行为和用户目标建成 milestone DAG，允许不同轨迹达到同一结果。它不能把产品变成固定的“先观察、再构建、再验证”向导；用户和模型仍可以先完整构建，再请求验证，或直接编辑文件后运行。
 

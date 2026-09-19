@@ -328,7 +328,7 @@ class NativeCircuitRuntime:
             'program': program,
             'programScope': 'In-memory stimulus only; candidate ROM is unchanged' if program else 'Candidate ROM contents',
             'rows': rows,
-            'note': 'Ticks are clock transitions, not necessarily CPU cycles. Samples are settled after each tick, not instruction-retirement claims.',
+            'note': 'Each call starts fresh. A native tick follows Clock high/low durations and need not be a transition or cycle. Sample 0 follows initialization and tick-0 events; later samples follow native tick/settling, input events, then button events. Each event settles in list order; values persist. Pins used as clocks require input events.',
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
         return report
