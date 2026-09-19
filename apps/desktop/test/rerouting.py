@@ -78,6 +78,9 @@ class Rerouting(unittest.TestCase):
         summary = candidate['changes'][0]['routing']
         self.assertLess(summary['lengthAfter'], summary['lengthBefore'])
         self.assertEqual(candidate['changes'][0]['wiringProof']['checkedPortBits'], 16)
+        after = self.call('inspect_circuit', {'circuit': 'main', 'candidateId': candidate['id'], 'includeWires': True})
+        self.assertEqual(summary['circuitWireLengthBefore'], geometry['totalWireLength'])
+        self.assertEqual(summary['circuitWireLengthAfter'], after['wireGeometry']['totalWireLength'])
         directory, _ = self.w.workbench._metadata(candidate['id'])
         xml = ET.parse(directory / 'artifact.circ').getroot()
         source_xml = ET.fromstring(self.original)

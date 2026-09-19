@@ -5,7 +5,7 @@ import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
-from studio.domain.rerouting import reroute
+from studio.domain.rerouting import reroute, wire_length
 from studio.domain.connectivity import assert_preserved_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.project.wire_selection import remove_wires
@@ -48,6 +48,11 @@ def reroute_candidate(workbench, args):
         artifact.write_bytes(document.replace_circuit(circuit).data)
         render_path = directory / (hashlib.sha256(name.encode()).hexdigest() + '.png')
         after = w.observer.run_full(artifact, name, render_path)
+        summary.update({
+            'circuitWireLengthBefore': wire_length(baseline['focus']['wires']),
+            'circuitWireLengthAfter': wire_length(after['focus']['wires']),
+            'lengthScope': 'lengthBefore/After count selected/emitted paths; circuitWireLengthBefore/After count native-normalized whole-circuit wires.',
+        })
         def components(document):
             return [{**c, 'factory': c['factoryName']} for c in document['focus']['components']]
         checked = assert_preserved_connections(components(baseline), components(after), set(), 0, 0)
