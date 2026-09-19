@@ -126,6 +126,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 **Code Mode 的最后一段传输也要验证。** 当前本机 Codex 0.153.3 会将动态工具的 `inputText`/`inputImage` 转换为换行拼接的字符串。直接 `text(await tools.render_circuit(...))` 会打印 base64，不能让模型看到图。工具 catalog 提供原生 Code Mode 调用示例：保留 metadata 文本，并把独立 data URL 行传给 `image(...)`。普通直接工具调用仍返回原生 `inputImage`。`node apps/desktop/test/native-tool-images.cjs` 用真实 Codex 和 localhost Responses 回放检查下一次模型请求中的 `input_image`，覆盖反例和 catalog 示例，不访问真实服务商或消耗模型额度。这证明传输契约，不证明某次真实模型回合采用了示例。
 
+[实验 006-v3](../experiments/006-visual-feedback/results/2026-09-19-native-v3/README.md)另行记录了一次真实模型轨迹：原生上下文包含 2 张图片、0 段 base64 文本；模型在 8 分 24 秒结束，冻结文件独立仿真 8/8 通过。图面消除了穿过门体的线，但仍有长绕线和扩大的面积，布局目标没有因功能通过而自动完成。单轮结果不能证明通用增益。
+
 ## Episode 级效果评测
 
 工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。
