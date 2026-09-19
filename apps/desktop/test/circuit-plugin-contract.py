@@ -202,6 +202,51 @@ class CircuitPluginContract(unittest.TestCase):
             finally:
                 workspace.close()
 
+    def test_workspace_verifier_binds_external_oracle_to_revision(self):
+        source_bytes = (REPO / "archive/tooling/tmp/half_adder.circ").read_bytes()
+        with tempfile.TemporaryDirectory(prefix="vibe-circuit-verifier-") as temporary:
+            root = Path(temporary)
+            source = root / "half_adder.circ"
+            source.write_bytes(source_bytes)
+            (root / "verify.py").write_text(
+                "import hashlib, json, sys\n"
+                "data = open(sys.argv[1], 'rb').read()\n"
+                "print(json.dumps({'status': 'passed', 'sha': hashlib.sha256(data).hexdigest()}))\n",
+                encoding="utf-8",
+            )
+            (root / "vibe-verification.json").write_text(json.dumps({
+                "schema": "vibe-logisim.verification/v1",
+                "verifications": [{
+                    "id": "fixture",
+                    "label": "fixture oracle",
+                    "command": ["python3", "verify.py", "${artifact}"],
+                    "result": "json-status",
+                }],
+            }), encoding="utf-8")
+            workspace = Workspace(
+                REPO,
+                root / "state",
+                REPO / "apps/desktop/circuit-lens/lensctl.py",
+                "circuit-plugin-verifier",
+            )
+            try:
+                workspace.open_path(source)
+                identity = {"projectId": workspace.history.record["id"], "revisionId": workspace.revision_id}
+                listed = workspace.application.agent_tool({**identity, "tool": "list_verifications", "arguments": {}})
+                self.assertEqual([item["id"] for item in listed["verifications"]], ["fixture"])
+                result = workspace.application.agent_tool({
+                    **identity,
+                    "tool": "run_verification",
+                    "arguments": {"id": "fixture", "circuit": "main"},
+                })
+                self.assertEqual(result["feedback"]["status"], "passed")
+                self.assertEqual(result["result"]["parsed"]["status"], "passed")
+                self.assertEqual(result["binding"]["revisionId"], workspace.revision_id)
+                self.assertEqual(result["binding"]["artifactSha256"], workspace.artifact_sha256)
+                self.assertEqual(result["result"]["parsed"]["sha"], workspace.artifact_sha256)
+            finally:
+                workspace.close()
+
     def test_http_plugin_discovery_and_tool_call(self):
         source_bytes = (REPO / "archive/tooling/tmp/half_adder.circ").read_bytes()
         with tempfile.TemporaryDirectory(prefix="vibe-circuit-plugin-http-") as temporary:

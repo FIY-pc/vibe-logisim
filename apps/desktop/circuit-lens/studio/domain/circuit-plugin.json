@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -902,6 +902,43 @@
     },
     {
       "type": "function",
+      "name": "list_verifications",
+      "description": "Discover optional verification recipes declared by the current workspace in the nearest vibe-verification.json. A recipe is an ordinary workspace-owned command or script; this tool only lists its declared id, scope and result mode. No verification is run and a missing manifest is normal.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "category": "evaluate",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "查找验证器"
+    },
+    {
+      "type": "function",
+      "name": "run_verification",
+      "description": "Run one workspace-owned verification recipe from vibe-verification.json against the current immutable circuit artifact. The recipe receives ${artifact}, ${source}, ${workspace}, ${circuit}, ${revision} and ${artifactSha256} placeholders plus matching VIBE_LOGISIM_* environment variables. Returns exit status or a declared JSON status, stdout/stderr, timeout and the exact current artifact binding. This is an optional external oracle; the circuit harness does not interpret its domain meaning or impose when to run it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "circuit": {"type": "string"}
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "category": "evaluate",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "运行验证器"
+    },
+    {
+      "type": "function",
       "name": "import_candidate",
       "description": "Import XML as an independent candidate without modifying the source file.",
       "inputSchema": {
@@ -937,6 +974,8 @@
     "simulate_circuit",
     "harness_run",
     "compare_circuit",
+    "list_verifications",
+    "run_verification",
     "evaluate_circuit",
     "import_candidate"
   ],

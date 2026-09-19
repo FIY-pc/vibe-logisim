@@ -5,6 +5,7 @@ from studio.domain.references import object_link
 from studio.project.candidates import CandidateService
 from studio.runtime.harness import NativeCircuitRuntime
 from studio.runtime.native import NativeOperations
+from studio.runtime.verification import VerificationService
 from studio.domain.plugin import plugin_manifest
 from studio.application.circuit_plugin import CircuitInvocation, CircuitPlugin, default_specs
 
@@ -14,6 +15,7 @@ class Workbench:
         self.workspace = workspace
         self.native = NativeOperations(workspace, self)
         self.runtime = NativeCircuitRuntime(workspace, self)
+        self.verification = VerificationService(workspace)
         self.candidate = CandidateService(workspace, self)
         self.inspection = InspectionService(workspace, self)
         self.plugin = CircuitPlugin(workspace)
@@ -32,6 +34,8 @@ class Workbench:
             "simulate_circuit": self._simulate_circuit,
             "harness_run": self._harness_run,
             "compare_circuit": self._compare_circuit,
+            "list_verifications": self._list_verifications,
+            "run_verification": self._run_verification,
             "evaluate_circuit": self._evaluate_circuit,
         }
         expected = {name for name, spec in specs.items() if spec.owner == "studio"}
@@ -147,6 +151,12 @@ class Workbench:
 
     def _compare_circuit(self, call):
         return self.runtime.compare_circuit(call.arguments)
+
+    def _list_verifications(self, call):
+        return self.verification.list(call.arguments)
+
+    def _run_verification(self, call):
+        return self.verification.run(call.arguments)
 
     def _evaluate_circuit(self, call):
         return self.evaluate_circuit(call.arguments)

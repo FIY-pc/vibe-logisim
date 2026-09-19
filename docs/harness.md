@@ -67,6 +67,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `compare_circuit` 是另一条可选路径：它用同一组原生时序激励运行当前版本和当前工程拥有的历史 revision，默认对照紧邻上一版本，也可以传入历史 `referenceRevisionId`。`passed` 只表示所选观察点在这次实验中与历史一致，`failed` 会给出第一个差异，`unknown` 表示缺少样本或发生振荡。它适合做回归检查；历史版本本身不是课程期望，因此这个结果不能替代 `evaluate_circuit` 的显式规格或用户提供的测试脚本。
 
+外部 oracle 通过工作区根目录或当前电路所在目录向上的最近 `vibe-verification.json` 声明。`list_verifications` 只发现声明，`run_verification` 只运行模型明确选择的条目。命令可以使用 `${artifact}`、`${source}`、`${workspace}`、`${circuit}`、`${revision}` 和 `${artifactSha256}`，并会收到同名的 `VIBE_LOGISIM_*` 环境变量；harness 运行的是当前不可变 artifact，结果绑定当前 revision 和 SHA。条目可以按进程退出码判断，也可以返回 `{"status":"passed|failed|unknown"}`。这是一层通用适配协议，课程自测、个人脚本和项目回归都通过同一入口接入，插件不理解脚本的领域语义，也不要求每次任务都运行验证器。
+
 ### 工具失败反馈
 
 工具失败使用 `vibe-logisim.circuit-plugin.error/v1`，错误对象至少包含：
