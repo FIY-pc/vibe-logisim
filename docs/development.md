@@ -47,9 +47,12 @@ apps/desktop/run
 
 ```sh
 python3 -m unittest apps/desktop/test/rerouting.py
+node apps/desktop/test/rerouting-workspace.cjs
 ```
 
 覆盖交叉的 4 位总线、保留未选导线与分支、组合候选、过期导线 ID 拒绝和失败不发布。除原生全部端口位关系检查外，交叉总线另外运行全部 256 组输入；故意注入错误的布线路径，确认原生检查会拒绝短接。
+
+后一个脚本还经过生产 Electron 宿主模块、文件夹、插件和 Studio：生成候选、写入真实工作文件、仿真、渲染、保存文件历史并撤销；检查其他文件未变。它不启动模型或窗口，不应标记为鼠标/UI 验收。
 
 模型视觉观察的像素与原生协议验收：
 

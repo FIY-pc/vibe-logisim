@@ -1,7 +1,6 @@
 """Optional rerouting proposal with native acceptance and ordinary candidate access."""
 from datetime import datetime, timezone
 import hashlib
-import re
 import shutil
 import uuid
 import xml.etree.ElementTree as ET
@@ -10,6 +9,7 @@ from studio.domain.rerouting import reroute
 from studio.domain.connectivity import assert_preserved_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.project.wire_selection import remove_wires
+from studio.project.document import CircuitDocument
 
 
 def reroute_candidate(workbench, args):
@@ -25,10 +25,8 @@ def reroute_candidate(workbench, args):
     if hashlib.sha256(before).hexdigest() != args['artifactSha256']:
         raise CircuitToolError('STALE_REVISION', '导线所属电路已变化',
                                hint='重新 inspect_circuit(includeWires=true)，使用该次返回的 artifactSha256 和 wireIds。')
-    match = next((m for m in re.finditer(rb'<circuit\b[^>]*>.*?</circuit>', before, re.S)
-                  if ET.fromstring(m.group()).get('name') == name), None)
-    if match is None:
-        raise ValueError('Unknown circuit')
+    document = CircuitDocument.parse(before, 'artifact.circ')
+    circuit = document.circuit(name)
     wire_ids = args['wireIds']
     if len(set(wire_ids)) != len(wire_ids):
         raise ValueError('wireIds 不能重复')
@@ -44,11 +42,10 @@ def reroute_candidate(workbench, args):
         if any(baseline['coverage'].get(k, 0) for k in ('invalidBundleEnds', 'widthIncompatibilities', 'unknownWidthEnds')):
             raise ValueError('电路包含未知位宽或位宽冲突，暂不能确认重新布线保持连接')
         proposed, summary = reroute(baseline, set(wire_ids))
-        circuit = ET.fromstring(match.group())
         remove_wires(circuit, {'wires': baseline['focus']['wires']}, set(wire_ids))
         for wire in proposed:
             ET.SubElement(circuit, 'wire', {key: f"({wire[key]['x']},{wire[key]['y']})" for key in ('from', 'to')})
-        artifact.write_bytes(before[:match.start()] + ET.tostring(circuit, encoding='utf-8') + before[match.end():])
+        artifact.write_bytes(document.replace_circuit(circuit).data)
         render_path = directory / (hashlib.sha256(name.encode()).hexdigest() + '.png')
         after = w.observer.run_full(artifact, name, render_path)
         def components(document):

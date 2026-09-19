@@ -140,6 +140,18 @@ class Rerouting(unittest.TestCase):
             self.propose(before, [w['wireId'] for w in before['wireGeometry']['wires']])
         self.assert_source_unchanged()
 
+    def test_reuses_document_editor_without_dropping_comments(self):
+        decoy = b'<!-- <circuit name="main"><wire from="(1,1)" to="(2,2)"/></circuit> -->'
+        original = fixture().replace(b'<circuit name="main">', b'<circuit name="main"><!-- user note -->')
+        original = original.replace(b'<main', decoy + b'<main', 1)
+        before = self.open(original)
+        candidate = self.propose(before, [w['wireId'] for w in before['wireGeometry']['wires']])
+        directory, _ = self.w.workbench._metadata(candidate['id'])
+        changed = (directory / 'artifact.circ').read_bytes()
+        self.assertIn(decoy, changed)
+        self.assertIn(b'<!-- user note -->', changed)
+        self.assert_source_unchanged()
+
 
 if __name__ == '__main__':
     unittest.main()
