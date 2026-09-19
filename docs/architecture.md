@@ -22,6 +22,8 @@
 
 长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；模型返回视图由 `electron/model-result-projection.cjs` 拥有，不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
 
+模型工具声明经 `electron/schema-constraints-projection.cjs` 从同一 schema 补充原生 Code Mode 遗失的参数界限，契约签名包含实际发送的声明；不维护第二份规则。原生编辑器选项与保存属性值的转换由 `NativeAttributeAdapter.java` 统一处理，模板查询、人工放置/属性编辑与观察器共用，通过原生 setter 规范化选项，不推断本地化标签或另写元件属性规则。
+
 ## 需要保持的边界
 
 - 文件夹拥有多条会话、上次选中的会话及资料；每条会话拥有自己的输入草稿和引用。电路文档拥有自己的结构状态和历史。切电路不切会话。

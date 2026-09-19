@@ -55,9 +55,13 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 | `binding` | 工程、修订、电路、候选、artifact 和运行时 profile 身份 |
 | `run` | 本次执行的 ID、用户可读 label、类型、状态、authority 和 stimulus 摘要 |
 | `result` | 原始观察或运行报告 |
+| `feedback` | 有明确期望时的比较结果，没有期望时保持 `observed` |
 
 模型传输出口由 `electron/model-result-projection.cjs` 提供规范视图：已知 metadata 仅在整值严格相等时保留一个规范位置；`inspect` 的组件链接仅在与既有模板精确一致时省略逐组件副本。观察、未知位、错误、新字段、保存/磁盘状态及图片不变；UI 和历史继续使用原始对象。不向模型发送解码协议，也不截断电路信息。具体规则及同一原始对象的测量见 [010](../experiments/010-model-efficiency/README.md)。
-| `feedback` | 有明确期望时的比较结果，没有期望时保持 `observed` |
+
+1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
+
+原生属性适配在 `observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java`：编辑器下拉项可能是包装对象，须经克隆 AttributeSet 的原生 setter 转为保存值。模型元件查询、人工模板/编辑和观察器使用同一边界；两种 Logisim 的实际拆线器位分组、连线仿真、非法配置及撤销已验证，见 [013](../experiments/013-component-attributes/README.md)。这不增加特定任务工具，也不改变直接编辑 `.circ` 的能力。
 
 当前能力类别包括：
 
