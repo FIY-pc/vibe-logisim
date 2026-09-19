@@ -146,7 +146,15 @@ export class ConversationView {
     }
     return this.work;
   }
-  start() {this.group().dataset.status='running';this.output.start();this.updateWork('正在思考');this.scroll();}
+  start() {
+    this.work=null;
+    this.activities.clear();
+    this.output.beginTurn();
+    this.group().dataset.status='running';
+    this.output.start();
+    this.updateWork('正在思考');
+    this.scroll();
+  }
   updateWork(fallback=null) {
     const summary=this.group().querySelector('summary span');
     summary.textContent=this.output.summary(fallback)||fallback||'工作过程';

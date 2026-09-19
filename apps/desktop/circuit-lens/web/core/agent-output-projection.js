@@ -10,6 +10,10 @@ export class AgentOutputProjection {
     this.order=[];
   }
 
+  // A conversation can contain many turns. Keep the conversation history in
+  // the DOM, but scope work-step counts and failures to the current turn.
+  beginTurn() { this.clear(); }
+
   start() { this.status='running'; }
 
   activity({id,label,status='running',kind='tool',detail=null,activityKey=null}={}) {

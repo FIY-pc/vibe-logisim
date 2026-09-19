@@ -124,6 +124,24 @@ fs.mkdirSync(out,{recursive:true});
     finally{await app.evaluate(({clipboard},value)=>clipboard.writeText(value),copied);}
     await answer.getByRole('link',{name:'参考说明'}).click();assert.equal(await app.evaluate(()=>global.__openedPanelURL),'https://cburch.com/logisim/docs/2.7/en/html/libs/mem/register.html');
     assert.equal(await page.evaluate(()=>window.vibeDesktop.openWebLink('file:///etc/passwd').then(()=>false,()=>true)),true);
+
+    // A second protocol turn must get an independent work projection. The
+    // final answer remains the primary content even when a tool step failed.
+    await emit({type:'turn-started',turnId:'panel-replay-second-turn'});
+    await emit({type:'assistant-started',itemId:'panel-second-answer',phase:'final_answer',text:''});
+    await emit({type:'assistant-completed',itemId:'panel-second-answer',phase:'final_answer',text:'第二轮回放回答：当前结构仍然可继续讨论。'});
+    await emit({type:'activity',itemId:'panel-tool',kind:'tool',activityKey:'circuit:simulate_circuit',status:'failed',label:'检查输入输出',detail:'输入标签不完整，请先读取当前接口。'});
+    await emit({type:'turn-completed',turnId:'panel-replay-second-turn',status:'completed'});
+    const workSteps=page.locator('.agent-work');
+    await waitUntil(()=>workSteps.count().then(n=>n>=2));
+    const interruptedWork=page.locator('.agent-work[data-status="interrupted"]');
+    const completedWork=page.locator('.agent-work[data-status="completed"]');
+    await waitUntil(()=>interruptedWork.count().then(n=>n===1)&&completedWork.count().then(n=>n===1));
+    assert.match(await interruptedWork.locator('summary span').textContent(),/已停止/);
+    assert.match(await completedWork.locator('summary span').textContent(),/回答完成 · 1 个步骤未完成/);
+    assert.equal(await completedWork.locator('.agent-activity[data-status="failed"]').count(),1);
+    assert.equal(await page.locator('[data-item-id="panel-second-answer"]').textContent().then(text=>text.includes('第二轮回放回答')),true);
+
     await page.locator('#questionInput').fill('保留现在的结构，我想再讨论一下控制线的布局。');
     await page.setViewportSize({width:1100,height:760});
     await page.screenshot({path:out+'/08-compact.png'});
