@@ -100,6 +100,14 @@ node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electro
 
 `apps/desktop/test/` 保存桌面和原生运行验证脚本。许多历史脚本依赖本地 `exports/`、`archive/` 下的课程样本；它们没有随仓库分发，不能把干净检出直接运行这些脚本的缺样本失败解释成产品回归。现有 `npm run test:e2e` 也是需要样本的浏览器服务验证，不覆盖完整 Electron 体验。
 
+安装两种 Logisim 运行文件后，可用自包含寄存器电路验证时序输入与采样，无需课程材料或模型额度：
+
+```sh
+python3 -m unittest -v apps/desktop/test/trace-events.py
+```
+
+它区分原生 Clock、Pin 时钟和 Button 时钟，检查输入事件与按钮事件顺序、保持、使能、复位、分页重跑，以及仿真不写回源文件或结构历史。真实模型的通用跨模块对照另见 [双实例寄存器场景](../experiments/009-sequential-hierarchy/README-scenario.md)，必须显式启用，不属于常规测试。
+
 交互改动优先在独立临时文件夹和独立状态目录启动真实 Electron，通过鼠标/键盘走用户流程，核对保存文件、原生行为与重开结果。AI 状态可用明确标注的回放验证；真实模型回合单独考虑额度和必要性。
 
 已经安装上述两个 Logisim 运行文件时，可验证 AI 缺失不影响人工工作：
