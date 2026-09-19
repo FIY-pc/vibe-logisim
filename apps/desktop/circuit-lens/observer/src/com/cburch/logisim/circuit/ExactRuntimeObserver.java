@@ -1107,7 +1107,7 @@ public final class ExactRuntimeObserver {
                 "display", display,
                 "displayName", attribute.getDisplayName(),
                 "readOnly", attributes.isReadOnly(attribute) || !attributes.isToSave(attribute),
-                "options", attributeOptions(attribute, value),
+                "options", attributeOptions(attributes, attribute),
                 "valueClass", value == null ? null : value.getClass().getName()
             ));
         }
@@ -1115,18 +1115,13 @@ public final class ExactRuntimeObserver {
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static List<Object> attributeOptions(Attribute attribute, Object value) {
+    private static List<Object> attributeOptions(AttributeSet attributes, Attribute attribute) {
         List<Object> options = new ArrayList<Object>();
         // Consult the native editor model, never infer enums from current CPU fields.
-        if (!(value instanceof Boolean || value instanceof AttributeOption || value instanceof Direction || value instanceof BitWidth || value instanceof Number)) return options;
         try {
-            java.awt.Component editor = attribute.getCellEditor(null, value);
-            if (editor instanceof javax.swing.JComboBox) {
-                javax.swing.JComboBox combo = (javax.swing.JComboBox)editor;
-                if (combo.getItemCount() <= 128) for (int i = 0; i < combo.getItemCount(); i++) {
-                    Object choice = combo.getItemAt(i);
-                    options.add(obj("value", attribute.toStandardString(choice), "label", attribute.toDisplayString(choice)));
-                }
+            List<NativeAttributeAdapter.Choice> choices=NativeAttributeAdapter.choices(attributes,attribute);
+            if(choices.size()<=128)for(NativeAttributeAdapter.Choice choice:choices) {
+                options.add(obj("value",choice.value,"label",choice.label));
             }
         } catch (Throwable unavailable) { options.clear(); }
         return options;

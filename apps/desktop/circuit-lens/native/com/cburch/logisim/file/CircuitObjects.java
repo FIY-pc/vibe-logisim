@@ -1,6 +1,7 @@
 package com.cburch.logisim.file;
 
 import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.NativeAttributeAdapter;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.*;
 import com.cburch.logisim.std.memory.Rom;
@@ -31,15 +32,7 @@ final class CircuitObjects {
             return;
         }
         AttributeSet attrs = (AttributeSet)target.getAttributeSet().clone();
-        Attribute attr = attrs.getAttribute(name);
-        if (attr == null || attrs.isReadOnly(attr) || !attrs.isToSave(attr)) throw new IllegalArgumentException("Read-only attribute");
-        Object old = attrs.getValue(attr);
-        if (!(old instanceof String || old instanceof Number || old instanceof Boolean || old instanceof BitWidth || old instanceof Direction || old instanceof AttributeOption || old instanceof java.awt.Color))
-            throw new IllegalArgumentException("This property needs a specialized editor");
-        Object parsed = attr.parse(request.getAttribute("value"));
-        attrs.setValue(attr, parsed);
-        String value = attr.toStandardString(attrs.getValue(attr));
-        if (!value.equals(attr.toStandardString(parsed))) throw new IllegalArgumentException("Value was clamped by the component");
+        String value = NativeAttributeAdapter.apply(attrs,name,request.getAttribute("value"),false);
         result.getDocumentElement().setTextContent(value);
     }
 }

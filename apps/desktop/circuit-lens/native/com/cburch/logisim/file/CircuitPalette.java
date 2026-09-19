@@ -68,23 +68,6 @@ public final class CircuitPalette {
         }
     }
     @SuppressWarnings({"rawtypes","unchecked"})
-    private static void checkChoice(Attribute attr,Object value,Object current) {
-        if(!(value instanceof Number||value instanceof Boolean||value instanceof AttributeOption||value instanceof Direction||value instanceof BitWidth))return;
-        java.awt.Component editor;
-        // Some editors throw when their initial selection is out of range.
-        // Build the choices using the existing value, then check the request.
-        try {editor=attr.getCellEditor(null,current);}
-        catch(Exception unavailable) {return;}
-        if(editor instanceof javax.swing.JComboBox) {
-            javax.swing.JComboBox combo=(javax.swing.JComboBox)editor;
-            if(combo.getItemCount()==0)return;
-            String standard=attr.toStandardString(value);
-            for(int i=0;i<combo.getItemCount();i++)
-                if(standard.equals(attr.toStandardString(combo.getItemAt(i))))return;
-            throw new IllegalArgumentException("属性值不在原生可选范围内: "+attr.getName()+"="+standard);
-        }
-    }
-    @SuppressWarnings({"rawtypes","unchecked"})
     private static void checkOverrides(AttributeSet attrs,Map<String,String> expected) {
         for(Map.Entry<String,String> entry:expected.entrySet()) {
             Attribute attr=attrs.getAttribute(entry.getKey());
@@ -110,18 +93,10 @@ public final class CircuitPalette {
                 if(raw==null)continue;
                 Attribute attr=attrs.getAttribute(name);
                 if(attr==null)continue;
-                if(attrs.isReadOnly(attr)||!attrs.isToSave(attr)||!simple(attrs.getValue(attr)))
-                    throw new IllegalArgumentException("属性不可编辑: "+name);
-                Object value;
-                try {value=attr.parse(raw);}
-                catch(RuntimeException error) {throw new IllegalArgumentException("属性值无效: "+name+"="+raw);}
                 // The model reference uses canonical strings to detect silent
                 // parser fallback; UI input keeps native formatting aliases.
-                if(value==null||(strict&&!raw.equals(attr.toStandardString(value))))
-                    throw new IllegalArgumentException("属性值无效或不是原生标准格式: "+name+"="+raw);
-                checkChoice(attr,value,attrs.getValue(attr));
-                expected.put(name,attr.toStandardString(value));
-                attrs.setValue(attr,value);pending.remove(name);progressed=true;
+                expected.put(name,NativeAttributeAdapter.apply(attrs,name,raw,strict));
+                pending.remove(name);progressed=true;
             }
             if(!progressed)throw new IllegalArgumentException("未知或当前配置不支持的属性: "+String.join(", ",pending.keySet()));
         }
@@ -141,27 +116,17 @@ public final class CircuitPalette {
         if(!(value instanceof AddTool))throw new IllegalArgumentException("当前组件库没有这个可放置元件");
         return (AddTool)value;
     }
-    private static boolean simple(Object v) {
-        return v instanceof String||v instanceof Number||v instanceof Boolean||v instanceof BitWidth||v instanceof Direction||v instanceof AttributeOption||v instanceof Color;
-    }
     @SuppressWarnings({"rawtypes","unchecked"})
     private static void attributes(AttributeSet attrs,Element root,Document doc) {
         for(Attribute attr:attrs.getAttributes()) {
             Object value=attrs.getValue(attr);Element item=child(doc,root,"attribute");
             item.setAttribute("name",attr.getName());item.setAttribute("label",attr.getDisplayName());
             item.setAttribute("value",attr.toStandardString(value));
-            item.setAttribute("editable",String.valueOf(!attrs.isReadOnly(attr)&&attrs.isToSave(attr)&&simple(value)));
-            if(value instanceof Number||value instanceof Boolean||value instanceof AttributeOption||value instanceof Direction||value instanceof BitWidth) {
-                try {
-                    java.awt.Component editor=attr.getCellEditor(null,value);
-                    if(editor instanceof javax.swing.JComboBox) {
-                        javax.swing.JComboBox combo=(javax.swing.JComboBox)editor;
-                        if(combo.getItemCount()<=128)for(int i=0;i<combo.getItemCount();i++) {
-                            Object option=combo.getItemAt(i);Element choice=child(doc,item,"option");
-                            choice.setAttribute("value",attr.toStandardString(option));choice.setAttribute("label",attr.toDisplayString(option));
-                        }
-                    }
-                } catch(Exception ignored) { /* A property without an enum remains a parsed text field. */ }
+            item.setAttribute("editable",String.valueOf(NativeAttributeAdapter.editable(attrs,attr)));
+            List<NativeAttributeAdapter.Choice> choices=NativeAttributeAdapter.choices(attrs,attr);
+            if(choices.size()<=128)for(NativeAttributeAdapter.Choice option:choices) {
+                Element choice=child(doc,item,"option");
+                choice.setAttribute("value",option.value);choice.setAttribute("label",option.label);
             }
         }
     }
