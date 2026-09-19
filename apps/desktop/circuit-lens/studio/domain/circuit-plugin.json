@@ -601,7 +601,7 @@
     {
       "type": "function",
       "name": "build_candidate",
-      "description": "Optional Boolean synthesis shortcut: fill 1–4 existing EMPTY pin-only combinational definitions into an independent candidate, never source. Each definition <=12 one-bit inputs and <=16 outputs. Original custom appearance and external pin mapping are preserved. Supply EVERY output using exact pin label and Boolean expression over input labels, with ~, &, |, ^, parentheses, constants 0/1. Native Logisim generates gates/wires and verifies external port footprint. simulate_circuit can observe its behavior. For buses, sequential logic, existing implementations or other general construction, edit the selected .circ file and submit_circuit instead.",
+      "description": "Optional Boolean synthesis shortcut: fill 1–4 existing EMPTY pin-only combinational definitions into an independent candidate, never source. Each definition <=12 one-bit inputs and <=16 outputs. Original custom appearance and external pin mapping are preserved. Supply EVERY output using exact pin label and Boolean expression over input labels, with ~, &, |, ^, parentheses, constants 0/1. Native Logisim generates gates/wires and verifies external port footprint. simulate_circuit can observe its behavior. For other construction, direct .circ edits/scripts with submit_circuit remain available; wire_candidate can add supported parts and connect full ports (including buses) in one existing definition.",
       "inputSchema": {
         "type": "object",
         "properties": {
