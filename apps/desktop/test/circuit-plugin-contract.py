@@ -45,6 +45,16 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(set(manifest["hostTools"]), {"open_circuit", "submit_circuit", "checkout_candidate"})
 
                 revision = workspace.revision_id
+                inspection = workspace.application.agent_tool({
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": revision,
+                    "tool": "inspect_circuit",
+                    "arguments": {"circuit": "main"},
+                })
+                self.assertIn("connectivityIssues", inspection)
+                self.assertEqual(inspection["connectivityIssues"]["unconnectedInputs"], [])
+                self.assertEqual(inspection["connectivityIssues"]["widthIncompatibilities"], [])
+
                 result = workspace.application.agent_tool({
                     "projectId": workspace.history.record["id"],
                     "revisionId": revision,

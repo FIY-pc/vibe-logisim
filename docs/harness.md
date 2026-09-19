@@ -61,6 +61,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `harness_run` 的反馈状态只有在每一行都有明确期望、且全部匹配时才是 `passed`；存在不匹配时是 `failed`；没有完整比较条件时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
+`inspect_circuit` 在精确运行时观察到端口后，还会返回 `connectivityIssues`：其中 `unconnectedInputs` 列出没有位网的输入端及其原生 tooltip，`widthIncompatibilities` 保留运行时报告的宽度冲突点。这是观察摘要，不替模型决定哪些端口应该连接；它把模型原本需要从大量端口和 net ID 中手工归纳的事实直接暴露出来。
+
 `evaluate_circuit` 是独立的评测能力。组合模式要求每个输入向量带 `expected`；时序模式要求 `expectedRows`，每行指定 tick 和观察信号。它返回 `evaluation` 对象并保留底层 native observation：`passed` 表示规格覆盖的案例全部匹配，`failed` 表示至少一个明确不匹配，`unknown` 表示运行结果中有未确定信号或缺失样本。
 
 ### 工具失败反馈
