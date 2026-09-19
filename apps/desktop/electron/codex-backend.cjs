@@ -163,6 +163,7 @@ class CodexBackend extends EventEmitter {
     developerInstructions = DEVELOPER_INSTRUCTIONS,
     includeCircuitContext = true,
     captureModelMedia = false,
+    captureCodeMode = false,
   }) {
     super();
     this.codex = codex;
@@ -189,6 +190,7 @@ class CodexBackend extends EventEmitter {
     this.developerInstructions = developerInstructions;
     this.includeCircuitContext = includeCircuitContext;
     this.captureModelMedia = captureModelMedia;
+    this.captureCodeMode = captureCodeMode;
     this.changeMode = "review";
     this.finalizing = false;
     this.model = process.env.VIBE_LOGISIM_MODEL || null;
@@ -915,7 +917,7 @@ class CodexBackend extends EventEmitter {
           config: THREAD_CONFIG,
           serviceName: "vibe_logisim",
           ephemeral: this.ephemeral,
-          ...(this.captureModelMedia ? {experimentalRawEvents: true} : {}),
+          ...(this.captureModelMedia || this.captureCodeMode ? {experimentalRawEvents: true} : {}),
           developerInstructions: this.developerInstructions,
           dynamicTools: this.circuitTool ? this.circuitTools.registry.tools : [],
         });
@@ -1209,6 +1211,14 @@ class CodexBackend extends EventEmitter {
 
   #handleNotification(method, params) {
     if (method === 'rawResponseItem/completed') {
+      // Explicit controlled-experiment observer only. No reasoning, user text,
+      // output bodies or images; the subscriber bounds/redacts before storage.
+      if (this.captureCodeMode && this.#matchesCurrentTurn(params)
+          && params.item?.type === 'custom_tool_call' && params.item.name === 'exec'
+          && typeof params.item.input === 'string') {
+        this.emit('telemetry', {method:'model/code', params:{threadId:params.threadId,
+          turnId:params.turnId, callId:params.item.call_id, code:params.item.input}});
+      }
       if (this.captureModelMedia && this.#matchesCurrentTurn(params)) {
         const evidence = modelMediaEvidence(params.item);
         if (evidence) this.emit('telemetry', {method:'model/media', params:{turnId:params.turnId, ...evidence}});
