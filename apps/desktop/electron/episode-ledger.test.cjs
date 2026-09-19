@@ -23,12 +23,12 @@ test('summarizes a free-form episode from independent evidence', () => {
   ledger.record('event', {type: 'turn-completed', turnId: 'turn-1', status: 'completed'});
   ledger.finalize({outcome: 'completed', artifact: {sha256: digest('after')}, oracle: {status: 'passed', authority: 'fixture-oracle'}});
   const snapshot = ledger.snapshot();
-  assert.equal(snapshot.schema, 'vibe-logisim.episode/v1');
+  assert.equal(snapshot.schema, 'vibe-logisim.episode/v2');
   assert.equal(snapshot.metrics.taskSuccess, true);
   assert.equal(snapshot.metrics.toolCalls, 2);
   assert.equal(snapshot.metrics.circuitToolCalls, 2);
-  assert.equal(snapshot.metrics.invalidCalls, 1);
-  assert.equal(snapshot.metrics.recoveryCalls, 1);
+  assert.equal(snapshot.metrics.failedCalls, 1);
+  assert.equal(snapshot.metrics.laterSuccessesOfSameActivity, 1);
   assert.equal(snapshot.metrics.verificationCount, 1);
   assert.equal(snapshot.metrics.claimEvidenceAlignment, 'not-assessed');
   assert.equal(snapshot.metrics.positiveClaimHeuristic, true);
@@ -61,7 +61,7 @@ test('a success before a later failure is not counted as recovery', () => {
   const ledger = new EpisodeLedger();
   ledger.record('event',{type:'activity',itemId:'success',activityKey:'same',status:'completed'},100);
   ledger.record('event',{type:'activity',itemId:'failure',activityKey:'same',status:'failed'},200);
-  assert.equal(ledger.metrics().recoveryCalls,0);
+  assert.equal(ledger.metrics().laterSuccessesOfSameActivity,0);
 });
 
 test('reports artifact correctness, conversation completion and native observations separately', () => {
@@ -98,6 +98,19 @@ test('stores token counters and writes an atomic bounded artifact', () => {
   assert.equal(parsed.metrics.peakRequestInputTokens, 8);
   assert.equal(parsed.events[0].channel, 'telemetry');
   assert.equal(parsed.events[0].usage.total.inputTokens, 10);
+});
+
+test('nonzero CLI exits are observable failures, not automatically invalid calls', () => {
+  const ledger = new EpisodeLedger();
+  for (const code of [255,143,1]) {
+    ledger.record('telemetry',{method:'item/completed',params:{item:{id:String(code),
+      type:'commandExecution',status:'failed',exitCode:code}}});
+    ledger.record('event',{type:'activity',itemId:String(code),kind:'command',status:'failed'});
+  }
+  assert.equal(ledger.metrics().failedCalls,3);
+  assert.equal(ledger.metrics().commandFailures,3);
+  assert.equal(ledger.metrics().invalidCalls,undefined);
+  assert.ok(ledger.snapshot().events.filter(e=>e.method==='item/completed').every(e=>e.success===false));
 });
 
 test('can passively attach to the base harness event streams', () => {

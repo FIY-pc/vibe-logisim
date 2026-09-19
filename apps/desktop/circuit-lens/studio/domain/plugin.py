@@ -39,11 +39,11 @@ def plugin_manifest(workspace=None) -> dict[str, Any]:
     return manifest
 
 
-def binding_for(workspace, *, circuit=None, candidate_id=None, artifact_sha256=None) -> dict[str, Any]:
+def binding_for(workspace, *, circuit=None, candidate_id=None, artifact_sha256=None, runtime_profile=None) -> dict[str, Any]:
     """Create the stable identity attached to a plugin operation."""
 
     record = getattr(workspace.history, "record", None)
-    profile = workspace.observer.profile()
+    profile = runtime_profile if runtime_profile is not None else workspace.observer.profile()
     return {
         "schema": PLUGIN_SCHEMA,
         "pluginId": PLUGIN_ID,

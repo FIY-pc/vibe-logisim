@@ -43,6 +43,15 @@ apps/desktop/run
 
 ## 有针对性的验证
 
+原生运行身份和模型参考入口（不调用模型）：
+
+```sh
+python3 -m unittest apps/desktop/test/runtime-execution.py
+node apps/desktop/test/agent-reference-mount.cjs
+```
+
+前者用两个支持的运行文件检查组合输入、时序事件、历史环境绑定、摘要不匹配拒绝与源文件不变；同时从发布给模型的 Markdown 中提取 Java 示例，实际编译、运行并核对成功/失败退出。后者使用生产 systemd 隔离启动 Python，检查参考可读、不可写，用户工作区仍可写且没有被塞入参考文件。它不启动 Codex 或窗口。
+
 局部重新布线的原生验收（内联夹具，不依赖课程材料，不调用模型）：
 
 ```sh

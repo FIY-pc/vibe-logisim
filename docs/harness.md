@@ -33,6 +33,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 插件能力是用户驱动的。模型可以直接编辑工作目录中的 `.circ` 文件，之后请求观察；也可以使用候选构建工具；可以先完成整张电路再运行实验。插件提供可靠动作和证据，不规定动作顺序。
 
+按需参考通过只读挂载 `/tmp/vibe-circuit-reference/` 提供，来源为 `apps/desktop/circuit-knowledge/`，开发版和独立包使用同一内容。它不写入用户文件夹，也不强制每轮读取。`java-runtime.md` 包含支持运行文件的 CLI 语义、正确的 Pin API 与一次性 Java 进程退出示例，供模型选择独立验证时复用。
+
 动态工具能力与原生会话绑定。每条本地对话保存创建线程时的插件契约签名；应用升级插件后，旧签名不会被假装成当前能力继续恢复。宿主会保留本地可见消息，启动带新工具集合的线程并替换绑定，同时记录被替换的线程。这样新增能力是一次明确的会话能力更新，旧线程和旧证据仍可追溯，模型也不会在一个没有新工具的线程里误以为工具存在。
 
 选区是协作焦点，不是每次提问都必须存在的前置条件。用户直接询问当前电路而没有选中对象时，宿主只绑定当前工作区、revision 和当前电路名称，让 Codex 自己通过工作区和 `inspect_circuit` 按需观察；不会为了填充上下文而伪造覆盖整张画布的选区。用户明确选中元件、导线或空间区域时，宿主才冻结 selection 并请求精确的 native 观察。这样大电路的普通问题不会在模型收到问题之前等待一次与用户意图无关的全图观测，同时保留局部问题需要的可追溯证据。
@@ -110,6 +112,10 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 运行报告还记录 `runId`、`stimulusSha256`、开始时间、耗时和 authority。候选运行使用候选 artifact 的真实 hash，不能回退到基础工作区 hash。仿真输入、时钟和按钮事件仍属于本次运行的 transient stimulus，不写入电路结构。
 
+`simulate_circuit`、`trace_circuit` 的 `execution` 由执行 JVM 返回：从实际加载的 Pin 类定位 JAR，读取其摘要、运行版本和电路摘要，操作结束时再次核对文件未变。宿主将其与调用前的运行文件/电路摘要比较，不匹配即拒绝结果。完成后的 `runtimeProfile` 为 `observed`；它和 `binding` 使用同一运行身份。历史对照分别保留两侧实际运行信息，不拿当前环境代替历史环境。尚未执行的配置描述仍保留 `configured-not-observed`。
+
+`trace_circuit` 与组合仿真一样，可省略 `candidateId` 表示当前文件；旧调用传空串仍兼容。运行身份说明本次执行使用了什么，不证明测试规格充分，也不是防恶意运行环境的远程证明。
+
 ## 当前实现边界
 
 - Codex thread/turn 与工作区文件能力由 [`codex-backend.cjs`](../apps/desktop/electron/codex-backend.cjs) 负责。
@@ -144,16 +150,18 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。
 
-[`episode-ledger.cjs`](../apps/desktop/electron/episode-ledger.cjs) 是被动的评测记录器。它可以 attach 到 `CodexBackend` 的 `event` 与 `telemetry` 事件，不改变模型可用的动作，也不强迫验证顺序。产物 schema 为 `vibe-logisim.episode/v1`，保存：
+[`episode-ledger.cjs`](../apps/desktop/electron/episode-ledger.cjs) 是被动的评测记录器。它可以 attach 到 `CodexBackend` 的 `event` 与 `telemetry` 事件，不改变模型可用的动作，也不强迫验证顺序。产物 schema 为 `vibe-logisim.episode/v2`，保存：
 
 - 任务、条件、模型和 effort，以及开始/结束时间；
-- 工具调用、无效调用、恢复、阻塞请求和 host error；
+- 工具调用、失败状态、同类活动后续成功、阻塞请求和 host error；
 - 视觉观察调用与绑定到原生图面的视觉证据次数，和行为运行调用分开计数；
 - 第一次绑定到 revision/artifact 的运行证据及验证次数；
 - artifact 是否改变、人工介入次数、token usage 摘要；
 - 最终独立 oracle 的状态；模型声明语义对齐保留为人工审查项。
 
 问题正文、命令正文、模型回答正文、完整电路输出和认证信息不进入 ledger；需要人工审查时，应由实验 runner 另行保存受控的证据文件。最终 `taskSuccess` 在 oracle 为 passed/failed 时分别为 true/false，unknown 时为 null。模型回答中的“完成/通过”不能覆盖 unknown；关键词无法分辨否定、承诺或旧结果，`claimEvidenceAlignment` 默认 not-assessed。
+
+v2 将 v1 的 `invalidCalls/recoveryCalls` 改成 `failedCalls/laterSuccessesOfSameActivity`：非零退出可能是帮助输出或主动终止，后续同类命令成功也不能证明修复了此前问题。旧实验保持原始 schema，不倒改历史数据。实验 006 runner 可显式加 `--capture-commands` 保存有界命令和输出，便于受控夹具诊断；默认关闭，不进入产品历史或 ledger。此文件可能包含私有正文，发布实验前需单独审阅。
 
 可运行的对照入口见 [实验 005](../experiments/005-harness-effect/README.md)。三组共用当前直接文件工作区、隔离方式、模型配置和原生 JAR，分别比较通用能力、增加工具、增加产品指令及上下文。最终冻结文件由独立 Java 客户端调用上游 Logisim 检查，不复用被测插件的 evaluator。预检不调用模型；真实回合必须显式启用。插件反馈事件统计看不到 A 组自建 shell 验证，因此不能用零次插件事件断言模型没有验证。
 

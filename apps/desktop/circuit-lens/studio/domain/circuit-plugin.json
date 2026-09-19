@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -421,7 +421,7 @@
     {
       "type": "function",
       "name": "trace_circuit",
-      "description": "Observe sequential behavior in the current working circuit (candidateId empty) or an independent candidate using the actual Logisim clock/propagator. Fresh state; supply ALL top-level input pins. watches name native component/port pairs obtained from inspect_circuit of that exact target. Each tick is a native clock transition, NOT necessarily an instruction/cycle; sample 0 is initial settled state. Unknown values stay null. Optional program {component,words} replaces one ROM in simulation memory only, never the circuit file (ROM <=4096 words). Otherwise uses embedded program. Up to 10000 ticks and 24 watches. By default returns the first 32 rows; optional rowStart and rowLimit (1-256) let you read any window from the same run. Full trace is retained with the circuit revision/candidate. This returns observations, not a pass verdict; compare with requirements as needed. Oscillation ends capture. No arbitrary memory pokes, file paths or program execution outside Logisim.",
+      "description": "Observe sequential behavior in the current working circuit (omit candidateId) or an independent candidate using the actual Logisim clock/propagator. Fresh state; supply ALL top-level input pins. watches name native component/port pairs obtained from inspect_circuit of that exact target. Each tick is a native clock transition, NOT necessarily an instruction/cycle; sample 0 is initial settled state. Unknown values stay null. Optional program {component,words} replaces one ROM in simulation memory only, never the circuit file (ROM <=4096 words). Otherwise uses embedded program. Up to 10000 ticks and 24 watches. By default returns the first 32 rows; optional rowStart and rowLimit (1-256) let you read any window from the same run. Full trace is retained with the circuit revision/candidate. This returns observations, not a pass verdict; compare with requirements as needed. Oscillation ends capture. No arbitrary memory pokes, file paths or program execution outside Logisim. execution identifies the JAR and artifact actually used by the JVM; the host checks both against the requested inputs.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -508,7 +508,6 @@
         },
         "required": [
           "circuit",
-          "candidateId",
           "ticks",
           "inputs",
           "watches"
@@ -573,7 +572,7 @@
     {
       "type": "function",
       "name": "simulate_circuit",
-      "description": "Native Logisim pin-vector propagation, fresh state per vector: COMBINATIONAL only, no clock steps. Omit candidateId for original module (e.g. inspect ALU encodings first). Supply ALL input pins as unsigned integers, optionally expected outputs from independent requirements. Unknown outputs are null. Success covers only supplied vectors/expectations, not CPU. At most 1024 vectors; large results return totals and bounded samples, all candidate rows remain in review/export. Rerun fewer vectors for specific details.",
+      "description": "Native Logisim pin-vector propagation, fresh state per vector: COMBINATIONAL only, no clock steps. Omit candidateId for the current on-disk module. Supply ALL input pins as unsigned integers, optionally expected outputs from independent requirements. Unknown outputs are null. Success covers only supplied vectors/expectations, not untested behavior. At most 1024 vectors; large results return totals and bounded samples, all candidate rows remain in review/export. Rerun fewer vectors for specific details. Returns execution.runtimeJarSha256 and runtimeVersion from the executing JVM, checked against the requested runtime/artifact; runtimeProfile is observed after a real run. For independent CLI/Java checks, optional /tmp/vibe-circuit-reference/java-runtime.md covers this runtime’s APIs and process lifecycle.",
       "inputSchema": {
         "type": "object",
         "properties": {

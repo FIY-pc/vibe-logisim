@@ -195,8 +195,10 @@ class EpisodeLedger {
       commandFailures: toolActivities.filter(item => item.kind === 'command' && item.status === 'failed').length,
       fileChangeEvents: completed.filter(item => item.kind === 'file').length,
       nativeRunCalls: nativeRuns.length,
-      invalidCalls: failed.length + this.blockedRequests,
-      recoveryCalls: recovery,
+      // Exit/status cannot tell apart invalid arguments, failed assertions,
+      // informational CLI exits or intentional process termination.
+      failedCalls: failed.length,
+      laterSuccessesOfSameActivity: recovery,
       artifactChanges: this.final?.artifact?.changed ?? (this.circuitChanges > 0 ? true : null),
       verificationCount: verdictEvidence.length,
       humanInterventions: this.humanInterventions.length,
@@ -217,7 +219,7 @@ class EpisodeLedger {
 
   snapshot() {
     return {
-      schema: 'vibe-logisim.episode/v1',
+      schema: 'vibe-logisim.episode/v2',
       episodeId: this.episodeId,
       taskId: this.taskId,
       condition: this.condition,
@@ -337,7 +339,8 @@ class EpisodeLedger {
       const entry = {
         at, channel: 'telemetry', method, turnId: params.turnId || null,
         itemId: item.id || null, itemType: item.type || null,
-        tool: item.tool || null, success: item.success !== false,
+        tool: item.tool || null, success: typeof item.success === 'boolean' ? item.success
+          : item.status === 'completed' ? true : item.status === 'failed' ? false : null,
         status: item.status || null, exitCode: finiteNumber(item.exitCode),
         durationMs: finiteNumber(item.durationMs),
       };

@@ -74,7 +74,7 @@ class EvaluationService:
             },
         }
         artifact_sha = report.get('artifactSha256') or self.runtime.workspace.artifact_sha256
-        binding = binding_for(self.runtime.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha)
+        binding = binding_for(self.runtime.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha, runtime_profile=report.get('runtimeProfile'))
         feedback = {
             'status': status,
             'rowCount': len(report.get('rows', [])),

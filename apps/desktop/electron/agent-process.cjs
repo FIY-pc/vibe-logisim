@@ -30,6 +30,9 @@ function isolatedSpawn(agent, codexArgs, environment) {
     const codeModeHost = resolveExecutable(process.env.VIBE_LOGISIM_CODE_MODE_HOST || "codex-code-mode-host");
     const sandboxProfile = "/tmp/codex";
     const sandboxWork = "/tmp/workspace";
+    const circuitReference = path.resolve(__dirname, '../circuit-knowledge');
+    const readOnlyPaths = [[circuitReference, '/tmp/vibe-circuit-reference']];
+    if (agent.runtimeRoot) readOnlyPaths.push([agent.runtimeRoot, '/tmp/vibe-runtime']);
     agent.runtimeWorkDir = sandboxWork;
     const unit = `vibe-logisim-agent-${process.pid}-${Date.now().toString(36)}.service`;
     let sandboxCodex = codex;
@@ -71,6 +74,7 @@ function isolatedSpawn(agent, codexArgs, environment) {
       "--property=ProcSubset=pid",
       "--property=InaccessiblePaths=/run /var -/opt -/srv -/media -/mnt -/boot -/sys -/.snapshots",
       `--property=BindPaths=${bindProperties.map(([source, target]) => `${JSON.stringify(source)}:${JSON.stringify(target)}`).join(" ")}`,
+      `--property=BindReadOnlyPaths=${readOnlyPaths.map(([source, target]) => `${JSON.stringify(source)}:${JSON.stringify(target)}`).join(' ')}`,
       "--property=NoNewPrivileges=yes",
       "--property=RestrictSUIDSGID=yes",
       "--property=LockPersonality=yes",
@@ -93,7 +97,6 @@ function isolatedSpawn(agent, codexArgs, environment) {
       "--property=CPUQuota=200%",
       `--working-directory=${sandboxWork}`,
     ];
-    if (agent.runtimeRoot) args.push(`--property=BindReadOnlyPaths=${JSON.stringify(agent.runtimeRoot) + ":/tmp/vibe-runtime"}`);
     // systemd copies these values from its environment; values never appear
     // in argv, generated TOML, or another active authentication profile.
     for (const key of Object.keys(agent.providerEnvironment || {})) args.push(`--setenv=${key}`);

@@ -18,6 +18,8 @@ class NativeOperations:
         if request.tag in {'component-catalog', 'component-template', 'place-component', 'check-existing-ports',
                            'property', 'memory', 'interface', 'check-interface', 'check-placement'}:
             return ET.fromstring(observer.worker.request(runtime, artifact, request, output))
+        artifact_sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        runtime_sha = hashlib.sha256(runtime.read_bytes()).hexdigest()
         source = self.workspace.repo_root / 'apps/desktop/circuit-lens/native/com/cburch/logisim/file/CircuitWorkbench.java'
         memory = source.parents[1] / 'std/memory/StudioMemory.java'
         interface = source.with_name('CircuitInterface.java')
@@ -36,5 +38,9 @@ class NativeOperations:
             result = observer._run_captured(['java', '-Djava.awt.headless=true', '-cp', str(classes) + ':' + str(runtime), 'com.cburch.logisim.file.CircuitWorkbench', str(artifact), str(request_path), str(output or '')], timeout=60)
             if result.returncode:
                 raise ValueError('Logisim: ' + result.stderr[-4000:])
-            return ET.fromstring(result.stdout)
-
+            response = ET.fromstring(result.stdout)
+            if (response.get('runtimeJarSha256') != runtime_sha
+                    or response.get('artifactSha256') != artifact_sha
+                    or not response.get('runtimeVersion')):
+                raise ValueError('Native execution identity does not match the requested runtime and artifact')
+            return response

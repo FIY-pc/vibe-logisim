@@ -63,7 +63,7 @@ class NativeCircuitRuntime:
             'note': 'Harness 提供真实运行反馈，不规定下一步必须验证还是继续构建。',
         }
         artifact_sha = report.get('artifactSha256') or self.workspace.artifact_sha256
-        binding = binding_for(self.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha)
+        binding = binding_for(self.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha, runtime_profile=report.get('runtimeProfile'))
         run = {
             'id': report.get('runId'),
             'label': '原生运行观察',
@@ -117,6 +117,7 @@ class NativeCircuitRuntime:
                 ET.SubElement(row, 'input', name=pin, value=str(value))
             self._values(vector.get('expected'), '期望输出', allow_none=True)
         response = self.tools._native(artifact, request)
+        profile = self.workspace.observer.profile(response.get('runtimeVersion'))
         finished = time.perf_counter()
         rows = []
         for i, row in enumerate(response):
@@ -132,8 +133,9 @@ class NativeCircuitRuntime:
             'artifactSha256': artifact_sha,
             'authority': 'Logisim native propagation',
             'runId': self._run_id(),
-            'runtimeProfileId': self.workspace.observer.profile().get('id'),
-            'runtimeProfile': self.workspace.observer.profile(),
+            'runtimeProfileId': profile['id'],
+            'runtimeProfile': profile,
+            'execution': dict(response.attrib),
             'stimulusSha256': self._stimulus_sha({'mode': 'simulate', 'circuit': name, 'vectors': vectors}),
             'startedAt': started_at,
             'durationMs': round((finished - started) * 1000, 3),
@@ -142,7 +144,7 @@ class NativeCircuitRuntime:
             'failed': sum((r['passed'] is False for r in rows)),
             'unchecked': sum((r['passed'] is None for r in rows)),
         }
-        report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha)
+        report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
         if candidate_id:
             metadata['checks'].append(report)
             self.tools._save(directory, metadata)
@@ -226,7 +228,6 @@ class NativeCircuitRuntime:
             runtime_jar = self.workspace.observer.runtime_jar
         artifact_sha = self._artifact_sha(artifact)
         report = self._trace_artifact(args, artifact, artifact_sha, runtime_jar, candidate_id=candidate_id)
-        report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha)
         if candidate_id:
             metadata.setdefault('traces', []).append(report)
             self.tools._save(directory, metadata)
@@ -301,6 +302,7 @@ class NativeCircuitRuntime:
             for word in words:
                 ET.SubElement(element, 'word', value=str(word))
         response = self.tools._native(artifact, request, runtime_jar=runtime_jar)
+        profile = self.workspace.observer.profile(response.get('runtimeVersion'), runtime_jar=runtime_jar)
         finished = time.perf_counter()
         rows = [{'tick': int(row.get('tick')), 'oscillating': row.get('oscillating') == 'true', 'values': {s.get('name'): int(s.get('value')) if 'value' in s.attrib else None for s in row}, 'bits': {s.get('name'): s.get('bits') for s in row}} for row in response]
         report = {
@@ -311,8 +313,9 @@ class NativeCircuitRuntime:
             'artifactSha256': artifact_sha,
             'authority': 'Logisim native clock and propagation',
             'runId': self._run_id(),
-            'runtimeProfileId': self.workspace.observer.profile().get('id'),
-            'runtimeProfile': self.workspace.observer.profile(),
+            'runtimeProfileId': profile['id'],
+            'runtimeProfile': profile,
+            'execution': dict(response.attrib),
             'stimulusSha256': self._stimulus_sha({'mode': 'trace', 'circuit': name, 'ticks': ticks, 'inputs': inputs, 'watches': watches, 'resetButton': args.get('resetButton'), 'buttonEvents': button_events, 'inputEvents': input_events, 'program': program}),
             'startedAt': started_at,
             'durationMs': round((finished - started) * 1000, 3),
@@ -327,7 +330,7 @@ class NativeCircuitRuntime:
             'rows': rows,
             'note': 'Ticks are clock transitions, not necessarily CPU cycles. Samples are settled after each tick, not instruction-retirement claims.',
         }
-        report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha)
+        report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
         return report
 
     def _historical_reference(self, args):
@@ -416,7 +419,7 @@ class NativeCircuitRuntime:
             'firstDifference': first_difference,
             'note': '历史对照只说明两版在本次输入、时钟和观察点下是否一致；通过不等于满足外部课程测试，差异也不自动代表错误。',
         }
-        binding = binding_for(self.workspace, circuit=args.get('circuit'), artifact_sha256=current_sha)
+        binding = binding_for(self.workspace, circuit=args.get('circuit'), artifact_sha256=current_sha, runtime_profile=current.get('runtimeProfile'))
         run = {
             'id': self._run_id(),
             'label': '历史版本对照',
@@ -430,9 +433,11 @@ class NativeCircuitRuntime:
             'mode': 'trace',
             'circuit': args.get('circuit'),
             'current': {'revisionId': self.workspace.revision_id, 'artifactSha256': current_sha,
+                        'execution': current.get('execution'),
                         'runId': current.get('runId'), 'rowCount': len(current.get('rows', [])),
                         'oscillating': sum(row.get('oscillating', False) for row in current.get('rows', []))},
             'reference': {'revisionId': reference['revisionId'], 'title': reference['title'],
+                          'execution': previous.get('execution'),
                           'artifactSha256': reference['artifactSha256'], 'runId': previous.get('runId'),
                           'rowCount': len(previous.get('rows', [])),
                           'oscillating': sum(row.get('oscillating', False) for row in previous.get('rows', []))},

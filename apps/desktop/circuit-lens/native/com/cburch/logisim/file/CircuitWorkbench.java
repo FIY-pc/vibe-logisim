@@ -11,6 +11,8 @@ import com.cburch.logisim.std.wiring.Pin;
 import com.cburch.logisim.std.memory.Rom;
 import com.cburch.hex.HexModel;
 import java.io.*;
+import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
 import javax.xml.parsers.*;
 import javax.xml.transform.*;
@@ -20,6 +22,12 @@ import org.w3c.dom.*;
 
 /** Native combinational synthesis and pin-vector execution. No arbitrary code protocol. */
 public final class CircuitWorkbench {
+    private static String digest(Path path) throws Exception {
+        byte[] bytes = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
+        StringBuilder hex = new StringBuilder();
+        for (byte b : bytes) hex.append(String.format("%02x", b & 255));
+        return hex.toString();
+    }
     private static List<Component> pins(Circuit circuit) {
         List<Component> result = new ArrayList<>();
         for (Component c : circuit.getNonWires()) if (c.getFactory() instanceof Pin) result.add(c);
@@ -242,12 +250,19 @@ public final class CircuitWorkbench {
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
             Document request = factory.newDocumentBuilder().parse(new File(args[1]));
+            // Identify the runtime that actually supplied Pin, not a version
+            // guessed from the selected filename or host configuration.
+            Path runtime = Paths.get(Pin.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            String runtimeSha = digest(runtime), artifactSha = digest(Paths.get(args[0]));
             Loader loader = new Loader(null) {
                 @Override public void showError(String description) { throw new IllegalStateException(description); }
             };
             LogisimFile file = loader.openLogisimFile(new File(args[0]));
             Document result = factory.newDocumentBuilder().newDocument();
             result.appendChild(result.createElement("result"));
+            result.getDocumentElement().setAttribute("runtimeJarSha256", runtimeSha);
+            result.getDocumentElement().setAttribute("runtimeVersion", String.valueOf(com.cburch.logisim.Main.VERSION));
+            result.getDocumentElement().setAttribute("artifactSha256", artifactSha);
             if (request.getDocumentElement().getTagName().equals("component-catalog")) {
                 CircuitPalette.catalog(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("component-template") || request.getDocumentElement().getTagName().equals("place-component")) {
@@ -274,6 +289,8 @@ public final class CircuitWorkbench {
             } else if (request.getDocumentElement().getTagName().equals("property") || request.getDocumentElement().getTagName().equals("memory")) {
                 CircuitObjects.describe(file, request.getDocumentElement(), result);
             } else throw new IllegalArgumentException("Unknown operation");
+            if (!artifactSha.equals(digest(Paths.get(args[0]))) || !runtimeSha.equals(digest(runtime)))
+                throw new IllegalStateException("Native execution inputs changed during operation");
             TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result), new StreamResult(protocol));
             System.exit(0);
         } catch (Throwable error) {
