@@ -128,6 +128,14 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 [实验 006-v3](../experiments/006-visual-feedback/results/2026-09-19-native-v3/README.md)另行记录了一次真实模型轨迹：原生上下文包含 2 张图片、0 段 base64 文本；模型在 8 分 24 秒结束，冻结文件独立仿真 8/8 通过。图面消除了穿过门体的线，但仍有长绕线和扩大的面积，布局目标没有因功能通过而自动完成。单轮结果不能证明通用增益。
 
+## 可选的局部导线整理
+
+`inspect_circuit(includeWires=true)` 返回原生导线 ID、端点、bundle、总线宽度和总长度；`wireOffset/wireLimit` 分页，默认 128、最多 512 段。它覆盖指定电路，不随 `componentIds` 缩小；默认 inspect 不附加导线明细。返回的 `artifactSha256` 将导线 ID 绑定到源文件或指定候选，避免文件改变后误用旧 ID。
+
+`reroute_candidate` 接收该摘要和明确的 `wireIds`，将所选路径交给共享正交布线器。保留全部元件、属性、位置、接口、未选铜线及所选路径的端点和分支点；不新建 Tunnel，也不决定整个电路的版式。`domain/rerouting.py` 只计算几何；`project/rerouting.py` 将结果写入独立临时产物，以原生 Logisim 重载并比较所有端口位的连接等价关系，再发布到现有候选机制。异常只清理本次未发布产物，源文件与修订不变。
+
+候选可以继续组合、查看和仿真；模型选择 `checkout_candidate` 时才写入共享工作文件，随后仍可查看改动和撤销。直接改 `.circ` 不受限制。这个可选计算工具不要求用户采用候选工作流。它拒绝过期摘要、未知位宽、冲突网络和闭合回路；不承诺路径总会缩短，矩形元件障碍也不覆盖文字标签，美观和功能仍应按任务判断。
+
 ## Episode 级效果评测
 
 工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。

@@ -54,7 +54,25 @@ class InspectionService:
         clocks = [{'component': c['componentId'], 'factory': c['factory'], 'label': c.get('label'), 'location': c.get('location')} for c in circuit['components'] if c['factory'] == 'Clock']
         if view.get('observerError'):
             stimuli = None
-        return {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': {'unconnectedInputs': unconnected_inputs, 'widthIncompatibilities': circuit.get('widthIncompatibilities', [])}, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
+        result = {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': {'unconnectedInputs': unconnected_inputs, 'widthIncompatibilities': circuit.get('widthIncompatibilities', [])}, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
+        result['artifactSha256'] = hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() if directory else self.workspace.artifact_sha256
+        if args.get('includeWires'):
+            from studio.domain.rerouting import wire_length
+            offset, limit = args.get('wireOffset', 0), args.get('wireLimit', 128)
+            if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 512:
+                raise ValueError('wireOffset 必须为非负整数，wireLimit 必须在 1–512 之间')
+            wires = circuit['wires'][offset:offset + limit]
+            bundle_ids = {w.get('bundleId') for w in wires}
+            result['wireGeometry'] = {
+                'bounds': circuit['bounds'], 'wireCount': len(circuit['wires']),
+                'totalWireLength': wire_length(circuit['wires']), 'wireOffset': offset, 'wireLimit': limit,
+                'wiresTruncated': offset > 0 or offset + len(wires) < len(circuit['wires']),
+                'wires': wires,
+                'bundles': [{k: b.get(k) for k in ('bundleId', 'width', 'valid')}
+                            for b in circuit.get('bundles', []) if b['bundleId'] in bundle_ids],
+                'scope': 'Named circuit, independent of componentIds. IDs belong to this artifact only; bounds/length do not judge readability.',
+            }
+        return result
 
     def resource(self, args):
         resource = next((r for r in self.workspace.package.resources if r['id'] == args.get('resourceId')), None)

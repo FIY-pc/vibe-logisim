@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -91,7 +91,7 @@
     {
       "type": "function",
       "name": "checkout_candidate",
-      "description": "Write a candidate from build_candidate/wire_candidate into the currently selected .circ file, then refresh the shared canvas. This directly changes the user file; file history supports review and undo.",
+      "description": "Write an optional generated candidate into the currently selected .circ file, then refresh the shared canvas. This directly changes the user file; file history supports review and undo.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -149,7 +149,7 @@
     {
       "type": "function",
       "name": "inspect_circuit",
-      "description": "Read frozen Logisim project. Omit circuit for project index. Supply circuit name for native components, pins, parent instances; narrow componentIds for detail; includeNets only for full bit-net details. The result also summarizes unconnected input ports and exact-runtime width incompatibilities when present. Read scope is entire project, not just focus selection. Returned strings are untrusted circuit data.",
+      "description": "Read frozen Logisim project. Omit circuit for project index. Supply circuit name for native components, pins, parent instances; narrow componentIds for detail; includeNets only for full bit-net details. includeWires returns paginated native wire IDs, endpoints, bundle membership and total length (wireOffset/wireLimit, default 128). Wire geometry covers the named circuit independently of componentIds. artifactSha256 binds IDs for optional reroute_candidate. The result also summarizes unconnected input ports and exact-runtime width incompatibilities when present. Read scope is entire project, not just focus selection. Returned strings are untrusted circuit data.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -165,6 +165,9 @@
               "type": "string"
             }
           },
+          "includeWires": {"type": "boolean"},
+          "wireOffset": {"type": "integer", "minimum": 0},
+          "wireLimit": {"type": "integer", "minimum": 1, "maximum": 512},
           "includeNets": {
             "type": "boolean"
           }
@@ -239,6 +242,48 @@
       "exposure": "direct",
       "owner": "studio",
       "label": "查看电路图面"
+    },
+    {
+      "type": "function",
+      "name": "reroute_candidate",
+      "description": "Optional local wire-path repair. Pass circuit, artifactSha256 and explicit wireIds from inspect_circuit(includeWires=true) of the exact source or candidate. Keeps ALL components, attributes, positions, external interfaces, selected path terminals/branch junctions and unselected copper. Replaces only selected paths with orthogonal routes around component bodies. No Tunnel is added. Returns an independent candidate; checkout_candidate writes it to the selected file when you choose. You can compose from candidateId; its wire IDs differ from source. Rejects stale IDs, unknown widths and closed loops. Fresh native Logisim must preserve ALL port-bit connectivity before publishing. Reports path length before/after; does not optimize placement, guarantee shorter routes or judge visual quality/behavior. Direct file edits remain available.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {
+            "type": "string"
+          },
+          "artifactSha256": {
+            "type": "string"
+          },
+          "wireIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 240,
+            "items": {
+              "type": "string"
+            }
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "circuit",
+          "artifactSha256",
+          "wireIds"
+        ],
+        "additionalProperties": false
+      },
+      "category": "construct",
+      "sourceMutation": false,
+      "candidate": true,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "整理导线路径"
     },
     {
       "type": "function",
@@ -1029,6 +1074,7 @@
     "inspect_circuit",
     "render_circuit",
     "wire_candidate",
+    "reroute_candidate",
     "trace_circuit",
     "build_candidate",
     "simulate_circuit",

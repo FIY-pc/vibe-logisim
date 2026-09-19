@@ -34,6 +34,7 @@ class Workbench:
             "import_candidate": self._import_candidate,
             "build_candidate": self._build_candidate,
             "wire_candidate": self._wire_candidate,
+            "reroute_candidate": self._reroute_candidate,
             "trace_circuit": self._trace_circuit,
             "simulate_circuit": self._simulate_circuit,
             "harness_run": self._harness_run,
@@ -157,6 +158,12 @@ class Workbench:
             raise ValueError("源工程已变化，请先重新载入")
         from studio.runtime.wiring import wire_candidate
         return wire_candidate(self, call.arguments)
+
+    def _reroute_candidate(self, call):
+        if self.workspace.source_status().get("stale"):
+            raise ValueError("源工程已变化，请先重新载入")
+        from studio.project.rerouting import reroute_candidate
+        return reroute_candidate(self, call.arguments)
 
     def _trace_circuit(self, call):
         report = self.trace(call.arguments)
