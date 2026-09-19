@@ -138,6 +138,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 候选可以继续组合、查看和仿真；模型选择 `checkout_candidate` 时才写入共享工作文件，随后仍可查看改动和撤销。直接改 `.circ` 不受限制。这个可选计算工具不要求用户采用候选工作流。它拒绝过期摘要、未知位宽、冲突网络和闭合回路；不承诺路径总会缩短，矩形元件障碍也不覆盖文字标签，美观和功能仍应按任务判断。
 
+`routing.lengthBefore/lengthAfter` 是所选/提出路径的长度，`circuitWireLengthBefore/circuitWireLengthAfter` 是原生规范化后的整图线长；重叠线可能被运行时合并，两者不能混用。[实验 007](../experiments/007-local-rerouting/README.md)分别保存直接工具计算、开放任务采用几何观察，以及真实模型自行调用局部布线器的结果；局部布线已被实际使用，但整轮效率和图面质量还不能由单次试跑推广。
+
 ## Episode 级效果评测
 
 工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。
