@@ -120,6 +120,22 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `NativeCircuitRuntime` 是电路插件中的原生执行能力，不是整个 Agent Harness。真正的 Base Harness 仍然是 Codex backend 及其 thread/turn、上下文、工具调用、权限、事件流和停止恢复边界。以后增加课程测试集、时序断言或其他领域能力时，优先注册新的插件 executor 或扩展独立 evaluator，保持 Codex 的代理生命周期不变。
 
+## Episode 级效果评测
+
+工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。
+
+[`episode-ledger.cjs`](../apps/desktop/electron/episode-ledger.cjs) 是被动的评测记录器。它可以 attach 到 `CodexBackend` 的 `event` 与 `telemetry` 事件，不改变模型可用的动作，也不强迫验证顺序。产物 schema 为 `vibe-logisim.episode/v1`，保存：
+
+- 任务、条件、模型和 effort，以及开始/结束时间；
+- 工具调用、无效调用、恢复、阻塞请求和 host error；
+- 第一次绑定到 revision/artifact 的运行证据及验证次数；
+- artifact 是否改变、人工介入次数、token usage 摘要；
+- 最终 workspace-owned oracle 的状态和模型声明与证据是否对齐。
+
+问题正文、命令正文、模型回答正文、完整电路输出和认证信息不进入 ledger；需要人工审查时，应由实验 runner 另行保存受控的证据文件。最终 `taskSuccess` 只由 `final.oracle.status === "passed"` 得出，模型回答中的“完成/通过”不能覆盖 `unknown`。
+
+评测器可以事后把结构、接口、运行行为和用户目标建成 milestone DAG，允许不同轨迹达到同一结果。它不能把产品变成固定的“先观察、再构建、再验证”向导；用户和模型仍可以先完整构建，再请求验证，或直接编辑文件后运行。
+
 一次调用的最小身份链是：
 
 ```text
