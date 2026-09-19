@@ -43,6 +43,15 @@ apps/desktop/run
 
 ## 有针对性的验证
 
+模型视觉观察的像素与原生协议验收：
+
+```sh
+python3 -m unittest apps/desktop/test/agent-render.py
+node apps/desktop/test/native-tool-images.cjs
+```
+
+前者使用真实 Logisim 与内联小电路，检查白底、导线坐标、缓存复用和过期图拒绝；Pillow 仅用于测试像素。后者启动本机 Codex，使用独立临时配置及 localhost Responses 回放，检查 Code Mode 结果是否进入下一次模型请求的图像内容。它不使用真实服务商和认证，不消耗模型额度，不代表实际模型能完成电路任务。
+
 渲染性能和清晰度基准（真实 Electron、临时工作区、不启动 Codex）：
 
 ```sh

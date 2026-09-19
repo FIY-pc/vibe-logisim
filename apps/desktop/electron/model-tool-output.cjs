@@ -44,4 +44,19 @@ function dynamicToolResponse(result) {
   };
 }
 
-module.exports = {MAX_IMAGE_BYTES, splitModelContent, dynamicToolResponse};
+// Opt-in evaluation sees only the shape of the native model-facing output.
+// Never forward raw response text, code, data URLs or image bytes to telemetry.
+function modelMediaEvidence(item) {
+  if (!item || !['custom_tool_call_output', 'function_call_output'].includes(item.type)) return null;
+  const content = Array.isArray(item.output) ? item.output : [{type:'input_text',text:item.output}];
+  const textItems = content.filter(part => part.type === 'input_text' && typeof part.text === 'string');
+  return {
+    callId: item.call_id || null,
+    itemType: item.type,
+    imageItems: content.filter(part => part.type === 'input_image').length,
+    textChars: textItems.reduce((sum, part) => sum + part.text.length, 0),
+    base64TextItems: textItems.filter(part => /data:image\/[^;\s]+;base64,/.test(part.text)).length,
+  };
+}
+
+module.exports = {MAX_IMAGE_BYTES, splitModelContent, dynamicToolResponse, modelMediaEvidence};

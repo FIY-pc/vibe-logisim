@@ -124,6 +124,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 模型整图和 viewport 都使用白底 RGB 原生 renderer，不能直接传递依赖网页背景的透明 overview。`region` 为电路坐标，`scale` 为每电路单位的像素数，并返回 `imageSha256`；静态图中的 X 不是运行结果。同版本同区域复用已有 renderer LRU，仍返回图像，避免模型压缩上下文后无法重看。切工程、修订或运行环境期间生成的旧图会被拒绝。
 
+**Code Mode 的最后一段传输也要验证。** 当前本机 Codex 0.153.3 会将动态工具的 `inputText`/`inputImage` 转换为换行拼接的字符串。直接 `text(await tools.render_circuit(...))` 会打印 base64，不能让模型看到图。工具 catalog 提供原生 Code Mode 调用示例：保留 metadata 文本，并把独立 data URL 行传给 `image(...)`。普通直接工具调用仍返回原生 `inputImage`。`node apps/desktop/test/native-tool-images.cjs` 用真实 Codex 和 localhost Responses 回放检查下一次模型请求中的 `input_image`，覆盖反例和 catalog 示例，不访问真实服务商或消耗模型额度。这证明传输契约，不证明某次真实模型回合采用了示例。
+
 ## Episode 级效果评测
 
 工具单测、catalog 校验和一次真实 dogfood 只能证明局部链路能工作，不能证明 Harness 让模型更容易完成任务。对照实验使用可重置的 workspace fixture，把同一初始 artifact、同一模型条件、同一用户任务和同一权威 oracle 配成一个 episode；只替换是否提供电路能力或工作台上下文。
