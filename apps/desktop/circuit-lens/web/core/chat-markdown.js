@@ -2,6 +2,7 @@ import {marked} from '../vendor/marked.js';
 import DOMPurify from '../vendor/purify.js';
 import {makeElement} from './dom.js';
 import {action,copyText} from './chat-dom.js';
+import {parseConversationReference} from './conversation-reference.js';
 
 // One renderer for restored and streaming answers. Source markup cannot create
 // controls, load remote media, or navigate the Electron window.
@@ -10,7 +11,7 @@ export function renderMarkdown(target,text,{followReference,notify}) {
     RETURN_DOM_FRAGMENT:true,
     ALLOWED_TAGS:['p','br','hr','strong','em','del','blockquote','ul','ol','li','h1','h2','h3','h4','h5','h6','pre','code','table','thead','tbody','tr','th','td','a'],
     ALLOWED_ATTR:['href','title','start','class'],
-    ALLOWED_URI_REGEXP:/^(?:https?:\/\/|circuit:\/\/object\?|material:\/\/file\?)/i,
+    ALLOWED_URI_REGEXP:/^(?:https?:\/\/|circuit:\/\/object\?|(?:material|workspace):\/\/file\?|(?:file:\/\/)?\/tmp\/workspace\/|[^:/?#\\\s]+(?:\/[^:/?#\\\s]+)*$)/i,
     ALLOW_DATA_ATTR:false,
   });
   for(const node of fragment.querySelectorAll('[class]')) {
@@ -18,11 +19,12 @@ export function renderMarkdown(target,text,{followReference,notify}) {
   }
   for(const link of fragment.querySelectorAll('a')) {
     const href=link.getAttribute('href')||'';
-    if(href.startsWith('circuit://object?')||href.startsWith('material://file?')) {
-      const material=href.startsWith('material:');
-      const button=makeElement('button',material?'material-reference':'circuit-reference',link.textContent);button.type='button';button.title=material?'查看引用资料':'在电路中定位';
-      button.addEventListener('click',()=>followReference(href));link.replaceWith(button);
-    }else if(/^https?:\/\//i.test(href)) {
+    const reference=parseConversationReference(href);
+    if(reference?.kind==='circuit'||reference?.kind==='file') {
+      const file=reference.kind==='file';
+      const button=makeElement('button',file?'material-reference':'circuit-reference',link.textContent);button.type='button';button.title=file?'打开工作区文件':'在电路中定位';
+      button.addEventListener('click',()=>Promise.resolve().then(()=>followReference(href)).catch(error=>notify(error.message)));link.replaceWith(button);
+    }else if(reference?.kind==='web') {
       link.title=href;link.addEventListener('click',e=>{
         e.preventDefault();
         if(window.vibeDesktop?.openWebLink)window.vibeDesktop.openWebLink(href).catch(error=>notify(error.message));

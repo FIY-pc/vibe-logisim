@@ -6,8 +6,11 @@ import {AgentOutputProjection} from './agent-output-projection.js';
 // Owns message DOM, reading position and transient progress only. Transport,
 // projects, draft submission and structural changes belong to other owners.
 export class ConversationView {
-  constructor(ui,{followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify}) {
-    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify});
+  constructor(ui,{followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify,referenceBinding=()=>null}) {
+    Object.assign(this,{ui,followReference,appendMoments,appendMaterials,edit,submitEdit,cancelEdit,fork,notify,referenceBinding});
+    // Keep live path versions across timeline rebuilds; history without a
+    // recorded version must never adopt the current version of a reused path.
+    this.referenceBindings=new Map();this.turnReferenceBinding=null;this.restoring=false;
     this.messages=new Map();this.activities=new Map();this.follow=true;
     this.output=new AgentOutputProjection();
     this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();this.editing=null;this.editingFollow=null;
@@ -25,11 +28,16 @@ export class ConversationView {
     latest.addEventListener('click',()=>{this.follow=true;this.scroll();});
   }
   clear() {
+    this.turnReferenceBinding=null;
     this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.output.clear();this.work=null;this.follow=true;this.scrollTop=null;
     this.ui.conversationLatest.hidden=true;this.ui.agentTimeline.replaceChildren(this.ui.agentEmpty);this.ui.agentEmpty.hidden=false;
   }
   user(id,text,context) {
     this.follow=true;this.work=null;
+    const binding=this.referenceBinding();
+    const sameFolder=context?.folderId&&context.folderId===binding?.folderId;
+    this.turnReferenceBinding={...binding,folderId:context?.folderId||null,projectId:context?.projectId,
+      pathVersion:!this.restoring&&sameFolder?binding.pathVersion:null};
     const message=this.create('user',id,text);
     message.context=context;
     if(context) {
@@ -47,7 +55,11 @@ export class ConversationView {
     const node=makeElement('article','agent-message');node.dataset.role=role;node.dataset.itemId=id;
     const header=makeElement('div','agent-message-header');header.append(makeElement('strong','',role==='user'?'你':'Codex'));
     const body=makeElement('div','agent-message-body');const footer=makeElement('div','message-actions');
-    const message={node,body,footer,text,phase:null,id};
+    const scope=this.turnReferenceBinding||{};
+    const bindingKey=JSON.stringify([scope?.folderId,scope?.conversationId,role,id]);
+    const binding=this.referenceBindings.get(bindingKey)||Object.freeze({...scope,pathVersion:this.restoring?null:scope?.pathVersion});
+    if(binding.folderId){this.referenceBindings.set(bindingKey,binding);if(this.referenceBindings.size>1000)this.referenceBindings.delete(this.referenceBindings.keys().next().value);}
+    const message={node,body,footer,text,phase:null,id,referenceBinding:binding};
     const copy=action('复制消息','Copy',()=>copyText(message.text,copy,this.notify));
     footer.append(copy);
     if(role==='user') {
@@ -68,7 +80,7 @@ export class ConversationView {
     this.messages.set(String(id),message);this.render(message);return message;
   }
   render(message) {
-    if(message.node.dataset.role==='assistant')renderMarkdown(message.body,message.text,{followReference:this.followReference,notify:this.notify});
+    if(message.node.dataset.role==='assistant')renderMarkdown(message.body,message.text,{followReference:value=>this.followReference(value,message.referenceBinding),notify:this.notify});
     else message.body.textContent=message.text;
   }
   openEditor(id) {
@@ -205,10 +217,12 @@ export class ConversationView {
   }
   history(messages) {
     this.clear();
+    this.restoring=true;
     for(const m of messages) {
       if(m.type==='user')this.user(m.id,m.text,m.context);
       if(m.type==='assistant')this.assistant(m.id,m.text,m.phase);
     }
+    this.restoring=false;
     if(this.work)this.updateWork('查看工作过程');this.scroll();
   }
   setBusy(value) {

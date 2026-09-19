@@ -11,6 +11,7 @@ export function createController({models, ui, client, ports}) {
   let workspaceEpoch = 0, editingMessageId = null;
   const {project: projectState, review: reviewState, agent: agentState} = models;
   const conversation=new ConversationView(ui,{followReference:ports.followConversationReference,appendMoments:ports.appendMomentReferences,appendMaterials:ports.appendMaterialReferences,
+    referenceBinding:()=>({folderId:projectState.folder?.id,conversationId:ports.conversationBinding().id,pathVersion:(projectState.folder?.moves||[]).length}),
     notify:ports.showToast,edit:beginMessageEdit,submitEdit:submitMessageEdit,cancelEdit:cancelMessageEdit,fork:ports.forkConversation});
   const appendAgentSystem=(text,kind)=>conversation.system(text,kind);
   const scrollAgentTimeline=()=>conversation.scroll();

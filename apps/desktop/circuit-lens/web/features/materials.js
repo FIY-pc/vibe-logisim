@@ -1,3 +1,4 @@
+import {parseConversationReference,resolveConversationFile} from '../core/conversation-reference.js';
 import {createReferenceDrop} from './reference-drop.js';
 import {makeElement} from '../core/dom.js';
 import {icon,action} from '../core/chat-dom.js';
@@ -5,7 +6,7 @@ import {icon,action} from '../core/chat-dom.js';
 // File references belong to a folder conversation. Preview is read-only and
 // never imports a second copy or executes file content in the renderer.
 export const modelDependencies=['project'];
-export const dependencies=['draftReceipt','draftReady','draftReferences','setDraftReferences','followCircuitReference','showToast','openReviewPanel','switchReviewTab'];
+export const dependencies=['draftReceipt','draftReady','draftReferences','setDraftReferences','followCircuitReference','openWorkspaceReference','showToast','openReviewPanel','switchReviewTab'];
 const key=ref=>JSON.stringify([ref.id,ref.pathVersion,ref.page,ref.quote]);
 const sizeLabel=n=>n>=1024*1024?`${(n/1024/1024).toFixed(1)} MB`:`${Math.max(1,Math.ceil(n/1024))} KB`;
 
@@ -51,10 +52,11 @@ export function createController({models,ui,ports}) {
     ui.materialsName.textContent=id.split('/').pop();ui.materialsMeta.textContent='';
     try{const result=await api.preview(request({id,page,pathVersion}));if(token!==epoch||!ui.materialsDialog.open)return;preview=result;selected=preview.item.id;renderPreview();}
     catch(e){if(token!==epoch)return;error(e);ui.materialsPreview.replaceChildren(makeElement('p','material-empty','暂时无法预览。'));
-      const retry=makeElement('button','quiet-button','重试');retry.type='button';retry.addEventListener('click',()=>load(id,page));ui.materialsPreview.append(retry);
+      const retry=makeElement('button','quiet-button','重试');retry.type='button';retry.addEventListener('click',()=>load(id,page,pathVersion));ui.materialsPreview.append(retry);
     }finally{if(token===epoch){loading=false;updateMaterialState();}}
   }
-  async function openWorkspaceFile(id,page=1,pathVersion=(models.project.folder?.moves||[]).length){
+  async function openWorkspaceFile(id,page=1,pathVersion=(models.project.folder?.moves||[]).length,owner=folderId){
+    if(owner!==current())throw new Error('文件属于另一工作区');
     if(!api||!folderId)return;
     if(document.querySelector('dialog[open]')&&!ui.materialsDialog.open)return;
     if(!ui.materialsDialog.open){returnFocus=document.activeElement;mode='image';ui.materialsDialog.showModal();}
@@ -78,13 +80,13 @@ export function createController({models,ui,ports}) {
       openWorkspaceFile(ref.id,ref.page||1,ref.pathVersion??0);
     });node.append(button);}
   }
-  function followConversationReference(value){
-    if(!value.startsWith('workspace://')&&!value.startsWith('material://'))return ports.followCircuitReference(value);
-    try{const url=new URL(value),legacy=url.protocol==='material:',owner=url.searchParams.get(legacy?'projectId':'folderId');
-      if(url.hostname!=='file'||(owner!==current()&&!(legacy&&models.project.folder?.documentIds?.includes(owner))))throw new Error('文件属于另一工作区');
-      const page=Number(url.searchParams.get('page')||1),id=url.searchParams.get(legacy?'id':'path');if(!id||!Number.isInteger(page)||page<1)throw new Error('文件引用无效');
-      return openWorkspaceFile(id,page,Number(url.searchParams.get('pathVersion')||0));
-    }catch(e){ports.showToast(e.message);}
+  async function followConversationReference(value,binding){
+    try {
+      const reference=parseConversationReference(value);
+      if(reference?.kind==='circuit')return ports.followCircuitReference(value);
+      const file=resolveConversationFile(reference,binding,models.project.folder);
+      await ports.openWorkspaceReference(file);
+    }catch(e){ports.showToast(String(e.message||e).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,''));}
   }
   async function attachWorkspaceFiles(references,owner=folderId,draft=ports.draftReceipt()){
     if(!draft||!ports.draftReady())throw new Error('对话正在加载，请稍后再拖入');

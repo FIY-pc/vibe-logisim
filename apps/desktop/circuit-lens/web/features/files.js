@@ -80,12 +80,21 @@ export function createController({models,ports}) {
   async function toggle(entry) {
     expanded.has(entry.path)?expanded.delete(entry.path):expanded.add(entry.path);persist();await refreshFiles();
   }
-  async function openEntry(entry) {
+  async function openEntry(entry,{folderId=folder?.id,page=1,pathVersion=(folder?.moves||[]).length}={}) {
+    if(folderId!==folder?.id)throw new Error('文件属于另一工作区');
     if(entry.kind==='directory')return toggle(entry);
     if(/\.circ$/i.test(entry.name)) {
       if(folder.activeFile===entry.path)return;
-      const id=folder.id;await api.select(request({path:entry.path}));if(folder?.id===id)await ports.bootstrap();
-    } else await ports.openWorkspaceFile(entry.path);
+      await api.select({folderId,path:entry.path});if(folder?.id===folderId)await ports.bootstrap();
+    } else await ports.openWorkspaceFile(entry.path,page,pathVersion,folderId);
+  }
+  async function openWorkspaceReference({folderId,path,page=1,pathVersion}) {
+    if(folderId!==folder?.id)throw new Error('文件属于另一工作区');
+    // The existing file service owns move mapping and realpath/symlink checks.
+    const {items}=await api.reference({folderId,refs:[{id:path,pathVersion}]});
+    if(folderId!==folder?.id)throw new Error('文件属于另一工作区');
+    const item=items[0];
+    await openEntry({...item,kind:'file'},{folderId,page,pathVersion:item.pathVersion});
   }
   async function locateCurrent() {
     if(!folder?.activeFile)return;
@@ -196,5 +205,5 @@ export function createController({models,ports}) {
       if(event.documentChanged)ports.bootstrap();
     });
   }
-  return {mountFiles,workspaceFolderChanged,refreshFiles,openFileChanges:history.openFileChanges};
+  return {mountFiles,workspaceFolderChanged,refreshFiles,openWorkspaceReference,openFileChanges:history.openFileChanges};
 }
