@@ -1,4 +1,4 @@
-"""Manual component construction from native library tools.
+"""Component references and manual placement from native library tools.
 
 Preview is transient. A successful placement publishes exactly one ordinary
 circuit revision; callers keep the normal save/undo and source protections.
@@ -54,8 +54,12 @@ class PlacementService:
                 request.set(axis, str(value))
         return request
 
-    def _native(self, operation, body):
+    def _native(self, operation, body, *, include_images=True, strict_attributes=False):
         request = self._request(operation, body)
+        if not include_images:
+            request.set('images', 'false')
+        if strict_attributes:
+            request.set('strictAttributes', 'true')
         with self.w.observation_artifact() as artifact:
             for lib in self.w.raw_project['libraries']:
                 ET.SubElement(request, 'library', id=lib.get('name'), desc=lib.get('desc'))
@@ -67,29 +71,54 @@ class PlacementService:
                     raise ValueError(match[1]) from error
                 raise
 
-    def query(self, kind, body):
+    def query(self, kind, body, *, include_images=True, strict_attributes=False):
         with self.w.lock:
+            if kind not in {'catalog', 'template'}:
+                raise ValueError('未知元件查询')
             self._check(body)
             binding = {k: body[k] for k in ('projectId', 'revisionId', 'circuit')}
-            key = (kind, self.catalog_identity(), json.dumps({k:v for k,v in body.items() if k not in {'projectId','revisionId'}}, ensure_ascii=False, sort_keys=True))
+            key = (kind, include_images, strict_attributes, self.catalog_identity(), json.dumps({k:v for k,v in body.items() if k not in {'projectId','revisionId'}}, ensure_ascii=False, sort_keys=True))
             if key in self.cache:
                 self.cache.move_to_end(key)
-                return {**self.cache[key], **binding}
-            native = self._native('component-catalog' if kind == 'catalog' else 'component-template', body)
+                return {**copy.deepcopy(self.cache[key]), **binding}
+            native = self._native('component-catalog' if kind == 'catalog' else 'component-template', body,
+                                  include_images=include_images, strict_attributes=strict_attributes)
             result = binding
             if kind == 'catalog':
                 result['groups'] = [{**g.attrib, 'tools': [dict(t.attrib) for t in g.findall('tool')]} for g in native.findall('group')]
             else:
                 result.update(native.attrib)
                 result['bounds'] = {k: int(v) for k, v in native.find('bounds').attrib.items()}
-                result['ports'] = [{k: (v == 'true' if k == 'exclusive' else int(v)) for k, v in p.attrib.items()} for p in native.findall('port')]
+                result['ports'] = [{
+                    **{k: int(p.get(k)) for k in ('index', 'x', 'y', 'width')},
+                    'direction': p.get('direction'), 'exclusive': p.get('exclusive') == 'true',
+                    'runtimeTooltip': p.get('runtimeTooltip'),
+                } for p in native.findall('port')]
                 result['attributes'] = [{**a.attrib, 'editable': a.get('editable') == 'true', 'options': [dict(o.attrib) for o in a.findall('option')]} for a in native.findall('attribute')]
+                result['xml'] = ET.tostring(native.find('comp'), encoding='unicode')
                 image = native.find('image')
-                result['image'] = {**{k: int(v) for k, v in image.attrib.items()}, 'url': image.text}
-            self.cache[key] = result
+                if image is not None:
+                    result['image'] = {**{k: int(v) for k, v in image.attrib.items()}, 'url': image.text}
+            self.cache[key] = copy.deepcopy(result)
             while len(self.cache) > 96:
                 self.cache.popitem(last=False)
             return result
+
+    def describe(self, body):
+        """Optional model projection of the same native palette used by the UI."""
+        template = 'tool' in body
+        if template and 'library' not in body:
+            raise ValueError('查询元件需提供 catalog 中的 library ID；当前文件的子电路使用空字符串')
+        if not template and ('library' in body or 'attributes' in body):
+            raise ValueError('请指定 tool 查询元件属性，或只提供 circuit 查询目录')
+        result = self.query('template' if template else 'catalog', body, include_images=False, strict_attributes=True)
+        result.update(kind='template' if template else 'catalog', authority='exact-runtime',
+                      libraryScope='Library IDs belong to this project only; empty library means a subcircuit in this file.')
+        if template:
+            result.update(library=body['library'], tool=body['tool'], origin={'x': 0, 'y': 0},
+                          coordinates='Bounds and indexed ports are offsets from comp loc=(0,0). Change loc to place the XML and add that location to every port offset. This query does not place anything.',
+                          attributeSemantics='Values are effective native standard strings after overrides; without overrides they are current library-tool defaults, not necessarily factory defaults. Only editable attributes accept overrides. Non-standard, unsupported or normalized-away values are rejected.')
+        return result
 
     def place(self, body):
         w = self.w

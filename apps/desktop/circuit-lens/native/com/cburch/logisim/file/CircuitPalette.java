@@ -3,6 +3,8 @@ package com.cburch.logisim.file;
 import com.cburch.logisim.circuit.*;
 import com.cburch.logisim.comp.*;
 import com.cburch.logisim.data.*;
+import com.cburch.logisim.instance.Instance;
+import com.cburch.logisim.instance.Port;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.tools.*;
 import java.awt.Color;
@@ -60,10 +62,71 @@ public final class CircuitPalette {
                     ComponentFactory factory=tool.getFactory();
                     entry.setAttribute("factory",factory.getName());
                     if(!canAdd(project,target,factory))entry.setAttribute("disabled","会形成循环引用");
-                    entry.setAttribute("icon",icon(tool,target,project));
+                    if(!request.getAttribute("images").equals("false"))entry.setAttribute("icon",icon(tool,target,project));
                 } catch(Exception error) {entry.setAttribute("disabled","此组件暂不可用: "+error.getMessage());}
             }
         }
+    }
+    @SuppressWarnings({"rawtypes","unchecked"})
+    private static void checkChoice(Attribute attr,Object value,Object current) {
+        if(!(value instanceof Number||value instanceof Boolean||value instanceof AttributeOption||value instanceof Direction||value instanceof BitWidth))return;
+        java.awt.Component editor;
+        // Some editors throw when their initial selection is out of range.
+        // Build the choices using the existing value, then check the request.
+        try {editor=attr.getCellEditor(null,current);}
+        catch(Exception unavailable) {return;}
+        if(editor instanceof javax.swing.JComboBox) {
+            javax.swing.JComboBox combo=(javax.swing.JComboBox)editor;
+            if(combo.getItemCount()==0)return;
+            String standard=attr.toStandardString(value);
+            for(int i=0;i<combo.getItemCount();i++)
+                if(standard.equals(attr.toStandardString(combo.getItemAt(i))))return;
+            throw new IllegalArgumentException("属性值不在原生可选范围内: "+attr.getName()+"="+standard);
+        }
+    }
+    @SuppressWarnings({"rawtypes","unchecked"})
+    private static void checkOverrides(AttributeSet attrs,Map<String,String> expected) {
+        for(Map.Entry<String,String> entry:expected.entrySet()) {
+            Attribute attr=attrs.getAttribute(entry.getKey());
+            if(attr==null||!entry.getValue().equals(attr.toStandardString(attrs.getValue(attr))))
+                throw new IllegalArgumentException("属性未保留请求值: "+entry.getKey()+"="+entry.getValue());
+        }
+    }
+    @SuppressWarnings({"rawtypes","unchecked"})
+    private static Map<String,String> applyOverrides(AttributeSet attrs,Element request) {
+        Map<String,String> expected=new LinkedHashMap<>(),pending=new LinkedHashMap<>();
+        boolean strict=request.getAttribute("strictAttributes").equals("true");
+        NodeList overrides=request.getElementsByTagName("set");
+        for(int i=0;i<overrides.getLength();i++) {
+            Element set=(Element)overrides.item(i);String name=set.getAttribute("name"),value=set.getAttribute("value");
+            if(pending.put(name,value)!=null)throw new IllegalArgumentException("重复属性: "+name);
+        }
+        // Some attributes appear only after changing input count or bus width.
+        // Resolve those without making JSON object key order part of the API.
+        while(!pending.isEmpty()) {
+            boolean progressed=false;
+            for(Attribute candidate:new ArrayList<Attribute<?>>(attrs.getAttributes())) {
+                String name=candidate.getName(),raw=pending.get(name);
+                if(raw==null)continue;
+                Attribute attr=attrs.getAttribute(name);
+                if(attr==null)continue;
+                if(attrs.isReadOnly(attr)||!attrs.isToSave(attr)||!simple(attrs.getValue(attr)))
+                    throw new IllegalArgumentException("属性不可编辑: "+name);
+                Object value;
+                try {value=attr.parse(raw);}
+                catch(RuntimeException error) {throw new IllegalArgumentException("属性值无效: "+name+"="+raw);}
+                // The model reference uses canonical strings to detect silent
+                // parser fallback; UI input keeps native formatting aliases.
+                if(value==null||(strict&&!raw.equals(attr.toStandardString(value))))
+                    throw new IllegalArgumentException("属性值无效或不是原生标准格式: "+name+"="+raw);
+                checkChoice(attr,value,attrs.getValue(attr));
+                expected.put(name,attr.toStandardString(value));
+                attrs.setValue(attr,value);pending.remove(name);progressed=true;
+            }
+            if(!progressed)throw new IllegalArgumentException("未知或当前配置不支持的属性: "+String.join(", ",pending.keySet()));
+        }
+        checkOverrides(attrs,expected);
+        return expected;
     }
     private static AddTool tool(LogisimFile file,Element request) {
         String id=request.getAttribute("library"),name=request.getAttribute("tool");
@@ -109,16 +172,11 @@ public final class CircuitPalette {
         AddTool tool=tool(file,request);ComponentFactory factory=tool.getFactory();Project project=new Project(file);project.getSimulator().shutDown();
         if(!canAdd(project,circuit,factory))throw new IllegalArgumentException("不能放入自身或引用了当前电路的子电路");
         AttributeSet attrs=(AttributeSet)tool.getAttributeSet().clone();
-        NodeList overrides=request.getElementsByTagName("set");
-        for(int i=0;i<overrides.getLength();i++) {
-            Element set=(Element)overrides.item(i);Attribute attr=attrs.getAttribute(set.getAttribute("name"));
-            if(attr==null||attrs.isReadOnly(attr)||!attrs.isToSave(attr)||!simple(attrs.getValue(attr)))throw new IllegalArgumentException("属性不可编辑: "+set.getAttribute("name"));
-            Object value=attr.parse(set.getAttribute("value"));attrs.setValue(attr,value);
-            if(!attr.toStandardString(value).equals(attr.toStandardString(attrs.getValue(attr))))throw new IllegalArgumentException("属性值超出范围: "+attr.getDisplayName());
-        }
+        Map<String,String> expected=applyOverrides(attrs,request);
         boolean placing=request.getTagName().equals("place-component");
         int x=placing?Integer.parseInt(request.getAttribute("x")):0,y=placing?Integer.parseInt(request.getAttribute("y")):0;
         com.cburch.logisim.comp.Component component=factory.createComponent(Location.create(x,y),attrs);
+        attrs=component.getAttributeSet();checkOverrides(attrs,expected);
         Bounds bounds=component.getBounds();
         if(placing) {
             if(bounds.getX()<0||bounds.getY()<0)throw new IllegalArgumentException("请将整个元件放在画布的非负坐标区域");
@@ -131,8 +189,20 @@ public final class CircuitPalette {
         if(facing instanceof Attribute)root.setAttribute("facingAttribute",((Attribute)facing).getName());
         boolean snap=!Boolean.FALSE.equals(factory.getFeature(ComponentFactory.SHOULD_SNAP,attrs));root.setAttribute("snap",String.valueOf(snap));
         Element box=child(result,root,"bounds");box.setAttribute("x",String.valueOf(bounds.getX()-x));box.setAttribute("y",String.valueOf(bounds.getY()-y));box.setAttribute("width",String.valueOf(bounds.getWidth()));box.setAttribute("height",String.valueOf(bounds.getHeight()));
+        Instance instance=Instance.getInstanceFor(component);
+        List<Port> nativePorts=instance==null?Collections.<Port>emptyList():instance.getPorts();
+        int index=0;
         for(EndData end:component.getEnds()) {
             Element port=child(result,root,"port");port.setAttribute("x",String.valueOf(end.getLocation().getX()-x));port.setAttribute("y",String.valueOf(end.getLocation().getY()-y));port.setAttribute("width",String.valueOf(end.getWidth().getWidth()));port.setAttribute("exclusive",String.valueOf(end.isExclusive()));
+            port.setAttribute("index",String.valueOf(index));
+            port.setAttribute("direction",end.isInput()?(end.isOutput()?"inout":"input"):(end.isOutput()?"output":"none"));
+            if(index<nativePorts.size()) {
+                try {
+                    String tooltip=nativePorts.get(index).getToolTip();
+                    if(tooltip!=null&&!tooltip.isEmpty())port.setAttribute("runtimeTooltip",tooltip);
+                } catch(Exception ignored) { /* No description is better than an invented port role. */ }
+            }
+            index++;
         }
         attributes(attrs,root,result);
         Element serialized=child(result,root,"comp");serialized.setAttribute("name",factory.getName());serialized.setAttribute("loc","("+x+","+y+")");
@@ -141,7 +211,7 @@ public final class CircuitPalette {
             String value=attr.toStandardString(attrs.getValue(attr));Element a=child(result,serialized,"a");a.setAttribute("name",attr.getName());
             if(value.contains("\n"))a.setTextContent(value);else a.setAttribute("val",value);
         }
-        if(!placing) {
+        if(!placing&&!request.getAttribute("images").equals("false")) {
             Bounds ink=bounds.expand(6);int width=Math.max(1,ink.getWidth()),height=Math.max(1,ink.getHeight());
             double scale=Math.min(3,3072.0/Math.max(width,height));
             BufferedImage bitmap=new BufferedImage(Math.max(1,(int)Math.ceil(width*scale)),Math.max(1,(int)Math.ceil(height*scale)),BufferedImage.TYPE_INT_ARGB);

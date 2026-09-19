@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
 
 from studio.application.workspace import Workspace
 from studio.domain.tool_errors import CircuitToolError
+from studio.domain.plugin import PLUGIN_VERSION
 
 
 RUNTIMES = (
@@ -186,7 +187,7 @@ class TraceEvents(unittest.TestCase):
                 self.assertEqual(trace['execution']['runtimeJarSha256'], hashlib.sha256(jar.read_bytes()).hexdigest())
                 self.assertEqual(trace['execution']['artifactSha256'], hashlib.sha256(source.read_bytes()).hexdigest())
                 self.assertEqual(trace['runtimeProfile']['status'], 'observed')
-                self.assertEqual(trace['plugin']['version'], '1.7.0')
+                self.assertEqual(trace['plugin']['version'], PLUGIN_VERSION)
 
                 evaluated = self.call('evaluate_circuit', {**args, 'mode': 'trace', 'expectedRows': expected})
                 self.assertEqual(evaluated['evaluation']['status'], 'passed')

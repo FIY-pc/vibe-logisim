@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -145,6 +145,28 @@
       "exposure": "direct",
       "owner": "studio",
       "label": "查阅课程资料"
+    },
+    {
+      "type": "function",
+      "name": "describe_component",
+      "description": "Optional native component reference for direct .circ editing; never places, saves or creates a candidate. Supply circuit only to list AddTools from this project's declared libraries and subcircuits (no images). To describe one, supply library (group id from that catalog; empty string for this file's subcircuits), tool (exact name), and optional attributes. Returns effective attribute standard strings/options, actual indexed port offsets/directions/widths and native tooltips (null if absent), bounds, and insertable comp XML at loc=(0,0). Library IDs belong to THIS project; change loc and translate port offsets when inserting. Overrides must use native standard strings; unknown, unsupported or normalized-away values fail instead of falling back. Without overrides values are current library-tool defaults, not necessarily factory defaults. Only editable attributes can be overridden. No requirement to query before editing; this describes shape/configuration, not behavior or live signal values.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {"type": "string", "minLength": 1, "maxLength": 1024},
+          "library": {"type": "string", "maxLength": 1024},
+          "tool": {"type": "string", "minLength": 1, "maxLength": 1024},
+          "attributes": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 4096}}
+        },
+        "required": ["circuit"],
+        "additionalProperties": false
+      },
+      "category": "observe",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "查阅原生元件"
     },
     {
       "type": "function",
@@ -1134,6 +1156,7 @@
     "read_kept_observation",
     "read_project_resource",
     "inspect_circuit",
+    "describe_component",
     "render_circuit",
     "wire_candidate",
     "reroute_candidate",

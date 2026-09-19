@@ -29,6 +29,7 @@ class Workbench:
         handlers = {
             "read_kept_observation": self._read_kept_observation,
             "inspect_circuit": self._inspect_circuit,
+            "describe_component": self._describe_component,
             "render_circuit": self._render_circuit,
             "read_project_resource": self._read_project_resource,
             "import_candidate": self._import_candidate,
@@ -66,6 +67,11 @@ class Workbench:
 
     def _read_kept_observation(self, call):
         return self.workspace.application.moments.inspect(call.arguments)
+
+    def _describe_component(self, call):
+        return self.workspace.application.placement.describe({
+            **call.arguments, 'projectId': self.workspace.history.record['id'], 'revisionId': call.revision_id,
+        })
 
     def _inspect_circuit(self, call):
         arguments, revision = call.arguments, call.revision_id
