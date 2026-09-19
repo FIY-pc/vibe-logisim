@@ -58,7 +58,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 当前能力类别包括：
 
 - `context`：打开电路并建立共享画布绑定。
-- `observe`：读取结构、冻结观察、组合仿真和时序 trace。
+- `observe`：读取结构、原生元件定义、冻结观察、组合仿真和时序 trace。
 - `construct`：构建候选或把工作目录中的直接编辑载入候选。
 - `mutate`：把候选写回用户选择的源文件。
 - `evaluate`：运行用户主动请求的实验，并在存在可比较期望时返回判断。
@@ -68,6 +68,10 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
 
 `inspect_circuit` 在精确运行时观察到端口后，还会返回 `connectivityIssues`：其中 `unconnectedInputs` 列出没有位网的输入端及其原生 tooltip，`widthIncompatibilities` 保留运行时报告的宽度冲突点。这是观察摘要，不替模型决定哪些端口应该连接；它把模型原本需要从大量端口和 net ID 中手工归纳的事实直接暴露出来。
+
+插件 1.8.0 的 `describe_component` 复用左栏元件库的 `PlacementService` / `CircuitPalette`，让模型能查询尚未放置的元件。只传 `circuit` 返回当前工程声明库及子电路中的可放置工具；加 `library`、`tool` 和可选 `attributes` 返回有效属性、选项、真实端口索引/方向/位宽/原生 tooltip、边界，以及原点为 `(0,0)` 的 `<comp>` XML。插入时移动 `loc` 并平移端口坐标；库 ID 属于当前工程，不能跨项目照搬。属性初值来自当前库工具配置，不冒充固定的 factory 默认值。
+
+模型查询不生成图片或 base64，不创建候选、放置元件、保存或修改结构历史。未知、非法或设置后被丢弃的属性会明确失败；模型入口使用返回的原生标准字符串，人工模板/放置继续接受原生合法的颜色与数值别名。支持动态属性的依赖关系，不把 JSON 对象键顺序变成行为约束。它提供形状和配置参考，不说明该元件在任意电路中的行为已经通过验证，也不要求模型先查再编辑。
 
 `evaluate_circuit` 是独立的评测能力。组合模式要求每个输入向量带 `expected`；时序模式要求 `expectedRows`，每行指定 tick 和观察信号。它返回 `evaluation` 对象并保留底层 native observation：`passed` 表示规格覆盖的案例全部匹配，`failed` 表示至少一个明确不匹配，`unknown` 表示运行结果中有未确定信号或缺失样本。
 
