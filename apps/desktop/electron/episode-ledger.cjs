@@ -165,8 +165,8 @@ class EpisodeLedger {
     const toolActivities = completed.filter(item => item.kind !== 'reasoning');
     const circuitActivities = toolActivities.filter(item => item.kind === 'tool' && item.activityKey?.startsWith('circuit:'));
     const failed = completed.filter(item => item.status === 'failed');
-    const failedKeys = new Set(activities.filter(item => item.failedAt).map(item => item.activityKey));
-    const recovery = activities.filter(item => item.status === 'completed' && failedKeys.has(item.activityKey)).length;
+    const recovery = activities.filter(item => item.status === 'completed' &&
+      activities.some(failure => failure.activityKey === item.activityKey && failure.failedAt !== null && failure.failedAt < item.lastAt)).length;
     const grounded = this.evidence.find(item => item.groundedAt !== null);
     const positiveClaim = this.claims.some(item => item.positive);
     const passedEvidence = this.evidence.some(item => item.feedbackStatus === 'passed');
@@ -178,7 +178,7 @@ class EpisodeLedger {
     }, 0);
     const oracleStatus = this.final?.oracle?.status || null;
     return {
-      taskSuccess: oracleStatus === 'passed',
+      taskSuccess: oracleStatus === 'passed' ? true : oracleStatus === 'failed' ? false : null,
       timeToFirstGroundedEvidenceMs: grounded ? grounded.at - this.startedAt : null,
       toolCalls: toolActivities.length,
       circuitToolCalls: circuitActivities.length,
@@ -187,9 +187,11 @@ class EpisodeLedger {
       artifactChanges: this.final?.artifact?.changed ?? (this.circuitChanges > 0 ? true : null),
       verificationCount: this.evidence.length,
       humanInterventions: this.humanInterventions.length,
-      claimEvidenceAlignment: positiveClaim
-        ? (passedEvidence || oracleStatus === 'passed' ? 'grounded' : 'unsupported')
-        : 'not-asserted',
+      // Keywords cannot distinguish a promise, negation, or a claim about
+      // another artifact. Semantic alignment needs an explicit review.
+      claimEvidenceAlignment: 'not-assessed',
+      positiveClaimHeuristic: positiveClaim,
+      observedPassedFeedback: passedEvidence,
       turnCount: this.turns.size,
       circuitChanges: this.circuitChanges,
       blockedRequests: this.blockedRequests,
@@ -238,7 +240,7 @@ class EpisodeLedger {
       }
       case 'assistant-completed': {
         const text = boundedTextMeta(event.text);
-        const claim = { at, positive: POSITIVE_CLAIM.test(event.text || ''), text };
+        const claim = { at, positive: event.phase !== 'commentary' && POSITIVE_CLAIM.test(event.text || ''), text };
         this.claims.push(claim);
         this.events.push({...base, itemId: event.itemId || null, text, positive: claim.positive});
         break;

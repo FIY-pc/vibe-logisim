@@ -16,8 +16,8 @@ test('summarizes a free-form episode from independent evidence', () => {
   });
   ledger.record('event', {type: 'user-message', id: 'u1', text: '构建全加器', context: {revisionId: 'rev-1'}});
   ledger.record('event', {type: 'turn-started', turnId: 'turn-1'});
-  ledger.record('event', {type: 'activity', itemId: 'tool-1', kind: 'tool', activityKey: 'circuit:inspect_circuit', label: '查看电路', status: 'failed', detail: '参数错误'});
-  ledger.record('event', {type: 'activity', itemId: 'tool-2', kind: 'tool', activityKey: 'circuit:inspect_circuit', label: '查看电路', status: 'completed'});
+  ledger.record('event', {type: 'activity', itemId: 'tool-1', kind: 'tool', activityKey: 'circuit:inspect_circuit', label: '查看电路', status: 'failed', detail: '参数错误'}, 100);
+  ledger.record('event', {type: 'activity', itemId: 'tool-2', kind: 'tool', activityKey: 'circuit:inspect_circuit', label: '查看电路', status: 'completed'}, 200);
   ledger.record('event', {type: 'harness-result', itemId: 'tool-3', binding: {revisionId: 'rev-1', circuit: 'main'}, run: {id: 'run-1', kind: 'evaluation'}, feedback: {status: 'passed'}});
   ledger.record('event', {type: 'assistant-completed', itemId: 'a1', text: '已完成，验证通过'});
   ledger.record('event', {type: 'turn-completed', turnId: 'turn-1', status: 'completed'});
@@ -30,7 +30,8 @@ test('summarizes a free-form episode from independent evidence', () => {
   assert.equal(snapshot.metrics.invalidCalls, 1);
   assert.equal(snapshot.metrics.recoveryCalls, 1);
   assert.equal(snapshot.metrics.verificationCount, 1);
-  assert.equal(snapshot.metrics.claimEvidenceAlignment, 'grounded');
+  assert.equal(snapshot.metrics.claimEvidenceAlignment, 'not-assessed');
+  assert.equal(snapshot.metrics.positiveClaimHeuristic, true);
   assert.equal(snapshot.metrics.artifactChanges, true);
   assert.equal(snapshot.events.find(item => item.type === 'user-message').text.chars, 5);
   assert.equal(snapshot.events.find(item => item.type === 'user-message').text.value, undefined);
@@ -41,8 +42,26 @@ test('does not call an unverified model claim a task success', () => {
   const ledger = new EpisodeLedger({episodeId: 'episode-2'});
   ledger.record('event', {type: 'assistant-completed', text: '应该完成了'});
   ledger.finalize({outcome: 'completed', oracle: {status: 'unknown'}});
-  assert.equal(ledger.snapshot().metrics.taskSuccess, false);
-  assert.equal(ledger.snapshot().metrics.claimEvidenceAlignment, 'unsupported');
+  assert.equal(ledger.snapshot().metrics.taskSuccess, null);
+  assert.equal(ledger.snapshot().metrics.claimEvidenceAlignment, 'not-assessed');
+});
+
+test('does not judge promises, negations or stale feedback as supported claims', () => {
+  const ledger = new EpisodeLedger();
+  ledger.record('event', {type:'assistant-completed',phase:'commentary',text:'我会完成并验证'});
+  assert.equal(ledger.metrics().positiveClaimHeuristic,false);
+  ledger.record('event', {type:'assistant-completed',phase:'final_answer',text:'没有通过'});
+  ledger.record('event', {type:'harness-result',binding:{revisionId:'old'},run:{id:'old'},feedback:{status:'passed'}});
+  ledger.finalize({oracle:{status:'failed'}});
+  assert.equal(ledger.metrics().taskSuccess,false);
+  assert.equal(ledger.metrics().claimEvidenceAlignment,'not-assessed');
+});
+
+test('a success before a later failure is not counted as recovery', () => {
+  const ledger = new EpisodeLedger();
+  ledger.record('event',{type:'activity',itemId:'success',activityKey:'same',status:'completed'},100);
+  ledger.record('event',{type:'activity',itemId:'failure',activityKey:'same',status:'failed'},200);
+  assert.equal(ledger.metrics().recoveryCalls,0);
 });
 
 test('stores token counters and writes an atomic bounded artifact', () => {
