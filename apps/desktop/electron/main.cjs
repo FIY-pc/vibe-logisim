@@ -518,8 +518,10 @@ function validateAgentAsk(value) {
   }
   const revisionId = typeof value.revisionId === "string" ? value.revisionId : "";
   if (revisionId && !/^[0-9a-f]{64}$/i.test(revisionId)) throw new Error("Invalid circuit revision.");
+  const circuit = typeof value.circuit === "string" ? value.circuit.trim() : "";
+  if (revisionId && (!circuit || circuit.length > 256)) throw new Error("Invalid current circuit.");
   const selectionId = typeof value.selectionId === "string" ? value.selectionId : "";
-  if (revisionId && !/^sel-[0-9a-f]{16}$/.test(selectionId)) throw new Error("Invalid circuit selection.");
+  if (revisionId && selectionId && !/^sel-[0-9a-f]{16}$/.test(selectionId)) throw new Error("Invalid circuit selection.");
   const kind = ["overview", "component", "net"].includes(value.kind) ? value.kind : "overview";
   const ids = Array.isArray(value.ids) ? [...new Set(value.ids)] : [];
   if (
@@ -534,7 +536,7 @@ function validateAgentAsk(value) {
   if(!Array.isArray(momentIds)||momentIds.length>2||momentIds.some(id=>typeof id!=="string"||!/^live-[a-f0-9]{16}$/.test(id)))throw new Error("Invalid kept observations.");
   const editMessageId = typeof value.editMessageId === "string" ? value.editMessageId.trim() : "";
   if (editMessageId.length > 512) throw new Error("Invalid edited message.");
-  return { question, revisionId, selectionId, kind, ids, observationId, editMessageId, momentIds:[...new Set(momentIds)],materialRefs:value.materialRefs||[] };
+  return { question, revisionId, circuit, selectionId, kind, ids, observationId, editMessageId, momentIds:[...new Set(momentIds)],materialRefs:value.materialRefs||[] };
 }
 
 function createWindow(baseUrl) {

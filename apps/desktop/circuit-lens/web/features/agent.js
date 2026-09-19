@@ -1,15 +1,15 @@
-import { firstDefined, normalizeBounds, responseRevision } from '../core/values.js';
+import { firstDefined, responseRevision } from '../core/values.js';
 import { makeElement } from '../core/dom.js';
 import {ConversationView} from '../core/conversation-view.js';
 import {icon} from '../core/chat-dom.js';
 
-export const modelDependencies = ["project", "canvas", "review", "agent"];
+export const modelDependencies = ["project", "review", "agent"];
 
-export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectRegionContext","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
+export const dependencies = ["forkConversation","conversationBinding","receiveConversationState","renderConversationHeader","renderConversationStarters","draftReady","draftReceipt","acknowledgeDraft","followConversationReference","appendMaterialReferences","materialAttachments","updateMaterialState","followCircuitReference","momentAttachments","appendMomentReferences","updateAgentConnection","reportAgentError","selectionSnapshot","selectionStatus","invalidateSimulation","activeObservation","bootstrap","clearSelection","focusHarnessTargets","hasSelection","intentSnapshot","loadCandidates","normalizeReview","openCandidate","openReviewPanel","postSelection","queryIntent","querySelection","queryToReview","renderReview","resizeQuestion","showToast","switchReviewTab"];
 
 export function createController({models, ui, client, ports}) {
   let workspaceEpoch = 0, editingMessageId = null;
-  const {project: projectState, canvas: canvasState, review: reviewState, agent: agentState} = models;
+  const {project: projectState, review: reviewState, agent: agentState} = models;
   const conversation=new ConversationView(ui,{followReference:ports.followConversationReference,appendMoments:ports.appendMomentReferences,appendMaterials:ports.appendMaterialReferences,
     notify:ports.showToast,edit:beginMessageEdit,submitEdit:submitMessageEdit,cancelEdit:cancelMessageEdit,fork:ports.forkConversation});
   const appendAgentSystem=(text,kind)=>conversation.system(text,kind);
@@ -83,10 +83,13 @@ async function ensureAgentSelection() {
       responseRevision(current.selection) === projectState.revision &&
       current.selection.circuit === projectState.circuitName
     ) return { selection: current.selection, snapshot: ports.intentSnapshot(current.selection) };
-    if (!ports.hasSelection()) {
-      const bounds = normalizeBounds(projectState.circuit?.bounds || canvasState.worldBounds);
-      ports.selectRegionContext(bounds);
-    }
+    // A conversation about the current circuit does not imply a spatial
+    // selection. Materializing the whole canvas here turns an ordinary ask
+    // into a heavyweight native observer request, and makes large circuits
+    // appear frozen before Codex has even received the question. Selection is
+    // an optional focus supplied by the user; without one, let the agent use
+    // the workspace and circuit tools to inspect what it needs.
+    if (!ports.hasSelection()) return { selection: { id: null }, snapshot: null };
     const expectedEpoch = ports.selectionStatus().selectionEpoch;
     const snapshot = ports.selectionSnapshot();
     const selection = await ports.postSelection(snapshot, expectedEpoch);
@@ -138,6 +141,7 @@ async function askAgent({questionOverride=null,editMessageIdOverride=null,inline
         conversationId: ports.conversationBinding().id,
         folderId: projectState.folder?.id,
         revisionId: includeCircuit ? submittedRevision : null,
+        circuit: includeCircuit ? projectState.circuitName : null,
         selectionId: selection.id,
         kind: query.kind,
         ids: query.ids || [],

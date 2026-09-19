@@ -22,6 +22,7 @@ const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), VIBE_LO
 delete env.ELECTRON_RUN_AS_NODE;
 let app, page, phase = 'launch';
 const errors = [];
+const selectionPosts = [];
 const buttons = () => page.locator('#conversationStarters button');
 const session = () => page.evaluate(() => fetch('/api/session').then(r => r.json()));
 const requests = () => app.evaluate(() => global.__starterRequests);
@@ -46,6 +47,9 @@ async function openCircuit(folder) {
     app = await _electron.launch({executablePath: require('electron'), args: [repo + '/apps/desktop', '--no-sandbox'], env});
     page = await app.firstWindow(); page.setDefaultTimeout(20000);
     page.on('pageerror', e => errors.push(e.stack));
+    page.on('request', request => {
+      if (request.method() === 'POST' && /\/api\/selection(?:\?|$)/.test(request.url())) selectionPosts.push(request.postData());
+    });
     await page.setViewportSize({width: 1500, height: 960});
     await app.evaluate((_, repo) => {
       const req = process.getBuiltinModule('node:module').createRequire(repo + '/apps/desktop/electron/main.cjs');
@@ -86,6 +90,7 @@ async function openCircuit(folder) {
 
     phase = 'current circuit and narrow panel';
     await openCircuit(folders[1]);
+    assert.equal(selectionPosts.length, 0, 'opening a circuit must not create a whole-canvas selection');
     assert.deepEqual(await buttons().allTextContents(), ['构建一个全加器', '讲解一下当前电路', '检查电路中的问题']);
     await page.setViewportSize({width: 1100, height: 800});
     for (const button of await buttons().all()) assert.equal(await button.evaluate(e => e.scrollWidth <= e.clientWidth), true);
@@ -105,12 +110,15 @@ async function openCircuit(folder) {
     await app.evaluate(() => { global.__starterMode = 'fail'; });
     await buttons().nth(1).click();
     await waitUntil(async () => (await requests()).length === 2);
+    assert.equal(selectionPosts.length, 0, 'a whole-circuit question must not post a synthetic selection');
     await page.waitForFunction(() => !document.querySelector('#askButton').disabled);
     assert.match(await page.locator('#agentNoticeDetails').textContent(), /验收回放：发送连接失败/);
     assert.match(await page.locator('#questionInput').inputValue(), /请结合实际电路讲解当前电路/);
     const explain = (await requests())[1];
     assert.equal(explain.context.folder.root, folders[1]);
     assert.equal(explain.context.circuit, 'main');
+    assert.equal(explain.context.selectionId, null);
+    assert.equal(explain.context.authority, 'workspace-binding');
     assert.equal(explain.context.revisionId, (await session()).revision.id);
 
     phase = 'double click sends once';

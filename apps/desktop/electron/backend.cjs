@@ -171,18 +171,63 @@ class LensBackend extends EventEmitter {
     }));
   }
 
-  async agentContext({ revisionId, selectionId, kind, ids, question, observationId, momentIds = [] }) {
+  async agentContext({ revisionId, circuit, selectionId, kind, ids, question, observationId, momentIds = [] }) {
     const queryIds = Array.isArray(ids) ? ids : [];
-    const [session, selection, plugin] = await Promise.all([
+    const [session, plugin] = await Promise.all([
       this.#requestJson("/api/session"),
-      this.#requestJson(
-        `/api/selection?revisionId=${encodeURIComponent(revisionId)}&selectionId=${encodeURIComponent(selectionId)}`,
-      ),
       this.circuitPlugin(),
     ]);
     if (session?.revision?.id !== revisionId) {
-      throw new Error("当前 Circuit Lens revision 已经变化，请重新建立选区。");
+      throw new Error("当前 Circuit Lens revision 已经变化，请重新加载当前电路后再问。");
     }
+    const workspaceKey = session.workspace?.conversationKey;
+    if (!workspaceKey) throw new Error("当前工程尚未建立身份，请重新打开工程。");
+    const knownCircuits = new Set((session.project?.circuits || []).map(item => item?.name).filter(Boolean));
+    const activeCircuit = circuit || session.activeCircuit || session.project?.mainCircuit;
+    if (!activeCircuit || (knownCircuits.size && !knownCircuits.has(activeCircuit))) {
+      throw new Error("当前电路已经变化，请重新打开后再问。");
+    }
+    const projectContext = {
+      projectId: session.workspace.id,
+      projectHistory: session.workspace.history.slice(0, 6),
+    };
+    const source = {
+      mode: session.source?.mode || "unknown",
+      name: session.source?.name || "circuit.circ",
+    };
+
+    // No selection means the user asked about the current circuit as a
+    // whole. Keep this path cheap and honest: it binds the active revision
+    // and circuit, but does not run a full-canvas selection observer or claim
+    // that the model has already inspected every component.
+    if (!selectionId) {
+      return {
+        workspaceKey,
+        context: {
+          schema: "vibe-logisim.agent-context/v0",
+          plugin,
+          ...projectContext,
+          authority: "workspace-binding",
+          revisionId,
+          selectionId: null,
+          circuit: activeCircuit,
+          source,
+          summary: `当前电路 ${activeCircuit}；尚未指定局部选区。请按问题需要使用 inspect_circuit 读取精确结构和接口。`,
+          selection: {
+            reference: null,
+            wireIds: [], wires: [], intent: null,
+            rectangle: null, componentIds: [], netIds: [],
+          },
+          query: {kind: "overview", ids: []},
+          evidence: null,
+        },
+        evidence: null,
+      };
+    }
+
+    const selection = await this.#requestJson(
+      `/api/selection?revisionId=${encodeURIComponent(revisionId)}&selectionId=${encodeURIComponent(selectionId)}`,
+    );
     if (
       selection?.id !== selectionId ||
       selection?.revisionId !== revisionId ||
@@ -200,12 +245,6 @@ class LensBackend extends EventEmitter {
     if ((kind === "overview" && queryIds.length) || queryIds.some((id) => !allowedIds.has(id))) {
       throw new Error("查询对象不属于当前冻结选区，请重新选择后再问。");
     }
-    const workspaceKey = session.workspace?.conversationKey;
-    if (!workspaceKey) throw new Error("当前工程尚未建立身份，请重新打开工程。");
-    const projectContext = {
-      projectId: session.workspace.id,
-      projectHistory: session.workspace.history.slice(0, 6),
-    };
     projectContext.keptMoments=await Promise.all(momentIds.map(async id=>{
       const moment=await this.#requestJson(`/api/moments?${new URLSearchParams({projectId:session.workspace.id,id})}`);
       const {render,sample,...summary}=moment;
@@ -224,11 +263,6 @@ class LensBackend extends EventEmitter {
       projectContext.displayedSimulation = { ...sample, components, componentCount: sample.components.length,
         note: "Frozen state the user saw when asking. Other ports of this observed instance can be read with inspect_circuit. rootCircuit and instancePath identify the precise instance. Tick counts clock advances, not retired instructions. Other definitions and other copies of this definition do not inherit these values." };
     }
-    const source = {
-      mode: session.source?.mode || "unknown",
-      name: session.source?.name || "circuit.circ",
-    };
-
     try {
       const query = await this.#requestJson("/api/query", {
         method: "POST",
