@@ -3,11 +3,12 @@
 const {isDeepStrictEqual} = require('node:util');
 
 // Only the model transport consumes this projection. Studio/UI/history keep
-// their original response. Known duplicate metadata becomes an explicit alias;
-// every alias is equality-checked against a still-present value in THIS result.
+// their original response. Known duplicate metadata has one canonical location,
+// checked against the complete value in THIS result. No decoder/map is sent.
 // This is not a recursive JSON compressor: rows, ports, nets, stimuli, errors,
 // execution identity and unknown/future fields are never scanned or truncated.
-const MODEL_OUTPUT_SCHEMA = 'vibe-logisim.model-tool-output/v1';
+// Identifies the checked-in contract, not a field added to each model response.
+const MODEL_OUTPUT_SCHEMA = 'vibe-logisim.canonical-model-view/v1';
 const RESULT_SCHEMA = 'vibe-logisim.circuit-plugin.result/v1';
 const SESSION_SCHEMA = 'vibe-logisim.circuit-lens/v0';
 
@@ -15,8 +16,8 @@ const BOUND_TOOLS = new Set(['trace_circuit', 'evaluate_circuit', 'render_circui
 const HOST_TOOLS = new Set(['open_circuit', 'submit_circuit']);
 
 // Paths are fixed JSON Pointers, never supplied by a tool or user. Sources do
-// not overlap destinations, so aliases are always one hop and order independent.
-const BOUND_ALIASES = [
+// not overlap destinations; the canonical value is always directly available.
+const BOUND_DUPLICATES = [
   ['/result/binding', '/binding'],
   ['/runtimeProfile', '/binding/runtimeProfile'],
   ['/result/runtimeProfile', '/binding/runtimeProfile'],
@@ -36,14 +37,13 @@ const BOUND_ALIASES = [
   ['/session/mode', '/run/mode'],
   ['/session/authority', '/run/authority'],
 ];
-const HOST_ALIASES = [
+const HOST_DUPLICATES = [
   ['/capabilities/profile', '/capabilities/observationProfile'],
   ['/invocation/projectId', '/workspace/id'],
   ['/invocation/revisionId', '/revision/id'],
-  ['/workspace/currentRevisionId', '/revision/id'],
-  ['/workspace/savedRevisionId', '/revision/id'],
-  ['/sourceStatus/currentSha256', '/revision/artifactSha256'],
 ];
+// Save state and disk identity have independent meanings, even when their
+// values equal revision.id/artifactSha256. Keep all three host state fields.
 
 function at(value, pointer) {
   for (const key of pointer.slice(1).split('/')) {
@@ -65,32 +65,41 @@ function projectModelResult(result) {
       || Object.hasOwn(result, 'modelProjection') || result.error != null) return result;
   const tool = result.invocation?.tool;
   let rules;
-  if (result.schema === RESULT_SCHEMA && BOUND_TOOLS.has(tool)) rules = BOUND_ALIASES;
-  else if (result.schema === SESSION_SCHEMA && HOST_TOOLS.has(tool)) rules = HOST_ALIASES;
+  if (result.schema === RESULT_SCHEMA && BOUND_TOOLS.has(tool)) rules = BOUND_DUPLICATES;
+  else if (result.schema === SESSION_SCHEMA && HOST_TOOLS.has(tool)) rules = HOST_DUPLICATES;
+  else if (!Object.hasOwn(result, 'schema') && tool === 'inspect_circuit') return projectInspection(result);
   else return result;
 
-  const aliases = {};
+  let projected;
   for (const [destination, source] of rules) {
     const original = at(result, destination), canonical = at(result, source);
     // Nulls (including unknown observations) and absent fields stay verbatim.
     if (original == null || !isDeepStrictEqual(original, canonical)) continue;
-    const key = destination.slice(destination.lastIndexOf('/') + 1);
-    const removedBytes = Buffer.byteLength(JSON.stringify({[key]:original}));
-    const aliasBytes = Buffer.byteLength(JSON.stringify({[destination]:source}));
-    if (removedBytes > aliasBytes) aliases[destination] = source;
-  }
-  if (!Object.keys(aliases).length) return result;
-
-  const projected = structuredClone(result);
-  for (const destination of Object.keys(aliases)) {
+    projected ||= structuredClone(result);
     const target = parent(projected, destination);
     delete target.value[target.key];
   }
-  projected.modelProjection = {schema:MODEL_OUTPUT_SCHEMA, aliases};
-  // A small result can cost more to describe than it saves. In that case send
-  // the original JSON; there is no imposed response-size budget or pagination.
-  return Buffer.byteLength(JSON.stringify(projected)) < Buffer.byteLength(JSON.stringify(result))
-    ? projected : result;
+  return projected || result;
+}
+
+function projectInspection(result) {
+  const template = result.objectReferenceTemplate;
+  // Reuse the existing COMPONENT_ID template contract. Ambiguous templates or
+  // IDs that would require a different escaping/substitution rule stay intact.
+  if (typeof template !== 'string' || !template.startsWith('circuit://object?')
+      || template.split('COMPONENT_ID').length !== 2
+      || !/[?&]componentId=COMPONENT_ID(?:&|$)/.test(template)
+      || !Array.isArray(result.components)) return result;
+  let projected;
+  result.components.forEach((component, index) => {
+    if (!component || typeof component.componentId !== 'string'
+        || !/^[A-Za-z0-9._~-]+$/.test(component.componentId)
+        || typeof component.reference !== 'string'
+        || component.reference !== template.replace('COMPONENT_ID', component.componentId)) return;
+    projected ||= structuredClone(result);
+    delete projected.components[index].reference;
+  });
+  return projected || result;
 }
 
 module.exports = {MODEL_OUTPUT_SCHEMA, projectModelResult};

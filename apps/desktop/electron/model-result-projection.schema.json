@@ -1,24 +1,82 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Vibe Logisim model-only lossless metadata projection v1",
-  "description": "The original result schema and all non-aliased fields remain. modelProjection.aliases maps an omitted field's absolute JSON Pointer to an exactly equal, still-present field in this same document. References are one hop, never external. Copy each source value to its destination and remove modelProjection to recover the original JSON. If the projection saves no UTF-8 bytes, the original response is sent without modelProjection.",
+  "title": "Vibe Logisim canonical model view v1",
+  "description": "A model-only view of known producer responses; no per-response projection metadata or decoder is added. Original schema and unknown fields remain. A declared legacy metadata field may be omitted only if its non-null value exactly equals the complete value at its canonical location. Conflicts and unknown values stay. This is semantic deduplication, not a codec to reconstruct the old UI object field-presence pattern. Rules below are build-time documentation and test constraints, never model output.",
   "type": "object",
-  "required": ["modelProjection"],
+  "additionalProperties": true,
   "properties": {
-    "modelProjection": {
-      "type": "object",
-      "required": ["schema", "aliases"],
-      "properties": {
-        "schema": {"const": "vibe-logisim.model-tool-output/v1"},
-        "aliases": {
-          "type": "object",
-          "minProperties": 1,
-          "propertyNames": {"pattern": "^/"},
-          "additionalProperties": {"type": "string", "pattern": "^/"}
-        }
-      },
-      "additionalProperties": false
+    "binding": {
+      "description": "Complete canonical project/revision/artifact/circuit/candidate and runtime profile identity; not pruned.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "run": {
+      "description": "Canonical run ID, authority, stimulus and mode where the producer supplies a run envelope. Its duplicate runtimeProfileId can be omitted in favor of binding.runtimeProfileId.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "result": {
+      "description": "Domain observation when an envelope exists. Rows, bits, execution identity, inputs and failures are unchanged. Flat trace responses retain their observation fields at the root; this view does not fabricate an envelope."
+    },
+    "objectReferenceTemplate": {
+      "description": "Existing inspect template; substitute the verified componentId for COMPONENT_ID. An explicit component reference, when present, takes precedence, particularly for historical/live instance links.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
-  "additionalProperties": true
+  "x-contract": "vibe-logisim.canonical-model-view/v1",
+  "x-bound-tools": [
+    "trace_circuit",
+    "evaluate_circuit",
+    "render_circuit"
+  ],
+  "x-bound-producer-schema": "vibe-logisim.circuit-plugin.result/v1",
+  "x-bound-canonical-sources": {
+    "/result/binding": "/binding",
+    "/runtimeProfile": "/binding/runtimeProfile",
+    "/result/runtimeProfile": "/binding/runtimeProfile",
+    "/runtimeProfileId": "/binding/runtimeProfileId",
+    "/result/runtimeProfileId": "/binding/runtimeProfileId",
+    "/session/runtimeProfileId": "/binding/runtimeProfileId",
+    "/artifactSha256": "/binding/artifactSha256",
+    "/result/artifactSha256": "/binding/artifactSha256",
+    "/session/artifactSha256": "/binding/artifactSha256",
+    "/revisionId": "/binding/revisionId",
+    "/result/revisionId": "/binding/revisionId",
+    "/session/revisionId": "/binding/revisionId",
+    "/circuit": "/binding/circuit",
+    "/result/circuit": "/binding/circuit",
+    "/session/circuit": "/binding/circuit",
+    "/candidateId": "/binding/candidateId",
+    "/result/candidateId": "/binding/candidateId",
+    "/session/candidateId": "/binding/candidateId",
+    "/invocation/projectId": "/binding/projectId",
+    "/invocation/revisionId": "/binding/revisionId",
+    "/run/runtimeProfileId": "/binding/runtimeProfileId",
+    "/result/schema": "/schema",
+    "/result/plugin": "/plugin",
+    "/result/runId": "/run/id",
+    "/result/stimulusSha256": "/run/stimulusSha256",
+    "/result/authority": "/run/authority",
+    "/session/mode": "/run/mode",
+    "/session/authority": "/run/authority"
+  },
+  "x-host-tools": [
+    "open_circuit",
+    "submit_circuit"
+  ],
+  "x-host-producer-schema": "vibe-logisim.circuit-lens/v0",
+  "x-host-canonical-sources": {
+    "/capabilities/profile": "/capabilities/observationProfile",
+    "/invocation/projectId": "/workspace/id",
+    "/invocation/revisionId": "/revision/id"
+  },
+  "x-inspect-reference-rule": "For inspect_circuit with no producer schema: preserve the existing template, IDs and component order. Only omit a string components[i].reference exactly equal to the existing circuit://object? template after substituting its sole COMPONENT_ID in the componentId query parameter. IDs must use URI-unreserved ASCII characters. Any differing, null, missing or ambiguous reference stays verbatim, including a reference with a different instance scope. All other electrical facts are unchanged.",
+  "x-host-state-preserved": "workspace.currentRevisionId, workspace.savedRevisionId and sourceStatus.currentSha256 retain their own meanings as current, saved and on-disk state. All remain explicit even when equal to revision.id or revision.artifactSha256."
 }
