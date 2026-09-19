@@ -63,7 +63,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 - `mutate`：把候选写回用户选择的源文件。
 - `evaluate`：运行用户主动请求的实验，并在存在可比较期望时返回判断。
 
-`harness_run` 的反馈状态只有在每一行都有明确期望、且全部匹配时才是 `passed`；存在不匹配时是 `failed`；没有完整比较条件时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
+`harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
 
@@ -73,7 +73,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 模型查询不生成图片或 base64，不创建候选、放置元件、保存或修改结构历史。未知、非法或设置后被丢弃的属性会明确失败；模型入口使用返回的原生标准字符串，人工模板/放置继续接受原生合法的颜色与数值别名。支持动态属性的依赖关系，不把 JSON 对象键顺序变成行为约束。它提供形状和配置参考，不说明该元件在任意电路中的行为已经通过验证，也不要求模型先查再编辑。
 
-`evaluate_circuit` 是独立的评测能力。组合模式要求每个输入向量带 `expected`；时序模式要求 `expectedRows`，每行指定 tick 和观察信号。它返回 `evaluation` 对象并保留底层 native observation：`passed` 表示规格覆盖的案例全部匹配，`failed` 表示至少一个明确不匹配，`unknown` 表示运行结果中有未确定信号或缺失样本。
+`evaluate_circuit` 是独立的评测能力。组合模式要求每个输入向量带非空 `expected`；时序模式要求非空 `expectedRows`，每行指定 tick 和至少一个观察信号的期望。它返回 `evaluation` 对象并保留底层 native observation：`passed` 表示所列案例全部稳定且匹配，`failed` 表示至少一个已稳定样本存在确定的不匹配，`unknown` 表示没有确定反例，但存在未确定信号、缺失样本或振荡。振荡样本即使某个独立输出恰好匹配，也不算通过；另一个已稳定样本的确定反例仍足以判失败。`cases[].reason` 和 `feedback.firstUnknown` 区分具体原因，不把未知位变为零。
 
 `compare_circuit` 是另一条可选路径：它用同一组原生时序激励运行当前版本和当前工程拥有的历史 revision，默认对照紧邻上一版本，也可以传入历史 `referenceRevisionId`。`passed` 只表示所选观察点在这次实验中与历史一致，`failed` 会给出第一个差异，`unknown` 表示缺少样本或发生振荡。它适合做回归检查；历史版本本身不是课程期望，因此这个结果不能替代 `evaluate_circuit` 的显式规格或用户提供的测试脚本。
 
@@ -128,6 +128,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 - 插件的模型可见协议规格和暴露策略由 [`circuit-plugin.json`](../apps/desktop/circuit-lens/studio/domain/circuit-plugin.json) 声明，由 [`circuit-tools.cjs`](../apps/desktop/electron/circuit-tools.cjs) 校验和投影；[`circuit-plugin.cjs`](../apps/desktop/electron/circuit-plugin.cjs) 只执行宿主工具并串行化共享画布操作。调用执行会带着 `threadId`、`turnId` 和 `callId` 穿过宿主边界。
 - Studio 的可执行插件注册和调用身份由 [`circuit_plugin.py`](../apps/desktop/circuit-lens/studio/application/circuit_plugin.py) 负责；`Workbench` 不再用一个按字符串展开的总分派器。目录中的 `import_candidate` 是隐藏的 Studio 内部能力，供候选生命周期测试使用，不会进入 Codex 的动态工具列表；模型看到的 `submit_circuit` 只刷新用户正在编辑的实际 `.circ` 文件。
 - 真实 Logisim 仿真和 trace 由 [`harness.py`](../apps/desktop/circuit-lens/studio/runtime/harness.py) 的 `NativeCircuitRuntime` 调用 native runtime 完成；显式规格比较由 [`evaluation.py`](../apps/desktop/circuit-lens/studio/runtime/evaluation.py) 独立完成。
+- 组合与时序共用 [`domain/evaluation.py`](../apps/desktop/circuit-lens/studio/domain/evaluation.py) 的样本比较语义；原生观察继续保留实际数值、未知位和振荡标记。空断言在运行前拒绝，观察动作无需提供断言。
 - 插件描述通过 `/api/agent/plugin` 暴露，桌面宿主在发送上下文时将其作为 application context 注入模型绑定。
 
 `NativeCircuitRuntime` 是电路插件中的原生执行能力，不是整个 Agent Harness。真正的 Base Harness 仍然是 Codex backend 及其 thread/turn、上下文、工具调用、权限、事件流和停止恢复边界。以后增加课程测试集、时序断言或其他领域能力时，优先注册新的插件 executor 或扩展独立 evaluator，保持 Codex 的代理生命周期不变。

@@ -161,6 +161,10 @@ class CircuitPlugin:
                 for index, item in enumerate(value):
                     CircuitPlugin._validate_schema_constraints(item, item_schema, f"{path}[{index}]")
         if isinstance(value, dict):
+            if 'minProperties' in schema and len(value) < schema['minProperties']:
+                raise CircuitToolError('INVALID_ARGUMENT', f"参数 {path} 至少需要 {schema['minProperties']} 个字段",
+                                       hint='按照 inputSchema.minProperties 补齐对象字段。',
+                                       context={'path': path, 'minProperties': schema['minProperties']})
             required = schema.get("required", [])
             missing = [name for name in required if name not in value]
             if missing:

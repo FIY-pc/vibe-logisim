@@ -110,6 +110,8 @@ python3 -m unittest -v apps/desktop/test/trace-events.py
 
 原生元件查询与人工放置的共享契约可用 `python3 -m unittest -v apps/desktop/test/describe-component.py` 检查：将模型查询返回的 XML 插入新文件，再由原生观察器核对实际端口、位宽、方向和属性；覆盖库 ID、库工具默认值、子电路、不同逻辑门配置、寄存器、非法属性、只读查询及人工输入格式兼容。不调用模型，不需要个人电路。
 
+`python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。当前 Codex 的旧线程会沿用初始 developer 指令，该脚本单独报告这一行为，不能仅凭 resume 参数接受成功就声称指令已更新。
+
 交互改动优先在独立临时文件夹和独立状态目录启动真实 Electron，通过鼠标/键盘走用户流程，核对保存文件、原生行为与重开结果。AI 状态可用明确标注的回放验证；真实模型回合单独考虑额度和必要性。
 
 已经安装上述两个 Logisim 运行文件时，可验证 AI 缺失不影响人工工作：

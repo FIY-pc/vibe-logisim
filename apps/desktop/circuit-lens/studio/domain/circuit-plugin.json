@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -706,7 +706,7 @@
     {
       "type": "function",
       "name": "harness_run",
-      "description": "Run a native circuit experiment. Use mode trace for clocks and sequential behavior or simulate for combinational vectors. This is an observation tool, not a required workflow or a pass verdict. First inspect the circuit: stimulusSchema lists injectable input Pins and clockSchema lists native Clock components; supply valid inputs and watches from that inspection. Returns the bound revision/artifact, native rows, observed targets and first failure/oscillation when present. Trace uses the same executor and semantics as trace_circuit: fresh state; native tick (except at 0), input events, button events, sample, with propagation after each step/event. Events are unavailable in simulate mode.",
+      "description": "Run a native circuit experiment. Use mode trace for clocks and sequential behavior or simulate for combinational vectors. This is an observation tool, not a required workflow or a pass verdict. Input Pin labels, Clock components and exact-target watch IDs are available from inspect_circuit; existing context may already contain what you need. Returns the bound revision/artifact, native rows, observed targets and first failure/oscillation when present. Trace uses the same executor and semantics as trace_circuit: fresh state; native tick (except at 0), input events, button events, sample, with propagation after each step/event. Events are unavailable in simulate mode.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1017,6 +1017,7 @@
                 },
                 "values": {
                   "type": "object",
+                  "minProperties": 1,
                   "additionalProperties": {
                     "type": "integer",
                     "minimum": 0,
@@ -1030,7 +1031,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "Expected values keyed by watch name, sampled after the tick's events settle. Missing rows or unknown values yield unknown."
+            "description": "Each row needs at least one expected value keyed by watch name, after events settle. Only settled samples are compared: a defined mismatch fails; missing/undefined signals or oscillating samples yield unknown. Any definite settled mismatch makes the overall evaluation fail even if other samples are unknown."
           }
         },
         "required": [
