@@ -4,6 +4,7 @@
 // dynamic tools. Domain executors may attach bounded binary observations here;
 // this adapter keeps them out of the text JSON and never exposes host paths.
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const {projectModelResult} = require('./model-result-projection.cjs');
 
 function splitModelContent(result) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
@@ -34,7 +35,7 @@ function dynamicToolResponse(result) {
   const {publicResult, modelContentItems} = splitModelContent(result);
   return {
     contentItems: [
-      {type: 'inputText', text: JSON.stringify(publicResult)},
+      {type: 'inputText', text: JSON.stringify(projectModelResult(publicResult))},
       ...modelContentItems.map(item => ({
         type: 'inputImage',
         imageUrl: `data:${item.mimeType};base64,${item.imageData}`,

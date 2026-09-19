@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Vibe Logisim model-only lossless metadata projection v1",
+  "description": "The original result schema and all non-aliased fields remain. modelProjection.aliases maps an omitted field's absolute JSON Pointer to an exactly equal, still-present field in this same document. References are one hop, never external. Copy each source value to its destination and remove modelProjection to recover the original JSON. If the projection saves no UTF-8 bytes, the original response is sent without modelProjection.",
+  "type": "object",
+  "required": ["modelProjection"],
+  "properties": {
+    "modelProjection": {
+      "type": "object",
+      "required": ["schema", "aliases"],
+      "properties": {
+        "schema": {"const": "vibe-logisim.model-tool-output/v1"},
+        "aliases": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {"pattern": "^/"},
+          "additionalProperties": {"type": "string", "pattern": "^/"}
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}
