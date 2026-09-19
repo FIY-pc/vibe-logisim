@@ -112,6 +112,8 @@ python3 -m unittest -v apps/desktop/test/trace-events.py
 
 `python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。当前 Codex 的旧线程会沿用初始 developer 指令，该脚本单独报告这一行为，不能仅凭 resume 参数接受成功就声称指令已更新。
 
+`node apps/desktop/test/e2e-delivery-links.cjs [可选电路路径]` 在真实 Electron 用鼠标点击合成聊天引用，确认工作区资料预览、模型原生路径打开画布、移动映射、跨文件夹和历史歧义处理。文件和状态均使用临时副本，不启动模型；[使用真实模型产物的记录](../experiments/010-model-efficiency/delivery-ui/README.md)区分模型任务结果与这个界面回放。
+
 交互改动优先在独立临时文件夹和独立状态目录启动真实 Electron，通过鼠标/键盘走用户流程，核对保存文件、原生行为与重开结果。AI 状态可用明确标注的回放验证；真实模型回合单独考虑额度和必要性。
 
 已经安装上述两个 Logisim 运行文件时，可验证 AI 缺失不影响人工工作：
