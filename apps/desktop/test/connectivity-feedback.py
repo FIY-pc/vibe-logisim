@@ -1,7 +1,7 @@
 """Focused native counterexamples for static connectivity feedback; no model.
 
 Fixtures are generic and generated here, independent of experiment 011. Both
-installed runtimes are required. No application integration is patched here.
+installed runtimes and the production inspect integration are exercised.
 """
 from copy import deepcopy
 from pathlib import Path
@@ -123,6 +123,10 @@ class ConnectivityFeedback(unittest.TestCase):
                         saved = deepcopy(scene)
                         scenes[name] = scene
                         facts[name] = connectivity_feedback(scene, exact=True)
+                        self.assertEqual(inspection['connectivityIssues'], facts[name])
+                        compact = call('inspect_circuit', name)
+                        self.assertEqual(compact['nets'], [])
+                        self.assertEqual(compact['connectivityIssues'], facts[name])
                         self.assertEqual(scene, saved, 'helper is a pure observation')
 
                     for name in ('Connected', 'Coincident'):
@@ -181,6 +185,7 @@ class ConnectivityFeedback(unittest.TestCase):
                     sink = next(c for c in scenes['Connected']['components'] if c['label'] == 'Sink')
                     selected = connectivity_feedback(scenes['Connected'], exact=True, component_ids=[sink['componentId']])
                     self.assertEqual(selected['inputsWithoutOutputPeer'], [])
+                    self.assertEqual(call('inspect_circuit', 'Connected', componentIds=[sink['componentId']])['connectivityIssues'], selected)
 
                     unknown, = facts['UnknownWidth']['unknownPorts']
                     self.assertEqual(unknown['reason'], 'unknown-width')

@@ -6,6 +6,8 @@ import io
 import xml.etree.ElementTree as ET
 import zipfile
 
+from studio.domain.connectivity_feedback import connectivity_feedback
+
 class InspectionService:
     def __init__(self, workspace, tools):
         self.workspace = workspace
@@ -35,26 +37,17 @@ class InspectionService:
         if ids:
             components = [c for c in components if c['componentId'] in ids]
         compact = [{k: c.get(k) for k in ('componentId', 'factory', 'label', 'location', 'bounds', 'attributes', 'ends', 'subcircuit')} for c in components]
-        unconnected_inputs = []
-        for component in components:
-            for end in component.get('ends') or []:
-                if end.get('direction') != 'input' or end.get('netBits'):
-                    continue
-                unconnected_inputs.append({
-                    'componentId': component.get('componentId'),
-                    'factory': component.get('factory'),
-                    'label': component.get('label'),
-                    'endIndex': end.get('index'),
-                    'location': end.get('location'),
-                    'width': end.get('width'),
-                    'semanticRole': end.get('semanticRole'),
-                    'runtimeTooltip': end.get('runtimeTooltip'),
-                })
+        connectivity = connectivity_feedback(
+            circuit,
+            exact=bool(view.get('capabilities', {}).get('exactConnectivity'))
+                  and not view.get('observerError'),
+            component_ids=ids,
+        )
         stimuli = [{'component': c['componentId'], 'factory': c['factory'], 'label': c.get('label'), 'port': e['index'], 'width': e.get('width'), 'direction': e.get('direction')} for c in circuit['components'] if c['factory'] == 'Pin' for e in c.get('ends', []) if e.get('direction') == 'output']
         clocks = [{'component': c['componentId'], 'factory': c['factory'], 'label': c.get('label'), 'location': c.get('location')} for c in circuit['components'] if c['factory'] == 'Clock']
         if view.get('observerError'):
             stimuli = None
-        result = {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': {'unconnectedInputs': unconnected_inputs, 'widthIncompatibilities': circuit.get('widthIncompatibilities', [])}, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
+        result = {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': connectivity, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
         result['artifactSha256'] = hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() if directory else self.workspace.artifact_sha256
         if args.get('includeWires'):
             from studio.domain.rerouting import wire_length

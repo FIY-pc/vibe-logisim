@@ -75,7 +75,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
 
-`inspect_circuit` 在精确运行时观察到端口后，还会返回 `connectivityIssues`：其中 `unconnectedInputs` 列出没有位网的输入端及其原生 tooltip，`widthIncompatibilities` 保留运行时报告的宽度冲突点。这是观察摘要，不替模型决定哪些端口应该连接；它把模型原本需要从大量端口和 net ID 中手工归纳的事实直接暴露出来。
+`inspect_circuit` 的 `connectivityIssues` 由 `domain/connectivity_feedback.py` 根据完整原生位网生成。1.9.2 修正了“有网络编号就算已连接”的漏报：`unconnectedInputs` / `unconnectedOutputs` 按端口列出没有其他端口 contact 的位；导线段可以存在。`inputsWithoutOutputPeer` 另列有 peer 但没有被原生标为 output 的位，不重复前一类；`unknownPorts` 与 `widthIncompatibilities` 保留未知和冲突。省略 nets 或筛选组件不缩减判断所用网络。原生方向标签不等于实际驱动，浮空输入也可能有合法默认值，因此这些是静态事实，不是功能成败或强制提交条件。两种实际运行时的总线、浮空、冲突反例与历史产物证据见 [014](../experiments/014-wire-construction/CONNECTIVITY.md)。
 
 插件 1.8.0 的 `describe_component` 复用左栏元件库的 `PlacementService` / `CircuitPalette`，让模型能查询尚未放置的元件。只传 `circuit` 返回当前工程声明库及子电路中的可放置工具；加 `library`、`tool` 和可选 `attributes` 返回有效属性、选项、真实端口索引/方向/位宽/原生 tooltip、边界，以及原点为 `(0,0)` 的 `<comp>` XML。插入时移动 `loc` 并平移端口坐标；库 ID 属于当前工程，不能跨项目照搬。属性初值来自当前库工具配置，不冒充固定的 factory 默认值。
 
