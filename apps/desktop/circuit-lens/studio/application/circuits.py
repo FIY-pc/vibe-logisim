@@ -42,9 +42,9 @@ class CircuitQueries:
     def render_for_agent(self, values):
         """Return a bounded native image for a model-facing visual observation.
 
-        The image is read from the same revision/profile cache as the desktop
-        canvas. The caller turns the bytes into an app-server inputImage; this
-        layer never exposes a host path to the model.
+        Use the opaque viewport renderer for both full and partial images.
+        The desktop overview has alpha and relies on its canvas background;
+        model image consumers do not necessarily composite alpha onto white.
         """
         w = self.workspace
         with w.lock:
@@ -55,36 +55,35 @@ class CircuitQueries:
             if not render or not view.get('capabilities', {}).get('exactConnectivity'):
                 raise ValueError('当前电路没有可用的原生图面，请先确认匹配的 Logisim 运行环境')
             revision = w.revision_id
+            project_id = w.history.record['id']
             profile_id = render['profileId']
             artifact_sha = w.artifact_sha256
             region = values.get('viewport')
             if region is None:
-                image = w.revision_dir / 'exact' / profile_id / (sha256_bytes(name.encode('utf-8')) + '.png')
-                if not image.is_file():
-                    raise ValueError('原生电路图面尚未生成，请稍后重试')
-                data = image.read_bytes()
                 kind = 'full'
-                description = render['bounds']
-                scale = render.get('scale')
+                region = {**render['bounds'], 'scale': render['scale']}
             else:
                 kind = 'viewport'
-                description = {key: region[key] for key in ('x', 'y', 'width', 'height', 'scale')}
-                scale = region['scale']
-        if region is not None:
-            data = self.render_viewport({
-                'revisionId': revision,
-                'profileId': profile_id,
-                'name': name,
-                **region,
-            })
+            description = {key: region[key] for key in ('x', 'y', 'width', 'height')}
+            scale = region['scale']
+        # Shares the existing bounded LRU, whose key contains the frozen
+        # artifact/runtime and region. Never suppress images on repeat reads:
+        # the model may need them again after compaction or a new turn.
+        data = self.render_viewport({
+            'revisionId': revision,
+            'profileId': profile_id,
+            'name': name,
+            **region,
+        })
         if len(data) > 4 * 1024 * 1024:
             raise ValueError('图面超过模型图像大小限制；请用 viewport 分块查看，范围建议不超过 2048×2048')
         if not data.startswith(b'\x89PNG\r\n\x1a\n') or len(data) < 24:
             raise ValueError('原生图面不是有效 PNG')
         pixel_width, pixel_height = struct.unpack('>II', data[16:24])
         with w.lock:
-            if w.revision_id != revision or w.artifact_sha256 != artifact_sha:
-                raise ValueError('电路在图面生成期间已经变化，请重新查看当前版本')
+            if (w.history.record['id'] != project_id or w.revision_id != revision or
+                    w.artifact_sha256 != artifact_sha or w.observer.profile()['id'] != profile_id):
+                raise LensError(HTTPStatus.CONFLICT, 'STALE_RENDER', '电路或运行环境已改变')
         return data, {
             'circuit': name,
             'revisionId': revision,
@@ -96,6 +95,8 @@ class CircuitQueries:
             'scale': scale,
             'pixelWidth': pixel_width,
             'pixelHeight': pixel_height,
+            'background': 'white',
+            'imageSha256': sha256_bytes(data),
             'bytes': len(data),
         }
 
