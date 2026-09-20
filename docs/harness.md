@@ -115,6 +115,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `retryable` 表示原参数不变时是否适合直接重试；参数错误、未知输入和过期修订通常为 `false`，模型应先根据 `hint`、`context` 或 `availableInputs` 修正调用。错误从 Studio 生成，经 HTTP 和 Electron 透传到 Codex 工具结果，不由 UI 改写成成功，也不要求用户进入固定验证流程。
 
+候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 [023](../experiments/023-simultaneous-layout/README.md)；反馈可恢复不等于已证明模型耗时改善。
+
 1.9.4 的原生加载共用 `NativeCircuitLoader`，在 Logisim WireRepair 前拒绝非水平/垂直导线，给出具体定义、序号及端点。它不自动换路线，不把坐标对齐规则扩大成网格/非零长度限制；直接编辑文件仍受支持。常驻 worker 的意外结束附退出码及有界 stderr，具体 observer 错误会传到渲染和交互启动。两种 JAR 的兼容、拒绝后的正常处理及源/结构不变证据见 [017](../experiments/017-native-wire-validation/README.md)。这是执行边界的故障反馈，不要求提交前先验证，也不证明功能正确。
 
 插件边界还会执行工具目录中声明的 `minimum/maximum/minItems/maxItems` 以及嵌套对象约束。越界参数在进入 native runtime 或工作区命令前就返回带路径的 `INVALID_ARGUMENT`，并给出可修正的边界；目录是约束的唯一来源，执行器不再各自重复维护一套上限。

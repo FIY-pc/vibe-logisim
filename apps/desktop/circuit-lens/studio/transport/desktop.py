@@ -6,6 +6,7 @@ import sys
 import threading
 from http import HTTPStatus
 from studio.domain.errors import DESKTOP_CONTROL_SCHEMA, LensError
+from studio.domain.tool_errors import CircuitToolError, ERROR_SCHEMA
 
 class DesktopControl:
     """Narrow, parent-process-only control channel carried over stdin/stdout."""
@@ -124,6 +125,9 @@ class DesktopControl:
                     },
                 }
             )
+        except CircuitToolError as error:
+            self.send({"id": request_id, "ok": False,
+                       "errorSchema": ERROR_SCHEMA, "error": error.as_dict()})
         except LensError as error:
             self.send(
                 {
@@ -154,4 +158,3 @@ class DesktopControl:
                     },
                 }
             )
-

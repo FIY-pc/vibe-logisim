@@ -45,6 +45,24 @@ async function main() {
       wireIds: read.wireGeometry.wires.map(w => w.wireId)});
     assert.ok(fs.readFileSync(artifact).equals(original));
     assert.ok(events.some(e => e.type === 'candidate-ready' && e.candidateId === candidate.id));
+    // A real model dropped the last hex digit, then retried the opaque error.
+    // Report exact choices while keeping lookup and checkout strictly explicit.
+    const typo = candidate.id.slice(0, -1);
+    await assert.rejects(invoke('inspect_circuit', {circuit: 'main', candidateId: typo}), error => {
+      assert.equal(error.toolError.code, 'CANDIDATE_NOT_FOUND');
+      assert.equal(error.toolError.retryable, false);
+      assert.deepEqual(error.toolError.context.availableCandidates.map(c => c.id), [candidate.id]);
+      return true;
+    });
+    for (const missing of [typo, 'candidate-' + 'f'.repeat(16)]) {
+      await assert.rejects(invoke('checkout_candidate', {candidateId: missing}), error => {
+        assert.ok(error.message.includes(candidate.id), 'checkout error retains the complete usable id');
+        assert.equal(error.toolError.code, 'CANDIDATE_NOT_FOUND');
+        assert.deepEqual(error.toolError.context.availableCandidates.map(c => c.id), [candidate.id]);
+        return true;
+      });
+      assert.ok(fs.readFileSync(artifact).equals(original), 'bad id never applies a guessed candidate');
+    }
     await invoke('checkout_candidate', {candidateId: candidate.id});
     assert.ok(!fs.readFileSync(artifact).equals(original));
     assert.equal(pending.projectId, initial.workspace.id, 'document identity remains stable');
@@ -55,6 +73,10 @@ async function main() {
     const rendered = await invoke('render_circuit', {circuit: 'main'});
     assert.equal(rendered.binding.artifactSha256, candidate.artifactSha256);
     assert.equal(rendered.modelContentItems.length, 1);
+    await assert.rejects(invoke('inspect_circuit', {circuit: 'main', candidateId: typo}), error => {
+      assert.deepEqual(error.toolError.context.availableCandidates, [], 'old-version choices are excluded');
+      return true;
+    });
     await workspace.finish(work, {isCurrent: () => true});
     const entry = desktop.history.list().find(e => e.files.some(f => f.path === 'design.circ'));
     assert.ok(entry, 'applied proposal has normal file history');
@@ -63,7 +85,8 @@ async function main() {
     assert.equal((await lens.session()).revision.id, initial.revision.id);
     assert.equal(fs.readFileSync(path.join(folder, 'notes.md'), 'utf8'), 'User reference file.');
     console.log(JSON.stringify({checkout: true, nativePropagation: '2/2', imageBoundToAppliedFile: true,
-      sourceUntouchedUntilCheckout: true, historyUndo: true, otherFilesPreserved: true}));
+      sourceUntouchedUntilCheckout: true, candidateTypoRecovery: true,
+      historyUndo: true, otherFilesPreserved: true}));
   } finally {
     desktop.folder.close();
     await desktop.queue.catch(() => {});

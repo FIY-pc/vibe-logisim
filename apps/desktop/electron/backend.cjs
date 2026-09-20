@@ -459,7 +459,12 @@ class LensBackend extends EventEmitter {
     this.pending.delete(String(message.id));
     clearTimeout(pending.timeout);
     if (message.ok) pending.resolve(message.result || {});
-    else pending.reject(new Error(message.error?.message || "Desktop control request failed."));
+    else {
+      const error = new Error(message.error?.message || "Desktop control request failed.");
+      error.code = message.error?.code || null;
+      if (message.errorSchema === "vibe-logisim.circuit-plugin.error/v1") error.toolError = message.error;
+      pending.reject(error);
+    }
   }
 
   #request(method, params) {

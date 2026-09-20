@@ -10,6 +10,7 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from studio.domain.candidate_access import CandidateAccess
+from studio.domain.tool_errors import CircuitToolError
 
 class CandidateService:
     def __init__(self, workspace, tools):
@@ -23,11 +24,28 @@ class CandidateService:
             frozenset(e['candidateId'] for e in record.get('history', []) if e.get('candidateId')),
         )
 
+    def _missing_candidate(self, candidate_id):
+        # Offer explicit choices from this project/version. Never resolve a
+        # mistyped identifier to a candidate, especially before applying it.
+        pending = self.list()
+        available = [{'id': item['id'], 'title': item.get('title', '')[:120]}
+                     for item in pending[:5]]
+        choices = '；'.join(f"{item['id']}（{item['title']}）" for item in available)
+        message = f'找不到候选 {str(candidate_id)[:120]}。'
+        message += f'当前版本可用候选：{choices}。' if available else '当前版本没有可用候选。'
+        return CircuitToolError('CANDIDATE_NOT_FOUND', message,
+            hint='从原始工具结果或 availableCandidates 选择完整 id；重复同一个无效编号不会恢复候选。',
+            context={'requestedCandidateId': candidate_id, 'availableCandidates': available,
+                     'availableCount': len(pending), 'truncated': len(pending) > len(available)})
+
     def _metadata(self, candidate_id, allow_applied=False):
         if not isinstance(candidate_id, str) or not re.fullmatch('candidate-[0-9a-f]{16}', candidate_id):
-            raise ValueError('Invalid candidate')
+            raise self._missing_candidate(candidate_id)
         directory = self.workspace.state_root / 'candidates' / candidate_id
-        metadata = json.loads((directory / 'candidate.json').read_text())
+        try:
+            metadata = json.loads((directory / 'candidate.json').read_text())
+        except FileNotFoundError as error:
+            raise self._missing_candidate(candidate_id) from error
         self._access().require(metadata, allow_applied=allow_applied)
         if hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() != metadata['artifactSha256']:
             raise ValueError('候选电路已被外部修改')
