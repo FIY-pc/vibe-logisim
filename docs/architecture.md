@@ -24,6 +24,8 @@
 
 模型工具声明经 `electron/schema-constraints-projection.cjs` 从同一 schema 补充原生 Code Mode 遗失的参数界限，契约签名包含实际发送的声明；不维护第二份规则。原生编辑器选项与保存属性值的转换由 `NativeAttributeAdapter.java` 统一处理，模板查询、人工放置/属性编辑与观察器共用，通过原生 setter 规范化选项，不推断本地化标签或另写元件属性规则。
 
+`electron/model-tool-output.cjs` 负责实际输出适配及 Code Mode 的字符串/图片返回说明。`domain/component_directory.py` 在已有静态观察上构造有字节预算的可选目录，不另建查询语言或游标服务。`application/candidate_render.py` 组合候选归属、原生边界观察与既有白底 renderer，允许应用前看图；候选访问和渲染身份继续由各自模块拥有，不改变文件编辑流程。
+
 ## 需要保持的边界
 
 - 文件夹拥有多条会话、上次选中的会话及资料；每条会话拥有自己的输入草稿和引用。电路文档拥有自己的结构状态和历史。切电路不切会话。

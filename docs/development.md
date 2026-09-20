@@ -114,6 +114,8 @@ python3 -m unittest -v apps/desktop/test/trace-events.py
 
 `node apps/desktop/test/native-tool-constraints.cjs /tmp/new-tool-constraints-capture` 使用真实 Codex app-server 与本地合成 Responses，核对模型实际收到的界限、旧线程恢复/分支限制；不读认证、不调用远端模型。纯投影与执行校验另用 `node --test apps/desktop/electron/schema-constraints-projection.test.cjs` 和 `python3 apps/desktop/test/tool-constraints.py`，见 [012](../experiments/012-tool-constraints/README.md)。
 
+该协议探针也核对实际 Code Mode 返回 string、普通 JSON 解析及 Unicode/null 字段保真；结果中的 passed 是明确夹具，不冒充电路仿真。可选组件目录的完整条目/字节预算/过期游标由 `python3 apps/desktop/test/inspection-discovery.py -v` 验证；真实保存的大电路观察及原生传输见 [018](../experiments/018-inspection-discovery/README.md)。候选应用前预览可用 `python3 apps/desktop/test/candidate-render.py -v` 检查两种 JAR 的真实生成候选、白底图像、文件不变与过期拒绝；图片传输及复现路径见 [019](../experiments/019-candidate-render/README.md)。这些入口均不调用远端模型。
+
 从空白接口构建组合算术电路的真实 base/full 回合、独立 oracle 与鼠标操作见 [011](../experiments/011-saturating-adder/README.md)。真实模型仅显式 `--run-model` 才启动；UI 脚本接受产物绝对路径，在临时副本操作 Pin，不启动模型。校准电路与模型产物结果必须分别报告。 默认结果目录为 `$XDG_STATE_HOME/vibe-logisim-experiments`（未设置则 `~/.local/state/vibe-logisim-experiments`）；`--output-root` 可指定其他持久目录，`--timeout-minutes` 明确实验预算。长回合及并行工作树不要放易随重启清空的 `/tmp`，遗失产物不能计入成功或功能失败。
 
 `python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。当前 Codex 的旧线程会沿用初始 developer 指令，该脚本单独报告这一行为，不能仅凭 resume 参数接受成功就声称指令已更新。

@@ -61,6 +61,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
 
+1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；[返回类型验收](../experiments/012-tool-constraints/RESULT-TYPE.md)证明传输与字段解析，不承诺模型必然遵循或整轮加速。
+
 原生属性适配在 `observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java`：编辑器下拉项可能是包装对象，须经克隆 AttributeSet 的原生 setter 转为保存值。模型元件查询、人工模板/编辑和观察器使用同一边界；两种 Logisim 的实际拆线器位分组、连线仿真、非法配置及撤销已验证，见 [013](../experiments/013-component-attributes/README.md)。这不增加特定任务工具，也不改变直接编辑 `.circ` 的能力。
 
 当前能力类别包括：
@@ -76,6 +78,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
 
 `inspect_circuit` 的 `connectivityIssues` 由 `domain/connectivity_feedback.py` 根据完整原生位网生成。1.9.2 修正了“有网络编号就算已连接”的漏报：`unconnectedInputs` / `unconnectedOutputs` 按端口列出没有其他端口 contact 的位；导线段可以存在。`inputsWithoutOutputPeer` 另列有 peer 但没有被原生标为 output 的位，不重复前一类；`unknownPorts` 与 `widthIncompatibilities` 保留未知和冲突。省略 nets 或筛选组件不缩减判断所用网络。原生方向标签不等于实际驱动，浮空输入也可能有合法默认值，因此这些是静态事实，不是功能成败或强制提交条件。两种实际运行时的总线、浮空、冲突反例与历史产物证据见 [014](../experiments/014-wire-construction/CONNECTIVITY.md)。
+
+1.10.0 的 `inspect_circuit(circuit, componentDirectory: {maxBytes?, cursor?})` 提供可选组件目录，返回完整的 ID、元件类型、标签和端口事实；详细连通信息仍按既有 componentIds 路径读取。页面按实际 UTF-8 JSON 字节预算生成，默认 24,000、上限 32,000，包含身份与游标；未知端口保留 null。游标绑定工程、版本、候选和完整静态观察/运行环境，过期拒绝，单条过大明确报错，不切断或跳过条目。原始全文和 Code Mode 自行筛选仍可用。实测 1,576 组件完整通过原生协议，目录每页约 82 毫秒本地处理的开销和未验证范围见 [018](../experiments/018-inspection-discovery/README.md)。
 
 插件 1.8.0 的 `describe_component` 复用左栏元件库的 `PlacementService` / `CircuitPalette`，让模型能查询尚未放置的元件。只传 `circuit` 返回当前工程声明库及子电路中的可放置工具；加 `library`、`tool` 和可选 `attributes` 返回有效属性、选项、真实端口索引/方向/位宽/原生 tooltip、边界，以及原点为 `(0,0)` 的 `<comp>` XML。插入时移动 `loc` 并平移端口坐标；库 ID 属于当前工程，不能跨项目照搬。属性初值来自当前库工具配置，不冒充固定的 factory 默认值。
 
@@ -146,6 +150,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 `render_circuit` 是一个可选的视觉观察工具。它从当前绑定的 revision 和 runtime profile 取得真实 Logisim 图面，返回范围、像素尺寸和来源摘要，并通过 Codex app-server 的 `inputImage` content item 传递 PNG；不会把宿主路径放进模型上下文。默认返回整张电路图，也支持受限 viewport。图像只说明几何和标签，不能替代 `inspect_circuit` 的连接观察或 `simulate_circuit`/`evaluate_circuit` 的行为结果。图像过大时工具返回可操作的分块提示，模型可以自行选择是否继续查看。
 
 模型整图和 viewport 都使用白底 RGB 原生 renderer，不能直接传递依赖网页背景的透明 overview。`region` 为电路坐标，`scale` 为每电路单位的像素数，并返回 `imageSha256`；静态图中的 X 不是运行结果。同版本同区域复用已有 renderer LRU，仍返回图像，避免模型压缩上下文后无法重看。切工程、修订或运行环境期间生成的旧图会被拒绝。
+
+1.10.0 增加可选 `candidateId`，允许在 checkout 前查看候选整图或 viewport；省略时仍查看当前电路。`application/candidate_render.py` 复用候选 owner/base/artifact/依赖检查和白底 renderer，原生观察提供图面边界；不修改源文件、结构历史或候选 UI PNG。返回真实候选 SHA、candidateId、baseRevisionId 和本次实际预览 runtime，拒绝其他工程、过期基线以及运行中变化。每次预览仍有一次 native overview 以取得边界，不宣称更快。生产生成的两种候选、两种 JAR 和 Code Mode 图像字节传递见 [019](../experiments/019-candidate-render/README.md)。
 
 **Code Mode 的最后一段传输也要验证。** 当前本机 Codex 0.153.3 会将动态工具的 `inputText`/`inputImage` 转换为换行拼接的字符串。直接 `text(await tools.render_circuit(...))` 会打印 base64，不能让模型看到图。工具 catalog 提供原生 Code Mode 调用示例：保留 metadata 文本，并把独立 data URL 行传给 `image(...)`。普通直接工具调用仍返回原生 `inputImage`。`node apps/desktop/test/native-tool-images.cjs` 用真实 Codex 和 localhost Responses 回放检查下一次模型请求中的 `input_image`，覆盖反例和 catalog 示例，不访问真实服务商或消耗模型额度。这证明传输契约，不证明某次真实模型回合采用了示例。
 
