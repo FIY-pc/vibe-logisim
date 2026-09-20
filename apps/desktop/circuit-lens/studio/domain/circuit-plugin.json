@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -419,7 +419,7 @@
     {
       "type": "function",
       "name": "wire_candidate",
-      "description": "Construct an independent candidate by adding native parts and physically wiring full ports in ONE definition. Omit candidateId for frozen source; supply it to compose an owned candidate. Existing component IDs MUST come from that exact candidate/source; IDs change when parts are added. New parts have unique aliases and 10-unit-grid locations. factory is an exact tool name from describe_component; optional library is its project-local group ID (empty string for this file's subcircuits). Without library, only a unique native tool name is accepted; ambiguous names require library. Uses the SAME native catalog, defaults, attributes, and custom subcircuit ports as manual placement, including declared third-party libraries. No arbitrary XML, deletion, moving, new Pin or new Tunnel. Recursive subcircuit placement and invalid attributes are rejected before routing. Connect {component,port} by native end index; use explicit Splitters for slicing. Preserves source and existing external footprint. Fresh Logisim load compares ALL port-bit connectivity against requested unions, rejecting unexpected shorts, missing links, width conflicts and merged output drivers. This proves requested connectivity, not functional correctness. Direct file edits remain available.",
+      "description": "Construct an independent candidate by adding native parts and physically wiring full ports in ONE definition. Omit candidateId for frozen source; supply it to compose an owned candidate. Existing component IDs MUST come from that exact candidate/source; IDs change when parts are added. New parts have unique aliases and 10-unit-grid locations. factory is an exact tool name from describe_component; optional library is its project-local group ID (empty string for this file's subcircuits). Without library, only a unique native tool name is accepted; ambiguous names require library. Uses the SAME native catalog, defaults, attributes, and custom subcircuit ports as manual placement, including declared third-party libraries. No arbitrary XML, deletion, moving, new Pin or new Tunnel. Recursive subcircuit placement and invalid attributes are rejected before routing. Connect {component,port} by native end index; use explicit Splitters for slicing. An explicitly connected pair of equal-width ports may touch directly; the point must have no existing wire or third port. Preserves source and existing external footprint. Fresh Logisim load compares ALL port-bit connectivity against requested unions, rejecting unexpected shorts, missing links, width conflicts and merged output drivers. This proves requested connectivity, not functional correctness. Direct file edits remain available.",
       "inputSchema": {
         "type": "object",
         "properties": {

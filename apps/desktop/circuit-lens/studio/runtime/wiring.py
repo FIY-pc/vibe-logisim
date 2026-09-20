@@ -8,6 +8,7 @@ correct: every existing and added port bit is compared after a fresh native load
 """
 
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -52,6 +53,93 @@ def ports(document):
             for c in document["focus"]["components"] for e in c["ends"]}
 
 
+def port_bits(end):
+    width = end["width"]
+    bits = {b["bit"]: b["netId"] for b in end["netBits"]}
+    if (type(width) is not int or width < 1 or len(end["netBits"]) != width
+            or set(bits) != set(range(width)) or any(net is None for net in bits.values())):
+        raise ValueError("端口位宽或逐位网络未知，无法确认连接")
+    return [bits[i] for i in range(width)]
+
+
+def disconnected_ports(workspace, document, name, baseline, parts, directory):
+    """Native relationships BEFORE placement can merge nets.
+
+    Observe each added part alone, retaining its native internal bit ties (e.g.
+    Splitter). Scope load-local net IDs separately from the baseline and other
+    additions. Never recover this partition from the already fused prepared graph.
+    """
+    components = []
+    def extend(observed, scope):
+        copied = deepcopy(observed["focus"]["components"])
+        for c in copied:
+            for end in c["ends"]:
+                if end["width"] is not None and end["width"] > 0:
+                    port_bits(end)  # Validate before namespacing could hide a null net ID.
+                for bit in end["netBits"]:
+                    bit["netId"] = (scope, bit["netId"])
+        components.extend(copied)
+    extend(baseline, "baseline")
+    isolated = document.circuit(name)
+    for node in list(isolated):
+        if node.tag in {"comp", "wire"}:
+            isolated.remove(node)
+    scratch = directory / "isolated-ports.circ"
+    try:
+        for alias, key, component, _ in parts:
+            isolated.append(component)
+            scratch.write_bytes(document.replace_circuit(isolated).data)
+            observed = workspace.observer.run_full(scratch, name)
+            if [identity(c) for c in observed["focus"]["components"]] != [key]:
+                raise ValueError(f"无法独立确认新增部件端口: {alias}")
+            extend(observed, key)
+            isolated.remove(component)
+    finally:
+        scratch.unlink(missing_ok=True)
+    return {"focus": {"components": components}}
+
+
+def touching_ports(prepared, baseline, added_keys):
+    """Find placement contacts before choosing a connectivity reference."""
+    at = defaultdict(list)
+    for key, end in ports(prepared).items():
+        at[point(end["location"])].append((key, end))
+    pairs = []
+    for p, ends in at.items():
+        if not any(key[0] in added_keys for key, _ in ends):
+            continue
+        # Exact segment containment also catches off-grid native wire geometry.
+        for wire in baseline["focus"]["wires"]:
+            a, b = point(wire["from"]), point(wire["to"])
+            if ((a[0] == b[0] == p[0] and min(a[1], b[1]) <= p[1] <= max(a[1], b[1]))
+                    or (a[1] == b[1] == p[1] and min(a[0], b[0]) <= p[0] <= max(a[0], b[0]))):
+                raise ValueError(f"新增端口 {p} 接触已有导线；暂仅支持无导线占用的显式双端口贴合")
+        if len(ends) == 1:
+            continue
+        if len(ends) != 2:
+            raise ValueError(f"新增端口 {p} 出现未要求的端口接触；仅支持显式连接的两个端口贴合")
+        pairs.append(tuple(key for key, _ in ends))
+    return pairs
+
+
+def contact_partition(reference, pairs, resolved):
+    """Accept contacts only when their exact port pair was explicitly requested."""
+    requested = {frozenset(((identity(ac), a["index"]), (identity(bc), b["index"])))
+                 for _, (ac, a), (bc, b) in resolved}
+    reference_ports = ports(reference)
+    contacts = Partition()
+    for pair in pairs:
+        a, b = (reference_ports[key] for key in pair)
+        p = point(a["location"])
+        if frozenset(pair) not in requested:
+            raise ValueError(f"新增端口 {p} 出现未要求的端口接触；仅支持显式连接的两个端口贴合")
+        if a["width"] != b["width"]:
+            raise ValueError(f"贴合端口连接位宽不同: {p}")
+        for x, y in zip(port_bits(a), port_bits(b)):
+            contacts.join(x, y)
+    return contacts
+
+
 def compare_partition(before, after, expected=None):
     """Equality of partitions, not equality of ephemeral observer net IDs."""
     old, new = ports(before), ports(after)
@@ -64,16 +152,12 @@ def compare_partition(before, after, expected=None):
             raise ValueError(f"端口或位宽被改变: {key}")
         if end["width"] is None or end["width"] < 1:
             continue  # Existing untyped probes are not evidence of a complete circuit.
-        actual = {b["bit"]: b["netId"] for b in other["netBits"]}
-        for bit in end["netBits"]:
-            wanted = expected.root(bit["netId"])
-            got = actual.get(bit["bit"])
-            if got is None:
-                raise ValueError(f"端口失去确定的电气网络: {key}")
+        for bit, (old_net, got) in enumerate(zip(port_bits(end), port_bits(other))):
+            wanted = expected.root(old_net)
             if forward.setdefault(wanted, got) != got:
-                raise ValueError(f"要求连接的信号仍然断开: {key} bit {bit['bit']}")
+                raise ValueError(f"要求连接的信号仍然断开: {key} bit {bit}")
             if backward.setdefault(got, wanted) != wanted:
-                raise ValueError(f"出现未要求的短接: {key} bit {bit['bit']}")
+                raise ValueError(f"出现未要求的短接: {key} bit {bit}")
             count += 1
     return count
 
@@ -120,8 +204,8 @@ def _wire_candidate(workbench, args, directory):
         raise ValueError("存在同类型同位置的重叠部件，无法唯一绑定端口；请先在编辑器中分开")
     aliases = {c["componentId"]: identity(c) for c in components_before}
     added_attrs = {}
-    for alias, key, component, attrs in prepare_parts(
-            workbench, artifact, name, additions, aliases, document.projection['libraries']):
+    parts = prepare_parts(workbench, artifact, name, additions, aliases, document.projection['libraries'])
+    for alias, key, component, attrs in parts:
         circuit.append(component)
         aliases[alias] = key
         added_attrs[key] = attrs
@@ -129,53 +213,71 @@ def _wire_candidate(workbench, args, directory):
         artifact.write_bytes(document.replace_circuit(circuit).data)
     write()
     prepared = workspace.observer.run_full(artifact, name)
-    compare_partition(baseline, prepared)
     native_components = {identity(c): c for c in prepared["focus"]["components"]}
-    old_ports = {point(e["location"]) for c in components_before for e in c["ends"]}
-    new_ports = set()
     for key, attrs in added_attrs.items():
         c = native_components.get(key)
         if c is None:
             raise ValueError(f"原生引擎未加载新增部件: {key}")
-        for end in c["ends"]:
-            p = point(end["location"])
-            on_wire = any(p in Router.grid(point(w["from"]), point(w["to"])) for w in baseline["focus"]["wires"])
-            if p in old_ports or p in new_ports or on_wire:
-                raise ValueError(f"新增端口 {key} {end['index']} 与已有端口或导线重合；请移开后显式连接")
-            new_ports.add(p)
         actual = {a["name"]: a.get("standard") for a in c["attributes"]}
         for attr, value in attrs.items():
             if actual.get(attr) != value:
                 raise ValueError(f"原生引擎未接受属性 {key} {attr}={value} (actual: {actual.get(attr)})")
+    touching = touching_ports(prepared, baseline, added_attrs)
+    if touching:
+        reference = disconnected_ports(workspace, document, name, baseline, parts, directory)
+    else:
+        # With every new port clear of all ports/wires, placement has not fused
+        # them. Keep the complete native partition, including Splitter bit ties,
+        # without an extra native load per addition. New Tunnels are disallowed
+        # by prepare_parts, so they cannot add hidden non-geometric joins here.
+        compare_partition(baseline, prepared)
+        reference = prepared
     partition = Partition()
     resolved = []
+    reference_components = {identity(c): c for c in reference["focus"]["components"]}
     def endpoint(ref):
         if not isinstance(ref, dict) or ref.get("component") not in aliases or type(ref.get("port")) is not int:
             raise ValueError("连接端点需为 {component: componentId 或新增 id, port: 原生端口序号}")
-        c = native_components[aliases[ref["component"]]]
+        c = reference_components[aliases[ref["component"]]]
         e = next((e for e in c["ends"] if e["index"] == ref["port"]), None)
-        if e is None or e["width"] is None or e["width"] < 1 or len(e["netBits"]) != e["width"]:
+        if e is None:
             raise ValueError(f"端口不存在或位宽未知: {ref}")
+        port_bits(e)
         return c, e
     for connection in connections:
         a, b = endpoint(connection.get("from")), endpoint(connection.get("to"))
         if a[1]["width"] != b[1]["width"]:
             raise ValueError(f"连接位宽不同: {connection.get('name')}: {a[1]['width']} ≠ {b[1]['width']}")
-        for x, y in zip(a[1]["netBits"], b[1]["netBits"]):
-            partition.join(x["netId"], y["netId"])
+        for x, y in zip(port_bits(a[1]), port_bits(b[1])):
+            partition.join(x, y)
         resolved.append((connection, a, b))
+    contacts = contact_partition(reference, touching, resolved)
     # Full-port output drivers may fan out, but must never merge with another driver.
     drivers = defaultdict(set)
-    for c in prepared["focus"]["components"]:
+    for c in reference["focus"]["components"]:
         for end in c["ends"]:
             if end["direction"] == "output":
-                for bit in end["netBits"]:
-                    drivers[partition.root(bit["netId"])].add(bit["netId"])
+                for net in port_bits(end):
+                    drivers[partition.root(net)].add(net)
     if any(len(group) > 1 for group in drivers.values()):
         raise ValueError("连接计划会合并多个原本独立的输出驱动，已拒绝")
-    router = Router(prepared, partition)
-    signals = []
+    # Placement itself may realize ONLY the explicitly permitted contacts. Then
+    # translate requested joins to prepared IDs solely for geometric routing.
+    if ports(reference).keys() != ports(prepared).keys():
+        raise ValueError("放置后端口集合改变，无法确认连接")
+    compare_partition(reference, prepared, contacts)
+    routed_partition = Partition()
+    native_ports = ports(prepared)
+    routed = []
     for connection, (ac, a), (bc, b) in resolved:
+        a = native_ports[(identity(ac), a["index"])]
+        b = native_ports[(identity(bc), b["index"])]
+        for x, y in zip(port_bits(a), port_bits(b)):
+            routed_partition.join(x, y)
+        routed.append((connection, (ac, a), (bc, b)))
+    router = Router(prepared, routed_partition)
+    signals = []
+    for connection, (ac, a), (bc, b) in routed:
         try:
             segments = router.route(a, b)
         except ValueError as error:
@@ -191,7 +293,7 @@ def _wire_candidate(workbench, args, directory):
     write()
     render_path = directory / (hashlib.sha256(name.encode()).hexdigest() + ".png")
     after = workspace.observer.run_full(artifact, name, render_path)
-    checked_bits = compare_partition(prepared, after, partition)
+    checked_bits = compare_partition(reference, after, partition)
     for key in ("invalidBundleEnds", "widthIncompatibilities"):
         if after.get("coverage", {}).get(key, 0) > baseline.get("coverage", {}).get(key, 0):
             raise ValueError("新增连接产生了电气冲突，未发布候选")
@@ -218,4 +320,3 @@ def _wire_candidate(workbench, args, directory):
                 "interfacePreserved": True, "sourceUnchanged": True, "verification": "native-bit-net-partition-only"}
     workbench._save(directory, metadata)
     return metadata
-
