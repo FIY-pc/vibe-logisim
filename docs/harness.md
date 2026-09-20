@@ -173,6 +173,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.10.1 的共享 `domain/routing.py` 对器件边缘附近增加有限代价，并优先让端口沿向外方向引出一格，再转弯；不新增硬障碍、移动元件或生成 Tunnel。重新布线、按端口连线和人工移动复用这一几何规则。真实产物 A/B 保留局部改善与变差的区域，原生端口位关系和独立行为检查分开验证，见 [间隙与引出报告](../experiments/007-local-rerouting/CLEARANCE.md)。这只是局部走线偏好，未解决全图布局、外置标签和密集拆线器。
 
+仿真执行目前仍按调用隔离启动 JVM。[021 运行时调查](../experiments/021-simulation-runtime/README.md)显示固定成本主要来自 JVM/首次加载；同一 JVM 直接复用 `LogisimFile` 又会保留 ROM program overlay 并累积 Project/Simulator 线程。因而 `NativeWorker` 的只读缓存不能直接承担仿真；任何后续 warm 优化必须拥有独立、串行、可丢弃的仿真边界，并在 revision/artifact/runtime 任一身份变化时销毁，异常也不能继续复用。这个边界是待实现约束，不是当前产品能力。
+
 `routing.lengthBefore/lengthAfter` 是所选/提出路径的长度，`circuitWireLengthBefore/circuitWireLengthAfter` 是原生规范化后的整图线长；重叠线可能被运行时合并，两者不能混用。[实验 007](../experiments/007-local-rerouting/README.md)分别保存直接工具计算、开放任务采用几何观察，以及真实模型自行调用局部布线器的结果；局部布线已被实际使用，但整轮效率和图面质量还不能由单次试跑推广。
 
 ## Episode 级效果评测

@@ -70,6 +70,8 @@ node apps/desktop/test/rerouting-workspace.cjs
 
 其结果可交给 `node apps/desktop/test/e2e-simulation-feedback.cjs /absolute/native-evidence-directory /absolute/new-ui-evidence`：在真实 Electron 回放已保存的原生事件，并以明确夹具补上工具完成事件，鼠标展开工作过程，核对完成不覆盖未知/反例、另一批通过不抹掉前一批反例、无断言只显示观察。它没有模型调用，证据来源与 UI 回放范围见 [截图](../experiments/008-native-verification/results/2026-09-20-feedback-ui/README.md)。
 
+仿真批量调用的启动成本调查见 [021](../experiments/021-simulation-runtime/README.md)。`measure.py` 和 `thread_lifetime.py` 只做有限的两 JAR 测量，不修改生产路径、不启动模型；它们证明的是每次 JVM 的成本和直接复用已加载 Logisim 图的污染/资源边界。不要把调查结果当作 warm worker 已经存在，或把它替代 UI/任务闭环验收。
+
 模型视觉观察的像素与原生协议验收：
 
 ```sh
