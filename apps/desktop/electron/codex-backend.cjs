@@ -224,6 +224,7 @@ class CodexBackend extends EventEmitter {
     // stopped or superseded turn is checked again when its queued call starts.
     this.circuitGeneration = 0;
     this.completedTurnIds = new Set();
+    this.pendingSteer = null;
     this.history = [];
     this.health = new TurnHealth();
     this.reconnecting = null;
@@ -243,7 +244,8 @@ class CodexBackend extends EventEmitter {
       conversationId: this.conversationId,
       revisionId: this.threadRevisionId,
       turnId: this.activeTurnId,
-      busy: this.finalizing || this.workspaceTransitioning || this.turnStarting || Boolean(this.activeTurnId) || Boolean(this.reconnecting),
+      busy: this.finalizing || this.workspaceTransitioning || this.turnStarting || Boolean(this.activeTurnId) || Boolean(this.pendingSteer) || Boolean(this.reconnecting),
+      canSteer: Boolean(this.child && !this.stopping && this.status === "busy" && this.activeTurnId && this.pendingTurn && !this.pendingSteer && !this.finalizing && !this.turnStarting && !this.workspaceTransitioning && !this.reconnecting),
       policy: this.agentWorkspace?.synchronize ? "direct" : this.changeMode,
       model: this.model,
       effort: this.effort,
@@ -545,8 +547,8 @@ class CodexBackend extends EventEmitter {
   }
 
 
-  async ask({ question, context, workspaceKey, editMessageId = null }) {
-    if (this.finalizing || this.turnStarting || this.activeTurnId || this.workspaceTransitioning) {
+  async ask({ question, context, workspaceKey, editMessageId = null, expectedTurnId = null }) {
+    if (expectedTurnId === null && (this.finalizing || this.turnStarting || this.activeTurnId || this.pendingSteer || this.workspaceTransitioning)) {
       throw new Error("Codex 正在回答上一条问题；请先等待或停止当前回答。");
     }
     const revisionId = context?.revisionId;
@@ -563,10 +565,6 @@ class CodexBackend extends EventEmitter {
     if (Buffer.byteLength(encodedBinding, "utf8") + Buffer.byteLength(encodedEvidence, "utf8") > MAX_CONTEXT_BYTES) {
       throw new Error("选区证据超过当前 Codex 上下文上限，请缩小选区后再问。");
     }
-    const changesWorkspace = Boolean(this.threadId && this.workspaceKey !== workspaceKey);
-    const requestEpoch = changesWorkspace ? ++this.workspaceEpoch : this.workspaceEpoch;
-    if (changesWorkspace) this.workspaceTransitioning = true;
-    this.turnStarting = true;
     const clientMessageId = `vibe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const frozenContext = {
       projectId:context.projectId,
@@ -585,6 +583,21 @@ class CodexBackend extends EventEmitter {
       simulationInstancePath: context.displayedSimulation?.instancePath || [],
       simulationRootCircuit: context.displayedSimulation?.rootCircuit || null,
     };
+    const additionalContext = cwd => ({
+      "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
+      "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
+      ...momentContext, ...materialContext(context),
+      "vibe-logisim.workspace": {value: JSON.stringify({cwd, file:context.folder?.activeFile || null, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
+    });
+    if (expectedTurnId !== null) {
+      if (editMessageId) throw new Error("运行中只能追加意见；编辑旧问题需要先停止回答。");
+      return this.#steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext,
+        additionalContext: this.includeCircuitContext ? additionalContext(this.currentCwd || this.runtimeWorkDir) : undefined});
+    }
+    const changesWorkspace = Boolean(this.threadId && this.workspaceKey !== workspaceKey);
+    const requestEpoch = changesWorkspace ? ++this.workspaceEpoch : this.workspaceEpoch;
+    if (changesWorkspace) this.workspaceTransitioning = true;
+    this.turnStarting = true;
     let generation = this.childEpoch;
     try {
       const startPromise = this.start();
@@ -672,13 +685,7 @@ class CodexBackend extends EventEmitter {
             ...(this.model ? {model:this.model} : {}),
             ...(this.effort ? {effort:this.effort} : {}),
             runtimeWorkspaceRoots: [turnCwd],
-            ...(this.includeCircuitContext ? { additionalContext: {
-              "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
-              "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
-              ...momentContext,
-              ...materialContext(context),
-              "vibe-logisim.workspace": {value: JSON.stringify({cwd:turnCwd, file:context.folder?.activeFile || null, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
-            } } : {}),
+            ...(this.includeCircuitContext ? {additionalContext: additionalContext(turnCwd)} : {}),
           });
         } catch (error) {
           const modelError = classifyModelError(error, {phase:"turn", model:this.model});
@@ -715,6 +722,57 @@ class CodexBackend extends EventEmitter {
       }
       this.#restoreLiveStatus(generation, requestEpoch);
     }
+  }
+
+  // A steer is bound to the turn the user saw. Never promote it to turn/start
+  // when the active turn ends while context is being gathered or sent.
+  async #steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext, additionalContext}) {
+    if (typeof expectedTurnId !== "string" || !expectedTurnId || this.activeTurnId !== expectedTurnId ||
+        !this.snapshot().canSteer || this.workspaceKey !== workspaceKey) {
+      throw new Error("当前任务已结束或状态变化，补充内容仍保留，请重新发送。");
+    }
+    const submission = {threadId:this.threadId, turnId:expectedTurnId, workspaceKey,
+      epoch:this.workspaceEpoch, generation:this.childEpoch, clientMessageId,
+      question, frozenContext:{...frozenContext,turnContinuation:true}, accepted:false};
+    this.pendingSteer = submission;
+    this.#setStatus("busy");
+    try {
+      const result = await this.#request("turn/steer", {
+        threadId:submission.threadId, expectedTurnId, clientUserMessageId:clientMessageId,
+        input:[{type:"text",text:question,text_elements:[]}],
+        ...(additionalContext ? {additionalContext} : {}),
+      });
+      this.#assertWorkspace(submission.epoch, submission.generation);
+      if (result?.turnId !== expectedTurnId) throw new Error("Codex 未确认向原任务追加意见，内容仍保留。");
+      this.#acceptSteer(submission);
+      return {threadId:submission.threadId, turnId:expectedTurnId, steered:true};
+    } catch (error) {
+      // Native userMessage can acknowledge acceptance before the RPC reply.
+      // A lost reply must not make an already accepted message look unsent.
+      if (submission.accepted && submission.epoch === this.workspaceEpoch && submission.generation === this.childEpoch) {
+        return {threadId:submission.threadId, turnId:expectedTurnId, steered:true};
+      }
+      throw error;
+    } finally {
+      if (this.pendingSteer === submission) this.pendingSteer = null;
+      this.#restoreLiveStatus(submission.generation, submission.epoch);
+    }
+  }
+
+  #acceptSteer(submission) {
+    if (submission.accepted || submission.epoch !== this.workspaceEpoch || submission.generation !== this.childEpoch ||
+        submission.threadId !== this.threadId) return;
+    submission.accepted = true;
+    if (this.pendingTurn?.turnId === submission.turnId) {
+      this.pendingTurn.observationId = submission.frozenContext.observationId;
+    }
+    const message = {type:"user",id:submission.clientMessageId,text:submission.question,context:submission.frozenContext};
+    this.history.push(message);
+    if (!this.ephemeral) {
+      try { this.#rememberMessageContext(submission.workspaceKey, message.id, message.context); }
+      catch (error) { this.emit("event", {type:"warning",message:"补充意见已发送，但本地记录未保存：" + plainError(error)}); }
+    }
+    this.emit("event", {type:"user-message",id:message.id,text:message.text,context:message.context});
   }
 
   async interrupt() {
@@ -1042,7 +1100,7 @@ class CodexBackend extends EventEmitter {
       return;
     }
     this.#setStatus(
-      this.finalizing || this.workspaceTransitioning || this.turnStarting || this.activeTurnId ? "busy" : "ready",
+      this.finalizing || this.workspaceTransitioning || this.turnStarting || this.activeTurnId || this.pendingSteer ? "busy" : "ready",
     );
   }
 
@@ -1114,6 +1172,7 @@ class CodexBackend extends EventEmitter {
   #historyFromThread(thread, messageContexts = null) {
     const messages = [];
     for (const turn of Array.isArray(thread?.turns) ? thread.turns : []) {
+      let userIndex = 0;
       for (const item of Array.isArray(turn?.items) ? turn.items : []) {
         if (item?.type === "userMessage") {
           const text = (Array.isArray(item.content) ? item.content : [])
@@ -1126,7 +1185,8 @@ class CodexBackend extends EventEmitter {
               type: "user",
               id: item.id,
               text,
-              context: messageContexts?.[item.clientId || item.id] || null,
+              context: userIndex++ === 0 ? (messageContexts?.[item.clientId || item.id] || null)
+                : {...messageContexts?.[item.clientId || item.id], turnContinuation:true},
             });
           }
         } else if (item?.type === "agentMessage" && item.text) {
@@ -1293,6 +1353,9 @@ class CodexBackend extends EventEmitter {
       ) {
         this.#bindPendingTurn(params.turnId, params.threadId, true);
       }
+      if (item.type === "userMessage" && this.pendingSteer &&
+          item.clientId === this.pendingSteer.clientMessageId && params.threadId === this.pendingSteer.threadId &&
+          params.turnId === this.pendingSteer.turnId) this.#acceptSteer(this.pendingSteer);
       if (!this.#matchesCurrentTurn(params)) return;
       if (item.type === "agentMessage") {
         if (this.health.clear()) this.#setStatus("busy");

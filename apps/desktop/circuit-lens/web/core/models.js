@@ -67,6 +67,8 @@ export function createModels() {
       status: window.vibeDesktop?.agent ? "starting" : "absent",
       busy: false,
       submitting: false,
+      canSteer: false,
+      turnId: null,
       unsubscribe: null,
     },
     memory: {

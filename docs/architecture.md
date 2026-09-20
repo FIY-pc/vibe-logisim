@@ -51,6 +51,8 @@
 
 用户消息的“编辑此问题”由 `conversation-view.js` 和 `conversation-edit.cjs` 共同实现原生编辑语义：前端在原消息的位置展开编辑器，底部草稿保持独立；用户发送时后端调用 `thread/revert(beforeTurnId)` 回到该用户回合之前，再以修改后的文字开始新回合。回退只修改 Codex 持久化对话历史，不回退工作区文件；回退完成后重新读取原生线程并同步消息上下文，失败或运行时没有准确保留前缀时不覆盖本地记录。取消编辑不会改变对话。
 
+运行中的补充意见复用同一输入上下文和原生 `turn/steer`，由 `codex-backend.cjs` 持有唯一待确认发送及其工作区/回合归属；不创建第二个模型循环。前端在准备选区之前捕获 `expectedTurnId`，IPC 传递该约束，过期不提升为新回合。原生响应或对应 userMessage 任一确认后只记一次消息，失败保留原草稿。历史中的补充消息由 native turn 内的位置标记为 continuation，避免按回合回退时误删原问题。
+
 独立包的目录与进程约定见 [分发说明](distribution.md)。`runtime-paths.cjs` 选择包内环境，`agent-process.cjs` 提供外部隔离，PDF 预览在独立受限渲染进程运行。应用资源不承担用户工作区或可写状态的职责。
 
 ## 文件操作与引用

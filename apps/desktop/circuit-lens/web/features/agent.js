@@ -38,6 +38,9 @@ function submitMessageEdit({id,text,context}) {
     if(editingMessageId==null||String(editingMessageId)!==String(id))return Promise.resolve(false);
     return askAgent({questionOverride:text,editMessageIdOverride:id,inlineEdit:true,editContext:context});
   }
+function canSteerCurrentTurn() {
+    return agentState.busy && agentState.canSteer && Boolean(agentState.turnId);
+  }
 function updateComposerState() {
     conversation.setBusy(agentState.busy || agentState.submitting || ports.conversationBinding().busy);
     ports.updateMaterialState();
@@ -52,22 +55,28 @@ function updateComposerState() {
       return;
     }
     const busy = agentState.busy || agentState.submitting;
+    const canSteer = canSteerCurrentTurn();
+    const hasQuestion = Boolean(ui.questionInput.value.trim());
     const ready = agentState.status === "ready";
     ui.copyReferenceButton.hidden = true;
     ui.interruptButton.hidden = !busy;
-    ui.askButton.hidden = busy;
+    ui.askButton.hidden = busy && !(canSteer && hasQuestion);
+    ui.interruptButton.classList.toggle("is-compact", busy && !ui.askButton.hidden);
     ui.interruptButton.disabled = agentState.submitting && !agentState.busy;
     ui.questionInput.disabled = !projectState.session || !ports.draftReady();
     ui.questionInput.placeholder = busy ? "继续写下你的想法…" : "一起构思、修改，或问一个问题…";
     ui.askButton.replaceChildren(icon("ArrowUp"));
-    ui.askButton.disabled = busy || projectState.projectBusy || !ready || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged) || !ui.questionInput.value.trim();
-    if (projectState.sourceChanged) {
+    ui.askButton.disabled = agentState.submitting || (busy && !canSteer) || projectState.projectBusy || (!ready && !canSteer) || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged) || !hasQuestion;
+    ui.askButton.setAttribute("aria-label", canSteer ? "追加到当前任务" : "发送问题");
+    if (canSteer) {
+      ui.askButton.title = "追加到当前任务";
+    } else if (projectState.sourceChanged) {
       ui.askButton.title = projectState.folder ? "向 AI 讨论或修复当前文件，画布仍显示此前可读版本" : "先重新载入并建立当前版本的上下文";
     } else if (!ready) {
       ui.askButton.title = agentState.status === "auth-required"
         ? "打开 AI 设置查看连接与登录"
         : "正在等待本机 Codex";
-    } else if (!ui.questionInput.value.trim()) {
+    } else if (!hasQuestion) {
       ui.askButton.title = "输入一个关于当前电路的问题";
     } else {
       ui.askButton.title = ports.hasSelection()
@@ -110,13 +119,17 @@ async function ensureAgentSelection() {
   }
 
 async function askAgent({questionOverride=null,editMessageIdOverride=null,inlineEdit=false,editContext=null}={}) {
-    if (projectState.projectBusy || agentState.busy || agentState.submitting || (agentState.enabled && agentState.status !== "ready")) return;
+    const steering = !inlineEdit && canSteerCurrentTurn();
+    if (projectState.projectBusy || (agentState.busy && !steering) || agentState.submitting || (agentState.enabled && agentState.status !== "ready" && !steering)) return;
     if (!agentState.enabled) {
       await ports.querySelection();
       return;
     }
     const question = (typeof questionOverride === "string" ? questionOverride : ui.questionInput.value).trim();
     if (!question || (!inlineEdit && !ports.draftReady()) || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged)) return false;
+    // Capture before selection preparation: a completed turn must reject this
+    // submission rather than silently turn the follow-up into a new turn.
+    const expectedTurnId = steering ? agentState.turnId : null;
     const receipt = inlineEdit ? null : ports.draftReceipt();
     const editMessageId = inlineEdit ? editMessageIdOverride : null;
     const submittedRevision = projectState.revision;
@@ -139,6 +152,7 @@ async function askAgent({questionOverride=null,editMessageIdOverride=null,inline
       backendSubmissionStarted = true;
       const result = await window.vibeDesktop.agent.ask({
         question,
+        ...(steering ? {expectedTurnId} : {}),
         conversationId: ports.conversationBinding().id,
         folderId: projectState.folder?.id,
         revisionId: includeCircuit ? submittedRevision : null,
@@ -173,8 +187,10 @@ async function askAgent({questionOverride=null,editMessageIdOverride=null,inline
       return true;
     } catch (error) {
       if (backendSubmissionStarted) clearMessageEdit();
-      if (submittedEpoch === workspaceEpoch && projectState.session?.workspace?.id === submittedProject)
-        ports.reportAgentError(`没有开始回答：${error.message}`);
+      if (submittedEpoch === workspaceEpoch && projectState.session?.workspace?.id === submittedProject) {
+        if (steering) ports.showToast(`没有追加到当前任务：${error.message}`);
+        else ports.reportAgentError(`没有开始回答：${error.message}`);
+      }
       return false;
     } finally {
       if(submittedEpoch===workspaceEpoch)agentState.submitting = false;
@@ -225,6 +241,8 @@ function initializeAgent() {
 function applyAgentState(snapshot = {}) {
     agentState.status = snapshot.status || "unavailable";
     agentState.busy = Boolean(snapshot.busy || snapshot.status === "busy");
+    agentState.canSteer = Boolean(snapshot.canSteer);
+    agentState.turnId = snapshot.turnId || null;
     const labels = {
       idle: "等待启动",
       starting: "正在连接本机 Codex…",
@@ -294,6 +312,8 @@ function handleAgentEvent(event) {
     if (event.type === "workspace-reset") {
       workspaceEpoch++;
       agentState.submitting=false;
+      agentState.canSteer=false;
+      agentState.turnId=null;
       clearMessageEdit();
       clearAgentTimeline();
       ports.updateAgentConnection({transmission:null});
@@ -303,6 +323,8 @@ function handleAgentEvent(event) {
       if (agentState.busy) conversation.finish("interrupted");
       ui.agentTimeline.querySelectorAll(".is-streaming").forEach(node => { node.classList.remove("is-streaming"); node.removeAttribute("aria-busy"); });
       agentState.busy = false;
+      agentState.canSteer = false;
+      agentState.turnId = null;
       updateComposerState();
       return;
     }
@@ -357,9 +379,9 @@ function handleAgentEvent(event) {
       return;
     }
     if (event.type === "turn-started") {
-      agentState.busy = true;
+      const canSteer = event.canSteer ?? (event.turnId === agentState.turnId && agentState.canSteer);
       conversation.start();
-      applyAgentState({ status: "busy", busy: true, transmission:null });
+      applyAgentState({ status: "busy", busy: true, turnId:event.turnId, canSteer, transmission:null });
       return;
     }
     if (event.type === "turn-completed") {

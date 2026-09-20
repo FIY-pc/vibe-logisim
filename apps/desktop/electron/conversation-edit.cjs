@@ -20,6 +20,11 @@ async function revertThroughMessage({request, assertCurrent, source, messageId})
     throw new Error('这条问题尚不能编辑，请等当前回答结束后重试');
   }
 
+  const firstUser = target.items?.find(item => item.type === 'userMessage');
+  if (firstUser?.id !== messageId && firstUser?.clientId !== messageId) {
+    throw new Error('补充意见与原问题属于同一回合；请发送新的问题，不回退整轮对话。');
+  }
+
   const prefix = turns.slice(0, index);
   const expectedIds = prefix.map(turn => turn.id);
   const keptIds = new Set(prefix.flatMap(turn => (turn.items || [])

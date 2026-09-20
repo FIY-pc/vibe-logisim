@@ -33,12 +33,12 @@ export class ConversationView {
     this.ui.conversationLatest.hidden=true;this.ui.agentTimeline.replaceChildren(this.ui.agentEmpty);this.ui.agentEmpty.hidden=false;
   }
   user(id,text,context) {
-    this.follow=true;this.work=null;
+    this.follow=true;if(!context?.turnContinuation)this.work=null;
     const binding=this.referenceBinding();
     const sameFolder=context?.folderId&&context.folderId===binding?.folderId;
     this.turnReferenceBinding={...binding,folderId:context?.folderId||null,projectId:context?.projectId,
       pathVersion:!this.restoring&&sameFolder?binding.pathVersion:null};
-    const message=this.create('user',id,text);
+    const message=this.create('user',id,text,context);
     message.context=context;
     if(context) {
       const path=context.simulationInstancePath?.map(p=>p.label)||[];
@@ -50,7 +50,7 @@ export class ConversationView {
     }
     this.scroll();return message;
   }
-  create(role,id,text='') {
+  create(role,id,text='',context=null) {
     this.ui.agentEmpty.hidden=true;
     const node=makeElement('article','agent-message');node.dataset.role=role;node.dataset.itemId=id;
     const header=makeElement('div','agent-message-header');header.append(makeElement('strong','',role==='user'?'你':'Codex'));
@@ -63,8 +63,10 @@ export class ConversationView {
     const copy=action('复制消息','Copy',()=>copyText(message.text,copy,this.notify));
     footer.append(copy);
     if(role==='user') {
-      const edit=action('编辑此问题','Pencil',()=>this.edit({id:message.id,text:message.text,node:message.node}));
-      edit.classList.add('message-edit');edit.disabled=Boolean(this.busy);footer.append(edit);
+      if(!context?.turnContinuation) {
+        const edit=action('编辑此问题','Pencil',()=>this.edit({id:message.id,text:message.text,node:message.node}));
+        edit.classList.add('message-edit');edit.disabled=Boolean(this.busy);footer.append(edit);
+      }
     }
     else {
       const status=makeElement('small','message-branch-status');status.hidden=true;status.setAttribute('role','status');

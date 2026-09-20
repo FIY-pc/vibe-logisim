@@ -478,6 +478,7 @@ function registerIpc() {
       context: {...resolved.context,materials:desktopWorkspace.references(request.materialRefs)},
       workspaceKey: resolved.workspaceKey,
       editMessageId: request.editMessageId || null,
+      expectedTurnId: request.expectedTurnId,
     });
     if (workspaceTransitioning || expectedGeneration !== workspaceGeneration) {
       throw workspaceChangedError();
@@ -536,7 +537,10 @@ function validateAgentAsk(value) {
   if(!Array.isArray(momentIds)||momentIds.length>2||momentIds.some(id=>typeof id!=="string"||!/^live-[a-f0-9]{16}$/.test(id)))throw new Error("Invalid kept observations.");
   const editMessageId = typeof value.editMessageId === "string" ? value.editMessageId.trim() : "";
   if (editMessageId.length > 512) throw new Error("Invalid edited message.");
-  return { question, revisionId, circuit, selectionId, kind, ids, observationId, editMessageId, momentIds:[...new Set(momentIds)],materialRefs:value.materialRefs||[] };
+  const expectedTurnId = value.expectedTurnId ?? null;
+  if (expectedTurnId !== null && (typeof expectedTurnId !== "string" || !expectedTurnId.trim() || expectedTurnId.length > 512)) throw new Error("Invalid active turn.");
+  if (expectedTurnId !== null && editMessageId) throw new Error("不能在追加意见时编辑旧问题。");
+  return { question, revisionId, circuit, selectionId, kind, ids, observationId, editMessageId, expectedTurnId, momentIds:[...new Set(momentIds)],materialRefs:value.materialRefs||[] };
 }
 
 function createWindow(baseUrl) {
