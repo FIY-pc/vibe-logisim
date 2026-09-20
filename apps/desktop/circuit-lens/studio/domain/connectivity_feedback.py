@@ -8,15 +8,77 @@ not actually drive a defined value. Native EndData directions are metadata.
 from copy import deepcopy
 
 
+# Bound the new preview independently of the full native net records.
+_OUTPUT_GROUP_LIMIT = 16
+_OUTPUT_PEER_LIMIT = 8
+_OUTPUT_BIT_LIMIT = 32
+_OUTPUT_TEXT_LIMIT = 256
+
+
+def _endpoint(component, end):
+    return {
+        **{key: component.get(key) for key in ('componentId', 'factory', 'label')},
+        'endIndex': end['index'],
+        **{key: end.get(key) for key in (
+            'location', 'width', 'direction', 'semanticRole', 'runtimeTooltip')},
+    }
+
+
 def _index_contacts(contacts):
-    members, endpoints, outputs = set(), set(), set()
+    members, endpoints, outputs = set(), set(), {}
     for contact in contacts:
         endpoint = (contact.get('componentId'), contact.get('endIndex'))
         members.add((*endpoint, contact.get('bit')))
         endpoints.add(endpoint)
         if contact.get('direction') == 'output':
-            outputs.add(endpoint)
+            outputs.setdefault(endpoint, set()).add(contact.get('bit'))
     return members, endpoints, outputs
+
+
+def _multiple_output_peers(circuit, peer_nets, selected):
+    # One group per complete output-endpoint set, not pairs or repeated reports
+    # at every sink. Different bit mappings still retain their native net IDs.
+    groups = {}
+    for net_id, outputs in peer_nets.items():
+        groups.setdefault(frozenset(outputs), []).append((net_id, outputs))
+    if not groups:
+        return [], 0
+    endpoints = {
+        (component['componentId'], end['index']): (component, end)
+        for component in circuit.get('components', [])
+        for end in component.get('ends', [])
+    }
+    result = []
+    for ports, nets in list(groups.items())[:_OUTPUT_GROUP_LIMIT]:
+        # Keep a selected output visible even when many peers share the bus.
+        shown = sorted(ports, key=lambda p: (p[0] not in selected, *p))[:_OUTPUT_PEER_LIMIT]
+        peers = []
+        for port in shown:
+            component, end = endpoints.get(port, ({'componentId': port[0]}, {'index': port[1]}))
+            peer = {**_endpoint(component, end), 'componentLocation': component.get('location')}
+            # Direction here is the contact's native metadata, never a drive
+            # assertion. Exclusive flags are deliberately not interpreted.
+            peer['direction'] = 'output'
+            truncated = []
+            for key in ('factory', 'label', 'semanticRole', 'runtimeTooltip'):
+                value = peer[key]
+                if isinstance(value, str) and len(value) > _OUTPUT_TEXT_LIMIT:
+                    peer[key] = value[:_OUTPUT_TEXT_LIMIT]
+                    truncated.append(key)
+            if truncated:
+                peer['truncatedFields'] = truncated
+            bits, count = [], 0
+            for net_id, outputs in nets:
+                count += len(outputs[port])
+                if len(bits) < _OUTPUT_BIT_LIMIT:
+                    bits.extend({'bit': bit, 'netId': net_id}
+                                for bit in sorted(outputs[port])[:_OUTPUT_BIT_LIMIT - len(bits)])
+            peer['netBits'] = bits
+            peer['omittedNetBits'] = count - len(bits)
+            peers.append(peer)
+        result.append({'peers': peers, 'netCount': len(nets),
+                       'omittedPeers': len(ports) - len(peers)})
+    return result, max(0, len(groups) - len(result))
 
 
 def connectivity_feedback(circuit, *, exact, component_ids=None):
@@ -33,12 +95,19 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
             'Unconnected lists bits without endpoint peers, regardless of wires. '
             'inputsWithoutOutputPeer excludes those bits: peers exist but none is '
             'marked output; inout peers are not interpreted as drivers. EndData '
-            'directions may differ from functional roles. Details remain in '
+            'directions may differ from functional roles. multipleOutputPeers '
+            'groups native output-marked ends sharing bit nets, including peers '
+            'outside the selection; this does not establish an electrical conflict. '
+            'Outputs may be tri-stated, inactive, or misdescribed by runtime metadata. '
+            'Groups, peers, bit mappings and text are bounded previews; omissions '
+            'are explicit. Details remain in '
             'components.ends.netBits and inspect(includeNets=true).'
         ),
         'unconnectedInputs': [],
         'unconnectedOutputs': [],
         'inputsWithoutOutputPeer': [],
+        'multipleOutputPeers': [],
+        'multipleOutputPeersOmittedGroups': 0,
         'unknownPorts': [],
         'widthIncompatibilities': deepcopy(circuit.get('widthIncompatibilities', [])),
     }
@@ -49,18 +118,14 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
     # Index each visited net once, including peers outside the report selection.
     # Work is linear in contacts plus port bits, rather than fanout squared.
     indexed_nets = {}
+    peer_nets = {}
     selected = set(component_ids or [])
     for component in circuit.get('components', []):
         component_id = component['componentId']
         if selected and component_id not in selected:
             continue
         for end in component.get('ends', []):
-            endpoint = {
-                **{key: component.get(key) for key in ('componentId', 'factory', 'label')},
-                'endIndex': end['index'],
-                **{key: end.get(key) for key in (
-                    'location', 'width', 'direction', 'semanticRole', 'runtimeTooltip')},
-            }
+            endpoint = _endpoint(component, end)
             width = end.get('width')
             if type(width) is not int or width < 0:
                 result['unknownPorts'].append({**endpoint, 'reason': 'unknown-width'})
@@ -85,6 +150,8 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
                 if (*port, bit) not in members:
                     missing.append(bit)
                     continue
+                if len(outputs) > 1:
+                    peer_nets[net_id] = outputs
                 # All bits of this same end are excluded, even if a splitter
                 # maps several of them onto one net; duplicates add no peers.
                 if len(endpoints) == 1:
@@ -105,5 +172,7 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
                     result[key].append({**endpoint, 'bits': bits})
     if result['unknownPorts']:
         result['status'] = 'partial'
+    result['multipleOutputPeers'], result['multipleOutputPeersOmittedGroups'] = (
+        _multiple_output_peers(circuit, peer_nets, selected))
     # Do not expose references into the cached circuit view to callers.
     return deepcopy(result)

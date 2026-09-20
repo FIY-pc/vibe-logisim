@@ -83,6 +83,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.17.0 的 `wire_candidate` 支持在没有父实例的定义中新增原生 Pin，包括产品新建的空白 main。原有引脚必须保持不变，新增集合必须与请求一致；已有父实例时给出明确原因和接口编辑/直接文件编辑路径，不猜父电路接线。元件目录、模板和连接校验继续共用。后续 wire/move/reroute 对比前一个候选的接口，保留相对源文件的 `interfacePreserved: false`，不会把合法扩展的接口误当作破坏。只改变当前定义且无父实例时，不逐一加载无关定义。助手活动的失败详情也不再被工具名覆盖。真实空白计数器回合暴露了这两个阻碍，但原回合超时且输出冲突，未完成任务；修正后的从空白构建/继续编辑是生产入口验证，不是新的模型自主成功，见 [027](../experiments/027-counter-from-blank/README.md)。
 
+1.18.0 在普通 `inspect_circuit` 的 `connectivityIssues` 中新增 `multipleOutputPeers`：从完整原生位网归并多个标为 output 的端口，给出组件/端口 ID、位置、原生提示和位映射，局部选择也带出选区外相关端口。默认最多16组、每组8个端口、每端口32个位映射，所有省略均标出，完整 nets 保持可读；没有新增原生查询。它是静态连接事实，不能把三态/未激活输出或原生方向元数据当作实际驱动冲突。真实失败计数器的寄存器、多路器和常量输出共网现可直接定位，正常32位扇出与原请求恢复产物不报告该项，见 [028](../experiments/028-construction-feedback/README.md)。
+
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
