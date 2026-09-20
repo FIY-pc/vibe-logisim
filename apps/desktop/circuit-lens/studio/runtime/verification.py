@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import tempfile
 import time
@@ -94,14 +95,32 @@ class VerificationService:
         return {
             "schema": MANIFEST_SCHEMA,
             "manifest": str(path) if path else None,
+            "manifestSha256": self._read_sha(path),
             "found": path is not None,
-            "verifications": recipes,
+            "verifications": [
+                {**recipe, "recipeSha256": self._recipe_sha(recipe)}
+                for recipe in recipes
+            ],
             "note": "验证器是工作区提供的可选外部 oracle；清单不存在时不代表电路错误。",
         }
 
     @staticmethod
     def _sha(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    @staticmethod
+    def _recipe_sha(recipe: dict) -> str:
+        payload = json.dumps(recipe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _read_sha(path: Path | None) -> str | None:
+        if path is None or not path.is_file():
+            return None
+        try:
+            return VerificationService._sha(path)
+        except OSError:
+            return None
 
     @staticmethod
     def _replace(value: str, variables: dict[str, str]) -> str:
@@ -117,6 +136,63 @@ class VerificationService:
         if len(value) <= MAX_OUTPUT:
             return value
         return value[:MAX_OUTPUT] + "\n…(输出已截断)"
+
+    @staticmethod
+    def _text(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    @staticmethod
+    def _terminate_process_group(process: subprocess.Popen) -> None:
+        """Stop the verifier and descendants after a timeout."""
+        if process.poll() is not None:
+            return
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        else:
+            process.terminate()
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+    def _execute(self, command, *, cwd, environment, timeout):
+        """Execute a recipe and clean up the complete process group."""
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=os.name == "posix",
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+            return process.returncode, False, self._bounded(stdout or ""), self._bounded(stderr or "")
+        except subprocess.TimeoutExpired as error:
+            self._terminate_process_group(process)
+            try:
+                trailing_stdout, trailing_stderr = process.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                trailing_stdout, trailing_stderr = process.communicate()
+            stdout = self._text(error.stdout) + self._text(trailing_stdout)
+            stderr = self._text(error.stderr) + self._text(trailing_stderr)
+            return None, True, self._bounded(stdout), self._bounded(stderr)
 
     def _materialize(self, root: Path, artifact: Path) -> Path:
         """Build a disposable input package for this exact revision.
@@ -162,6 +238,9 @@ class VerificationService:
             raise ValueError("验证器 cwd 必须位于清单目录内")
         artifact = self.workspace.frozen_path.resolve()
         current_sha = self._sha(artifact)
+        manifest_sha = self._sha(manifest)
+        recipe_sha = self._recipe_sha(recipe)
+        source_sha_before = self._read_sha(source_path)
         circuit = args.get("circuit") or ""
         started_at = datetime.now(timezone.utc).isoformat()
         started = time.perf_counter()
@@ -171,7 +250,9 @@ class VerificationService:
             variables = {
                 "artifact": str(materialized_artifact),
                 "artifactDir": str(materialized_root),
-                "source": str(source_path) if source_path else str(materialized_artifact),
+                # The verifier receives a disposable package. Passing the live
+                # source path would let an oracle silently mutate user work.
+                "source": str(materialized_artifact),
                 "workspace": str(root),
                 "circuit": circuit,
                 "revision": str(self.workspace.revision_id),
@@ -182,51 +263,57 @@ class VerificationService:
             environment.update({
                 "VIBE_LOGISIM_ARTIFACT": str(materialized_artifact),
                 "VIBE_LOGISIM_ARTIFACT_DIR": str(materialized_root),
-                "VIBE_LOGISIM_SOURCE": str(source_path) if source_path else str(materialized_artifact),
+                "VIBE_LOGISIM_SOURCE": str(materialized_artifact),
                 "VIBE_LOGISIM_WORKSPACE": str(root),
                 "VIBE_LOGISIM_CIRCUIT": circuit,
                 "VIBE_LOGISIM_REVISION": str(self.workspace.revision_id),
                 "VIBE_LOGISIM_ARTIFACT_SHA256": current_sha,
             })
-            timed_out = False
-            try:
-                completed = subprocess.run(
-                    command,
-                    cwd=cwd,
-                    env=environment,
-                    capture_output=True,
-                    text=True,
-                    timeout=recipe["timeoutSeconds"],
-                    check=False,
-                )
-                exit_code = completed.returncode
-                stdout = self._bounded(completed.stdout or "")
-                stderr = self._bounded(completed.stderr or "")
-            except subprocess.TimeoutExpired as error:
-                timed_out = True
-                exit_code = None
-                stdout = self._bounded((error.stdout or "") if isinstance(error.stdout, str) else "")
-                stderr = self._bounded((error.stderr or "") if isinstance(error.stderr, str) else "")
+            exit_code, timed_out, stdout, stderr = self._execute(
+                command,
+                cwd=cwd,
+                environment=environment,
+                timeout=recipe["timeoutSeconds"],
+            )
+            materialized_sha = self._read_sha(materialized_artifact)
+            manifest_sha_after = self._read_sha(manifest)
+            source_sha_after = self._read_sha(source_path)
+        integrity_error = None
+        if materialized_sha != current_sha:
+            integrity_error = "验证器修改了 materialize 的电路输入"
+        elif manifest_sha_after != manifest_sha:
+            integrity_error = "验证器清单在运行期间发生变化"
+        elif source_sha_after != source_sha_before:
+            integrity_error = "验证器修改了工作区源文件"
         finished = time.perf_counter()
         parsed = None
-        if recipe["result"] == "json-status" and not timed_out:
+        if integrity_error:
+            status = "unknown"
+        elif recipe["result"] == "json-status" and not timed_out:
             try:
                 parsed = json.loads(stdout)
             except json.JSONDecodeError as error:
-                return self._envelope(args, recipe, manifest, current_sha, started_at, finished - started,
+                return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
+                                      started_at, finished - started,
                                       None, False, stdout, stderr, None, f"验证器输出不是合法 JSON：{error}")
             if not isinstance(parsed, dict) or parsed.get("status") not in {"passed", "failed", "unknown"}:
-                return self._envelope(args, recipe, manifest, current_sha, started_at, finished - started,
+                return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
+                                      started_at, finished - started,
                                       exit_code, False, stdout, stderr, parsed, "JSON 验证器必须返回 status=passed、failed 或 unknown")
-            status = parsed["status"]
+            if exit_code != 0:
+                status = "unknown"
+                integrity_error = f"验证器以非零退出码结束：{exit_code}"
+            else:
+                status = parsed["status"]
         elif timed_out:
             status = "unknown"
         else:
             status = "passed" if exit_code == 0 else "failed"
-        return self._envelope(args, recipe, manifest, current_sha, started_at, finished - started,
-                              exit_code, timed_out, stdout, stderr, parsed, None, status=status)
+        return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
+                              started_at, finished - started,
+                              exit_code, timed_out, stdout, stderr, parsed, integrity_error, status=status)
 
-    def _envelope(self, args, recipe, manifest, artifact_sha, started_at, duration,
+    def _envelope(self, args, recipe, manifest, manifest_sha, recipe_sha, artifact_sha, started_at, duration,
                   exit_code, timed_out, stdout, stderr, parsed, error, *, status=None):
         if status is None:
             status = "unknown"
@@ -241,6 +328,8 @@ class VerificationService:
             "id": recipe["id"],
             "label": recipe["label"],
             "manifest": str(manifest),
+            "manifestSha256": manifest_sha,
+            "recipeSha256": recipe_sha,
             "command": recipe["command"],
             "cwd": recipe["cwd"],
             "resultMode": recipe["result"],
