@@ -8,7 +8,7 @@ def component_key(component):
     return component['factory'], component['location']['x'], component['location']['y']
 
 
-def assert_preserved_connections(before, after, moved_ids, dx, dy, *, joins=()):
+def assert_preserved_connections(before, after, moved_ids, dx, dy, *, joins=(), positions=None):
     parents = {}
     def root(net):
         parents.setdefault(net, net)
@@ -24,7 +24,9 @@ def assert_preserved_connections(before, after, moved_ids, dx, dy, *, joins=()):
     checked = 0
     for component in before:
         factory, x, y = component_key(component)
-        if component['componentId'] in moved_ids:
+        if positions is not None and component['componentId'] in positions:
+            x, y = positions[component['componentId']]
+        elif component['componentId'] in moved_ids:
             x, y = x + dx, y + dy
         other = actual.get((factory, x, y))
         if other is None:

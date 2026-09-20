@@ -36,6 +36,29 @@ def layout_request(scene, body):
     return selected,wires,dx,dy
 
 
+def position_request(scene, body):
+    if any(key in body for key in ('componentIds', 'delta', 'wireIds')):
+        raise ValueError('positions 不能与 componentIds、delta 或 wireIds 混用')
+    positions = body.get('positions')
+    if not isinstance(positions, list) or not 1 <= len(positions) <= 240:
+        raise ValueError('positions 需要 1–240 个 {componentId,x,y} 目标位置')
+    components = {c['componentId']: c for c in scene['components']}
+    result = {}
+    for index, target in enumerate(positions):
+        if not isinstance(target, dict) or set(target) != {'componentId', 'x', 'y'}:
+            raise ValueError(f'positions[{index}] 需要 componentId、x、y')
+        identifier = target['componentId']
+        if not isinstance(identifier, str) or identifier not in components or identifier in result:
+            raise ValueError(f'positions[{index}].componentId 不存在或重复，请使用本次观察的对象 ID')
+        x, y = target['x'], target['y']
+        if any(type(value) is not int or value % 10 or not 0 <= value <= 6000 for value in (x, y)):
+            raise ValueError(f'positions[{index}] 需要 0–6000 范围内的十像素网格坐标')
+        result[identifier] = (x, y)
+    if all(result[key] == (components[key]['location']['x'], components[key]['location']['y']) for key in result):
+        raise ValueError('目标位置均未变化；如需观察原图，请使用 render_circuit')
+    return result
+
+
 def plan_layout(scene, selected, wire_ids, dx, dy):
     if not wire_ids: return plan_move(scene,selected,dx,dy)
     components, attached = moved_components(scene,selected,dx,dy)

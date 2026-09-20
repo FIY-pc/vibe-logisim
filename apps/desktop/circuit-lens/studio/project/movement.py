@@ -11,12 +11,21 @@ from studio.domain.wire_geometry import on_segment
 
 
 def moved_components(scene, selected, dx, dy):
+    deltas = {identifier: (dx, dy) for identifier in selected}
+    components, attached = relocated_components(scene, deltas)
+    return components, defaultdict(list, {
+        p: [(delta != (0, 0), end) for delta, end in ends] for p, ends in attached.items()})
+
+
+def relocated_components(scene, deltas):
+    selected = set(deltas)
     components = copy.deepcopy(scene['components'])
     attached = defaultdict(list)
     for c in components:
-        moving = c['componentId'] in selected
+        dx, dy = deltas.get(c['componentId'], (0, 0))
+        moving = bool(dx or dy)
         for end in c['ends']:
-            attached[point(end['location'])].append((moving, end))
+            attached[point(end['location'])].append(((dx, dy), end))
         if moving:
             for location in [c['location'], c['bounds'], *(e['location'] for e in c['ends'])]:
                 location['x'] += dx
@@ -38,7 +47,11 @@ def moved_components(scene, selected, dx, dy):
 
 
 def plan_move(scene, selected, dx, dy):
-    components, attached = moved_components(scene, selected, dx, dy)
+    return plan_movements(scene, {identifier: (dx, dy) for identifier in selected})
+
+
+def plan_movements(scene, deltas):
+    components, attached = relocated_components(scene, deltas)
     bundles = {b['bundleId']: b for b in scene['bundles']}
     vertices = set(attached)
     for wire in scene['wires']:
@@ -54,7 +67,7 @@ def plan_move(scene, selected, dx, dy):
             adjacent[p].append(index)
             adjacent[q].append(index)
 
-    moved_vertices = set()
+    vertex_deltas = {}
     visited = set()
     for start in adjacent:
         if start in visited:
@@ -69,20 +82,24 @@ def plan_move(scene, selected, dx, dy):
                 a, b, _ = edges[index]
                 stack.append(b if a == p else a)
         visited.update(cluster)
-        terminals = [moving for p in cluster for moving, _ in attached[p]]
-        if terminals and all(terminals):
-            moved_vertices.update(cluster)
+        terminals = {delta for p in cluster for delta, _ in attached.get(p, [])}
+        if len(terminals) == 1 and (0, 0) not in terminals:
+            delta = next(iter(terminals))
+            vertex_deltas.update((p, delta) for p in cluster)
 
     connectors = []
     for p, ends in attached.items():
-        moving = [flag for flag, _ in ends]
-        if not any(moving) or p in moved_vertices:
+        movements = {delta for delta, _ in ends}
+        moving = movements - {(0, 0)}
+        if not moving or p in vertex_deltas:
             continue
-        if all(moving) and len(adjacent[p]) <= 2:
-            moved_vertices.add(p)
+        if len(movements) == 1:
+            vertex_deltas[p] = next(iter(moving))
         else:
-            # A stationary component or shared branch owns the old junction.
-            connectors.append((p, (p[0] + dx, p[1] + dy), ends[0][1]['netBits']))
+            # Stationary/shared junctions remain anchors. Components at the
+            # same original point can now depart in different directions.
+            for dx, dy in sorted(moving):
+                connectors.append((p, (p[0] + dx, p[1] + dy), ends[0][1]['netBits']))
 
     anchors = set(attached) | {p for p in adjacent if len(adjacent[p]) != 2}
     paths, used = [], set()
@@ -108,11 +125,14 @@ def plan_move(scene, selected, dx, dy):
 
     kept, reroute = [], []
     def translated(p):
-        return (p[0] + dx, p[1] + dy) if p in moved_vertices else p
+        dx, dy = vertex_deltas.get(p, (0, 0))
+        return p[0] + dx, p[1] + dy
     for path, bundle in paths:
         a, b = path[0], path[-1]
-        if (a in moved_vertices) == (b in moved_vertices):
-            transformed = [(p[0] + dx, p[1] + dy) for p in path] if a in moved_vertices else path
+        a_delta, b_delta = vertex_deltas.get(a, (0, 0)), vertex_deltas.get(b, (0, 0))
+        if a_delta == b_delta:
+            dx, dy = a_delta
+            transformed = [(p[0] + dx, p[1] + dy) for p in path]
             kept.extend((p, q, bundle) for p, q in zip(transformed, transformed[1:]))
         else:
             reroute.append((translated(a), translated(b), bundles[bundle].get('bitNets', []), bundle))

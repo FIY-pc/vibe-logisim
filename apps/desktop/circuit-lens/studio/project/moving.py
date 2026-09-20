@@ -8,8 +8,8 @@ import xml.etree.ElementTree as ET
 from studio.domain.connectivity import assert_preserved_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.project.document import CircuitDocument
-from studio.project.layout import layout_request
-from studio.project.layout_document import apply_layout
+from studio.project.layout import layout_request, position_request
+from studio.project.layout_document import apply_layout, apply_positions
 
 
 def move_candidate(workbench, args):
@@ -35,17 +35,26 @@ def move_candidate(workbench, args):
             (directory / filename).write_bytes(data)
         baseline = w.observer.run_full(artifact, name)
         scene = w._transform_exact(baseline, w.observer.profile())['circuit']
-        selected, wire_ids, dx, dy = layout_request(scene, args)
-        if not dx and not dy:
-            raise ValueError('移动距离为零；如需观察原图，请使用 render_circuit')
         document = CircuitDocument.parse(before, 'artifact.circ')
         circuit = document.circuit(name)
-        apply_layout(circuit, scene, selected, wire_ids, dx, dy)
+        positions = None
+        if 'positions' in args:
+            positions = position_request(scene, args)
+            selected, dx, dy = set(positions), 0, 0
+            apply_positions(circuit, scene, positions)
+            movement = {'positions': [{'componentId': key, 'x': x, 'y': y}
+                                      for key, (x, y) in positions.items()]}
+        else:
+            selected, wire_ids, dx, dy = layout_request(scene, args)
+            if not dx and not dy:
+                raise ValueError('移动距离为零；如需观察原图，请使用 render_circuit')
+            apply_layout(circuit, scene, selected, wire_ids, dx, dy)
+            movement = {'componentIds': sorted(selected), 'wireIds': sorted(wire_ids), 'delta': {'x': dx, 'y': dy}}
         artifact.write_bytes(document.replace_circuit(circuit).data)
         render_path = directory / (hashlib.sha256(name.encode()).hexdigest() + '.png')
         after = w.observer.run_full(artifact, name, render_path)
         after_scene = w._transform_exact(after, w.observer.profile())['circuit']
-        checked = assert_preserved_connections(scene['components'], after_scene['components'], selected, dx, dy)
+        checked = assert_preserved_connections(scene['components'], after_scene['components'], selected, dx, dy, positions=positions)
         if any(after['coverage'].get(k, 0) > baseline['coverage'].get(k, 0)
                for k in ('invalidBundleEnds', 'widthIncompatibilities', 'unknownWidthEnds')):
             raise ValueError('移动产生了电气冲突，请调整目标位置')
@@ -58,7 +67,7 @@ def move_candidate(workbench, args):
             'circuit': name, 'componentsBefore': len(scene['components']),
             'componentsAfter': len(after_scene['components']), 'wiresAfter': len(after_scene['wires']),
             'render': after['render'], 'coverage': after['coverage'],
-            'movement': {'componentIds': sorted(selected), 'wireIds': sorted(wire_ids), 'delta': {'x': dx, 'y': dy}},
+            'movement': movement,
             'wiringProof': {'authority': 'native-bit-net-partition', 'checkedPortBits': checked,
                             'scope': 'All port-bit relationships preserved; behavior and readability not judged.'},
         })

@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -319,7 +319,7 @@
     {
       "type": "function",
       "name": "move_candidate",
-      "description": "Move a selected group of existing components by delta {x,y}, stretching boundary wires and carrying internal wires with it, using the same layout engine as human dragging. Optional wireIds also move selected paths. Supply circuit, artifactSha256 and componentIds from inspect_circuit of the exact source/candidate; IDs can change after a move. Deltas are multiples of 10; component locations must stay in 0..6000. Components, attributes, all native port-bit connections and external interface are preserved; obstructed or electrically changed moves fail without changing the source. Returns an independent candidate; compose using candidateId, view using render_circuit, or write using checkout_candidate. No automatic layout, new Tunnel or functional-correctness claim. Direct file edits remain available.",
+      "description": "Reposition existing components with their connections. Choose positions:[{componentId,x,y}] to set DIFFERENT final positions in one operation from the SAME observation, or componentIds + delta:{x,y} to translate a group (optionally wireIds to carry selected paths). Do not mix these forms. The shared human-drag layout engine reroutes affected boundary paths and carries wires between equally translated components; unmoved junctions remain anchors. positions is simultaneous: only final placement is checked, no intermediate collision or per-move ID lookup. Supply circuit, artifactSha256 and component IDs from inspect_circuit of the exact source/candidate; IDs can change after a move. Coordinates/deltas are multiples of 10; component locations must stay in 0..6000. Components, attributes, all native port-bit connections and external interface are preserved; obstructed or electrically changed moves fail without changing the source. Returns an independent candidate; compose using candidateId, view using render_circuit, or write using checkout_candidate. No automatic layout, new Tunnel or functional-correctness claim. Direct file edits remain available.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -331,6 +331,38 @@
           },
           "candidateId": {
             "type": "string"
+          },
+          "positions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 240,
+            "description": "Final locations for components from the same source/candidate observation. Alternative to componentIds + delta; cannot include wireIds.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "componentId": {
+                  "type": "string"
+                },
+                "x": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6000,
+                  "multipleOf": 10
+                },
+                "y": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6000,
+                  "multipleOf": 10
+                }
+              },
+              "required": [
+                "componentId",
+                "x",
+                "y"
+              ],
+              "additionalProperties": false
+            }
           },
           "componentIds": {
             "type": "array",
@@ -373,9 +405,7 @@
         },
         "required": [
           "circuit",
-          "artifactSha256",
-          "componentIds",
-          "delta"
+          "artifactSha256"
         ],
         "additionalProperties": false
       },
