@@ -98,7 +98,8 @@ public final class CircuitPalette {
                 expected.put(name,NativeAttributeAdapter.apply(attrs,name,raw,strict));
                 pending.remove(name);progressed=true;
             }
-            if(!progressed)throw new IllegalArgumentException("未知或当前配置不支持的属性: "+String.join(", ",pending.keySet()));
+            if(!progressed)throw new IllegalArgumentException("未知或当前配置不支持的属性: "+String.join(", ",pending.keySet())
+                +"；当前可编辑属性: "+NativeAttributeAdapter.editableNames(attrs));
         }
         checkOverrides(attrs,expected);
         return expected;
@@ -109,11 +110,21 @@ public final class CircuitPalette {
         if(!id.isEmpty()) {
             Element spec=null;NodeList specs=request.getElementsByTagName("library");
             for(int i=0;i<specs.getLength();i++)if(((Element)specs.item(i)).getAttribute("id").equals(id))spec=(Element)specs.item(i);
-            if(spec==null)throw new IllegalArgumentException("组件库不在当前文件中");
+            if(spec==null) {
+                List<String> ids=new ArrayList<>();
+                for(int i=0;i<specs.getLength();i++)ids.add(((Element)specs.item(i)).getAttribute("id"));
+                throw new IllegalArgumentException("组件库不在当前文件中: "+id+"；当前库 ID: "
+                    +NativeAttributeAdapter.names(ids)+"；当前文件的子电路使用空字符串");
+            }
             lib=library(file,spec);
         }
         Tool value=lib.getTool(name);
-        if(!(value instanceof AddTool))throw new IllegalArgumentException("当前组件库没有这个可放置元件");
+        if(!(value instanceof AddTool)) {
+            List<String> names=new ArrayList<>();
+            for(Tool candidate:lib.getTools())if(candidate instanceof AddTool)names.add(candidate.getName());
+            throw new IllegalArgumentException("当前组件库没有这个可放置元件: "+name+"；该库元件名: "
+                +NativeAttributeAdapter.names(names)+"；完整名称见元件目录");
+        }
         return (AddTool)value;
     }
     @SuppressWarnings({"rawtypes","unchecked"})

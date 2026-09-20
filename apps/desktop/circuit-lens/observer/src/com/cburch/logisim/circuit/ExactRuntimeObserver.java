@@ -967,7 +967,7 @@ public final class ExactRuntimeObserver {
         ));
         unknowns.add(obj(
             "code", "NO_CORRECTNESS_CLAIM",
-            "claim", "Runtime-interpreted connectivity is observation evidence, not proof that the Cache or replacement policy is correct."
+            "claim", "Runtime-interpreted connectivity does not establish circuit behavior."
         ));
     }
 

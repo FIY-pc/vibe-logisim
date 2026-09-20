@@ -35,6 +35,54 @@ def document_with(fixture, component):
 
 
 class ComponentAttributes(unittest.TestCase):
+    def test_rejected_requests_expose_native_choices_for_correction(self):
+        # Errors must be actionable without accepting native parser fallbacks.
+        cases = [
+            ({'library': '20', 'tool': 'OR'}, ['OR Gate', 'AND Gate'],
+             {'library': '20', 'tool': 'OR Gate'}),
+            ({'library': '99', 'tool': 'OR Gate'}, ['10, 20, 30', '空字符串'],
+             {'library': '20', 'tool': 'OR Gate'}),
+            ({'library': '20', 'tool': 'OR Gate', 'attributes': {'widht': '4'}},
+             ['widht', '当前可编辑属性:', 'width'],
+             {'library': '20', 'tool': 'OR Gate', 'attributes': {'width': '4'}}),
+            ({'library': '10', 'tool': 'Bit Extender', 'attributes': {'type': 'sign extension'}},
+             ['type=sign extension', '可选值:', 'sign'],
+             {'library': '10', 'tool': 'Bit Extender', 'attributes': {'type': 'sign'}}),
+            ({'library': '10', 'tool': 'Constant', 'attributes': {'width': '8', 'value': '0x07f'}},
+             ['value=0x07f', '原生解析为: 0x7f'],
+             {'library': '10', 'tool': 'Constant', 'attributes': {'width': '8', 'value': '0x7f'}}),
+            ({'library': '10', 'tool': 'Pin', 'attributes': {'output': 'banana'}},
+             ['output=banana', '可选值:', 'true', 'false'],
+             {'library': '10', 'tool': 'Pin', 'attributes': {'output': 'true'}}),
+            ({'library': '10', 'tool': 'Splitter', 'attributes': {'fanout': '2', 'incoming': '9', 'bit8': '2'}},
+             ['bit8=2', 'none, 0, 1'],
+             {'library': '10', 'tool': 'Splitter', 'attributes': {'fanout': '2', 'incoming': '9', 'bit8': '1'}}),
+        ]
+        for version in describe.RUNTIMES:
+            fixture = describe.DescribeComponent()
+            with self.subTest(runtime=version), fixture.opened(version):
+                for bad, expected, corrected in cases:
+                    with self.subTest(request=bad):
+                        with self.assertRaises(describe.CircuitToolError) as caught:
+                            fixture.call(**bad)
+                        message = str(caught.exception)
+                        for fragment in expected:
+                            self.assertIn(fragment, message)
+                        self.assertFalse(caught.exception.retryable)
+                        self.assertLess(len(message), 2200)
+                        result = fixture.call(**corrected)
+                        fixture.roundtrip(result)
+                        for key, value in corrected.get('attributes', {}).items():
+                            self.assertEqual(describe.values(result)[key], value)
+                        EVIDENCE.append({'runtime': version, 'request': bad, 'message': message,
+                                         'corrected': corrected, 'nativeReloadPassed': True})
+                # An invalid Boolean is not silently replaced by the parser's
+                # false fallback, and a wide part does not flood the error.
+                with self.assertRaises(describe.CircuitToolError) as caught:
+                    fixture.template(library='10', tool='Splitter', incoming='32', unsupported='x')
+                self.assertIn('…（共', str(caught.exception))
+                self.assertLess(len(str(caught.exception)), 2200)
+
     def test_splitter_templates_xml_connections_and_all_input_values(self):
         groups = [[0]*8 + [1], [0,1,2,0,1,2], [1,1,1,0,0], [None,0,1,0]]
         for version in describe.RUNTIMES:

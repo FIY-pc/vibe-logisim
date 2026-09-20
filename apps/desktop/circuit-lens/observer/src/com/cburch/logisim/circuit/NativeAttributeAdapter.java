@@ -21,6 +21,34 @@ public final class NativeAttributeAdapter {
             ||value instanceof Direction||value instanceof AttributeOption||value instanceof Color);
     }
 
+    /** Keep native error hints useful without dumping a whole library/bus. */
+    public static String names(Collection<String> values) {
+        StringBuilder text=new StringBuilder();int count=0;
+        for(String value:values) {
+            if(count==32||text.length()+value.length()>1600)break;
+            if(count>0)text.append(", ");
+            text.append(value);count++;
+        }
+        if(count<values.size())text.append(" …（共 ").append(values.size()).append(" 项）");
+        return text.toString();
+    }
+
+    public static String editableNames(AttributeSet attrs) {
+        List<String> result=new ArrayList<>();
+        for(Attribute<?> attr:attrs.getAttributes())if(editable(attrs,attr))result.add(attr.getName());
+        return names(result);
+    }
+
+    @SuppressWarnings({"rawtypes","unchecked"})
+    private static IllegalArgumentException invalidValue(AttributeSet attrs,Attribute attr,
+            String message,String parsed) {
+        List<String> allowed=new ArrayList<>();
+        for(Choice choice:choices(attrs,attr))allowed.add(choice.value);
+        if(!allowed.isEmpty())message+="；可选值: "+names(allowed);
+        else if(parsed!=null)message+="；原生解析为: "+parsed+"；请确认含义后使用标准值";
+        return new IllegalArgumentException(message);
+    }
+
     @SuppressWarnings({"rawtypes","unchecked"})
     public static List<Choice> choices(AttributeSet attrs, Attribute attr) {
         Object current=attrs.getValue(attr);
@@ -58,25 +86,28 @@ public final class NativeAttributeAdapter {
     @SuppressWarnings({"rawtypes","unchecked"})
     public static String apply(AttributeSet attrs,String name,String raw,boolean strict) {
         Attribute attr=attrs.getAttribute(name);
-        if(attr==null)throw new IllegalArgumentException("未知或当前配置不支持的属性: "+name);
+        if(attr==null)throw new IllegalArgumentException("未知或当前配置不支持的属性: "+name
+            +"；当前可编辑属性: "+editableNames(attrs));
         if(!editable(attrs,attr))throw new IllegalArgumentException("属性不可编辑: "+name);
         Object value;String standard;
         try { value=attr.parse(raw);standard=value==null?null:attr.toStandardString(value); }
-        catch(RuntimeException invalid) { throw new IllegalArgumentException("属性值无效: "+name+"="+raw); }
+        catch(RuntimeException invalid) { throw invalidValue(attrs,attr,"属性值无效: "+name+"="+raw,null); }
         if(standard==null||(strict&&!raw.equals(standard)))
-            throw new IllegalArgumentException("属性值无效或不是原生标准格式: "+name+"="+raw);
+            throw invalidValue(attrs,attr,"属性值无效或不是原生标准格式: "+name+"="+raw,standard);
         List<Choice> choices=choices(attrs,attr);
         if(!choices.isEmpty()) {
             List<String> allowed=new ArrayList<>();
             for(Choice choice:choices)allowed.add(choice.value);
             if(!allowed.contains(standard))throw new IllegalArgumentException(
-                "属性值不在原生可选范围内: "+name+"="+raw+"；可选值: "+String.join(", ",allowed));
+                "属性值不在原生可选范围内: "+name+"="+raw+"；可选值: "+names(allowed));
         }
         try { attrs.setValue(attr,value); }
         catch(RuntimeException incompatible) { throw new IllegalArgumentException("属性值与当前配置不兼容: "+name+"="+raw); }
         attr=attrs.getAttribute(name);
-        if(attr==null||!standard.equals(attr.toStandardString(attrs.getValue(attr))))
-            throw new IllegalArgumentException("属性未保留请求值: "+name+"="+raw);
+        String retained=attr==null?null:attr.toStandardString(attrs.getValue(attr));
+        if(!standard.equals(retained))
+            throw new IllegalArgumentException("属性未保留请求值: "+name+"="+raw
+                +"；当前配置实际保留: "+(retained==null?"属性已移除":retained));
         return standard;
     }
 }
