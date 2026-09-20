@@ -97,6 +97,20 @@ test('summarizes a free-form episode from independent evidence', () => {
   assert.deepEqual(snapshot.metadata, {replicate: 1});
 });
 
+test('preserves planned episode identity without persisting prompt content', () => {
+  const ledger = new EpisodeLedger({metadata: {
+    pairId: 'half-to-full-adder-r001', replicate: 1, seed: 47, scheduleIndex: 2,
+    planSha256: 'plan', taskSha256: 'task', fixtureSha256: 'fixture',
+    runtimeSha256: 'runtime', judgeBundleSha256: 'judge', runnerVersion: '005-v3',
+    prompt: 'must not be persisted',
+  }});
+  assert.deepEqual(ledger.snapshot().metadata, {
+    pairId: 'half-to-full-adder-r001', replicate: 1, seed: 47, scheduleIndex: 2,
+    planSha256: 'plan', taskSha256: 'task', fixtureSha256: 'fixture',
+    runtimeSha256: 'runtime', judgeBundleSha256: 'judge', runnerVersion: '005-v3',
+  });
+});
+
 test('does not call an unverified model claim a task success', () => {
   const ledger = new EpisodeLedger({episodeId: 'episode-2'});
   ledger.record('event', {type: 'assistant-completed', text: '应该完成了'});

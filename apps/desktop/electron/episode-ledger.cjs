@@ -68,8 +68,10 @@ function eventTime(at) {
 function safeMetadata(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const allowed = [
-    'replicate', 'seed', 'fixtureId', 'fixtureSha256', 'oracleId',
-    'oracleVersion', 'runtimeVersion', 'runnerVersion', 'taskVariant',
+    'pairId', 'replicate', 'seed', 'scheduleIndex', 'planSha256',
+    'taskSha256', 'taskVariant', 'fixtureId', 'fixtureSha256',
+    'runtimeSha256', 'runtimeVersion', 'judgeBundleSha256',
+    'oracleId', 'oracleVersion', 'runnerVersion',
   ];
   const result = {};
   for (const key of allowed) {
