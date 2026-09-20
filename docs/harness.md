@@ -175,9 +175,9 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.10.1 的共享 `domain/routing.py` 对器件边缘附近增加有限代价，并优先让端口沿向外方向引出一格，再转弯；不新增硬障碍、移动元件或生成 Tunnel。重新布线、按端口连线和人工移动复用这一几何规则。真实产物 A/B 保留局部改善与变差的区域，原生端口位关系和独立行为检查分开验证，见 [间隙与引出报告](../experiments/007-local-rerouting/CLEARANCE.md)。这只是局部走线偏好，未解决全图布局、外置标签和密集拆线器。
 
-仿真执行目前仍按调用隔离启动 JVM。[021 运行时调查](../experiments/021-simulation-runtime/README.md)显示固定成本主要来自 JVM/首次加载；同一 JVM 直接复用 `LogisimFile` 又会保留 ROM program overlay 并累积 Project/Simulator 线程。因而 `NativeWorker` 的只读缓存不能直接承担仿真；任何后续 warm 优化必须拥有独立、串行、可丢弃的仿真边界，并在 revision/artifact/runtime 任一身份变化时销毁，异常也不能继续复用。这个边界是待实现约束，不是当前产品能力。
+仿真执行现在由独立的串行 `SimulationWorker` 持有 warm JVM。[021 运行时调查](../experiments/021-simulation-runtime/README.md)显示固定成本主要来自 JVM/首次加载；同一 JVM 直接复用 `LogisimFile` 又会保留 ROM program overlay 并累积 Project/Simulator 线程。因此 worker 只复用 JVM，每个请求重新加载 immutable artifact；runtime 切换、超时、协议错误或 native/domain 异常都会销毁它。`NativeWorker` 的只读缓存仍不能承担仿真，也没有被扩成仿真池。
 
-当前每次原生 `simulate`/`trace` 已在 finally 中关闭其 `Project` 的 Simulator；后续 021 复测的线程和文件引用不再增长。这个修复只负责生命周期回收，不能把可变 `LogisimFile` 变成可复用快照，故不改变仿真调用仍按进程隔离的边界。
+当前每次原生 `simulate`/`trace` 已在 finally 中关闭其 `Project` 的 Simulator；后续 021 复测的线程和文件引用不再增长。这个修复只负责请求内生命周期回收，不能把可变 `LogisimFile` 变成可复用快照，所以 warm worker 仍坚持每请求重载 artifact，异常后不继续复用。
 
 `routing.lengthBefore/lengthAfter` 是所选/提出路径的长度，`circuitWireLengthBefore/circuitWireLengthAfter` 是原生规范化后的整图线长；重叠线可能被运行时合并，两者不能混用。[实验 007](../experiments/007-local-rerouting/README.md)分别保存直接工具计算、开放任务采用几何观察，以及真实模型自行调用局部布线器的结果；局部布线已被实际使用，但整轮效率和图面质量还不能由单次试跑推广。
 
@@ -216,3 +216,5 @@ Codex dynamic tool call
 ```
 
 工作区切换、版本变化、停止回合和 Codex 进程重连都会使排队调用失效。Native 进程可能仍在结束，但其结果不会再写回旧回合。
+
+这里的失效检查有两个边界：CodexBackend 在停止/切换时递增当前 circuit generation，Electron 插件在排队执行前、同步工作区后和 domain executor 返回后都调用 `scope.assertCurrent()`；因此过期结果不会推进新的 binding、产生 harness-result 事件或交给模型。队列本身会在失败后继续服务后续调用。这个交界由 [`circuit-tool-expiry.test.cjs`](../apps/desktop/electron/circuit-tool-expiry.test.cjs) 覆盖；它验证了第一调用过期、第二调用仍执行以及旧结果不泄漏。底层 native 进程可能还会完成当前有限请求，Python 工作区也会先完成已进入的原子操作，不能把“模型看不到旧结果”夸大为“所有底层计算被即时取消”。
