@@ -75,6 +75,14 @@ class Workbench:
 
     def _inspect_circuit(self, call):
         arguments, revision = call.arguments, call.revision_id
+        if 'componentDirectory' in arguments:
+            # Static discovery is a separate opt-in view. Account for the real
+            # invocation before paging; do not attach an unbounded live sample.
+            return self.inspect(arguments, response_metadata={'invocation': {
+                'projectId': call.project_id, 'revisionId': revision,
+                'threadId': call.thread_id, 'turnId': call.turn_id,
+                'callId': call.call_id, 'tool': call.tool,
+            }})
         result = self.inspect(arguments)
         if not arguments.get("candidateId") and arguments.get("circuit"):
             result["objectReferenceTemplate"] = object_link(

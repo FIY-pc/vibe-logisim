@@ -7,13 +7,16 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 from studio.domain.connectivity_feedback import connectivity_feedback
+from studio.domain.component_directory import component_directory, directory_options
+from studio.domain.tool_errors import CircuitToolError
 
 class InspectionService:
     def __init__(self, workspace, tools):
         self.workspace = workspace
         self.tools = tools
 
-    def inspect(self, args):
+    def inspect(self, args, *, response_metadata=None):
+        options = directory_options(args)
         name = args.get('circuit')
         project = self.workspace.circuits()
         structure = self.workspace.raw_project['circuits']
@@ -32,6 +35,17 @@ class InspectionService:
         else:
             view = self.workspace.circuit_view(name)
         circuit = view['circuit']
+        if options is not None:
+            artifact_sha = hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() if directory else self.workspace.artifact_sha256
+            observed_sha = document.get('revision', {}).get('artifactSha256') if directory else view.get('revision', {}).get('artifactSha256')
+            if observed_sha != artifact_sha or circuit['name'] != name:
+                raise CircuitToolError('STALE_COMPONENT_OBSERVATION', '实际观察与请求的电路文件不一致。',
+                                       hint='重新读取当前电路；不要续接旧目录。')
+            return component_directory(view, identity={
+                'projectId': self.workspace.history.record['id'],
+                'revisionId': self.workspace.revision_id, 'artifactSha256': artifact_sha,
+                'candidateId': args.get('candidateId'), 'circuit': name,
+            }, options=options, response_metadata=response_metadata)
         ids = args.get('componentIds') or []
         components = circuit['components']
         if ids:
