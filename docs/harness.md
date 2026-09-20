@@ -61,7 +61,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
 
-1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；[返回类型验收](../experiments/012-tool-constraints/RESULT-TYPE.md)证明传输与字段解析，不承诺模型必然遵循或整轮加速。
+1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；[返回类型验收](../experiments/012-tool-constraints/RESULT-TYPE.md)证明传输与字段解析。[020 真实模型对照](../experiments/020-result-contract/README.md)中有/无说明均完成同一只读验证任务、完整覆盖且只穷举一遍；没有观察到减少重跑，不将单次耗时差当因果收益。
 
 原生属性适配在 `observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java`：编辑器下拉项可能是包装对象，须经克隆 AttributeSet 的原生 setter 转为保存值。模型元件查询、人工模板/编辑和观察器使用同一边界；两种 Logisim 的实际拆线器位分组、连线仿真、非法配置及撤销已验证，见 [013](../experiments/013-component-attributes/README.md)。这不增加特定任务工具，也不改变直接编辑 `.circ` 的能力。
 
@@ -75,7 +75,11 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
+1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
+
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
+
+右栏投影保留每次调用的 `resultStatus`：后续传输层“工具完成”不能覆盖实际反例或未知，另一批通过也不能自动将前一批反例标为恢复。工具请求失败的重试仍沿用原有处理；运行不匹配、未确定与普通已观察分别显示，不把测得反例说成工具没有执行。
 
 `inspect_circuit` 的 `connectivityIssues` 由 `domain/connectivity_feedback.py` 根据完整原生位网生成。1.9.2 修正了“有网络编号就算已连接”的漏报：`unconnectedInputs` / `unconnectedOutputs` 按端口列出没有其他端口 contact 的位；导线段可以存在。`inputsWithoutOutputPeer` 另列有 peer 但没有被原生标为 output 的位，不重复前一类；`unknownPorts` 与 `widthIncompatibilities` 保留未知和冲突。省略 nets 或筛选组件不缩减判断所用网络。原生方向标签不等于实际驱动，浮空输入也可能有合法默认值，因此这些是静态事实，不是功能成败或强制提交条件。两种实际运行时的总线、浮空、冲突反例与历史产物证据见 [014](../experiments/014-wire-construction/CONNECTIVITY.md)。
 
@@ -166,6 +170,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 电路片段的读写复用 `CircuitDocument`，保留注释并按真实 XML 元素边界修改；不会把注释里的 `<circuit>` 文本误当编辑目标。宿主验收覆盖候选写回、渲染绑定和文件历史撤销，不能用原生候选生成成功代替共享文件链路成功。
 
 候选可以继续组合、查看和仿真；模型选择 `checkout_candidate` 时才写入共享工作文件，随后仍可查看改动和撤销。直接改 `.circ` 不受限制。这个可选计算工具不要求用户采用候选工作流。它拒绝过期摘要、未知位宽、冲突网络和闭合回路；不承诺路径总会缩短，矩形元件障碍也不覆盖文字标签，美观和功能仍应按任务判断。
+
+1.10.1 的共享 `domain/routing.py` 对器件边缘附近增加有限代价，并优先让端口沿向外方向引出一格，再转弯；不新增硬障碍、移动元件或生成 Tunnel。重新布线、按端口连线和人工移动复用这一几何规则。真实产物 A/B 保留局部改善与变差的区域，原生端口位关系和独立行为检查分开验证，见 [间隙与引出报告](../experiments/007-local-rerouting/CLEARANCE.md)。这只是局部走线偏好，未解决全图布局、外置标签和密集拆线器。
 
 `routing.lengthBefore/lengthAfter` 是所选/提出路径的长度，`circuitWireLengthBefore/circuitWireLengthAfter` 是原生规范化后的整图线长；重叠线可能被运行时合并，两者不能混用。[实验 007](../experiments/007-local-rerouting/README.md)分别保存直接工具计算、开放任务采用几何观察，以及真实模型自行调用局部布线器的结果；局部布线已被实际使用，但整轮效率和图面质量还不能由单次试跑推广。
 
