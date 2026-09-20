@@ -17,6 +17,10 @@ function finiteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function nonemptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function boundedTextMeta(value) {
   if (typeof value !== 'string') return { chars: 0, sha256: digest('') };
   return { chars: value.length, sha256: digest(value) };
@@ -301,7 +305,9 @@ class EpisodeLedger {
           authority: event.run.authority || null,
         } : null;
         const feedbackStatus = event.feedback?.status || null;
-        const evidence = {at, groundedAt: binding && run ? at : null, binding, run, feedbackStatus};
+        const grounded = nonemptyString(run?.id) &&
+          (nonemptyString(binding?.revisionId) || nonemptyString(binding?.artifactSha256));
+        const evidence = {at, groundedAt: grounded ? at : null, binding, run, feedbackStatus};
         this.evidence.push(evidence);
         this.events.push({...base, itemId: event.itemId || null, turnId: event.turnId || null,
           binding, run, feedbackStatus});

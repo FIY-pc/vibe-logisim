@@ -7,6 +7,65 @@ const path = require('node:path');
 const test = require('node:test');
 const {EventEmitter} = require('node:events');
 const {EpisodeLedger, digest} = require('./episode-ledger.cjs');
+const {harnessResultEvent} = require('./harness-result.cjs');
+
+test('grounded evidence requires an actual run and a revision or artifact identity', () => {
+  const ledger = new EpisodeLedger();
+  const at = ledger.startedAt;
+  for (const [binding, run] of [
+    [{projectId: 'project-only'}, {id: 'run-1'}],
+    [{revisionId: null, artifactSha256: ''}, {id: 'run-1'}],
+    [{revisionId: 'rev-1'}, {}],
+    [{revisionId: 'rev-1'}, {id: ' '}],
+  ]) {
+    ledger.record('event', {type: 'harness-result', binding, run, feedback: {status: 'observed'}}, at + 10);
+    assert.equal(ledger.metrics().timeToFirstGroundedEvidenceMs, null);
+  }
+  ledger.record('event', {type: 'harness-result', binding: {artifactSha256: 'artifact'},
+    run: {id: 'run-2', kind: 'simulate'}, feedback: {status: 'unknown'}}, at + 25);
+  assert.equal(ledger.metrics().timeToFirstGroundedEvidenceMs, 25);
+  assert.equal(ledger.metrics().observedPassedFeedback, false);
+  assert.equal(ledger.metrics().verificationCount, 0);
+});
+
+test('counts and completed calls cannot fabricate a run or a verdict', () => {
+  const ledger = new EpisodeLedger();
+  const legacy = {passed: 1024, failed: 0, unchecked: 0, binding: {revisionId: 'rev-1'}};
+  assert.equal(harnessResultEvent(legacy), null);
+  ledger.record('event', {type: 'activity', itemId: 'call-1', kind: 'tool',
+    activityKey: 'circuit:simulate_circuit', status: 'completed', ...legacy});
+  assert.equal(ledger.metrics().timeToFirstGroundedEvidenceMs, null);
+  assert.equal(ledger.metrics().observedPassedFeedback, false);
+  assert.equal(ledger.metrics().verificationCount, 0);
+  const projected = harnessResultEvent({...legacy, run: {id: 'native-run', kind: 'simulate'},
+    feedback: {status: 'passed'}}, {itemId: 'call-1'});
+  ledger.record('event', projected, ledger.startedAt + 50);
+  assert.equal(ledger.metrics().timeToFirstGroundedEvidenceMs, 50);
+  assert.equal(ledger.metrics().observedPassedFeedback, true);
+  assert.equal(ledger.metrics().verificationCount, 1);
+  assert.equal(ledger.metrics().taskSuccess, null, 'plugin evidence does not replace the independent oracle');
+});
+
+test('a completed tool cannot mask a failed expectation or erase it after a later pass', () => {
+  const ledger = new EpisodeLedger();
+  const feedback = (id, status) => harnessResultEvent({
+    binding: {revisionId: 'rev-1', artifactSha256: 'artifact'},
+    run: {id, kind: 'simulate'}, feedback: {status},
+  }, {itemId: id});
+  ledger.record('event', feedback('representative', 'failed'), ledger.startedAt + 10);
+  ledger.record('event', {type: 'activity', itemId: 'representative', kind: 'tool',
+    activityKey: 'circuit:simulate_circuit', status: 'completed'}, ledger.startedAt + 11);
+  assert.equal(ledger.metrics().nativeRunCalls, 1);
+  assert.equal(ledger.metrics().observedPassedFeedback, false);
+  assert.equal(ledger.metrics().verificationCount, 1);
+  ledger.record('event', feedback('full-batch', 'passed'), ledger.startedAt + 20);
+  assert.equal(ledger.metrics().observedPassedFeedback, true);
+  assert.equal(ledger.metrics().verificationCount, 2);
+  assert.equal(ledger.metrics().timeToFirstGroundedEvidenceMs, 10);
+  assert.deepEqual(ledger.snapshot().events.filter(e => e.type === 'harness-result')
+    .map(e => e.feedbackStatus), ['failed', 'passed']);
+  assert.equal(ledger.metrics().taskSuccess, null);
+});
 
 test('summarizes a free-form episode from independent evidence', () => {
   const ledger = new EpisodeLedger({

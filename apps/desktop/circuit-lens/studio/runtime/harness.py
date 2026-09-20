@@ -11,7 +11,7 @@ from studio.domain.tool_errors import CircuitToolError
 from studio.domain.plugin import PLUGIN_ID, PLUGIN_VERSION, RESULT_SCHEMA, binding_for, result_envelope
 from studio.project.package import ProjectPackage
 from studio.runtime.evaluation import EvaluationService
-from studio.domain.evaluation import compare_sample
+from studio.domain.evaluation import compare_sample, observation_feedback
 
 class NativeCircuitRuntime:
     """Execute native Logisim observations for the circuit plugin.
@@ -38,10 +38,6 @@ class NativeCircuitRuntime:
             report = self.simulate(args)
         else:
             raise ValueError('Harness mode must be trace or simulate')
-        rows = report.get('rows', [])
-        failures = [{**row, 'rowIndex': index} for index, row in enumerate(rows) if row.get('passed') is False]
-        unknown = [{**row, 'rowIndex': index} for index, row in enumerate(rows)
-                   if row.get('oscillating') or row.get('status') == 'unknown']
         targets = [{'kind': 'component', 'component': watch.get('component'), 'componentId': watch.get('component'), 'port': watch.get('port'), 'name': watch.get('name')} for watch in args.get('watches', []) if isinstance(watch, dict)]
         connectivity = None
         if args.get('candidateId'):
@@ -49,37 +45,15 @@ class NativeCircuitRuntime:
             proofs = [change['wiringProof'] for change in metadata.get('changes', []) if change.get('wiringProof')]
             if proofs:
                 connectivity = proofs
-        checked = [row for row in rows if row.get('passed') is not None]
-        status = 'failed' if failures else 'unknown' if unknown else (
-            'passed' if checked and len(checked) == len(rows) and all(row.get('passed') is True for row in checked)
-            else 'observed'
-        )
         feedback = {
-            'status': status,
-            'rowCount': len(rows),
-            'checkedCount': len(checked),
-            'failureCount': len(failures),
-            'unknownCount': len(unknown),
+            **report['feedback'],
             'targets': targets,
             'connectivity': connectivity,
-            'firstFailure': failures[0] if failures else None,
-            'firstUnknown': unknown[0] if unknown else None,
             'nextActions': ['inspect_circuit 查看相关端口和位网', 'harness_run 以更窄的输入或观察点重跑', 'submit_circuit 刷新修复后的当前文件'],
             'note': 'Harness 提供真实运行反馈，不规定下一步必须验证还是继续构建。',
         }
-        artifact_sha = report.get('artifactSha256') or self.workspace.artifact_sha256
-        binding = binding_for(self.workspace, circuit=args.get('circuit'), candidate_id=args.get('candidateId'), artifact_sha256=artifact_sha, runtime_profile=report.get('runtimeProfile'))
-        run = {
-            'id': report.get('runId'),
-            'label': '原生运行观察',
-            'kind': mode,
-            'status': 'completed',
-            'authority': report.get('authority', 'Logisim native clock and propagation'),
-            'runtimeProfileId': report.get('runtimeProfileId'),
-            'stimulusSha256': report.get('stimulusSha256'),
-            'rowCount': len(rows),
-        }
-        envelope = result_envelope(binding=binding, run=run, observation=report, feedback=feedback)
+        artifact_sha = report['artifactSha256']
+        envelope = result_envelope(binding=report['binding'], run=report['run'], observation=report, feedback=feedback)
         # Keep the original session/result shape for existing UI consumers;
         # the envelope is the new stable model-facing contract.
         envelope['session'] = {
@@ -91,6 +65,22 @@ class NativeCircuitRuntime:
             'authority': report.get('authority', 'Logisim native clock and propagation'),
         }
         return envelope
+
+    @staticmethod
+    def _complete_observation(report, mode):
+        # Reuse the identity established by native execution. Keep the flat
+        # report for existing callers, without duplicating all rows in result.
+        report['run'] = {
+            'id': report['runId'],
+            'label': '原生运行观察',
+            'kind': mode,
+            'status': 'completed',
+            'authority': report['authority'],
+            'runtimeProfileId': report['runtimeProfileId'],
+            'stimulusSha256': report['stimulusSha256'],
+            'rowCount': len(report['rows']),
+        }
+        report['feedback'] = observation_feedback(report['rows'])
 
     def evaluate(self, args):
         return self.evaluator.evaluate(args)
@@ -154,6 +144,7 @@ class NativeCircuitRuntime:
             'unchecked': sum((r['passed'] is None for r in rows)),
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
+        self._complete_observation(report, 'simulate')
         if candidate_id:
             metadata['checks'].append(report)
             self.tools._save(directory, metadata)
@@ -340,6 +331,7 @@ class NativeCircuitRuntime:
             'note': 'Each call starts fresh. A native tick follows Clock high/low durations and need not be a transition or cycle. Sample 0 follows initialization and tick-0 events; later samples follow native tick/settling, input events, then button events. Each event settles in list order; values persist. Pins used as clocks require input events.',
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
+        self._complete_observation(report, 'trace')
         return report
 
     def _historical_reference(self, args):
