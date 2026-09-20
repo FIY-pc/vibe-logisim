@@ -93,6 +93,8 @@ class PlacementService:
                     **{k: int(p.get(k)) for k in ('index', 'x', 'y', 'width')},
                     'direction': p.get('direction'), 'exclusive': p.get('exclusive') == 'true',
                     'runtimeTooltip': p.get('runtimeTooltip'),
+                    **{key: p.get(key) for key in ('nativeDirection', 'directionSource', 'semanticRole')
+                       if key in p.attrib},
                 } for p in native.findall('port')]
                 result['attributes'] = [{**a.attrib, 'editable': a.get('editable') == 'true', 'options': [dict(o.attrib) for o in a.findall('option')]} for a in native.findall('attribute')]
                 result['xml'] = ET.tostring(native.find('comp'), encoding='unicode')

@@ -428,7 +428,7 @@ public final class ExactRuntimeObserver {
                     else omitted++;
                 }
                 omittedAdjacentNetBits += omitted;
-                compactEnds.add(obj(
+                Map<String, Object> compactEnd = obj(
                     "index", end.get("index"),
                     "location", end.get("location"),
                     "width", end.get("width"),
@@ -437,7 +437,11 @@ public final class ExactRuntimeObserver {
                     "runtimeTooltip", end.get("runtimeTooltip"),
                     "relevantNetBits", keptBits,
                     "omittedNetBitCount", omitted
-                ));
+                );
+                for (String key : new String[] { "nativeDirection", "directionSource" }) {
+                    if (end.containsKey(key)) compactEnd.put(key, end.get(key));
+                }
+                compactEnds.add(compactEnd);
             }
 
             compactComponents.add(obj(
@@ -686,17 +690,18 @@ public final class ExactRuntimeObserver {
                         tooltip = null;
                     }
                 }
-                ends.add(obj(
+                Map<String, Object> observedEnd = obj(
                     "index", index,
                     "location", location(end.getLocation()),
                     "width", width < 0 ? null : width,
-                    "direction", endDirection(end),
                     "exclusive", end.isExclusive(),
                     "semanticRole", role,
                     "runtimeTooltip", emptyToNull(tooltip),
                     "netBits", netBits,
                     "localOccupants", focus.getComponents(end.getLocation()).size()
-                ));
+                );
+                NativePortSemantics.putDirection(observedEnd, component, index);
+                ends.add(observedEnd);
             }
 
             String provenance = factoryProvenance(component.getFactory());
@@ -731,18 +736,14 @@ public final class ExactRuntimeObserver {
 
     private List<Object> observeStateElements(NetIndex nets) {
         List<Object> result = new ArrayList<Object>();
-        // The course fork has a different Register port layout. Its raw ends
-        // remain observable; do not attach the newer fork's state-role overlay.
-        if (courseRuntime) return result;
         for (Component component : sortedComponents(focus)) {
-            String factoryClass = component.getFactory().getClass().getName();
-            if (!"com.cburch.logisim.std.memory.Register".equals(factoryClass)) continue;
+            if (!NativePortSemantics.isVerifiedRegister(component)) continue;
             coverage.knownStateElements++;
             List<Object> ports = new ArrayList<Object>();
             for (int i = 0; i < component.getEnds().size(); i++) {
                 EndData end = component.getEnd(i);
                 ports.add(obj(
-                    "role", registerRole(i),
+                    "role", NativePortSemantics.registerRole(component, i),
                     "endIndex", i,
                     "netBits", nets.netBits(component, i, end)
                 ));
@@ -750,7 +751,7 @@ public final class ExactRuntimeObserver {
             result.add(obj(
                 "componentId", focusIds.get(component),
                 "kind", "Register",
-                "roleMappingProfile", "Logisim-ITA 2.16.2.2 Register port order",
+                "roleMappingProfile", NativePortSemantics.registerProfile(component),
                 "label", componentLabel(component),
                 "ports", ports
             ));
@@ -961,9 +962,7 @@ public final class ExactRuntimeObserver {
         ));
         unknowns.add(obj(
             "code", "PARTIAL_STATEFUL_CLASSIFICATION",
-            "claim", courseRuntime
-                ? "Stateful role overlays are not yet calibrated for this course runtime; raw ends and connectivity remain available."
-                : "Only the exact Register factory is classified as a state element in this task adapter; arbitrary external stateful factories are not inferred."
+            "claim", "Only Register implementations with verified class SHA-256 are classified as state elements; arbitrary external stateful factories are not inferred."
         ));
         unknowns.add(obj(
             "code", "NO_CORRECTNESS_CLAIM",
@@ -1020,7 +1019,6 @@ public final class ExactRuntimeObserver {
     }
 
     private static String semanticRole(Component component, int index) {
-        String className = component.getFactory().getClass().getName();
         String factoryName = component.getFactory().getName();
         int endCount = component.getEnds().size();
         if (component.getFactory() instanceof Tunnel) return "tunnel:" + componentLabel(component);
@@ -1029,10 +1027,9 @@ public final class ExactRuntimeObserver {
             return end.isOutput() && !end.isInput() ? "circuitInput"
                 : end.isInput() && !end.isOutput() ? "circuitOutput" : "circuitInOut";
         }
+        String registerRole = NativePortSemantics.registerRole(component, index);
+        if (registerRole != null) return registerRole;
         if (courseRuntime) return null;
-        if ("com.cburch.logisim.std.memory.Register".equals(className)) {
-            return registerRole(index);
-        }
         if ("Decoder".equals(factoryName)) {
             boolean enabled = booleanAttribute(component.getAttributeSet(), "enable");
             int outputs = endCount - (enabled ? 2 : 1);
@@ -1057,11 +1054,6 @@ public final class ExactRuntimeObserver {
             return index < roles.length ? roles[index] : null;
         }
         return null;
-    }
-
-    private static String registerRole(int index) {
-        String[] roles = { "q", "d", "clock", "clear", "enable", "chipSelect", "preset" };
-        return index >= 0 && index < roles.length ? roles[index] : "unknown";
     }
 
     private static boolean booleanAttribute(AttributeSet attributes, String name) {
@@ -1157,13 +1149,6 @@ public final class ExactRuntimeObserver {
         } catch (Throwable error) {
             return factory.getName();
         }
-    }
-
-    private static String endDirection(EndData end) {
-        if (end.isInput() && end.isOutput()) return "inout";
-        if (end.isInput()) return "input";
-        if (end.isOutput()) return "output";
-        return "none";
     }
 
     private static int width(BitWidth width) {
@@ -1538,6 +1523,8 @@ public final class ExactRuntimeObserver {
                 String componentId = componentIds.get(component);
                 for (int endIndex = 0; endIndex < component.getEnds().size(); endIndex++) {
                     EndData end = component.getEnd(endIndex);
+                    Map<String, Object> direction = new LinkedHashMap<String, Object>();
+                    NativePortSemantics.putDirection(direction, component, endIndex);
                     int width = width(end.getWidth());
                     if (width < 0) continue;
                     WireBundle bundle = circuit.wires.getWireBundle(end.getLocation());
@@ -1565,14 +1552,15 @@ public final class ExactRuntimeObserver {
                         if (net == null) continue;
                         String key = endKey(componentId, endIndex, bit);
                         endBitNet.put(key, net.id);
-                        net.contacts.add(obj(
+                        Map<String, Object> contact = obj(
                             "componentId", componentId,
                             "endIndex", endIndex,
                             "bit", bit,
                             "location", location(end.getLocation()),
-                            "direction", endDirection(end),
                             "semanticRole", semanticRole(component, endIndex)
-                        ));
+                        );
+                        contact.putAll(direction);
+                        net.contacts.add(contact);
                     }
                 }
             }

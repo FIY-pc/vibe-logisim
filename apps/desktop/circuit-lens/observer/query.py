@@ -107,6 +107,7 @@ class Surface:
                 "bit": contact["bit"],
                 "role": contact.get("semanticRole"),
                 "direction": contact.get("direction"),
+                **{key: contact[key] for key in ("nativeDirection", "directionSource") if key in contact},
                 "at": contact["location"],
             }
             for contact in net["contacts"]
@@ -152,6 +153,7 @@ class Surface:
                         "index": end["index"],
                         "role": end.get("semanticRole"),
                         "direction": end["direction"],
+                        **{key: end[key] for key in ("nativeDirection", "directionSource") if key in end},
                         "width": end["width"],
                         "at": end["location"],
                         "nets": bits,
@@ -341,6 +343,15 @@ class Surface:
                 "net": "net NET_ID [NET_ID ...]",
             },
         }
+        corrections = [
+            {"componentId": component_id, "endIndex": end["index"],
+             "direction": end["direction"], "nativeDirection": end["nativeDirection"],
+             "directionSource": end["directionSource"]}
+            for component_id, component in self.components.items()
+            for end in component["ends"] if "directionSource" in end
+        ]
+        if corrections:
+            result["overview"]["directionCorrections"] = corrections
         return result
 
     def component_query(self, requested: list[str]) -> dict[str, Any]:

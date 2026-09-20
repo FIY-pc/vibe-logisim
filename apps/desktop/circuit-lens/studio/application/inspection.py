@@ -9,6 +9,7 @@ import zipfile
 from studio.domain.connectivity_feedback import connectivity_feedback
 from studio.domain.component_directory import component_directory, directory_options
 from studio.domain.tool_errors import CircuitToolError
+from studio.domain.net_groups import group_bit_nets
 
 class InspectionService:
     def __init__(self, workspace, tools):
@@ -17,6 +18,9 @@ class InspectionService:
 
     def inspect(self, args, *, response_metadata=None):
         options = directory_options(args)
+        net_format = args.get('netFormat', 'groups')
+        if net_format not in ('groups', 'bits') or ('netFormat' in args and not args.get('includeNets')):
+            raise CircuitToolError('INVALID_ARGUMENT', 'netFormat 需要 includeNets=true，可选 groups 或 bits。')
         name = args.get('circuit')
         project = self.workspace.circuits()
         structure = self.workspace.raw_project['circuits']
@@ -63,6 +67,10 @@ class InspectionService:
             stimuli = None
         result = {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': connectivity, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
         result['artifactSha256'] = hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() if directory else self.workspace.artifact_sha256
+        if args.get('includeNets'):
+            result['netFormat'] = net_format
+            if net_format == 'groups':
+                result['netGroups'] = group_bit_nets(result.pop('nets'))
         if args.get('includeWires'):
             from studio.domain.rerouting import wire_length
             offset, limit = args.get('wireOffset', 0), args.get('wireLimit', 128)

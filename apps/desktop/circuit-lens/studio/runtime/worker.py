@@ -26,6 +26,7 @@ class NativeWorker:
         self.sources.append(root / 'native/com/cburch/logisim/std/memory/StudioMemory.java')
         self.sources.append(root / 'observer/src/com/cburch/logisim/circuit/ExactRuntimeObserver.java')
         self.sources.append(root / 'observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java')
+        self.sources.append(root / 'observer/src/com/cburch/logisim/circuit/NativePortSemantics.java')
         self.cache_root = state_root / 'worker-cache'
         self.lock = threading.Lock()
         self.process = None

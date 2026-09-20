@@ -89,6 +89,10 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.20.0 的时序入口共用 `inputClocks` 周期输入激励：`[{name:"CLK"}]` 从 `inputs.CLK` 的初值开始，于第1步翻转，此后每步翻转。可指定 `firstTick`、`lastTick`、`highTicks` 和 `lowTicks`；停止后保持末值。同一步先按原顺序执行 `inputEvents`，再按声明顺序翻转周期输入，最后执行按钮事件，每项独立传播。一个Pin只能由一种输入事件来源驱动；原生Clock依然在这些输入事件之前推进，并非同一时间单位下的物理时钟。周期激励展开为现有原生事件，执行摘要来自展开序列，返回与留存报告保持紧凑参数；Java按tick索引事件及绑定端口，不再逐步扫描全部事件。适用于 trace/evaluate/harness/compare 的时序模式，不是必需的验证步骤。实际原生与宿主消费结果见 [030](../experiments/030-clock-stimuli/README.md)。
 
+1.21.0 将 `inspect_circuit(includeNets:true)` 的默认连接视图改为 `netGroups`：具有相同端点/切片结构的原生位网合并展示，`netIds[i]` 与每个 contact/slice 的 `bits[i]` 仍一一对应，反向拆线和同端口多位短接不被折叠为猜测的总线。无法归组的记录原样保留；`netFormat:"bits"` 可直接读取逐位原记录。分组发生在模型观察边界，原生位网、组件和连接诊断不改写。失败计数器的真实宿主模型出口从24,424 B降至20,128 B；这不是模型耗时或成功率证明。
+
+同版新增共享 `NativePortSemantics`，按实际加载的类及其 SHA-256 校准已核实的 HUST/ITA 实现：Adder 的第4端口实际输出进位，虽原生 EndData 声明为输入；观察和元件模板现返回 `direction:output`，同时保留 `nativeDirection:input` 与 `directionSource`。两个运行库的 Register 都按原生实现给出七个端口角色及状态元件分类，移除此前对 HUST 的错误排除。模板、组件详情、选区、目录、位网和连接反馈共用这些语义；未知实现继续使用原生声明，不根据名称或 tooltip 猜测。没有改动运行库端口对象或执行逻辑，方向仍不意味着输出此刻正在驱动。具体实现事实、原生运行及宿主出口见 [031](../experiments/031-observation-semantics/README.md)。
+
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。

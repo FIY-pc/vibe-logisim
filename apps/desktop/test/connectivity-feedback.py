@@ -176,7 +176,7 @@ class ConnectivityFeedback(unittest.TestCase):
 
                     scenes, facts = {}, {}
                     for name in (c.get('name') for c in ET.fromstring(original).findall('circuit')):
-                        inspection = call('inspect_circuit', name, includeNets=True)
+                        inspection = call('inspect_circuit', name, includeNets=True, netFormat='bits')
                         self.assertEqual(inspection['authority'], 'exact-runtime', inspection.get('error'))
                         view = w.circuit_view(name)
                         self.assertTrue(view['capabilities']['exactConnectivity'])

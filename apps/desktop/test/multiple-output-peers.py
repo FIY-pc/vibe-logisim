@@ -193,7 +193,7 @@ class NativePeerFacts(unittest.TestCase):
                             'projectId': w.history.record['id'], 'revisionId': w.revision_id,
                             'tool': 'inspect_circuit', 'arguments': {'circuit': circuit_name, **args}})
 
-                    full = inspect(includeNets=True)
+                    full = inspect(includeNets=True, netFormat='bits')
                     save(f'{name}-full.json', full)
                     self.assertEqual(full['authority'], 'exact-runtime', full.get('error'))
                     view = w.circuit_view(circuit_name)

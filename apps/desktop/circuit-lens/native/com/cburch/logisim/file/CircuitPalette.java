@@ -186,7 +186,11 @@ public final class CircuitPalette {
         for(EndData end:component.getEnds()) {
             Element port=child(result,root,"port");port.setAttribute("x",String.valueOf(end.getLocation().getX()-x));port.setAttribute("y",String.valueOf(end.getLocation().getY()-y));port.setAttribute("width",String.valueOf(end.getWidth().getWidth()));port.setAttribute("exclusive",String.valueOf(end.isExclusive()));
             port.setAttribute("index",String.valueOf(index));
-            port.setAttribute("direction",end.isInput()?(end.isOutput()?"inout":"input"):(end.isOutput()?"output":"none"));
+            Map<String,Object> direction=new LinkedHashMap<>();
+            NativePortSemantics.putDirection(direction,component,index);
+            for(Map.Entry<String,Object> entry:direction.entrySet())port.setAttribute(entry.getKey(),String.valueOf(entry.getValue()));
+            String role=NativePortSemantics.registerRole(component,index);
+            if(role!=null)port.setAttribute("semanticRole",role);
             if(index<nativePorts.size()) {
                 try {
                     String tooltip=nativePorts.get(index).getToolTip();

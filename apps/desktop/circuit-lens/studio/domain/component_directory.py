@@ -19,7 +19,7 @@ def directory_options(args):
     options = args['componentDirectory']
     if (not isinstance(options, dict) or set(options) - {'maxBytes', 'cursor'}
             or not isinstance(args.get('circuit'), str) or not args['circuit']
-            or any(key in args for key in ('componentIds', 'includeNets', 'includeWires', 'wireOffset', 'wireLimit'))):
+            or any(key in args for key in ('componentIds', 'includeNets', 'netFormat', 'includeWires', 'wireOffset', 'wireLimit'))):
         raise CircuitToolError('INVALID_ARGUMENT', '组件目录需要 circuit，且不能与详情或导线选项混用。',
                                hint='使用 componentDirectory: {maxBytes?, cursor?}；详情另用 componentIds。')
     budget = options.get('maxBytes', 24000)
@@ -65,7 +65,8 @@ def component_directory(view, *, identity, options, response_metadata=None):
         'unknowns': deepcopy(view.get('unknowns', [])),
         'scope': 'Static components with circuit-coordinate locations, bounds and indexed port geometry. '
                  'ends=null means ports unavailable; [] means observed zero ports. Null fields remain unknown. '
-                 'Directions and semanticRole are native metadata, not a behavior verdict. '
+                 'Directions and semanticRole describe verified runtime ports, not a behavior verdict. '
+                 'Corrected directions retain nativeDirection and directionSource. '
                  'Attributes and bit nets remain available with componentIds or full inspect; no simulation values.',
         **(response_metadata or {}),
         'components': [],
@@ -90,8 +91,9 @@ def component_directory(view, *, identity, options, response_metadata=None):
         entry = {key: deepcopy(component.get(key)) for key in
                  ('componentId', 'factory', 'label', 'location', 'bounds', 'subcircuit')}
         ends = component.get('ends')
-        entry['ends'] = [{key: deepcopy(end.get(key)) for key in
-                          ('index', 'location', 'width', 'direction', 'exclusive', 'semanticRole', 'runtimeTooltip')}
+        entry['ends'] = [{**{key: deepcopy(end.get(key)) for key in
+                          ('index', 'location', 'width', 'direction', 'exclusive', 'semanticRole', 'runtimeTooltip')},
+                         **{key: deepcopy(end[key]) for key in ('nativeDirection', 'directionSource') if key in end}}
                          for end in ends] if exact and isinstance(ends, list) else None
         size = entries_bytes + bool(result['components']) + len(_json(entry).encode('utf-8'))
         proposed = page_size(len(result['components']) + 1, size)

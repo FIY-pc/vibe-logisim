@@ -21,6 +21,7 @@ def _endpoint(component, end):
         'endIndex': end['index'],
         **{key: end.get(key) for key in (
             'location', 'width', 'direction', 'semanticRole', 'runtimeTooltip')},
+        **{key: end[key] for key in ('nativeDirection', 'directionSource') if key in end},
     }
 
 
@@ -56,7 +57,7 @@ def _multiple_output_peers(circuit, peer_nets, selected):
         for port in shown:
             component, end = endpoints.get(port, ({'componentId': port[0]}, {'index': port[1]}))
             peer = {**_endpoint(component, end), 'componentLocation': component.get('location')}
-            # Direction here is the contact's native metadata, never a drive
+            # Direction includes verified implementation corrections, never a drive
             # assertion. Exclusive flags are deliberately not interpreted.
             peer['direction'] = 'output'
             truncated = []
@@ -96,7 +97,8 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
             'inputsWithoutOutputPeer excludes those bits: peers exist but none is '
             'marked output; inout peers are not interpreted as drivers. EndData '
             'directions may differ from functional roles. multipleOutputPeers '
-            'groups native output-marked ends sharing bit nets, including peers '
+            'groups output-marked ends sharing bit nets, including verified '
+            'implementation corrections and peers '
             'outside the selection; this does not establish an electrical conflict. '
             'Outputs may be tri-stated, inactive, or misdescribed by runtime metadata. '
             'Groups, peers, bit mappings and text are bounded previews; omissions '
