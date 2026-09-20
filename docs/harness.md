@@ -89,7 +89,9 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `inspect_circuit` 的 `connectivityIssues` 由 `domain/connectivity_feedback.py` 根据完整原生位网生成。1.9.2 修正了“有网络编号就算已连接”的漏报：`unconnectedInputs` / `unconnectedOutputs` 按端口列出没有其他端口 contact 的位；导线段可以存在。`inputsWithoutOutputPeer` 另列有 peer 但没有被原生标为 output 的位，不重复前一类；`unknownPorts` 与 `widthIncompatibilities` 保留未知和冲突。省略 nets 或筛选组件不缩减判断所用网络。原生方向标签不等于实际驱动，浮空输入也可能有合法默认值，因此这些是静态事实，不是功能成败或强制提交条件。两种实际运行时的总线、浮空、冲突反例与历史产物证据见 [014](../experiments/014-wire-construction/CONNECTIVITY.md)。
 
-1.10.0 的 `inspect_circuit(circuit, componentDirectory: {maxBytes?, cursor?})` 提供可选组件目录，返回完整的 ID、元件类型、标签和端口事实；详细连通信息仍按既有 componentIds 路径读取。页面按实际 UTF-8 JSON 字节预算生成，默认 24,000、上限 32,000，包含身份与游标；未知端口保留 null。游标绑定工程、版本、候选和完整静态观察/运行环境，过期拒绝，单条过大明确报错，不切断或跳过条目。原始全文和 Code Mode 自行筛选仍可用。实测 1,576 组件完整通过原生协议，目录每页约 82 毫秒本地处理的开销和未验证范围见 [018](../experiments/018-inspection-discovery/README.md)。
+`inspect_circuit(circuit, componentDirectory: {maxBytes?, cursor?})` 提供可选组件目录。1.15.0 起直接包含组件位置、边界、子电路目标和端口坐标、位宽、方向与原生角色说明，可据此布局和接线，无需仅为几何再查完整详情。属性和详细位网按既有 componentIds 路径读取。页面按实际 UTF-8 JSON 字节预算生成，默认 24,000、上限 32,000，包含身份与游标；未知端口保留 null。游标绑定工程、版本、候选和完整静态观察/运行环境，过期拒绝，单条过大明确报错，不切断或跳过条目。原始全文和 Code Mode 自行筛选仍可用。原有分页证据见 [018](../experiments/018-inspection-discovery/README.md)，用目录完成原生子电路构建的实际消费见 [025](../experiments/025-context-observation/README.md)。
+
+每轮会话上下文的 `binding.plugin` 只携带插件身份与版本；完整工具说明由原生 dynamicTools 提供一次，不在应用上下文中再复制 capabilities。原始 context 仍保留给 UI，选区、运行观察、留存时刻和资料引用照常传送。
 
 插件 1.8.0 的 `describe_component` 复用左栏元件库的 `PlacementService` / `CircuitPalette`，让模型能查询尚未放置的元件。只传 `circuit` 返回当前工程声明库及子电路中的可放置工具；加 `library`、`tool` 和可选 `attributes` 返回有效属性、选项、真实端口索引/方向/位宽/原生 tooltip、边界，以及原点为 `(0,0)` 的 `<comp>` XML。插入时移动 `loc` 并平移端口坐标；库 ID 属于当前工程，不能跨项目照搬。属性初值来自当前库工具配置，不冒充固定的 factory 默认值。
 

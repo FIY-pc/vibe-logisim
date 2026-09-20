@@ -1,7 +1,7 @@
 "use strict";
 
-// Keep observation facts independently retrievable and small enough to survive
-// the host's per-entry context truncation. UI metadata and source text stay data.
+// Keep plugin identity in the binding; native dynamic tools supply descriptions.
+// Observation facts stay separate, and the original context stays intact for UI.
 function splitContext(context) {
   const selection = context?.selection || {};
   return {
@@ -12,7 +12,6 @@ function splitContext(context) {
         id: context.plugin.id,
         version: context.plugin.version,
         workflow: context.plugin.workflow,
-        capabilities: context.plugin.capabilities,
       } : null,
       authority: context?.authority,
       projectId: context?.projectId,

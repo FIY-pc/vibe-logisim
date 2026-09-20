@@ -63,9 +63,10 @@ def component_directory(view, *, identity, options, response_metadata=None):
         'authority': 'exact-runtime' if exact else 'geometry-only',
         'error': deepcopy(view.get('observerError')),
         'unknowns': deepcopy(view.get('unknowns', [])),
-        'scope': 'Static component directory only. ends=null means ports unavailable; [] means observed zero ports. '
-                 'Null fields remain unknown. Port directions are native metadata, not functional roles. '
-                 'Details remain available with componentIds or full inspect; no simulation values or connectivity verdict.',
+        'scope': 'Static components with circuit-coordinate locations, bounds and indexed port geometry. '
+                 'ends=null means ports unavailable; [] means observed zero ports. Null fields remain unknown. '
+                 'Directions and semanticRole are native metadata, not a behavior verdict. '
+                 'Attributes and bit nets remain available with componentIds or full inspect; no simulation values.',
         **(response_metadata or {}),
         'components': [],
     }
@@ -86,9 +87,12 @@ def component_directory(view, *, identity, options, response_metadata=None):
 
     page = page_size(0, 0)
     for component in components[offset:]:
-        entry = {key: component.get(key) for key in ('componentId', 'factory', 'label')}
+        entry = {key: deepcopy(component.get(key)) for key in
+                 ('componentId', 'factory', 'label', 'location', 'bounds', 'subcircuit')}
         ends = component.get('ends')
-        entry['ends'] = [{key: end.get(key) for key in ('index', 'width', 'direction')} for end in ends] if exact and isinstance(ends, list) else None
+        entry['ends'] = [{key: deepcopy(end.get(key)) for key in
+                          ('index', 'location', 'width', 'direction', 'exclusive', 'semanticRole', 'runtimeTooltip')}
+                         for end in ends] if exact and isinstance(ends, list) else None
         size = entries_bytes + bool(result['components']) + len(_json(entry).encode('utf-8'))
         proposed = page_size(len(result['components']) + 1, size)
         if proposed['bytes'] > budget:

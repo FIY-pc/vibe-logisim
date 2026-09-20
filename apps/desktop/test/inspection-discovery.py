@@ -55,8 +55,8 @@ class Discovery(unittest.TestCase):
             cursor = result['page']['nextCursor']
             if not cursor:
                 break
-        expected = [{**{k: c[k] for k in ('componentId', 'factory', 'label')},
-                     'ends': [{k: e[k] for k in ('index', 'width', 'direction')} for e in c['ends']]}
+        expected = [{**{k: c.get(k) for k in ('componentId', 'factory', 'label', 'location', 'bounds', 'subcircuit')},
+                     'ends': [{k: e.get(k) for k in ('index', 'location', 'width', 'direction', 'exclusive', 'semanticRole', 'runtimeTooltip')} for e in c['ends']]}
                     for c in original['circuit']['components']]
         self.assertEqual(found, expected)
         self.assertEqual(len({c['componentId'] for c in found}), len(found))
