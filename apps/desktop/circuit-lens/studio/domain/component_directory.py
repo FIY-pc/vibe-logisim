@@ -42,6 +42,9 @@ def component_directory(view, *, identity, options, response_metadata=None):
     budget, cursor = options
     circuit = view['circuit']
     exact = bool(view.get('capabilities', {}).get('exactConnectivity')) and not view.get('observerError')
+    # CircuitQueries carries the full observationProfile (id, runtime JAR and
+    # observer digests) in capabilities, plus the observed runtime separately.
+    # Include both even without render metadata; no second profile ID source.
     observation = {key: view.get(key) for key in ('circuit', 'capabilities', 'unknowns', 'observerError', 'runtime')}
     digest = hashlib.sha256(_json([identity, observation]).encode('utf-8')).hexdigest()
     components = circuit['components']

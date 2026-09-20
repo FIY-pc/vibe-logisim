@@ -128,6 +128,30 @@ for (const page of JSON.parse(require('node:fs').readFileSync(0,'utf8'))) {
             call(empty, {})
         self.assertEqual(caught.exception.code, 'COMPONENT_DIRECTORY_BUDGET')
 
+    def test_runtime_binding_without_render_and_repeated_read_stability(self):
+        # The production transform carries the entire profile in capabilities;
+        # binding must not depend only on render.profileId or a friendly name.
+        wb, view = fixture()
+        view['circuit']['render'] = None
+        profile = {'id': 'profile-hust', 'runtimeJarSha256': 'a' * 64,
+                   'observerSourceSha256': 'b' * 64}
+        view['capabilities'].update(observationProfile=profile, profile=profile)
+        view['runtime'] = {'jarSha256': 'a' * 64, 'reportedVersion': '2.15.0'}
+        options = {'maxBytes': 1800}
+        first = call(wb, options)
+        self.assertEqual(first, call(wb, options))
+        continuation = {'cursor': first['page']['nextCursor'], 'maxBytes': 1800}
+        self.assertGreater(call(wb, continuation)['page']['offset'], 0)
+        for target, field in ((profile, 'id'), (profile, 'runtimeJarSha256'),
+                              (profile, 'observerSourceSha256'), (view['runtime'], 'jarSha256')):
+            old = target[field]
+            target[field] = 'other-runtime-or-observer'
+            with self.assertRaises(CircuitToolError) as caught:
+                call(wb, continuation)
+            self.assertEqual(caught.exception.code, 'STALE_COMPONENT_CURSOR')
+            target[field] = old
+        self.assertEqual(first, call(wb, options))
+
     def test_unknown_ports_and_observation_not_mutated(self):
         wb, view = fixture(1)
         view['circuit']['components'][0]['ends'] = []
