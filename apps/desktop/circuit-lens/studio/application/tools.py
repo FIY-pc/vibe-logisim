@@ -121,7 +121,12 @@ class Workbench:
             self.workspace,
             circuit=metadata['circuit'],
             artifact_sha256=metadata['artifactSha256'],
+            candidate_id=metadata.get('candidateId'),
+            runtime_profile=metadata.get('runtimeProfile'),
         )
+        if metadata.get('candidateId'):
+            binding.update(baseRevisionId=metadata['baseRevisionId'],
+                           currentArtifactSha256=metadata['currentArtifactSha256'])
         run = {
             'id': 'render-' + uuid.uuid4().hex[:16],
             'label': '原生电路图面',
@@ -141,7 +146,9 @@ class Workbench:
             feedback={
                 'status': 'observed',
                 'kind': 'visual-render',
-                'note': '图像来自当前 revision 和原生 Logisim；需要用 inspect_circuit 或运行工具判断连接和行为。',
+                'note': ('图像来自候选快照和原生 Logisim；baseRevisionId 是候选基线，revisionId 是本次调用的当前版本。'
+                         if metadata.get('candidateId') else
+                         '图像来自当前 revision 和原生 Logisim；需要用 inspect_circuit 或运行工具判断连接和行为。'),
             },
         )
         # This field is consumed by Electron and converted to the native

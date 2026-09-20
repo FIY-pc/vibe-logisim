@@ -47,6 +47,9 @@ class CircuitQueries:
         model image consumers do not necessarily composite alpha onto white.
         """
         w = self.workspace
+        if 'candidateId' in values:
+            from studio.application.candidate_render import render_candidate_for_agent
+            return render_candidate_for_agent(w, values)
         with w.lock:
             w._require()
             name = values.get('circuit') or w.raw_project['mainCircuit']
