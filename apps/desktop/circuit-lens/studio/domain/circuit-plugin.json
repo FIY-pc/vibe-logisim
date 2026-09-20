@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -419,7 +419,7 @@
     {
       "type": "function",
       "name": "wire_candidate",
-      "description": "Construct an independent candidate by adding native parts and physically wiring full ports in ONE definition. Omit candidateId for frozen source; supply it to compose an owned candidate. Existing component IDs MUST come from that exact candidate/source; IDs change when parts are added. New parts have unique aliases and 10-unit-grid locations. factory is an exact tool name from describe_component; optional library is its project-local group ID (empty string for this file's subcircuits). Without library, only a unique native tool name is accepted; ambiguous names require library. Uses the SAME native catalog, defaults, attributes, and custom subcircuit ports as manual placement, including declared third-party libraries. New Pins are supported in definitions without parent instances, including an empty main; existing Pins are preserved. Definitions already used by parents require interface editing or direct .circ edits with parent wiring adjusted. No arbitrary XML, deletion, moving or new Tunnel. Recursive subcircuit placement and invalid attributes are rejected before routing. Connect {component,port} by native end index; use explicit Splitters for slicing. An explicitly connected pair of equal-width ports may touch directly; the point must have no existing wire or third port. Preserves source; without new Pins, also preserves the previous candidate/source external footprint. Fresh Logisim load compares ALL port-bit connectivity against requested unions, rejecting unexpected shorts, missing links, width conflicts and merged output drivers. This proves requested connectivity, not functional correctness. Direct file edits remain available.",
+      "description": "Construct or repair an independent candidate by optionally removing selected wires, adding native parts and physically wiring full ports in ONE definition. Omit candidateId for frozen source; supply it to compose an owned candidate. Existing component and wire IDs MUST come from that exact candidate/source; IDs may change after edits. Optional removeWireIds removes exactly those native segments first, using the same geometry as manual wire deletion; artifactSha256 from that inspection is REQUIRED for removals. Unselected copper, existing parts and their attributes/locations remain. Connections reference the pre-edit component IDs. Removing a segment can disconnect all branches depending on it. Empty connections allows removal-only or placement-only; at least one removal, addition or connection is required. New parts have unique aliases and 10-unit-grid locations. factory is an exact tool name from describe_component; optional library is its project-local group ID (empty string for this file's subcircuits). Without library, only a unique native tool name is accepted; ambiguous names require library. Uses the SAME native catalog, defaults, attributes, and custom subcircuit ports as manual placement, including declared third-party libraries. New Pins are supported in definitions without parent instances, including an empty main; existing Pins are preserved. Definitions already used by parents require interface editing or direct .circ edits with parent wiring adjusted. No arbitrary XML, component deletion, moving or new Tunnel. Recursive subcircuit placement and invalid attributes are rejected before routing. Connect {component,port} by native end index; use explicit Splitters for slicing. An explicitly connected pair of equal-width ports may touch directly; the point must have no existing wire or third port. Preserves source; without new Pins, also preserves the previous candidate/source external footprint. Fresh Logisim load compares ALL port-bit connectivity of the graph remaining AFTER explicit wire removal against requested unions, rejecting unexpected shorts, missing links, remaining width conflicts and newly merged output drivers. Source width conflicts may be repaired by removing their wires first. This proves requested connectivity, not functional correctness. Direct file edits remain available.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -431,6 +431,18 @@
           },
           "candidateId": {
             "type": "string"
+          },
+          "artifactSha256": {
+            "type": "string",
+            "description": "Exact target artifact hash from inspect_circuit. Required when removeWireIds is nonempty; checked whenever supplied.",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "removeWireIds": {
+            "type": "array",
+            "description": "Native wire IDs from the same source/candidate inspection (includeWires=true); removes only these segments before routing. Select all necessary segments explicitly; no geometric or logical net guessing.",
+            "maxItems": 512,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1, "maxLength": 128}
           },
           "additions": {
             "type": "array",
@@ -495,7 +507,6 @@
           },
           "connections": {
             "type": "array",
-            "minItems": 1,
             "maxItems": 240,
             "items": {
               "type": "object",
@@ -548,8 +559,7 @@
         },
         "required": [
           "title",
-          "circuit",
-          "connections"
+          "circuit"
         ],
         "additionalProperties": false
       },

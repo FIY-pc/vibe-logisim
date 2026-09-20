@@ -17,7 +17,9 @@ import uuid
 import xml.etree.ElementTree as ET
 
 from studio.domain.routing import Router, Partition
+from studio.domain.tool_errors import CircuitToolError
 from studio.project.document import CircuitDocument
+from studio.project.wire_selection import remove_wires
 from studio.runtime.construction_parts import check_interfaces, prepare_parts
 
 
@@ -177,10 +179,20 @@ def _wire_candidate(workbench, args, directory):
     workspace = workbench.workspace
     name = args.get("circuit")
     additions, connections = args.get("additions", []), args.get("connections", [])
+    removals = args.get("removeWireIds", [])
     if not isinstance(name, str) or not isinstance(additions, list) or len(additions) > 80:
         raise ValueError("指定一个电路，最多新增 80 个部件")
-    if not isinstance(connections, list) or not 1 <= len(connections) <= 240:
-        raise ValueError("指定 1–240 条完整端口连接；分位请显式添加 Splitter")
+    if not isinstance(connections, list) or len(connections) > 240:
+        raise ValueError("最多指定 240 条完整端口连接；分位请显式添加 Splitter")
+    if (not isinstance(removals, list) or len(removals) > 512
+            or any(not isinstance(wire_id, str) for wire_id in removals)
+            or len(set(removals)) != len(removals)):
+        raise CircuitToolError('INVALID_ARGUMENT', 'removeWireIds 需为最多512个不重复的原生导线ID。')
+    if not additions and not connections and not removals:
+        raise CircuitToolError('INVALID_ARGUMENT', '请指定新增元件、连接或要删除的导线。')
+    if removals and not args.get('artifactSha256'):
+        raise CircuitToolError('INVALID_ARGUMENT', '删除导线需要同一次观察的 artifactSha256。',
+                               hint='使用 inspect_circuit(includeWires=true) 返回的 artifactSha256 和 wireIds。')
     parent_id = args.get("candidateId")
     if parent_id:
         parent_dir, parent = workbench._metadata(parent_id)
@@ -191,6 +203,9 @@ def _wire_candidate(workbench, args, directory):
         previous_artifact = workspace.frozen_path
         with workspace.observation_artifact() as frozen:
             before = frozen.read_bytes()
+    if 'artifactSha256' in args and args['artifactSha256'] != hashlib.sha256(before).hexdigest():
+        raise CircuitToolError('STALE_REVISION', '导线或端口所属电路已变化。',
+                               hint='重新观察同一 source/candidate，使用该次 artifactSha256 和对象ID。')
     document = CircuitDocument.parse(before, 'artifact.circ')
     circuit = document.circuit(name)
     candidate_id = directory.name
@@ -199,12 +214,28 @@ def _wire_candidate(workbench, args, directory):
     for filename, data in workspace.package.contents.items():
         (directory / filename).write_bytes(data)
     baseline = workspace.observer.run_full(artifact, name)
-    if any(baseline.get("coverage", {}).get(k, 0) for k in ("invalidBundleEnds", "widthIncompatibilities")):
-        raise ValueError("当前电路已有位宽冲突，暂不支持在冲突网络上自动布线")
     components_before = baseline["focus"]["components"]
+    # References always name the observation BEFORE removal; native IDs may be
+    # reassigned by a subsequent load. Bind them to component identity now.
+    aliases = {c["componentId"]: identity(c) for c in components_before}
+    removed_wires = []
+    if removals:
+        available = {wire['wireId']: wire for wire in baseline['focus']['wires']}
+        unknown = [wire_id for wire_id in removals if wire_id not in available]
+        if unknown:
+            raise CircuitToolError('INVALID_WIRE_SELECTION', '所选导线不属于这次原生观察。',
+                                   hint='使用 inspect_circuit(includeWires=true) 的 wireGeometry.wires 中的 wireId。',
+                                   context={'unknownWireIds': unknown[:16], 'unknownCount': len(unknown)})
+        removed_wires = [available[wire_id] for wire_id in removals]
+        remove_wires(circuit, {'wires': baseline['focus']['wires']}, set(removals))
+        artifact.write_bytes(document.replace_circuit(circuit).data)
+        baseline = workspace.observer.run_full(artifact, name)
+        # The remaining native graph, not the original shorted graph, is the
+        # authority for requested joins and preservation of every other bit net.
+    if any(baseline.get("coverage", {}).get(k, 0) for k in ("invalidBundleEnds", "widthIncompatibilities")):
+        raise ValueError("剩余电路仍有位宽冲突，无法确认连接；可调整要移除的导线或直接编辑文件")
     if len({identity(c) for c in components_before}) != len(components_before):
         raise ValueError("存在同类型同位置的重叠部件，无法唯一绑定端口；请先在编辑器中分开")
-    aliases = {c["componentId"]: identity(c) for c in components_before}
     added_attrs = {}
     parts = prepare_parts(workbench, artifact, name, additions, aliases, document.projection['libraries'])
     wiring_libraries = {lib['name'] for lib in document.projection['libraries'] if lib['desc'] == '#Wiring'}
@@ -216,8 +247,11 @@ def _wire_candidate(workbench, args, directory):
         added_attrs[key] = attrs
     def write():
         artifact.write_bytes(document.replace_circuit(circuit).data)
-    write()
-    prepared = workspace.observer.run_full(artifact, name)
+    if parts:
+        write()
+        prepared = workspace.observer.run_full(artifact, name)
+    else:
+        prepared = baseline
     native_components = {identity(c): c for c in prepared["focus"]["components"]}
     for key, attrs in added_attrs.items():
         c = native_components.get(key)
@@ -280,7 +314,7 @@ def _wire_candidate(workbench, args, directory):
         for x, y in zip(port_bits(a), port_bits(b)):
             routed_partition.join(x, y)
         routed.append((connection, (ac, a), (bc, b)))
-    router = Router(prepared, routed_partition)
+    router = Router(prepared, routed_partition) if routed else None
     signals = []
     for connection, (ac, a), (bc, b) in routed:
         try:
@@ -316,9 +350,11 @@ def _wire_candidate(workbench, args, directory):
                       "componentsAfter": len(after["focus"]["components"]), "wiresAfter": len(after["focus"]["wires"]),
                       "interfacePreserved": interface_preserved,
                       "render": after["render"], "coverage": after["coverage"], "connections": signals,
+                      "removedWires": [{k: wire[k] for k in ('wireId', 'from', 'to')} for wire in removed_wires],
                       "wiringProof": {"authority": "native-bit-net-partition", "checkedPortBits": checked_bits,
                                       "connections": len(signals), "unexpectedMerges": 0, "missingConnections": 0,
-                                      "scope": "Port-bit connectivity only; not CPU behavior."}})
+                                      "reference": "remaining-native-graph-after-explicit-wire-removal" if removals else "native-graph-before-routing",
+                                      "scope": "All port-bit relationships after the explicitly selected wire removals and requested joins; not behavior."}})
     metadata = {"id": candidate_id, "projectId": workspace.history.record["id"], "baseRevisionId": workspace.revision_id, "parentCandidateId": parent_id,
                 "artifactSha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                 "title": str(args.get("title") or "批量连接")[:120], "changes": inherited,

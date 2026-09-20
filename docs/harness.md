@@ -85,6 +85,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.18.0 在普通 `inspect_circuit` 的 `connectivityIssues` 中新增 `multipleOutputPeers`：从完整原生位网归并多个标为 output 的端口，给出组件/端口 ID、位置、原生提示和位映射，局部选择也带出选区外相关端口。默认最多16组、每组8个端口、每端口32个位映射，所有省略均标出，完整 nets 保持可读；没有新增原生查询。它是静态连接事实，不能把三态/未激活输出或原生方向元数据当作实际驱动冲突。真实失败计数器的寄存器、多路器和常量输出共网现可直接定位，正常32位扇出与原请求恢复产物不报告该项，见 [028](../experiments/028-construction-feedback/README.md)。
 
+1.19.0 的 `wire_candidate` 可用 `removeWireIds` 显式删去已有原生导线段，再新增部件或按端口重连；也支持只删除或只放置。删除要求同一 source/candidate 观察的 `artifactSha256`，导线 ID 严格匹配该原件；端口引用在删除前绑定，避免重载编号变化。复用人工删线的几何减法，原生拆分后的半段可独立选择；不自动猜测整条信号路径或清理未选支线。连接证明以删线后的原生位网为基准，仅允许请求中的新合并，保留其余端口位关系、原组件与接口。候选仍独立，checkout 写入共享文件并进入原有撤销机制；直接文件/脚本编辑继续开放。真实失败计数器的4段删除+2对重连约0.118秒完成，独立原生运行、真实鼠标操作、宿主写回/撤销通过；不是新模型自主采用或整轮提速证据，见 [029](../experiments/029-topology-repair/README.md)。
+
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
