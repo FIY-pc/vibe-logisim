@@ -24,7 +24,7 @@ class NativeOperations:
                     or not response.get('runtimeVersion')):
                 raise ValueError('Native execution identity does not match the requested runtime and artifact')
             return response
-        if request.tag in {'component-catalog', 'component-template', 'place-component', 'check-existing-ports',
+        if request.tag in {'component-catalog', 'component-template', 'component-templates', 'place-component', 'check-existing-ports',
                            'property', 'memory', 'interface', 'check-interface', 'check-placement'}:
             return ET.fromstring(observer.worker.request(runtime, artifact, request, output))
         artifact_sha = hashlib.sha256(artifact.read_bytes()).hexdigest()

@@ -86,6 +86,7 @@ public final class CircuitWorker {
                     } else {
                         Document result=factory.newDocumentBuilder().newDocument();result.appendChild(result.createElement("result"));
                         if(kind.equals("component-catalog"))CircuitPalette.catalog(loaded.file,operation,result);
+                        else if(kind.equals("component-templates"))CircuitPalette.templates(loaded.file,operation,result);
                         else if(kind.equals("component-template")||kind.equals("place-component"))CircuitPalette.describe(loaded.file,operation,result);
                         else if(kind.equals("property")||kind.equals("memory"))CircuitObjects.describe(loaded.file,operation,result);
                         else if(kind.equals("interface"))CircuitInterface.describe(loaded.file,operation,result);

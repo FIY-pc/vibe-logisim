@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -419,7 +419,7 @@
     {
       "type": "function",
       "name": "wire_candidate",
-      "description": "Construct an independent candidate by adding supported native parts and physically wiring full ports in ONE definition. Omit candidateId to start from frozen source; supply it to compose a previous candidate. Existing component IDs MUST come from inspect_circuit of that exact candidate/source: IDs change when parts are added. New parts have unique aliases. Positions use a 10-unit grid. Supported: Constant, Splitter, Bit Extender, basic gates, Multiplexer/Demultiplexer, Adder/Subtractor/Comparator/Shifter, Register/Counter, Button/LED. Attributes use native string names/values; unknown or normalized mismatches are rejected. No arbitrary XML, deletion, moving, Pin or new Tunnel. Connect endpoints {component,port} using native end indices; use explicit Splitters for slicing. Router preserves source and existing external footprint, and freshly loads Logisim to compare ALL port-bit connectivity against requested unions, rejecting unexpected shorts, missing links, width conflicts and merged output drivers. This proves connectivity, NOT CPU behavior. Connectivity and behavior are separate observations.",
+      "description": "Construct an independent candidate by adding native parts and physically wiring full ports in ONE definition. Omit candidateId for frozen source; supply it to compose an owned candidate. Existing component IDs MUST come from that exact candidate/source; IDs change when parts are added. New parts have unique aliases and 10-unit-grid locations. factory is an exact tool name from describe_component; optional library is its project-local group ID (empty string for this file's subcircuits). Without library, only a unique native tool name is accepted; ambiguous names require library. Uses the SAME native catalog, defaults, attributes, and custom subcircuit ports as manual placement, including declared third-party libraries. No arbitrary XML, deletion, moving, new Pin or new Tunnel. Recursive subcircuit placement and invalid attributes are rejected before routing. Connect {component,port} by native end index; use explicit Splitters for slicing. Preserves source and existing external footprint. Fresh Logisim load compares ALL port-bit connectivity against requested unions, rejecting unexpected shorts, missing links, width conflicts and merged output drivers. This proves requested connectivity, not functional correctness. Direct file edits remain available.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -439,10 +439,15 @@
               "type": "object",
               "properties": {
                 "id": {
-                  "type": "string"
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 48
                 },
                 "factory": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Exact native tool name; use the same library/tool pair returned by describe_component.",
+                  "minLength": 1,
+                  "maxLength": 1024
                 },
                 "location": {
                   "type": "object",
@@ -469,8 +474,15 @@
                 "attributes": {
                   "type": "object",
                   "additionalProperties": {
-                    "type": "string"
-                  }
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "maxProperties": 128
+                },
+                "library": {
+                  "type": "string",
+                  "description": "Project-local native library ID from describe_component. Empty string selects this file's subcircuits. Omit only when factory/tool name is unique across available libraries.",
+                  "maxLength": 1024
                 }
               },
               "required": [
@@ -527,7 +539,6 @@
                 }
               },
               "required": [
-                "name",
                 "from",
                 "to"
               ],

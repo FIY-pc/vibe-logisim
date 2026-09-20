@@ -11,21 +11,13 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import hashlib
 import json
-import re
+import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
 from studio.domain.routing import Router, Partition
-
-
-BUILTINS = {
-    "#Wiring": {"Constant", "Bit Extender", "Splitter", "Tunnel"},
-    "#Gates": {"NOT Gate", "AND Gate", "OR Gate", "XOR Gate", "NAND Gate", "NOR Gate"},
-    "#Plexers": {"Multiplexer", "Demultiplexer"},
-    "#Arithmetic": {"Adder", "Subtractor", "Comparator", "Shifter"},
-    "#Memory": {"Register", "Counter"},
-    "#I/O": {"Button", "LED"},
-}
+from studio.project.document import CircuitDocument
+from studio.runtime.construction_parts import prepare_parts
 
 
 def point(value):
@@ -88,6 +80,16 @@ def compare_partition(before, after, expected=None):
 
 
 def wire_candidate(workbench, args):
+    directory = workbench.workspace.state_root / 'candidates' / ('candidate-' + uuid.uuid4().hex[:16])
+    directory.mkdir(parents=True)
+    try:
+        return _wire_candidate(workbench, args, directory)
+    except Exception:
+        shutil.rmtree(directory)
+        raise
+
+
+def _wire_candidate(workbench, args, directory):
     workspace = workbench.workspace
     name = args.get("circuit")
     additions, connections = args.get("additions", []), args.get("connections", [])
@@ -103,14 +105,9 @@ def wire_candidate(workbench, args):
         parent = None
         with workspace.observation_artifact() as frozen:
             before = frozen.read_bytes()
-    matches = list(re.finditer(rb"<circuit\b[^>]*>.*?</circuit>", before, re.S))
-    match = next((m for m in matches if ET.fromstring(m.group()).get("name") == name), None)
-    if match is None:
-        raise ValueError("Unknown circuit")
-    circuit = ET.fromstring(match.group())
-    candidate_id = "candidate-" + uuid.uuid4().hex[:16]
-    directory = workspace.state_root / "candidates" / candidate_id
-    directory.mkdir(parents=True)
+    document = CircuitDocument.parse(before, 'artifact.circ')
+    circuit = document.circuit(name)
+    candidate_id = directory.name
     artifact = directory / "artifact.circ"
     artifact.write_bytes(before)
     for filename, data in workspace.package.contents.items():
@@ -122,32 +119,14 @@ def wire_candidate(workbench, args):
     if len({identity(c) for c in components_before}) != len(components_before):
         raise ValueError("存在同类型同位置的重叠部件，无法唯一绑定端口；请先在编辑器中分开")
     aliases = {c["componentId"]: identity(c) for c in components_before}
-    libraries = {lib.get("desc"): lib.get("name") for lib in ET.fromstring(before).findall("lib")}
     added_attrs = {}
-    for item in additions:
-        alias, factory, location = item.get("id"), item.get("factory"), item.get("location")
-        if not isinstance(alias, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,47}", alias) or alias in aliases:
-            raise ValueError("新增部件 id 必须唯一且不能与已有 componentId 冲突")
-        if not isinstance(location, dict) or any(type(location.get(k)) is not int or not 0 <= location[k] <= 6000 or location[k] % 10 for k in ("x", "y")):
-            raise ValueError("部件位置需在 0–6000 的 10 单位网格上")
-        lib = next((libraries[desc] for desc, names in BUILTINS.items() if factory in names and desc in libraries), None)
-        if lib is None:
-            raise ValueError(f"尚不支持新增组件: {factory}")
-        attrs = item.get("attributes", {})
-        if not isinstance(attrs, dict) or len(attrs) > 40 or any(not isinstance(k, str) or not isinstance(v, str) or len(v) > 160 for k, v in attrs.items()):
-            raise ValueError("属性必须为原生属性名与短字符串值")
-        if factory == "Tunnel":
-            raise ValueError("当前物理连线工具不新增 Tunnel；请连接已有端口")
-        key = factory, point(location)
-        if key in aliases.values():
-            raise ValueError("新增部件与已有部件位置重复")
-        component = ET.SubElement(circuit, "comp", lib=lib, name=factory, loc=f"({location['x']},{location['y']})")
-        for attr, value in attrs.items():
-            ET.SubElement(component, "a", name=attr, val=value)
+    for alias, key, component, attrs in prepare_parts(
+            workbench, artifact, name, additions, aliases, document.projection['libraries']):
+        circuit.append(component)
         aliases[alias] = key
         added_attrs[key] = attrs
     def write():
-        artifact.write_bytes(before[:match.start()] + ET.tostring(circuit, encoding="utf-8") + before[match.end():])
+        artifact.write_bytes(document.replace_circuit(circuit).data)
     write()
     prepared = workspace.observer.run_full(artifact, name)
     compare_partition(baseline, prepared)

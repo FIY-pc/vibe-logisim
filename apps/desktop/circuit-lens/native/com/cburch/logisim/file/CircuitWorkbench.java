@@ -273,6 +273,8 @@ public final class CircuitWorkbench {
             result.getDocumentElement().setAttribute("artifactSha256", artifactSha);
             if (request.getDocumentElement().getTagName().equals("component-catalog")) {
                 CircuitPalette.catalog(file, request.getDocumentElement(), result);
+            } else if (request.getDocumentElement().getTagName().equals("component-templates")) {
+                CircuitPalette.templates(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("component-template") || request.getDocumentElement().getTagName().equals("place-component")) {
                 CircuitPalette.describe(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("check-existing-ports")) {

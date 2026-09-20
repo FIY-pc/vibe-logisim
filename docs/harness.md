@@ -77,6 +77,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.13.0 的 `move_candidate` 还可接受 `positions:[{componentId,x,y}]`，一次指定多个元件各自的最终坐标。ID 全部来自同一次观察，不需逐次移动后重新查询；只检查最终布局，因此支持同时腾空旧位置。它与 `componentIds+delta`（可含 wireIds）二选一，位置由调用者决定，不自动规划布局。两种操作共用 `plan_movements`、XML 更新和原生端口位检查；同位移的内部路径随组平移，不同位移的连接重新布线，固定元件与真正的分支节点继续作为边界。普通拐点不会再被误加入固定端口集合，附着在移动端口上的分支随端口移动。源文件只在用户或模型明确选择 checkout 时写入，候选可预览、组合，直接编辑路径仍开放。
 
+1.14.0 的 `wire_candidate` 移除组件白名单，新增部件复用人工 palette 的真实工具、默认属性、序列化和端口。`factory` 使用原生 tool 名称；可选 `library` 使用当前工程库 ID，空字符串表示项目子电路，省略时仅接受目录中唯一的可放置同名工具。自定义封装及属性由运行时解释，不在 Python 中猜端口位置；一次 `component-templates` 请求取得全部新增部件，仍由已有路由器按完整端口连线。连接 `name` 是可选说明。此工具仍保持现有外部接口，不新增 Pin/Tunnel；直接文件编辑继续开放。未知库、名字歧义、属性错误和子电路循环在布线前拒绝，并带出对应新增部件 id；失败只清理本次未发布候选。
+
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
