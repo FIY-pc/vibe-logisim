@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -728,7 +728,7 @@
     {
       "type": "function",
       "name": "simulate_circuit",
-      "description": "Native Logisim pin-vector propagation, fresh state per vector: COMBINATIONAL only, no clock steps. Omit candidateId for the current on-disk module. Supply ALL input pins as unsigned integers, optionally expected outputs from independent requirements. Unknown outputs are null. Success covers only supplied vectors/expectations, not untested behavior. At most 1024 vectors; large results return totals and bounded samples, all candidate rows remain in review/export. Rerun fewer vectors for specific details. Returns execution.runtimeJarSha256 and runtimeVersion from the executing JVM, checked against the requested runtime/artifact; runtimeProfile is observed after a real run. For independent CLI/Java checks, optional /tmp/vibe-circuit-reference/java-runtime.md covers this runtime’s APIs and process lifecycle.",
+      "description": "Native Logisim pin-vector propagation, fresh state per vector: COMBINATIONAL only, no clock steps. Omit candidateId for the current on-disk module. Supply ALL input pins as unsigned integers, optionally expected outputs from independent requirements. Unknown outputs are null. Success covers only supplied vectors/expectations, not untested behavior. Supply exactly one of vectors (1–1024 items) or vectorsFile (workspace-relative JSON file, a nonempty array of the same {inputs, expected?} objects; up to 131072 items and 32 MiB). Generate larger input sets with ordinary scripts and pass their file path; no Java program or per-batch tool calls are needed. Files are data only, never executed. Large results return totals and bounded failure/unknown samples; full rows are retained in observations or candidate review/export. vectorsFile metadata identifies the exact bytes read; expected remains caller-provided, not an independent oracle. Rerun fewer vectors for specific details. Returns execution.runtimeJarSha256 and runtimeVersion from the executing JVM, checked against the requested runtime/artifact; runtimeProfile is observed after a real run. For independent CLI/Java checks, optional /tmp/vibe-circuit-reference/java-runtime.md covers this runtime’s APIs and process lifecycle.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -737,6 +737,10 @@
           },
           "candidateId": {
             "type": "string"
+          },
+          "vectorsFile": {
+            "type": "string",
+            "description": "JSON input file relative to the open workspace folder. Supply this OR vectors."
           },
           "vectors": {
             "type": "array",
@@ -770,8 +774,7 @@
           }
         },
         "required": [
-          "circuit",
-          "vectors"
+          "circuit"
         ],
         "additionalProperties": false
       },

@@ -19,6 +19,10 @@ class DirectAgentWorkspace {
       revisionId, relative:'.', sourceName:w.folder.current.activeFile};
   }
   assert(binding) { this.workspace.folder.assert(binding.folderId); }
+  resolveFile(binding, relative) {
+    this.assert(binding);
+    return this.workspace.folder.resolve(relative);
+  }
   async synchronize(binding, relative = null, assertCurrent = () => {}) {
     this.assert(binding);
     assertCurrent();

@@ -8,6 +8,18 @@
 
 要与工作区中的某个运行文件核对，可用 `sha256sum path/to/runtime.jar` 与结果的 `execution.runtimeJarSha256` 比较；扩展名可以是 `.jar` 或含 Java 类的课程 `.exe`。运行环境相同不意味着两个验证器独立：独立检查仍应自行确定期望、覆盖案例，并按需另写脚本。
 
+## 脚本生成的大批量输入
+
+`simulate_circuit` 可直接读取工作区里的 JSON 文件，不需要自行编写 Java 入口或多次发送输入批次。`vectorsFile` 相对于打开的文件夹，文件内容是与 `vectors` 相同的数组：
+
+```json
+[{"inputs":{"A":0,"B":1},"expected":{"Y":1}}]
+```
+
+先用普通 Python/JavaScript 脚本按照自己的规格生成完整数组，再调用 `simulate_circuit({circuit:"实际电路名", vectorsFile:"checks/inputs.json"})`。`vectors` 和 `vectorsFile` 只传一个；内联最多 1,024 组，文件最多 131,072 组、32 MiB。工具读取数据，不执行文件里的代码。
+
+每组仍使用全新原生状态。结果的计数覆盖全部输入，返回行优先保留反例和未知；`vectorsFile.sha256` 标识实际读取的文件字节。没有 `expected` 的行只是运行观察，完整空间和预期是否正确仍由输入文件决定。时序任务继续使用 `trace_circuit`，独立 Java/CLI 路径也仍然可用。
+
 ## CLI 的实际含义
 
 - `java -jar runtime.jar -help` / `-version` 会输出帮助/版本，但这两种支持的运行文件返回 **255**。不能仅凭退出码把它算作 API 调用错误。

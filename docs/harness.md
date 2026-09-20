@@ -73,6 +73,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 - `mutate`：把候选写回用户选择的源文件。
 - `evaluate`：运行用户主动请求的实验，并在存在可比较期望时返回判断。
 
+1.12.0 的 `simulate_circuit` 可二选一接收内联 `vectors` 或工作区相对路径 `vectorsFile`。文件是相同 `{inputs, expected?}` 结构的 JSON 数组，最多 131,072 组、32 MiB；模型用普通脚本生成数据，工具只读取，不执行代码。Electron 按当前文件夹解析路径（包括子目录中的电路与根目录测试资料），运行器读取一次并记录实际字节摘要，内部每 1,024 组复用常驻 JVM 执行。各组仍新建原生状态，每批核对同一电路与运行时；缺行或中途执行失败不能产生整批通过结果。返回完整计数及有限反例/未知样本，完整行沿用观察记录。它减少模型编写 Java 运行入口或多轮批次调用的需求，不生成预期、不强制验证，也不是独立 oracle。小样本、直接 Java/CLI 和时序 trace 继续分别可用。
+
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。

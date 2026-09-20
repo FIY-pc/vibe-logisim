@@ -57,13 +57,21 @@ class CircuitPlugin {
         callId: request.callId,
         tool: request.tool,
       };
+      let domainArgs = args;
+      if (request.tool === 'simulate_circuit' && args.vectorsFile !== undefined) {
+        if (typeof this.workspace.resolveFile !== 'function') throw new Error('文件输入需要已打开共享文件夹');
+        domainArgs = {...args, vectorsFile: this.workspace.resolveFile(work, args.vectorsFile)};
+      }
       let result = tool.owner === 'host'
         ? await this.hostExecutors[tool.name](args, scope, session)
-        : await this.invokeDomain({...identity, observationId:scope.pending.observationId, arguments:args});
+        : await this.invokeDomain({...identity, observationId:scope.pending.observationId, arguments:domainArgs});
       scope.assertCurrent();
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('电路工具没有返回有效结果');
       const separated = splitModelContent(result);
       result = separated.publicResult;
+      if (request.tool === 'simulate_circuit' && result.vectorsFile && args.vectorsFile !== undefined) {
+        result = {...result, vectorsFile: {...result.vectorsFile, path: args.vectorsFile}};
+      }
       if (tool.owner === 'host') scope.updateBinding(result);
       const finalIdentity = {
         ...identity,

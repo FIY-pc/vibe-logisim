@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+from pathlib import Path
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -12,6 +13,7 @@ from studio.domain.plugin import PLUGIN_ID, PLUGIN_VERSION, RESULT_SCHEMA, bindi
 from studio.project.package import ProjectPackage
 from studio.runtime.evaluation import EvaluationService
 from studio.domain.evaluation import compare_sample, observation_feedback
+from studio.runtime.vector_file import load_vectors_file
 
 class NativeCircuitRuntime:
     """Execute native Logisim observations for the circuit plugin.
@@ -86,9 +88,30 @@ class NativeCircuitRuntime:
         return self.evaluator.evaluate(args)
 
     def simulate(self, args):
-        name, vectors = (args.get('circuit'), args.get('vectors'))
-        if not isinstance(name, str) or not isinstance(vectors, list) or (not 1 <= len(vectors) <= 1024):
-            raise ValueError('指定电路和 1–1024 组输入向量')
+        name = args.get('circuit')
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError('指定非空电路名称 circuit')
+        if ('vectors' in args) == ('vectorsFile' in args):
+            raise ValueError('指定 vectors 或 vectorsFile，二者必须且只能提供一个')
+        vectors_file = None
+        if 'vectorsFile' in args:
+            filename = args['vectorsFile']
+            if not isinstance(filename, str) or not filename.strip():
+                raise ValueError('vectorsFile 必须是非空 JSON 文件路径')
+            path = Path(filename)
+            if not path.is_absolute():
+                if not self.workspace.source_path:
+                    raise ValueError('相对 vectorsFile 路径需要已打开磁盘上的电路文件')
+                path = self.workspace.source_path.parent / path
+            try:
+                vectors, vectors_file = load_vectors_file(path)
+            except ValueError as error:
+                raise CircuitToolError('INVALID_VECTOR_FILE', str(error),
+                                       hint='修正该 JSON 文件中指出的位置后重试；文件应为 {inputs, expected?} 对象的非空数组。') from error
+        else:
+            vectors = args['vectors']
+            if not isinstance(vectors, list) or not 1 <= len(vectors) <= 1024:
+                raise ValueError('vectors 需要 1–1024 组输入；较大输入集可用 vectorsFile')
         if args.get('inputEvents') or args.get('buttonEvents'):
             raise ValueError('组合仿真不接受时钟或按钮事件，请改用 trace 模式')
         candidate_id = args.get('candidateId')
@@ -103,27 +126,39 @@ class NativeCircuitRuntime:
         started = time.perf_counter()
         inspected = self.tools.inspect({'circuit': name, 'candidateId': candidate_id} if candidate_id else {'circuit': name})
         available = [item.get('label') for item in inspected.get('stimulusSchema') or [] if item.get('label')]
-        request = ET.Element('simulate', circuit=name)
-        for vector in vectors:
-            row = ET.SubElement(request, 'vector')
-            inputs = self._values(vector.get('inputs', {}), '输入')
-            self._assert_known_inputs(inputs, available)
-            for pin, value in inputs.items():
-                ET.SubElement(row, 'input', name=pin, value=str(value))
-            self._values(vector.get('expected'), '期望输出', allow_none=True)
-        response = self.tools._native(artifact, request)
+        rows = []
+        execution = None
+        # Bound native protocol/DOM memory without requiring a model round trip
+        # for each batch. Every batch uses the same immutable artifact, and
+        # NativeOperations checks its runtime/artifact identity independently.
+        for start in range(0, len(vectors), 1024):
+            batch = vectors[start:start + 1024]
+            request = ET.Element('simulate', circuit=name)
+            for vector in batch:
+                row = ET.SubElement(request, 'vector')
+                inputs = self._values(vector.get('inputs', {}), '输入')
+                self._assert_known_inputs(inputs, available)
+                for pin, value in inputs.items():
+                    ET.SubElement(row, 'input', name=pin, value=str(value))
+                self._values(vector.get('expected'), '期望输出', allow_none=True)
+            response = self.tools._native(artifact, request)
+            identity = dict(response.attrib)
+            if identity.get('artifactSha256') != artifact_sha or (execution is not None and identity != execution):
+                raise ValueError('批量仿真的电路或运行时已变化，未得到同一版本的完整结果')
+            execution = identity
+            if len(response) != len(batch):
+                raise ValueError(f'原生仿真返回 {len(response)} 行，但批次请求了 {len(batch)} 组输入；未得到完整结果')
+            for i, row in enumerate(response):
+                outputs = {o.get('name'): int(o.get('value')) if 'value' in o.attrib else None for o in row}
+                expected = batch[i].get('expected')
+                oscillating = row.get('oscillating') == 'true'
+                status, reason = compare_sample(outputs, expected, oscillating=oscillating) if expected else ('observed', None)
+                passed = {'passed': True, 'failed': False}.get(status)
+                rows.append({'inputs': batch[i]['inputs'], 'outputs': outputs, 'bits': {o.get('name'): o.get('bits') for o in row},
+                             'expected': expected, 'passed': passed, 'status': status, 'oscillating': oscillating,
+                             **({'reason': reason} if reason else {})})
         profile = self.workspace.observer.profile(response.get('runtimeVersion'))
         finished = time.perf_counter()
-        rows = []
-        for i, row in enumerate(response):
-            outputs = {o.get('name'): int(o.get('value')) if 'value' in o.attrib else None for o in row}
-            expected = vectors[i].get('expected')
-            oscillating = row.get('oscillating') == 'true'
-            status, reason = compare_sample(outputs, expected, oscillating=oscillating) if expected else ('observed', None)
-            passed = {'passed': True, 'failed': False}.get(status)
-            rows.append({'inputs': vectors[i]['inputs'], 'outputs': outputs, 'bits': {o.get('name'): o.get('bits') for o in row},
-                         'expected': expected, 'passed': passed, 'status': status, 'oscillating': oscillating,
-                         **({'reason': reason} if reason else {})})
         report = {
             'schema': RESULT_SCHEMA,
             'plugin': {'id': PLUGIN_ID, 'version': PLUGIN_VERSION},
@@ -142,6 +177,7 @@ class NativeCircuitRuntime:
             'passed': sum((r['passed'] is True for r in rows)),
             'failed': sum((r['passed'] is False for r in rows)),
             'unchecked': sum((r['passed'] is None for r in rows)),
+            **({'vectorsFile': vectors_file} if vectors_file else {}),
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
         self._complete_observation(report, 'simulate')
