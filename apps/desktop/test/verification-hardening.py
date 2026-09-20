@@ -52,6 +52,7 @@ def recipe_document(recipe: dict) -> dict:
         "cwd": recipe["cwd"],
         "timeoutSeconds": recipe["timeoutSeconds"],
         "result": recipe["result"],
+        "oracleFiles": recipe.get("oracleFiles", []),
     }
 
 
@@ -263,6 +264,31 @@ while True:
             self.assertEqual(result["result"]["execution"], "failed-to-start")
             self.assertEqual(result["result"]["verdict"], "unknown")
             self.assertIn("启动失败", result["result"]["error"])
+
+    def test_declared_oracle_file_change_invalidates_identity(self):
+        script = (
+            "from pathlib import Path\n"
+            "import json\n"
+            "path = Path(__file__)\n"
+            "path.write_text(path.read_text() + '\\n# oracle drift\\n', encoding='utf-8')\n"
+            "print(json.dumps({'status': 'passed'}))\n"
+        )
+        recipe = {
+            "id": "oracle-identity",
+            "label": "oracle identity",
+            "description": "declared oracle file changes during execution",
+            "command": [sys.executable, "oracle.py", "${artifact}"],
+            "cwd": ".",
+            "timeoutSeconds": 10,
+            "result": "json-status",
+            "oracleFiles": ["oracle.py"],
+        }
+        with self.opened([recipe]) as (workspace, root, _source, _source_bytes, _manifest):
+            (root / "oracle.py").write_text(script, encoding="utf-8")
+            result = self.run_verification(workspace, "oracle-identity")
+            self.assertEqual(result["result"]["oracleIdentityComplete"], True)
+            self.assertEqual(result["result"]["execution"], "identity-changed")
+            self.assertEqual(result["result"]["verdict"], "unknown")
 
 
 if __name__ == "__main__":

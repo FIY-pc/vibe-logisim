@@ -1101,7 +1101,7 @@
     {
       "type": "function",
       "name": "list_verifications",
-      "description": "Discover optional verification recipes declared by the current workspace in the nearest vibe-verification.json. A recipe is an ordinary workspace-owned command or script; this tool only lists its declared id, scope, result mode and manifest/recipe identity hashes. No verification is run and a missing manifest is normal.",
+      "description": "Discover optional verification recipes declared by the current workspace in the nearest vibe-verification.json. A recipe is an ordinary workspace-owned command or script; this tool only lists its declared id, scope, result mode, optional oracleFiles and manifest/recipe identity hashes. No verification is run and a missing manifest is normal.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -1118,7 +1118,7 @@
     {
       "type": "function",
       "name": "run_verification",
-      "description": "Run one workspace-owned verification recipe from vibe-verification.json against the current immutable circuit artifact. The recipe receives ${artifact}, ${artifactDir}, ${source}, ${workspace}, ${circuit}, ${revision} and ${artifactSha256} placeholders plus matching VIBE_LOGISIM_* environment variables. artifactDir contains the exact circuit and frozen project dependencies as a disposable input package; ${source} is also this disposable input, never the live user file. The result includes artifact, manifest and recipe identity hashes, stdout/stderr, and separate execution=completed|timed-out|identity-changed|failed-to-start and verdict=passed|failed|unknown fields. This is an optional external oracle; the circuit harness does not interpret its domain meaning or impose when to run it.",
+      "description": "Run one workspace-owned verification recipe from vibe-verification.json against the current immutable circuit artifact. The recipe receives ${artifact}, ${artifactDir}, ${source}, ${workspace}, ${circuit}, ${revision}, ${artifactSha256} and ${oracleSha256} placeholders plus matching VIBE_LOGISIM_* environment variables. artifactDir contains the exact circuit and frozen project dependencies as a disposable input package; ${source} is also this disposable input, never the live user file. A recipe may declare relative oracleFiles for identity binding; omitted declarations remain compatible but are marked incomplete. The result includes artifact, manifest, recipe and optional oracle identity hashes, stdout/stderr, and separate execution=completed|timed-out|identity-changed|failed-to-start and verdict=passed|failed|unknown fields. This is an optional external oracle; the circuit harness does not interpret its domain meaning or impose when to run it.",
       "inputSchema": {
         "type": "object",
         "properties": {

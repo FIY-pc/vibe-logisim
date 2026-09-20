@@ -7,7 +7,7 @@
 | 边界 | 当前行为 | 证据 |
 | --- | --- | --- |
 | 清单发现 | 从当前电路目录向上寻找最近的 `vibe-verification.json`；要求 `vibe-logisim.verification/v1`，最多 32 项；`cwd` 必须位于清单目录内；超时为 1–600 秒。 | `circuit-plugin-contract.py` 的 workspace verifier 测试。 |
-| 结果身份 | 结果绑定 project、revision、circuit、artifact SHA 和 runtime profile，并记录清单原始字节 SHA、规范化 recipe SHA。`list_verifications` 也返回这两个摘要。 | `verification-hardening.py::test_result_carries_manifest_and_recipe_identity_hashes`。 |
+| 结果身份 | 结果绑定 project、revision、circuit、artifact SHA 和 runtime profile，并记录清单原始字节 SHA、规范化 recipe SHA。recipe 可声明 `oracleFiles`，结果再记录文件摘要和完整性状态；未声明时明确标记 identity incomplete。 | `verification-hardening.py::test_result_carries_manifest_and_recipe_identity_hashes`、`test_declared_oracle_file_change_invalidates_identity`。 |
 | 材料包 | 运行前核对冻结 artifact、JAR 和资料资源，再复制到一次性目录；`${artifact}`、`${source}`、`VIBE_LOGISIM_SOURCE` 都指向该 disposable 输入。用户源文件不作为验证器输入路径。 | `test_artifact_mutation_cannot_be_reported_as_passed` 确认验证器改写输入后不能通过，且源文件不变。 |
 | 运行生命周期 | POSIX 下验证器运行在独立 session；超时先终止进程组，必要时强制终止，并回收 stdout/stderr。 | `test_timeout_returns_unknown_and_reaps_verifier_process_tree` 通过 `/proc` 检查子进程退出。 |
 | 完整性 | 运行后核对 materialized artifact、清单和源文件摘要；任一变化都降级为 `unknown`，不把结果当作电路反例。 | `VerificationService.run` 的完整性分支；异常输入测试。 |
@@ -15,7 +15,7 @@
 
 ## 仍然存在的边界
 
-1. **验证器代码的身份仍不完整。** 结果绑定 manifest 和 recipe，但命令引用的 Python/Java 脚本、外部工具、解释器和工作区依赖没有自动形成 `oracleSha256` 文件清单。相同 recipe 下替换脚本，harness 目前只能知道命令没变，不能证明 oracle 字节没变。
+1. **验证器代码的身份仍是声明式的。** `oracleFiles` 能绑定工作区内声明的脚本和依赖；没有声明的旧 recipe 仍可运行，但结果会标记 identity incomplete。harness 不会猜测命令隐式导入的所有解释器、系统工具或工作区依赖，也不会把 incomplete 误写成完整可复现证据。
 
 2. **外部脚本仍有工作区权限。** `cwd` 是清单目录内的真实目录，脚本可以读取或修改其他工作区文件。harness 保护了当前源文件、清单和 disposable 输入的“不能悄悄改变后仍声称通过”边界，但没有把任意工作区写入变成沙箱，也没有假装自己提供了 OS 级隔离。
 

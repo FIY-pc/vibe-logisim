@@ -78,6 +78,13 @@ class VerificationService:
             result = recipe.get("result", "exit-code")
             if result not in {"exit-code", "json-status"}:
                 raise ValueError(f"验证器 {identifier} 的 result 必须为 exit-code 或 json-status")
+            oracle_files = recipe.get("oracleFiles", [])
+            if not isinstance(oracle_files, list) or len(oracle_files) > 64 or any(
+                not isinstance(item, str) or not item.strip() or Path(item).is_absolute()
+                or ".." in Path(item).parts
+                for item in oracle_files
+            ):
+                raise ValueError(f"验证器 {identifier} 的 oracleFiles 必须是工作区内的相对路径数组")
             seen.add(identifier)
             normalized.append({
                 "id": identifier,
@@ -87,6 +94,7 @@ class VerificationService:
                 "cwd": cwd,
                 "timeoutSeconds": timeout,
                 "result": result,
+                "oracleFiles": oracle_files,
             })
         return path, normalized
 
@@ -112,6 +120,23 @@ class VerificationService:
     def _recipe_sha(recipe: dict) -> str:
         payload = json.dumps(recipe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _oracle_identity(self, root: Path, recipe: dict) -> dict:
+        files = []
+        for declared in recipe.get("oracleFiles", []):
+            relative = Path(declared)
+            target = (root / relative).resolve()
+            if target != root and root not in target.parents:
+                raise ValueError(f"验证器 oracleFiles 超出清单目录：{declared}")
+            if not target.is_file():
+                raise ValueError(f"验证器 oracleFiles 不存在：{declared}")
+            files.append({"path": relative.as_posix(), "sha256": self._sha(target)})
+        payload = json.dumps(files, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return {
+            "complete": bool(files),
+            "files": files,
+            "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+        }
 
     @staticmethod
     def _read_sha(path: Path | None) -> str | None:
@@ -240,6 +265,7 @@ class VerificationService:
         current_sha = self._sha(artifact)
         manifest_sha = self._sha(manifest)
         recipe_sha = self._recipe_sha(recipe)
+        oracle_identity_before = self._oracle_identity(root, recipe)
         source_sha_before = self._read_sha(source_path)
         circuit = args.get("circuit") or ""
         started_at = datetime.now(timezone.utc).isoformat()
@@ -257,6 +283,7 @@ class VerificationService:
                 "circuit": circuit,
                 "revision": str(self.workspace.revision_id),
                 "artifactSha256": current_sha,
+                "oracleSha256": oracle_identity_before["sha256"],
             }
             command = [self._replace(item, variables) for item in recipe["command"]]
             environment = os.environ.copy()
@@ -268,6 +295,7 @@ class VerificationService:
                 "VIBE_LOGISIM_CIRCUIT": circuit,
                 "VIBE_LOGISIM_REVISION": str(self.workspace.revision_id),
                 "VIBE_LOGISIM_ARTIFACT_SHA256": current_sha,
+                "VIBE_LOGISIM_ORACLE_SHA256": oracle_identity_before["sha256"],
             })
             start_error = None
             try:
@@ -282,12 +310,20 @@ class VerificationService:
                 exit_code, timed_out, stdout, stderr = None, False, "", ""
             materialized_sha = self._read_sha(materialized_artifact)
             manifest_sha_after = self._read_sha(manifest)
+            try:
+                oracle_identity_after = self._oracle_identity(root, recipe)
+                oracle_identity_error = None
+            except ValueError as error:
+                oracle_identity_after = None
+                oracle_identity_error = str(error)
             source_sha_after = self._read_sha(source_path)
         integrity_error = None
         if materialized_sha != current_sha:
             integrity_error = "验证器修改了 materialize 的电路输入"
         elif manifest_sha_after != manifest_sha:
             integrity_error = "验证器清单在运行期间发生变化"
+        elif oracle_identity_after != oracle_identity_before:
+            integrity_error = oracle_identity_error or "验证器 oracle 文件在运行期间发生变化"
         elif source_sha_after != source_sha_before:
             integrity_error = "验证器修改了工作区源文件"
         finished = time.perf_counter()
@@ -301,11 +337,13 @@ class VerificationService:
             except json.JSONDecodeError as error:
                 return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
                                       started_at, finished - started,
-                                      None, False, stdout, stderr, None, f"验证器输出不是合法 JSON：{error}")
+                                      None, False, stdout, stderr, None, f"验证器输出不是合法 JSON：{error}",
+                                      oracle_identity=oracle_identity_before)
             if not isinstance(parsed, dict) or parsed.get("status") not in {"passed", "failed", "unknown"}:
                 return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
                                       started_at, finished - started,
-                                      exit_code, False, stdout, stderr, parsed, "JSON 验证器必须返回 status=passed、failed 或 unknown")
+                                      exit_code, False, stdout, stderr, parsed, "JSON 验证器必须返回 status=passed、failed 或 unknown",
+                                      oracle_identity=oracle_identity_before)
             if exit_code != 0:
                 status = "unknown"
                 result_error = f"验证器以非零退出码结束：{exit_code}"
@@ -318,12 +356,14 @@ class VerificationService:
         return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
                               started_at, finished - started,
                               exit_code, timed_out, stdout, stderr, parsed, result_error, status=status,
+                              oracle_identity=oracle_identity_before,
                               execution_status=("failed-to-start" if start_error else
                                                  "identity-changed" if integrity_error else
                                                  "timed-out" if timed_out else "completed"))
 
     def _envelope(self, args, recipe, manifest, manifest_sha, recipe_sha, artifact_sha, started_at, duration,
-                  exit_code, timed_out, stdout, stderr, parsed, error, *, status=None, execution_status=None):
+                  exit_code, timed_out, stdout, stderr, parsed, error, *, status=None, execution_status=None,
+                  oracle_identity=None):
         if status is None:
             status = "unknown"
         execution_status = execution_status or ("timed-out" if timed_out else "completed")
@@ -342,6 +382,9 @@ class VerificationService:
             "manifest": str(manifest),
             "manifestSha256": manifest_sha,
             "recipeSha256": recipe_sha,
+            "oracleFiles": recipe.get("oracleFiles", []),
+            "oracleIdentityComplete": bool(oracle_identity and oracle_identity.get("complete")),
+            "oracleSha256": oracle_identity.get("sha256") if oracle_identity else None,
             "command": recipe["command"],
             "cwd": recipe["cwd"],
             "resultMode": recipe["result"],
