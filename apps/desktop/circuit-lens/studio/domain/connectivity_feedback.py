@@ -8,6 +8,17 @@ not actually drive a defined value. Native EndData directions are metadata.
 from copy import deepcopy
 
 
+def _index_contacts(contacts):
+    members, endpoints, outputs = set(), set(), set()
+    for contact in contacts:
+        endpoint = (contact.get('componentId'), contact.get('endIndex'))
+        members.add((*endpoint, contact.get('bit')))
+        endpoints.add(endpoint)
+        if contact.get('direction') == 'output':
+            outputs.add(endpoint)
+    return members, endpoints, outputs
+
+
 def connectivity_feedback(circuit, *, exact, component_ids=None):
     """Inspect full native nets, optionally reporting only selected components.
 
@@ -35,6 +46,9 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
         return result
 
     nets = {n['netId']: n for n in circuit.get('nets', [])}
+    # Index each visited net once, including peers outside the report selection.
+    # Work is linear in contacts plus port bits, rather than fanout squared.
+    indexed_nets = {}
     selected = set(component_ids or [])
     for component in circuit.get('components', []):
         component_id = component['componentId']
@@ -60,18 +74,22 @@ def connectivity_feedback(circuit, *, exact, component_ids=None):
                 net = nets.get(net_ids[0]) if len(net_ids) == 1 else None
                 # Require reciprocal membership. An absent/partial observation
                 # must not turn into an assertion that the port is disconnected.
-                contacts = net.get('contacts', []) if net else []
-                if not any(c.get('componentId') == component_id and
-                           c.get('endIndex') == end['index'] and c.get('bit') == bit
-                           for c in contacts):
+                if not net:
                     missing.append(bit)
                     continue
-                peers = [c for c in contacts if
-                         (c.get('componentId'), c.get('endIndex')) !=
-                         (component_id, end['index'])]
-                if not peers:
+                net_id = net_ids[0]
+                if net_id not in indexed_nets:
+                    indexed_nets[net_id] = _index_contacts(net.get('contacts', []))
+                members, endpoints, outputs = indexed_nets[net_id]
+                port = (component_id, end['index'])
+                if (*port, bit) not in members:
+                    missing.append(bit)
+                    continue
+                # All bits of this same end are excluded, even if a splitter
+                # maps several of them onto one net; duplicates add no peers.
+                if len(endpoints) == 1:
                     no_peer.append(bit)
-                elif not any(p.get('direction') == 'output' for p in peers):
+                elif not outputs or (len(outputs) == 1 and port in outputs):
                     no_output.append(bit)
             if missing:
                 result['unknownPorts'].append({**endpoint, 'reason': 'unmapped-bits', 'bits': missing})

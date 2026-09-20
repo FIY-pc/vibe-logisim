@@ -92,6 +92,69 @@ def fixture(version):
 
 
 class ConnectivityFeedback(unittest.TestCase):
+    def test_peer_identity_and_reciprocal_membership(self):
+        # A different bit of the same end (even marked output) is not a peer.
+        own = {'componentId': 'A', 'endIndex': 0, 'bit': 0, 'direction': 'input'}
+        scene = {
+            'components': [{'componentId': 'A', 'ends': [{
+                'index': 0, 'width': 4, 'direction': 'input',
+                'netBits': [{'bit': 0, 'netId': 'n'}, {'bit': 1, 'netId': 'n'},
+                            {'bit': 2, 'netId': 'absent'},
+                            {'bit': 3, 'netId': 'n'}, {'bit': 3, 'netId': 'n'}],
+            }]}],
+            'nets': [{'netId': 'n', 'contacts': [own, dict(own),
+                      {**own, 'bit': 1}, {**own, 'bit': 7, 'direction': 'output'}]}],
+        }
+        facts = connectivity_feedback(scene, exact=True)
+        self.assertEqual(facts['status'], 'partial')
+        self.assertEqual(facts['unknownPorts'][0]['bits'], [2, 3])
+        self.assertEqual(facts['unconnectedInputs'][0]['bits'], [0, 1])
+        self.assertEqual(facts['inputsWithoutOutputPeer'], [])
+
+        # Another end on the same component IS a peer, but inout is not output.
+        contacts = scene['nets'][0]['contacts']
+        contacts.append({**own, 'endIndex': 1, 'direction': 'inout'})
+        facts = connectivity_feedback(scene, exact=True)
+        self.assertEqual(facts['unconnectedInputs'], [])
+        self.assertEqual(facts['inputsWithoutOutputPeer'][0]['bits'], [0, 1])
+        contacts[-1]['direction'] = 'output'
+        self.assertEqual(connectivity_feedback(scene, exact=True)['inputsWithoutOutputPeer'], [])
+
+        # A peer without reciprocal membership does not make a bit observed.
+        contacts[:] = [c for c in contacts if c['endIndex'] != 0 or c['bit'] != 1]
+        facts = connectivity_feedback(scene, exact=True)
+        self.assertEqual(facts['unknownPorts'][0]['bits'], [1, 2, 3])
+        self.assertEqual(facts['inputsWithoutOutputPeer'], [])
+
+    def test_fanout_contact_work_is_bounded(self):
+        class Contacts(list):
+            visits = 0
+
+            def __iter__(self):
+                for item in super().__iter__():
+                    self.visits += 1
+                    yield item
+
+        count, width = 257, 4
+        scene = {'components': [], 'nets': [
+            {'netId': bit, 'contacts': Contacts()} for bit in range(width)]}
+        for i in range(count):
+            direction = 'input' if i else 'output'
+            scene['components'].append({'componentId': str(i), 'ends': [{
+                'index': 0, 'width': width, 'direction': direction,
+                'netBits': [{'bit': bit, 'netId': bit} for bit in range(width)],
+            }]})
+            for bit, net in enumerate(scene['nets']):
+                net['contacts'].append({'componentId': str(i), 'endIndex': 0,
+                                        'bit': bit, 'direction': direction})
+        for selected in (None, [str(count - 1)]):
+            facts = connectivity_feedback(scene, exact=True, component_ids=selected)
+            self.assertEqual(facts['status'], 'observed')
+            self.assertTrue(all(not value for value in facts.values() if isinstance(value, list)))
+        # Count traversal work, not machine-dependent elapsed time. Includes
+        # a filtered report whose source lies outside the selected components.
+        self.assertLessEqual(sum(n['contacts'].visits for n in scene['nets']), 4 * count * width)
+
     def test_native_counterexamples(self):
         for version in ('2.16.2.2', '2.15.0'):
             with self.subTest(runtime=version), tempfile.TemporaryDirectory(prefix='vibe-connectivity-') as directory:
