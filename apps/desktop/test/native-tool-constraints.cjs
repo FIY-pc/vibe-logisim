@@ -12,6 +12,7 @@ const {once} = require('node:events');
 const {createHash} = require('node:crypto');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const {CircuitToolRegistry} = require('../electron/circuit-tools.cjs');
+const {dynamicToolResponse, CODE_MODE_RESULT_CONTRACT} = require('../electron/model-tool-output.cjs');
 
 const rawTools = catalog.tools.filter(t => t.exposure === 'direct')
   .map(({type, name, description, inputSchema}) => ({type, name, description, inputSchema}));
@@ -36,6 +37,7 @@ async function probe() {
   const requests = [];
   let child, lines, timer, nextId = 0, finishTurn;
   let logs = '';
+  let resultProbe = false, resultProbeCalls = 0;
   const pending = new Map();
   const server = http.createServer(async (request, response) => {
     if (request.method !== 'POST' || request.url !== '/v1/responses') {
@@ -45,10 +47,17 @@ async function probe() {
     for await (const chunk of request) chunks.push(chunk);
     requests.push(JSON.parse(Buffer.concat(chunks).toString()));
     const id = 'fixture-' + requests.length;
+    const body = requests.at(-1);
+    const returned = resultProbe && body.input.find(item => item.call_id === 'json-result-fixture'
+      && item.type.endsWith('tool_call_output'));
+    const item = resultProbe && !returned ? {
+      type:'custom_tool_call', id:'json-result-item', call_id:'json-result-fixture', name:'exec',
+      input:'const raw = await tools.simulate_circuit({circuit:"main",vectors:[{inputs:{In:1},expected:{Out:1}}]}); const parsed=JSON.parse(raw); text({type:typeof raw,rawPassedMissing:raw.passed===undefined,parsed});',
+    } : {type:'message', id:'reply-' + requests.length,
+      role:'assistant', phase:'final_answer', content:[{type:'output_text', text:'Local constraints fixture.'}]};
     const events = [
       {type:'response.created', response:{id}},
-      {type:'response.output_item.done', item:{type:'message', id:'reply-' + requests.length,
-        role:'assistant', phase:'final_answer', content:[{type:'output_text', text:'Local constraints fixture.'}]}},
+      {type:'response.output_item.done', item},
       {type:'response.completed', response:{id, usage:{input_tokens:0, output_tokens:0, total_tokens:0}}},
     ];
     response.writeHead(200, {'Content-Type':'text/event-stream'});
@@ -76,6 +85,13 @@ async function probe() {
     lines.on('line', line => {
       let message; try { message = JSON.parse(line); } catch { return; }
       if (message.method === 'turn/completed') finishTurn?.(message.params);
+      else if (message.method === 'item/tool/call' && resultProbe) {
+        assert.equal(message.params.tool, 'simulate_circuit');
+        resultProbeCalls++;
+        // Fixed protocol data, not a claim that a native circuit was run.
+        send({id:message.id, result:dynamicToolResponse({passed:1, failed:0, unchecked:0,
+          unknown:null, label:'协议🙂', fixture:true})});
+      }
       else if (pending.has(message.id)) {
         const p = pending.get(message.id); pending.delete(message.id);
         if (message.error) p.reject(new Error(JSON.stringify(message.error))); else p.resolve(message.result);
@@ -84,13 +100,13 @@ async function probe() {
         send({id:message.id, error:{code:-32601, message:'Unexpected fixture request'}});
       }
     });
-    const turn = async (threadId, label) => {
+    const turn = async (threadId, label, expectedRequests=1) => {
       const done = new Promise(resolve => { finishTurn = resolve; });
       const before = requests.length;
       await rpc('turn/start', {threadId, input:[{type:'text', text:'Local constraints transport fixture.'}]});
       const end = await done;
       assert.equal(end.turn.status, 'completed', JSON.stringify(end));
-      assert.equal(requests.length, before + 1, 'one fixed response, no tool/model loop');
+      assert.equal(requests.length, before + expectedRequests, 'fixed local response sequence');
       const body = requests.at(-1);
       if (output) fs.writeFileSync(path.join(output, label + '.request.json'), JSON.stringify(body, null, 2) + '\n');
       return body;
@@ -113,6 +129,9 @@ async function probe() {
         bodies.forked = await turn(fork.thread.id, 'forked');
         const after = await start(registry.tools);
         bodies.after = await turn(after.thread.id, 'after');
+        resultProbe = true;
+        bodies.jsonResult = await turn(after.thread.id, 'json-result', 2);
+        assert.equal(resultProbeCalls, 1, 'return inspection must not rerun the expensive operation');
       }
       return bodies;
     };
@@ -171,8 +190,8 @@ async function main() {
       summary.perToolAddedBytes[raw.name] = Buffer.byteLength(suffix);
       if (suffix) {
         assert.ok(toolBlock(after, raw.name).includes(projected.description), 'full projected description must reach the model: ' + raw.name);
-        assert.equal(after.split(suffix).length - 1, 1, 'bounds must appear once per tool');
-        restored = restored.replace(suffix, '');
+        assert.equal(toolBlock(after, raw.name).split(suffix).length - 1, 1, 'projected contract must appear once per tool');
+        restored = restored.replace(projected.description, raw.description);
       }
     }
     assert.equal(restored, before, 'native declarations, property comments and all other tool text stay byte-for-byte identical');
@@ -185,6 +204,16 @@ async function main() {
     assert.equal(summary.addedExecDescriptionBytes, Object.values(summary.perToolAddedBytes).reduce((a,b) => a+b, 0));
     summary.semantics = {schemasUnchanged:true, nativeTypesAndExistingTextUnchanged:true,
       newThreadBoundsVisible:true, resumedInterface:'initial-thread-tools', forkedInterface:'initial-thread-tools'};
+    for (const tool of registry.tools) assert.ok(toolBlock(after, tool.name).includes(CODE_MODE_RESULT_CONTRACT));
+    const resultItem = bodies.jsonResult.input.find(item => item.call_id === 'json-result-fixture'
+      && item.type.endsWith('tool_call_output'));
+    assert.ok(resultItem, 'next request must contain the actual exec output');
+    const text = typeof resultItem.output === 'string' ? resultItem.output
+      : resultItem.output.filter(item => item.type === 'input_text').map(item => item.text).join('');
+    const proof = JSON.parse(text.slice(text.indexOf('{')));
+    assert.deepEqual(proof, {type:'string',rawPassedMissing:true,
+      parsed:{passed:1,failed:0,unchecked:0,unknown:null,label:'协议🙂',fixture:true}});
+    summary.codeModeResult = {contractVisible:true, calls:1, ...proof};
   }
   if (output) fs.writeFileSync(path.join(output, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
   console.log(JSON.stringify(summary));

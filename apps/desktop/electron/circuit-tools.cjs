@@ -1,6 +1,7 @@
 'use strict';
 const {createHash} = require('node:crypto');
 const {projectToolInterface} = require('./schema-constraints-projection.cjs');
+const {describeCodeModeResult} = require('./model-tool-output.cjs');
 
 const CONTRACT = Object.freeze({
   id: 'vibe-logisim.circuit',
@@ -40,7 +41,7 @@ class CircuitToolRegistry {
     this.records = records;
     this.identity = freeze({id:manifest.id, version:manifest.version, schema:manifest.schema, resultSchema:manifest.resultSchema});
     this.tools = freeze([...records.values()].filter(tool => tool.exposure === 'direct')
-      .map(projectToolInterface));
+      .map(projectToolInterface).map(describeCodeModeResult));
     // Availability changes with the canvas; the executable contract must stay
     // fixed for a live thread because Codex received it when that thread opened.
     // Include rendered descriptions: native resume/fork can retain old tools

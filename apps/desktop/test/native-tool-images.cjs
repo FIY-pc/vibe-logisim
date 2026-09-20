@@ -12,7 +12,9 @@ const readline = require('node:readline');
 const {spawn} = require('node:child_process');
 const {once} = require('node:events');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
-const renderTool = catalog.tools.find(tool => tool.name === 'render_circuit');
+const {CircuitToolRegistry} = require('../electron/circuit-tools.cjs');
+const registry = new CircuitToolRegistry(catalog, Object.fromEntries(catalog.hostTools.map(name => [name, () => {}])));
+const renderTool = registry.tools.find(tool => tool.name === 'render_circuit');
 const {dynamicToolResponse, modelMediaEvidence} = require('../electron/model-tool-output.cjs');
 
 const fixturePng = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAKUlEQVR4nGP8//8/AymAiSTVDKMaKAxWRkZG0jT8xxGhTES6hGFEawAADTwGHXfTkWsAAAAASUVORK5CYII=';
@@ -96,7 +98,16 @@ async function probe(code) {
       const end = await done;
       assert.equal(end.turn.status, 'completed', JSON.stringify(end));
       assert.equal(requests.length, 2);
-      return {output:requests[1].input.find(item => item.call_id === 'image-probe' && item.type.endsWith('tool_call_output')),rawItems};
+      const flatten = tools => (tools || []).flatMap(tool => tool.type === 'namespace' ? flatten(tool.tools) : [tool]);
+      const visibleTools = [...flatten(requests[0].tools), ...requests[0].input.flatMap(item => flatten(item.tools))];
+      // Native model catalogs may expose the same callable separately or inline
+      // its declaration under exec. In either case the actual request must carry
+      // the complete production description, including the image exception.
+      const contractCarrier = visibleTools.find(tool => ['exec', renderTool.name].includes(tool.name)
+        && tool.description?.includes(renderTool.description));
+      assert.ok(contractCarrier, 'actual projected image contract must reach the model request');
+      return {output:requests[1].input.find(item => item.call_id === 'image-probe' && item.type.endsWith('tool_call_output')),
+        rawItems, contractCarrier:contractCarrier.name};
     };
     return await Promise.race([run(),new Promise((_,reject) => {
       timer = setTimeout(() => reject(new Error('Native image probe timed out: '+logs)), 45000);
@@ -141,7 +152,8 @@ async function probe(code) {
   }
   const summary = {rawEvidence,fixedEvidence,nativeCodeMode:true,rawTextLeaksBase64:true,explicitImageEmission:true,
     base64InFixedText:false,modelTurns:0,candidateId:renderArgs.candidateId || null,artifactSha256:result.binding?.artifactSha256 || null,
-    exactPngPreserved:true};
+    exactPngPreserved:true,catalogVersion:catalog.version,projectedContractSignature:registry.signature,
+    projectedDescriptionVisible:true,descriptionCarrier:fixedProbe.contractCarrier};
   if (process.argv[3]) fs.writeFileSync(process.argv[3], JSON.stringify(summary,null,2)+'\n');
   console.log(JSON.stringify(summary));
 })().catch(error => { console.error(error); process.exitCode = 1; });
