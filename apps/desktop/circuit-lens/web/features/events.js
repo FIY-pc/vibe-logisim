@@ -2,12 +2,13 @@
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["mountGrid","mountConversations","mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","applyCamera","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
+export const dependencies = ["mountCanvasViewport","mountGrid","mountConversations","mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
 function bindEvents() {
     ports.mountLayout();
+    ports.mountCanvasViewport();
     ports.mountGrid();
     ports.mountComponents();
     ports.mountPlacement();
@@ -164,7 +165,6 @@ function bindEvents() {
       event.preventDefault();
       if (!window.vibeDesktop?.folder) ports.openFile(event.dataTransfer.files[0]);
     });
-    window.addEventListener("resize", ports.applyCamera);
   }
   function mount() {
     ports.mountFiles();

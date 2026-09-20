@@ -9,6 +9,25 @@ export const dependencies = ["gridViewportChanged","commitCircuitRendering","pla
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
+  let viewportSize = null;
+  const readViewportSize = () => ({width: ui.circuitCanvas.clientWidth, height: ui.circuitCanvas.clientHeight});
+
+  function resizeViewport(from, to) {
+    if (!from?.width || !from.height || !to.width || !to.height) return;
+    // Panels expose or cover world space. They must not silently zoom the
+    // circuit (SVG's default behavior with an unchanged viewBox).
+    const unitsPerPixel = canvasState.camera.width / from.width;
+    canvasState.camera = {...canvasState.camera,
+      width: to.width * unitsPerPixel, height: to.height * unitsPerPixel};
+    canvasState.fitCameraWidth *= to.width / from.width;
+  }
+
+  function mountCanvasViewport() {
+    new ResizeObserver(() => {
+      resizeViewport(viewportSize, readViewportSize());
+      applyCamera();
+    }).observe(ui.circuitCanvas);
+  }
 function renderWirePreview() {
     ui.interactionLayer.querySelector(".wire-preview")?.remove();
     if (!canvasState.wirePoints || canvasState.wirePoints.length < 2) return;
@@ -449,6 +468,7 @@ function fitCircuit(bounds = canvasState.worldBounds) {
   }
 
 function applyCamera() {
+    viewportSize = readViewportSize();
     const camera = canvasState.camera;
     ui.circuitCanvas.setAttribute("viewBox", `${camera.x} ${camera.y} ${camera.width} ${camera.height}`);
     const percent = Math.round((canvasState.fitCameraWidth / camera.width) * 100);
@@ -567,14 +587,15 @@ function onPointerUp(event) {
     canvasState.pointer = null;
   }
   function captureViewport() {
-    return {camera: {...canvasState.camera}, fitWidth: canvasState.fitCameraWidth};
+    return {camera: {...canvasState.camera}, fitWidth: canvasState.fitCameraWidth, size: {...viewportSize}};
   }
 
   function restoreViewport(viewport) {
     canvasState.camera = {...viewport.camera};
     canvasState.fitCameraWidth = viewport.fitWidth;
+    resizeViewport(viewport.size, readViewportSize());
     applyCamera();
   }
 
-  return Object.freeze({focusComponents, captureViewport, restoreViewport, renderWirePreview, buildWireNetLookup, renderCircuit, renderComponent, appendOptimisticComponent, removeOptimisticComponent, beginOptimisticDeletion, rollbackOptimisticDeletion, fitCircuit, applyCamera, zoomAt, clientToWorld, onPointerDown, onPointerMove, onPointerUp});
+  return Object.freeze({mountCanvasViewport, focusComponents, captureViewport, restoreViewport, renderWirePreview, buildWireNetLookup, renderCircuit, renderComponent, appendOptimisticComponent, removeOptimisticComponent, beginOptimisticDeletion, rollbackOptimisticDeletion, fitCircuit, applyCamera, zoomAt, clientToWorld, onPointerDown, onPointerMove, onPointerUp});
 }
