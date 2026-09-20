@@ -14,6 +14,7 @@ from studio.project.package import ProjectPackage
 from studio.runtime.evaluation import EvaluationService
 from studio.domain.evaluation import compare_sample, observation_feedback
 from studio.runtime.vector_file import load_vectors_file
+from studio.domain.trace_stimulus import expand_input_clocks
 
 class NativeCircuitRuntime:
     """Execute native Logisim observations for the circuit plugin.
@@ -32,7 +33,7 @@ class NativeCircuitRuntime:
         if not isinstance(args, dict):
             raise ValueError('Harness 参数必须为对象')
         mode = args.get('mode', 'trace')
-        if mode == 'simulate' and (args.get('inputEvents') or args.get('buttonEvents')):
+        if mode == 'simulate' and (args.get('inputEvents') or args.get('buttonEvents') or args.get('inputClocks')):
             raise ValueError('组合仿真不接受时钟或按钮事件，请改用 trace 模式')
         if mode == 'trace':
             report = self.trace(args)
@@ -112,7 +113,7 @@ class NativeCircuitRuntime:
             vectors = args['vectors']
             if not isinstance(vectors, list) or not 1 <= len(vectors) <= 1024:
                 raise ValueError('vectors 需要 1–1024 组输入；较大输入集可用 vectorsFile')
-        if args.get('inputEvents') or args.get('buttonEvents'):
+        if args.get('inputEvents') or args.get('buttonEvents') or args.get('inputClocks'):
             raise ValueError('组合仿真不接受时钟或按钮事件，请改用 trace 模式')
         candidate_id = args.get('candidateId')
         if candidate_id:
@@ -329,6 +330,10 @@ class NativeCircuitRuntime:
             if not isinstance(event.get('name'), str) or not event['name'].strip() or type(event.get('value')) is not int or (not 0 <= event['value'] <= 4294967295):
                 raise ValueError('输入事件目标或数值无效')
             self._assert_known_inputs({event['name']: event['value']}, self._input_labels(observation['focus']['components']))
+        executed_events, input_clocks = expand_input_clocks(
+            args.get('inputClocks', []), normalized_inputs, input_events,
+            observation['focus']['components'], ticks)
+        for event in executed_events:
             ET.SubElement(request, 'input-event', name=event['name'], tick=str(event['tick']), value=str(event['value']))
         if program is not None:
             words = program.get('words')
@@ -352,7 +357,7 @@ class NativeCircuitRuntime:
             'runtimeProfileId': profile['id'],
             'runtimeProfile': profile,
             'execution': dict(response.attrib),
-            'stimulusSha256': self._stimulus_sha({'mode': 'trace', 'circuit': name, 'ticks': ticks, 'inputs': inputs, 'watches': watches, 'resetButton': args.get('resetButton'), 'buttonEvents': button_events, 'inputEvents': input_events, 'program': program}),
+            'stimulusSha256': self._stimulus_sha({'mode': 'trace', 'circuit': name, 'ticks': ticks, 'inputs': inputs, 'watches': watches, 'resetButton': args.get('resetButton'), 'buttonEvents': button_events, 'inputEvents': executed_events, 'program': program}),
             'startedAt': started_at,
             'durationMs': round((finished - started) * 1000, 3),
             'ticks': ticks,
@@ -361,10 +366,12 @@ class NativeCircuitRuntime:
             'resetButton': args.get('resetButton'),
             'buttonEvents': button_events,
             'inputEvents': input_events,
+            'inputClocks': input_clocks,
+            'inputEventCount': len(executed_events),
             'program': program,
             'programScope': 'In-memory stimulus only; candidate ROM is unchanged' if program else 'Candidate ROM contents',
             'rows': rows,
-            'note': 'Each call starts fresh. A native tick follows Clock high/low durations and need not be a transition or cycle. Sample 0 follows initialization and tick-0 events; later samples follow native tick/settling, input events, then button events. Each event settles in list order; values persist. Pins used as clocks require input events.',
+            'note': 'Each call starts fresh. A native tick follows Clock high/low durations and need not be a transition or cycle. Sample 0 follows initialization and tick-0 events; later samples follow native tick/settling, explicit input events, inputClocks transitions, then button events. Each event settles in list order; values persist. inputClocks toggle their supplied initial value at firstTick, then after highTicks/lowTicks through lastTick inclusive. Native Clock components are independent; set data by t-1 to affect their edge at t.',
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
         self._complete_observation(report, 'trace')

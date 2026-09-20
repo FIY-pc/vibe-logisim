@@ -145,6 +145,14 @@ public final class CircuitWorkbench {
         if (found == null) throw new IllegalArgumentException("Unknown component");
         return found;
     }
+    private static final class TraceEvent {
+        final Component component;
+        final Value value;
+        TraceEvent(Component component, Value value) {
+            this.component = component;
+            this.value = value;
+        }
+    }
     private static void trace(LogisimFile file, Element request, Document result) {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
@@ -167,12 +175,14 @@ public final class CircuitWorkbench {
         try {
             CircuitState state = new CircuitState(project, circuit);
             Map<String, Element> inputs = new HashMap<>();
+            Map<String, Component> inputPins = new HashMap<>();
             NodeList inputNodes = request.getElementsByTagName("input");
             for (int i = 0; i < inputNodes.getLength(); i++) {
                 Element item = (Element) inputNodes.item(i);
                 if (inputs.put(item.getAttribute("name"), item) != null) throw new IllegalArgumentException("Duplicate input");
             }
         for (Component pin : pins(circuit)) if (input(pin)) {
+            inputPins.put(label(pin), pin);
             Element supplied = inputs.remove(label(pin));
             if (supplied == null) throw new IllegalArgumentException("Missing input " + label(pin));
             BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
@@ -201,30 +211,43 @@ public final class CircuitWorkbench {
                 state.getPropagator().propagate();
             }
         }
+        // Bind and validate once; append in XML order so each tick retains event order.
+        Map<Integer, List<TraceEvent>> inputEventsByTick = new HashMap<>();
+        NodeList inputEvents = request.getElementsByTagName("input-event");
+        for (int i = 0, count = inputEvents.getLength(); i < count; i++) {
+            Element event = (Element) inputEvents.item(i);
+            int tick = Integer.parseInt(event.getAttribute("tick"));
+            // Events outside this trace were ignored by the original tick loop.
+            if (tick < 0 || tick > ticks) continue;
+            Component pin = inputPins.get(event.getAttribute("name"));
+            if (pin == null) throw new IllegalArgumentException("Stimulus target is not an input Pin " + event.getAttribute("name"));
+            BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
+            long number = Long.parseUnsignedLong(event.getAttribute("value"));
+            if (width.getWidth() > 32 || number > 0xffffffffL || (width.getWidth() < 32 && number >= (1L << width.getWidth()))) throw new IllegalArgumentException("Input event out of range");
+            inputEventsByTick.computeIfAbsent(tick, ignored -> new ArrayList<>())
+                .add(new TraceEvent(pin, Value.createKnown(width, (int) number)));
+        }
+        Map<Integer, List<TraceEvent>> buttonEventsByTick = new HashMap<>();
+        NodeList buttonEvents = request.getElementsByTagName("button-event");
+        for (int i = 0, count = buttonEvents.getLength(); i < count; i++) {
+            Element event = (Element) buttonEvents.item(i);
+            int tick = Integer.parseInt(event.getAttribute("tick"));
+            if (tick < 0 || tick > ticks) continue;
+            Component button = selected(circuit, event);
+            if (!button.getFactory().getName().equals("Button")) throw new IllegalArgumentException("Stimulus target must be a Button");
+            Value value = event.getAttribute("pressed").equals("true") ? Value.TRUE : Value.FALSE;
+            buttonEventsByTick.computeIfAbsent(tick, ignored -> new ArrayList<>())
+                .add(new TraceEvent(button, value));
+        }
             for (int tick = 0; tick <= ticks; tick++) {
-            NodeList inputEvents = request.getElementsByTagName("input-event");
-            for (int i = 0; i < inputEvents.getLength(); i++) {
-                Element event = (Element) inputEvents.item(i);
-                if (Integer.parseInt(event.getAttribute("tick")) != tick) continue;
-                Component pin = null;
-                for (Component candidate : pins(circuit)) if (input(candidate) && label(candidate).equals(event.getAttribute("name"))) pin = candidate;
-                if (pin == null) throw new IllegalArgumentException("Stimulus target is not an input Pin " + event.getAttribute("name"));
-                BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
-                long number = Long.parseUnsignedLong(event.getAttribute("value"));
-                if (width.getWidth() > 32 || number > 0xffffffffL || (width.getWidth() < 32 && number >= (1L << width.getWidth()))) throw new IllegalArgumentException("Input event out of range");
-                Pin.FACTORY.setValue(state.getInstanceState(pin), Value.createKnown(width, (int) number));
-                state.markComponentAsDirty(pin);
+            for (TraceEvent event : inputEventsByTick.getOrDefault(tick, Collections.emptyList())) {
+                Pin.FACTORY.setValue(state.getInstanceState(event.component), event.value);
+                state.markComponentAsDirty(event.component);
                 state.getPropagator().propagate();
             }
-            NodeList events = request.getElementsByTagName("button-event");
-            for (int i = 0; i < events.getLength(); i++) {
-                Element event = (Element) events.item(i);
-                if (Integer.parseInt(event.getAttribute("tick")) != tick) continue;
-                Component button = selected(circuit, event);
-                if (!button.getFactory().getName().equals("Button")) throw new IllegalArgumentException("Stimulus target must be a Button");
-                Value value = event.getAttribute("pressed").equals("true") ? Value.TRUE : Value.FALSE;
-                state.getInstanceState(button).setData(new InstanceDataSingleton(value));
-                state.markComponentAsDirty(button);
+            for (TraceEvent event : buttonEventsByTick.getOrDefault(tick, Collections.emptyList())) {
+                state.getInstanceState(event.component).setData(new InstanceDataSingleton(event.value));
+                state.markComponentAsDirty(event.component);
                 state.getPropagator().propagate();
             }
             Element sample = result.createElement("sample");

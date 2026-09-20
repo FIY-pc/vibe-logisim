@@ -87,6 +87,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.19.0 的 `wire_candidate` 可用 `removeWireIds` 显式删去已有原生导线段，再新增部件或按端口重连；也支持只删除或只放置。删除要求同一 source/candidate 观察的 `artifactSha256`，导线 ID 严格匹配该原件；端口引用在删除前绑定，避免重载编号变化。复用人工删线的几何减法，原生拆分后的半段可独立选择；不自动猜测整条信号路径或清理未选支线。连接证明以删线后的原生位网为基准，仅允许请求中的新合并，保留其余端口位关系、原组件与接口。候选仍独立，checkout 写入共享文件并进入原有撤销机制；直接文件/脚本编辑继续开放。真实失败计数器的4段删除+2对重连约0.118秒完成，独立原生运行、真实鼠标操作、宿主写回/撤销通过；不是新模型自主采用或整轮提速证据，见 [029](../experiments/029-topology-repair/README.md)。
 
+1.20.0 的时序入口共用 `inputClocks` 周期输入激励：`[{name:"CLK"}]` 从 `inputs.CLK` 的初值开始，于第1步翻转，此后每步翻转。可指定 `firstTick`、`lastTick`、`highTicks` 和 `lowTicks`；停止后保持末值。同一步先按原顺序执行 `inputEvents`，再按声明顺序翻转周期输入，最后执行按钮事件，每项独立传播。一个Pin只能由一种输入事件来源驱动；原生Clock依然在这些输入事件之前推进，并非同一时间单位下的物理时钟。周期激励展开为现有原生事件，执行摘要来自展开序列，返回与留存报告保持紧凑参数；Java按tick索引事件及绑定端口，不再逐步扫描全部事件。适用于 trace/evaluate/harness/compare 的时序模式，不是必需的验证步骤。实际原生与宿主消费结果见 [030](../experiments/030-clock-stimuli/README.md)。
+
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
