@@ -31,9 +31,10 @@ class Partition:
 class Router:
     """Grid Manhattan routing. Cross a foreign straight wire, never its vertex.
 
-    Component bodies and ports are obstacles. A route may branch anywhere on its
-    own bus. All emitted polylines are compressed so straight crossings do not
-    become Logisim junctions. No tunnels are invented by the router.
+    Component interiors and foreign ports are obstacles. A finite cost prefers
+    one grid cell of clearance and straight pin leads, without closing narrow
+    passages or moving fixed anchors. A route may branch anywhere on its own
+    bus. Compressed polylines keep straight crossings from becoming junctions.
     """
     def __init__(self, document, partition):
         self.partition = partition
@@ -42,12 +43,15 @@ class Router:
         self.segments = []
         self.at = defaultdict(list)
         self.blocked = set()
+        self.clearance_cost = {}
         self.port_owners = defaultdict(set)
         self.all_points = []
         focus = document["focus"]
         for c in focus["components"]:
             b = c["bounds"]
-            if c["factoryName"] not in {"Text", "Tunnel", "Splitter"}:
+            body = c["factoryName"] not in {"Text", "Tunnel", "Splitter"}
+            escape_axes = set()
+            if body:
                 # The body interior is forbidden; end points on its boundary remain usable.
                 for x in range((b["x"] // 10) * 10, b["x"] + b["width"] + 1, 10):
                     for y in range((b["y"] // 10) * 10, b["y"] + b["height"] + 1, 10):
@@ -68,6 +72,24 @@ class Router:
                 while b["x"] <= q[0] <= b["x"] + b["width"] and b["y"] <= q[1] <= b["y"] + b["height"]:
                     self.blocked.discard(q)
                     q = q[0] + dx, q[1] + dy
+                q = p
+                while (b["x"] - 10 < q[0] < b["x"] + b["width"] + 10 and
+                       b["y"] - 10 < q[1] < b["y"] + b["height"] + 10):
+                    escape_axes.add((q, 0 if dx else 1))
+                    q = q[0] + dx, q[1] + dy
+            if body:
+                # Prefer a grid cell of air around bodies. Keep this a cost,
+                # not a new obstacle: fixed junctions and narrow gaps must
+                # remain routable. A port's outward ray is free only along
+                # its axis; turning immediately at the pin still pays. 40 is
+                # slightly more than two bends (2 * 18), so a small detour can
+                # beat tracing the edge. Overlapping halos do not multiply it.
+                for x in range((b["x"] // 10) * 10, b["x"] + b["width"] + 10, 10):
+                    for y in range((b["y"] // 10) * 10, b["y"] + b["height"] + 10, 10):
+                        for axis in (0, 1):
+                            key = ((x, y), axis)
+                            if key not in escape_axes:
+                                self.clearance_cost[key] = 40
         for p in self.port_owners:
             self.blocked.discard(p)
         owners = {b["bundleId"]: self.owner(b.get("bitNets", [])) or ("floating", b["bundleId"])
@@ -169,6 +191,8 @@ class Router:
                     continue
                 following = (q, axis)
                 new_cost = distance + 10 + (18 if incoming not in (-1, axis) else 0) + 24 * bool(foreign_next)
+                new_cost += max(self.clearance_cost.get((p, axis), 0),
+                                self.clearance_cost.get((q, axis), 0))
                 # A manually placed segment should end at its new bend, not
                 # become a dangling stub when its connector doubles back.
                 if avoid_retrace and any(own == owner and direction == axis for own, direction, _ in self.at[q]):
@@ -195,4 +219,3 @@ class Router:
         corners.append(path[-1])
         result = list(zip(corners, corners[1:]))
         return result
-
