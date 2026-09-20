@@ -133,7 +133,9 @@ def plan_move(scene, selected, dx, dy):
         router = Router(document, Partition())
         for a, b, bits, bundle in reroute:
             owner = router.owner(bits) or ('floating', bundle)
-            segments = router.path({a}, b, owner)
+            # Retained bends are anchors too. Doubling back over their old
+            # copper leaves a dangling tail after native normalization.
+            segments = router.path({a}, b, owner, avoid_retrace=True)
             for p, q in segments:
                 router.add(p, q, owner, owner)
                 kept.append((p, q, bundle))
