@@ -8,6 +8,33 @@ import re
 import xml.etree.ElementTree as ET
 
 
+def pin_interface(workbench, artifact, circuit):
+    symbol = workbench._native(artifact, ET.Element('interface', circuit=circuit)).find('symbol')
+    if symbol is None:
+        raise ValueError(f'{circuit}: 原生查询未返回接口，无法确认新增 Pin 的影响')
+    uses = symbol.findall('use')
+    if uses:
+        parents = ', '.join(dict.fromkeys(use.get('circuit') for use in uses))
+        raise ValueError(f'{circuit}: 已有父实例（{parents}），wire_candidate 不能新增 Pin 或改变父实例端口映射；'
+                         '请使用编辑器的「封装与接口」编辑，或直接编辑 .circ 并同步调整父实例接线')
+    return {pin.get('id'): dict(pin.attrib) for pin in symbol.findall('pin')}
+
+
+def check_interfaces(workbench, before, after, circuit, added_pins):
+    """Only an explicitly extended, uninstantiated interface may change."""
+    if added_pins:
+        old = pin_interface(workbench, before, circuit)
+        new = pin_interface(workbench, after, circuit)
+        expected = {f'{x},{y}' for _, (x, y) in added_pins}
+        if (set(new) != set(old) | expected or expected & set(old)
+                or any(new.get(key) != pin for key, pin in old.items())):
+            raise ValueError(f'{circuit}: 新增 Pin 未完整保留已有引脚或引脚集合与 additions 不符')
+        # Only this definition is replaced and it has no parents. Other definitions
+        # cannot change, so do not reload the runtime once per unrelated circuit.
+        return
+    workbench._native(before, ET.Element('check-interface', circuit=circuit), after)
+
+
 def prepare_parts(workbench, artifact, circuit, additions, aliases, libraries):
     if not additions:
         return []
@@ -43,13 +70,18 @@ def prepare_parts(workbench, artifact, circuit, additions, aliases, libraries):
     descriptors = {lib['name']: lib['desc'] for lib in libraries}
     prepared = []
     occupied = set(aliases.values())
+    checked_pin_interface = False
     for item, template in zip(additions, templates):
         component = template.find('comp')
         if component is None or not template.get('factory') or component.get('name') != template.get('factory'):
             raise ValueError(f'{item["id"]}: 原生组件查询未返回有效部件')
         factory = template.get('factory')
-        if descriptors.get(component.get('lib')) == '#Wiring' and factory in {'Pin', 'Tunnel'}:
-            raise ValueError(f'{item["id"]}: 物理连线工具不新增 {factory}；接口编辑或直接文件编辑仍可用')
+        if descriptors.get(component.get('lib')) == '#Wiring':
+            if factory == 'Tunnel':
+                raise ValueError(f'{item["id"]}: 物理连线工具不新增 Tunnel；直接文件编辑仍可用')
+            if factory == 'Pin' and not checked_pin_interface:
+                pin_interface(workbench, artifact, circuit)
+                checked_pin_interface = True
         location = item['location']
         key = factory, (location['x'], location['y'])
         if key in occupied:

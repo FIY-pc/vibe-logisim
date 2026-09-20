@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 
 from studio.domain.routing import Router, Partition
 from studio.project.document import CircuitDocument
-from studio.runtime.construction_parts import prepare_parts
+from studio.runtime.construction_parts import check_interfaces, prepare_parts
 
 
 def point(value):
@@ -184,9 +184,11 @@ def _wire_candidate(workbench, args, directory):
     parent_id = args.get("candidateId")
     if parent_id:
         parent_dir, parent = workbench._metadata(parent_id)
-        before = (parent_dir / "artifact.circ").read_bytes()
+        previous_artifact = parent_dir / "artifact.circ"
+        before = previous_artifact.read_bytes()
     else:
         parent = None
+        previous_artifact = workspace.frozen_path
         with workspace.observation_artifact() as frozen:
             before = frozen.read_bytes()
     document = CircuitDocument.parse(before, 'artifact.circ')
@@ -205,6 +207,9 @@ def _wire_candidate(workbench, args, directory):
     aliases = {c["componentId"]: identity(c) for c in components_before}
     added_attrs = {}
     parts = prepare_parts(workbench, artifact, name, additions, aliases, document.projection['libraries'])
+    wiring_libraries = {lib['name'] for lib in document.projection['libraries'] if lib['desc'] == '#Wiring'}
+    added_pins = {key for _, key, component, _ in parts
+                  if component.get('lib') in wiring_libraries and component.get('name') == 'Pin'}
     for alias, key, component, attrs in parts:
         circuit.append(component)
         aliases[alias] = key
@@ -297,7 +302,7 @@ def _wire_candidate(workbench, args, directory):
     for key in ("invalidBundleEnds", "widthIncompatibilities"):
         if after.get("coverage", {}).get(key, 0) > baseline.get("coverage", {}).get(key, 0):
             raise ValueError("新增连接产生了电气冲突，未发布候选")
-    workbench._native(workspace.frozen_path, ET.Element("check-interface", circuit=name), artifact)
+    check_interfaces(workbench, previous_artifact, artifact, name, added_pins)
     (directory / "wiring-observation.json").write_text(json.dumps(after, ensure_ascii=False))
     inherited = [dict(c) for c in parent.get("changes", []) if c["circuit"] != name] if parent else []
     # Retain native images for unchanged modules in a composed candidate.
@@ -305,8 +310,11 @@ def _wire_candidate(workbench, args, directory):
         for change in inherited:
             filename = hashlib.sha256(change["circuit"].encode()).hexdigest() + ".png"
             (directory / filename).write_bytes((parent_dir / filename).read_bytes())
+    prior_change = next((c for c in parent.get("changes", []) if c["circuit"] == name), {}) if parent else {}
+    interface_preserved = False if added_pins else prior_change.get("interfacePreserved", True)
     inherited.append({"circuit": name, "componentsBefore": len(components_before),
                       "componentsAfter": len(after["focus"]["components"]), "wiresAfter": len(after["focus"]["wires"]),
+                      "interfacePreserved": interface_preserved,
                       "render": after["render"], "coverage": after["coverage"], "connections": signals,
                       "wiringProof": {"authority": "native-bit-net-partition", "checkedPortBits": checked_bits,
                                       "connections": len(signals), "unexpectedMerges": 0, "missingConnections": 0,
@@ -317,6 +325,7 @@ def _wire_candidate(workbench, args, directory):
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "checks": [c for c in parent.get("checks", []) if c["circuit"] != name] if parent else [],
                 "dependencies": [{"name": d["name"], "sha256": d["sha256"]} for d in workspace.package.dependencies],
-                "interfacePreserved": True, "sourceUnchanged": True, "verification": "native-bit-net-partition-only"}
+                "interfacePreserved": False if added_pins else parent.get("interfacePreserved") if parent else True,
+                "sourceUnchanged": True, "verification": "native-bit-net-partition-only"}
     workbench._save(directory, metadata)
     return metadata

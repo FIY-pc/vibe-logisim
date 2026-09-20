@@ -23,6 +23,10 @@ const {waitUntil}=require('./support/wait-until.cjs');
   await assert.rejects(()=>backend.selectModel(null),/先停止/);
   await assert.rejects(()=>backend.reconnect(),/先停止/);
   assert.equal(backend.childEpoch,generation);
+  notify('item/completed',{turnId:'turn-replay-1',item:{id:'failed-pin',type:'dynamicToolCall',tool:'wire_candidate',success:false,
+   contentItems:[{type:'inputText',text:JSON.stringify({error:{message:'clk: 物理连线工具不新增 Pin',hint:'接口编辑或直接文件编辑仍可用'}})}]}});
+  const failure=events.find(e=>e.type==='activity'&&e.itemId==='failed-pin');
+  assert.equal(failure.status,'failed');assert.match(failure.detail,/物理连线工具不新增 Pin/);assert.match(failure.detail,/接口编辑/);
   for(let i=0;i<12;i++)notify('error',{turnId:'turn-replay-1',willRetry:true,error:{message:'Reconnecting… waiting for network'}});
   assert.equal(backend.snapshot().transmission.phase,'retrying');assert.equal(backend.snapshot().busy,true);
   assert.equal(backend.snapshot().transmission.attempts,12);

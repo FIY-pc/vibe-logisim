@@ -1336,8 +1336,8 @@ class CodexBackend extends EventEmitter {
           itemId: item.id,
           turnId: params.turnId,
           status,
-          detail: method === "item/completed" ? itemErrorText(item) || activity.detail || null : null,
           ...activity,
+          detail: method === "item/completed" ? itemErrorText(item) || activity.detail || null : null,
         });
       }
       return;

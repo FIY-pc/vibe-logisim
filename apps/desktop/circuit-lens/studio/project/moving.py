@@ -17,6 +17,7 @@ def move_candidate(workbench, args):
     name = args['circuit']
     parent_id = args.get('candidateId')
     parent_dir, parent = workbench._metadata(parent_id) if parent_id else (None, None)
+    previous_artifact = parent_dir / 'artifact.circ' if parent_dir else w.frozen_path
     if parent_dir:
         before = (parent_dir / 'artifact.circ').read_bytes()
     else:
@@ -58,13 +59,15 @@ def move_candidate(workbench, args):
         if any(after['coverage'].get(k, 0) > baseline['coverage'].get(k, 0)
                for k in ('invalidBundleEnds', 'widthIncompatibilities', 'unknownWidthEnds')):
             raise ValueError('移动产生了电气冲突，请调整目标位置')
-        workbench._native(w.frozen_path, ET.Element('check-interface', circuit=name), artifact)
+        workbench._native(previous_artifact, ET.Element('check-interface', circuit=name), artifact)
         inherited = [dict(c) for c in parent.get('changes', []) if c['circuit'] != name] if parent else []
         for change in inherited:
             filename = hashlib.sha256(change['circuit'].encode()).hexdigest() + '.png'
             shutil.copyfile(parent_dir / filename, directory / filename)
+        prior_change = next((c for c in parent.get('changes', []) if c['circuit'] == name), {}) if parent else {}
         inherited.append({
             'circuit': name, 'componentsBefore': len(scene['components']),
+            'interfacePreserved': prior_change.get('interfacePreserved', True),
             'componentsAfter': len(after_scene['components']), 'wiresAfter': len(after_scene['wires']),
             'render': after['render'], 'coverage': after['coverage'],
             'movement': movement,
@@ -78,7 +81,8 @@ def move_candidate(workbench, args):
             'createdAt': datetime.now(timezone.utc).isoformat(),
             'checks': [c for c in parent.get('checks', []) if c['circuit'] != name] if parent else [],
             'dependencies': [{'name': d['name'], 'sha256': d['sha256']} for d in w.package.dependencies],
-            'interfacePreserved': True, 'sourceUnchanged': True, 'verification': 'native-bit-net-partition-only',
+            'interfacePreserved': parent.get('interfacePreserved') if parent else True,
+            'sourceUnchanged': True, 'verification': 'native-bit-net-partition-only',
         }
         workbench._save(directory, metadata)
         return metadata
