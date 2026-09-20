@@ -96,37 +96,41 @@ public final class CircuitWorkbench {
                 throw new IllegalArgumentException("Pins must have unique labels");
         }
         Project project = new Project(file);
-        NodeList vectors = request.getElementsByTagName("vector");
-        for (int i = 0; i < vectors.getLength(); i++) {
-            Element vector = (Element) vectors.item(i);
-            CircuitState state = new CircuitState(project, circuit);
-            Set<String> supplied = new HashSet<>();
-            NodeList values = vector.getElementsByTagName("input");
-            for (int j = 0; j < values.getLength(); j++) {
-                Element value = (Element) values.item(j);
-                Component pin = pins.get(value.getAttribute("name"));
-                if (pin == null || !input(pin) || !supplied.add(label(pin))) throw new IllegalArgumentException("Invalid input");
-                BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
-                long number = Long.parseUnsignedLong(value.getAttribute("value"));
-                if (width.getWidth() > 32 || (width.getWidth() < 32 && number >= (1L << width.getWidth())) || number > 0xffffffffL)
-                    throw new IllegalArgumentException("Input value out of range");
-                Pin.FACTORY.setValue(state.getInstanceState(pin), Value.createKnown(width, (int) number));
+        try {
+            NodeList vectors = request.getElementsByTagName("vector");
+            for (int i = 0; i < vectors.getLength(); i++) {
+                Element vector = (Element) vectors.item(i);
+                CircuitState state = new CircuitState(project, circuit);
+                Set<String> supplied = new HashSet<>();
+                NodeList values = vector.getElementsByTagName("input");
+                for (int j = 0; j < values.getLength(); j++) {
+                    Element value = (Element) values.item(j);
+                    Component pin = pins.get(value.getAttribute("name"));
+                    if (pin == null || !input(pin) || !supplied.add(label(pin))) throw new IllegalArgumentException("Invalid input");
+                    BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
+                    long number = Long.parseUnsignedLong(value.getAttribute("value"));
+                    if (width.getWidth() > 32 || (width.getWidth() < 32 && number >= (1L << width.getWidth())) || number > 0xffffffffL)
+                        throw new IllegalArgumentException("Input value out of range");
+                    Pin.FACTORY.setValue(state.getInstanceState(pin), Value.createKnown(width, (int) number));
+                }
+                for (Component pin : pins.values()) if (input(pin) && !supplied.contains(label(pin)))
+                    throw new IllegalArgumentException("Missing input " + label(pin));
+                state.getPropagator().propagate();
+                Element row = result.createElement("vector");
+                row.setAttribute("index", String.valueOf(i));
+                row.setAttribute("oscillating", String.valueOf(state.getPropagator().isOscillating()));
+                for (Component pin : pins.values()) if (!input(pin)) {
+                    Value value = Pin.FACTORY.getValue(state.getInstanceState(pin));
+                    Element out = result.createElement("output");
+                    out.setAttribute("name", label(pin));
+                    out.setAttribute("bits", value.toDisplayString(2));
+                    if (value.isFullyDefined()) out.setAttribute("value", Integer.toUnsignedString(value.toIntValue()));
+                    row.appendChild(out);
+                }
+                result.getDocumentElement().appendChild(row);
             }
-            for (Component pin : pins.values()) if (input(pin) && !supplied.contains(label(pin)))
-                throw new IllegalArgumentException("Missing input " + label(pin));
-            state.getPropagator().propagate();
-            Element row = result.createElement("vector");
-            row.setAttribute("index", String.valueOf(i));
-            row.setAttribute("oscillating", String.valueOf(state.getPropagator().isOscillating()));
-            for (Component pin : pins.values()) if (!input(pin)) {
-                Value value = Pin.FACTORY.getValue(state.getInstanceState(pin));
-                Element out = result.createElement("output");
-                out.setAttribute("name", label(pin));
-                out.setAttribute("bits", value.toDisplayString(2));
-                if (value.isFullyDefined()) out.setAttribute("value", Integer.toUnsignedString(value.toIntValue()));
-                row.appendChild(out);
-            }
-            result.getDocumentElement().appendChild(row);
+        } finally {
+            project.getSimulator().shutDown();
         }
     }
     private static Component selected(Circuit circuit, Element selector) {
@@ -160,13 +164,14 @@ public final class CircuitWorkbench {
                 memory.set(i, (int) Long.parseUnsignedLong(((Element) words.item(i)).getAttribute("value")));
         }
         Project project = new Project(file);
-        CircuitState state = new CircuitState(project, circuit);
-        Map<String, Element> inputs = new HashMap<>();
-        NodeList inputNodes = request.getElementsByTagName("input");
-        for (int i = 0; i < inputNodes.getLength(); i++) {
-            Element item = (Element) inputNodes.item(i);
-            if (inputs.put(item.getAttribute("name"), item) != null) throw new IllegalArgumentException("Duplicate input");
-        }
+        try {
+            CircuitState state = new CircuitState(project, circuit);
+            Map<String, Element> inputs = new HashMap<>();
+            NodeList inputNodes = request.getElementsByTagName("input");
+            for (int i = 0; i < inputNodes.getLength(); i++) {
+                Element item = (Element) inputNodes.item(i);
+                if (inputs.put(item.getAttribute("name"), item) != null) throw new IllegalArgumentException("Duplicate input");
+            }
         for (Component pin : pins(circuit)) if (input(pin)) {
             Element supplied = inputs.remove(label(pin));
             if (supplied == null) throw new IllegalArgumentException("Missing input " + label(pin));
@@ -196,7 +201,7 @@ public final class CircuitWorkbench {
                 state.getPropagator().propagate();
             }
         }
-        for (int tick = 0; tick <= ticks; tick++) {
+            for (int tick = 0; tick <= ticks; tick++) {
             NodeList inputEvents = request.getElementsByTagName("input-event");
             for (int i = 0; i < inputEvents.getLength(); i++) {
                 Element event = (Element) inputEvents.item(i);
@@ -239,6 +244,9 @@ public final class CircuitWorkbench {
                 state.getPropagator().tick();
                 state.getPropagator().propagate();
             }
+            }
+        } finally {
+            project.getSimulator().shutDown();
         }
     }
     public static void main(String[] args) {
