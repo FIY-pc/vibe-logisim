@@ -77,13 +77,11 @@ class RuntimeExecution(unittest.TestCase):
                             self.assertIn(output_text,result.stdout+result.stderr)
                         self.assertEqual(artifact.read_bytes(), original, 'simulation must not save input stimuli')
                 # A native response with mismatched identity must not become successful evidence.
-                run = workspace.observer._run_captured
-                def wrong_identity(command, **kwargs):
-                    result = run(command, **kwargs)
-                    if command[0]=='java':
-                        result.stdout = re.sub(r'runtimeJarSha256="[^"]+"', 'runtimeJarSha256="wrong"', result.stdout)
-                    return result
-                with patch.object(workspace.observer, '_run_captured', side_effect=wrong_identity):
+                run = workspace.observer.simulation_worker.request
+                def wrong_identity(runtime, artifact, request):
+                    response = run(runtime, artifact, request)
+                    return re.sub(rb'runtimeJarSha256="[^"]+"', b'runtimeJarSha256="wrong"', response)
+                with patch.object(workspace.observer.simulation_worker, 'request', side_effect=wrong_identity):
                     with self.assertRaisesRegex(ValueError,'execution identity'):
                         workspace.workbench.simulate(args)
             finally:

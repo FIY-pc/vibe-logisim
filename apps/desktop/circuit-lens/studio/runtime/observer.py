@@ -12,6 +12,7 @@ import threading
 import time
 from studio.infrastructure.files import sha256_bytes, sha256_file
 from studio.runtime.worker import NativeWorker
+from studio.runtime.simulation_worker import SimulationWorker
 import xml.etree.ElementTree as ET
 
 class ObserverRuntime:
@@ -41,8 +42,10 @@ class ObserverRuntime:
         self._active_processes: set[subprocess.Popen[Any]] = set()
         self._closed = False
         self.worker = NativeWorker(repo_root, state_root)
+        self.simulation_worker = SimulationWorker(repo_root, state_root)
 
     def close(self) -> None:
+        self.simulation_worker.close()
         self.worker.close()
         with self._process_lock:
             if self._closed:
@@ -293,4 +296,3 @@ class ObserverRuntime:
         if document.get("error"):
             raise RuntimeError(str(document["error"]))
         return document
-

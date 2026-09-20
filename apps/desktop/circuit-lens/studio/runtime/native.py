@@ -15,6 +15,15 @@ class NativeOperations:
     def _native(self, artifact: Path, request: ET.Element, output: Path | None=None, *, runtime_jar=None):
         observer = self.workspace.observer
         runtime = runtime_jar or observer.runtime_jar
+        if request.tag in {'simulate', 'trace'}:
+            artifact_sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
+            runtime_sha = hashlib.sha256(runtime.read_bytes()).hexdigest()
+            response = ET.fromstring(observer.simulation_worker.request(runtime, artifact, request))
+            if (response.get('runtimeJarSha256') != runtime_sha
+                    or response.get('artifactSha256') != artifact_sha
+                    or not response.get('runtimeVersion')):
+                raise ValueError('Native execution identity does not match the requested runtime and artifact')
+            return response
         if request.tag in {'component-catalog', 'component-template', 'place-component', 'check-existing-ports',
                            'property', 'memory', 'interface', 'check-interface', 'check-placement'}:
             return ET.fromstring(observer.worker.request(runtime, artifact, request, output))
