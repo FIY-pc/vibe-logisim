@@ -12,46 +12,15 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import signal
-import subprocess
 import tempfile
-import threading
 import time
 
 from studio.domain.plugin import binding_for, result_envelope
+from studio.runtime.verification_process import execute_verifier, JSON_RESULT_BYTES, PREVIEW_BYTES, ProcessOutput
 
 
 MANIFEST_NAME = "vibe-verification.json"
 MANIFEST_SCHEMA = "vibe-logisim.verification/v1"
-MAX_OUTPUT = 16 * 1024
-OUTPUT_CHUNK = 4096
-
-
-class _BoundedOutput:
-    """Collect one pipe without retaining data beyond the evidence budget."""
-
-    def __init__(self):
-        self.parts = []
-        self.size = 0
-        self.truncated = False
-
-    def append(self, value: str):
-        if self.truncated:
-            return
-        remaining = MAX_OUTPUT - self.size
-        if len(value) > remaining:
-            if remaining:
-                self.parts.append(value[:remaining])
-                self.size += remaining
-            self.truncated = True
-        else:
-            self.parts.append(value)
-            self.size += len(value)
-
-    def text(self) -> str:
-        return "".join(self.parts)
-
-
 class VerificationService:
     def __init__(self, workspace):
         self.workspace = workspace
@@ -183,141 +152,6 @@ class VerificationService:
             raise ValueError(f"验证器参数包含未知占位符：{result}")
         return result
 
-    @staticmethod
-    def _bounded(value: str, *, truncated: bool = False) -> str:
-        if not truncated and len(value) <= MAX_OUTPUT:
-            return value
-        return value[:MAX_OUTPUT] + "\n…(输出已截断)"
-
-    @staticmethod
-    def _text(value) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes):
-            return value.decode("utf-8", errors="replace")
-        return str(value)
-
-    @staticmethod
-    def _terminate_process_group(process: subprocess.Popen) -> None:
-        """Stop the verifier and descendants after a runtime stop."""
-        if process.poll() is not None:
-            return
-        if os.name == "posix":
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                return
-            try:
-                process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-        else:
-            process.terminate()
-            try:
-                process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                process.kill()
-
-    def _execute(self, command, *, cwd, environment, timeout):
-        """Execute a recipe with bounded, concurrent stdout/stderr readers.
-
-        ``Popen.communicate`` drains both pipes, but retains all bytes until
-        the verifier exits.  Reader threads keep both pipes flowing while
-        storing at most ``MAX_OUTPUT`` characters per stream.  Crossing that
-        existing evidence limit stops the process group so a runaway verifier
-        cannot turn the post-run truncation into unbounded memory use.
-
-        The second boolean in the return value keeps the existing incomplete
-        execution path (the caller exposes it as ``timed-out``/``unknown``),
-        while the third boolean records that the stop came from output budget.
-        """
-        process = subprocess.Popen(
-            command,
-            cwd=cwd,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=os.name == "posix",
-        )
-        stdout_buffer = _BoundedOutput()
-        stderr_buffer = _BoundedOutput()
-        output_limit = threading.Event()
-
-        def read_stream(stream, buffer):
-            try:
-                while True:
-                    chunk = stream.read(OUTPUT_CHUNK)
-                    if not chunk:
-                        return
-                    buffer.append(chunk)
-                    if buffer.truncated:
-                        output_limit.set()
-                        return
-            except (OSError, ValueError):
-                # The process cleanup path may close a pipe while its reader
-                # is waking up.  The already collected prefix is evidence.
-                return
-
-        readers = [
-            threading.Thread(
-                target=read_stream,
-                args=(process.stdout, stdout_buffer),
-                name="verification-stdout",
-                daemon=True,
-            ),
-            threading.Thread(
-                target=read_stream,
-                args=(process.stderr, stderr_buffer),
-                name="verification-stderr",
-                daemon=True,
-            ),
-        ]
-        for reader in readers:
-            reader.start()
-
-        timed_out = False
-        output_limited = False
-        try:
-            deadline = time.monotonic() + timeout
-            while process.poll() is None:
-                if output_limit.is_set():
-                    output_limited = True
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    timed_out = True
-                    break
-                output_limit.wait(min(0.01, remaining))
-            if output_limit.is_set():
-                output_limited = True
-            if timed_out or output_limited:
-                self._terminate_process_group(process)
-            else:
-                process.wait()
-        finally:
-            for reader in readers:
-                reader.join(timeout=2)
-            # A descendant that retained a pipe should already have been
-            # removed with its process group.  Closing our descriptors also
-            # handles the normal path without leaving TextIOWrapper warnings.
-            for stream in (process.stdout, process.stderr):
-                try:
-                    stream.close()
-                except (OSError, ValueError):
-                    pass
-            if any(reader.is_alive() for reader in readers):
-                for reader in readers:
-                    reader.join(timeout=1)
-
-        stopped = timed_out or output_limited
-        stdout = self._bounded(stdout_buffer.text(), truncated=stdout_buffer.truncated)
-        stderr = self._bounded(stderr_buffer.text(), truncated=stderr_buffer.truncated)
-        return (None if stopped else process.returncode), stopped, output_limited, stdout, stderr
-
     def _materialize(self, root: Path, artifact: Path) -> Path:
         """Build a disposable input package for this exact revision.
 
@@ -398,15 +232,18 @@ class VerificationService:
             })
             start_error = None
             try:
-                exit_code, timed_out, output_limited, stdout, stderr = self._execute(
+                output = execute_verifier(
                     command,
                     cwd=cwd,
                     environment=environment,
                     timeout=recipe["timeoutSeconds"],
+                    json_status=recipe["result"] == "json-status",
                 )
             except OSError as error:
                 start_error = f"验证器启动失败：{error}"
-                exit_code, timed_out, output_limited, stdout, stderr = None, False, False, "", ""
+                output = ProcessOutput(None, False, False, "", "", None, 0, 0)
+            exit_code, timed_out, output_limited = output.exit_code, output.timed_out, output.output_limited
+            stdout, stderr = output.stdout, output.stderr
             materialized_sha = self._read_sha(materialized_artifact)
             manifest_sha_after = self._read_sha(manifest)
             try:
@@ -432,27 +269,25 @@ class VerificationService:
             status = "unknown"
         elif output_limited:
             status = "unknown"
-            result_error = f"验证器输出超过运行时预算（每个输出流最多 {MAX_OUTPUT} 个字符），已停止执行"
+            result_error = f"验证器 JSON 结果超过 {JSON_RESULT_BYTES} 字节，已停止执行；缩小结果正文后重试"
         elif recipe["result"] == "json-status" and not timed_out:
             try:
-                parsed = json.loads(stdout)
-            except json.JSONDecodeError as error:
-                return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
-                                      started_at, finished - started,
-                                      None, False, stdout, stderr, None, f"验证器输出不是合法 JSON：{error}",
-                                      oracle_identity=oracle_identity_before)
-            if not isinstance(parsed, dict) or parsed.get("status") not in {"passed", "failed", "unknown"}:
-                return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
-                                      started_at, finished - started,
-                                      exit_code, False, stdout, stderr, parsed, "JSON 验证器必须返回 status=passed、failed 或 unknown",
-                                      oracle_identity=oracle_identity_before)
+                parsed = json.loads(output.json_output)
+            except (ValueError, RecursionError) as error:
+                status = "unknown"
+                result_error = f"验证器输出不是合法 JSON：{error}"
+            else:
+                if not isinstance(parsed, dict) or parsed.get("status") not in ("passed", "failed", "unknown"):
+                    status = "unknown"
+                    result_error = "JSON 验证器必须返回 status=passed、failed 或 unknown"
+                else:
+                    status = parsed["status"]
             if exit_code != 0:
                 status = "unknown"
                 result_error = f"验证器以非零退出码结束：{exit_code}"
-            else:
-                status = parsed["status"]
         elif timed_out:
             status = "unknown"
+            result_error = f"验证器未在 {recipe['timeoutSeconds']} 秒内结束并关闭输出管道，已停止执行"
         else:
             status = "passed" if exit_code == 0 else "failed"
         return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
@@ -460,13 +295,15 @@ class VerificationService:
                               exit_code, timed_out, stdout, stderr, parsed, result_error, status=status,
                               oracle_identity=oracle_identity_before,
                               output_limited=output_limited,
+                              output=output,
                               execution_status=("failed-to-start" if start_error else
                                                  "identity-changed" if integrity_error else
+                                                 "output-limited" if output_limited else
                                                  "timed-out" if timed_out else "completed"))
 
     def _envelope(self, args, recipe, manifest, manifest_sha, recipe_sha, artifact_sha, started_at, duration,
                   exit_code, timed_out, stdout, stderr, parsed, error, *, status=None, execution_status=None,
-                  oracle_identity=None, output_limited=False):
+                  oracle_identity=None, output_limited=False, output=None):
         if status is None:
             status = "unknown"
         execution_status = execution_status or ("timed-out" if timed_out else "completed")
@@ -495,6 +332,10 @@ class VerificationService:
             "execution": execution_status,
             "verdict": status,
             "outputLimited": output_limited,
+            "stdoutTruncated": bool(output and output.stdout_bytes > PREVIEW_BYTES),
+            "stderrTruncated": bool(output and output.stderr_bytes > PREVIEW_BYTES),
+            "stdoutBytes": output.stdout_bytes if output else 0,
+            "stderrBytes": output.stderr_bytes if output else 0,
             "startedAt": started_at,
             "durationMs": round(duration * 1000, 3),
             "exitCode": exit_code,

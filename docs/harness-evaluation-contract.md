@@ -109,7 +109,9 @@
 
 `compare_sample` 和 `observation_feedback` 的实现位于 [`domain/evaluation.py`](../apps/desktop/circuit-lens/studio/domain/evaluation.py)。其中，振荡行即使某个无关输出数值碰巧匹配，也只能是 `unknown`；稳定反例优先使整体成为 `failed`。空断言在运行前拒绝，见 [`evaluation.py`](../apps/desktop/circuit-lens/studio/runtime/evaluation.py) 和 [`evaluation-integrity.py`](../apps/desktop/test/evaluation-integrity.py)。
 
-外部测试也可以作为期望比对路径。工作区中的 `vibe-verification.json` 由 `run_verification` 发现并运行；harness 在一次性目录中提供精确 artifact、冻结依赖、目录、revision 和 SHA，`${source}` 也指向这份 disposable 输入，避免验证器直接写入用户源文件。recipe 可以声明相对 `oracleFiles`，harness 记录其摘要并在运行前后核对；未声明时保持兼容运行，但明确标记 oracle identity incomplete。结果保留清单 SHA、规范化条目 SHA 和声明文件 SHA；输入包、清单、声明文件或源文件在运行期间变化时只能是 `unknown`。结果同时区分 `execution=completed|timed-out|identity-changed|failed-to-start` 与 `verdict=passed|failed|unknown`，旧的 `feedback.status` 只作为兼容投影。超时会清理验证器的进程组。harness 接受命令退出码或 `status=passed|failed|unknown` 的 JSON，不解释脚本内部的领域语义。实现见 [`verification.py`](../apps/desktop/circuit-lens/studio/runtime/verification.py)。
+外部测试也可以作为期望比对路径。工作区中的 `vibe-verification.json` 由 `run_verification` 发现并运行；harness 在一次性目录中提供精确 artifact、冻结依赖、目录、revision 和 SHA，`${source}` 也指向这份 disposable 输入，避免验证器直接写入用户源文件。recipe 可以声明相对 `oracleFiles`，harness 记录其摘要并在运行前后核对；未声明时保持兼容运行，但明确标记 oracle identity incomplete。结果保留清单 SHA、规范化条目 SHA 和声明文件 SHA；输入包、清单、声明文件或源文件在运行期间变化时只能是 `unknown`。结果同时区分 `execution=completed|timed-out|output-limited|identity-changed|failed-to-start` 与 `verdict=passed|failed|unknown`，旧的 `feedback.status` 只作为兼容投影。超时会清理验证器的进程组。harness 接受命令退出码或 `status=passed|failed|unknown` 的 JSON，不解释脚本内部的领域语义。实现见 [`verification.py`](../apps/desktop/circuit-lens/studio/runtime/verification.py)。
+
+外部验证器的普通日志持续排空，只保留每个流开头和结尾各 8 KiB，附字节数与截断标记；超过预览长度不会中断脚本。JSON 判定正文独立收集，最多 1 MiB，完整解析后再生成预览；超限是 `output-limited/unknown`，不是超时。期限同时覆盖父进程和仍持有管道的后代进程，执行结束会清理进程组。POSIX 进程 I/O 实现在 [`verification_process.py`](../apps/desktop/circuit-lens/studio/runtime/verification_process.py)。
 
 ### 身份与版本
 
