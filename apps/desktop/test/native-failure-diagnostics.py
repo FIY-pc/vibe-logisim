@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
@@ -15,9 +16,43 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
 from studio.runtime.worker import NativeWorker
 from studio.application.workspace import Workspace
+from studio.infrastructure.files import sha256_file
 
 
 class NativeFailureDiagnostics(unittest.TestCase):
+    def test_short_stderr_is_available_before_a_hung_process_exits(self):
+        with tempfile.TemporaryDirectory(prefix='vibe-native-stderr-') as directory:
+            root = Path(directory)
+            source = root / 'CircuitWorker.java'
+            source.write_text('''package com.cburch.logisim.file;
+public class CircuitWorker {
+    public static void main(String[] args) throws Exception {
+        System.out.println("ok\\tcmVhZHk=");
+        System.err.println("SHORT_DIAGNOSTIC: 等待🙂");
+        System.err.flush();
+        Thread.sleep(60000);
+    }
+}''')
+            subprocess.run(['javac', '-encoding', 'UTF-8', '-d', str(root), str(source)],
+                           check=True, capture_output=True, timeout=30)
+            runtime = REPO / 'apps/desktop/circuit-lens/native/Logisim-ITA.jar'
+            worker = NativeWorker(REPO, root / 'state')
+            try:
+                with patch.object(worker, '_classes', return_value=root):
+                    worker._start(runtime, sha256_file(runtime))
+                deadline = time.monotonic() + 2
+                while b'SHORT_DIAGNOSTIC' not in worker.stderr_tail and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertIn(b'SHORT_DIAGNOSTIC', worker.stderr_tail)
+                self.assertIsNone(worker.process.poll())
+                receive = worker.responses.get
+                with patch.object(worker.responses, 'get', side_effect=lambda timeout: receive(timeout=0.01)):
+                    with self.assertRaisesRegex(RuntimeError, '响应超时.*SHORT_DIAGNOSTIC: 等待🙂'):
+                        worker._receive()
+                self.assertIsNone(worker.process.poll())
+            finally:
+                worker.close()
+
     def test_bad_wire_feedback_reaches_product_actions_without_losing_source(self):
         with tempfile.TemporaryDirectory(prefix='vibe-native-boundary-') as directory:
             root = Path(directory)

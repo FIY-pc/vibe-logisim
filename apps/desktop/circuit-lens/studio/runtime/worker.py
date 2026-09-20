@@ -6,7 +6,6 @@ and simulation stay outside this process; a restart only loses derived caches.
 from __future__ import annotations
 
 import base64
-from collections import deque
 import os
 from pathlib import Path
 import queue
@@ -33,7 +32,7 @@ class NativeWorker:
         self.binding = None
         self.closed = False
         self.starts = 0
-        self.stderr_tail = deque(maxlen=8)
+        self.stderr_tail = bytearray()
         self.stderr_reader = None
 
     def _stop(self):
@@ -60,7 +59,7 @@ class NativeWorker:
                 message += f'（退出码 {code}）'
                 if self.stderr_reader:
                     self.stderr_reader.join(timeout=0.5)
-        detail = ''.join(tuple(self.stderr_tail)).strip()
+        detail = bytes(self.stderr_tail[-8192:]).decode('utf-8', errors='replace').strip()
         return RuntimeError(message + (': ' + detail if detail else ''))
 
     def close(self):
@@ -103,12 +102,15 @@ class NativeWorker:
             stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', bufsize=1)
         process, responses = self.process, queue.Queue(maxsize=2)
         self.responses = responses
-        tail = deque(maxlen=8)
+        tail = bytearray()
         self.stderr_tail = tail
         def read_stderr():
             try:
-                while chunk := process.stderr.read(1024):
-                    tail.append(chunk)
+                # read1 returns available bytes instead of waiting for 1024
+                # characters or EOF. A hung process may emit only a short hint.
+                while chunk := process.stderr.buffer.read1(1024):
+                    tail.extend(chunk)
+                    del tail[:-8192]
             except (ValueError, OSError):
                 return
         self.stderr_reader = threading.Thread(target=read_stderr, daemon=True)
