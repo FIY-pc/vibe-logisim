@@ -151,6 +151,10 @@ class Router:
 
     def path(self, starts, target, owner, *, avoid_retrace=False):
         """Propose geometry between explicit anchors; do not infer connectivity."""
+        # A route may cross unrelated copper, but cannot terminate on it. This
+        # is impossible regardless of path length; avoid exhausting A* first.
+        if any(own != owner for own, _, _ in self.at[target]):
+            raise ValueError(f"目标端点 {target} 已被其他信号的导线占用，请调整元件或导线位置")
         starts = {p for p in starts if p not in self.blocked and
                   not any(own != owner for own, _, _ in self.at[p]) and
                   not any(own != owner for own in self.port_owners[p])}

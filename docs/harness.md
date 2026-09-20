@@ -163,6 +163,14 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 [实验 006-v3](../experiments/006-visual-feedback/results/2026-09-19-native-v3/README.md)另行记录了一次真实模型轨迹：原生上下文包含 2 张图片、0 段 base64 文本；模型在 8 分 24 秒结束，冻结文件独立仿真 8/8 通过。图面消除了穿过门体的线，但仍有长绕线和扩大的面积，布局目标没有因功能通过而自动完成。单轮结果不能证明通用增益。
 
+## 可选的布局移动
+
+1.11.0 的 `move_candidate` 提供与人工拖动相同的成组移动能力：传入当前 source/candidate 的 `artifactSha256`、`componentIds` 和 `delta: {x,y}`，可另选 `wireIds` 一起移动。内部线路随组平移，边界线路重新连接；距离对齐 10 单位网格，元件留在当前 0–6000 画布范围。允许通过 `candidateId` 连续组合，再用已有渲染、运行、写回动作处理结果；没有强制顺序，直接编辑文件仍可用。
+
+`project/layout_document.py` 供人工编辑和模型入口共同应用 XML 布局，更新 Pin 的自定义封装引用。`project/moving.py` 负责独立产物、原生重载、全部端口位连接关系和外部接口检查；失败不发布候选或修改源文件。新位置若压到别的信号线，布线器提前返回具体端点冲突，不做无效路径搜索。工具只执行指定移动，不自动设计版式，也不承诺移动后的线最短。可选 `reroute_candidate` 可以继续整理遗留折线。
+
+[实际使用与图面](../experiments/007-local-rerouting/results/2026-09-21-move/README.md)：外层助手通过模型工具入口移动真实产物上的 XOR/NOT/AND，原生检查保留 177 个端口位关系，随后局部重布线；最终文件经独立 65,536 组及真实 Electron 输入、停止、重开验证。没有调用嵌入模型，不能据此声称自主采用率或整轮加速。
+
 ## 可选的局部导线整理
 
 `inspect_circuit(includeWires=true)` 返回原生导线 ID、端点、bundle、总线宽度和总长度；`wireOffset/wireLimit` 分页，默认 128、最多 512 段。它覆盖指定电路，不随 `componentIds` 缩小；默认 inspect 不附加导线明细。返回的 `artifactSha256` 将导线 ID 绑定到源文件或指定候选，避免文件改变后误用旧 ID。
