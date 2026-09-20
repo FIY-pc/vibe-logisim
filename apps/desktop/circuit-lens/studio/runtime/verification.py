@@ -269,12 +269,17 @@ class VerificationService:
                 "VIBE_LOGISIM_REVISION": str(self.workspace.revision_id),
                 "VIBE_LOGISIM_ARTIFACT_SHA256": current_sha,
             })
-            exit_code, timed_out, stdout, stderr = self._execute(
-                command,
-                cwd=cwd,
-                environment=environment,
-                timeout=recipe["timeoutSeconds"],
-            )
+            start_error = None
+            try:
+                exit_code, timed_out, stdout, stderr = self._execute(
+                    command,
+                    cwd=cwd,
+                    environment=environment,
+                    timeout=recipe["timeoutSeconds"],
+                )
+            except OSError as error:
+                start_error = f"验证器启动失败：{error}"
+                exit_code, timed_out, stdout, stderr = None, False, "", ""
             materialized_sha = self._read_sha(materialized_artifact)
             manifest_sha_after = self._read_sha(manifest)
             source_sha_after = self._read_sha(source_path)
@@ -287,7 +292,8 @@ class VerificationService:
             integrity_error = "验证器修改了工作区源文件"
         finished = time.perf_counter()
         parsed = None
-        if integrity_error:
+        result_error = start_error or integrity_error
+        if start_error or integrity_error:
             status = "unknown"
         elif recipe["result"] == "json-status" and not timed_out:
             try:
@@ -302,7 +308,7 @@ class VerificationService:
                                       exit_code, False, stdout, stderr, parsed, "JSON 验证器必须返回 status=passed、failed 或 unknown")
             if exit_code != 0:
                 status = "unknown"
-                integrity_error = f"验证器以非零退出码结束：{exit_code}"
+                result_error = f"验证器以非零退出码结束：{exit_code}"
             else:
                 status = parsed["status"]
         elif timed_out:
@@ -311,14 +317,20 @@ class VerificationService:
             status = "passed" if exit_code == 0 else "failed"
         return self._envelope(args, recipe, manifest, manifest_sha, recipe_sha, current_sha,
                               started_at, finished - started,
-                              exit_code, timed_out, stdout, stderr, parsed, integrity_error, status=status)
+                              exit_code, timed_out, stdout, stderr, parsed, result_error, status=status,
+                              execution_status=("failed-to-start" if start_error else
+                                                 "identity-changed" if integrity_error else
+                                                 "timed-out" if timed_out else "completed"))
 
     def _envelope(self, args, recipe, manifest, manifest_sha, recipe_sha, artifact_sha, started_at, duration,
-                  exit_code, timed_out, stdout, stderr, parsed, error, *, status=None):
+                  exit_code, timed_out, stdout, stderr, parsed, error, *, status=None, execution_status=None):
         if status is None:
             status = "unknown"
+        execution_status = execution_status or ("timed-out" if timed_out else "completed")
         feedback = {
             "status": status,
+            "execution": execution_status,
+            "verdict": status,
             "failureCount": 1 if status == "failed" else 0,
             "unknownCount": 1 if status == "unknown" else 0,
             "note": "外部验证器的语义由工作区提供；harness 只绑定版本并转发结果，不解释其领域结论。",
@@ -333,6 +345,8 @@ class VerificationService:
             "command": recipe["command"],
             "cwd": recipe["cwd"],
             "resultMode": recipe["result"],
+            "execution": execution_status,
+            "verdict": status,
             "startedAt": started_at,
             "durationMs": round(duration * 1000, 3),
             "exitCode": exit_code,

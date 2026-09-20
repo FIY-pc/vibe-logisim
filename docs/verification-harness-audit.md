@@ -19,7 +19,7 @@
 
 2. **外部脚本仍有工作区权限。** `cwd` 是清单目录内的真实目录，脚本可以读取或修改其他工作区文件。harness 保护了当前源文件、清单和 disposable 输入的“不能悄悄改变后仍声称通过”边界，但没有把任意工作区写入变成沙箱，也没有假装自己提供了 OS 级隔离。
 
-3. **执行状态与领域 verdict 仍共用顶层 status。** 非零退出、超时、输入完整性变化会被降级为 `unknown`，已经避免错误的 `passed`；但结果仍需要更明确的 `execution: completed|timed-out|identity-changed|failed-to-start` 与 `verdict: passed|failed|unknown` 两层字段，UI 和模型才可以区分“电路被 oracle 判错”和“oracle 没有形成可靠结论”。
+3. **执行状态与领域 verdict 需要由消费端采用分层字段。** 结果现在同时提供 `execution: completed|timed-out|identity-changed|failed-to-start` 与 `verdict: passed|failed|unknown`，并保留顶层 `feedback.status` 兼容旧投影。UI 和模型可以区分“电路被 oracle 判错”和“oracle 没有形成可靠结论”。
 
 4. **输出在进程结束后才截断。** 返回给模型的 stdout/stderr 有 16 KiB 上限，但运行期间仍由 pipe 收集全部输出。恶意或失控的验证器可以制造过大的内存压力；后续应采用运行期间有界收集并保留 `truncated` 标记。
 
@@ -41,8 +41,8 @@
 python3 -m unittest -v apps/desktop/test/circuit-plugin-contract.py
 Ran 4 tests ... OK
 
-python3 -m unittest -v apps/desktop/test/verification-hardening.py
-Ran 4 tests ... OK
+python3 -m unittest -v apps/desktop/test/verification-hardening.py apps/desktop/test/verification-execution-contract.py
+Ran 10 tests ... OK
 ```
 
 这两组测试证明当前实现的材料包、结果身份、进程组超时和非零 JSON 状态边界；它们不证明外部验证器的领域逻辑正确，也不证明有限测试集等于课程任务的完整验收。

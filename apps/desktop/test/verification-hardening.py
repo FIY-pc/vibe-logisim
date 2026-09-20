@@ -248,6 +248,22 @@ while True:
             self.assertEqual(result["result"]["exitCode"], 7)
             self.assertIn("非零退出码", result["result"]["error"])
 
+    def test_missing_verifier_is_a_start_failure_envelope(self):
+        with self.opened([{
+            "id": "missing-command",
+            "label": "missing command",
+            "description": "cannot start the configured verifier",
+            "command": ["this-command-does-not-exist", "${artifact}"],
+            "cwd": ".",
+            "timeoutSeconds": 10,
+            "result": "exit-code",
+        }]) as (workspace, _root, _source, _source_bytes, _manifest):
+            result = self.run_verification(workspace, "missing-command")
+            self.assertEqual(result["feedback"]["status"], "unknown")
+            self.assertEqual(result["result"]["execution"], "failed-to-start")
+            self.assertEqual(result["result"]["verdict"], "unknown")
+            self.assertIn("启动失败", result["result"]["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
