@@ -257,7 +257,7 @@ public final class CircuitWorkbench {
             Loader loader = new Loader(null) {
                 @Override public void showError(String description) { throw new IllegalStateException(description); }
             };
-            LogisimFile file = loader.openLogisimFile(new File(args[0]));
+            LogisimFile file = NativeCircuitLoader.open(loader, new File(args[0]));
             Document result = factory.newDocumentBuilder().newDocument();
             result.appendChild(result.createElement("result"));
             result.getDocumentElement().setAttribute("runtimeJarSha256", runtimeSha);
@@ -269,7 +269,7 @@ public final class CircuitWorkbench {
                 CircuitPalette.describe(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("check-existing-ports")) {
                 Loader otherLoader = new Loader(null) { @Override public void showError(String message) { throw new IllegalStateException(message); } };
-                CircuitPalette.preserveExistingPorts(file, otherLoader.openLogisimFile(new File(args[2])), request.getDocumentElement().getAttribute("circuit"));
+                CircuitPalette.preserveExistingPorts(file, NativeCircuitLoader.open(otherLoader, new File(args[2])), request.getDocumentElement().getAttribute("circuit"));
             } else if (request.getDocumentElement().getTagName().equals("build")) {
                 build(file, request.getDocumentElement());
                 try (OutputStream out = new FileOutputStream(args[2])) { file.write(out, loader); }
@@ -279,7 +279,7 @@ public final class CircuitWorkbench {
                 Loader otherLoader = new Loader(null) {
                     @Override public void showError(String description) { throw new IllegalStateException(description); }
                 };
-                LogisimFile other = otherLoader.openLogisimFile(new File(args[2]));
+                LogisimFile other = NativeCircuitLoader.open(otherLoader, new File(args[2]));
                 String name = request.getDocumentElement().getAttribute("circuit");
                 CircuitInterface.check(file, other, name);
             } else if (request.getDocumentElement().getTagName().equals("simulate")) {

@@ -6,6 +6,7 @@ and simulation stay outside this process; a restart only loses derived caches.
 from __future__ import annotations
 
 import base64
+from collections import deque
 import os
 from pathlib import Path
 import queue
@@ -22,7 +23,7 @@ class NativeWorker:
     def __init__(self, repo_root, state_root):
         root = repo_root / 'apps/desktop/circuit-lens'
         self.sources = [root / 'native/com/cburch/logisim/file' / name for name in (
-            'CircuitWorker.java', 'CircuitPalette.java', 'CircuitRenderer.java', 'CircuitObjects.java', 'CircuitInterface.java')]
+            'NativeCircuitLoader.java', 'CircuitWorker.java', 'CircuitPalette.java', 'CircuitRenderer.java', 'CircuitObjects.java', 'CircuitInterface.java')]
         self.sources.append(root / 'native/com/cburch/logisim/std/memory/StudioMemory.java')
         self.sources.append(root / 'observer/src/com/cburch/logisim/circuit/ExactRuntimeObserver.java')
         self.sources.append(root / 'observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java')
@@ -32,6 +33,8 @@ class NativeWorker:
         self.binding = None
         self.closed = False
         self.starts = 0
+        self.stderr_tail = deque(maxlen=8)
+        self.stderr_reader = None
 
     def _stop(self):
         if self.process:
@@ -41,8 +44,24 @@ class NativeWorker:
                 try: process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     process.kill(); process.wait()
-            process.stdin.close(); process.stdout.close()
+            if self.stderr_reader:
+                self.stderr_reader.join(timeout=0.5)
+            process.stdin.close(); process.stdout.close(); process.stderr.close()
         self.binding = None
+
+    def _failure(self, message):
+        process = self.process
+        if process is not None:
+            try:
+                code = process.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                code = None
+            if code is not None:
+                message += f'（退出码 {code}）'
+                if self.stderr_reader:
+                    self.stderr_reader.join(timeout=0.5)
+        detail = ''.join(tuple(self.stderr_tail)).strip()
+        return RuntimeError(message + (': ' + detail if detail else ''))
 
     def close(self):
         with self.lock:
@@ -67,8 +86,8 @@ class NativeWorker:
 
     def _receive(self):
         try: line = self.responses.get(timeout=60)
-        except queue.Empty: raise RuntimeError('原生编辑服务响应超时') from None
-        if not line: raise RuntimeError('原生编辑服务已结束，请重试')
+        except queue.Empty: raise self._failure('原生编辑服务响应超时') from None
+        if not line: raise self._failure('原生编辑服务已结束')
         status, payload = line.split('\t', 1)
         value = base64.b64decode(payload, validate=True)
         if status == 'error': raise ValueError(value.decode('utf-8', errors='replace'))
@@ -81,9 +100,19 @@ class NativeWorker:
         self.process = subprocess.Popen(['java', '-Xmx768m', '-Djava.awt.headless=true', '-cp',
             os.pathsep.join([str(classes), str(runtime)]), 'com.cburch.logisim.file.CircuitWorker',
             str(runtime), digest, str(classes)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, encoding='utf-8', bufsize=1)
+            stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', bufsize=1)
         process, responses = self.process, queue.Queue(maxsize=2)
         self.responses = responses
+        tail = deque(maxlen=8)
+        self.stderr_tail = tail
+        def read_stderr():
+            try:
+                while chunk := process.stderr.read(1024):
+                    tail.append(chunk)
+            except (ValueError, OSError):
+                return
+        self.stderr_reader = threading.Thread(target=read_stderr, daemon=True)
+        self.stderr_reader.start()
         def read():
             try:
                 while True:
@@ -116,6 +145,10 @@ class NativeWorker:
             except ValueError:
                 # A native domain rejection does not poison the loaded snapshots.
                 raise
+            except (BrokenPipeError, ConnectionResetError):
+                error = self._failure('原生编辑服务连接中断')
+                self._stop()
+                raise error from None
             except Exception:
                 self._stop()
                 raise

@@ -19,7 +19,7 @@ fi
 build_dir="$(mktemp -d -t vibe-logisim-observer.XXXXXXXX)"
 trap 'rm -rf -- "$build_dir"' EXIT
 
-javac -encoding UTF-8 -cp "$runtime_jar" -d "$build_dir" "$observer_source" "${observer_source%/*}/NativeAttributeAdapter.java"
+javac -encoding UTF-8 -cp "$runtime_jar" -d "$build_dir" "$observer_source" "${observer_source%/*}/NativeAttributeAdapter.java" "$observer_dir/../native/com/cburch/logisim/file/NativeCircuitLoader.java"
 java \
   -Djava.awt.headless=true \
   -Dobserver.runtime.jar="$runtime_jar" \

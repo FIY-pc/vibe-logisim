@@ -60,7 +60,7 @@ public final class NativeCircuitLoader {
                 if (start.getX() != end.getX() && start.getY() != end.getY()) {
                     throw new IllegalArgumentException(context
                         + "：导线必须水平或垂直；斜线可能使原生加载无法结束并耗尽内存。"
-                        + "请按预期连接手动改为水平/垂直线段，并检查拐点及沿途连接；未自动选择路线或修改文件。");
+                        + "请按预期连接改为水平/垂直线段，并检查拐点及沿途连接。");
                 }
             }
         }

@@ -277,7 +277,7 @@ public final class CircuitSession {
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
         DocumentBuilder parser = f.newDocumentBuilder();
         Loader loader = new Loader(null) { @Override public void showError(String description) { throw new IllegalStateException(description); } };
-        CircuitSession session = new CircuitSession(loader.openLogisimFile(new File(args[0])), parser.parse(new File(args[1])).getDocumentElement());
+        CircuitSession session = new CircuitSession(NativeCircuitLoader.open(loader, new File(args[0])), parser.parse(new File(args[1])).getDocumentElement());
         session.startWorkers(protocol);
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String line;

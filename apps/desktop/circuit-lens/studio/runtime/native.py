@@ -23,7 +23,7 @@ class NativeOperations:
         source = self.workspace.repo_root / 'apps/desktop/circuit-lens/native/com/cburch/logisim/file/CircuitWorkbench.java'
         memory = source.parents[1] / 'std/memory/StudioMemory.java'
         interface = source.with_name('CircuitInterface.java')
-        sources = [source, memory, interface, source.with_name("CircuitPalette.java"), source.with_name("CircuitObjects.java")]
+        sources = [source, source.with_name("NativeCircuitLoader.java"), memory, interface, source.with_name("CircuitPalette.java"), source.with_name("CircuitObjects.java")]
         sources.append(observer.attribute_adapter)
         key = hashlib.sha256(b''.join(p.read_bytes() for p in sources) + runtime.read_bytes()).hexdigest()
         classes = self.workspace.state_root / 'native-cache' / key

@@ -24,7 +24,7 @@ public final class CircuitWorker {
             };
             ByteArrayOutputStream log = new ByteArrayOutputStream();
             PrintStream previous = System.out;
-            try { System.setOut(new PrintStream(log,true,"UTF-8")); file=loader.openLogisimFile(path); }
+            try { System.setOut(new PrintStream(log,true,"UTF-8")); file=NativeCircuitLoader.open(loader, path); }
             finally { System.setOut(previous); }
             stdout=log.toString("UTF-8");
             String message; while((message=file.getMessage())!=null)messages.add(message);

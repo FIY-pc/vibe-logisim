@@ -145,7 +145,7 @@ public final class ExactRuntimeObserver {
             LogisimFile file;
             try {
                 System.setOut(new PrintStream(loaderOutput, true, "UTF-8"));
-                file = loader.openLogisimFile(artifact.toFile());
+                file = com.cburch.logisim.file.NativeCircuitLoader.open(loader, artifact.toFile());
             } finally {
                 System.setOut(originalOut);
             }

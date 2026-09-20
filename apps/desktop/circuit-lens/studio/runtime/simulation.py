@@ -87,7 +87,9 @@ class Simulation:
         with self.w.observation_artifact() as artifact:
             artifact = Path(artifact)
         view = self.w.circuit_view(circuit)
-        if view.get("observerError") or not view["circuit"].get("components"):
+        if view.get("observerError"):
+            raise ValueError(view['observerError']['message'])
+        if not view["circuit"].get("components"):
             raise ValueError("当前电路没有可用的原生运行对象")
         observer = self.w.observer
         source = self.w.repo_root / "apps/desktop/circuit-lens/native/com/cburch/logisim/file/CircuitSession.java"
@@ -95,12 +97,13 @@ class Simulation:
         propagation = source.parents[1] / "circuit/StudioPropagation.java"
         view_source = source.with_name('CircuitSessionView.java')
         frame_source = source.with_name('CircuitFrame.java')
-        key = hashlib.sha256(source.read_bytes() + memory.read_bytes() + propagation.read_bytes() + view_source.read_bytes() + frame_source.read_bytes() + observer.runtime_jar.read_bytes()).hexdigest()
+        sources = [source, memory, propagation, view_source, frame_source, source.with_name('NativeCircuitLoader.java')]
+        key = hashlib.sha256(b''.join(p.read_bytes() for p in sources) + observer.runtime_jar.read_bytes()).hexdigest()
         classes = self.w.state_root / "native-cache" / key
         with observer._compile_lock:
             if not (classes / "com/cburch/logisim/file/CircuitSession.class").is_file():
                 classes.mkdir(parents=True, exist_ok=True)
-                result = observer._run_captured(["javac", "-encoding", "UTF-8", "-cp", str(observer.runtime_jar), "-d", str(classes), str(source), str(memory), str(propagation), str(view_source), str(frame_source)], timeout=60)
+                result = observer._run_captured(["javac", "-encoding", "UTF-8", "-cp", str(observer.runtime_jar), "-d", str(classes), *map(str, sources)], timeout=60)
                 if result.returncode:
                     raise ValueError(result.stderr[-4000:])
         self.close()
@@ -372,4 +375,3 @@ class Simulation:
         if ids:
             result["components"] = [c for c in result["components"] if c["componentId"] in ids]
         return result
-

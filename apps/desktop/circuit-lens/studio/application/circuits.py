@@ -51,6 +51,8 @@ class CircuitQueries:
             w._require()
             name = values.get('circuit') or w.raw_project['mainCircuit']
             view = self.circuit_view(name)
+            if view.get('observerError'):
+                raise ValueError(view['observerError']['message'])
             render = view.get('circuit', {}).get('render')
             if not render or not view.get('capabilities', {}).get('exactConnectivity'):
                 raise ValueError('当前电路没有可用的原生图面，请先确认匹配的 Logisim 运行环境')

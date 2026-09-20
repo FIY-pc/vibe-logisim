@@ -33,7 +33,7 @@ public final class CircuitRenderer {
             Loader loader = new Loader(null) {
                 @Override public void showError(String description) { throw new IllegalStateException(description); }
             };
-            LogisimFile file = loader.openLogisimFile(artifact);
+            LogisimFile file = NativeCircuitLoader.open(loader, artifact);
             protocol.println("ready");
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
             String line;

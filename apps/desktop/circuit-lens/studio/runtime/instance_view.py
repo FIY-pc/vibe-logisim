@@ -16,7 +16,7 @@ class InstanceViews:
         if circuit not in self.scenes:
             view = self.w.circuit_view(circuit)
             if view.get('observerError'):
-                raise ValueError('这个模块暂时无法进行原生观察')
+                raise ValueError(view['observerError']['message'])
             self.scenes[circuit] = view['circuit']
         return self.scenes[circuit]
 

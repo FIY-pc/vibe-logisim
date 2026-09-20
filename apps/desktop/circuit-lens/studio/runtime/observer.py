@@ -32,6 +32,7 @@ class ObserverRuntime:
         )
         self.runtime_jar = self.repo_root / "apps/desktop/circuit-lens/native" / "Logisim-ITA.jar"
         self.attribute_adapter = self.source.with_name('NativeAttributeAdapter.java')
+        self.circuit_loader = repo_root / 'apps/desktop/circuit-lens/native/com/cburch/logisim/file/NativeCircuitLoader.java'
         self.full_runner = self.observer_dir / "run-precompiled.sh"
         self.query_runner = self.observer_dir / "query-precompiled.sh"
         self.query_program = self.observer_dir / "query.py"
@@ -127,6 +128,7 @@ class ObserverRuntime:
             for path in (
                 self.source,
                 self.attribute_adapter,
+                self.circuit_loader,
                 self.runtime_jar,
                 self.full_runner,
                 self.query_runner,
@@ -160,6 +162,7 @@ class ObserverRuntime:
             "runtimeJarSha256": runtime_sha,
             "observerSourceSha256": observer_sha,
             "attributeAdapterSourceSha256": sha256_file(self.attribute_adapter),
+            "circuitLoaderSourceSha256": sha256_file(self.circuit_loader),
             "queryProgramSha256": query_sha,
             "fullRunnerSha256": full_runner_sha,
             "queryRunnerSha256": query_runner_sha,
@@ -188,7 +191,7 @@ class ObserverRuntime:
         issue = self.prerequisite_error()
         if issue:
             raise RuntimeError(issue)
-        key = sha256_bytes(self.source.read_bytes() + self.attribute_adapter.read_bytes())[:24] + "-" + sha256_file(self.runtime_jar)[:24]
+        key = sha256_bytes(self.source.read_bytes() + self.attribute_adapter.read_bytes() + self.circuit_loader.read_bytes())[:24] + "-" + sha256_file(self.runtime_jar)[:24]
         classes = self.state_root / "observer-cache" / key / "classes"
         class_file = classes / "com" / "cburch" / "logisim" / "circuit" / "ExactRuntimeObserver.class"
         if class_file.is_file():
@@ -210,6 +213,7 @@ class ObserverRuntime:
                         str(temporary),
                         str(self.source),
                         str(self.attribute_adapter),
+                        str(self.circuit_loader),
                     ],
                     timeout=60,
                 )

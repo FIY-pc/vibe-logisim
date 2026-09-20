@@ -197,7 +197,7 @@ def main():
                 assert recovered['detail'] == new['rows'][0]['detail'], (path, recovered)
                 assert 'NATIVE_WIRE_EXTERNAL_ENTITY_MUST_NOT_BE_READ' not in rejected['detail']
             first = recovery['rows'][0]['detail']
-            assert all(text in first for text in ['main', 'wire #1', '(240,140)', '(280,160)', '水平', '垂直', '手动'])
+            assert all(text in first for text in ['main', 'wire #1', '(240,140)', '(280,160)', '水平', '垂直'])
             assert '未实例化子电路' in recovery['rows'][2]['detail'] and 'wire #2' in recovery['rows'][2]['detail']
             for row in recovery['rows'][6:12:2]:
                 assert 'DOCTYPE' in row['detail'], row
