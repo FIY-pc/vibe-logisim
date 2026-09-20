@@ -171,9 +171,9 @@ export class ConversationView {
     const summary=this.group().querySelector('summary span');
     summary.textContent=this.output.summary(fallback)||fallback||'工作过程';
   }
-  activity(id,label,status='running',kind='tool',detail=null,activityKey=null) {
+  activity(id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null) {
     if(!id)return;this.ui.agentEmpty.hidden=true;
-    const projected=this.output.activity({id,label,status,kind,detail,activityKey});
+    const projected=this.output.activity({id,label,status,kind,detail,activityKey,resultStatus});
     if(!projected)return;
     let node=this.activities.get(String(id));
     if(!node) {
@@ -182,6 +182,7 @@ export class ConversationView {
     }
     const item=projected.item;
     node.dataset.status=item.status;
+    if(item.resultStatus)node.dataset.resultStatus=item.resultStatus;
     if(item.activityKey)node.dataset.activityKey=item.activityKey;
     if(item.recovered)node.dataset.recovered='true';
     if(projected.priorFailed) {
@@ -194,7 +195,7 @@ export class ConversationView {
     const recovered=item.recovered;
     const text=item.label;
     node.querySelector('.agent-activity-label').textContent=kind==='reasoning'?'分析电路与问题':text;
-    node.querySelector('.agent-activity-status').textContent=item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?(recovered?'已恢复':'未完成'):'完成';
+    node.querySelector('.agent-activity-status').textContent=item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?(recovered?'已恢复':'未完成'):'完成';
     if(item.detail) {
       node.title=item.detail;
       if(item.status==='failed' || item.status==='warning') {

@@ -335,7 +335,7 @@ function handleAgentEvent(event) {
       const run = event.run || {};
       const observation = event.observation || {};
       const status = event.feedback?.status === "failed" ? "有异常"
-        : event.feedback?.status === "passed" ? "通过" : "未确定";
+        : event.feedback?.status === "passed" ? "通过" : event.feedback?.status === "observed" ? "已观察" : "未确定";
       const failure = event.feedback?.firstFailure;
       const position = failure?.tick != null ? ` · 首个异常 tick ${failure.tick}`
         : Number.isInteger(failure?.rowIndex) ? ` · 首个异常输入第 ${failure.rowIndex + 1} 组` : "";
@@ -344,7 +344,7 @@ function handleAgentEvent(event) {
       const label = run.label || observation.label || run.kind || session.circuit || "电路";
       const output = [observation.error, observation.stderr, observation.stdout].filter(Boolean).join("\n");
       const eventStatus = event.feedback?.status === "failed" ? "failed" : event.feedback?.status === "unknown" ? "warning" : "completed";
-      conversation.activity(event.itemId || run.id || session.id || `harness-${Date.now()}`, `${label} · ${status}${position}${scope}`, eventStatus, "tool", output || event.feedback?.note || null, `harness:${run.kind || session.circuit || "result"}`);
+      conversation.activity(event.itemId || run.id || session.id || `harness-${Date.now()}`, `${label} · ${status}${position}${scope}`, eventStatus, "tool", output || event.feedback?.note || null, `harness:${run.kind || session.circuit || "result"}`, event.feedback?.status || "observed");
       if (failure) {
         const actual = JSON.stringify(failure.outputs || failure.actual || {});
         const expected = JSON.stringify(failure.expected || {});
