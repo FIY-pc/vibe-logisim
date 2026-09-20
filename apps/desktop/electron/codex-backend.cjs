@@ -1322,6 +1322,12 @@ class CodexBackend extends EventEmitter {
       }
       const activity = itemActivity(item, this.circuitTools.registry);
       if (activity) {
+        // New model activity proves the retry resumed even without text deltas.
+        // A previous tool may finish while the stream is still retrying.
+        if (method === "item/started" && this.health.value?.phase === "retrying") {
+          this.health.clear();
+          this.#setStatus("busy");
+        }
         const status = method === "item/started"
           ? "running"
           : (item.status === "failed" || item.success === false ? "failed" : (item.status || "completed"));

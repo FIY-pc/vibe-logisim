@@ -30,6 +30,17 @@ const {waitUntil}=require('./support/wait-until.cjs');
   assert.equal(events.filter(e=>e.type==='turn-completed').length,0);
   notify('error',{turnId:'old-turn',willRetry:false,error:{message:'stale failure'}});
   assert.equal(backend.snapshot().transmission.phase,'retrying');
+  notify('item/started',{turnId:'old-turn',item:{id:'old-reasoning',type:'reasoning'}});
+  notify('item/completed',{turnId:'turn-replay-1',item:{id:'in-flight',type:'dynamicToolCall',tool:'inspect_circuit',status:'completed'}});
+  assert.equal(backend.snapshot().transmission.phase,'retrying','old work is not evidence of stream recovery');
+  for(const type of ['reasoning','dynamicToolCall']){
+   notify('error',{turnId:'turn-replay-1',willRetry:true,error:{message:'stream overloaded'}});
+   notify('item/started',{turnId:'turn-replay-1',item:{id:'resumed-'+type,type,tool:'inspect_circuit'}});
+   assert.equal(backend.snapshot().transmission,null,'new work clears retry without waiting for prose');
+   assert.equal(backend.snapshot().busy,true);
+   assert.equal(events.filter(e=>e.type==='turn-completed').length,0);
+  }
+  notify('error',{turnId:'turn-replay-1',willRetry:true,error:{message:'retry before prose'}});
   notify('item/agentMessage/delta',{turnId:'turn-replay-1',itemId:'message-replay',delta:'恢复输出'});
   assert.equal(backend.snapshot().transmission,null);
   notify('error',{turnId:'turn-replay-1',willRetry:false,error:{message:'terminal failure'}});
