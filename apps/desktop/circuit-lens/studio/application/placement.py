@@ -109,11 +109,17 @@ class PlacementService:
         template = 'tool' in body
         if template and 'library' not in body:
             raise ValueError('查询元件需提供 catalog 中的 library ID；当前文件的子电路使用空字符串')
-        if not template and ('library' in body or 'attributes' in body):
+        if not template and 'attributes' in body:
             raise ValueError('请指定 tool 查询元件属性，或只提供 circuit 查询目录')
         result = self.query('template' if template else 'catalog', body, include_images=False, strict_attributes=True)
         result.update(kind='template' if template else 'catalog', authority='exact-runtime',
                       libraryScope='Library IDs belong to this project only; empty library means a subcircuit in this file.')
+        if not template and 'library' in body:
+            groups = result['groups']
+            result['groups'] = [group for group in groups if group['id'] == body['library']]
+            if not result['groups']:
+                ids = ', '.join(group['id'] for group in groups if group['id'])
+                raise ValueError(f'组件库不在当前文件中: {body["library"]}；当前库 ID: {ids}；当前文件的子电路使用空字符串')
         if template:
             result.update(library=body['library'], tool=body['tool'], origin={'x': 0, 'y': 0},
                           coordinates='Bounds and indexed ports are offsets from comp loc=(0,0). Change loc to place the XML and add that location to every port offset. This query does not place anything.',

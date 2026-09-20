@@ -117,6 +117,15 @@ class DescribeComponent(unittest.TestCase):
                 self.assertNotIn('data:image', json.dumps(template))
                 self.assertNotIn('image', template)
                 groups = {g['id']: g for g in catalog['groups']}
+                # A library-only request is a scoped catalog, not an invalid
+                # half-template. Project IDs and subcircuit scope stay exact.
+                for library in ('10', '20', '30', ''):
+                    selected = self.call(library=library)
+                    self.assertEqual(selected['groups'], [groups[library]])
+                    self.assertEqual(selected['kind'], 'catalog')
+                with self.assertRaisesRegex(CircuitToolError, '10, 20, 30'):
+                    self.call(library='99')
+                self.assertEqual(self.call()['groups'], catalog['groups'], 'filtering must not narrow cached full catalog')
                 self.assertTrue(any(t['name'] == 'OR Gate' for t in groups['20']['tools']))
                 self.assertTrue(any(t['name'] == 'Register' for t in groups['30']['tools']))
                 self.assertTrue(any(t['name'] == 'Child' for t in groups['']['tools']))
@@ -189,7 +198,7 @@ class DescribeComponent(unittest.TestCase):
                 ]
                 bad_calls = [
                     dict(library='20', tool='No Such Gate'), dict(library='99', tool='OR Gate'),
-                    dict(tool='OR Gate'), dict(library='20'), dict(attributes={'width': '4'}),
+                    dict(tool='OR Gate'), dict(library='99'), dict(attributes={'width': '4'}),
                     dict(library='10', tool='Pin', attributes={'output': 'banana'}),
                     dict(library='20', tool='OR Gate', attributes={'width': 4}),
                     dict(library='20', tool='OR Gate', unexpected=True),

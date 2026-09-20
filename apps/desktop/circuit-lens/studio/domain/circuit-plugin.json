@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -149,7 +149,7 @@
     {
       "type": "function",
       "name": "describe_component",
-      "description": "Optional native component reference for direct .circ editing; never places, saves or creates a candidate. Supply circuit only to list AddTools from this project's declared libraries and subcircuits (no images). To describe one, supply library (group id from that catalog; empty string for this file's subcircuits), tool (exact name), and optional attributes. Returns effective attribute standard strings/options, actual indexed port offsets/directions/widths and native tooltips (null if absent), bounds, and insertable comp XML at loc=(0,0). Library IDs belong to THIS project; change loc and translate port offsets when inserting. Overrides must use native standard strings; unknown, unsupported or normalized-away values fail instead of falling back. Without overrides values are current library-tool defaults, not necessarily factory defaults. Only editable attributes can be overridden. No requirement to query before editing; this describes shape/configuration, not behavior or live signal values.",
+      "description": "Optional native component reference; never places, saves or creates a candidate. Supply circuit to list AddTools from this project's declared libraries and subcircuits (no images); optional library narrows the catalog to that group. To describe one, supply library (group id from that catalog; empty string for this file's subcircuits), tool (exact name), and optional attributes. Returns effective attribute standard strings/options, actual indexed port offsets/directions/widths and native tooltips (null if absent), bounds, and insertable comp XML at loc=(0,0). Library IDs belong to THIS project; change loc and translate port offsets when inserting. Overrides must use native standard strings; unknown, unsupported or normalized-away values fail instead of falling back. Without overrides values are current library-tool defaults, not necessarily factory defaults. Only editable attributes can be overridden. No requirement to query before editing; this describes shape/configuration, not behavior or live signal values.",
       "inputSchema": {
         "type": "object",
         "properties": {
