@@ -81,12 +81,19 @@ public final class CircuitPalette {
     private static void checkOverrides(AttributeSet attrs,Map<String,String> expected) {
         for(Map.Entry<String,String> entry:expected.entrySet()) {
             Attribute attr=attrs.getAttribute(entry.getKey());
-            if(attr==null||!entry.getValue().equals(attr.toStandardString(attrs.getValue(attr))))
-                throw new IllegalArgumentException("属性未保留请求值: "+entry.getKey()+"="+entry.getValue());
+            String actual=attr==null?null:attr.toStandardString(attrs.getValue(attr));
+            if(!entry.getValue().equals(actual)) {
+                String message="属性未保留请求值: "+entry.getKey()+"="+entry.getValue()
+                    +"；当前配置实际保留: "+(actual==null?"属性已移除":actual);
+                List<String> choices=new ArrayList<>();
+                if(attr!=null)for(NativeAttributeAdapter.Choice choice:NativeAttributeAdapter.choices(attrs,attr))choices.add(choice.value);
+                if(!choices.isEmpty())message+="；可选值: "+NativeAttributeAdapter.names(choices);
+                throw new IllegalArgumentException(message);
+            }
         }
     }
     @SuppressWarnings({"rawtypes","unchecked"})
-    private static Map<String,String> applyOverrides(AttributeSet attrs,Element request) {
+    static Map<String,String> applyOverrides(AttributeSet attrs,Element request) {
         Map<String,String> expected=new LinkedHashMap<>(),pending=new LinkedHashMap<>();
         boolean strict=request.getAttribute("strictAttributes").equals("true");
         NodeList overrides=request.getElementsByTagName("set");
@@ -113,6 +120,15 @@ public final class CircuitPalette {
         }
         checkOverrides(attrs,expected);
         return expected;
+    }
+    /** All native save attributes, including defaults and multiline ROM contents. */
+    @SuppressWarnings({"rawtypes","unchecked"})
+    static void serialize(AttributeSet attrs,Element serialized) {
+        Document result=serialized.getOwnerDocument();
+        for(Attribute attr:attrs.getAttributes())if(attrs.isToSave(attr)) {
+            String value=attr.toStandardString(attrs.getValue(attr));Element a=child(result,serialized,"a");a.setAttribute("name",attr.getName());
+            if(value.contains("\n"))a.setTextContent(value);else a.setAttribute("val",value);
+        }
     }
     private static AddTool tool(LogisimFile file,Element request) {
         String id=request.getAttribute("library"),name=request.getAttribute("tool");
@@ -202,10 +218,7 @@ public final class CircuitPalette {
         attributes(attrs,root,result);
         Element serialized=child(result,root,"comp");serialized.setAttribute("name",factory.getName());serialized.setAttribute("loc","("+x+","+y+")");
         if(!request.getAttribute("library").isEmpty())serialized.setAttribute("lib",request.getAttribute("library"));
-        for(Attribute attr:attrs.getAttributes())if(attrs.isToSave(attr)) {
-            String value=attr.toStandardString(attrs.getValue(attr));Element a=child(result,serialized,"a");a.setAttribute("name",attr.getName());
-            if(value.contains("\n"))a.setTextContent(value);else a.setAttribute("val",value);
-        }
+        serialize(attrs,serialized);
         if(!placing&&!request.getAttribute("images").equals("false")) {
             Bounds ink=bounds.expand(6);int width=Math.max(1,ink.getWidth()),height=Math.max(1,ink.getHeight());
             double scale=Math.min(3,3072.0/Math.max(width,height));

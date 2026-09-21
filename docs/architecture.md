@@ -22,6 +22,8 @@
 
 长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；模型返回视图由 `electron/model-result-projection.cjs` 拥有，不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
 
+`project/attribute_edits.py` 负责批量属性候选、源版本绑定、差异写入和端口/接口反馈；`CircuitObjects` 只操作原生属性 clone，与 `CircuitPalette` 共用 setter 与序列化。它不调用推进当前 revision 的人工编辑事务，也不复制组件属性白名单或启动另一个模型循环。
+
 模型工具声明经 `electron/schema-constraints-projection.cjs` 从同一 schema 补充原生 Code Mode 遗失的参数界限，契约签名包含实际发送的声明；不维护第二份规则。原生编辑器选项与保存属性值的转换由 `NativeAttributeAdapter.java` 统一处理，模板查询、人工放置/属性编辑与观察器共用，通过原生 setter 规范化选项，不推断本地化标签或另写元件属性规则。
 
 `electron/model-tool-output.cjs` 负责实际输出适配及 Code Mode 的字符串/图片返回说明。`domain/component_directory.py` 在已有静态观察上构造有字节预算的可选目录，不另建查询语言或游标服务。`application/candidate_render.py` 组合候选归属、原生边界观察与既有白底 renderer，允许应用前看图；候选访问和渲染身份继续由各自模块拥有，不改变文件编辑流程。

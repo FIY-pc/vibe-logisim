@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.21.0",
+  "version": "1.22.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -574,6 +574,67 @@
       "exposure": "direct",
       "owner": "studio",
       "label": "批量连接电路"
+    },
+    {
+      "type": "function",
+      "name": "edit_candidate",
+      "description": "Change attributes of existing components in one native batch, including bus widths, constant values, labels and trigger modes. Supply circuit, artifactSha256 and component IDs from the SAME inspect_circuit source/candidate. edits:[{componentId,attributes:{name:canonicalString}}]. Native setters validate values and coupled attributes; inspect/describe_component exposes native values and options. Returns an independent candidate with actual attribute deltas, changed port locations/widths, interface changes and native coverage. ALL component locations and wire segments remain unchanged: changing width, facing, splitter mapping or pin direction may change connectivity or require rewiring; no connection-preservation or functional-correctness claim. Loadable incomplete edits are allowed. Optional candidateId composes edits; checkout_candidate writes the result. Direct .circ editing remains available.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {
+            "type": "string"
+          },
+          "artifactSha256": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "edits": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 240,
+            "items": {
+              "type": "object",
+              "properties": {
+                "componentId": {
+                  "type": "string"
+                },
+                "attributes": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "maxProperties": 128,
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 4096
+                  }
+                }
+              },
+              "required": [
+                "componentId",
+                "attributes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "circuit",
+          "artifactSha256",
+          "edits"
+        ],
+        "additionalProperties": false
+      },
+      "category": "construct",
+      "sourceMutation": false,
+      "candidate": true,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "修改元件属性"
     },
     {
       "type": "function",
@@ -1448,6 +1509,7 @@
     "wire_candidate",
     "reroute_candidate",
     "move_candidate",
+    "edit_candidate",
     "trace_circuit",
     "build_candidate",
     "simulate_circuit",

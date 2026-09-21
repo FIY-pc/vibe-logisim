@@ -319,6 +319,8 @@ public final class CircuitWorkbench {
                 simulate(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("trace")) {
                 trace(file, request.getDocumentElement(), result);
+            } else if (request.getDocumentElement().getTagName().equals("edit-components")) {
+                CircuitObjects.editComponents(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("property") || request.getDocumentElement().getTagName().equals("memory")) {
                 CircuitObjects.describe(file, request.getDocumentElement(), result);
             } else throw new IllegalArgumentException("Unknown operation");
