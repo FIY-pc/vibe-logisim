@@ -12,11 +12,19 @@ class DesktopWorkspace extends EventEmitter {
   constructor({stateRoot, backend, materials}) {
     super(); this.folder = new FolderWorkspace(stateRoot); this.backend = backend; this.materials=materials;
     this.history = new FolderHistory(this.folder); this.queue = Promise.resolve();
-    this.digest = null; this.error = ''; this.turnActive = false;
+    this.digest = null; this.error = ''; this.turnActive = false; this.lastNativeLoadability = null;
     this.folder.on('changed', () => this.run(() => this.refresh()).catch(e => this.report(e)));
   }
   run(operation) { const result = this.queue.catch(() => {}).then(operation); this.queue = result.catch(() => {}); return result; }
   snapshot() { return {folder:this.folder.snapshot(), error:this.error}; }
+  rememberNativeLoadability(result) {
+    const artifactSha256 = result?.binding?.artifactSha256;
+    const file = result?.file;
+    const value = result?.nativeLoadability;
+    if (typeof file !== 'string' || !/^[a-f0-9]{64}$/.test(artifactSha256 || '')
+        || !value || typeof value !== 'object') return;
+    this.lastNativeLoadability = {file, artifactSha256, value:structuredClone(value)};
+  }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {
     const previous = this.folder.snapshot();

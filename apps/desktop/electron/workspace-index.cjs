@@ -37,7 +37,7 @@ function parseCircuitSummary(bytes) {
 
 // A bounded map of the user's real folder. It contains paths and lightweight
 // circuit metadata only; file contents remain available through cwd/tools.
-function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
+function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoadability = null} = {}) {
   const absoluteRoot = path.resolve(root || '.');
   const files = [];
   const directories = [];
@@ -89,6 +89,12 @@ function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
   const workspace = session?.workspace || {};
   const sourceStatus = session?.sourceStatus || null;
   const revision = session?.revision || null;
+  const rememberedLoadability = activeFile
+    && nativeLoadability?.file === activeFile
+    && nativeLoadability?.artifactSha256
+    && nativeLoadability.artifactSha256 === revision?.artifactSha256
+    ? nativeLoadability
+    : null;
   const currentSource = activeFile
     ? {
       path: activeFile,
@@ -102,7 +108,10 @@ function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
           : sourceStatus?.stale === false
             ? 'aligned'
             : 'unknown',
-      loadability: 'unknown',
+      loadability: rememberedLoadability?.value?.status || 'unknown',
+      loadabilityEvidence: rememberedLoadability
+        ? {artifactSha256: rememberedLoadability.artifactSha256, ...rememberedLoadability.value}
+        : null,
       behavior: 'unknown',
       note: 'alignment only compares the source file with the frozen revision; it does not establish native loadability or circuit behavior.',
     }
@@ -113,6 +122,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
       diskSha256: null,
       alignment: 'no-active-file',
       loadability: 'unknown',
+      loadabilityEvidence: null,
       behavior: 'unknown',
       note: 'No circuit file is selected. Choose a .circ from circuits and call open_circuit when a canvas file is needed.',
     };

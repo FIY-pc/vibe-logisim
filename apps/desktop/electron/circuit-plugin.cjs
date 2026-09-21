@@ -174,6 +174,7 @@ class CircuitPlugin {
         scope.updateBinding(result);
         result = {...result,canvas:result.canvas ?? this.workspace.canvasState(result)};
         result = circuitActionResult(result, args);
+        if (request.tool === 'submit_circuit') this.workspace.rememberNativeLoadability?.(result);
       }
       const finalIdentity = {
         ...identity,
