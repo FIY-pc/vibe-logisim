@@ -37,7 +37,7 @@ function parseCircuitSummary(bytes) {
 
 // A bounded map of the user's real folder. It contains paths and lightweight
 // circuit metadata only; file contents remain available through cwd/tools.
-function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoadability = null} = {}) {
+function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoadability = null, nativeBehavior = null} = {}) {
   const absoluteRoot = path.resolve(root || '.');
   const files = [];
   const directories = [];
@@ -96,6 +96,13 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
     && nativeLoadability.artifactSha256 === revision?.artifactSha256
     ? nativeLoadability
     : null;
+  const rememberedBehavior = activeFile
+    && nativeBehavior?.file === activeFile
+    && nativeBehavior?.projectId === workspace.id
+    && nativeBehavior?.artifactSha256
+    && nativeBehavior.artifactSha256 === revision?.artifactSha256
+    ? nativeBehavior
+    : null;
   const currentSource = activeFile
     ? {
       path: activeFile,
@@ -113,8 +120,11 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
       loadabilityEvidence: rememberedLoadability
         ? {artifactSha256: rememberedLoadability.artifactSha256, ...rememberedLoadability.value}
         : null,
-      behavior: 'unknown',
-      note: 'alignment only compares the source file with the frozen revision; it does not establish native loadability or circuit behavior.',
+      behavior: rememberedBehavior?.value?.status || 'unknown',
+      behaviorEvidence: rememberedBehavior
+        ? {artifactSha256: rememberedBehavior.artifactSha256, ...rememberedBehavior.value}
+        : null,
+      note: 'alignment only compares the source file with the frozen revision; loadability and behavior are carried only as exact-artifact receipts and do not establish full correctness.',
     }
     : {
       path: null,
@@ -125,6 +135,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
       loadability: 'unknown',
       loadabilityEvidence: null,
       behavior: 'unknown',
+      behaviorEvidence: null,
       note: 'No circuit file is selected. Choose a .circ from circuits and call open_circuit when a canvas file is needed.',
     };
   const result = {

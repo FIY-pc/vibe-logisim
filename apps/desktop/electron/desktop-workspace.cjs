@@ -12,7 +12,8 @@ class DesktopWorkspace extends EventEmitter {
   constructor({stateRoot, backend, materials}) {
     super(); this.folder = new FolderWorkspace(stateRoot); this.backend = backend; this.materials=materials;
     this.history = new FolderHistory(this.folder); this.queue = Promise.resolve();
-    this.digest = null; this.error = ''; this.turnActive = false; this.lastNativeLoadability = null;
+    this.digest = null; this.error = ''; this.turnActive = false;
+    this.lastNativeLoadability = null; this.lastNativeBehavior = null;
     this.folder.on('changed', () => this.run(() => this.refresh()).catch(e => this.report(e)));
   }
   run(operation) { const result = this.queue.catch(() => {}).then(operation); this.queue = result.catch(() => {}); return result; }
@@ -26,6 +27,25 @@ class DesktopWorkspace extends EventEmitter {
         || !/^[a-f0-9]{64}$/.test(artifactSha256 || '')
         || !value || typeof value !== 'object') return;
     this.lastNativeLoadability = {projectId, file, artifactSha256, value:structuredClone(value)};
+  }
+  rememberNativeBehavior(result, tool, file = this.folder.current?.activeFile) {
+    const allowedTools = new Set(['simulate_circuit', 'trace_circuit', 'harness_run', 'evaluate_circuit', 'run_verification']);
+    const binding = result?.binding;
+    const feedback = result?.feedback;
+    const run = result?.run;
+    const status = feedback?.status;
+    if (!allowedTools.has(tool) || !['passed', 'failed', 'unknown', 'observed'].includes(status)
+        || typeof file !== 'string'
+        || binding?.candidateId
+        || !/^project-[a-f0-9]{16}$/.test(binding?.projectId || '')
+        || !/^[a-f0-9]{64}$/.test(binding?.artifactSha256 || '')) return;
+    const value = {status, tool, circuit: binding.circuit || null, runId: run?.id || null,
+      kind: run?.kind || null, authority: run?.authority || null,
+      stimulusSha256: run?.stimulusSha256 || result?.result?.stimulusSha256 || null};
+    for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
+      if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
+    }
+    this.lastNativeBehavior = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
   }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {
