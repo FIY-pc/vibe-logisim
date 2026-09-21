@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const {buildWorkspaceIndex} = require('./workspace-index.cjs');
 
 // Codex writes the same directory the human sees. The host keeps optional
 // history and native runtime observations; there is no staging design.circ.
@@ -15,8 +16,13 @@ class DirectAgentWorkspace {
       session = await w.backend.session();
     });
     w.turnActive = true;
+    const workspaceIndex = buildWorkspaceIndex({
+      root: w.folder.current.root,
+      activeFile: w.folder.current.activeFile,
+      session,
+    });
     return {folderId:w.folder.current.id, projectId:session?.workspace?.id || null,
-      revisionId, relative:'.', sourceName:w.folder.current.activeFile};
+      revisionId, relative:'.', sourceName:w.folder.current.activeFile, workspaceIndex};
   }
   assert(binding) { this.workspace.folder.assert(binding.folderId); }
   resolveFile(binding, relative) {

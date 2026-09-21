@@ -583,16 +583,17 @@ class CodexBackend extends EventEmitter {
       simulationInstancePath: context.displayedSimulation?.instancePath || [],
       simulationRootCircuit: context.displayedSimulation?.rootCircuit || null,
     };
-    const additionalContext = cwd => ({
+    const additionalContext = (cwd, workspaceIndex = null) => ({
       "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
       "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
       ...momentContext, ...materialContext(context),
       "vibe-logisim.workspace": {value: JSON.stringify({cwd, file:context.folder?.activeFile || null, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
+      ...(workspaceIndex ? {"vibe-logisim.workspace-index": {value: JSON.stringify(workspaceIndex), kind:"untrusted"}} : {}),
     });
     if (expectedTurnId !== null) {
       if (editMessageId) throw new Error("运行中只能追加意见；编辑旧问题需要先停止回答。");
       return this.#steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext,
-        additionalContext: this.includeCircuitContext ? additionalContext(this.currentCwd || this.runtimeWorkDir) : undefined});
+        additionalContext: this.includeCircuitContext ? additionalContext(this.currentCwd || this.runtimeWorkDir, this.pendingTurn?.work?.workspaceIndex || null) : undefined});
     }
     const changesWorkspace = Boolean(this.threadId && this.workspaceKey !== workspaceKey);
     const requestEpoch = changesWorkspace ? ++this.workspaceEpoch : this.workspaceEpoch;
@@ -685,7 +686,7 @@ class CodexBackend extends EventEmitter {
             ...(this.model ? {model:this.model} : {}),
             ...(this.effort ? {effort:this.effort} : {}),
             runtimeWorkspaceRoots: [turnCwd],
-            ...(this.includeCircuitContext ? {additionalContext: additionalContext(turnCwd)} : {}),
+            ...(this.includeCircuitContext ? {additionalContext: additionalContext(turnCwd, work?.workspaceIndex || null)} : {}),
           });
         } catch (error) {
           const modelError = classifyModelError(error, {phase:"turn", model:this.model});
