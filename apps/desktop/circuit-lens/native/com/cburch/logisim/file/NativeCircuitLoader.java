@@ -42,6 +42,9 @@ public final class NativeCircuitLoader {
             Element circuit = (Element) node;
             int wireNumber = 0;
             for (Node child = circuit.getFirstChild(); child != null; child = child.getNextSibling()) {
+                if (child instanceof Element && child.getNodeName().equals("comp")) {
+                    validateMemoryContents((Element) child, circuit.getAttribute("name"));
+                }
                 if (!(child instanceof Element) || !child.getNodeName().equals("wire")) continue;
                 Element wire = (Element) child;
                 String from = wire.getAttribute("from"), to = wire.getAttribute("to");
@@ -65,5 +68,28 @@ public final class NativeCircuitLoader {
             }
         }
         return loader.openLogisimFile(file);
+    }
+
+    /**
+     * Logisim memory contents are serialized as the text of the contents
+     * attribute. A generated file that adds val="" while retaining that text
+     * looks like XML, but the native attribute parser creates no MemContents.
+     * Report the source location before the runtime emits a null dereference.
+     */
+    private static void validateMemoryContents(Element component, String circuitName) {
+        String factory = component.getAttribute("name");
+        if (!factory.equals("ROM") && !factory.equals("RAM")) return;
+        org.w3c.dom.NodeList attributes = component.getElementsByTagName("a");
+        for (int index = 0; index < attributes.getLength(); index++) {
+            Element attribute = (Element) attributes.item(index);
+            if (!attribute.getAttribute("name").equals("contents")) continue;
+            String text = attribute.getTextContent();
+            if (attribute.hasAttribute("val") && text != null && !text.trim().isEmpty()) {
+                throw new IllegalArgumentException(
+                    "电路 \"" + circuitName + "\" 的 " + factory + " @ " + component.getAttribute("loc")
+                    + " 的 contents 同时包含 val 属性和文本；原生格式应删除 val 属性并保留文本内容。"
+                );
+            }
+        }
     }
 }
