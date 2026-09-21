@@ -64,6 +64,34 @@ def port_bits(end):
     return [bits[i] for i in range(width)]
 
 
+def endpoint_context(ref, component, end):
+    """Keep a width failure actionable without returning the whole observation."""
+    return {
+        **(ref if isinstance(ref, dict) else {}),
+        "componentId": component.get("componentId"),
+        "factory": component.get("factoryName"),
+        "label": (component.get("selector") or {}).get("label"),
+        "portName": end.get("runtimeTooltip"),
+        "width": end.get("width"),
+        "direction": end.get("direction"),
+        "location": end.get("location"),
+    }
+
+
+def width_mismatch(connection, left, right):
+    """Return a model-facing error for the common size-versus-width mistake."""
+    return CircuitToolError(
+        "PORT_WIDTH_MISMATCH",
+        f"连接位宽不同: {connection.get('name')}: {left[1]['width']} ≠ {right[1]['width']}",
+        hint="from 和 to 的端口 width 必须相同；width 是数据位宽，size 等几何属性不能代替它。",
+        context={
+            "connection": connection.get("name"),
+            "from": endpoint_context(connection.get("from"), *left),
+            "to": endpoint_context(connection.get("to"), *right),
+        },
+    )
+
+
 def disconnected_ports(workspace, document, name, baseline, parts, directory):
     """Native relationships BEFORE placement can merge nets.
 
@@ -286,7 +314,7 @@ def _wire_candidate(workbench, args, directory):
     for connection in connections:
         a, b = endpoint(connection.get("from")), endpoint(connection.get("to"))
         if a[1]["width"] != b[1]["width"]:
-            raise ValueError(f"连接位宽不同: {connection.get('name')}: {a[1]['width']} ≠ {b[1]['width']}")
+            raise width_mismatch(connection, a, b)
         for x, y in zip(port_bits(a[1]), port_bits(b[1])):
             partition.join(x, y)
         resolved.append((connection, a, b))
