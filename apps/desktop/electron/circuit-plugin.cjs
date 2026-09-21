@@ -15,7 +15,66 @@ class CircuitPlugin {
     this.queue = Promise.resolve();
     this.hostExecutors = {
       open_circuit: async (args, scope, session, viewVersion) => this.workspace.navigate(scope.pending.work,session,args.circuit,scope.assertCurrent,viewVersion),
-      submit_circuit: async (_args, _scope, session) => session,
+      submit_circuit: async (_args, scope, session, _viewVersion, request) => {
+        const circuit = session?.canvas?.status === 'shown'
+          ? session.canvas.circuit
+          : session?.activeCircuit || session?.project?.mainCircuit || null;
+        if (!circuit) {
+          return {...session, nativeLoadability: {
+            status: 'unknown',
+            circuit: null,
+            note: '当前没有可检查的电路定义。刷新文件状态成功，但没有建立原生加载性结论。',
+          }};
+        }
+        if (typeof this.invokeDomain !== 'function') {
+          return {...session, nativeLoadability: {
+            status: 'unavailable', circuit,
+            note: '原生加载性检查通道不可用。刷新文件状态成功，但没有建立加载性结论。',
+          }};
+        }
+        try {
+          // This is an internal, bounded observer call. It does not create a
+          // second model tool item or turn submit into a behavior verdict.
+          const observed = await this.invokeDomain({
+            projectId: scope.pending.projectId,
+            revisionId: scope.pending.revisionId,
+            threadId: request?.threadId || null,
+            turnId: request?.turnId || null,
+            callId: request?.callId ? `${request.callId}:loadability` : null,
+            tool: 'inspect_circuit',
+            arguments: {circuit},
+          });
+          if (!observed || typeof observed !== 'object' || Array.isArray(observed)) {
+            return {...session, nativeLoadability: {
+              status: 'unavailable',
+              circuit,
+              note: '文件刷新成功，但原生加载性检查没有返回结果；这不是功能正确性结论。',
+            }};
+          }
+          const error = observed?.error && typeof observed.error === 'object'
+            ? {code: observed.error.code || 'EXACT_OBSERVER_FAILED', message: observed.error.message || '原生观察失败'}
+            : observed?.error ? {code: 'EXACT_OBSERVER_FAILED', message: String(observed.error)} : null;
+          const status = observed.authority === 'exact-runtime' && !error
+            ? 'loadable'
+            : error ? 'not-loadable' : 'unavailable';
+          return {...session, nativeLoadability: {
+            status,
+            circuit,
+            authority: observed?.authority || 'unknown',
+            ...(error ? {error} : {}),
+            note: error
+              ? '文件刷新成功，但原生 Logisim 无法加载当前电路定义；这不是功能正确性结论。'
+              : '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。',
+          }};
+        } catch (error) {
+          return {...session, nativeLoadability: {
+            status: 'unavailable',
+            circuit,
+            error: {code: error.code || 'LOADABILITY_CHECK_FAILED', message: error.message || String(error)},
+            note: '文件刷新成功，但加载性检查本身不可用；这不是功能正确性结论。',
+          }};
+        }
+      },
       checkout_candidate: async (args, scope) => {
         const result = await this.workspace.checkout(scope.pending.work, args.candidateId, scope.assertCurrent);
         scope.assertCurrent();
@@ -66,7 +125,7 @@ class CircuitPlugin {
         domainArgs = {...args, vectorsFile: this.workspace.resolveFile(work, args.vectorsFile)};
       }
       let result = tool.owner === 'host'
-        ? await this.hostExecutors[tool.name](args, scope, session, viewVersion)
+        ? await this.hostExecutors[tool.name](args, scope, session, viewVersion, request)
         : await this.invokeDomain({...identity, observationId:scope.pending.observationId, arguments:domainArgs});
       scope.assertCurrent();
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('电路工具没有返回有效结果');

@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.26.0",
+  "version": "1.27.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -78,7 +78,7 @@
     {
       "type": "function",
       "name": "submit_circuit",
-      "description": "Refresh the selected workspace .circ after direct file edits, which are already on disk. Returns the selected file/circuit, revision and explicit save/disk state; null file means no circuit is selected. Loading is not a correctness proof.",
+      "description": "Refresh the selected workspace .circ after direct file edits, which are already on disk. Returns the selected file/circuit, revision, explicit save/disk state, and a lightweight nativeLoadability status for the active circuit (loadable, not-loadable, unavailable or unknown). A not-loadable result includes the native loader error so the edit can be repaired immediately. This checks that Logisim can load the definition; it is not a behavior or correctness verdict.",
       "inputSchema": {
         "type": "object",
         "properties": {},

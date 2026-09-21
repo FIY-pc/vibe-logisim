@@ -29,6 +29,7 @@ function circuitActionResult(session, {candidateId} = {}) {
       canSave: workspace.canSave,
     } : null,
     sourceStatus: structuredClone(session.sourceStatus),
+    nativeLoadability: structuredClone(session.nativeLoadability ?? null),
     connectionIndex: structuredClone(session.connectionIndex ?? null),
   };
 }
