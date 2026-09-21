@@ -99,6 +99,54 @@ class InspectionService:
             }
         return result
 
+    def check_native_loadability(self, args):
+        """Load one definition through the native runtime without building a view.
+
+        This is intentionally a hidden host-side primitive used by the desktop
+        submit acknowledgement. A model does not need another tool for this;
+        the point is to avoid paying for a full inspection when the host only
+        needs to report whether the edited file is loadable.
+        """
+        if self.workspace.raw_project is None:
+            raise CircuitToolError('NO_CIRCUIT_OPEN', '当前工作区尚未打开电路文件。')
+        circuit = args.get('circuit')
+        if not circuit or circuit not in {item.get('name') for item in self.workspace.raw_project['circuits']}:
+            raise CircuitToolError('UNKNOWN_CIRCUIT', '请求的电路定义不存在。', context={'circuit': circuit})
+        prerequisite = self.workspace.observer.prerequisite_error()
+        if prerequisite:
+            return {
+                'status': 'unavailable',
+                'authority': 'native-loader',
+                'circuit': circuit,
+                'error': {'code': 'NATIVE_RUNTIME_UNAVAILABLE', 'message': prerequisite},
+            }
+        try:
+            with self.workspace.observation_artifact() as artifact:
+                try:
+                    self.workspace.observer.check_loadability(artifact, circuit)
+                except ValueError as error:
+                    return {
+                        'status': 'not-loadable',
+                        'authority': 'native-loader',
+                        'circuit': circuit,
+                        'error': {'code': 'NATIVE_LOAD_FAILED', 'message': str(error) or '原生加载失败'},
+                    }
+                except Exception as error:
+                    return {
+                        'status': 'unavailable',
+                        'authority': 'native-loader',
+                        'circuit': circuit,
+                        'error': {'code': 'NATIVE_CHECK_UNAVAILABLE', 'message': str(error) or '原生加载预检不可用'},
+                    }
+        except Exception as error:
+            return {
+                'status': 'unavailable',
+                'authority': 'native-loader',
+                'circuit': circuit,
+                'error': {'code': 'NATIVE_CHECK_UNAVAILABLE', 'message': str(error) or '原生加载预检不可用'},
+            }
+        return {'status': 'loadable', 'authority': 'native-loader', 'circuit': circuit}
+
     def resource(self, args):
         resource = next((r for r in self.workspace.package.resources if r['id'] == args.get('resourceId')), None)
         if not resource:

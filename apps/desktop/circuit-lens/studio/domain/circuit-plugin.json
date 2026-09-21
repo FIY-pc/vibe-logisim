@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.27.0",
+  "version": "1.28.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -1525,12 +1525,32 @@
       "sourceMutation": false,
       "candidate": true,
       "label": "导入候选"
+    },
+    {
+      "type": "function",
+      "name": "check_native_loadability",
+      "description": "Internal host acknowledgement: load the selected definition through the native Logisim loader without rendering or returning an inspection view.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {"type": "string", "minLength": 1, "maxLength": 1024}
+        },
+        "required": ["circuit"],
+        "additionalProperties": false
+      },
+      "category": "observe",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "hidden",
+      "owner": "studio",
+      "label": "原生加载预检"
     }
   ],
   "registeredToolNames": [
     "read_kept_observation",
     "read_project_resource",
     "inspect_circuit",
+    "check_native_loadability",
     "describe_component",
     "render_circuit",
     "wire_candidate",

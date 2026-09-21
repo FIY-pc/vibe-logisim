@@ -73,7 +73,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 随后原始课设真实回合实际采用指定子电路open，但20分钟内无final且未改文件，不能称课设完成。[036](../experiments/036-single-cycle-model/README.md)保留结果及实际失败请求。未打开电路的inspect返回 `NO_CIRCUIT_OPEN`；trace的 `domain/trace_targets.py` 用同次原生观察统一报告无效观察名称/元件/端口、reset和ROM目标，返回真实元件及可用端口，不推断正确接法。原生输入检查也按当前引脚真实位宽报告向量索引/事件tick、输入名、提供值和允许范围。1.26 的 `inspect_circuit.portConnections` 为指定端口提供同一定义内原生共享位网的对端、端点元数据、坐标和逐 lane 位映射，按完整连接分页；它不穿过逻辑器件推断信号传播，不把方向当作驱动冲突结论。上述能力复用现有观察身份和结构化错误出口，没有新工具或强制步骤。
 
-当前源码的下一次真实课设回合已经说明了提交流程的另一个责任边界：模型直接编辑 `.circ` 后，文件可能已经落盘但原生 Logisim 仍无法加载。例如模型给 ROM 写入了不符合原生内存内容格式的 XML；旧 `submit_circuit` 只刷新工作区，模型要到后续观察才看到错误。1.27 的宿主 `submit_circuit` 在刷新后对当前电路做一次轻量原生加载性检查，并在 `vibe-logisim.circuit-action/v1` 回执的 `nativeLoadability` 中保留状态和受限错误信息。这是提交后的即时反馈，不是强制验证流程，也不是行为正确性结论。实际回合没有采用1.26新增的 `portConnections`，所以不能把工具存在当成模型已经获得收益；完整记录见 [037](../experiments/037-single-cycle-model-1.26/README.md)。
+当前源码的下一次真实课设回合已经说明了提交流程的另一个责任边界：模型直接编辑 `.circ` 后，文件可能已经落盘但原生 Logisim 仍无法加载。例如模型给 ROM 写入了不符合原生内存内容格式的 XML；旧 `submit_circuit` 只刷新工作区，模型要到后续观察才看到错误。1.28 的宿主 `submit_circuit` 在刷新后通过隐藏的原生加载预检，只加载当前定义而不构造完整观察视图，并在 `vibe-logisim.circuit-action/v1` 回执的 `nativeLoadability` 中保留状态和受限错误信息。这是提交后的即时反馈，不是强制验证流程，也不是行为正确性结论。实际回合没有采用1.26新增的 `portConnections`，所以不能把工具存在当成模型已经获得收益；完整记录见 [037](../experiments/037-single-cycle-model-1.26/README.md)。
 
 独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
 

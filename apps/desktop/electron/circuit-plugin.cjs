@@ -41,7 +41,7 @@ class CircuitPlugin {
             threadId: request?.threadId || null,
             turnId: request?.turnId || null,
             callId: request?.callId ? `${request.callId}:loadability` : null,
-            tool: 'inspect_circuit',
+            tool: 'check_native_loadability',
             arguments: {circuit},
           });
           if (!observed || typeof observed !== 'object' || Array.isArray(observed)) {
@@ -54,17 +54,19 @@ class CircuitPlugin {
           const error = observed?.error && typeof observed.error === 'object'
             ? {code: observed.error.code || 'EXACT_OBSERVER_FAILED', message: observed.error.message || '原生观察失败'}
             : observed?.error ? {code: 'EXACT_OBSERVER_FAILED', message: String(observed.error)} : null;
-          const status = observed.authority === 'exact-runtime' && !error
-            ? 'loadable'
-            : error ? 'not-loadable' : 'unavailable';
+          const status = ['loadable', 'not-loadable', 'unavailable', 'unknown'].includes(observed.status)
+            ? observed.status
+            : error ? 'not-loadable' : 'unknown';
           return {...session, nativeLoadability: {
             status,
             circuit,
-            authority: observed?.authority || 'unknown',
+            authority: observed?.authority || 'native-loader',
             ...(error ? {error} : {}),
-            note: error
+            note: status === 'not-loadable'
               ? '文件刷新成功，但原生 Logisim 无法加载当前电路定义；这不是功能正确性结论。'
-              : '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。',
+              : status === 'loadable'
+                ? '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。'
+                : '文件刷新成功，但原生加载性预检不可用；这不是功能正确性结论。',
           }};
         } catch (error) {
           return {...session, nativeLoadability: {

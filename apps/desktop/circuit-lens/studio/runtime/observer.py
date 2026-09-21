@@ -253,6 +253,11 @@ class ObserverRuntime:
         return json.loads(self.worker.request(runtime_jar or self.runtime_jar, artifact,
             ET.Element('observe', circuit=circuit), render_path))
 
+    def check_loadability(self, artifact: Path, circuit: str, *, runtime_jar=None) -> None:
+        """Load the artifact through Logisim without rendering or inspecting it."""
+        self.worker.request(runtime_jar or self.runtime_jar, artifact,
+                            ET.Element('loadability', circuit=circuit))
+
     def run_query(
         self,
         artifact: Path,

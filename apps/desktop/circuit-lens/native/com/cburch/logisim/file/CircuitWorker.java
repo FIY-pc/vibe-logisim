@@ -72,7 +72,18 @@ public final class CircuitWorker {
                     if(operation==null)throw new IllegalArgumentException("缺少原生操作");
                     Loaded loaded=worker.load(request.getAttribute("artifact"),request.getAttribute("digest"));
                     String kind=operation.getTagName();byte[] response;
-                    if(kind.equals("observe")) {
+                    if(kind.equals("loadability")) {
+                        if(loaded.file.getCircuit(operation.getAttribute("circuit")) == null)
+                            throw new IllegalArgumentException("Unknown circuit");
+                        Document result=factory.newDocumentBuilder().newDocument();
+                        Element value=result.createElement("result");
+                        value.setAttribute("status", "loadable");
+                        value.setAttribute("circuit", operation.getAttribute("circuit"));
+                        result.appendChild(value);
+                        ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                        TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result),new StreamResult(bytes));
+                        response=bytes.toByteArray();
+                    } else if(kind.equals("observe")) {
                         String value=ExactRuntimeObserver.observeLoaded(loaded.file,Paths.get(request.getAttribute("artifact")),
                             operation.getAttribute("circuit"),runtime,args[1],bundle,loaded.stdout,loaded.messages,
                             request.getAttribute("output"));

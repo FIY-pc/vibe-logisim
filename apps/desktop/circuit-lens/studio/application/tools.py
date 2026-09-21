@@ -29,6 +29,7 @@ class Workbench:
         handlers = {
             "read_kept_observation": self._read_kept_observation,
             "inspect_circuit": self._inspect_circuit,
+            "check_native_loadability": self._check_native_loadability,
             "describe_component": self._describe_component,
             "render_circuit": self._render_circuit,
             "read_project_resource": self._read_project_resource,
@@ -116,6 +117,9 @@ class Workbench:
                     "note": "Live values belong only to this observed instance and moment.",
                 }
         return result
+
+    def _check_native_loadability(self, call):
+        return self.inspection.check_native_loadability(call.arguments)
 
     def _render_circuit(self, call):
         data, metadata = self.workspace.circuits_service.render_for_agent(call.arguments)
