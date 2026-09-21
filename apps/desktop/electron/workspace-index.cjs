@@ -89,7 +89,9 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
   const workspace = session?.workspace || {};
   const sourceStatus = session?.sourceStatus || null;
   const revision = session?.revision || null;
+  const sourceAligned = sourceStatus?.stale === false && sourceStatus?.exists !== false;
   const rememberedLoadability = activeFile
+    && sourceAligned
     && nativeLoadability?.file === activeFile
     && nativeLoadability?.projectId === workspace.id
     && nativeLoadability?.artifactSha256
@@ -97,6 +99,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
     ? nativeLoadability
     : null;
   const rememberedBehavior = activeFile
+    && sourceAligned
     && nativeBehavior?.file === activeFile
     && nativeBehavior?.projectId === workspace.id
     && nativeBehavior?.artifactSha256
