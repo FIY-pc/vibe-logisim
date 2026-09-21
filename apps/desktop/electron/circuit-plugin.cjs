@@ -14,7 +14,7 @@ class CircuitPlugin {
     this.registry = null;
     this.queue = Promise.resolve();
     this.hostExecutors = {
-      open_circuit: async (_args, _scope, session) => session,
+      open_circuit: async (args, scope, session, viewVersion) => this.workspace.navigate(scope.pending.work,session,args.circuit,scope.assertCurrent,viewVersion),
       submit_circuit: async (_args, _scope, session) => session,
       checkout_candidate: async (args, scope) => {
         const result = await this.workspace.checkout(scope.pending.work, args.candidateId, scope.assertCurrent);
@@ -46,8 +46,10 @@ class CircuitPlugin {
           if (typeof args[name] !== 'string' || !args[name].trim()) throw new Error('工具参数需要非空 ' + name);
         }
         if (Object.keys(args).some(key => !Object.hasOwn(tool.inputSchema.properties, key))) throw new Error('工具包含未声明的参数');
+        if(args.circuit !== undefined && (typeof args.circuit !== 'string' || !args.circuit.trim()))throw new Error('工具参数需要非空 circuit');
       }
-      const session = await this.workspace.synchronize(work, request.tool === 'open_circuit' ? args.path : null, scope.assertCurrent);
+      const viewVersion = this.workspace.canvasVersion();
+      const session = await this.workspace.synchronize(work, request.tool === 'open_circuit' ? args.path : null, scope.assertCurrent, {navigate:request.tool==='open_circuit'});
       scope.assertCurrent();
       scope.updateBinding(session);
       const identity = {
@@ -64,7 +66,7 @@ class CircuitPlugin {
         domainArgs = {...args, vectorsFile: this.workspace.resolveFile(work, args.vectorsFile)};
       }
       let result = tool.owner === 'host'
-        ? await this.hostExecutors[tool.name](args, scope, session)
+        ? await this.hostExecutors[tool.name](args, scope, session, viewVersion)
         : await this.invokeDomain({...identity, observationId:scope.pending.observationId, arguments:domainArgs});
       scope.assertCurrent();
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('电路工具没有返回有效结果');
@@ -75,6 +77,7 @@ class CircuitPlugin {
       }
       if (tool.owner === 'host') {
         scope.updateBinding(result);
+        result = {...result,canvas:result.canvas ?? this.workspace.canvasState(result)};
         result = circuitActionResult(result, args);
       }
       const finalIdentity = {

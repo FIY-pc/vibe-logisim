@@ -19,6 +19,7 @@ const { CodexBackend } = require("./codex-backend.cjs");
 const {DirectAgentWorkspace} = require("./direct-agent-workspace.cjs");
 const {DesktopWorkspace} = require("./desktop-workspace.cjs");
 const {registerFolderIpc} = require("./folder-ipc.cjs");
+const {CanvasNavigation,registerCanvasIpc} = require('./canvas-navigation.cjs');
 const {MaterialStore}=require('./material-store.cjs');
 const {registerMaterialIpc}=require('./material-ipc.cjs');
 const {registerConversationIpc}=require('./conversation-ipc.cjs');
@@ -206,6 +207,7 @@ async function startApplication() {
   const agentRoot = path.join(app.getPath("userData"), "circuit-agent");
   materials=new MaterialStore({root:path.join(agentRoot,'materials'),workspaceRoot:path.join(agentRoot,'workspace')});
   desktopWorkspace = new DesktopWorkspace({stateRoot:path.join(app.getPath('userData'),'folder-workspaces'),backend,materials});
+  desktopWorkspace.canvas = new CanvasNavigation(request=>mainWindow.webContents.send('vibe-logisim:canvas-navigate',request));
   const initialSession = await backend.session();
   const folderRoot = initialTarget?.kind === 'folder'
     ? initialTarget.path
@@ -259,11 +261,15 @@ async function openFolder(root, activeFile = null) {
   await restoreAgentConversation();
   return result;
 }
-async function selectFolderCircuit(relative) {
-  return transitionWorkspace('document-selected', () => desktopWorkspace.run(() => desktopWorkspace.select(relative)), {preserveConversation:true});
+async function selectFolderCircuit(relative,folderId=desktopWorkspace.folder.current?.id) {
+  return transitionWorkspace('document-selected', () => desktopWorkspace.run(() => {
+    desktopWorkspace.folder.assert(folderId);
+    return desktopWorkspace.select(relative);
+  }), {preserveConversation:true});
 }
 function registerIpc() {
   require('./canvas-preferences.cjs').registerCanvasPreferences({ipcMain,userData:app.getPath('userData'),trusted:isTrustedRenderer});
+  registerCanvasIpc({ipcMain,trusted:isTrustedRenderer,canvas:desktopWorkspace.canvas});
   registerFolderIpc({ipcMain,dialog,shell,nativeImage,workspace:desktopWorkspace,trusted:isTrustedRenderer,window:()=>mainWindow,open:openFolder,select:selectFolderCircuit,mutate:operation=>{
     if(workspaceTransitioning)throw workspaceChangedError();
     if(codex.snapshot().busy||desktopWorkspace.turnActive)throw new Error('请先停止 AI 回答，再移动或删除文件');
@@ -573,12 +579,16 @@ function createWindow(baseUrl) {
     event.preventDefault();
   };
   mainWindow.webContents.on("will-navigate", allowOnlyLensOrigin);
+  mainWindow.webContents.on('did-start-navigation',details=>{
+    if(details.isMainFrame && !details.isSameDocument)desktopWorkspace.canvas.reset();
+  });
   mainWindow.webContents.on("will-redirect", allowOnlyLensOrigin);
   mainWindow.webContents.on("will-attach-webview", (event) => event.preventDefault());
   mainWindow.webContents.on('will-prevent-unload',()=>{quitRequested=false;});
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
+    desktopWorkspace.canvas.reset();
     mainWindow = null;
   });
   mainWindow.loadURL(`${baseUrl}/`);

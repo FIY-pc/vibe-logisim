@@ -17,7 +17,8 @@ function circuitActionResult(session, {candidateId} = {}) {
       artifactSha256: session.revision?.artifactSha256 ?? null,
     },
     file: session.folder?.activeFile ?? null,
-    activeCircuit: session.activeCircuit ?? null,
+    activeCircuit: session.canvas?.status === 'shown' ? session.canvas.circuit : null,
+    canvas: structuredClone(session.canvas ?? {status:'unavailable',circuit:null}),
     circuits: session.project?.circuits?.map(circuit => circuit.name) ?? [],
     // Current, saved and disk identities describe independent states. Equal
     // hashes do not allow inferring one from another, or imply functional proof.

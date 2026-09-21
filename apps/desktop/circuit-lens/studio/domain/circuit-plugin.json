@@ -2,19 +2,23 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.24.0",
+  "version": "1.25.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
     {
       "type": "function",
       "name": "open_circuit",
-      "description": "Select and load a workspace .circ file into the shared canvas using its relative path. Returns the selected file/circuit, revision and explicit save/disk state, not circuit observations or simulation proof. Selecting another file keeps the same folder conversation.",
+      "description": "Open a workspace .circ file by relative path, optionally showing a named circuit definition in the shared canvas so the human can take over there. Without circuit, preserve the current view when possible. Returns file/revision/save/disk state and canvas status; activeCircuit is set only when the renderer confirms the displayed definition. A headless, superseded or failed view is reported explicitly; it is not simulation proof. Keeps the same folder conversation; changes no source or main circuit attribute.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string"
+          },
+          "circuit": {
+            "type": "string", "minLength": 1,
+            "description": "Optional exact circuit definition name, including any symbols."
           }
         },
         "required": [

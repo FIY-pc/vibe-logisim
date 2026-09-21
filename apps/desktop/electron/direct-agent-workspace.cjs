@@ -23,12 +23,13 @@ class DirectAgentWorkspace {
     this.assert(binding);
     return this.workspace.folder.resolve(relative);
   }
-  async synchronize(binding, relative = null, assertCurrent = () => {}) {
+  async synchronize(binding, relative = null, assertCurrent = () => {}, {navigate=false} = {}) {
     this.assert(binding);
     assertCurrent();
     await this.workspace.run(async () => {
       assertCurrent();
-      if(relative) await this.workspace.select(relative);
+      this.assert(binding);
+      if(relative) await this.workspace.select(relative,{notify:!navigate});
       else await this.workspace.refresh({checkpoint:false});
     });
     const session = await this.workspace.backend.session();
@@ -38,6 +39,18 @@ class DirectAgentWorkspace {
     binding.revisionId = session.revision?.id || null;
     binding.sourceName = this.workspace.folder.current.activeFile;
     return session;
+  }
+  canvasState(session) { return this.workspace.canvas?.snapshot(session) ?? {status:'unavailable',circuit:null}; }
+  canvasVersion() { return this.workspace.canvas?.version; }
+  async navigate(binding, session, circuit, assertCurrent, version) {
+    this.assert(binding);assertCurrent();
+    if(circuit && !session.project?.circuits?.some(item=>item.name===circuit)){
+      this.workspace.emit('changed',{...this.workspace.snapshot(),documentChanged:true});
+      throw new Error('文件已载入，但电路定义不存在：'+circuit+'。可用电路：'+(session.project?.circuits||[]).map(item=>item.name).join('、'));
+    }
+    const canvas=await this.workspace.canvas?.open(session,circuit,version) ?? this.canvasState(session);
+    this.assert(binding);assertCurrent();
+    return {...session,canvas};
   }
   async checkout(binding, candidateId, assertCurrent = () => {}) {
     const w = this.workspace;

@@ -18,7 +18,7 @@ function registerFolderIpc({ipcMain, dialog, shell, nativeImage, workspace, trus
   handle('state', () => workspace.snapshot());
   handle('list', request => ({items:workspace.folder.list(request.path||'',request.hidden === true)}));
   handle('view', request => workspace.folder.saveExplorer(request));
-  handle('select', request => select(request.path));
+  handle('select', request => select(request.path,request.folderId));
   handle('reference', request => {
     if(!Array.isArray(request.refs)||request.refs.length>8)throw new Error('每条问题最多引用 8 处文件');
     return {items:request.refs.map(ref=>workspace.folder.reference(ref))};

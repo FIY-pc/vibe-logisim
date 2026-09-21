@@ -10,6 +10,16 @@ export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
   const request = client.request;
   let bootstrapEpoch=0;
+  const canvas=window.vibeDesktop?.canvas;
+  const viewState=(status,circuit=null)=>({status,circuit,folderId:projectState.folder?.id??null,
+    projectId:projectState.session?.workspace?.id??null,revisionId:projectState.revision??null});
+  const reportView=(status,circuit=null)=>canvas?.report(viewState(status,circuit)).catch(()=>{});
+  canvas?.onNavigate(async target=>{
+    let result;
+    try { result=await bootstrap({circuit:target.circuit,target}); }
+    catch(error){result={...target,status:'failed',circuit:null,error:statusErrorMessage(error,'无法打开电路')};}
+    await canvas.complete(target.id,result||{...target,status:'superseded',circuit:null});
+  });
 function sessionHasWorkspace(session) {
     if (!session) return false;
     if (session.workspace === null || session.hasWorkspace === false || session.status === "no-workspace") return false;
@@ -21,22 +31,27 @@ function sessionHasWorkspace(session) {
     );
   }
 
-async function bootstrap({ preserveStale = false, circuit = null } = {}) {
+async function bootstrap({ preserveStale = false, circuit = null, target = null } = {}) {
     const token=++bootstrapEpoch;
+    ++projectState.circuitRequestEpoch;
     ports.setCanvasStatus("正在读取本地电路工作区…", "loading");
     let session;
     try {
       session = await request(API.session);
     } catch (error) {
+      if(token!==bootstrapEpoch)return;
       if (error.status === 404 && error.payload?.code === "NO_WORKSPACE") {
         session = { workspace: null, status: "no-workspace" };
       } else {
         showNoServer(error);
+        if(target)return {...target,status:'failed',circuit:null,error:statusErrorMessage(error,'无法读取工作区')};
         return;
       }
     }
 
     if(token!==bootstrapEpoch)return;
+    if(target && (session.folder?.id!==target.folderId || session.workspace?.id!==target.projectId ||
+      session.revision?.id!==target.revisionId))return;
     projectState.folder=session.folder||null;
     ports.workspaceFolderChanged(projectState.folder);
     if (!sessionHasWorkspace(session)) {
@@ -96,8 +111,11 @@ async function bootstrap({ preserveStale = false, circuit = null } = {}) {
       circuits[0],
     );
     if (preferred) {
-      await loadCircuit(displayName(preferred), { clearSelection: !preserveStale, navigation: {kind:"refresh"}, draftFocus:!sameProject?draftFocus:null });
+      const result=await loadCircuit(displayName(preferred), { clearSelection: !preserveStale,
+        navigation: {kind:target?.circuit?'definition':'refresh'}, draftFocus:!sameProject&&!target?.circuit?draftFocus:null, fromBootstrap:true });
       if(token!==bootstrapEpoch)return;
+      ports.startReviewPolling();
+      return result;
     } else {
       await showEmptyWorkspace("这份项目没有可读取的电路定义。");
     }
@@ -121,6 +139,7 @@ function showEmptyWorkspace(detail) {
     projectState.circuit = null;
     projectState.circuitName = null;
     projectState.revision = null;
+    reportView('shown');
     const draftLoading = ports.openDraftProject();
     ports.momentsProjectChanged();
     ports.materialsProjectChanged();
@@ -208,12 +227,14 @@ async function refreshEditedProject(session, circuit) {
     void ports.loadCandidates();
 }
 
-async function loadCircuit(name, { clearSelection: shouldClear = true, navigation = {kind:"definition"}, draftFocus = null, editing = false } = {}) {
+async function loadCircuit(name, { clearSelection: shouldClear = true, navigation = {kind:"definition"}, draftFocus = null, editing = false, fromBootstrap = false } = {}) {
     if (!name) return;
+    if(!fromBootstrap)++bootstrapEpoch;
     if(name!==projectState.circuitName)ports.cancelPlacement();
     ports.prepareCircuitNavigation(name,navigation);
     const epoch = ++projectState.circuitRequestEpoch;
     const projectId = projectState.session?.workspace?.id;
+    reportView('loading');
     if(!editing)ports.setCanvasStatus(`正在打开 ${name}…`, "loading");
     try {
       const payload = await request(`${API.circuit}?name=${encodeURIComponent(name)}`);
@@ -260,16 +281,21 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       ports.renderInspector();
       ports.renderSimulation();
       ports.renderConnections();
+      reportView('shown',name);
       if(!editing){await ports.pollSimulation();ports.loadCandidates();}
       if(!draftFocus&&!editing)await ports.loadSelection();
       if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
       ports.restoreEntrySelection(returnEntry);
       if(!editing){await ports.loadReview({ quiet: true });ports.closeMobilePanels();}
+      if(epoch!==projectState.circuitRequestEpoch || projectId!==projectState.session?.workspace?.id)return;
+      return viewState('shown',name);
     } catch (error) {
       if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
       ports.setCanvasStatus(statusErrorMessage(error, `无法读取电路 ${name}`), "error");
       ports.showToast(statusErrorMessage(error, "读取电路失败"));
+      reportView('failed');
       if(editing)throw error;
+      return {...viewState('failed'),error:statusErrorMessage(error,'无法打开电路')};
     }
   }
 

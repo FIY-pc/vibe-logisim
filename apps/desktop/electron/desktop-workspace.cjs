@@ -33,7 +33,7 @@ class DesktopWorkspace extends EventEmitter {
       throw error;
     }
   }
-  async select(relative) {
+  async select(relative, {notify=true} = {}) {
     const file = this.folder.resolve(relative);
     if (path.extname(file).toLowerCase() !== '.circ') throw new Error('请选择 .circ 电路文件');
     await this.backend.openPath(file);
@@ -45,7 +45,8 @@ class DesktopWorkspace extends EventEmitter {
     if(this.materials)migrateReferences(this.folder,this.materials,session.workspace?.id);
     await this.backend.setFolder(this.folder.snapshot());
     this.digest = hash(fs.readFileSync(file)); this.error = '';
-    this.emit('changed', {...this.snapshot(), documentChanged:true}); return this.snapshot();
+    if(notify)this.emit('changed', {...this.snapshot(), documentChanged:true});
+    return this.snapshot();
   }
   async saveWorking() {
     const session = await this.backend.session();

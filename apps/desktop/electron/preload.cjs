@@ -25,6 +25,16 @@ window.addEventListener('beforeunload',event=>{
 contextBridge.exposeInMainWorld(
   "vibeDesktop",
   Object.freeze({
+    canvas:Object.freeze({
+      report:view=>ipcRenderer.invoke('vibe-logisim:canvas',{action:'report',view}),
+      complete:(id,view)=>ipcRenderer.invoke('vibe-logisim:canvas',{action:'complete',id,view}),
+      onNavigate:callback=>{
+        const listener=(_event,value)=>callback(value);
+        ipcRenderer.on('vibe-logisim:canvas-navigate',listener);
+        ipcRenderer.invoke('vibe-logisim:canvas',{action:'ready'});
+        return()=>ipcRenderer.removeListener('vibe-logisim:canvas-navigate',listener);
+      },
+    }),
     folder:Object.freeze({
       open:()=>ipcRenderer.invoke('vibe-logisim:folder-open'),
       state:()=>ipcRenderer.invoke('vibe-logisim:folder-state'),
