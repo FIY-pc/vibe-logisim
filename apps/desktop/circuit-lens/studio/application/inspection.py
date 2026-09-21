@@ -17,6 +17,9 @@ class InspectionService:
         self.tools = tools
 
     def inspect(self, args, *, response_metadata=None):
+        if self.workspace.raw_project is None:
+            raise CircuitToolError('NO_CIRCUIT_OPEN', '当前工作区尚未打开电路文件。',
+                                   hint='先读取工作区文件列表，再用 open_circuit({path: 工作区内的 .circ 相对路径}) 打开文件。')
         options = directory_options(args)
         net_format = args.get('netFormat', 'groups')
         if net_format not in ('groups', 'bits') or ('netFormat' in args and not args.get('includeNets')):

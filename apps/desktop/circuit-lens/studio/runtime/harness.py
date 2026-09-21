@@ -15,6 +15,7 @@ from studio.runtime.evaluation import EvaluationService
 from studio.domain.evaluation import compare_sample, observation_feedback
 from studio.runtime.vector_file import load_vectors_file
 from studio.domain.trace_stimulus import expand_input_clocks
+from studio.domain.trace_targets import validate_trace_targets
 
 class NativeCircuitRuntime:
     """Execute native Logisim observations for the circuit plugin.
@@ -289,6 +290,8 @@ class NativeCircuitRuntime:
         started = time.perf_counter()
         observation = self.workspace.observer.run_full(artifact, name, runtime_jar=runtime_jar)
         components = {c['componentId']: c for c in observation['focus']['components']}
+        validate_trace_targets(components, watches, circuit=name, artifact_sha=artifact_sha,
+                               program=args.get('program'), reset=args.get('resetButton'))
         request = ET.Element('trace', circuit=name, ticks=str(ticks))
 
         def select(tag, ref, **attrs):
@@ -296,13 +299,8 @@ class NativeCircuitRuntime:
             if component is None:
                 raise ValueError('观察端口不存在，请先 inspect_circuit 读取候选')
             return ET.SubElement(request, tag, factory=component['factoryName'], x=str(component['location']['x']), y=str(component['location']['y']), **attrs)
-        seen = set()
         for watch in watches:
             label, port = (watch.get('name'), watch.get('port'))
-            c = components.get(watch.get('component'))
-            if not isinstance(label, str) or not 1 <= len(label) <= 80 or label in seen or (type(port) is not int) or (c is None) or (not any((e['index'] == port for e in c['ends']))):
-                raise ValueError('观察名称必须唯一，端口需来自此候选的原生观察')
-            seen.add(label)
             select('watch', watch, name=label, port=str(port))
         normalized_inputs = self._values(inputs, '输入')
         self._assert_known_inputs(normalized_inputs, self._input_labels(observation['focus']['components']))
