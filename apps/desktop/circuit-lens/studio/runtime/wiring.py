@@ -92,6 +92,35 @@ def width_mismatch(connection, left, right):
     )
 
 
+def invalid_endpoint(ref, components):
+    """Return the native port choices when a model uses a stale/wrong index."""
+    component_id = ref.get("component") if isinstance(ref, dict) else None
+    port = ref.get("port") if isinstance(ref, dict) else None
+    component = components.get(component_id)
+    context = {"reference": ref, "componentId": component_id, "requestedPort": port}
+    if component is not None:
+        context.update(
+            factory=component.get("factoryName"),
+            label=(component.get("selector") or {}).get("label"),
+            availablePorts=[
+                {
+                    "port": end.get("index"),
+                    "portName": end.get("runtimeTooltip"),
+                    "width": end.get("width"),
+                    "direction": end.get("direction"),
+                    "location": end.get("location"),
+                }
+                for end in component.get("ends", [])
+            ],
+        )
+    return CircuitToolError(
+        "INVALID_PORT_REFERENCE",
+        f"连接端口不存在或不可用: {ref}",
+        hint="port 必须使用同一次 inspect/候选观察中的原生端口序号；从 context.availablePorts 选择，不能把组件属性或几何 size 当成端口号。",
+        context=context,
+    )
+
+
 def disconnected_ports(workspace, document, name, baseline, parts, directory):
     """Native relationships BEFORE placement can merge nets.
 
@@ -304,12 +333,15 @@ def _wire_candidate(workbench, args, directory):
     reference_components = {identity(c): c for c in reference["focus"]["components"]}
     def endpoint(ref):
         if not isinstance(ref, dict) or ref.get("component") not in aliases or type(ref.get("port")) is not int:
-            raise ValueError("连接端点需为 {component: componentId 或新增 id, port: 原生端口序号}")
+            raise invalid_endpoint(ref, {})
         c = reference_components[aliases[ref["component"]]]
         e = next((e for e in c["ends"] if e["index"] == ref["port"]), None)
         if e is None:
-            raise ValueError(f"端口不存在或位宽未知: {ref}")
-        port_bits(e)
+            raise invalid_endpoint(ref, {ref["component"]: c})
+        try:
+            port_bits(e)
+        except ValueError as error:
+            raise invalid_endpoint(ref, {ref["component"]: c}) from error
         return c, e
     for connection in connections:
         a, b = endpoint(connection.get("from")), endpoint(connection.get("to"))
