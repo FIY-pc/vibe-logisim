@@ -20,8 +20,8 @@ class DirectAgentWorkspace {
       root: w.folder.current.root,
       activeFile: w.folder.current.activeFile,
       session,
-      nativeLoadability: w.lastNativeLoadability,
-      nativeBehavior: w.lastNativeBehavior,
+      nativeLoadability: w.nativeLoadabilityReceipts,
+      nativeBehavior: w.nativeBehaviorReceipts,
     });
     return {folderId:w.folder.current.id, projectId:session?.workspace?.id || null,
       revisionId, relative:'.', sourceName:w.folder.current.activeFile, workspaceIndex};

@@ -6,6 +6,18 @@ const {FolderWorkspace, hash} = require('./folder-workspace.cjs');
 const {migrateReferences} = require('./folder-migration.cjs');
 const {FolderHistory} = require('./folder-history.cjs');
 
+const MAX_NATIVE_RECEIPTS = 8;
+
+function sameReceipt(a, b, {includeRun = false} = {}) {
+  if (!a || !b || a.projectId !== b.projectId || a.file !== b.file
+      || a.artifactSha256 !== b.artifactSha256
+      || a.value?.circuit !== b.value?.circuit) return false;
+  if (!includeRun) return true;
+  return a.value?.tool === b.value?.tool
+    && a.value?.stimulusSha256 === b.value?.stimulusSha256
+    && a.value?.expectationSha256 === b.value?.expectationSha256;
+}
+
 // Owns the relationship between one real folder, its selected document, and
 // the runtime. All filesystem refreshes share a queue with explicit operations.
 class DesktopWorkspace extends EventEmitter {
@@ -13,7 +25,7 @@ class DesktopWorkspace extends EventEmitter {
     super(); this.folder = new FolderWorkspace(stateRoot); this.backend = backend; this.materials=materials;
     this.history = new FolderHistory(this.folder); this.queue = Promise.resolve();
     this.digest = null; this.error = ''; this.turnActive = false;
-    this.lastNativeLoadability = null; this.lastNativeBehavior = null;
+    this.nativeLoadabilityReceipts = []; this.nativeBehaviorReceipts = [];
     this.folder.on('changed', () => this.run(() => this.refresh()).catch(e => this.report(e)));
   }
   run(operation) { const result = this.queue.catch(() => {}).then(operation); this.queue = result.catch(() => {}); return result; }
@@ -26,7 +38,10 @@ class DesktopWorkspace extends EventEmitter {
     if (typeof file !== 'string' || !/^project-[a-f0-9]{16}$/.test(projectId || '')
         || !/^[a-f0-9]{64}$/.test(artifactSha256 || '')
         || !value || typeof value !== 'object') return;
-    this.lastNativeLoadability = {projectId, file, artifactSha256, value:structuredClone(value)};
+    const receipt = {projectId, file, artifactSha256, value:structuredClone(value)};
+    this.nativeLoadabilityReceipts = [receipt,
+      ...this.nativeLoadabilityReceipts.filter(item => !sameReceipt(item, receipt))]
+      .slice(0, MAX_NATIVE_RECEIPTS);
   }
   rememberNativeBehavior(result, tool, file = this.folder.current?.activeFile) {
     const allowedTools = new Set(['simulate_circuit', 'trace_circuit', 'harness_run', 'evaluate_circuit', 'run_verification']);
@@ -52,7 +67,10 @@ class DesktopWorkspace extends EventEmitter {
     for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
       if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
     }
-    this.lastNativeBehavior = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
+    const receipt = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
+    this.nativeBehaviorReceipts = [receipt,
+      ...this.nativeBehaviorReceipts.filter(item => !sameReceipt(item, receipt, {includeRun:true}))]
+      .slice(0, MAX_NATIVE_RECEIPTS);
   }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {

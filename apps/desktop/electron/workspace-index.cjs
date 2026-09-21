@@ -9,6 +9,7 @@ const MAX_FILES = 800;
 const MAX_CIRC_BYTES = 8 * 1024 * 1024;
 const MAX_CIRC_READ_BYTES = 2 * 1024 * 1024;
 const MAX_INDEX_BYTES = 128 * 1024;
+const MAX_RECEIPTS = 8;
 const IGNORED = new Set([
   '.git', '.codex', '.config', '.local', '.ssh', 'node_modules',
   '__pycache__', '.venv', 'dist', 'build', 'target', 'coverage',
@@ -91,24 +92,25 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
   const revision = session?.revision || null;
   const currentCircuit = session?.activeCircuit || session?.project?.mainCircuit || null;
   const sourceAligned = sourceStatus?.stale === false && sourceStatus?.exists !== false;
-  const rememberedLoadability = activeFile
-    && sourceAligned
-    && nativeLoadability?.file === activeFile
-    && nativeLoadability?.projectId === workspace.id
-    && nativeLoadability?.artifactSha256
-    && nativeLoadability.artifactSha256 === revision?.artifactSha256
-    ? nativeLoadability
+  const loadabilityReceipts = (Array.isArray(nativeLoadability) ? nativeLoadability : [])
+    .filter(receipt => activeFile && sourceAligned
+      && receipt?.file === activeFile
+      && receipt?.projectId === workspace.id
+      && receipt?.artifactSha256
+      && receipt.artifactSha256 === revision?.artifactSha256)
+    .slice(0, MAX_RECEIPTS);
+  const behaviorReceipts = (Array.isArray(nativeBehavior) ? nativeBehavior : [])
+    .filter(receipt => activeFile && sourceAligned
+      && receipt?.file === activeFile
+      && receipt?.projectId === workspace.id
+      && receipt?.artifactSha256
+      && receipt.artifactSha256 === revision?.artifactSha256)
+    .slice(0, MAX_RECEIPTS);
+  const rememberedLoadability = loadabilityReceipts.find(receipt => receipt.value?.circuit === currentCircuit) || null;
+  const rememberedBehavior = behaviorReceipts.find(receipt => receipt.value?.circuit === currentCircuit) || null;
+  const toEvidence = receipt => receipt
+    ? {artifactSha256: receipt.artifactSha256, ...receipt.value}
     : null;
-  const rememberedBehavior = activeFile
-    && sourceAligned
-    && nativeBehavior?.file === activeFile
-    && nativeBehavior?.projectId === workspace.id
-    && nativeBehavior?.artifactSha256
-    && nativeBehavior.artifactSha256 === revision?.artifactSha256
-    ? nativeBehavior
-    : null;
-  const loadabilityScopeMatches = rememberedLoadability?.value?.circuit === currentCircuit;
-  const behaviorScopeMatches = rememberedBehavior?.value?.circuit === currentCircuit;
   const currentSource = activeFile
     ? {
       path: activeFile,
@@ -122,15 +124,13 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
           : sourceStatus?.stale === false
             ? 'aligned'
             : 'unknown',
-      loadability: loadabilityScopeMatches ? rememberedLoadability.value.status : 'unknown',
-      loadabilityEvidence: rememberedLoadability
-        ? {artifactSha256: rememberedLoadability.artifactSha256, ...rememberedLoadability.value}
-        : null,
-      behavior: behaviorScopeMatches ? rememberedBehavior.value.status : 'unknown',
-      behaviorEvidence: rememberedBehavior
-        ? {artifactSha256: rememberedBehavior.artifactSha256, ...rememberedBehavior.value}
-        : null,
-      note: 'alignment only compares the source file with the frozen revision; scalar loadability and behavior are shown only when the receipt scope matches the current circuit. Evidence keeps its recorded circuit and inputs, and neither establishes full correctness.',
+      loadability: rememberedLoadability?.value?.status || 'unknown',
+      loadabilityEvidence: toEvidence(rememberedLoadability),
+      recentLoadabilityEvidence: loadabilityReceipts.map(toEvidence),
+      behavior: rememberedBehavior?.value?.status || 'unknown',
+      behaviorEvidence: toEvidence(rememberedBehavior),
+      recentBehaviorEvidence: behaviorReceipts.map(toEvidence),
+      note: 'alignment only compares the source file with the frozen revision; scalar loadability and behavior use the newest exact receipt for the current circuit. Recent evidence keeps other circuits, inputs and expectations visible; neither establishes full correctness.',
     }
     : {
       path: null,
@@ -140,8 +140,10 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
       alignment: 'no-active-file',
       loadability: 'unknown',
       loadabilityEvidence: null,
+      recentLoadabilityEvidence: [],
       behavior: 'unknown',
       behaviorEvidence: null,
+      recentBehaviorEvidence: [],
       note: 'No circuit file is selected. Choose a .circ from circuits and call open_circuit when a canvas file is needed.',
     };
   const result = {
@@ -159,6 +161,15 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
     truncated,
     limits: {maxDepth: MAX_DEPTH, maxEntries: MAX_ENTRIES, maxFiles: MAX_FILES, maxCircuitReadBytes: MAX_CIRC_READ_BYTES},
   };
+  while (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_INDEX_BYTES
+      && (result.currentSource.recentBehaviorEvidence?.length || result.currentSource.recentLoadabilityEvidence?.length)) {
+    result.truncated = true;
+    if (result.currentSource.recentBehaviorEvidence.length >= result.currentSource.recentLoadabilityEvidence.length) {
+      result.currentSource.recentBehaviorEvidence.pop();
+    } else {
+      result.currentSource.recentLoadabilityEvidence.pop();
+    }
+  }
   while (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_INDEX_BYTES
       && (result.files.length || result.directories.length)) {
     result.truncated = true;
