@@ -43,23 +43,16 @@ class DesktopWorkspace extends EventEmitter {
       stimulusSha256: run?.stimulusSha256 || result?.result?.stimulusSha256 || null,
       expectationSha256: run?.expectationSha256 || result?.evaluation?.spec?.expectationSha256
         || feedback.expectationSha256 || null};
+    if (tool === 'run_verification') {
+      const verification = result?.result || result;
+      for (const key of ['id', 'manifestSha256', 'recipeSha256', 'oracleSha256', 'execution', 'verdict']) {
+        if (verification[key] !== undefined) value[key] = structuredClone(verification[key]);
+      }
+    }
     for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
       if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
     }
-    this.lastNativeBehavior = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256,
-      candidateId:binding.candidateId || null, value};
-  }
-  promoteNativeBehavior(result, candidateId) {
-    const binding = result?.binding;
-    const current = this.lastNativeBehavior;
-    if (!binding?.artifactSha256 || !candidateId) return;
-    if (current?.candidateId === candidateId && current.artifactSha256 === binding.artifactSha256
-        && current.projectId === binding.projectId) {
-      this.lastNativeBehavior = {...current, file:result.file || this.folder.current?.activeFile || current.file,
-        candidateId:null};
-      return;
-    }
-    if (current && current.artifactSha256 !== binding.artifactSha256) this.lastNativeBehavior = null;
+    this.lastNativeBehavior = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
   }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {

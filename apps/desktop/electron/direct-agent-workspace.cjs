@@ -52,7 +52,6 @@ class DirectAgentWorkspace {
   canvasVersion() { return this.workspace.canvas?.version; }
   rememberNativeLoadability(result) { this.workspace.rememberNativeLoadability(result); }
   rememberNativeBehavior(result, tool, file) { this.workspace.rememberNativeBehavior(result, tool, file); }
-  promoteNativeBehavior(result, candidateId) { this.workspace.promoteNativeBehavior(result, candidateId); }
   async navigate(binding, session, circuit, assertCurrent, version) {
     this.assert(binding);assertCurrent();
     if(circuit && !session.project?.circuits?.some(item=>item.name===circuit)){

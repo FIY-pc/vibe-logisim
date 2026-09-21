@@ -176,7 +176,6 @@ class CircuitPlugin {
         result = {...result,canvas:result.canvas ?? this.workspace.canvasState(result)};
         result = circuitActionResult(result, args);
         if (request.tool === 'submit_circuit') this.workspace.rememberNativeLoadability?.(result);
-        if (request.tool === 'checkout_candidate') this.workspace.promoteNativeBehavior?.(result, args.candidateId);
       }
       const finalIdentity = {
         ...identity,
