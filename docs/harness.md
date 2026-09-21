@@ -155,7 +155,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 当模型尚未打开电路而调用观察工具时，Electron 会在 `NO_CIRCUIT_OPEN` 的 `context.availableFiles` 中补充当前工作区索引里的 `.circ` 相对路径、主电路名和定义摘要，并给出下一步 `open_circuit` 参数。它只提供选择信息，不替模型切换用户当前电路；索引被截断时同时标记 `indexTruncated`。
 
-`wire_candidate` 的端口引用失败会返回 `INVALID_PORT_REFERENCE`，并在组件仍能从同一次观察中定位时附上 `context.availablePorts`。这让模型可以从原生端口序号、名称、位宽和方向中修正一次调用；它不替模型猜测端口语义，也不把错误引用自动改写为另一个端口。
+`wire_candidate` 的端口引用失败会返回 `INVALID_PORT_REFERENCE`：组件存在但端口错误时附上同一次观察中的 `context.availablePorts`；组件 ID 错误时附上 `context.availableComponents`。这让模型可以从原生端口序号、名称、位宽和方向中修正一次调用，或直接选回正确的组件 ID；它不替模型猜测端口语义，也不把错误引用自动改写为另一个端口。
 
 回合初始的工作区上下文还会附带 `currentSource`：它记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。`loadability` 初始是 `unknown`，也可以携带同一 artifact SHA 上一次明确 `submit_circuit` 得到的原生加载回执；文件变更后这份回执自动失效。`behavior` 始终不会由加载性代替，文件和 revision 对齐也不等于原生可加载，更不等于功能正确。这些字段只帮助中断或长任务回到正确文件，不规定模型先观察还是先构建。
 

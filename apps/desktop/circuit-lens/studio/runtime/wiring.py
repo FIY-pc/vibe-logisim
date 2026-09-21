@@ -113,6 +113,20 @@ def invalid_endpoint(ref, components):
                 for end in component.get("ends", [])
             ],
         )
+    else:
+        available = []
+        for component_id, candidate in list(components.items())[:32]:
+            available.append({
+                "componentId": component_id,
+                "factory": candidate.get("factoryName"),
+                "label": (candidate.get("selector") or {}).get("label"),
+                "ports": [end.get("index") for end in candidate.get("ends", [])],
+            })
+        context.update(
+            availableComponents=available,
+            availableComponentCount=len(components),
+            availableComponentsTruncated=len(components) > len(available),
+        )
     return CircuitToolError(
         "INVALID_PORT_REFERENCE",
         f"连接端口不存在或不可用: {ref}",
@@ -331,17 +345,20 @@ def _wire_candidate(workbench, args, directory):
     partition = Partition()
     resolved = []
     reference_components = {identity(c): c for c in reference["focus"]["components"]}
+    available_components = {
+        component_id: reference_components[key] for component_id, key in aliases.items()
+    }
     def endpoint(ref):
         if not isinstance(ref, dict) or ref.get("component") not in aliases or type(ref.get("port")) is not int:
-            raise invalid_endpoint(ref, {})
+            raise invalid_endpoint(ref, available_components)
         c = reference_components[aliases[ref["component"]]]
         e = next((e for e in c["ends"] if e["index"] == ref["port"]), None)
         if e is None:
-            raise invalid_endpoint(ref, {ref["component"]: c})
+            raise invalid_endpoint(ref, available_components)
         try:
             port_bits(e)
         except ValueError as error:
-            raise invalid_endpoint(ref, {ref["component"]: c}) from error
+            raise invalid_endpoint(ref, available_components) from error
         return c, e
     for connection in connections:
         a, b = endpoint(connection.get("from")), endpoint(connection.get("to"))
