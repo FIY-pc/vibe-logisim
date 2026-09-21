@@ -67,16 +67,5 @@
     "/session/mode": "/run/mode",
     "/session/authority": "/run/authority"
   },
-  "x-host-tools": [
-    "open_circuit",
-    "submit_circuit"
-  ],
-  "x-host-producer-schema": "vibe-logisim.circuit-lens/v0",
-  "x-host-canonical-sources": {
-    "/capabilities/profile": "/capabilities/observationProfile",
-    "/invocation/projectId": "/workspace/id",
-    "/invocation/revisionId": "/revision/id"
-  },
-  "x-inspect-reference-rule": "For inspect_circuit with no producer schema: preserve the existing template, IDs and component order. Only omit a string components[i].reference exactly equal to the existing circuit://object? template after substituting its sole COMPONENT_ID in the componentId query parameter. IDs must use URI-unreserved ASCII characters. Any differing, null, missing or ambiguous reference stays verbatim, including a reference with a different instance scope. All other electrical facts are unchanged.",
-  "x-host-state-preserved": "workspace.currentRevisionId, workspace.savedRevisionId and sourceStatus.currentSha256 retain their own meanings as current, saved and on-disk state. All remain explicit even when equal to revision.id or revision.artifactSha256."
+  "x-inspect-reference-rule": "For inspect_circuit with no producer schema: preserve the existing template, IDs and component order. Only omit a string components[i].reference exactly equal to the existing circuit://object? template after substituting its sole COMPONENT_ID in the componentId query parameter. IDs must use URI-unreserved ASCII characters. Any differing, null, missing or ambiguous reference stays verbatim, including a reference with a different instance scope. All other electrical facts are unchanged."
 }

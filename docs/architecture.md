@@ -20,7 +20,7 @@
 
 面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；Circuit Plugin 负责电路上下文、观察、操作、原生运行及可选评测。电路运行反馈不规定模型必须遵循的工作流。
 
-长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；模型返回视图由 `electron/model-result-projection.cjs` 拥有，不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
+长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；领域观察的模型返回视图由 `electron/model-result-projection.cjs` 拥有，文件操作回执由 `electron/circuit-action-result.cjs` 拥有，二者不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
 
 `project/attribute_edits.py` 负责批量属性候选、源版本绑定、差异写入和端口/接口反馈；`CircuitObjects` 只操作原生属性 clone，与 `CircuitPalette` 共用 setter 与序列化。它不调用推进当前 revision 的人工编辑事务，也不复制组件属性白名单或启动另一个模型循环。
 

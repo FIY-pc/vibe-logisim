@@ -2,14 +2,14 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.22.0",
+  "version": "1.23.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
     {
       "type": "function",
       "name": "open_circuit",
-      "description": "Load a .circ file from the actual workspace folder into the shared canvas. Use a relative path after creating or editing it. Selecting another circuit keeps the same folder conversation.",
+      "description": "Select and load a workspace .circ file into the shared canvas using its relative path. Returns the selected file/circuit, revision and explicit save/disk state, not circuit observations or simulation proof. Selecting another file keeps the same folder conversation.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -74,7 +74,7 @@
     {
       "type": "function",
       "name": "submit_circuit",
-      "description": "Refresh the currently selected .circ from the actual workspace folder. File edits are already on disk. Native loading alone is not a correctness proof.",
+      "description": "Refresh the selected workspace .circ after direct file edits, which are already on disk. Returns the selected file/circuit, revision and explicit save/disk state; null file means no circuit is selected. Loading is not a correctness proof.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -91,7 +91,7 @@
     {
       "type": "function",
       "name": "checkout_candidate",
-      "description": "Write an optional generated candidate into the currently selected .circ file, then refresh the shared canvas. This directly changes the user file; file history supports review and undo.",
+      "description": "Write an optional candidate into the selected .circ and refresh the shared canvas. Returns the candidate ID, selected file/circuit, revision and explicit save/disk state. The written file is already selected; no extra open is needed. Directly changes the user file; file history supports review and undo. Loading is not a correctness proof.",
       "inputSchema": {
         "type": "object",
         "properties": {

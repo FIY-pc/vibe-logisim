@@ -10,10 +10,8 @@ const {isDeepStrictEqual} = require('node:util');
 // Identifies the checked-in contract, not a field added to each model response.
 const MODEL_OUTPUT_SCHEMA = 'vibe-logisim.canonical-model-view/v1';
 const RESULT_SCHEMA = 'vibe-logisim.circuit-plugin.result/v1';
-const SESSION_SCHEMA = 'vibe-logisim.circuit-lens/v0';
 
 const BOUND_TOOLS = new Set(['trace_circuit', 'evaluate_circuit', 'render_circuit']);
-const HOST_TOOLS = new Set(['open_circuit', 'submit_circuit']);
 
 // Paths are fixed JSON Pointers, never supplied by a tool or user. Sources do
 // not overlap destinations; the canonical value is always directly available.
@@ -37,13 +35,6 @@ const BOUND_DUPLICATES = [
   ['/session/mode', '/run/mode'],
   ['/session/authority', '/run/authority'],
 ];
-const HOST_DUPLICATES = [
-  ['/capabilities/profile', '/capabilities/observationProfile'],
-  ['/invocation/projectId', '/workspace/id'],
-  ['/invocation/revisionId', '/revision/id'],
-];
-// Save state and disk identity have independent meanings, even when their
-// values equal revision.id/artifactSha256. Keep all three host state fields.
 
 function at(value, pointer) {
   for (const key of pointer.slice(1).split('/')) {
@@ -66,7 +57,6 @@ function projectModelResult(result) {
   const tool = result.invocation?.tool;
   let rules;
   if (result.schema === RESULT_SCHEMA && BOUND_TOOLS.has(tool)) rules = BOUND_DUPLICATES;
-  else if (result.schema === SESSION_SCHEMA && HOST_TOOLS.has(tool)) rules = HOST_DUPLICATES;
   else if (!Object.hasOwn(result, 'schema') && tool === 'inspect_circuit') return projectInspection(result);
   else return result;
 

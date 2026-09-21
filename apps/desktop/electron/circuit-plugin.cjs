@@ -2,6 +2,7 @@
 const {CircuitToolRegistry} = require('./circuit-tools.cjs');
 const {harnessResultEvent} = require('./harness-result.cjs');
 const {splitModelContent} = require('./model-tool-output.cjs');
+const {circuitActionResult} = require('./circuit-action-result.cjs');
 
 // Owns only domain tool execution. Thread admission, stop, reconnect and the
 // model loop remain in CodexBackend. All tools share the selected document, so
@@ -72,7 +73,10 @@ class CircuitPlugin {
       if (request.tool === 'simulate_circuit' && result.vectorsFile && args.vectorsFile !== undefined) {
         result = {...result, vectorsFile: {...result.vectorsFile, path: args.vectorsFile}};
       }
-      if (tool.owner === 'host') scope.updateBinding(result);
+      if (tool.owner === 'host') {
+        scope.updateBinding(result);
+        result = circuitActionResult(result, args);
+      }
       const finalIdentity = {
         ...identity,
         projectId: scope.pending.projectId,

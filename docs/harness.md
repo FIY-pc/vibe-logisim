@@ -63,6 +63,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 模型传输出口由 `electron/model-result-projection.cjs` 提供规范视图：已知 metadata 仅在整值严格相等时保留一个规范位置；`inspect` 的组件链接仅在与既有模板精确一致时省略逐组件副本。观察、未知位、错误、新字段、保存/磁盘状态及图片不变；UI 和历史继续使用原始对象。不向模型发送解码协议，也不截断电路信息。具体规则及同一原始对象的测量见 [010](../experiments/010-model-efficiency/README.md)。
 
+1.23 起，`open_circuit`、`submit_circuit`、`checkout_candidate` 的结果由 `electron/circuit-action-result.cjs` 单独定义为 `vibe-logisim.circuit-action/v1`：文件相对路径、当前电路、可用电路名、工程/版本/文件摘要、保存状态、磁盘状态、连接索引可用性，以及写回时的候选 ID。`file:null` 表示没有选中电路；加载、索引可用与保存均不代表功能验证通过。先用完整 session 更新宿主绑定，再生成回执；UI/历史仍使用完整 session。旧 UI session 的模型去重规则已删除，电路观察继续由观察工具提供。实际输出与交付等待的边界见 [034](../experiments/034-host-action-receipts/README.md)。
+
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
 
 1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；[返回类型验收](../experiments/012-tool-constraints/RESULT-TYPE.md)证明传输与字段解析。[020 真实模型对照](../experiments/020-result-contract/README.md)中有/无说明均完成同一只读验证任务、完整覆盖且只穷举一遍；没有观察到减少重跑，不将单次耗时差当因果收益。
