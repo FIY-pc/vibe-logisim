@@ -18,29 +18,22 @@ export class AgentOutputProjection {
 
   activity({id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null}={}) {
     if(id==null || id==='')return null;
-    const key=String(id), retryKey=String(activityKey||'');
+    const key=String(id);
     let item=this.items.get(key);
     // Transport completion says the tool returned, not that its observations
     // matched. Once present, keep that call's actual result on the same row.
     if(item?.resultStatus && !resultStatus)return null;
-    const priorFailed=!resultStatus && status==='completed' && retryKey
-      ? [...this.order].map(id=>this.items.get(id)).find(candidate=>candidate && candidate.id!==key
-        && !candidate.resultStatus && candidate.status==='failed' && candidate.activityKey===retryKey)
-      : null;
     if(!item) {
-      item={id:key,label:'正在处理',status:'running',kind:'tool',detail:null,activityKey:null,recovered:false};
+      item={id:key,label:'正在处理',status:'running',kind:'tool',detail:null,activityKey:null};
       this.items.set(key,item);this.order.push(key);
     }
-    const recovered=!resultStatus && !item.resultStatus && item.status==='failed' && status==='completed' && item.activityKey===retryKey;
     item.label=String(label||'正在处理').replace(/\s+/g,' ').trim();
     item.status=status;
     item.kind=kind||'tool';
     item.detail=detail==null?item.detail:String(detail);
     if(activityKey)item.activityKey=String(activityKey);
-    if(resultStatus){item.resultStatus=resultStatus;item.recovered=false;}
-    if(recovered)item.recovered=true;
-    if(priorFailed)priorFailed.recovered=true;
-    return {item:{...item},priorFailed:priorFailed?{...priorFailed}:null};
+    if(resultStatus)item.resultStatus=resultStatus;
+    return {item:{...item}};
   }
 
   finish(status='completed') { this.status=status; }
@@ -53,8 +46,8 @@ export class AgentOutputProjection {
     return null;
   }
 
-  unresolvedFailureCount() {
-    return [...this.items.values()].filter(item=>!item.resultStatus&&item.status==='failed'&&!item.recovered).length;
+  failedCallCount() {
+    return [...this.items.values()].filter(item=>!item.resultStatus&&item.status==='failed').length;
   }
 
   unresolvedWarningCount() {
@@ -65,11 +58,11 @@ export class AgentOutputProjection {
     const running=this.runningItem();
     if(this.status==='running')return running?`正在${running.label}…`:fallback||'正在整理结果';
     if(this.status==='completed') {
-      const count=this.items.size,failed=this.unresolvedFailureCount(),warnings=this.unresolvedWarningCount();
+      const count=this.items.size,failed=this.failedCallCount(),warnings=this.unresolvedWarningCount();
       const mismatches=[...this.items.values()].filter(item=>item.resultStatus==='failed').length;
-      if(failed)return `回答完成 · ${failed} 个步骤未完成 · 查看工作过程`;
       if(mismatches)return `回答完成 · ${mismatches} 个运行结果不匹配 · 查看工作过程`;
       if(warnings)return `回答完成 · ${warnings} 个结果待确认 · 查看工作过程`;
+      if(failed)return `回答完成 · 过程中 ${failed} 次调用失败 · 查看工作过程`;
       return count?`已完成 · ${count} 个工作步骤 · 查看工作过程`:'已完成 · 查看工作过程';
     }
     if(this.status==='interrupted')return '已停止 · 查看工作过程';

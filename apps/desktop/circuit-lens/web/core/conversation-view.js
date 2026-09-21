@@ -186,18 +186,9 @@ export class ConversationView {
     node.dataset.status=item.status;
     if(item.resultStatus)node.dataset.resultStatus=item.resultStatus;
     if(item.activityKey)node.dataset.activityKey=item.activityKey;
-    if(item.recovered)node.dataset.recovered='true';
-    if(projected.priorFailed) {
-      const priorNode=this.activities.get(projected.priorFailed.id);
-      if(priorNode) {
-        priorNode.dataset.recovered='true';
-        priorNode.querySelector('.agent-activity-status').textContent='已恢复';
-      }
-    }
-    const recovered=item.recovered;
     const text=item.label;
     node.querySelector('.agent-activity-label').textContent=kind==='reasoning'?'分析电路与问题':text;
-    node.querySelector('.agent-activity-status').textContent=item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?(recovered?'已恢复':'未完成'):'完成';
+    node.querySelector('.agent-activity-status').textContent=item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?'调用失败':'完成';
     if(item.detail) {
       node.title=item.detail;
       if(item.status==='failed' || item.status==='warning') {

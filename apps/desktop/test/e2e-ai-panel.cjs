@@ -96,7 +96,8 @@ fs.mkdirSync(out,{recursive:true});
     await emit({type:'activity',itemId:'panel-tool-retry',kind:'tool',activityKey:'circuit:inspect_circuit',status:'running',label:'查看电路'});
     await emit({type:'activity',itemId:'panel-tool-retry',kind:'tool',activityKey:'circuit:inspect_circuit',status:'completed',label:'查看电路'});
     await page.locator('.agent-work').last().locator('summary').click();
-    await page.locator('.agent-activity[data-recovered="true"]').waitFor();
+    await page.locator('.agent-activity[data-status="failed"] .agent-activity-status').filter({hasText:'调用失败'}).waitFor();
+    assert.equal(await page.locator('.agent-activity[data-recovered="true"]').count(),0);
     assert.equal(await page.locator('.agent-activity-detail').textContent(),'找不到输入引脚 IR1；请先读取当前接口。');
     const markdown='**界面验收回放，不是模型新回答。**\n\n### 先看控制关系\n\n1. `RST=1` 时清零。\n2. `FETCH.EN=0` 时保持原值。\n\n> 输入改变不等于寄存器已经写入。\n\n| 信号 | 写入后 | 暂停后 |\n| --- | --- | --- |\n| IF.PC | 0x100 | 0x200 |\n| DECODE.PC | 0x100 | 0x100 |\n\n```text\nRST=0\nFETCH.EN=0\n```\n\n[参考说明](https://cburch.com/logisim/docs/2.7/en/html/libs/mem/register.html)\n\n<img src="https://invalid.example/never-request" onerror="window.panelInjected=true"><a href="javascript:alert(1)">危险链接</a>';
     await emit({type:'assistant-started',itemId:'panel-answer',phase:'final_answer',text:''});
@@ -138,7 +139,7 @@ fs.mkdirSync(out,{recursive:true});
     const completedWork=page.locator('.agent-work[data-status="completed"]');
     await waitUntil(()=>interruptedWork.count().then(n=>n===1)&&completedWork.count().then(n=>n===1));
     assert.match(await interruptedWork.locator('summary span').textContent(),/已停止/);
-    assert.match(await completedWork.locator('summary span').textContent(),/回答完成 · 1 个步骤未完成/);
+    assert.match(await completedWork.locator('summary span').textContent(),/回答完成 · 过程中 1 次调用失败/);
     assert.equal(await completedWork.locator('.agent-activity[data-status="failed"]').count(),1);
     assert.equal(await page.locator('[data-item-id="panel-second-answer"]').textContent().then(text=>text.includes('第二轮回放回答')),true);
 
