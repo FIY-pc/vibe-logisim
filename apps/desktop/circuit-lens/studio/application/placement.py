@@ -138,6 +138,18 @@ class PlacementService:
                     context={'tool': body.get('tool'), 'matches': matches},
                 )
             body = {**body, 'library': matches[0]['library']}
+        elif template and body.get('library'):
+            # The native project stores numeric library IDs, while the same
+            # catalog exposes human-readable descriptions such as #Wiring.
+            # Accept either exact project-local spelling without guessing
+            # across projects, and keep the returned binding canonical.
+            library = body['library']
+            libraries = [lib for lib in self.w.raw_project.get('libraries', [])
+                         if isinstance(lib, dict)]
+            alias_matches = [lib.get('name') for lib in libraries
+                             if lib.get('desc') == library and isinstance(lib.get('name'), str)]
+            if len(alias_matches) == 1:
+                body = {**body, 'library': alias_matches[0]}
         result = self.query('template' if template else 'catalog', body, include_images=False, strict_attributes=True)
         result.update(kind='template' if template else 'catalog', authority='exact-runtime',
                       libraryScope='Library IDs belong to this project only; empty library means a subcircuit in this file.')
