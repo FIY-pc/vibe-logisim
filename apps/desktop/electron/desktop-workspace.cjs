@@ -11,7 +11,8 @@ const MAX_NATIVE_RECEIPTS = 8;
 function sameReceipt(a, b, {includeRun = false} = {}) {
   if (!a || !b || a.projectId !== b.projectId || a.file !== b.file
       || a.artifactSha256 !== b.artifactSha256
-      || a.value?.circuit !== b.value?.circuit) return false;
+      || a.value?.circuit !== b.value?.circuit
+      || a.value?.runtimeProfileId !== b.value?.runtimeProfileId) return false;
   if (!includeRun) return true;
   return a.value?.tool === b.value?.tool
     && a.value?.stimulusSha256 === b.value?.stimulusSha256
@@ -53,7 +54,14 @@ class DesktopWorkspace extends EventEmitter {
         || typeof file !== 'string'
         || !/^project-[a-f0-9]{16}$/.test(binding?.projectId || '')
         || !/^[a-f0-9]{64}$/.test(binding?.artifactSha256 || '')) return;
-    const value = {status, tool, circuit: binding.circuit || null, runId: run?.id || null,
+    const execution = result?.result?.execution || result?.execution || {};
+    const value = {status, tool, circuit: binding.circuit || null,
+      candidateId: binding.candidateId || null,
+      revisionId: binding.revisionId || null,
+      runtimeProfileId: binding.runtimeProfileId || run?.runtimeProfileId || result?.runtimeProfileId || null,
+      runtimeJarSha256: execution.runtimeJarSha256 || null,
+      runtimeVersion: execution.runtimeVersion || null,
+      runId: run?.id || null,
       kind: run?.kind || null, authority: run?.authority || null,
       stimulusSha256: run?.stimulusSha256 || result?.result?.stimulusSha256 || null,
       expectationSha256: run?.expectationSha256 || result?.evaluation?.spec?.expectationSha256
