@@ -155,6 +155,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 当模型尚未打开电路而调用观察工具时，Electron 会在 `NO_CIRCUIT_OPEN` 的 `context.availableFiles` 中补充当前工作区索引里的 `.circ` 相对路径、主电路名和定义摘要，并给出下一步 `open_circuit` 参数。它只提供选择信息，不替模型切换用户当前电路；索引被截断时同时标记 `indexTruncated`。
 
+回合初始的工作区上下文还会附带 `currentSource`：它记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。其中 `loadability` 与 `behavior` 初始都是 `unknown`；文件和 revision 对齐不等于原生可加载，更不等于功能正确。这些字段只帮助中断或长任务回到正确文件，不规定模型先观察还是先构建。
+
 候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 [023](../experiments/023-simultaneous-layout/README.md)；反馈可恢复不等于已证明模型耗时改善。
 
 1.9.4 的原生加载共用 `NativeCircuitLoader`，在 Logisim WireRepair 前拒绝非水平/垂直导线，给出具体定义、序号及端点。它不自动换路线，不把坐标对齐规则扩大成网格/非零长度限制；直接编辑文件仍受支持。常驻 worker 的意外结束附退出码及有界 stderr，具体 observer 错误会传到渲染和交互启动。两种 JAR 的兼容、拒绝后的正常处理及源/结构不变证据见 [017](../experiments/017-native-wire-validation/README.md)。这是执行边界的故障反馈，不要求提交前先验证，也不证明功能正确。

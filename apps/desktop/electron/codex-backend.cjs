@@ -595,7 +595,13 @@ class CodexBackend extends EventEmitter {
         "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
         "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
         ...momentContext, ...materialContext(context),
-        "vibe-logisim.workspace": {value: JSON.stringify({cwd, file:activeFile, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
+        "vibe-logisim.workspace": {value: JSON.stringify({
+          cwd,
+          file:activeFile,
+          folderId:context.folder?.id,
+          changeMode:"direct",
+          currentSource: workspaceIndex?.currentSource || null,
+        }), kind:"application"},
         ...(workspaceIndex ? {"vibe-logisim.workspace-index": {value: JSON.stringify(workspaceIndex), kind:"untrusted"}} : {}),
       };
     };
