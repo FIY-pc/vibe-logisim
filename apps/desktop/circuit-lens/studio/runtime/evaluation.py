@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 from studio.domain.plugin import binding_for, result_envelope
 from studio.domain.evaluation import compare_sample
 
@@ -38,6 +41,10 @@ class EvaluationService:
                     case_status = 'unknown'
                 cases.append({'index': index, 'status': case_status, 'expected': row.get('expected'), 'actual': row.get('outputs'),
                               **({'reason': row['reason']} if row.get('reason') else {})})
+            expectation = {'mode': mode, 'vectors': [
+                {'inputs': vector.get('inputs'), 'expected': vector.get('expected')}
+                for vector in vectors
+            ]}
         else:
             expected_rows = args.get('expectedRows')
             if not isinstance(expected_rows, list) or not expected_rows:
@@ -58,6 +65,11 @@ class EvaluationService:
                                                      oscillating=bool(actual_row and actual_row.get('oscillating')))
                 cases.append({'tick': expected['tick'], 'status': case_status, 'expected': expected['values'], 'actual': actual_values,
                               **({'reason': reason} if reason else {})})
+            expectation = {'mode': mode, 'expectedRows': expected_rows}
+
+        expectation_sha = hashlib.sha256(json.dumps(
+            expectation, ensure_ascii=False, sort_keys=True, separators=(',', ':')
+        ).encode('utf-8')).hexdigest()
 
         failed = [case for case in cases if case['status'] == 'failed']
         unknown = [case for case in cases if case['status'] == 'unknown']
@@ -72,6 +84,7 @@ class EvaluationService:
             'spec': {
                 'mode': mode,
                 'stimulusSha256': report.get('stimulusSha256'),
+                'expectationSha256': expectation_sha,
             },
         }
         artifact_sha = report.get('artifactSha256') or self.runtime.workspace.artifact_sha256
@@ -82,6 +95,7 @@ class EvaluationService:
             'checkedCount': len(cases) - len(unknown),
             'failureCount': len(failed),
             'unknownCount': len(unknown),
+            'expectationSha256': expectation_sha,
             'firstFailure': failed[0] if failed else None,
             'firstUnknown': unknown[0] if unknown else None,
             'note': '评测只比较本次显式提供的测试规格；它不声明未覆盖的行为。',
@@ -95,6 +109,7 @@ class EvaluationService:
             'authority': report.get('authority', 'Logisim native clock and propagation'),
             'runtimeProfileId': report.get('runtimeProfileId'),
             'stimulusSha256': report.get('stimulusSha256'),
+            'expectationSha256': expectation_sha,
             'rowCount': len(report.get('rows', [])),
         }
         envelope = result_envelope(binding=binding, run=run, observation=report, feedback=feedback)

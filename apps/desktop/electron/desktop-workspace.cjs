@@ -40,7 +40,9 @@ class DesktopWorkspace extends EventEmitter {
         || !/^[a-f0-9]{64}$/.test(binding?.artifactSha256 || '')) return;
     const value = {status, tool, circuit: binding.circuit || null, runId: run?.id || null,
       kind: run?.kind || null, authority: run?.authority || null,
-      stimulusSha256: run?.stimulusSha256 || result?.result?.stimulusSha256 || null};
+      stimulusSha256: run?.stimulusSha256 || result?.result?.stimulusSha256 || null,
+      expectationSha256: run?.expectationSha256 || result?.evaluation?.spec?.expectationSha256
+        || feedback.expectationSha256 || null};
     for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
       if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
     }

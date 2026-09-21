@@ -133,6 +133,7 @@ runtimeProfileId
 ```text
 run.id
 stimulusSha256
+expectationSha256  # 显式评测期望集合的摘要；普通观察可为空
 authority
 runtimeJarSha256
 runtimeVersion
