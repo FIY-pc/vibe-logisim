@@ -36,7 +36,6 @@ class DesktopWorkspace extends EventEmitter {
     const status = feedback?.status;
     if (!allowedTools.has(tool) || !['passed', 'failed', 'unknown', 'observed'].includes(status)
         || typeof file !== 'string'
-        || binding?.candidateId
         || !/^project-[a-f0-9]{16}$/.test(binding?.projectId || '')
         || !/^[a-f0-9]{64}$/.test(binding?.artifactSha256 || '')) return;
     const value = {status, tool, circuit: binding.circuit || null, runId: run?.id || null,
@@ -45,7 +44,20 @@ class DesktopWorkspace extends EventEmitter {
     for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
       if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
     }
-    this.lastNativeBehavior = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
+    this.lastNativeBehavior = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256,
+      candidateId:binding.candidateId || null, value};
+  }
+  promoteNativeBehavior(result, candidateId) {
+    const binding = result?.binding;
+    const current = this.lastNativeBehavior;
+    if (!binding?.artifactSha256 || !candidateId) return;
+    if (current?.candidateId === candidateId && current.artifactSha256 === binding.artifactSha256
+        && current.projectId === binding.projectId) {
+      this.lastNativeBehavior = {...current, file:result.file || this.folder.current?.activeFile || current.file,
+        candidateId:null};
+      return;
+    }
+    if (current && current.artifactSha256 !== binding.artifactSha256) this.lastNativeBehavior = null;
   }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {

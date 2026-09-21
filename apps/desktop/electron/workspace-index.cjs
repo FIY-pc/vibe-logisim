@@ -101,6 +101,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
   const rememberedBehavior = activeFile
     && sourceAligned
     && nativeBehavior?.file === activeFile
+    && !nativeBehavior?.candidateId
     && nativeBehavior?.projectId === workspace.id
     && nativeBehavior?.artifactSha256
     && nativeBehavior.artifactSha256 === revision?.artifactSha256
