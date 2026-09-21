@@ -38,6 +38,14 @@ class InspectionService:
             project = {**project, 'candidateId': args['candidateId'], 'mainCircuit': root.find('main').get('name'), 'activeCircuit': None, 'circuits': structure}
         if not name:
             return {'revisionId': self.workspace.revision_id, 'project': project, 'authority': 'source-structure', 'countScope': 'Project counts describe serialized components and wire segments, not electrical nets. Native loading may split or normalize wire segments; inspect a named circuit for its loaded counts.', 'resources': [{k: r[k] for k in ('id', 'name', 'sha256')} for r in self.workspace.package.resources], 'buildSupport': 'General construction: edit the selected .circ file with files/scripts, then submit_circuit to refresh the shared canvas. Direct edits are already on disk; refresh does not create a candidate or prove behavior. Supports existing implementation repair, removal, reconnection, new combinational/sequential definitions and hierarchy. Preserve frozen libraries/source version. Optional candidates: build_candidate synthesizes Boolean expressions into empty one-bit pin-only definitions; wire_candidate can remove explicitly selected wires, add native parts, and connect full ports (including buses) in one definition; removals require the exact inspection artifact hash. edit_candidate changes existing component attributes through native setters, reporting port and interface changes without rewriting wire paths; checkout_candidate writes a chosen candidate into the selected file.'}
+        available = [item.get('name') for item in project.get('circuits', []) if item.get('name')]
+        if name not in available:
+            raise CircuitToolError(
+                'UNKNOWN_CIRCUIT',
+                f'找不到电路定义：{name}。',
+                hint='使用 context.availableCircuits 中的完整定义名重新观察；不要根据文件名猜测电路名。',
+                context={'requestedCircuit': name, 'availableCircuits': available},
+            )
         if directory:
             document = self.workspace.observer.run_full(directory / 'artifact.circ', name)
             view = self.workspace._transform_exact(document, self.workspace.observer.profile())
