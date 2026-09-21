@@ -19,8 +19,8 @@ def directory_options(args):
     options = args['componentDirectory']
     if (not isinstance(options, dict) or set(options) - {'maxBytes', 'cursor'}
             or not isinstance(args.get('circuit'), str) or not args['circuit']
-            or any(key in args for key in ('componentIds', 'includeNets', 'netFormat', 'includeWires', 'wireOffset', 'wireLimit'))):
-        raise CircuitToolError('INVALID_ARGUMENT', '组件目录需要 circuit，且不能与详情或导线选项混用。',
+            or any(key in args for key in ('portConnections', 'componentIds', 'includeNets', 'netFormat', 'includeWires', 'wireOffset', 'wireLimit'))):
+        raise CircuitToolError('INVALID_ARGUMENT', '组件目录需要 circuit，且不能与端口连接、详情或导线选项混用。',
                                hint='使用 componentDirectory: {maxBytes?, cursor?}；详情另用 componentIds。')
     budget = options.get('maxBytes', 24000)
     cursor = options.get('cursor')

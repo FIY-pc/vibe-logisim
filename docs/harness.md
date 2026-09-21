@@ -69,7 +69,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.25 起 `open_circuit({path,circuit?})` 可以让人接手指定子电路定义；省略 circuit 保留当前图面。回执的 `activeCircuit` 只来自同工程/修订的 renderer 确认，`canvas.status` 区分 shown、loading、superseded、failed、unknown、unavailable，不再从 Studio 的旧选区猜测。后续人工操作优先；不改文件 main、构造选区或切换会话。原始课设副本的生产插件→真实 Electron 交接已核对，模型由机械调用方代替，未声称模型自主采用。鼠标切模块、延迟请求让位、源文件/修订/会话保持见 `apps/desktop/test/e2e-canvas-handoff.cjs`。
 
-随后原始课设真实回合实际采用指定子电路open，但20分钟内无final且未改文件，不能称课设完成。[036](../experiments/036-single-cycle-model/README.md)保留结果及实际失败请求。未打开电路的inspect返回 `NO_CIRCUIT_OPEN`；trace的 `domain/trace_targets.py` 用同次原生观察统一报告无效观察名称/元件/端口、reset和ROM目标，返回真实元件及可用端口，不推断正确接法。它复用现有结构化错误出口，没有新工具或强制步骤。
+随后原始课设真实回合实际采用指定子电路open，但20分钟内无final且未改文件，不能称课设完成。[036](../experiments/036-single-cycle-model/README.md)保留结果及实际失败请求。未打开电路的inspect返回 `NO_CIRCUIT_OPEN`；trace的 `domain/trace_targets.py` 用同次原生观察统一报告无效观察名称/元件/端口、reset和ROM目标，返回真实元件及可用端口，不推断正确接法。原生输入检查也按当前引脚真实位宽报告向量索引/事件tick、输入名、提供值和允许范围。1.26 的 `inspect_circuit.portConnections` 为指定端口提供同一定义内原生共享位网的对端、端点元数据、坐标和逐 lane 位映射，按完整连接分页；它不穿过逻辑器件推断信号传播，不把方向当作驱动冲突结论。上述能力复用现有观察身份和结构化错误出口，没有新工具或强制步骤。
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
 

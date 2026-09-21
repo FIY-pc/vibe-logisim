@@ -135,7 +135,7 @@ class NativeCircuitRuntime:
         # NativeOperations checks its runtime/artifact identity independently.
         for start in range(0, len(vectors), 1024):
             batch = vectors[start:start + 1024]
-            request = ET.Element('simulate', circuit=name)
+            request = ET.Element('simulate', circuit=name, vectorOffset=str(start))
             for vector in batch:
                 row = ET.SubElement(request, 'vector')
                 inputs = self._values(vector.get('inputs', {}), '输入')

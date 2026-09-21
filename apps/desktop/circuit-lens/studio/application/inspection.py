@@ -8,6 +8,7 @@ import zipfile
 
 from studio.domain.connectivity_feedback import connectivity_feedback
 from studio.domain.component_directory import component_directory, directory_options
+from studio.domain.port_connections import connection_options, port_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.net_groups import group_bit_nets
 
@@ -20,7 +21,8 @@ class InspectionService:
         if self.workspace.raw_project is None:
             raise CircuitToolError('NO_CIRCUIT_OPEN', '当前工作区尚未打开电路文件。',
                                    hint='先读取工作区文件列表，再用 open_circuit({path: 工作区内的 .circ 相对路径}) 打开文件。')
-        options = directory_options(args)
+        directory_opts = directory_options(args)
+        connection_opts = connection_options(args)
         net_format = args.get('netFormat', 'groups')
         if net_format not in ('groups', 'bits') or ('netFormat' in args and not args.get('includeNets')):
             raise CircuitToolError('INVALID_ARGUMENT', 'netFormat 需要 includeNets=true，可选 groups 或 bits。')
@@ -42,17 +44,22 @@ class InspectionService:
         else:
             view = self.workspace.circuit_view(name)
         circuit = view['circuit']
-        if options is not None:
+        if directory_opts is not None or connection_opts is not None:
             artifact_sha = hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() if directory else self.workspace.artifact_sha256
             observed_sha = document.get('revision', {}).get('artifactSha256') if directory else view.get('revision', {}).get('artifactSha256')
             if observed_sha != artifact_sha or circuit['name'] != name:
                 raise CircuitToolError('STALE_COMPONENT_OBSERVATION', '实际观察与请求的电路文件不一致。',
-                                       hint='重新读取当前电路；不要续接旧目录。')
-            return component_directory(view, identity={
+                                       hint='重新读取当前电路；不要续接旧页。')
+            identity = {
                 'projectId': self.workspace.history.record['id'],
                 'revisionId': self.workspace.revision_id, 'artifactSha256': artifact_sha,
                 'candidateId': args.get('candidateId'), 'circuit': name,
-            }, options=options, response_metadata=response_metadata)
+            }
+            if connection_opts is not None:
+                return port_connections(view, identity=identity, options=connection_opts,
+                                        response_metadata=response_metadata)
+            return component_directory(view, identity=identity, options=directory_opts,
+                                       response_metadata=response_metadata)
         ids = args.get('componentIds') or []
         components = circuit['components']
         if ids:

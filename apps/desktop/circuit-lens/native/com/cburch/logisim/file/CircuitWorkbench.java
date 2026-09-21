@@ -37,6 +37,24 @@ public final class CircuitWorkbench {
     }
     private static String label(Component c) { return c.getAttributeSet().getValue(StdAttr.LABEL); }
     private static boolean input(Component c) { return Pin.FACTORY.isInputPin(Instance.getInstanceFor(c)); }
+    private static IllegalArgumentException inputRangeError(Component pin, String raw, String context, int bits, long maximum) {
+        return new IllegalArgumentException(context + " input \"" + label(pin) + "\" value " + raw
+            + " is outside its native " + bits + "-bit unsigned range 0.." + maximum
+            + "; correct the stimulus value or the circuit pin width.");
+    }
+    private static Value inputValue(Component pin, Element supplied, String context) {
+        BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
+        int bits = width.getWidth();
+        if (bits < 1 || bits > 32)
+            throw new IllegalArgumentException(context + " input \"" + label(pin) + "\" has unsupported native width " + bits);
+        long maximum = (1L << bits) - 1;
+        String raw = supplied.getAttribute("value");
+        long number;
+        try { number = Long.parseUnsignedLong(raw); }
+        catch (NumberFormatException invalid) { throw inputRangeError(pin, raw, context, bits, maximum); }
+        if (number < 0 || number > maximum) throw inputRangeError(pin, raw, context, bits, maximum);
+        return Value.createKnown(width, (int) number);
+    }
     private static void build(LogisimFile file, Element request) throws Exception {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
@@ -98,6 +116,7 @@ public final class CircuitWorkbench {
         Project project = new Project(file);
         try {
             NodeList vectors = request.getElementsByTagName("vector");
+            int offset = request.hasAttribute("vectorOffset") ? Integer.parseInt(request.getAttribute("vectorOffset")) : 0;
             for (int i = 0; i < vectors.getLength(); i++) {
                 Element vector = (Element) vectors.item(i);
                 CircuitState state = new CircuitState(project, circuit);
@@ -107,11 +126,7 @@ public final class CircuitWorkbench {
                     Element value = (Element) values.item(j);
                     Component pin = pins.get(value.getAttribute("name"));
                     if (pin == null || !input(pin) || !supplied.add(label(pin))) throw new IllegalArgumentException("Invalid input");
-                    BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
-                    long number = Long.parseUnsignedLong(value.getAttribute("value"));
-                    if (width.getWidth() > 32 || (width.getWidth() < 32 && number >= (1L << width.getWidth())) || number > 0xffffffffL)
-                        throw new IllegalArgumentException("Input value out of range");
-                    Pin.FACTORY.setValue(state.getInstanceState(pin), Value.createKnown(width, (int) number));
+                    Pin.FACTORY.setValue(state.getInstanceState(pin), inputValue(pin, value, "vectors[" + (offset + i) + "].inputs"));
                 }
                 for (Component pin : pins.values()) if (input(pin) && !supplied.contains(label(pin)))
                     throw new IllegalArgumentException("Missing input " + label(pin));
@@ -185,11 +200,7 @@ public final class CircuitWorkbench {
             inputPins.put(label(pin), pin);
             Element supplied = inputs.remove(label(pin));
             if (supplied == null) throw new IllegalArgumentException("Missing input " + label(pin));
-            BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
-            long number = Long.parseUnsignedLong(supplied.getAttribute("value"));
-            if (width.getWidth() > 32 || number > 0xffffffffL || (width.getWidth() < 32 && number >= (1L << width.getWidth())))
-                throw new IllegalArgumentException("Input out of range");
-            Pin.FACTORY.setValue(state.getInstanceState(pin), Value.createKnown(width, (int) number));
+            Pin.FACTORY.setValue(state.getInstanceState(pin), inputValue(pin, supplied, "inputs"));
         }
         if (!inputs.isEmpty()) throw new IllegalArgumentException("Unknown input");
         NodeList watches = request.getElementsByTagName("watch");
@@ -221,11 +232,8 @@ public final class CircuitWorkbench {
             if (tick < 0 || tick > ticks) continue;
             Component pin = inputPins.get(event.getAttribute("name"));
             if (pin == null) throw new IllegalArgumentException("Stimulus target is not an input Pin " + event.getAttribute("name"));
-            BitWidth width = pin.getAttributeSet().getValue(StdAttr.WIDTH);
-            long number = Long.parseUnsignedLong(event.getAttribute("value"));
-            if (width.getWidth() > 32 || number > 0xffffffffL || (width.getWidth() < 32 && number >= (1L << width.getWidth()))) throw new IllegalArgumentException("Input event out of range");
             inputEventsByTick.computeIfAbsent(tick, ignored -> new ArrayList<>())
-                .add(new TraceEvent(pin, Value.createKnown(width, (int) number)));
+                .add(new TraceEvent(pin, inputValue(pin, event, "input event at tick " + tick)));
         }
         Map<Integer, List<TraceEvent>> buttonEventsByTick = new HashMap<>();
         NodeList buttonEvents = request.getElementsByTagName("button-event");
