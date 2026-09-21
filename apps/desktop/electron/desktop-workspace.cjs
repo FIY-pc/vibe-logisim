@@ -21,32 +21,43 @@ function sameReceipt(a, b, {includeRun = false} = {}) {
 }
 
 function behaviorReceiptFromObservation(report, file) {
-  const binding = report?.binding || {};
-  const feedback = report?.feedback || {};
-  const run = report?.run || {};
-  const execution = report?.execution || {};
+  const persistedEnvelope = report?.run?.kind === 'verification' && report?.result && typeof report.result === 'object';
+  const source = persistedEnvelope
+    ? {...report.result, binding:report.binding, feedback:report.feedback, run:report.run, id:report.run.id}
+    : report;
+  const binding = source?.binding || {};
+  const feedback = source?.feedback || {};
+  const run = source?.run || {};
+  const execution = source?.execution || {};
   const status = feedback.status;
   if (!BEHAVIOR_STATUSES.has(status) || typeof file !== 'string'
       || !/^project-[a-f0-9]{16}$/.test(binding.projectId || '')
       || !/^[a-f0-9]{64}$/.test(binding.artifactSha256 || '')) return null;
-  const tool = report.tool || (report.kind === 'clock-trace' ? 'trace_circuit' : 'simulate_circuit');
+  const tool = source.tool || (run.kind === 'verification'
+    ? 'run_verification'
+    : source.kind === 'clock-trace' ? 'trace_circuit' : 'simulate_circuit');
   const value = {
     status,
     tool,
-    circuit: binding.circuit || report.circuit || null,
-    candidateId: binding.candidateId || report.candidateId || null,
-    revisionId: binding.revisionId || report.revisionId || null,
-    runtimeProfileId: binding.runtimeProfileId || report.runtimeProfileId || run.runtimeProfileId || null,
+    circuit: binding.circuit || source.circuit || null,
+    candidateId: binding.candidateId || source.candidateId || null,
+    revisionId: binding.revisionId || source.revisionId || null,
+    runtimeProfileId: binding.runtimeProfileId || source.runtimeProfileId || run.runtimeProfileId || null,
     runtimeJarSha256: execution.runtimeJarSha256 || null,
     runtimeVersion: execution.runtimeVersion || null,
-    runId: run.id || report.runId || null,
-    kind: run.kind || report.kind || null,
-    authority: run.authority || report.authority || null,
-    stimulusSha256: run.stimulusSha256 || report.stimulusSha256 || null,
+    runId: run.id || source.runId || null,
+    kind: run.kind || source.kind || null,
+    authority: run.authority || source.authority || null,
+    stimulusSha256: run.stimulusSha256 || source.stimulusSha256 || null,
     expectationSha256: run.expectationSha256 || feedback.expectationSha256 || null,
     persisted: true,
     observationId: report.id || null,
   };
+  if (tool === 'run_verification') {
+    for (const key of ['id', 'manifestSha256', 'recipeSha256', 'oracleSha256', 'execution', 'verdict']) {
+      if (source[key] !== undefined) value[key] = structuredClone(source[key]);
+    }
+  }
   for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
     if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
   }
@@ -125,7 +136,7 @@ class DesktopWorkspace extends EventEmitter {
     let entries;
     try {
       entries = fs.readdirSync(observationDirectory)
-        .filter(name => /^observation-[a-f0-9]{16}\.json$/.test(name))
+        .filter(name => /^(?:observation|verify)-[a-f0-9]{16}\.json$/.test(name))
         .map(name => {
           const absolute = path.join(observationDirectory, name);
           return {absolute, mtimeMs: fs.statSync(absolute).mtimeMs};

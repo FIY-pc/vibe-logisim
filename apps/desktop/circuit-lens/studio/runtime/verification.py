@@ -356,4 +356,12 @@ class VerificationService:
             "authority": "workspace-owned verification recipe",
             "rowCount": 1,
         }
-        return result_envelope(binding=binding, run=run, observation=result, feedback=feedback)
+        envelope = result_envelope(binding=binding, run=run, observation=result, feedback=feedback)
+        from studio.project.history import write_json
+        try:
+            write_json(self.workspace.revision_dir / 'observations' / (run['id'] + '.json'), envelope)
+        except OSError:
+            # The current result remains usable even when the optional history
+            # copy cannot be written.
+            pass
+        return envelope

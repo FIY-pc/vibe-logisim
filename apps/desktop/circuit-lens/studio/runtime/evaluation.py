@@ -122,4 +122,35 @@ class EvaluationService:
             'mode': mode,
             'authority': report.get('authority', 'Logisim native clock and propagation'),
         }
+        self._persist_evaluation(report, evaluation, feedback, run)
         return envelope
+
+    def _persist_evaluation(self, report, evaluation, feedback, run):
+        observation_id = report.get('id')
+        if not observation_id:
+            # Candidate observations are stored with the candidate itself;
+            # they are recovered through candidate identity after checkout.
+            return
+        from studio.project.history import write_json
+        path = self.runtime.workspace.revision_dir / 'observations' / (observation_id + '.json')
+        try:
+            persisted = json.loads(path.read_text(encoding='utf-8'))
+            persisted['feedback'] = {**persisted.get('feedback', {}), **feedback}
+            persisted['run'] = {**persisted.get('run', {}),
+                                'kind': 'evaluation',
+                                'expectationSha256': run.get('expectationSha256')}
+            persisted['evaluation'] = {
+                'mode': evaluation['spec']['mode'],
+                'status': evaluation['status'],
+                'caseCount': evaluation['caseCount'],
+                'passedCount': evaluation['passedCount'],
+                'failedCount': evaluation['failedCount'],
+                'unknownCount': evaluation['unknownCount'],
+                'expectationSha256': evaluation['spec']['expectationSha256'],
+            }
+            write_json(path, persisted)
+        except (OSError, ValueError, json.JSONDecodeError):
+            # The live envelope remains authoritative for this call. A
+            # persistence failure must not turn a valid native run into an
+            # execution failure.
+            return
