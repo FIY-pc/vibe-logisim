@@ -73,6 +73,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 当前源码的下一次真实课设回合已经说明了提交流程的另一个责任边界：模型直接编辑 `.circ` 后，文件可能已经落盘但原生 Logisim 仍无法加载。例如模型给 ROM 写入了不符合原生内存内容格式的 XML；旧 `submit_circuit` 只刷新工作区，模型要到后续观察才看到错误。1.27 的宿主 `submit_circuit` 在刷新后对当前电路做一次轻量原生加载性检查，并在 `vibe-logisim.circuit-action/v1` 回执的 `nativeLoadability` 中保留状态和受限错误信息。这是提交后的即时反馈，不是强制验证流程，也不是行为正确性结论。实际回合没有采用1.26新增的 `portConnections`，所以不能把工具存在当成模型已经获得收益；完整记录见 [037](../experiments/037-single-cycle-model-1.26/README.md)。
 
+独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务的首次20分钟回合还显示，模型可能在资料和全图观察阶段停留过久；基础协作指令因此增加了一个非强制节奏提示，鼓励在约束足够明确后先形成小的可检查增量，再扩展实现。记录见 [038](../experiments/038-submit-loadability-feedback/README.md)。
+
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
 
 1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；[返回类型验收](../experiments/012-tool-constraints/RESULT-TYPE.md)证明传输与字段解析。[020 真实模型对照](../experiments/020-result-contract/README.md)中有/无说明均完成同一只读验证任务、完整覆盖且只穷举一遍；没有观察到减少重跑，不将单次耗时差当因果收益。
