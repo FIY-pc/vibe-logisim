@@ -9,6 +9,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 
+from studio.domain.tool_errors import CircuitToolError
 
 class PlacementService:
     def __init__(self, workspace, inspect_snapshot):
@@ -109,10 +110,34 @@ class PlacementService:
     def describe(self, body):
         """Optional model projection of the same native palette used by the UI."""
         template = 'tool' in body
-        if template and 'library' not in body:
-            raise ValueError('查询元件需提供 catalog 中的 library ID；当前文件的子电路使用空字符串')
         if not template and 'attributes' in body:
             raise ValueError('请指定 tool 查询元件属性，或只提供 circuit 查询目录')
+        if template and 'library' not in body:
+            catalog_body = {
+                key: body[key] for key in ('projectId', 'revisionId', 'circuit') if key in body
+            }
+            catalog = self.query('catalog', catalog_body, include_images=False, strict_attributes=True)
+            matches = []
+            for group in catalog.get('groups', []):
+                library = group.get('id') or ''
+                for tool in group.get('tools', []):
+                    if tool.get('name') == body.get('tool'):
+                        matches.append({'library': library, 'tool': tool['name']})
+            if not matches:
+                raise CircuitToolError(
+                    'UNKNOWN_COMPONENT',
+                    f'当前文件没有名为 {body.get("tool")} 的可放置元件。',
+                    hint='先用 describe_component({circuit}) 读取当前项目的精确元件目录。',
+                    context={'tool': body.get('tool'), 'matches': []},
+                )
+            if len(matches) > 1:
+                raise CircuitToolError(
+                    'AMBIGUOUS_COMPONENT',
+                    f'元件名 {body.get("tool")} 在当前文件的多个组件库中存在。',
+                    hint='从 context.matches 选择正确的 library 后重试。',
+                    context={'tool': body.get('tool'), 'matches': matches},
+                )
+            body = {**body, 'library': matches[0]['library']}
         result = self.query('template' if template else 'catalog', body, include_images=False, strict_attributes=True)
         result.update(kind='template' if template else 'catalog', authority='exact-runtime',
                       libraryScope='Library IDs belong to this project only; empty library means a subcircuit in this file.')
