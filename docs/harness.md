@@ -155,7 +155,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 当模型尚未打开电路而调用观察工具时，Electron 会在 `NO_CIRCUIT_OPEN` 的 `context.availableFiles` 中补充当前工作区索引里的 `.circ` 相对路径、主电路名和定义摘要，并给出下一步 `open_circuit` 参数。它只提供选择信息，不替模型切换用户当前电路；索引被截断时同时标记 `indexTruncated`。
 
-回合初始的工作区上下文还会附带 `currentSource`：它记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。其中 `loadability` 与 `behavior` 初始都是 `unknown`；文件和 revision 对齐不等于原生可加载，更不等于功能正确。这些字段只帮助中断或长任务回到正确文件，不规定模型先观察还是先构建。
+回合初始的工作区上下文还会附带 `currentSource`：它记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。`loadability` 初始是 `unknown`，也可以携带同一 artifact SHA 上一次明确 `submit_circuit` 得到的原生加载回执；文件变更后这份回执自动失效。`behavior` 始终不会由加载性代替，文件和 revision 对齐也不等于原生可加载，更不等于功能正确。这些字段只帮助中断或长任务回到正确文件，不规定模型先观察还是先构建。
 
 候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 [023](../experiments/023-simultaneous-layout/README.md)；反馈可恢复不等于已证明模型耗时改善。
 
