@@ -125,7 +125,7 @@ class PlacementService:
         if template:
             result.update(library=body['library'], tool=body['tool'], origin={'x': 0, 'y': 0},
                           coordinates='Bounds and indexed ports are offsets from comp loc=(0,0). Change loc to place the XML and add that location to every port offset. This query does not place anything.',
-                          attributeSemantics='Values are effective native standard strings after overrides; without overrides they are current library-tool defaults, not necessarily factory defaults. Only editable attributes accept overrides. Non-standard, unsupported or normalized-away values are rejected.')
+                          attributeSemantics='Values are effective native standard strings after overrides; without overrides they are current library-tool defaults, not necessarily factory defaults. Only editable attributes accept overrides. Native-accepted decimal/0x hexadecimal integer formats may normalize only when exactly equal (e.g. 0 to 0x0). Other values require native standard strings. Unsupported, truncated or normalized-away values are rejected.')
         return result
 
     def place(self, body):

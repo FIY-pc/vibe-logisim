@@ -89,5 +89,13 @@ def prepare_parts(workbench, artifact, circuit, additions, aliases, libraries):
         occupied.add(key)
         component = copy.deepcopy(component)
         component.set('loc', f'({location["x"]},{location["y"]})')
-        prepared.append((item['id'], key, component, item.get('attributes', {})))
+        # Strict native parsing already validated each override. Reload checks
+        # compare its effective value, not its input spelling (e.g. 0 -> 0x0).
+        effective = {a.get('name'): a.get('value') for a in template.findall('attribute')}
+        expected = {}
+        for name in item.get('attributes', {}):
+            if effective.get(name) is None:
+                raise ValueError(f'{item["id"]}: 原生模板未返回请求属性 {name}')
+            expected[name] = effective[name]
+        prepared.append((item['id'], key, component, expected))
     return prepared

@@ -2,10 +2,11 @@ package com.cburch.logisim.circuit;
 
 import com.cburch.logisim.data.*;
 import java.awt.Color;
+import java.math.BigInteger;
 import java.util.*;
 import javax.swing.JComboBox;
 
-/** Standard strings cross the host boundary; editor choices need not be values. */
+/** Native standard strings cross the host boundary; equivalent integer inputs may normalize. */
 public final class NativeAttributeAdapter {
     private NativeAttributeAdapter() {}
 
@@ -83,6 +84,24 @@ public final class NativeAttributeAdapter {
         return result;
     }
 
+    private static BigInteger integer(String text) {
+        if(text.matches("[+-]?[0-9]+"))return new BigInteger(text,10);
+        if(text.matches("[+-]?0[xX][0-9a-fA-F]+")) {
+            int prefix=text.startsWith("+")||text.startsWith("-")?1:0;
+            BigInteger value=new BigInteger(text.substring(prefix+2),16);
+            return text.startsWith("-")?value.negate():value;
+        }
+        throw new NumberFormatException("Not an explicit decimal/hex integer");
+    }
+
+    private static boolean sameInteger(Object parsed,String raw,String standard) {
+        if(!(parsed instanceof Number||parsed instanceof BitWidth))return false;
+        // Compare unbounded integers, never truncated machine words. This only
+        // validates native parsing; it does not replace the parser or setter.
+        try { return integer(raw).equals(integer(standard)); }
+        catch(NumberFormatException invalid) { return false; }
+    }
+
     @SuppressWarnings({"rawtypes","unchecked"})
     public static String apply(AttributeSet attrs,String name,String raw,boolean strict) {
         Attribute attr=attrs.getAttribute(name);
@@ -92,7 +111,7 @@ public final class NativeAttributeAdapter {
         Object value;String standard;
         try { value=attr.parse(raw);standard=value==null?null:attr.toStandardString(value); }
         catch(RuntimeException invalid) { throw invalidValue(attrs,attr,"属性值无效: "+name+"="+raw,null); }
-        if(standard==null||(strict&&!raw.equals(standard)))
+        if(standard==null||(strict&&!raw.equals(standard)&&!sameInteger(value,raw,standard)))
             throw invalidValue(attrs,attr,"属性值无效或不是原生标准格式: "+name+"="+raw,standard);
         List<Choice> choices=choices(attrs,attr);
         if(!choices.isEmpty()) {

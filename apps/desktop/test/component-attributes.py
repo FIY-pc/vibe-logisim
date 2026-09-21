@@ -9,6 +9,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -35,6 +36,73 @@ def document_with(fixture, component):
 
 
 class ComponentAttributes(unittest.TestCase):
+    def test_hust_integer_formats_across_describe_add_and_edit(self):
+        # Replay the real value="0" request on the official blank HUST main.
+        original = (describe.REPO / 'apps/desktop/electron/templates/blank.circ').read_bytes()
+        with tempfile.TemporaryDirectory(prefix='vibe-native-integers-') as directory:
+            root = Path(directory)
+            source = root / 'source.circ'
+            source.write_bytes(original)
+            w = describe.Workspace(describe.REPO, root / 'state',
+                                   describe.REPO / 'apps/desktop/circuit-lens/lensctl.py', 'native-integers')
+            try:
+                w.open_path(source)
+                before = deepcopy((w.revision_id, w.history.record, w.frozen_path.read_bytes()))
+
+                def call(tool_name, **args):
+                    if tool_name == 'wire_candidate':
+                        args.setdefault('title', 'Native integer formats')
+                    return w.application.agent_tool({'projectId': w.history.record['id'],
+                        'revisionId': w.revision_id, 'tool': tool_name, 'arguments': {'circuit': 'main', **args}})
+
+                def part(alias, factory, attributes, y=100):
+                    return {'id': alias, 'library': '0', 'factory': factory,
+                            'location': {'x': 300, 'y': y}, 'attributes': attributes}
+
+                for raw, canonical in [('0', '0x0'), ('0x07f', '0x7f'), ('127', '0x7f')]:
+                    result = call('describe_component', library='0', tool='Constant', attributes={'width': '8', 'value': raw})
+                    self.assertEqual(describe.values(result)['value'], canonical)
+                    self.assertEqual(ET.fromstring(result['xml']).find("a[@name='value']").get('val'), canonical)
+                width = call('describe_component', library='0', tool='Constant', attributes={'width': '08', 'value': '0'})
+                self.assertEqual(describe.values(width)['width'], '8')
+                added = call('wire_candidate', additions=[
+                    part('zero', 'Constant', {'width': '8', 'value': '0'}),
+                    part('padded', 'Constant', {'width': '8', 'value': '0x07f'}, 220)], connections=[])
+                observed = call('inspect_circuit', candidateId=added['id'])
+                by_y = {c['location']['y']: c for c in observed['components']}
+                self.assertEqual({y: c['attributes']['value'] for y, c in by_y.items()}, {100: '0x0', 220: '0x7f'})
+                edited = call('edit_candidate', candidateId=added['id'], artifactSha256=observed['artifactSha256'], edits=[
+                    {'componentId': by_y[100]['componentId'], 'attributes': {'value': '0x07f'}},
+                    {'componentId': by_y[220]['componentId'], 'attributes': {'value': '0'}}])
+                after = call('inspect_circuit', candidateId=edited['id'])
+                self.assertEqual({c['location']['y']: c['attributes']['value'] for c in after['components']},
+                                 {100: '0x7f', 220: '0x0'})
+
+                # Parser fallbacks and integer truncation must still be rejected
+                # by both query and placement, not merely by final XML reloading.
+                invalid = [('Pin', {'output': 'banana'}), ('Constant', {'facing': 'diagonal'}),
+                           ('Constant', {'width': '8', 'value': '0x100'}),
+                           ('Constant', {'width': '32', 'value': '0x100000000'}),
+                           ('Constant', {'width': '33'}), ('Constant', {'width': '8', 'value': 'junk'})]
+                for factory, attrs in invalid:
+                    with self.subTest(factory=factory, attrs=attrs):
+                        with self.assertRaises(describe.CircuitToolError):
+                            call('describe_component', library='0', tool=factory, attributes=attrs)
+                        with self.assertRaises(describe.CircuitToolError):
+                            call('wire_candidate', additions=[part('bad', factory, attrs)], connections=[])
+                for attrs in [{'facing': 'diagonal'}, {'value': '0x100'}, {'value': '0x100000000'}]:
+                    with self.subTest(edit=attrs), self.assertRaises(describe.CircuitToolError):
+                        call('edit_candidate', candidateId=added['id'], artifactSha256=observed['artifactSha256'],
+                             edits=[{'componentId': by_y[100]['componentId'], 'attributes': attrs}])
+                self.assertEqual(call('inspect_circuit', candidateId=added['id'])['artifactSha256'], observed['artifactSha256'])
+                self.assertEqual((w.revision_id, w.history.record, w.frozen_path.read_bytes()), before)
+                self.assertEqual(source.read_bytes(), original)
+                EVIDENCE.append({'runtime': '2.15.0', 'integerFormats': True, 'describe': True,
+                                 'wireCandidateCanonicalValues': True, 'editCandidateCanonicalValues': True,
+                                 'invalidFallbacksAndTruncationRejected': True, 'sourceUnchanged': True})
+            finally:
+                w.close()
+
     def test_rejected_requests_expose_native_choices_for_correction(self):
         # Errors must be actionable without accepting native parser fallbacks.
         cases = [
@@ -48,8 +116,8 @@ class ComponentAttributes(unittest.TestCase):
             ({'library': '10', 'tool': 'Bit Extender', 'attributes': {'type': 'sign extension'}},
              ['type=sign extension', '可选值:', 'sign'],
              {'library': '10', 'tool': 'Bit Extender', 'attributes': {'type': 'sign'}}),
-            ({'library': '10', 'tool': 'Constant', 'attributes': {'width': '8', 'value': '0x07f'}},
-             ['value=0x07f', '原生解析为: 0x7f'],
+            ({'library': '10', 'tool': 'Constant', 'attributes': {'width': '8', 'value': '0x100'}},
+             ['value=0x100', '实际保留: 0x0'],
              {'library': '10', 'tool': 'Constant', 'attributes': {'width': '8', 'value': '0x7f'}}),
             ({'library': '10', 'tool': 'Pin', 'attributes': {'output': 'banana'}},
              ['output=banana', '可选值:', 'true', 'false'],

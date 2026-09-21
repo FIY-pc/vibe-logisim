@@ -110,8 +110,8 @@ public final class CircuitPalette {
                 if(raw==null)continue;
                 Attribute attr=attrs.getAttribute(name);
                 if(attr==null)continue;
-                // The model reference uses canonical strings to detect silent
-                // parser fallback; UI input keeps native formatting aliases.
+                // Strict model input rejects parser fallback but accepts proven
+                // integer-equivalent formats. Retention checks use native values.
                 expected.put(name,NativeAttributeAdapter.apply(attrs,name,raw,strict));
                 pending.remove(name);progressed=true;
             }
