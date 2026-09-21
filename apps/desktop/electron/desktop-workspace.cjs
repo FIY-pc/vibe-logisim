@@ -19,11 +19,13 @@ class DesktopWorkspace extends EventEmitter {
   snapshot() { return {folder:this.folder.snapshot(), error:this.error}; }
   rememberNativeLoadability(result) {
     const artifactSha256 = result?.binding?.artifactSha256;
+    const projectId = result?.binding?.projectId;
     const file = result?.file;
     const value = result?.nativeLoadability;
-    if (typeof file !== 'string' || !/^[a-f0-9]{64}$/.test(artifactSha256 || '')
+    if (typeof file !== 'string' || !/^project-[a-f0-9]{16}$/.test(projectId || '')
+        || !/^[a-f0-9]{64}$/.test(artifactSha256 || '')
         || !value || typeof value !== 'object') return;
-    this.lastNativeLoadability = {file, artifactSha256, value:structuredClone(value)};
+    this.lastNativeLoadability = {projectId, file, artifactSha256, value:structuredClone(value)};
   }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {

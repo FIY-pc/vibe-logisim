@@ -91,6 +91,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
   const revision = session?.revision || null;
   const rememberedLoadability = activeFile
     && nativeLoadability?.file === activeFile
+    && nativeLoadability?.projectId === workspace.id
     && nativeLoadability?.artifactSha256
     && nativeLoadability.artifactSha256 === revision?.artifactSha256
     ? nativeLoadability
