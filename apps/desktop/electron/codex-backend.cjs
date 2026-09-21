@@ -583,13 +583,22 @@ class CodexBackend extends EventEmitter {
       simulationInstancePath: context.displayedSimulation?.instancePath || [],
       simulationRootCircuit: context.displayedSimulation?.rootCircuit || null,
     };
-    const additionalContext = (cwd, workspaceIndex = null) => ({
-      "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
-      "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
-      ...momentContext, ...materialContext(context),
-      "vibe-logisim.workspace": {value: JSON.stringify({cwd, file:context.folder?.activeFile || null, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
-      ...(workspaceIndex ? {"vibe-logisim.workspace-index": {value: JSON.stringify(workspaceIndex), kind:"untrusted"}} : {}),
-    });
+    const additionalContext = (cwd, workspaceIndex = null) => {
+      // The prepared workspace is authoritative for the file the host has
+      // selected. UI context can be a stale snapshot from before the folder
+      // operation completed; do not make the model rediscover that fact from
+      // the untrusted directory index.
+      const activeFile = typeof workspaceIndex?.activeFile === "string"
+        ? workspaceIndex.activeFile
+        : (context.folder?.activeFile || null);
+      return {
+        "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
+        "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
+        ...momentContext, ...materialContext(context),
+        "vibe-logisim.workspace": {value: JSON.stringify({cwd, file:activeFile, folderId:context.folder?.id, changeMode:"direct"}), kind:"application"},
+        ...(workspaceIndex ? {"vibe-logisim.workspace-index": {value: JSON.stringify(workspaceIndex), kind:"untrusted"}} : {}),
+      };
+    };
     if (expectedTurnId !== null) {
       if (editMessageId) throw new Error("运行中只能追加意见；编辑旧问题需要先停止回答。");
       return this.#steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext,
