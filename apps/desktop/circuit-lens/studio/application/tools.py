@@ -10,6 +10,7 @@ from studio.runtime.harness import NativeCircuitRuntime
 from studio.runtime.native import NativeOperations
 from studio.runtime.verification import VerificationService
 from studio.domain.plugin import binding_for, plugin_manifest, result_envelope
+from studio.domain.tool_errors import CircuitToolError
 from studio.application.circuit_plugin import CircuitInvocation, CircuitPlugin, default_specs
 
 
@@ -72,6 +73,12 @@ class Workbench:
         return self.workspace.application.moments.inspect(call.arguments)
 
     def _describe_component(self, call):
+        if not self.workspace.history.record or not self.workspace.revision_id:
+            raise CircuitToolError(
+                'NO_CIRCUIT_OPEN',
+                '当前工作区尚未打开电路文件。',
+                hint='先用 open_circuit 打开或准备一个 .circ 文件，再查询组件。',
+            )
         return self.workspace.application.placement.describe({
             **call.arguments, 'projectId': self.workspace.history.record['id'], 'revisionId': call.revision_id,
         })
