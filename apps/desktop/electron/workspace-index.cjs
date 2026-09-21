@@ -7,6 +7,7 @@ const MAX_DEPTH = 6;
 const MAX_ENTRIES = 1200;
 const MAX_FILES = 800;
 const MAX_CIRC_BYTES = 8 * 1024 * 1024;
+const MAX_CIRC_READ_BYTES = 2 * 1024 * 1024;
 const MAX_INDEX_BYTES = 128 * 1024;
 const IGNORED = new Set([
   '.git', '.codex', '.config', '.local', '.ssh', 'node_modules',
@@ -70,7 +71,11 @@ function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
       files.push(item);
       if (path.extname(entry.name).toLowerCase() === '.circ') {
         let summary;
-        try { summary = parseCircuitSummary(fs.readFileSync(absolute)); }
+        try {
+          summary = stat.size > MAX_CIRC_READ_BYTES
+            ? {tooLarge: true, circuits: [], note: `超过索引读取上限 ${MAX_CIRC_READ_BYTES} bytes`}
+            : parseCircuitSummary(fs.readFileSync(absolute));
+        }
         catch { summary = {readError: true, circuits: []}; }
         circuits.push({path: rel, size: stat.size, ...summary});
       }
@@ -94,7 +99,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
     files,
     circuits,
     truncated,
-    limits: {maxDepth: MAX_DEPTH, maxEntries: MAX_ENTRIES, maxFiles: MAX_FILES},
+    limits: {maxDepth: MAX_DEPTH, maxEntries: MAX_ENTRIES, maxFiles: MAX_FILES, maxCircuitReadBytes: MAX_CIRC_READ_BYTES},
   };
   while (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_INDEX_BYTES
       && (result.files.length || result.directories.length)) {
