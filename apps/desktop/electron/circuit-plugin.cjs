@@ -4,6 +4,35 @@ const {harnessResultEvent} = require('./harness-result.cjs');
 const {splitModelContent} = require('./model-tool-output.cjs');
 const {circuitActionResult} = require('./circuit-action-result.cjs');
 
+function enrichNoCircuitOpen(error, workspaceIndex) {
+  const toolError = error?.toolError;
+  if (!toolError || toolError.code !== 'NO_CIRCUIT_OPEN') return error;
+  const circuits = Array.isArray(workspaceIndex?.circuits) ? workspaceIndex.circuits : [];
+  const availableFiles = circuits.map(file => ({
+    path: file.path,
+    mainCircuit: file.mainCircuit || null,
+    circuits: Array.isArray(file.circuits)
+      ? file.circuits.map(circuit => ({
+        name: circuit.name,
+        components: circuit.components,
+        wireSegments: circuit.wireSegments,
+      }))
+      : [],
+  }));
+  error.toolError = {
+    ...toolError,
+    hint: availableFiles.length
+      ? '先从 context.availableFiles 选择目标 .circ 的 path，再调用 open_circuit({path, circuit})；不要根据文件名猜测电路定义。'
+      : '当前工作区索引中没有可用的 .circ 文件；先确认文件已放入工作区，再调用 open_circuit。',
+    context: {
+      ...(toolError.context || {}),
+      availableFiles,
+      indexTruncated: Boolean(workspaceIndex?.truncated),
+    },
+  };
+  return error;
+}
+
 // Owns only domain tool execution. Thread admission, stop, reconnect and the
 // model loop remain in CodexBackend. All tools share the selected document, so
 // synchronization plus execution is one serialized operation.
@@ -126,9 +155,14 @@ class CircuitPlugin {
         if (typeof this.workspace.resolveFile !== 'function') throw new Error('文件输入需要已打开共享文件夹');
         domainArgs = {...args, vectorsFile: this.workspace.resolveFile(work, args.vectorsFile)};
       }
-      let result = tool.owner === 'host'
-        ? await this.hostExecutors[tool.name](args, scope, session, viewVersion, request)
-        : await this.invokeDomain({...identity, observationId:scope.pending.observationId, arguments:domainArgs});
+      let result;
+      try {
+        result = tool.owner === 'host'
+          ? await this.hostExecutors[tool.name](args, scope, session, viewVersion, request)
+          : await this.invokeDomain({...identity, observationId:scope.pending.observationId, arguments:domainArgs});
+      } catch (error) {
+        throw enrichNoCircuitOpen(error, work.workspaceIndex);
+      }
       scope.assertCurrent();
       if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('电路工具没有返回有效结果');
       const separated = splitModelContent(result);
