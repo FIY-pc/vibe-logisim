@@ -7,6 +7,7 @@ const {migrateReferences} = require('./folder-migration.cjs');
 const {FolderHistory} = require('./folder-history.cjs');
 
 const MAX_NATIVE_RECEIPTS = 8;
+const BEHAVIOR_STATUSES = new Set(['passed', 'failed', 'unknown', 'observed']);
 
 function sameReceipt(a, b, {includeRun = false} = {}) {
   if (!a || !b || a.projectId !== b.projectId || a.file !== b.file
@@ -17,6 +18,42 @@ function sameReceipt(a, b, {includeRun = false} = {}) {
   return a.value?.tool === b.value?.tool
     && a.value?.stimulusSha256 === b.value?.stimulusSha256
     && a.value?.expectationSha256 === b.value?.expectationSha256;
+}
+
+function behaviorReceiptFromObservation(report, file) {
+  const binding = report?.binding || {};
+  const feedback = report?.feedback || {};
+  const run = report?.run || {};
+  const execution = report?.execution || {};
+  const status = feedback.status;
+  if (!BEHAVIOR_STATUSES.has(status) || typeof file !== 'string'
+      || !/^project-[a-f0-9]{16}$/.test(binding.projectId || '')
+      || !/^[a-f0-9]{64}$/.test(binding.artifactSha256 || '')) return null;
+  const tool = report.tool || (report.kind === 'clock-trace' ? 'trace_circuit' : 'simulate_circuit');
+  const value = {
+    status,
+    tool,
+    circuit: binding.circuit || report.circuit || null,
+    candidateId: binding.candidateId || report.candidateId || null,
+    revisionId: binding.revisionId || report.revisionId || null,
+    runtimeProfileId: binding.runtimeProfileId || report.runtimeProfileId || run.runtimeProfileId || null,
+    runtimeJarSha256: execution.runtimeJarSha256 || null,
+    runtimeVersion: execution.runtimeVersion || null,
+    runId: run.id || report.runId || null,
+    kind: run.kind || report.kind || null,
+    authority: run.authority || report.authority || null,
+    stimulusSha256: run.stimulusSha256 || report.stimulusSha256 || null,
+    expectationSha256: run.expectationSha256 || feedback.expectationSha256 || null,
+    persisted: true,
+    observationId: report.id || null,
+  };
+  for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
+    if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
+  }
+  if (!value.expectationSha256 && status !== 'observed') {
+    value.note = '恢复自持久化 native observation；原始显式期望摘要未持久化，只保留当时的有限反馈。';
+  }
+  return {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
 }
 
 // Owns the relationship between one real folder, its selected document, and
@@ -79,6 +116,47 @@ class DesktopWorkspace extends EventEmitter {
     this.nativeBehaviorReceipts = [receipt,
       ...this.nativeBehaviorReceipts.filter(item => !sameReceipt(item, receipt, {includeRun:true}))]
       .slice(0, MAX_NATIVE_RECEIPTS);
+  }
+  persistedNativeBehaviorReceipts(session, file = this.folder.current?.activeFile) {
+    const observationDirectory = session?.statePaths?.workspace
+      ? path.join(path.dirname(session.statePaths.workspace), 'observations')
+      : null;
+    if (!observationDirectory || typeof file !== 'string') return [];
+    let entries;
+    try {
+      entries = fs.readdirSync(observationDirectory)
+        .filter(name => /^observation-[a-f0-9]{16}\.json$/.test(name))
+        .map(name => {
+          const absolute = path.join(observationDirectory, name);
+          return {absolute, mtimeMs: fs.statSync(absolute).mtimeMs};
+        })
+        .sort((a, b) => b.mtimeMs - a.mtimeMs)
+        .slice(0, MAX_NATIVE_RECEIPTS * 2);
+    } catch {
+      return [];
+    }
+    const projectId = session.workspace?.id;
+    const revisionId = session.revision?.id;
+    const artifactSha256 = session.revision?.artifactSha256;
+    const receipts = [];
+    for (const entry of entries) {
+      try {
+        const report = JSON.parse(fs.readFileSync(entry.absolute, 'utf8'));
+        const receipt = behaviorReceiptFromObservation(report, file);
+        if (!receipt || receipt.projectId !== projectId
+            || receipt.artifactSha256 !== artifactSha256
+            || receipt.value.revisionId !== revisionId) continue;
+        receipts.push(receipt);
+      } catch {
+        // A damaged historical observation is not current circuit evidence.
+      }
+    }
+    return receipts;
+  }
+  nativeBehaviorContext(session, file = this.folder.current?.activeFile) {
+    const receipts = [...this.nativeBehaviorReceipts, ...this.persistedNativeBehaviorReceipts(session, file)];
+    return receipts.filter((receipt, index) => !receipts.slice(0, index).some(previous =>
+      sameReceipt(previous, receipt, {includeRun:true}))).slice(0, MAX_NATIVE_RECEIPTS);
   }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {
