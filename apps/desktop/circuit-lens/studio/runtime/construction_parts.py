@@ -145,6 +145,9 @@ def prepare_parts(workbench, artifact, circuit, additions, aliases, libraries):
     descriptors = {lib['name']: lib['desc'] for lib in libraries}
     prepared = []
     occupied = set(aliases.values())
+    occupied_by_key = {}
+    for existing_id, existing_key in aliases.items():
+        occupied_by_key.setdefault(existing_key, []).append(existing_id)
     checked_pin_interface = False
     for item, template in zip(additions, templates):
         component = template.find('comp')
@@ -160,8 +163,23 @@ def prepare_parts(workbench, artifact, circuit, additions, aliases, libraries):
         location = item['location']
         key = factory, (location['x'], location['y'])
         if key in occupied:
-            raise ValueError(f'{item["id"]}: 新增部件与已有部件位置重复')
+            existing_ids = occupied_by_key.get(key, [])
+            raise CircuitToolError(
+                'COMPONENT_PLACEMENT_CONFLICT',
+                f'{item["id"]}: 新增部件与已有部件位置重复',
+                hint='移动新增部件到未占用的 10 单位网格位置后重试；不要依赖端口重合来完成连接。',
+                context={
+                    'location': dict(location),
+                    'newComponent': {'id': item['id'], 'factory': factory},
+                    'existingComponents': [
+                        {'component': existing_id, 'factory': key[0],
+                         'location': {'x': key[1][0], 'y': key[1][1]}}
+                        for existing_id in existing_ids
+                    ],
+                },
+            )
         occupied.add(key)
+        occupied_by_key.setdefault(key, []).append(alias)
         component = copy.deepcopy(component)
         component.set('loc', f'({location["x"]},{location["y"]})')
         # Strict native parsing already validated each override. Reload checks

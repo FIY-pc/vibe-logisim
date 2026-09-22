@@ -172,8 +172,50 @@ def disconnected_ports(workspace, document, name, baseline, parts, directory):
     return {"focus": {"components": components}}
 
 
-def touching_ports(prepared, baseline, added_keys):
-    """Find placement contacts before choosing a connectivity reference."""
+def _port_placement_context(key, end, components, added_aliases):
+    """Describe one native port without returning the whole circuit view."""
+    component_identity, port_index = key
+    component = components.get(component_identity) or {}
+    added_id = added_aliases.get(component_identity)
+    native_id = component.get("componentId")
+    return {
+        "role": "added" if added_id else "existing",
+        "component": added_id or native_id,
+        **({"requestedId": added_id} if added_id else {}),
+        **({"nativeComponentId": native_id} if added_id and native_id else {}),
+        "port": port_index,
+        "factory": component.get("factoryName"),
+        "label": (component.get("selector") or {}).get("label"),
+        "portName": end.get("runtimeTooltip"),
+        "width": end.get("width"),
+        "direction": end.get("direction"),
+        "location": end.get("location"),
+    }
+
+
+def _placement_contact_context(p, ends, prepared, baseline, added_aliases, wires):
+    prepared_components = {identity(c): c for c in prepared["focus"]["components"]}
+    return {
+        "location": {"x": p[0], "y": p[1]},
+        "ports": [_port_placement_context(key, end, prepared_components, added_aliases)
+                  for key, end in ends],
+        "existingWires": [
+            {key: wire.get(key) for key in ("wireId", "from", "to", "bundleId") if key in wire}
+            for wire in wires
+        ],
+        "rule": "新增端口不能落在已有导线上；恰好两个端口贴合时必须在 connections 中显式连接。",
+    }
+
+
+def touching_ports(prepared, baseline, added_keys, added_aliases=None):
+    """Find placement contacts before choosing a connectivity reference.
+
+    Placement is still rejected exactly as before, but native facts about the
+    conflicting ports and wires are returned so the model can correct the
+    location or explicitly declare the intended contact in a new call.
+    """
+    added_aliases = added_aliases or {}
+    added_keys = set(added_keys)
     at = defaultdict(list)
     for key, end in ports(prepared).items():
         at[point(end["location"])].append((key, end))
@@ -182,30 +224,56 @@ def touching_ports(prepared, baseline, added_keys):
         if not any(key[0] in added_keys for key, _ in ends):
             continue
         # Exact segment containment also catches off-grid native wire geometry.
+        wires = []
         for wire in baseline["focus"]["wires"]:
             a, b = point(wire["from"]), point(wire["to"])
             if ((a[0] == b[0] == p[0] and min(a[1], b[1]) <= p[1] <= max(a[1], b[1]))
                     or (a[1] == b[1] == p[1] and min(a[0], b[0]) <= p[0] <= max(a[0], b[0]))):
-                raise ValueError(f"新增端口 {p} 接触已有导线；暂仅支持无导线占用的显式双端口贴合")
+                wires.append(wire)
+        if wires:
+            context = _placement_contact_context(p, ends, prepared, baseline, added_aliases, wires)
+            raise CircuitToolError(
+                "PLACEMENT_PORT_ON_EXISTING_WIRE",
+                f"新增端口 {p} 接触已有导线；暂仅支持无导线占用的显式双端口贴合",
+                hint="移动新增部件使端口离开已有导线；如果要接入已有网络，请保留端口不重合并用 connections 显式连接。",
+                context=context,
+            )
         if len(ends) == 1:
             continue
         if len(ends) != 2:
-            raise ValueError(f"新增端口 {p} 出现未要求的端口接触；仅支持显式连接的两个端口贴合")
+            raise CircuitToolError(
+                "AMBIGUOUS_PORT_CONTACT",
+                f"新增端口 {p} 出现未要求的端口接触；仅支持显式连接的两个端口贴合",
+                hint="把新增部件移开，或只让一个新增端口与一个已有端口贴合，并在 connections 中显式声明连接。",
+                context=_placement_contact_context(p, ends, prepared, baseline, added_aliases, []),
+            )
         pairs.append(tuple(key for key, _ in ends))
     return pairs
 
 
-def contact_partition(reference, pairs, resolved):
+def contact_partition(reference, pairs, resolved, added_aliases=None):
     """Accept contacts only when their exact port pair was explicitly requested."""
+    added_aliases = added_aliases or {}
     requested = {frozenset(((identity(ac), a["index"]), (identity(bc), b["index"])))
                  for _, (ac, a), (bc, b) in resolved}
     reference_ports = ports(reference)
+    reference_components = {identity(c): c for c in reference["focus"]["components"]}
     contacts = Partition()
     for pair in pairs:
         a, b = (reference_ports[key] for key in pair)
         p = point(a["location"])
         if frozenset(pair) not in requested:
-            raise ValueError(f"新增端口 {p} 出现未要求的端口接触；仅支持显式连接的两个端口贴合")
+            raise CircuitToolError(
+                "UNDECLARED_PORT_CONTACT",
+                f"新增端口 {p} 出现未要求的端口接触；仅支持显式连接的两个端口贴合",
+                hint="在 connections 中用这两个端口的 component 和 port 显式声明连接，或移动新增部件。",
+                context={
+                    "location": {"x": p[0], "y": p[1]},
+                    "ports": [_port_placement_context(key, reference_ports[key], reference_components, added_aliases)
+                              for key in pair],
+                    "rule": "端口贴合不会自动改变网络，必须由 connections 明确声明。",
+                },
+            )
         if a["width"] != b["width"]:
             raise ValueError(f"贴合端口连接位宽不同: {p}")
         for x, y in zip(port_bits(a), port_bits(b)):
@@ -332,7 +400,8 @@ def _wire_candidate(workbench, args, directory):
         for attr, value in attrs.items():
             if actual.get(attr) != value:
                 raise ValueError(f"原生引擎未接受属性 {key} {attr}={value} (actual: {actual.get(attr)})")
-    touching = touching_ports(prepared, baseline, added_attrs)
+    added_aliases = {key: alias for alias, key, _, _ in parts}
+    touching = touching_ports(prepared, baseline, added_attrs, added_aliases)
     if touching:
         reference = disconnected_ports(workspace, document, name, baseline, parts, directory)
     else:
@@ -367,7 +436,7 @@ def _wire_candidate(workbench, args, directory):
         for x, y in zip(port_bits(a[1]), port_bits(b[1])):
             partition.join(x, y)
         resolved.append((connection, a, b))
-    contacts = contact_partition(reference, touching, resolved)
+    contacts = contact_partition(reference, touching, resolved, added_aliases)
     # Full-port output drivers may fan out, but must never merge with another driver.
     drivers = defaultdict(set)
     for c in reference["focus"]["components"]:
