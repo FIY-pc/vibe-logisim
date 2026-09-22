@@ -1598,7 +1598,7 @@ class CodexBackend extends EventEmitter {
         if (outcome && isCurrent()) {
           if (Object.hasOwn(outcome, "revisionId")) this.threadRevisionId = outcome.revisionId;
           if (outcome.applied) this.threadRevisionId = outcome.session.revision.id;
-          this.emit("event", {type:"circuit-change", ...outcome});
+          if (outcome.applied || outcome.candidate) this.emit("event", {type:"circuit-change", ...outcome});
         }
       }
     } catch (error) {
@@ -1655,7 +1655,7 @@ class CodexBackend extends EventEmitter {
       completed: false,
       isCurrent: () => true,
     }).then(outcome => {
-      if (outcome) this.emit("event", {type:"circuit-change", ...outcome});
+      if (outcome?.applied || outcome?.candidate) this.emit("event", {type:"circuit-change", ...outcome});
     }).catch(error => {
       this.emit("event", {type:"error", message:"Codex 连接中断；文件改动仍留在工作区，但历史收束未完成：" + plainError(error)});
     });
