@@ -111,10 +111,12 @@ test('domain failures preserve the workspace and observation binding', async () 
 });
 
 test('the model-facing error envelope keeps the shared protocol schema', () => {
-  const payload = modelErrorPayload(new Error('expired'), {
+  const source = new Error('expired');
+  source.toolError = {schema: 'untrusted-schema', code: 'STALE_REVISION', message: source.message};
+  const payload = modelErrorPayload(source, {
     tool: 'inspect_circuit', callId: 'call-1', turnId: 'turn-1', threadId: 'thread-1',
   }, {pending: {projectId: 'project-1', revisionId: 'revision-1'}});
   assert.equal(payload.schema, ERROR_SCHEMA);
-  assert.equal(payload.code, 'CIRCUIT_TOOL_FAILED');
+  assert.equal(payload.code, 'STALE_REVISION');
   assert.equal(payload.context.invocation.revisionId, 'revision-1');
 });

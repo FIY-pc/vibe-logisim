@@ -87,7 +87,7 @@ function attachInvocationIdentity(error, request, scope) {
 
 function modelErrorPayload(error, request, scope) {
   const enriched = attachInvocationIdentity(error, request, scope);
-  return {schema: ERROR_SCHEMA, ...enriched.toolError};
+  return {...enriched.toolError, schema: ERROR_SCHEMA};
 }
 
 // Owns only domain tool execution. Thread admission, stop, reconnect and the
