@@ -35,9 +35,22 @@ class CircuitToolError(ValueError):
         return {"schema": ERROR_SCHEMA, "error": self.as_dict()}
 
 
+class NativeRuntimeFailure(RuntimeError):
+    """A native worker failure that remains a RuntimeError below the tool boundary."""
+    def __init__(self, code, message, *, retryable=False, hint=None, context=None):
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+        self.hint = hint
+        self.context = context
+
+
 def tool_error_from_exception(tool, error):
     if isinstance(error, CircuitToolError):
         return error
+    if isinstance(error, NativeRuntimeFailure):
+        return CircuitToolError(error.code, str(error), retryable=error.retryable,
+                                hint=error.hint, context=error.context)
     if isinstance(error, LensError):
         return CircuitToolError(error.code, str(error), context={"detail": error.detail} if error.detail else None)
     # Legacy ValueError also represents compilation/loading failures. Do not

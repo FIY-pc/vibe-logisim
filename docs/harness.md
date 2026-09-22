@@ -79,6 +79,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.30.0 的 `SimulationWorker` 将仿真、trace 和 `harness_run` 共用的原生服务边界错误分为 `NATIVE_RUNTIME_TIMEOUT`、`NATIVE_RUNTIME_EXITED`、`NATIVE_RUNTIME_PROTOCOL`、`NATIVE_RUNTIME_DISCONNECTED` 和 `NATIVE_RUNTIME_START_FAILED`，并携带服务、阶段、超时上限及 worker 已停止的信息。原生进程仍在错误后销毁并于下一次调用重启；这些错误只描述运行设施状态，不把超时冒充电路功能结论，也不规定模型必须重试。
 
+1.31.0 将同一类 native failure 统一到静态观察、组件目录和渲染 worker。底层 worker 仍保留 `RuntimeError` 兼容性，进入 Circuit Plugin 后才转换为带 `service`、`phase`、`operation`、`circuit`、artifact 和 runtime 摘要的工具错误；原生组件拒绝仍保持普通领域拒绝，不会被误报成宿主故障。
+
 独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。

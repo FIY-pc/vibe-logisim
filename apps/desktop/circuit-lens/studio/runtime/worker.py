@@ -16,6 +16,7 @@ import threading
 import xml.etree.ElementTree as ET
 
 from studio.infrastructure.files import sha256_file, sha256_bytes
+from studio.domain.tool_errors import NativeRuntimeFailure
 
 
 class NativeWorker:
@@ -49,7 +50,7 @@ class NativeWorker:
             process.stdin.close(); process.stdout.close(); process.stderr.close()
         self.binding = None
 
-    def _failure(self, message):
+    def _failure(self, code, message, phase='request', request_context=None):
         process = self.process
         if process is not None:
             try:
@@ -61,7 +62,21 @@ class NativeWorker:
                 if self.stderr_reader:
                     self.stderr_reader.join(timeout=0.5)
         detail = bytes(self.stderr_tail[-8192:]).decode('utf-8', errors='replace').strip()
-        return RuntimeError(message + (': ' + detail if detail else ''))
+        context = {
+            'service': 'native-worker',
+            'phase': phase,
+            'workerStopped': False,
+        }
+        if code == 'NATIVE_RUNTIME_TIMEOUT':
+            context['timeoutSeconds'] = 60
+        if isinstance(request_context, dict):
+            context.update({key: value for key, value in request_context.items() if value is not None})
+        return NativeRuntimeFailure(
+            code,
+            message + (': ' + detail if detail else ''),
+            hint='原生观察服务没有产生有效结果；这不是电路功能通过或失败的结论。',
+            context=context,
+        )
 
     def close(self):
         with self.lock:
@@ -84,14 +99,17 @@ class NativeWorker:
             if temporary.exists(): shutil.rmtree(temporary)
         return target
 
-    def _receive(self):
+    def _receive(self, phase='request', request_context=None):
         try: line = self.responses.get(timeout=60)
-        except queue.Empty: raise self._failure('原生编辑服务响应超时') from None
-        if not line: raise self._failure('原生编辑服务已结束')
-        status, payload = line.split('\t', 1)
-        value = base64.b64decode(payload, validate=True)
+        except queue.Empty: raise self._failure('NATIVE_RUNTIME_TIMEOUT', '原生编辑服务响应超时（60 秒）', phase, request_context) from None
+        if not line: raise self._failure('NATIVE_RUNTIME_EXITED', '原生编辑服务已结束', phase, request_context)
+        try:
+            status, payload = line.split('\t', 1)
+            value = base64.b64decode(payload, validate=True)
+        except (ValueError, TypeError) as error:
+            raise self._failure('NATIVE_RUNTIME_PROTOCOL', '原生编辑服务返回了无效协议', phase, request_context) from error
         if status == 'error': raise ValueError(value.decode('utf-8', errors='replace'))
-        if status != 'ok': raise RuntimeError('无效的原生编辑响应')
+        if status != 'ok': raise self._failure('NATIVE_RUNTIME_PROTOCOL', '无效的原生编辑响应', phase, request_context)
         return value
 
     def _start(self, runtime, digest):
@@ -125,7 +143,9 @@ class NativeWorker:
                     if not line: return
             except (ValueError, OSError, queue.Full): return
         threading.Thread(target=read, daemon=True).start()
-        if self._receive() != b'ready': raise RuntimeError('原生编辑服务未就绪')
+        if self._receive('startup') != b'ready':
+            self._stop()
+            raise self._failure('NATIVE_RUNTIME_START_FAILED', '原生编辑服务未就绪', 'startup')
         self.binding = (runtime, digest)
         self.starts += 1
 
@@ -133,10 +153,17 @@ class NativeWorker:
         with self.lock:
             if self.closed: raise RuntimeError('原生编辑服务已关闭')
             digest = sha256_file(runtime)
+            artifact_sha = sha256_file(artifact)
+            request_context = {
+                'operation': operation.tag,
+                'circuit': operation.get('circuit'),
+                'artifactSha256': artifact_sha,
+                'runtimeJarSha256': digest,
+            }
             try:
                 if self.binding != (runtime, digest) or self.process.poll() is not None:
                     self._start(runtime, digest)
-                envelope = ET.Element('request', artifact=str(artifact), digest=sha256_file(artifact))
+                envelope = ET.Element('request', artifact=str(artifact), digest=artifact_sha)
                 if output:
                     envelope.set('output', str(output))
                     if operation.tag in {'check-existing-ports', 'check-interface', 'check-placement'}:
@@ -144,14 +171,19 @@ class NativeWorker:
                 envelope.append(operation)
                 payload = base64.b64encode(ET.tostring(envelope, encoding='utf-8')).decode()
                 self.process.stdin.write(payload + '\n'); self.process.stdin.flush()
-                return self._receive()
+                return self._receive('request', request_context)
             except ValueError:
                 # A native domain rejection does not poison the loaded snapshots.
                 raise
             except (BrokenPipeError, ConnectionResetError):
-                error = self._failure('原生编辑服务连接中断')
+                error = self._failure('NATIVE_RUNTIME_DISCONNECTED', '原生编辑服务连接中断', 'request', request_context)
                 self._stop()
+                error.context['workerStopped'] = True
                 raise error from None
+            except NativeRuntimeFailure as error:
+                self._stop()
+                error.context['workerStopped'] = True
+                raise
             except Exception:
                 self._stop()
                 raise
