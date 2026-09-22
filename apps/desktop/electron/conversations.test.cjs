@@ -7,6 +7,8 @@ const path = require('node:path');
 const {ConversationStore} = require('./conversation-store.cjs');
 const {ConversationDraftStore} = require('./conversation-drafts.cjs');
 const {CodexBackend} = require('./codex-backend.cjs');
+const {CircuitPlugin} = require('./circuit-plugin.cjs');
+const {AgentToolHost} = require('./agent-tool-host.cjs');
 const {AgentModelError} = require('./model-errors.cjs');
 const pluginManifest = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const makeRoot = t => {const root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-conversations-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root;};
@@ -113,8 +115,10 @@ test('an explicit app model is sent as an override while inherited config stays 
 
 test('a changed circuit plugin contract starts a capable thread while retaining local conversation history', async t => {
   const root=makeRoot(t), key='folder:capability-upgrade';
+  const plugin = new CircuitPlugin({invoke:async()=>({}), workspace:null});
+  const toolHost = new AgentToolHost({plugin, manifest:async()=>pluginManifest, mode:'circuit'});
   const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json',
-    circuitTool:async()=>({}), circuitManifest:async()=>pluginManifest});
+    toolHost});
   backend.start=async()=>{backend.status='ready';};
   const saved=backend.conversationState(key).conversation;
   backend.conversations.remember(key,{threadId:'thread-old',messages:[
@@ -138,7 +142,7 @@ test('a changed circuit plugin contract starts a capable thread while retaining 
   assert.equal(record.threadId,'thread-new');
   assert.deepEqual(record.messages.map(message=>message.text),['保留这段上下文','旧线程回答']);
   assert.deepEqual(record.supersededThreadIds,['thread-old']);
-  assert.equal(record.toolContract.signature,backend.circuitTools.registry.signature);
+  assert.equal(record.toolContract.signature,backend.toolHost.signature);
   assert.equal(record.toolContract.mode, 'circuit');
   assert.match(record.toolContract.developerInstructionsSha256, /^[a-f0-9]{64}$/);
   assert.equal(events.find(event=>event.type==='thread-started').capabilityReset,true);

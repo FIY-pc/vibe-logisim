@@ -281,6 +281,9 @@ class CircuitPlugin {
     this.queue = operation.catch(() => {});
     return operation;
   }
+  modelErrorPayload(error, request, scope) {
+    return modelErrorPayload(error, request, scope);
+  }
 }
 
 module.exports = {CircuitPlugin, attachInvocationIdentity, modelErrorPayload, ERROR_SCHEMA};

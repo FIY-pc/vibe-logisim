@@ -23,7 +23,6 @@ const {
   capabilitySnapshot,
 } = require('./codex-capabilities.cjs');
 
-const { CircuitPlugin, modelErrorPayload } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
@@ -130,8 +129,7 @@ class CodexBackend extends EventEmitter {
     sessionStorePath,
     version = "0.1.0",
     ephemeral = false,
-    circuitTool = null,
-    circuitManifest = null,
+    toolHost = null,
     agentWorkspace = null,
     developerInstructions = DEVELOPER_INSTRUCTIONS,
     includeCircuitContext = true,
@@ -150,14 +148,9 @@ class CodexBackend extends EventEmitter {
     this.conversationId = null;
     this.version = version;
     this.ephemeral = ephemeral;
-    this.circuitTool = circuitTool;
-    this.circuitManifest = circuitManifest;
-    this.circuitManifestState = null;
+    this.toolHost = toolHost;
+    this.toolHostState = null;
     this.agentWorkspace = agentWorkspace;
-    this.circuitTools = new CircuitPlugin({
-      invoke: payload => this.circuitTool?.(payload),
-      workspace: this.agentWorkspace,
-    });
     // Controlled comparisons can reuse the identical transport/isolation without
     // exposing the circuit application's instructions to a generic baseline.
     this.developerInstructions = developerInstructions;
@@ -238,8 +231,8 @@ class CodexBackend extends EventEmitter {
       accountMode: this.runtimeRoot ? "application" : "shared",
       signingIn: Boolean(this.loginId),
       harness: capabilitySnapshot({
-        plugin: this.circuitManifestState,
-        directTools: this.circuitTools.registry?.tools?.map(tool => tool.name) || [],
+        plugin: this.toolHostState,
+        directTools: this.toolHost?.tools?.map(tool => tool.name) || [],
         nativeProfile: this.effectiveNativeConfig,
       }),
       messages: this.history.slice(-60),
@@ -248,8 +241,8 @@ class CodexBackend extends EventEmitter {
 
   capabilityReport() {
     return capabilitySnapshot({
-      plugin: this.circuitManifestState,
-      directTools: this.circuitTools.registry?.tools?.map(tool => tool.name) || [],
+      plugin: this.toolHostState,
+      directTools: this.toolHost?.tools?.map(tool => tool.name) || [],
       nativeProfile: this.effectiveNativeConfig,
       detail: true,
     });
@@ -996,12 +989,10 @@ class CodexBackend extends EventEmitter {
   }
 
   async #ensureThread(workspaceKey, revisionId, expectedEpoch, generation) {
-    if (this.circuitTool) {
-      if (!this.circuitManifest) throw new Error("电路插件 manifest 不可用，已拒绝启动 Codex 电路会话");
-      const manifest = await this.circuitManifest();
+    if (this.toolHost) {
       this.#assertWorkspace(expectedEpoch, generation);
-      const registry = this.circuitTools.configure(manifest, {live: Boolean(this.threadId)});
-      this.circuitManifestState = {...registry.identity, signature: registry.signature};
+      const registry = await this.toolHost.prepare({live: Boolean(this.threadId)});
+      this.toolHostState = {...registry.identity, signature: registry.signature};
     }
     if (this.threadId) {
       if (this.workspaceKey !== workspaceKey) throw workspaceChangedError();
@@ -1029,7 +1020,7 @@ class CodexBackend extends EventEmitter {
             approvalPolicy: "never",
             sandbox: "danger-full-access",
             ...this.#nativeModelOverrides(),
-            dynamicTools: this.circuitTool ? this.circuitTools.registry.tools : [],
+            dynamicTools: this.toolHost?.tools || [],
             config: THREAD_CONFIG,
             developerInstructions: this.developerInstructions,
           });
@@ -1051,7 +1042,7 @@ class CodexBackend extends EventEmitter {
           ephemeral: this.ephemeral,
           ...(this.captureModelMedia || this.captureCodeMode ? {experimentalRawEvents: true} : {}),
           developerInstructions: this.developerInstructions,
-          dynamicTools: this.circuitTool ? this.circuitTools.registry.tools : [],
+          dynamicTools: this.toolHost?.tools || [],
         });
         provisionalThreadId = result?.thread?.id || null;
       }
@@ -1240,9 +1231,9 @@ class CodexBackend extends EventEmitter {
 
   #threadContract() {
     return {
-      mode: this.circuitTool ? 'circuit' : 'base',
-      signature: this.circuitManifestState?.signature || null,
-      ...(this.circuitManifestState || {}),
+      mode: this.toolHost?.mode || 'base',
+      signature: this.toolHostState?.signature || null,
+      ...(this.toolHostState || {}),
       harnessSignature: POLICY_SIGNATURE,
       developerInstructionsSha256: this.developerInstructionsSha256,
     };
@@ -1468,7 +1459,7 @@ class CodexBackend extends EventEmitter {
         });
         return;
       }
-      const activity = itemActivity(item, this.circuitTools.registry);
+      const activity = itemActivity(item, this.toolHost?.registry);
       if (activity) {
         // New model activity proves the retry resumed even without text deltas.
         // A previous tool may finish while the stream is still retrying.
@@ -1525,8 +1516,7 @@ class CodexBackend extends EventEmitter {
       const current = () => generation === this.childEpoch && epoch === this.workspaceEpoch
         && circuitGeneration === this.circuitGeneration
         && this.#matchesCurrentTurn(request);
-      const allowed = Boolean(this.circuitTool && this.circuitTools.registry
-        && this.circuitTools.registry.get(params.tool) && current());
+      const allowed = Boolean(this.toolHost && this.toolHost.get(params.tool) && current());
       const invoke = async () => {
         if (!allowed || !current()) throw new Error("电路工具调用已过期或未授权");
         const pending = this.pendingTurn;
@@ -1546,7 +1536,7 @@ class CodexBackend extends EventEmitter {
           },
           emit: event => this.emit("event", event),
         };
-        const result = await this.circuitTools.call(request, scope);
+        const result = await this.toolHost.call(request, scope);
         scope.assertCurrent();
         return dynamicToolResponse(result);
       };
@@ -1554,7 +1544,7 @@ class CodexBackend extends EventEmitter {
         .catch(error => {
           return {
             contentItems: [{type: "inputText", text: JSON.stringify({
-              error: modelErrorPayload(error, request, {pending: this.pendingTurn}),
+              error: this.toolHost.errorPayload(error, request, {pending: this.pendingTurn}),
             })}],
             success: false,
           };

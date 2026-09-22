@@ -17,6 +17,8 @@ const {
 const { LensBackend } = require("./backend.cjs");
 const { CodexBackend } = require("./codex-backend.cjs");
 const {DirectAgentWorkspace} = require("./direct-agent-workspace.cjs");
+const {CircuitPlugin} = require("./circuit-plugin.cjs");
+const {AgentToolHost} = require("./agent-tool-host.cjs");
 const {DesktopWorkspace} = require("./desktop-workspace.cjs");
 const {registerFolderIpc} = require("./folder-ipc.cjs");
 const {CanvasNavigation,registerCanvasIpc} = require('./canvas-navigation.cjs');
@@ -215,6 +217,15 @@ async function startApplication() {
   const activeFile = initialTarget?.kind === 'circuit' ? initialTarget.path : initialOpenPath;
   if(folderRoot)await desktopWorkspace.open(folderRoot,{activeFile,conversationKey:initialSession.workspace?.conversationKey});
   agentWorkspace = new DirectAgentWorkspace(desktopWorkspace);
+  const circuitPlugin = new CircuitPlugin({
+    invoke: payload => backend.circuitTool(payload),
+    workspace: agentWorkspace,
+  });
+  const toolHost = new AgentToolHost({
+    plugin: circuitPlugin,
+    manifest: () => backend.circuitPlugin(),
+    mode: 'circuit',
+  });
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
   codex = new CodexBackend({
     runtimeRoot,
@@ -222,8 +233,7 @@ async function startApplication() {
     profileDir: path.join(agentRoot, "codex-home"),
     sessionStorePath: path.join(agentRoot, "sessions.json"),
     version: app.getVersion(),
-    circuitTool: (payload) => backend.circuitTool(payload),
-    circuitManifest: () => backend.circuitPlugin(),
+    toolHost,
     agentWorkspace,
   });
   codex.on("log", (message) => console.error(`[codex] ${message}`));
