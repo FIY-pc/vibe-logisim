@@ -157,7 +157,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `wire_candidate` 的端口引用失败会返回 `INVALID_PORT_REFERENCE`：组件存在但端口错误时附上同一次观察中的 `context.availablePorts`；组件 ID 错误时附上 `context.availableComponents`。这让模型可以从原生端口序号、名称、位宽和方向中修正一次调用，或直接选回正确的组件 ID；它不替模型猜测端口语义，也不把错误引用自动改写为另一个端口。
 
-回合初始的工作区上下文还会附带 `currentSource`：它记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。`loadability` 和 `behavior` 从同一 artifact SHA 的少量近期回执中取当前活动电路的最新一条；`recentLoadabilityEvidence`、`recentBehaviorEvidence` 保留其他电路、输入、工具、期望、候选和 runtime profile 范围，避免一次局部运行覆盖另一条有效证据。行为回执也会从当前 revision 已持久化的 native observation 恢复，但只恢复完整身份匹配的有限摘要；如果原始显式期望摘要没有持久化，会明确标记这一限制。候选上的行为回执在 artifact SHA 未匹配当前 revision 时不会冒充当前文件；checkout 后如果 artifact SHA 精确匹配，它可以作为当前文件的历史证据继续使用。只有磁盘仍与冻结 revision 对齐，且回执记录的 `circuit` 是当前活动电路时，`loadability` 或 `behavior` 才会作为当前标量状态出现。文件变更或 checkout 其他 artifact 后这些回执自动失效。它们表示特定工具、输入、运行环境和范围内的历史运行，不等于完整功能正确；文件和 revision 对齐也不等于原生可加载。字段只帮助中断或长任务回到正确文件和已有证据，不规定模型先观察还是先构建。
+回合初始的工作区上下文还会附带 `currentSource`：它只记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。它是宿主的文件身份和导航上下文，不是电路观察结果，也不自动携带上一次仿真或验证的结论。加载性、行为和评测结果只通过对应的显式电路工具返回；模型需要时可以重新观察，用户留存的冻结时刻则通过 `read_kept_observation` 主动读取。这样一次局部运行不会在下一回合伪装成当前电路状态，也不会把历史证据变成隐含工作流。
 
 候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 [023](../experiments/023-simultaneous-layout/README.md)；反馈可恢复不等于已证明模型耗时改善。
 

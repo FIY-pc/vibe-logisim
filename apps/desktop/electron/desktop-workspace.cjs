@@ -6,67 +6,6 @@ const {FolderWorkspace, hash} = require('./folder-workspace.cjs');
 const {migrateReferences} = require('./folder-migration.cjs');
 const {FolderHistory} = require('./folder-history.cjs');
 
-const MAX_NATIVE_RECEIPTS = 8;
-const BEHAVIOR_STATUSES = new Set(['passed', 'failed', 'unknown', 'observed']);
-
-function sameReceipt(a, b, {includeRun = false} = {}) {
-  if (!a || !b || a.projectId !== b.projectId || a.file !== b.file
-      || a.artifactSha256 !== b.artifactSha256
-      || a.value?.circuit !== b.value?.circuit
-      || a.value?.runtimeProfileId !== b.value?.runtimeProfileId) return false;
-  if (!includeRun) return true;
-  return a.value?.tool === b.value?.tool
-    && a.value?.stimulusSha256 === b.value?.stimulusSha256
-    && a.value?.expectationSha256 === b.value?.expectationSha256;
-}
-
-function behaviorReceiptFromObservation(report, file) {
-  const persistedEnvelope = report?.run?.kind === 'verification' && report?.result && typeof report.result === 'object';
-  const source = persistedEnvelope
-    ? {...report.result, binding:report.binding, feedback:report.feedback, run:report.run, id:report.run.id}
-    : report;
-  const binding = source?.binding || {};
-  const feedback = source?.feedback || {};
-  const run = source?.run || {};
-  const execution = source?.execution || {};
-  const status = feedback.status;
-  if (!BEHAVIOR_STATUSES.has(status) || typeof file !== 'string'
-      || !/^project-[a-f0-9]{16}$/.test(binding.projectId || '')
-      || !/^[a-f0-9]{64}$/.test(binding.artifactSha256 || '')) return null;
-  const tool = source.tool || (run.kind === 'verification'
-    ? 'run_verification'
-    : source.kind === 'clock-trace' ? 'trace_circuit' : 'simulate_circuit');
-  const value = {
-    status,
-    tool,
-    circuit: binding.circuit || source.circuit || null,
-    candidateId: binding.candidateId || source.candidateId || null,
-    revisionId: binding.revisionId || source.revisionId || null,
-    runtimeProfileId: binding.runtimeProfileId || source.runtimeProfileId || run.runtimeProfileId || null,
-    runtimeJarSha256: execution.runtimeJarSha256 || null,
-    runtimeVersion: execution.runtimeVersion || null,
-    runId: run.id || source.runId || null,
-    kind: run.kind || source.kind || null,
-    authority: run.authority || source.authority || null,
-    stimulusSha256: run.stimulusSha256 || source.stimulusSha256 || null,
-    expectationSha256: run.expectationSha256 || feedback.expectationSha256 || null,
-    persisted: true,
-    observationId: report.id || null,
-  };
-  if (tool === 'run_verification') {
-    for (const key of ['id', 'manifestSha256', 'recipeSha256', 'oracleSha256', 'execution', 'verdict']) {
-      if (source[key] !== undefined) value[key] = structuredClone(source[key]);
-    }
-  }
-  for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
-    if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
-  }
-  if (!value.expectationSha256 && status !== 'observed') {
-    value.note = '恢复自持久化 native observation；原始显式期望摘要未持久化，只保留当时的有限反馈。';
-  }
-  return {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
-}
-
 // Owns the relationship between one real folder, its selected document, and
 // the runtime. All filesystem refreshes share a queue with explicit operations.
 class DesktopWorkspace extends EventEmitter {
@@ -74,101 +13,10 @@ class DesktopWorkspace extends EventEmitter {
     super(); this.folder = new FolderWorkspace(stateRoot); this.backend = backend; this.materials=materials;
     this.history = new FolderHistory(this.folder); this.queue = Promise.resolve();
     this.digest = null; this.error = ''; this.turnActive = false;
-    this.nativeLoadabilityReceipts = []; this.nativeBehaviorReceipts = [];
     this.folder.on('changed', () => this.run(() => this.refresh()).catch(e => this.report(e)));
   }
   run(operation) { const result = this.queue.catch(() => {}).then(operation); this.queue = result.catch(() => {}); return result; }
   snapshot() { return {folder:this.folder.snapshot(), error:this.error}; }
-  rememberNativeLoadability(result) {
-    const artifactSha256 = result?.binding?.artifactSha256;
-    const projectId = result?.binding?.projectId;
-    const file = result?.file;
-    const value = result?.nativeLoadability;
-    if (typeof file !== 'string' || !/^project-[a-f0-9]{16}$/.test(projectId || '')
-        || !/^[a-f0-9]{64}$/.test(artifactSha256 || '')
-        || !value || typeof value !== 'object') return;
-    const receipt = {projectId, file, artifactSha256, value:structuredClone(value)};
-    this.nativeLoadabilityReceipts = [receipt,
-      ...this.nativeLoadabilityReceipts.filter(item => !sameReceipt(item, receipt))]
-      .slice(0, MAX_NATIVE_RECEIPTS);
-  }
-  rememberNativeBehavior(result, tool, file = this.folder.current?.activeFile) {
-    const allowedTools = new Set(['simulate_circuit', 'trace_circuit', 'harness_run', 'evaluate_circuit', 'run_verification']);
-    const binding = result?.binding;
-    const feedback = result?.feedback;
-    const run = result?.run;
-    const status = feedback?.status;
-    if (!allowedTools.has(tool) || !['passed', 'failed', 'unknown', 'observed'].includes(status)
-        || typeof file !== 'string'
-        || !/^project-[a-f0-9]{16}$/.test(binding?.projectId || '')
-        || !/^[a-f0-9]{64}$/.test(binding?.artifactSha256 || '')) return;
-    const execution = result?.result?.execution || result?.execution || {};
-    const value = {status, tool, circuit: binding.circuit || null,
-      candidateId: binding.candidateId || null,
-      revisionId: binding.revisionId || null,
-      runtimeProfileId: binding.runtimeProfileId || run?.runtimeProfileId || result?.runtimeProfileId || null,
-      runtimeJarSha256: execution.runtimeJarSha256 || null,
-      runtimeVersion: execution.runtimeVersion || null,
-      runId: run?.id || null,
-      kind: run?.kind || null, authority: run?.authority || null,
-      stimulusSha256: run?.stimulusSha256 || result?.result?.stimulusSha256 || null,
-      expectationSha256: run?.expectationSha256 || result?.evaluation?.spec?.expectationSha256
-        || feedback.expectationSha256 || null};
-    if (tool === 'run_verification') {
-      const verification = result?.result || result;
-      for (const key of ['id', 'manifestSha256', 'recipeSha256', 'oracleSha256', 'execution', 'verdict']) {
-        if (verification[key] !== undefined) value[key] = structuredClone(verification[key]);
-      }
-    }
-    for (const key of ['checkedCount', 'failureCount', 'unknownCount', 'rowCount', 'note', 'firstFailure', 'firstUnknown']) {
-      if (feedback[key] !== undefined) value[key] = structuredClone(feedback[key]);
-    }
-    const receipt = {projectId:binding.projectId, file, artifactSha256:binding.artifactSha256, value};
-    this.nativeBehaviorReceipts = [receipt,
-      ...this.nativeBehaviorReceipts.filter(item => !sameReceipt(item, receipt, {includeRun:true}))]
-      .slice(0, MAX_NATIVE_RECEIPTS);
-  }
-  persistedNativeBehaviorReceipts(session, file = this.folder.current?.activeFile) {
-    const observationDirectory = session?.statePaths?.workspace
-      ? path.join(path.dirname(session.statePaths.workspace), 'observations')
-      : null;
-    if (!observationDirectory || typeof file !== 'string') return [];
-    let entries;
-    try {
-      entries = fs.readdirSync(observationDirectory)
-        .filter(name => /^(?:observation|verify)-[a-f0-9]{16}\.json$/.test(name))
-        .map(name => {
-          const absolute = path.join(observationDirectory, name);
-          return {absolute, mtimeMs: fs.statSync(absolute).mtimeMs};
-        })
-        .sort((a, b) => b.mtimeMs - a.mtimeMs)
-        .slice(0, MAX_NATIVE_RECEIPTS * 2);
-    } catch {
-      return [];
-    }
-    const projectId = session.workspace?.id;
-    const revisionId = session.revision?.id;
-    const artifactSha256 = session.revision?.artifactSha256;
-    const receipts = [];
-    for (const entry of entries) {
-      try {
-        const report = JSON.parse(fs.readFileSync(entry.absolute, 'utf8'));
-        const receipt = behaviorReceiptFromObservation(report, file);
-        if (!receipt || receipt.projectId !== projectId
-            || receipt.artifactSha256 !== artifactSha256
-            || receipt.value.revisionId !== revisionId) continue;
-        receipts.push(receipt);
-      } catch {
-        // A damaged historical observation is not current circuit evidence.
-      }
-    }
-    return receipts;
-  }
-  nativeBehaviorContext(session, file = this.folder.current?.activeFile) {
-    const receipts = [...this.nativeBehaviorReceipts, ...this.persistedNativeBehaviorReceipts(session, file)];
-    return receipts.filter((receipt, index) => !receipts.slice(0, index).some(previous =>
-      sameReceipt(previous, receipt, {includeRun:true}))).slice(0, MAX_NATIVE_RECEIPTS);
-  }
   report(error) { this.error = error.message; this.emit('changed', this.snapshot()); }
   async open(root, options = {}) {
     const previous = this.folder.snapshot();

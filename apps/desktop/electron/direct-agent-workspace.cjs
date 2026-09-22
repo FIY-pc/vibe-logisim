@@ -20,8 +20,6 @@ class DirectAgentWorkspace {
       root: w.folder.current.root,
       activeFile: w.folder.current.activeFile,
       session,
-      nativeLoadability: w.nativeLoadabilityReceipts,
-      nativeBehavior: w.nativeBehaviorContext(session),
     });
     return {folderId:w.folder.current.id, projectId:session?.workspace?.id || null,
       revisionId, relative:'.', sourceName:w.folder.current.activeFile, workspaceIndex};
@@ -50,8 +48,6 @@ class DirectAgentWorkspace {
   }
   canvasState(session) { return this.workspace.canvas?.snapshot(session) ?? {status:'unavailable',circuit:null}; }
   canvasVersion() { return this.workspace.canvas?.version; }
-  rememberNativeLoadability(result) { this.workspace.rememberNativeLoadability(result); }
-  rememberNativeBehavior(result, tool, file) { this.workspace.rememberNativeBehavior(result, tool, file); }
   async navigate(binding, session, circuit, assertCurrent, version) {
     this.assert(binding);assertCurrent();
     if(circuit && !session.project?.circuits?.some(item=>item.name===circuit)){

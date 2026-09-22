@@ -170,12 +170,10 @@ class CircuitPlugin {
       if (request.tool === 'simulate_circuit' && result.vectorsFile && args.vectorsFile !== undefined) {
         result = {...result, vectorsFile: {...result.vectorsFile, path: args.vectorsFile}};
       }
-      if (tool.owner === 'studio') this.workspace?.rememberNativeBehavior?.(result, request.tool, result?.file || work.sourceName);
       if (tool.owner === 'host') {
         scope.updateBinding(result);
         result = {...result,canvas:result.canvas ?? this.workspace.canvasState(result)};
         result = circuitActionResult(result, args);
-        if (request.tool === 'submit_circuit') this.workspace.rememberNativeLoadability?.(result);
       }
       const finalIdentity = {
         ...identity,

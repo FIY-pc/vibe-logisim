@@ -9,7 +9,6 @@ const MAX_FILES = 800;
 const MAX_CIRC_BYTES = 8 * 1024 * 1024;
 const MAX_CIRC_READ_BYTES = 2 * 1024 * 1024;
 const MAX_INDEX_BYTES = 128 * 1024;
-const MAX_RECEIPTS = 8;
 const IGNORED = new Set([
   '.git', '.codex', '.config', '.local', '.ssh', 'node_modules',
   '__pycache__', '.venv', 'dist', 'build', 'target', 'coverage',
@@ -37,8 +36,8 @@ function parseCircuitSummary(bytes) {
 }
 
 // A bounded map of the user's real folder. It contains paths and lightweight
-// circuit metadata only; file contents remain available through cwd/tools.
-function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoadability = null, nativeBehavior = null} = {}) {
+// circuit metadata only; electrical observations remain explicit tool results.
+function buildWorkspaceIndex({root, activeFile = null, session = null} = {}) {
   const absoluteRoot = path.resolve(root || '.');
   const files = [];
   const directories = [];
@@ -92,25 +91,6 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
   const revision = session?.revision || null;
   const currentCircuit = session?.activeCircuit || session?.project?.mainCircuit || null;
   const sourceAligned = sourceStatus?.stale === false && sourceStatus?.exists !== false;
-  const loadabilityReceipts = (Array.isArray(nativeLoadability) ? nativeLoadability : [])
-    .filter(receipt => activeFile && sourceAligned
-      && receipt?.file === activeFile
-      && receipt?.projectId === workspace.id
-      && receipt?.artifactSha256
-      && receipt.artifactSha256 === revision?.artifactSha256)
-    .slice(0, MAX_RECEIPTS);
-  const behaviorReceipts = (Array.isArray(nativeBehavior) ? nativeBehavior : [])
-    .filter(receipt => activeFile && sourceAligned
-      && receipt?.file === activeFile
-      && receipt?.projectId === workspace.id
-      && receipt?.artifactSha256
-      && receipt.artifactSha256 === revision?.artifactSha256)
-    .slice(0, MAX_RECEIPTS);
-  const rememberedLoadability = loadabilityReceipts.find(receipt => receipt.value?.circuit === currentCircuit) || null;
-  const rememberedBehavior = behaviorReceipts.find(receipt => receipt.value?.circuit === currentCircuit) || null;
-  const toEvidence = receipt => receipt
-    ? {artifactSha256: receipt.artifactSha256, ...receipt.value}
-    : null;
   const currentSource = activeFile
     ? {
       path: activeFile,
@@ -124,13 +104,7 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
           : sourceStatus?.stale === false
             ? 'aligned'
             : 'unknown',
-      loadability: rememberedLoadability?.value?.status || 'unknown',
-      loadabilityEvidence: toEvidence(rememberedLoadability),
-      recentLoadabilityEvidence: loadabilityReceipts.map(toEvidence),
-      behavior: rememberedBehavior?.value?.status || 'unknown',
-      behaviorEvidence: toEvidence(rememberedBehavior),
-      recentBehaviorEvidence: behaviorReceipts.map(toEvidence),
-      note: 'alignment only compares the source file with the frozen revision; scalar loadability and behavior use the newest exact receipt for the current circuit. Recent evidence keeps other circuits, inputs and expectations visible; neither establishes full correctness.',
+      note: 'alignment only compares the source file with the frozen revision. Electrical loadability and behavior are returned by explicit circuit tools and are not copied into this index.',
     }
     : {
       path: null,
@@ -138,12 +112,6 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
       frozenSha256: null,
       diskSha256: null,
       alignment: 'no-active-file',
-      loadability: 'unknown',
-      loadabilityEvidence: null,
-      recentLoadabilityEvidence: [],
-      behavior: 'unknown',
-      behaviorEvidence: null,
-      recentBehaviorEvidence: [],
       note: 'No circuit file is selected. Choose a .circ from circuits and call open_circuit when a canvas file is needed.',
     };
   const result = {
@@ -161,15 +129,6 @@ function buildWorkspaceIndex({root, activeFile = null, session = null, nativeLoa
     truncated,
     limits: {maxDepth: MAX_DEPTH, maxEntries: MAX_ENTRIES, maxFiles: MAX_FILES, maxCircuitReadBytes: MAX_CIRC_READ_BYTES},
   };
-  while (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_INDEX_BYTES
-      && (result.currentSource.recentBehaviorEvidence?.length || result.currentSource.recentLoadabilityEvidence?.length)) {
-    result.truncated = true;
-    if (result.currentSource.recentBehaviorEvidence.length >= result.currentSource.recentLoadabilityEvidence.length) {
-      result.currentSource.recentBehaviorEvidence.pop();
-    } else {
-      result.currentSource.recentLoadabilityEvidence.pop();
-    }
-  }
   while (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_INDEX_BYTES
       && (result.files.length || result.directories.length)) {
     result.truncated = true;
