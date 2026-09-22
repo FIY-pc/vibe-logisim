@@ -1646,10 +1646,25 @@ class CodexBackend extends EventEmitter {
     this.#setStatus("unavailable", message);
   }
 
+  #settleOrphanedWork(pending) {
+    if (!pending?.work || typeof this.agentWorkspace?.finish !== "function") return;
+    void this.agentWorkspace.finish(pending.work, {
+      apply: false,
+      completed: false,
+      isCurrent: () => true,
+    }).then(outcome => {
+      if (outcome) this.emit("event", {type:"circuit-change", ...outcome});
+    }).catch(error => {
+      this.emit("event", {type:"error", message:"Codex 连接中断；文件改动仍留在工作区，但历史收束未完成：" + plainError(error)});
+    });
+  }
+
   #handleExit(code, signal, generation) {
     if (generation !== this.childEpoch) return;
     const expected = this.stopping;
     const processGroupId = this.processGroupId;
+    const orphanedWork = this.finalizing ? null : this.pendingTurn;
+    this.#settleOrphanedWork(orphanedWork);
     this.child = null;
     this.startPromise = null;
     this.processGroupId = null;
