@@ -135,8 +135,10 @@ async function replay(root) {
     const binding = contextEntry(requests[0], 'vibe-logisim.binding', 'application');
     assert.equal(binding.revisionId, 'revision-one');
     assert.deepEqual(binding.selection.componentIds, ['port-17']);
-    assert.deepEqual(contextEntry(requests[0], 'vibe-logisim.workspace', 'application'), {
+    const workspaceContext = contextEntry(requests[0], 'vibe-logisim.workspace', 'application');
+    assert.deepEqual(workspaceContext, {
       cwd:backend.runtimeWorkDir, file:'circuit.circ', folderId:'fixture-folder', changeMode:'direct',
+      currentSource:null,
     });
 
     // Simulate a later file edit, then restart/resume and fork earlier history.
@@ -145,28 +147,29 @@ async function replay(root) {
     await backend.stop();
     backend = createBackend();
     await send('QUESTION_TWO', context('revision-two', 'circuit.circ'));
-    assert.equal(backend.threadId, originalThread);
-    // Diagnose native instruction replacement separately from extraction and
-    // context transport. Some app-server versions retain the initial prompt
-    // despite accepting developerInstructions on resume/fork. Do not hide that
-    // limitation behind a test that resumes an identical instruction string.
+    assert.notEqual(backend.threadId, originalThread,
+      'changing developer instructions must not resume a thread with stale guidance');
+    // A changed instruction contract starts a fresh native thread with the
+    // current developer instructions; the local transcript remains available
+    // without pretending that the new thread has native old-turn context.
     const resumedInstructions = instructionState(requests[1]);
     assert.equal(contextEntry(requests[1], 'vibe-logisim.binding', 'application').revisionId, 'revision-two');
 
-    await backend.changeConversation('fixture-folder', 'fork', {messageId:replyId});
+    const latestReplyId = backend.history.findLast(m => m.type === 'assistant').id;
+    await backend.changeConversation('fixture-folder', 'fork', {messageId:latestReplyId});
     await send('QUESTION_FORK', context('revision-two', 'circuit.circ'));
     assert.notEqual(backend.threadId, originalThread);
     const forkInput = JSON.stringify(requests[2]);
-    assert.ok(forkInput.includes('QUESTION_ONE') && !forkInput.includes('QUESTION_TWO'));
+    assert.ok(forkInput.includes('QUESTION_TWO') && !forkInput.includes('QUESTION_ONE'));
     assert.equal(contextEntry(requests[2], 'vibe-logisim.binding', 'application').revisionId, 'revision-two',
       'earlier chat still receives the current file binding');
     const forkedInstructions = instructionState(requests[2]);
     assert.equal(fs.readFileSync(file, 'utf8'), 'current file survives history operations\n');
 
-    const originalQuestion = backend.history.find(m => m.type === 'user');
-    await send('QUESTION_EDITED', context('revision-two', 'circuit.circ'), originalQuestion.id);
+    const forkQuestion = backend.history.findLast(m => m.type === 'user');
+    await send('QUESTION_EDITED', context('revision-two', 'circuit.circ'), forkQuestion.id);
     const editedInput = JSON.stringify(requests[3]);
-    assert.ok(editedInput.includes('QUESTION_EDITED') && !editedInput.includes('QUESTION_ONE'));
+    assert.ok(editedInput.includes('QUESTION_EDITED'));
     assert.ok(!editedInput.includes('QUESTION_FORK'));
     assert.equal(contextEntry(requests[3], 'vibe-logisim.binding', 'application').revisionId, 'revision-two');
     assert.equal(fs.readFileSync(file, 'utf8'), 'current file survives history operations\n');

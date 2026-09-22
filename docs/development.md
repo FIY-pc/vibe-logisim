@@ -127,7 +127,7 @@ python3 -m unittest -v apps/desktop/test/trace-events.py
 
 从空白接口构建组合算术电路的真实 base/full 回合、独立 oracle 与鼠标操作见 [011](../experiments/011-saturating-adder/README.md)。真实模型仅显式 `--run-model` 才启动；UI 脚本接受产物绝对路径，在临时副本操作 Pin，不启动模型。校准电路与模型产物结果必须分别报告。 默认结果目录为 `$XDG_STATE_HOME/vibe-logisim-experiments`（未设置则 `~/.local/state/vibe-logisim-experiments`）；`--output-root` 可指定其他持久目录，`--timeout-minutes` 明确实验预算。长回合及并行工作树不要放易随重启清空的 `/tmp`，遗失产物不能计入成功或功能失败。
 
-`python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。当前 Codex 的旧线程会沿用初始 developer 指令，该脚本单独报告这一行为，不能仅凭 resume 参数接受成功就声称指令已更新。
+`python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。它验证完整线程契约匹配时才 resume，developer 指令变化时使用当前说明启动新线程，并验证显式分支保留原生历史；不能仅凭 resume/fork 参数接受成功就声称旧线程已更新。
 
 `node apps/desktop/test/e2e-delivery-links.cjs [可选电路路径]` 在真实 Electron 用鼠标点击合成聊天引用，确认工作区资料预览、模型原生路径打开画布、移动映射、跨文件夹和历史歧义处理。文件和状态均使用临时副本，不启动模型；[使用真实模型产物的记录](../experiments/010-model-efficiency/delivery-ui/README.md)区分模型任务结果与这个界面回放。
 

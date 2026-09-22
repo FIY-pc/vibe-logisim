@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const readline = require("node:readline");
+const { createHash } = require("node:crypto");
 
 const START_TIMEOUT_MS = 20_000;
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -188,6 +189,8 @@ class CodexBackend extends EventEmitter {
     // Controlled comparisons can reuse the identical transport/isolation without
     // exposing the circuit application's instructions to a generic baseline.
     this.developerInstructions = developerInstructions;
+    this.developerInstructionsSha256 = createHash("sha256")
+      .update(String(developerInstructions ?? ""), "utf8").digest("hex");
     this.includeCircuitContext = includeCircuitContext;
     this.captureModelMedia = captureModelMedia;
     this.captureCodeMode = captureCodeMode;
@@ -953,12 +956,12 @@ class CodexBackend extends EventEmitter {
     const savedWorkspace = this.ephemeral ? null : this.conversations.ensure(workspaceKey);
     this.conversationId = savedWorkspace?.id || null;
     const savedThreadId = savedWorkspace?.threadId;
-    const currentToolContract = this.circuitTool ? this.circuitManifestState : null;
-    const compatibleThread = !this.circuitTool || !savedThreadId || (
-      savedWorkspace?.toolContract?.signature &&
-      savedWorkspace.toolContract.signature === currentToolContract?.signature
-    );
-    const resumableThreadId = compatibleThread ? savedThreadId : null;
+    const currentToolContract = this.#threadContract();
+    const contractCompatible = Boolean(savedThreadId &&
+      savedWorkspace?.toolContract?.mode === currentToolContract.mode &&
+      savedWorkspace.toolContract.signature === currentToolContract.signature &&
+      savedWorkspace.toolContract.developerInstructionsSha256 === currentToolContract.developerInstructionsSha256);
+    const resumableThreadId = contractCompatible ? savedThreadId : null;
     const capabilityReset = Boolean(savedThreadId && !resumableThreadId);
     let result = null;
     let provisionalThreadId = null;
@@ -1014,7 +1017,8 @@ class CodexBackend extends EventEmitter {
       this.workspaceKey = workspaceKey;
       this.threadRevisionId = revisionId;
       provisionalThreadId = null;
-      const restoredContexts = resumableThreadId === threadId ? savedWorkspace?.messageContexts : null;
+      const restoredContexts = resumableThreadId === threadId
+        ? savedWorkspace?.messageContexts : null;
       const restoredHistory = this.#historyFromThread(result.thread, restoredContexts);
       this.history = restoredHistory.length ? restoredHistory : savedWorkspace?.messages || [];
       if (!this.ephemeral) this.#rememberThread(workspaceKey, threadId, {rebind:capabilityReset});
@@ -1147,7 +1151,7 @@ class CodexBackend extends EventEmitter {
           this.#assertWorkspace(epoch, generation);
           state = this.conversations.fork(workspaceKey, {sourceId:source.id, sourceThreadId:source.threadId,
             messageId:request.messageId, turnId:fork.turnId, threadId:fork.thread.id, messageContexts:fork.messageContexts,
-            messages:this.#historyFromThread(fork.thread, fork.messageContexts), toolContract:this.circuitManifestState});
+            messages:this.#historyFromThread(fork.thread, fork.messageContexts), toolContract:this.#threadContract()});
         } else state = this.conversations.change(workspaceKey, action, request);
         const activate = state.activeId !== previous || this.workspaceKey !== workspaceKey;
         if (activate) {
@@ -1171,12 +1175,21 @@ class CodexBackend extends EventEmitter {
   #rememberThread(workspaceKey, threadId, {rebind = false} = {}) {
     if (rebind) {
       this.conversations.rebind(workspaceKey, {threadId, messages:this.history,
-        toolContract:this.circuitManifestState, reason:'circuit-plugin-capability-updated'});
+        toolContract:this.#threadContract(), reason:'thread-contract-updated'});
     } else {
       this.conversations.remember(workspaceKey, {threadId, messages:this.history,
-        toolContract:this.circuitManifestState});
+        toolContract:this.#threadContract()});
     }
     this.emit('event', {type:'conversations-changed', workspaceKey, ...this.conversations.state(workspaceKey)});
+  }
+
+  #threadContract() {
+    return {
+      mode: this.circuitTool ? 'circuit' : 'base',
+      signature: this.circuitManifestState?.signature || null,
+      ...(this.circuitManifestState || {}),
+      developerInstructionsSha256: this.developerInstructionsSha256,
+    };
   }
 
   #rememberMessageContext(workspaceKey, messageId, context) {

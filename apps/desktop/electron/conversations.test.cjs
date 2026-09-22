@@ -72,6 +72,8 @@ test('selected conversations resume their own native threads; busy turns and mis
   assert.equal(backend.conversations.get(key,b).threadId,'thread-2');
   assert.equal(backend.conversations.get(key,b).messages[0].text,'计数器');
   assert.equal(backend.conversations.get(key,a).messages[0].text,'全加器');
+  assert.equal(backend.conversations.get(key,a).toolContract.mode, 'base');
+  assert.match(backend.conversations.get(key,a).toolContract.developerInstructionsSha256, /^[a-f0-9]{64}$/);
   await backend.changeConversation(key,'select',{id:b});missing=true;
   await assert.rejects(()=>backend.ask({question:'再试',context,workspaceKey:key}),/原始会话暂时不可用/);
   assert.equal(requests.filter(r=>r.method==='thread/start').length,2);
@@ -106,5 +108,43 @@ test('a changed circuit plugin contract starts a capable thread while retaining 
   assert.deepEqual(record.messages.map(message=>message.text),['保留这段上下文','旧线程回答']);
   assert.deepEqual(record.supersededThreadIds,['thread-old']);
   assert.equal(record.toolContract.signature,backend.circuitTools.registry.signature);
+  assert.equal(record.toolContract.mode, 'circuit');
+  assert.match(record.toolContract.developerInstructionsSha256, /^[a-f0-9]{64}$/);
   assert.equal(events.find(event=>event.type==='thread-started').capabilityReset,true);
+});
+
+test('changed developer instructions start a fresh native thread instead of resuming stale guidance', async t => {
+  const root=makeRoot(t), key='folder:instruction-contract';
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json',
+    developerInstructions:'instructions-v1'});
+  backend.start=async()=>{backend.status='ready';};
+  const requests=[]; let serial=0;
+  const childFor=owner=>({stdin:{destroyed:false,write(line){
+    const request=JSON.parse(line); requests.push(request); if(!request.id)return;
+    const pending=owner.pending.get(String(request.id)); clearTimeout(pending.timeout); owner.pending.delete(String(request.id));
+    const result=request.method==='thread/start'?{thread:{id:'thread-'+(++serial),turns:[]}}:
+      request.method==='thread/resume'?{thread:{id:request.params.threadId,turns:[]}}:
+      request.method==='mcpServerStatus/list'?{data:[]}:
+      request.method==='turn/start'?{turn:{id:'turn-'+serial}}:{};
+    pending.resolve(result);
+  }}});
+  backend.child=childFor(backend); backend.model='test-model';
+  const context={folder:{id:'folder-aaaaaaaaaaaaaaaa'},revisionId:'revision-one'};
+  await backend.ask({question:'第一版指令',context,workspaceKey:key});
+  const firstThread=backend.threadId;
+  backend.child = null;
+  backend.status = 'stopped';
+
+  const changed=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json',
+    developerInstructions:'instructions-v2'});
+  changed.start=async()=>{changed.status='ready';};
+  changed.child=childFor(changed); changed.model='test-model';
+  await changed.resumeWorkspace({workspaceKey:key,revisionId:'revision-one'});
+  assert.notEqual(changed.threadId, firstThread);
+  assert.equal(changed.conversations.get(key,changed.conversationId).toolContract.developerInstructionsSha256,
+    changed.developerInstructionsSha256);
+  assert.equal(requests.some(request=>request.method==='thread/resume'), false);
+  assert.equal(requests.filter(request=>request.method==='thread/fork').length, 0);
+  assert.equal(requests.filter(request=>request.method==='thread/start').length, 2);
+  changed.child = null;
 });

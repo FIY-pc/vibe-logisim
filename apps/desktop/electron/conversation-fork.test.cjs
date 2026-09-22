@@ -10,7 +10,8 @@ function setup(t){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-fork-unit-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json'});
   const key='folder:one',sourceId=backend.conversationState(key).activeId;
-  backend.conversations.remember(key,{threadId:'source'});
+  backend.conversations.remember(key,{threadId:'source',toolContract:{mode:'base',signature:null,
+    developerInstructionsSha256:backend.developerInstructionsSha256}});
   for(let n=1;n<=3;n++)backend.conversations.remember(key,{messageId:'user-'+n,context:{circuit:'main',materials:[{id:'material-'+n}]}});
   const requests=[],driver={ignoreCut:false,fail:false};
   backend.start=async()=>{backend.status='ready';};backend.model='test-model';
