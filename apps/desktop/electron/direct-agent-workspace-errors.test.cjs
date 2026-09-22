@@ -55,3 +55,22 @@ test('prepare rejects a stale UI revision before starting a model turn', async (
     },
   );
 });
+
+test('prepare does not start a model turn when workspace refresh reports a conflict', async () => {
+  let reported = null;
+  const workspace = {
+    folder: {current: {id: 'folder-1', root: '/tmp', activeFile: 'main.circ'}},
+    backend: {
+      async session() {
+        return {workspace: {id: 'project-1'}, revision: {id: 'revision-current'}, sourceStatus: {stale: false}};
+      },
+    },
+    async run(operation) { return operation(); },
+    async saveWorking() {},
+    async refresh() { throw new Error('磁盘文件已改变，画布还有未保存编辑'); },
+    report(error) { reported = error; },
+  };
+  const agent = new DirectAgentWorkspace(workspace);
+  await assert.rejects(agent.prepare('revision-current'), /磁盘文件已改变/);
+  assert.equal(reported, null);
+});

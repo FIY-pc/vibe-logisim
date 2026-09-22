@@ -25,7 +25,7 @@ class DirectAgentWorkspace {
     await w.run(async () => {
       session = await w.backend.session();
       if(!session.sourceStatus?.stale)await w.saveWorking();
-      try{await w.refresh({checkpoint:true});}catch(error){w.report(error);}
+      await w.refresh({checkpoint:true});
       session = await w.backend.session();
     });
     const currentRevisionId = session?.revision?.id || null;
