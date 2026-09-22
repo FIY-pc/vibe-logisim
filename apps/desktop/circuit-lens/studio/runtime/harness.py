@@ -53,7 +53,7 @@ class NativeCircuitRuntime:
             **report['feedback'],
             'targets': targets,
             'connectivity': connectivity,
-            'note': 'Harness 提供真实运行反馈，不规定下一步必须验证还是继续构建。',
+            'note': '反馈仅描述本次绑定版本、激励和观察范围，不代表完整功能正确性。',
         }
         artifact_sha = report['artifactSha256']
         envelope = result_envelope(binding=report['binding'], run=report['run'], observation=report, feedback=feedback)
