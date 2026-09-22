@@ -12,6 +12,7 @@ import threading
 import xml.etree.ElementTree as ET
 
 from studio.infrastructure.files import sha256_bytes, sha256_file
+from studio.domain.tool_errors import CircuitToolError
 
 
 class SimulationWorker:
@@ -90,20 +91,34 @@ class SimulationWorker:
                 shutil.rmtree(temporary)
         return target
 
-    def _failure(self, message: str) -> RuntimeError:
+    def _failure(self, code: str, message: str, phase: str, request_context=None) -> CircuitToolError:
         detail = bytes(self.stderr_tail[-8192:]).decode('utf-8', errors='replace').strip()
-        return RuntimeError(message + (': ' + detail if detail else ''))
+        context = {
+            'service': 'simulation-worker',
+            'phase': phase,
+            'workerStopped': True,
+        }
+        if code == 'NATIVE_RUNTIME_TIMEOUT':
+            context['timeoutSeconds'] = 60
+        if isinstance(request_context, dict):
+            context.update({key: value for key, value in request_context.items() if value is not None})
+        return CircuitToolError(
+            code,
+            message + (': ' + detail if detail else ''),
+            hint='原生运行服务已停止并会在下一次调用时重启；这不是电路功能通过或失败的结论。',
+            context=context,
+        )
 
-    def _receive(self) -> bytes:
+    def _receive(self, phase: str = 'request', request_context=None) -> bytes:
         assert self.responses is not None
         try:
             line = self.responses.get(timeout=60)
         except queue.Empty:
-            error = self._failure('仿真服务响应超时')
+            error = self._failure('NATIVE_RUNTIME_TIMEOUT', '仿真服务响应超时（60 秒）', phase, request_context)
             self._stop()
             raise error from None
         if not line:
-            error = self._failure('仿真服务已结束')
+            error = self._failure('NATIVE_RUNTIME_EXITED', '仿真服务已结束', phase, request_context)
             self._stop()
             raise error
         try:
@@ -111,13 +126,13 @@ class SimulationWorker:
             value = base64.b64decode(encoded, validate=True)
         except (ValueError, TypeError) as error:
             self._stop()
-            raise RuntimeError('仿真服务返回了无效协议') from error
+            raise self._failure('NATIVE_RUNTIME_PROTOCOL', '仿真服务返回了无效协议', phase, request_context) from error
         if status == 'error':
             self._stop()
             raise ValueError(value.decode('utf-8', errors='replace'))
         if status != 'ok':
             self._stop()
-            raise RuntimeError('仿真服务返回了未知状态')
+            raise self._failure('NATIVE_RUNTIME_PROTOCOL', '仿真服务返回了未知状态', phase, request_context)
         return value
 
     def _start(self, runtime: Path, runtime_sha: str) -> None:
@@ -166,9 +181,9 @@ class SimulationWorker:
         self.stderr_reader = threading.Thread(target=read_stderr, daemon=True)
         self.stderr_reader.start()
         threading.Thread(target=read_stdout, daemon=True).start()
-        if self._receive() != b'ready':
+        if self._receive('startup') != b'ready':
             self._stop()
-            raise RuntimeError('仿真服务未就绪')
+            raise self._failure('NATIVE_RUNTIME_START_FAILED', '仿真服务未就绪', 'startup')
         self.binding = (str(runtime.resolve()), runtime_sha)
         self.starts += 1
 
@@ -178,18 +193,24 @@ class SimulationWorker:
                 raise RuntimeError('仿真服务已关闭')
             runtime = runtime.resolve()
             runtime_sha = sha256_file(runtime)
+            artifact_sha = sha256_file(artifact)
+            request_context = {
+                'operation': operation.tag,
+                'circuit': operation.get('circuit'),
+                'artifactSha256': artifact_sha,
+            }
             try:
                 if self.binding != (str(runtime), runtime_sha) or self.process is None or self.process.poll() is not None:
                     self._start(runtime, runtime_sha)
-                envelope = ET.Element('request', artifact=str(artifact.resolve()), digest=sha256_file(artifact))
+                envelope = ET.Element('request', artifact=str(artifact.resolve()), digest=artifact_sha)
                 envelope.append(operation)
                 payload = base64.b64encode(ET.tostring(envelope, encoding='utf-8')).decode('ascii')
                 assert self.process is not None and self.process.stdin is not None
                 self.process.stdin.write(payload + '\n')
                 self.process.stdin.flush()
-                return self._receive()
+                return self._receive('request', request_context)
             except (BrokenPipeError, ConnectionResetError):
-                error = self._failure('仿真服务连接中断')
+                error = self._failure('NATIVE_RUNTIME_DISCONNECTED', '仿真服务连接中断', 'request', request_context)
                 self._stop()
                 raise error from None
             except Exception:
