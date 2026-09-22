@@ -63,6 +63,17 @@ test('combined harness observations use the same canonical metadata view', () =>
   assert.equal(JSON.stringify(projected).length < JSON.stringify(raw).length, true);
 });
 
+test('other envelope tools keep domain details while collapsing exact identity copies', () => {
+  for (const tool of ['compare_circuit', 'run_verification']) {
+    const raw = sample('evaluate-unknown');
+    raw.invocation.tool = tool;
+    const projected = projectModelResult(raw);
+    assert.equal(Object.hasOwn(projected.result, 'binding'), false, tool);
+    assert.equal(projected.binding.artifactSha256, raw.binding.artifactSha256, tool);
+    assert.deepEqual(projected.result.evaluation, raw.result.evaluation, tool);
+  }
+});
+
 test('unknowns, new fields, failed expectations and large observations remain verbatim', () => {
   const raw=sample('evaluate-unknown');
   raw.future={bytes:'x'.repeat(20000),value:null};
