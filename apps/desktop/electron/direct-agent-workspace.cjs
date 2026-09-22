@@ -2,6 +2,19 @@
 const fs = require('node:fs');
 const {buildWorkspaceIndex} = require('./workspace-index.cjs');
 
+function workspaceToolError(code, message, {hint = null, context = null} = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.toolError = {
+    code,
+    message,
+    retryable: false,
+    ...(hint ? {hint} : {}),
+    ...(context && typeof context === 'object' ? {context} : {}),
+  };
+  return error;
+}
+
 // Codex writes the same directory the human sees. The host keeps optional
 // history and native runtime observations; there is no staging design.circ.
 class DirectAgentWorkspace {
@@ -52,7 +65,14 @@ class DirectAgentWorkspace {
     this.assert(binding);assertCurrent();
     if(circuit && !session.project?.circuits?.some(item=>item.name===circuit)){
       this.workspace.emit('changed',{...this.workspace.snapshot(),documentChanged:true});
-      throw new Error('文件已载入，但电路定义不存在：'+circuit+'。可用电路：'+(session.project?.circuits||[]).map(item=>item.name).join('、'));
+      const available = (session.project?.circuits || []).map(item => item.name).filter(Boolean);
+      throw workspaceToolError('CIRCUIT_NOT_FOUND',
+        '文件已载入，但电路定义不存在：' + circuit + '。可用电路：' + available.join('、'), {
+          hint: available.length
+            ? '从 context 或上一次 open_circuit 回执的 circuits 中选择一个定义名后重试。'
+            : '当前文件没有可用的电路定义；先检查文件内容。',
+          context: {requested: circuit, availableCircuits: available},
+        });
     }
     const canvas=await this.workspace.canvas?.open(session,circuit,version) ?? this.canvasState(session);
     this.assert(binding);assertCurrent();
