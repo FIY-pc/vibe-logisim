@@ -32,6 +32,19 @@ class CircuitToolRegistry {
     }
     const owned = owner => [...records.values()].filter(tool => tool.owner === owner).map(tool => tool.name);
     const hostTools = owned('host');
+    const studioTools = owned('studio');
+    const sameNames = (left, right) => Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && new Set(left).size === left.length
+      && new Set(right).size === right.length
+      && left.every(name => right.includes(name));
+    if (manifest.registeredToolNames !== undefined
+        && !sameNames(manifest.registeredToolNames, studioTools)) {
+      throw invalid('Studio 工具注册与目录 owner 不一致');
+    }
+    if (manifest.hostTools !== undefined && !sameNames(manifest.hostTools, hostTools)) {
+      throw invalid('宿主工具注册与目录 owner 不一致');
+    }
     const executors = Object.keys(hostExecutors);
     if (hostTools.length !== executors.length || hostTools.some(name => !executors.includes(name))) {
       throw invalid('工具 owner 与宿主执行器清单不一致');

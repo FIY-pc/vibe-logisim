@@ -21,6 +21,8 @@ assert.throws(() => plugin.configure({...catalog, version: "9.0.0"}), /版本/);
 const mismatchedOwner = {...catalog, tools: catalog.tools.map(tool =>
   tool.name === 'open_circuit' ? {...tool, owner:'studio'} : tool)};
 assert.throws(() => plugin.configure(mismatchedOwner), /owner|执行器/);
+assert.throws(() => plugin.configure({...catalog, registeredToolNames:['inspect_circuit']}), /注册|目录/);
+assert.throws(() => plugin.configure({...catalog, hostTools:['submit_circuit']}), /注册|目录/);
 const updated = {...catalog, version:"1.2.0"};
 assert.throws(() => plugin.configure(updated, {live:true}), /重新连接/);
 assert.equal(plugin.registry.identity.version, catalog.version, 'failed handshake must preserve the active contract');
