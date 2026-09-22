@@ -70,6 +70,7 @@ test('selected conversations resume their own native threads; busy turns and mis
   assert.equal(backend.history,liveHistory,'restoring a circuit must not replace live conversation state');
   await assert.rejects(()=>backend.changeConversation(key,'new',{}),/先停止/);
   await backend.invalidateRevision();
+  assert.equal(backend.snapshot().revisionId, null, 'revision binding is cleared while the conversation is preserved');
   const b=(await backend.changeConversation(key,'new',{})).activeId;
   await backend.ask({question:'计数器',context,workspaceKey:key});await backend.invalidateRevision();
   await backend.changeConversation(key,'select',{id:a});

@@ -918,6 +918,7 @@ class CodexBackend extends EventEmitter {
         const turnId = this.activeTurnId || this.pendingTurn?.turnId;
         this.activeTurnId = this.activeTurnEpoch = null;
         this.pendingTurn = null;
+        this.threadRevisionId = null;
         this.turnStarting = false;
         this.health.clear();
         this.emit("event", { type: "revision-changed", reason });
