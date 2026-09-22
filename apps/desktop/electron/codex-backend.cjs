@@ -14,8 +14,6 @@ const GRACEFUL_STOP_MS = 1_500;
 const FORCED_STOP_MS = 2_000;
 const {ConversationStore}=require('./conversation-store.cjs');
 const {forkThroughReply}=require('./conversation-fork.cjs');
-const {splitContext,keptObservationContext,materialContext}=require("./conversation-context.cjs");
-const MAX_CONTEXT_BYTES = 512 * 1024;
 const {
   DISABLED_CODEX_FEATURES,
   THREAD_CONFIG,
@@ -132,7 +130,8 @@ class CodexBackend extends EventEmitter {
     toolHost = null,
     agentWorkspace = null,
     developerInstructions = DEVELOPER_INSTRUCTIONS,
-    includeCircuitContext = true,
+    contextHost = null,
+    includeAgentContext = true,
     captureModelMedia = false,
     captureCodeMode = false,
   }) {
@@ -156,7 +155,8 @@ class CodexBackend extends EventEmitter {
     this.developerInstructions = developerInstructions;
     this.developerInstructionsSha256 = createHash("sha256")
       .update(String(developerInstructions ?? ""), "utf8").digest("hex");
-    this.includeCircuitContext = includeCircuitContext;
+    this.contextHost = contextHost;
+    this.includeAgentContext = includeAgentContext;
     this.captureModelMedia = captureModelMedia;
     this.captureCodeMode = captureCodeMode;
     this.changeMode = "review";
@@ -588,57 +588,20 @@ class CodexBackend extends EventEmitter {
     if (typeof workspaceKey !== "string" || !workspaceKey) {
       throw new Error("电路上下文没有稳定的 workspace identity。");
     }
-    const { binding, untrustedEvidence } = splitContext(context);
-    const encodedBinding = JSON.stringify(binding);
-    const encodedEvidence = JSON.stringify(untrustedEvidence);
-    const momentContext=keptObservationContext(context);
-    if (Buffer.byteLength(encodedBinding, "utf8") + Buffer.byteLength(encodedEvidence, "utf8") > MAX_CONTEXT_BYTES) {
-      throw new Error("选区证据超过当前 Codex 上下文上限，请缩小选区后再问。");
-    }
+    const preparedContext = this.contextHost?.prepare(context) || null;
     const clientMessageId = `vibe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const frozenContext = {
-      projectId:context.projectId,
-      plugin: context.plugin ? {id:context.plugin.id, version:context.plugin.version} : null,
-      folderId:context.folder?.id,
-      moments:(context.keptMoments||[]).map(m=>({id:m.id,projectId:m.projectId,title:m.title})),
-      materials:(context.materials||[]).map(m=>({id:m.id,name:m.name,pathVersion:m.pathVersion,page:m.page,quote:m.quote,reference:m.reference})),
+    const frozenContext = preparedContext?.frozenContext || {
+      projectId:context.projectId || null,
       revisionId,
-      selectionId: context.selectionId || null,
-      circuit: context.circuit || null,
-      summary: context.summary || null,
-      authority: context.authority || "unknown",
-      observationId: context.displayedSimulation?.id || null,
-      simulationSessionId: context.displayedSimulation?.sessionId || null,
-      simulationTick: context.displayedSimulation?.ticks ?? null,
-      simulationInstancePath: context.displayedSimulation?.instancePath || [],
-      simulationRootCircuit: context.displayedSimulation?.rootCircuit || null,
     };
-    const additionalContext = (cwd, workspaceIndex = null) => {
-      // The prepared workspace is authoritative for the file the host has
-      // selected. UI context can be a stale snapshot from before the folder
-      // operation completed; do not make the model rediscover that fact from
-      // the untrusted directory index.
-      const activeFile = typeof workspaceIndex?.activeFile === "string"
-        ? workspaceIndex.activeFile
-        : (context.folder?.activeFile || null);
-      return {
-        "vibe-logisim.binding": { value: encodedBinding, kind: "application" },
-        "vibe-logisim.evidence": { value: encodedEvidence, kind: "untrusted" },
-        ...momentContext, ...materialContext(context),
-        "vibe-logisim.workspace": {value: JSON.stringify({
-          cwd,
-          file:activeFile,
-          folderId:context.folder?.id,
-          changeMode:"direct",
-          currentSource: workspaceIndex?.currentSource || null,
-        }), kind:"application"},
-        ...(workspaceIndex ? {"vibe-logisim.workspace-index": {value: JSON.stringify(workspaceIndex), kind:"untrusted"}} : {}),
-      };
-    };
+    const additionalContext = (cwd, workspaceIndex = null) => this.contextHost?.additionalContext(
+      preparedContext, {cwd, workspaceIndex});
     if (expectedTurnId !== null) {
       if (editMessageId) throw new Error("运行中只能追加意见；编辑旧问题需要先停止回答。");
       return this.#steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext,
-        additionalContext: this.includeCircuitContext ? additionalContext(this.currentCwd || this.runtimeWorkDir, this.pendingTurn?.work?.workspaceIndex || null) : undefined});
+        additionalContext: this.includeAgentContext && preparedContext
+          ? additionalContext(this.currentCwd || this.runtimeWorkDir, this.pendingTurn?.work?.workspaceIndex || null)
+          : undefined});
     }
     const changesWorkspace = Boolean(this.threadId && this.workspaceKey !== workspaceKey);
     const requestEpoch = changesWorkspace ? ++this.workspaceEpoch : this.workspaceEpoch;
@@ -735,7 +698,9 @@ class CodexBackend extends EventEmitter {
             sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
             ...this.#nativeModelOverrides({includeEffort:true}),
             runtimeWorkspaceRoots: [turnCwd],
-            ...(this.includeCircuitContext ? {additionalContext: additionalContext(turnCwd, work?.workspaceIndex || null)} : {}),
+            ...(this.includeAgentContext && preparedContext
+              ? {additionalContext: additionalContext(turnCwd, work?.workspaceIndex || null)}
+              : {}),
           });
         } catch (error) {
           const modelError = this.#classifyTurnModelError(error);

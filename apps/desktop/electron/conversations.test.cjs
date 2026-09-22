@@ -113,6 +113,39 @@ test('an explicit app model is sent as an override while inherited config stays 
   assert.deepEqual({model:turns[1].params.model,effort:turns[1].params.effort},{model:'selected-model',effort:'high'});
 });
 
+test('Base Harness transports opaque context host output without rebuilding domain fields', async t => {
+  const root=makeRoot(t), key='folder:context-host';
+  const calls=[];
+  const contextHost={
+    prepare(context) {
+      calls.push({kind:'prepare', context});
+      return {frozenContext:{opaque:'domain-binding'}, token:'prepared'};
+    },
+    additionalContext(prepared, options) {
+      calls.push({kind:'additional', prepared, options});
+      return {'example.context':{value:JSON.stringify({prepared, options}), kind:'application'}};
+    },
+  };
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json',contextHost});
+  backend.start=async()=>{backend.status='ready';};
+  const requests=[];
+  backend.child={stdin:{destroyed:false,write(line){
+    const request=JSON.parse(line);requests.push(request);if(!request.id)return;
+    const pending=backend.pending.get(String(request.id));clearTimeout(pending.timeout);backend.pending.delete(String(request.id));
+    const result=request.method==='thread/start'?{thread:{id:'thread-context-host',turns:[]}}:
+      request.method==='mcpServerStatus/list'?{data:[]}:
+      request.method==='turn/start'?{turn:{id:'turn-context-host'}}:{};
+    pending.resolve(result);
+  }}};
+  const context={folder:{id:'folder-aaaaaaaaaaaaaaaa',activeFile:'main.circ'},revisionId:'revision-context'};
+  await backend.ask({question:'使用宿主上下文',context,workspaceKey:key});
+  const turn=requests.find(request=>request.method==='turn/start');
+  assert.deepEqual(calls.map(call=>call.kind),['prepare','additional']);
+  assert.deepEqual(backend.history[0].context,{opaque:'domain-binding'});
+  assert.equal(turn.params.additionalContext['example.context'].kind,'application');
+  assert.match(turn.params.additionalContext['example.context'].value,/prepared/);
+});
+
 test('a changed circuit plugin contract starts a capable thread while retaining local conversation history', async t => {
   const root=makeRoot(t), key='folder:capability-upgrade';
   const plugin = new CircuitPlugin({invoke:async()=>({}), workspace:null});

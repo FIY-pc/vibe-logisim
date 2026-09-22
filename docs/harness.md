@@ -23,7 +23,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 这里的“工具”是模型使用 harness 的接口，不是 harness 的全部。当前连接状态里的 `harness` 字段会报告 `vibe-logisim.harness/v1`：基础能力（原生 thread/turn/history、真实工作区文件、shell、搜索、模型目录、turn steering）、桌面宿主强制的边界（外部 systemd 隔离、无审批、关闭 login shell），以及电路插件的版本、契约签名和模型可见工具。Codex 原生功能如果需要额外的浏览器、MCP、插件、计划、子 agent 或 UI 请求处理，会在同一份能力政策中标记为 `disabled`；这不是把 agent 限制成电路专用 agent，而是避免模型看到一个宿主实际上接不住的接口。
 
-Base Harness 与领域插件之间通过 `electron/agent-tool-host.cjs` 的最小适配边界连接。Base Harness 只要求宿主能够准备当前动态工具契约、提供模型可见工具、按名称检查调用、分发调用并生成该插件的错误 envelope；它不导入 `CircuitPlugin`、不读取电路 manifest，也不理解电路动作或错误 schema。电路插件仍负责自己的执行器、工作区同步、串行队列和领域结果。这样“工具是模型接口”与“工具需要宿主才能真实执行”分别落在清晰的两层，新增领域插件不需要修改 Codex 回合生命周期。
+Base Harness 与领域插件之间通过 `electron/agent-tool-host.cjs` 和 `electron/agent-context-host.cjs` 的最小适配边界连接。Base Harness 只要求宿主能够准备当前动态工具契约、提供模型可见工具、按名称检查调用、分发调用并生成该插件的错误 envelope；上下文宿主负责把领域上下文投影成 binding、evidence 和 `additionalContext`。Base Harness 不导入 `CircuitPlugin`、不读取电路 manifest，也不理解电路动作、上下文字段或错误 schema。电路插件仍负责自己的执行器、工作区同步、串行队列和领域结果；电路上下文由 `circuit-context-host.cjs` 投影。这样“工具/上下文是模型接口”与“它们需要宿主才能真实执行”分别落在清晰的两层，新增领域插件不需要修改 Codex 回合生命周期。
 
 状态里的摘要只保留能力签名和名称。启动连接时，Base Harness 还通过同一个 app-server 的 `config/read` 读取 `nativeProfile`，把实际生效的模型行为配置与宿主强制策略分开；读取失败会明确标成 `unavailable`，不会把 profile 文件内容当成已生效的证据。需要查看每项禁用的边界与原因时，桌面只读接口 `agent.getCapabilities()` 返回同一份 `vibe-logisim.harness/v1` 的详细报告。
 

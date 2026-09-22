@@ -178,8 +178,8 @@ async function replay(root) {
 
     // Controlled comparisons keep their explicit override and omit app context.
     await backend.stop();
-    backend = createBackend({developerInstructions:'BASELINE_INSTRUCTIONS_FIXTURE', includeCircuitContext:false,
-      circuitTool:null, circuitManifest:null, ephemeral:true});
+    backend = createBackend({developerInstructions:'BASELINE_INSTRUCTIONS_FIXTURE', includeAgentContext:false,
+      ephemeral:true});
     await send('BASELINE_QUESTION', context('revision-two', 'circuit.circ'));
     assert.ok(textInputs(requests[4]).some(m => m.role === 'developer' && m.text.includes('BASELINE_INSTRUCTIONS_FIXTURE')));
     const baseline = JSON.stringify(requests[4]);

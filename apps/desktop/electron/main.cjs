@@ -19,6 +19,8 @@ const { CodexBackend } = require("./codex-backend.cjs");
 const {DirectAgentWorkspace} = require("./direct-agent-workspace.cjs");
 const {CircuitPlugin} = require("./circuit-plugin.cjs");
 const {AgentToolHost} = require("./agent-tool-host.cjs");
+const {AgentContextHost} = require("./agent-context-host.cjs");
+const {CircuitContextProvider} = require("./circuit-context-host.cjs");
 const {DesktopWorkspace} = require("./desktop-workspace.cjs");
 const {registerFolderIpc} = require("./folder-ipc.cjs");
 const {CanvasNavigation,registerCanvasIpc} = require('./canvas-navigation.cjs');
@@ -226,6 +228,7 @@ async function startApplication() {
     manifest: () => backend.circuitPlugin(),
     mode: 'circuit',
   });
+  const contextHost = new AgentContextHost({provider:new CircuitContextProvider()});
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
   codex = new CodexBackend({
     runtimeRoot,
@@ -234,6 +237,7 @@ async function startApplication() {
     sessionStorePath: path.join(agentRoot, "sessions.json"),
     version: app.getVersion(),
     toolHost,
+    contextHost,
     agentWorkspace,
   });
   codex.on("log", (message) => console.error(`[codex] ${message}`));
