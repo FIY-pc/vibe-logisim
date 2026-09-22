@@ -159,6 +159,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `wire_candidate` 的端口引用失败会返回 `INVALID_PORT_REFERENCE`：组件存在但端口错误时附上同一次观察中的 `context.availablePorts`；组件 ID 错误时附上 `context.availableComponents`。这让模型可以从原生端口序号、名称、位宽和方向中修正一次调用，或直接选回正确的组件 ID；它不替模型猜测端口语义，也不把错误引用自动改写为另一个端口。
 
+新增部件的原生模板或属性被拒绝时，`wire_candidate` 返回 `NATIVE_COMPONENT_TEMPLATE_REJECTED`，并在失败路径按需查询当前项目的 native palette，附上对应部件的 `effectiveAttributes`、可选项和端口。成功构建不承担这次额外查询；失败反馈也不会替模型静默改写属性，尤其不把 OR Gate 的数据 `width` 与几何 `size` 混为一谈。
+
 回合初始的工作区上下文还会附带 `currentSource`：它只记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。它是宿主的文件身份和导航上下文，不是电路观察结果，也不自动携带上一次仿真或验证的结论。加载性、行为和评测结果只通过对应的显式电路工具返回；模型需要时可以重新观察，用户留存的冻结时刻则通过 `read_kept_observation` 主动读取。这样一次局部运行不会在下一回合伪装成当前电路状态，也不会把历史证据变成隐含工作流。
 
 候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 [023](../experiments/023-simultaneous-layout/README.md)；反馈可恢复不等于已证明模型耗时改善。

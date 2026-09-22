@@ -90,6 +90,19 @@ class ComponentAttributes(unittest.TestCase):
                             call('describe_component', library='0', tool=factory, attributes=attrs)
                         with self.assertRaises(describe.CircuitToolError):
                             call('wire_candidate', additions=[part('bad', factory, attrs)], connections=[])
+
+                # A failed template request should expose the native choices
+                # needed to correct the request, rather than making the model
+                # rediscover them through a second free-form guess.
+                bad_gate = {'id': 'bad-or', 'library': '1', 'factory': 'OR Gate',
+                            'location': {'x': 300, 'y': 340}, 'attributes': {'facing': 'diagonal'}}
+                with self.assertRaises(describe.CircuitToolError) as rejected:
+                    call('wire_candidate', additions=[bad_gate], connections=[])
+                self.assertEqual(rejected.exception.code, 'NATIVE_COMPONENT_TEMPLATE_REJECTED')
+                templates = rejected.exception.as_dict()['context']['nativeTemplates']
+                self.assertEqual(templates[0]['id'], 'bad-or')
+                self.assertTrue(templates[0]['effectiveAttributes'])
+                self.assertTrue(templates[0]['ports'])
                 for attrs in [{'facing': 'diagonal'}, {'value': '0x100'}, {'value': '0x100000000'}]:
                     with self.subTest(edit=attrs), self.assertRaises(describe.CircuitToolError):
                         call('edit_candidate', candidateId=added['id'], artifactSha256=observed['artifactSha256'],

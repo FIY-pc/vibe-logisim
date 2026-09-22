@@ -7,6 +7,78 @@ import copy
 import re
 import xml.etree.ElementTree as ET
 
+from studio.domain.tool_errors import CircuitToolError
+
+
+def _template_feedback(workbench, circuit, additions):
+    """Resolve compact native hints only after a template request fails.
+
+    The normal construction path already asks the native worker for all
+    templates. Re-querying the palette is deliberately failure-only: the
+    model gets actionable attribute choices without making successful builds
+    pay for a second discovery pass.
+    """
+    workspace = workbench.workspace
+    record = getattr(workspace.history, 'record', None) or {}
+    hints = []
+    def compact(value, limit=256):
+        if isinstance(value, str) and len(value) > limit:
+            return value[:limit] + '…'
+        return value
+
+    for item in additions[:8]:
+        hint = {
+            'id': item.get('id'),
+            'factory': item.get('factory'),
+            'library': item.get('library') if 'library' in item else None,
+            'requestedAttributes': dict(item.get('attributes') or {}),
+        }
+        try:
+            body = {
+                'projectId': record.get('id'),
+                'revisionId': workspace.revision_id,
+                'circuit': circuit,
+                'tool': item.get('factory'),
+            }
+            if 'library' in item:
+                body['library'] = item['library']
+            described = workspace.application.placement.describe(body)
+            attributes = []
+            for attribute in (described.get('attributes') or [])[:24]:
+                attributes.append({
+                    key: compact(attribute.get(key))
+                    for key in ('name', 'value', 'standard', 'editable')
+                    if key in attribute
+                } | {
+                    'options': [
+                        {key: compact(option.get(key), 128) for key in ('value', 'label') if key in option}
+                        for option in (attribute.get('options') or [])[:16]
+                    ],
+                })
+            hint['effectiveAttributes'] = attributes
+            hint['ports'] = [
+                {key: port.get(key) for key in ('index', 'width', 'direction', 'runtimeTooltip') if key in port}
+                for port in (described.get('ports') or [])[:24]
+            ]
+        except Exception as lookup_error:
+            hint['lookupError'] = str(lookup_error)
+        hints.append(hint)
+    if len(additions) > len(hints):
+        hints.append({'truncated': True, 'omittedCount': len(additions) - len(hints)})
+    return hints
+
+
+def _template_rejection(workbench, circuit, additions, error):
+    return CircuitToolError(
+        'NATIVE_COMPONENT_TEMPLATE_REJECTED',
+        str(error) or '原生组件模板拒绝了新增部件或属性',
+        hint='按 context.nativeTemplates 中对应部件的 effectiveAttributes 和 ports 修正 factory、library 或 attributes；不要把几何 size 当作数据 width。',
+        context={
+            'nativeMessage': str(error),
+            'nativeTemplates': _template_feedback(workbench, circuit, additions),
+        },
+    )
+
 
 def pin_interface(workbench, artifact, circuit):
     symbol = workbench._native(artifact, ET.Element('interface', circuit=circuit)).find('symbol')
@@ -63,7 +135,10 @@ def prepare_parts(workbench, artifact, circuit, additions, aliases, libraries):
             raise ValueError(f'{alias}: 属性必须为原生属性名与字符串值')
         for name, value in attrs.items():
             ET.SubElement(part, 'set', name=name, value=value)
-    result = workbench._native(artifact, request)
+    try:
+        result = workbench._native(artifact, request)
+    except ValueError as error:
+        raise _template_rejection(workbench, circuit, additions, error) from error
     templates = result.findall('template')
     if [part.get('id') for part in templates] != [item['id'] for item in additions]:
         raise ValueError('原生组件查询未完整返回请求部件')
