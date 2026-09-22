@@ -48,6 +48,21 @@ test('one differing field defeats metadata removal; identical IDs do not establi
   assert.equal(model.binding.runtimeProfile.status,'observed');
 });
 
+test('combined harness observations use the same canonical metadata view', () => {
+  const raw = sample('evaluate-unknown');
+  raw.invocation.tool = 'harness_run';
+  const projected = projectModelResult(raw);
+
+  assert.equal(Object.hasOwn(projected.result, 'binding'), false);
+  assert.equal(Object.hasOwn(projected.result, 'run'), false);
+  assert.equal(Object.hasOwn(projected.result, 'schema'), false);
+  assert.equal(Object.hasOwn(projected.result, 'plugin'), false);
+  assert.equal(Object.hasOwn(projected.result, 'runtimeProfile'), false);
+  assert.equal(projected.binding.revisionId, raw.binding.revisionId);
+  assert.equal(projected.result.rows.length, raw.result.rows.length);
+  assert.equal(JSON.stringify(projected).length < JSON.stringify(raw).length, true);
+});
+
 test('unknowns, new fields, failed expectations and large observations remain verbatim', () => {
   const raw=sample('evaluate-unknown');
   raw.future={bytes:'x'.repeat(20000),value:null};

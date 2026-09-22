@@ -11,7 +11,10 @@ const {isDeepStrictEqual} = require('node:util');
 const MODEL_OUTPUT_SCHEMA = 'vibe-logisim.canonical-model-view/v1';
 const RESULT_SCHEMA = 'vibe-logisim.circuit-plugin.result/v1';
 
-const BOUND_TOOLS = new Set(['trace_circuit', 'evaluate_circuit', 'render_circuit']);
+// All tools that return the result envelope carry the same binding/run
+// metadata inside their observation for legacy consumers. Keep the model
+// transport canonical for the combined harness entry point as well.
+const BOUND_TOOLS = new Set(['trace_circuit', 'evaluate_circuit', 'render_circuit', 'harness_run']);
 
 // Paths are fixed JSON Pointers, never supplied by a tool or user. Sources do
 // not overlap destinations; the canonical value is always directly available.
@@ -29,6 +32,7 @@ const BOUND_DUPLICATES = [
   ['/run/runtimeProfileId', '/binding/runtimeProfileId'],
   ['/result/schema', '/schema'],
   ['/result/plugin', '/plugin'],
+  ['/result/run', '/run'],
   ['/result/runId', '/run/id'],
   ['/result/stimulusSha256', '/run/stimulusSha256'],
   ['/result/authority', '/run/authority'],
