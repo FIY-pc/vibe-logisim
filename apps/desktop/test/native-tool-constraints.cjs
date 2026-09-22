@@ -13,6 +13,7 @@ const {createHash} = require('node:crypto');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const {CircuitToolRegistry} = require('../electron/circuit-tools.cjs');
 const {dynamicToolResponse, CODE_MODE_RESULT_CONTRACT} = require('../electron/model-tool-output.cjs');
+const {DEVELOPER_INSTRUCTIONS} = require('../electron/agent-instructions.cjs');
 
 const rawTools = catalog.tools.filter(t => t.exposure === 'direct')
   .map(({type, name, description, inputSchema}) => ({type, name, description, inputSchema}));
@@ -31,6 +32,11 @@ function execTool(body) {
 
 function toolBlock(text, name) {
   return text.split('### `' + name + '`\n')[1]?.split('\n### ')[0];
+}
+
+function developerText(body) {
+  return (body.input || []).filter(item => item.type === 'message' && item.role === 'developer')
+    .flatMap(item => item.content || []).map(item => item.text || '').join('\n');
 }
 
 async function probe() {
@@ -114,7 +120,7 @@ async function probe() {
     };
     const start = tools => rpc('thread/start', {
       cwd:root, approvalPolicy:'never', sandbox:'danger-full-access',
-      dynamicTools:tools, developerInstructions:'Local constraints transport fixture.',
+      dynamicTools:tools, developerInstructions:DEVELOPER_INSTRUCTIONS,
     });
     const run = async () => {
       await rpc('initialize', {clientInfo:{name:'vibe-tool-constraints-test', version:'1'}, capabilities:{experimentalApi:true}});
@@ -205,7 +211,10 @@ async function main() {
     assert.equal(summary.addedExecDescriptionBytes, Object.values(summary.perToolAddedBytes).reduce((a,b) => a+b, 0));
     summary.semantics = {schemasUnchanged:true, nativeTypesAndExistingTextUnchanged:true,
       newThreadBoundsVisible:true, resumedInterface:'initial-thread-tools', forkedInterface:'initial-thread-tools'};
-    for (const tool of registry.tools) assert.ok(toolBlock(after, tool.name).includes(CODE_MODE_RESULT_CONTRACT));
+    assert.ok(developerText(bodies.after).includes(CODE_MODE_RESULT_CONTRACT),
+      'shared result transport must reach the native developer instructions');
+    for (const tool of registry.tools) assert.equal(toolBlock(after, tool.name).includes(CODE_MODE_RESULT_CONTRACT), false,
+      'result transport must not be repeated in each tool');
     const resultItem = bodies.jsonResult.input.find(item => item.call_id === 'json-result-fixture'
       && item.type.endsWith('tool_call_output'));
     assert.ok(resultItem, 'next request must contain the actual exec output');
@@ -214,7 +223,7 @@ async function main() {
     const proof = JSON.parse(text.slice(text.indexOf('{')));
     assert.deepEqual(proof, {type:'string',rawPassedMissing:true,
       parsed:{passed:1,failed:0,unchecked:0,unknown:null,label:'协议🙂',fixture:true}});
-    summary.codeModeResult = {contractVisible:true, calls:1, ...proof};
+    summary.codeModeResult = {contractVisible:true, perToolContract:false, calls:1, ...proof};
   }
   if (output) fs.writeFileSync(path.join(output, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
   console.log(JSON.stringify(summary));

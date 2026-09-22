@@ -7,10 +7,11 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const {projectModelResult} = require('./model-result-projection.cjs');
 
 // DynamicToolSpec has no return schema. Codex Code Mode joins content items
-// into a string, even for a JSON-only response; expose that transport contract.
+// into a string, even for a JSON-only response. The shared transport rule is
+// sent once in agent-instructions.cjs; do not repeat it for every tool.
 const CODE_MODE_RESULT_CONTRACT = 'Code Mode return type: string. Parse JSON text with JSON.parse(result) before reading fields. Image-bearing results use the image delivery format described by the tool.';
 function describeCodeModeResult(tool) {
-  return {...tool, description: tool.description + '\n\n' + CODE_MODE_RESULT_CONTRACT};
+  return {...tool};
 }
 
 function splitModelContent(result) {
