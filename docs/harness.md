@@ -165,6 +165,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `retryable` 表示原参数不变时是否适合直接重试；参数错误、未知输入和过期修订通常为 `false`，模型应先根据 `hint`、`context` 或 `availableInputs` 修正调用。错误从 Studio 生成，经 HTTP 和 Electron 透传到 Codex 工具结果，不由 UI 改写成成功，也不要求用户进入固定验证流程。
 
+通过 Codex dynamic tool 返回模型时，失败对象也显式带有同一 `schema`，与 Studio、HTTP 和桌面控制通道使用的错误协议一致；`code`、恢复上下文和调用身份仍位于同一个 `error` 对象中。
+
 当模型尚未打开电路而调用观察工具时，Electron 会在 `NO_CIRCUIT_OPEN` 的 `context.availableFiles` 中补充当前工作区索引里的 `.circ` 相对路径、主电路名和定义摘要，并给出下一步 `open_circuit` 参数。它只提供选择信息，不替模型切换用户当前电路；索引被截断时同时标记 `indexTruncated`。
 
 `wire_candidate` 的端口引用失败会返回 `INVALID_PORT_REFERENCE`：组件存在但端口错误时附上同一次观察中的 `context.availablePorts`；组件 ID 错误时附上 `context.availableComponents`。这让模型可以从原生端口序号、名称、位宽和方向中修正一次调用，或直接选回正确的组件 ID；它不替模型猜测端口语义，也不把错误引用自动改写为另一个端口。

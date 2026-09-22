@@ -4,6 +4,8 @@ const {harnessResultEvent} = require('./harness-result.cjs');
 const {splitModelContent} = require('./model-tool-output.cjs');
 const {circuitActionResult} = require('./circuit-action-result.cjs');
 
+const ERROR_SCHEMA = 'vibe-logisim.circuit-plugin.error/v1';
+
 function hostToolError(code, message, {retryable = false, hint = null, context = null} = {}) {
   const error = new Error(message);
   error.code = code;
@@ -81,6 +83,11 @@ function attachInvocationIdentity(error, request, scope) {
     context: {...context, invocation: invocationIdentity(request, scope?.pending)},
   };
   return target;
+}
+
+function modelErrorPayload(error, request, scope) {
+  const enriched = attachInvocationIdentity(error, request, scope);
+  return {schema: ERROR_SCHEMA, ...enriched.toolError};
 }
 
 // Owns only domain tool execution. Thread admission, stop, reconnect and the
@@ -277,4 +284,4 @@ class CircuitPlugin {
   }
 }
 
-module.exports = {CircuitPlugin, attachInvocationIdentity};
+module.exports = {CircuitPlugin, attachInvocationIdentity, modelErrorPayload, ERROR_SCHEMA};

@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
-const {CircuitPlugin} = require('./circuit-plugin.cjs');
+const {CircuitPlugin, modelErrorPayload, ERROR_SCHEMA} = require('./circuit-plugin.cjs');
 
 function scope(work = {folder: '/workspace'}) {
   return {
@@ -108,4 +108,13 @@ test('domain failures preserve the workspace and observation binding', async () 
     threadId: 'thread-1', turnId: 'turn-1', callId: 'call-1', tool: 'simulate_circuit',
   });
   assert.equal(error.toolError.context.service, 'simulation-worker');
+});
+
+test('the model-facing error envelope keeps the shared protocol schema', () => {
+  const payload = modelErrorPayload(new Error('expired'), {
+    tool: 'inspect_circuit', callId: 'call-1', turnId: 'turn-1', threadId: 'thread-1',
+  }, {pending: {projectId: 'project-1', revisionId: 'revision-1'}});
+  assert.equal(payload.schema, ERROR_SCHEMA);
+  assert.equal(payload.code, 'CIRCUIT_TOOL_FAILED');
+  assert.equal(payload.context.invocation.revisionId, 'revision-1');
 });

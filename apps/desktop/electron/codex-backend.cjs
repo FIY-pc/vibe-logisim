@@ -50,7 +50,7 @@ const THREAD_CONFIG = Object.freeze({
   allow_login_shell: false,
 });
 
-const { CircuitPlugin, attachInvocationIdentity } = require("./circuit-plugin.cjs");
+const { CircuitPlugin, modelErrorPayload } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
@@ -1482,10 +1482,9 @@ class CodexBackend extends EventEmitter {
       };
       Promise.resolve().then(invoke)
         .catch(error => {
-          const enriched = attachInvocationIdentity(error, request, {pending: this.pendingTurn});
           return {
             contentItems: [{type: "inputText", text: JSON.stringify({
-              error: enriched.toolError,
+              error: modelErrorPayload(error, request, {pending: this.pendingTurn}),
             })}],
             success: false,
           };
