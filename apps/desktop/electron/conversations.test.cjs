@@ -168,3 +168,39 @@ test('an invalid inherited model is rejected before a turn can admit a native th
   assert.equal(backend.threadId,null);
   assert.equal(backend.conversationId,null);
 });
+
+test('a provider model rejection invalidates the catalog and blocks a repeated native turn', async t => {
+  const root=makeRoot(t), key='folder:provider-model-rejection';
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json'});
+  backend.start=async()=>{backend.status='ready';};
+  backend.model='stale-model'; backend.effort='high';
+  const requests=[];
+  backend.child={stdin:{destroyed:false,writable:true,write(line){
+    const request=JSON.parse(line); requests.push(request);
+    if (!request.id) return;
+    const pending=backend.pending.get(String(request.id));
+    clearTimeout(pending.timeout); backend.pending.delete(String(request.id));
+    if (request.method==='thread/start') {
+      pending.resolve({thread:{id:'thread-provider-rejection',turns:[]}}); return;
+    }
+    if (request.method==='turn/start') {
+      const error=new Error('unexpected status 404 Not Found: The model `stale-model` does not exist or you do not have access to it.');
+      error.status=404; pending.reject(error); return;
+    }
+    pending.resolve({});
+  }}};
+  const context={folder:{id:'folder-aaaaaaaaaaaaaaaa'},revisionId:'revision-one'};
+  await assert.rejects(()=>backend.ask({question:'第一次发送',context,workspaceKey:key}),error=>{
+    assert.equal(error.code,'MODEL_UNAVAILABLE');
+    assert.equal(error.phase,'turn');
+    return true;
+  });
+  assert.equal(backend.modelConfigurationError.code,'MODEL_UNAVAILABLE');
+  assert.equal(backend.modelSettings.state().status,'unknown');
+  await assert.rejects(()=>backend.ask({question:'不应重复发送',context,workspaceKey:key}),error=>{
+    assert.equal(error.code,'MODEL_UNAVAILABLE');
+    return true;
+  });
+  assert.equal(requests.filter(request=>request.method==='thread/start').length,1);
+  assert.equal(requests.filter(request=>request.method==='turn/start').length,1);
+});

@@ -516,8 +516,17 @@ class CodexBackend extends EventEmitter {
     const selected = await this.modelSettings.validate(selection);
     if (generation !== this.childEpoch || this.snapshot().busy) throw new Error("连接或回答状态已变化，请重新选择");
     this.modelSettings.save(selected);
-    this.model = selected?.model || this.inheritedModel || null;
-    this.effort = selected ? selected.effort : (this.inheritedEffort || null);
+    if (selected) {
+      this.model = selected.model;
+      this.effort = selected.effort;
+      this.modelConfigurationError = null;
+    } else if (this.modelConfigurationError) {
+      this.model = null;
+      this.effort = null;
+    } else {
+      this.model = this.inheritedModel || null;
+      this.effort = this.inheritedEffort || null;
+    }
     this.#setStatus(this.status);
     return this.snapshot();
   }
@@ -569,6 +578,9 @@ class CodexBackend extends EventEmitter {
   async ask({ question, context, workspaceKey, editMessageId = null, expectedTurnId = null }) {
     if (expectedTurnId === null && (this.finalizing || this.turnStarting || this.activeTurnId || this.pendingSteer || this.workspaceTransitioning)) {
       throw new Error("Codex 正在回答上一条问题；请先等待或停止当前回答。");
+    }
+    if (expectedTurnId === null && this.modelConfigurationError) {
+      throw this.modelConfigurationError;
     }
     const revisionId = context?.revisionId;
     if (!context?.folder && (typeof revisionId !== "string" || !revisionId)) {
@@ -643,7 +655,7 @@ class CodexBackend extends EventEmitter {
       if (this.status === "auth-required") {
         throw new Error("请先在 AI 设置中登录 ChatGPT。");
       }
-      if (this.modelConfigurationError && !this.modelSettings.selection) {
+      if (this.modelConfigurationError) {
         throw this.modelConfigurationError;
       }
       if (!this.child || !["ready", "busy"].includes(this.status)) {
@@ -726,7 +738,7 @@ class CodexBackend extends EventEmitter {
             ...(this.includeCircuitContext ? {additionalContext: additionalContext(turnCwd, work?.workspaceIndex || null)} : {}),
           });
         } catch (error) {
-          const modelError = classifyModelError(error, {phase:"turn", model:this.model});
+          const modelError = this.#classifyTurnModelError(error);
           if (modelError) {
             this.#setStatus("unavailable", modelError.message);
             throw modelError;
@@ -1456,8 +1468,9 @@ class CodexBackend extends EventEmitter {
     if (method === "error") {
       if (!this.#matchesCurrentTurn(params)) return;
       const message = params.error?.message || params.message || "Codex turn failed.";
+      const modelError = params.willRetry ? null : this.#classifyTurnModelError(message);
       if (params.willRetry) this.health.retry(params.turnId, message);
-      else this.health.finish(params.turnId, "failed", message);
+      else this.health.finish(params.turnId, "failed", modelError?.message || message);
       this.#setStatus(this.status);
       return;
     }
@@ -1562,6 +1575,7 @@ class CodexBackend extends EventEmitter {
 
   async #finishTurn(turn, pending) {
     const isCurrent = () => pending?.epoch === this.workspaceEpoch && pending?.childEpoch === this.childEpoch;
+    const modelError = turn.error?.message ? this.#classifyTurnModelError(turn.error.message) : null;
     try {
       if (pending?.work && isCurrent()) {
         const outcome = await this.agentWorkspace.finish(pending.work, {
@@ -1580,11 +1594,26 @@ class CodexBackend extends EventEmitter {
         this.activeTurnEpoch = null;
         this.pendingTurn = null;
         this.userRequests.clear();
-        this.health.finish(turn.id, turn.status, turn.error?.message);
+        this.health.finish(turn.id, turn.status, modelError?.message || turn.error?.message);
         this.#setStatus(this.turnStarting ? "busy" : "ready");
-        this.emit("event", {type:"turn-completed", turnId:turn.id, status:turn.status, error:turn.error?.message || null});
+        this.emit("event", {type:"turn-completed", turnId:turn.id, status:turn.status, error:modelError?.message || turn.error?.message || null});
       }
     }
+  }
+
+  #classifyTurnModelError(error) {
+    const modelError = classifyModelError(
+      error instanceof Error ? error : new Error(String(error || "")),
+      {phase:"turn", model:this.model},
+    );
+    if (modelError?.code === "MODEL_UNAVAILABLE") {
+      // The provider is the final authority for availability. Force the next
+      // model-picker read through app-server/model/list instead of retrying a
+      // stale catalog entry or creating another native thread with it.
+      this.modelConfigurationError = modelError;
+      this.modelSettings.invalidate();
+    }
+    return modelError;
   }
 
   #handleProcessError(error, generation) {
