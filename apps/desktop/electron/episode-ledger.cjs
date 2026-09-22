@@ -172,7 +172,10 @@ class EpisodeLedger {
     const circuitActivities = toolActivities.filter(item => item.kind === 'tool' && item.activityKey?.startsWith('circuit:'));
     const visualActivities = circuitActivities.filter(item => item.activityKey === 'circuit:render_circuit');
     const nativeRuns = circuitActivities.filter(item => item.status === 'completed' &&
-      ['circuit:simulate_circuit', 'circuit:trace_circuit', 'circuit:evaluate_circuit'].includes(item.activityKey));
+      ['circuit:simulate_circuit', 'circuit:trace_circuit', 'circuit:evaluate_circuit',
+        'circuit:harness_run', 'circuit:compare_circuit'].includes(item.activityKey));
+    const verificationRuns = circuitActivities.filter(item => item.status === 'completed' &&
+      item.activityKey === 'circuit:run_verification');
     const failed = toolActivities.filter(item => item.status === 'failed');
     const recovery = activities.filter(item => item.status === 'completed' &&
       activities.some(failure => failure.activityKey === item.activityKey && failure.failedAt !== null && failure.failedAt < item.lastAt)).length;
@@ -201,6 +204,7 @@ class EpisodeLedger {
       commandFailures: toolActivities.filter(item => item.kind === 'command' && item.status === 'failed').length,
       fileChangeEvents: completed.filter(item => item.kind === 'file').length,
       nativeRunCalls: nativeRuns.length,
+      verificationToolCalls: verificationRuns.length,
       // Exit/status cannot tell apart invalid arguments, failed assertions,
       // informational CLI exits or intentional process termination.
       failedCalls: failed.length,

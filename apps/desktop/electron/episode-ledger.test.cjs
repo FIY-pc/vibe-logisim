@@ -67,6 +67,18 @@ test('a completed tool cannot mask a failed expectation or erase it after a late
   assert.equal(ledger.metrics().taskSuccess, null);
 });
 
+test('counts combined native runs and external verification separately', () => {
+  const ledger = new EpisodeLedger();
+  ledger.record('event', {type: 'activity', itemId: 'harness', kind: 'tool',
+    activityKey: 'circuit:harness_run', status: 'completed'});
+  ledger.record('event', {type: 'activity', itemId: 'compare', kind: 'tool',
+    activityKey: 'circuit:compare_circuit', status: 'completed'});
+  ledger.record('event', {type: 'activity', itemId: 'verify', kind: 'tool',
+    activityKey: 'circuit:run_verification', status: 'completed'});
+  assert.equal(ledger.metrics().nativeRunCalls, 2);
+  assert.equal(ledger.metrics().verificationToolCalls, 1);
+});
+
 test('summarizes a free-form episode from independent evidence', () => {
   const ledger = new EpisodeLedger({
     episodeId: 'episode-1', taskId: 'full-adder', condition: 'circuit-tools',
