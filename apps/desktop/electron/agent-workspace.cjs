@@ -158,7 +158,7 @@ class AgentWorkspace {
     if (!isCurrent()) return null;
     if (apply && completed) session = await this.backend.projectAction("apply", {
       projectId:binding.projectId, revisionId:binding.revisionId, candidateId:candidate.id});
-    return {candidate, applied:Boolean(session), session};
+    return {candidate, applied:Boolean(session), session, revisionId:session?.revision?.id || null};
   }
   finishEvent(outcome) {
     return outcome?.applied || outcome?.candidate ? {type:'circuit-change', ...outcome} : null;

@@ -151,7 +151,7 @@ class CodexBackend extends EventEmitter {
     this.toolHostState = null;
     this.agentWorkspace = agentWorkspace;
     // Controlled comparisons can reuse the identical transport/isolation without
-    // exposing the circuit application's instructions to a generic baseline.
+    // exposing application-specific instructions to a generic baseline.
     this.developerInstructions = developerInstructions;
     this.developerInstructionsSha256 = createHash("sha256")
       .update(String(developerInstructions ?? ""), "utf8").digest("hex");
@@ -1022,7 +1022,7 @@ class CodexBackend extends EventEmitter {
       if (mcpServers.length) {
         await this.#request("thread/unsubscribe", { threadId }).catch(() => {});
         provisionalThreadId = null;
-        throw new Error("隔离失败：Circuit Agent 检测到继承的 MCP 服务，已拒绝启动该会话。");
+        throw new Error("隔离失败：嵌入式 Codex 检测到继承的 MCP 服务，已拒绝启动该会话。");
       }
       this.threadId = threadId;
       this.workspaceKey = workspaceKey;
@@ -1562,7 +1562,6 @@ class CodexBackend extends EventEmitter {
           apply:pending.changeMode === "auto", completed:turn.status === "completed", isCurrent});
         if (outcome && isCurrent()) {
           if (Object.hasOwn(outcome, "revisionId")) this.threadRevisionId = outcome.revisionId;
-          if (outcome.applied) this.threadRevisionId = outcome.session.revision.id;
           const event = this.agentWorkspace.finishEvent?.(outcome);
           if (event) this.emit("event", event);
         }
