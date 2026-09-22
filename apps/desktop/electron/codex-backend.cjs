@@ -244,6 +244,14 @@ class CodexBackend extends EventEmitter {
     };
   }
 
+  capabilityReport() {
+    return capabilitySnapshot({
+      plugin: this.circuitManifestState,
+      directTools: this.circuitTools.registry?.tools?.map(tool => tool.name) || [],
+      detail: true,
+    });
+  }
+
   async start() {
     if (this.startPromise) return this.startPromise;
     const attempt = this.#startOnce();

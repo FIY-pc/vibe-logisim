@@ -21,7 +21,9 @@ Vibe Logisim 使用 Codex 作为基础 Agent Harness，并通过 Circuit Plugin 
 
 Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作目录、上下文、工具调用、权限、事件流和历史等生命周期。电路插件不创建第二套 thread、turn、审批或模型循环，它只提供模型在电路世界中的可调用能力。
 
-这里的“工具”是模型使用 harness 的接口，不是 harness 的全部。当前连接状态里的 `harness` 字段会报告 `vibe-logisim.harness/v1`：基础能力（原生 thread/turn/history、真实工作区文件、shell、搜索、模型目录、turn steering）、桌面宿主强制的边界（外部 systemd 隔离、无审批、关闭 login shell），以及电路插件的版本、契约签名和模型可见工具。Codex 原生功能如果需要额外的浏览器、MCP、插件、计划、子 agent 或 UI 请求处理，会在同一份能力政策中标记为 `disabled` 和原因；这不是把 agent 限制成电路专用 agent，而是避免模型看到一个宿主实际上接不住的接口。
+这里的“工具”是模型使用 harness 的接口，不是 harness 的全部。当前连接状态里的 `harness` 字段会报告 `vibe-logisim.harness/v1`：基础能力（原生 thread/turn/history、真实工作区文件、shell、搜索、模型目录、turn steering）、桌面宿主强制的边界（外部 systemd 隔离、无审批、关闭 login shell），以及电路插件的版本、契约签名和模型可见工具。Codex 原生功能如果需要额外的浏览器、MCP、插件、计划、子 agent 或 UI 请求处理，会在同一份能力政策中标记为 `disabled`；这不是把 agent 限制成电路专用 agent，而是避免模型看到一个宿主实际上接不住的接口。
+
+状态里的摘要只保留能力签名和名称。需要查看每项禁用的边界与原因时，桌面只读接口 `agent.getCapabilities()` 返回同一份 `vibe-logisim.harness/v1` 的详细报告。
 
 能力政策位于 [`codex-capabilities.cjs`](../apps/desktop/electron/codex-capabilities.cjs)，生命周期仍位于 `codex-backend.cjs`。新增一项原生能力时，先补齐它的宿主/工作区契约，再从政策中解除禁用；不能只删一个 `--disable` 参数就把并发写文件或未处理的 server request 暴露给模型。
 

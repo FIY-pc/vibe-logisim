@@ -407,6 +407,10 @@ function registerIpc() {
       messages: [],
     };
   });
+  ipcMain.handle("vibe-logisim:agent-capabilities", (event) => {
+    if (!isTrustedRenderer(event)) throw new Error("Untrusted renderer.");
+    return codex?.capabilityReport?.() || null;
+  });
 
   ipcMain.handle("vibe-logisim:agent-recoveries", (event) => {
     if (!isTrustedRenderer(event)) throw new Error("Untrusted renderer.");

@@ -71,18 +71,12 @@ const POLICY_SIGNATURE = createHash('sha256')
   .update(JSON.stringify({featurePolicy: FEATURE_POLICY, thread: THREAD_CONFIG, base: BASE_CAPABILITIES}), 'utf8')
   .digest('hex');
 
-function capabilitySnapshot({plugin = null, directTools = []} = {}) {
-  return {
+function capabilitySnapshot({plugin = null, directTools = [], detail = false} = {}) {
+  const report = {
     schema: 'vibe-logisim.harness/v1',
     signature: POLICY_SIGNATURE,
     base: BASE_CAPABILITIES,
-    featurePolicy: Object.fromEntries(
-      Object.entries(FEATURE_POLICY).map(([feature, [state, boundary, reason]]) => [feature, {
-        state,
-        boundary,
-        reason,
-      }]),
-    ),
+    disabledFeatures: Object.keys(FEATURE_POLICY),
     enforced: {
       approval: 'never',
       sandbox: 'external-systemd',
@@ -99,6 +93,16 @@ function capabilitySnapshot({plugin = null, directTools = []} = {}) {
       }
       : null,
   };
+  if (detail) {
+    report.featurePolicy = Object.fromEntries(
+      Object.entries(FEATURE_POLICY).map(([feature, [state, boundary, reason]]) => [feature, {
+        state,
+        boundary,
+        reason,
+      }]),
+    );
+  }
+  return report;
 }
 
 module.exports = {

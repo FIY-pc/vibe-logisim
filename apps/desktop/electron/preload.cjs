@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld(
     agent: Object.freeze({
       conversations: request => ipcRenderer.invoke("vibe-logisim:conversations", request),
       getState: () => ipcRenderer.invoke("vibe-logisim:agent-state"),
+      getCapabilities: () => ipcRenderer.invoke("vibe-logisim:agent-capabilities"),
       listModels: refresh => ipcRenderer.invoke("vibe-logisim:agent-models", refresh),
       selectModel: selection => ipcRenderer.invoke("vibe-logisim:agent-model-select", selection),
       reconnect: () => ipcRenderer.invoke("vibe-logisim:agent-reconnect"),
