@@ -16,40 +16,12 @@ const {ConversationStore}=require('./conversation-store.cjs');
 const {forkThroughReply}=require('./conversation-fork.cjs');
 const {splitContext,keptObservationContext,materialContext}=require("./conversation-context.cjs");
 const MAX_CONTEXT_BYTES = 512 * 1024;
-const DISABLED_CODEX_FEATURES = [
-  "apps",
-  "auth_elicitation",
-  "browser_use",
-  "browser_use_external",
-  "browser_use_full_cdp_access",
-  "computer_use",
-  "goals",
-  "hooks",
-  "image_generation",
-  "in_app_browser",
-  "multi_agent",
-  "multi_agent_v2",
-  "network_proxy",
-  "plugin_sharing",
-  "plugins",
-  "remote_plugin",
-  "shell_snapshot",
-  "shell_snapshot_v2",
-  "skill_mcp_dependency_install",
-  "sleep_tool",
-  "tool_call_mcp_elicitation",
-  "tool_suggest",
-  "workspace_dependencies",
-];
-const THREAD_CONFIG = Object.freeze({
-  ...Object.fromEntries(DISABLED_CODEX_FEATURES.map((feature) => [`features.${feature}`, false])),
-  "features.memories": false,
-  "features.code_mode": true,
-  "features.code_mode_host": true,
-  web_search: "live",
-  "shell_environment_policy.inherit": "core",
-  allow_login_shell: false,
-});
+const {
+  DISABLED_CODEX_FEATURES,
+  THREAD_CONFIG,
+  POLICY_SIGNATURE,
+  capabilitySnapshot,
+} = require('./codex-capabilities.cjs');
 
 const { CircuitPlugin, modelErrorPayload } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
@@ -264,6 +236,10 @@ class CodexBackend extends EventEmitter {
       isolation: "systemd-linux",
       accountMode: this.runtimeRoot ? "application" : "shared",
       signingIn: Boolean(this.loginId),
+      harness: capabilitySnapshot({
+        plugin: this.circuitManifestState,
+        directTools: this.circuitTools.registry?.tools?.map(tool => tool.name) || [],
+      }),
       messages: this.history.slice(-60),
     };
   }
@@ -1006,6 +982,7 @@ class CodexBackend extends EventEmitter {
     const contractCompatible = Boolean(savedThreadId &&
       savedWorkspace?.toolContract?.mode === currentToolContract.mode &&
       savedWorkspace.toolContract.signature === currentToolContract.signature &&
+      savedWorkspace.toolContract.harnessSignature === currentToolContract.harnessSignature &&
       savedWorkspace.toolContract.developerInstructionsSha256 === currentToolContract.developerInstructionsSha256);
     const resumableThreadId = contractCompatible ? savedThreadId : null;
     const capabilityReset = Boolean(savedThreadId && !resumableThreadId);
@@ -1234,6 +1211,7 @@ class CodexBackend extends EventEmitter {
       mode: this.circuitTool ? 'circuit' : 'base',
       signature: this.circuitManifestState?.signature || null,
       ...(this.circuitManifestState || {}),
+      harnessSignature: POLICY_SIGNATURE,
       developerInstructionsSha256: this.developerInstructionsSha256,
     };
   }
