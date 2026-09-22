@@ -87,6 +87,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.34.0 将 `harness_run` 从模型可见目录中隐藏。它与 `simulate_circuit`、`trace_circuit` 和 `evaluate_circuit` 没有模型独有能力，历史真实轨迹中也没有被模型采用；底层共享执行器和内部评测入口继续保留。模型面只保留语义更明确、覆盖范围更清楚的入口，减少工具选择和契约上下文负担。
 
+1.35.0 修正隐藏工具下线后的目录语义：模型可见工具的描述不再推荐不可调用的 `harness_run`，注册器也拒绝任何直接工具说明引用隐藏工具。这样隐藏内部实现不会继续污染模型的工具选择上下文。
+
 独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。

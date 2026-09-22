@@ -17,6 +17,9 @@ assert.equal(new Set(directNames).size, directNames.length);
 assert.equal(registry.get("harness_run"), null, "the redundant common runner stays internal");
 assert.equal(registry.tools.some(tool => tool.name === "harness_run"), false);
 assert.equal(registry.get("import_candidate"), null, "internal candidate import must stay hidden");
+const leakedHiddenTool = {...catalog, tools: catalog.tools.map(tool =>
+  tool.name === 'trace_circuit' ? {...tool, description: tool.description + ' harness_run'} : tool)};
+assert.throws(() => new CircuitToolRegistry(leakedHiddenTool, hostExecutors), /隐藏工具/);
 plugin.configure(catalog);
 assert.throws(() => plugin.configure({...catalog, version: "9.0.0"}), /版本/);
 const mismatchedOwner = {...catalog, tools: catalog.tools.map(tool =>

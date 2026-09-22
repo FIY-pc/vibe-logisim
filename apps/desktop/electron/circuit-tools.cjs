@@ -30,6 +30,13 @@ class CircuitToolRegistry {
       if (records.has(raw.name)) throw invalid('重复工具：' + raw.name);
       records.set(raw.name, freeze(structuredClone(raw)));
     }
+    const hiddenNames = new Set([...records.values()]
+      .filter(tool => tool.exposure === 'hidden').map(tool => tool.name));
+    for (const tool of records.values()) {
+      if (tool.exposure === 'direct' && [...hiddenNames].some(name => tool.description.includes(name))) {
+        throw invalid('模型可见工具说明引用隐藏工具：' + tool.name);
+      }
+    }
     const owned = owner => [...records.values()].filter(tool => tool.owner === owner).map(tool => tool.name);
     const hostTools = owned('host');
     const studioTools = owned('studio');
