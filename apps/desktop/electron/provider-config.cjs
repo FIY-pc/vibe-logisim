@@ -4,6 +4,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {execFileSync} = require("node:child_process");
 
+// These fields affect model requests but do not grant the embedded process a
+// new host surface. Approval, sandbox, feature, plugin and credential fields
+// stay owned by the desktop harness.
+const PRESERVED_NATIVE_FIELDS = Object.freeze([
+  "disable_response_storage",
+  "service_tier",
+  "personality",
+  "model_reasoning_summary",
+  "model_verbosity",
+]);
+
 // Python is already required by the circuit authority; use its TOML parser.
 function readProvider(configPath, environment = process.env, options = {}) {
   if (!fs.existsSync(configPath)) return {environment: {}, toml: ""};
@@ -11,7 +22,8 @@ function readProvider(configPath, environment = process.env, options = {}) {
     "import json,sys,tomllib",
     "with open(sys.argv[1], 'rb') as f: c=tomllib.load(f)",
     "name=c.get('model_provider', 'openai')",
-    "print(json.dumps({'model':c.get('model'), 'effort':c.get('model_reasoning_effort'), 'modelCatalogJson':c.get('model_catalog_json'), 'name':name, 'provider':c.get('model_providers', {}).get(name)}))",
+    "preserved={key:c[key] for key in ('disable_response_storage','service_tier','personality','model_reasoning_summary','model_verbosity') if key in c}",
+    "print(json.dumps({'model':c.get('model'), 'effort':c.get('model_reasoning_effort'), 'modelCatalogJson':c.get('model_catalog_json'), 'name':name, 'provider':c.get('model_providers', {}).get(name), 'preserved':preserved}))",
   ].join("\n");
   let config;
   try {
@@ -65,6 +77,9 @@ function readProvider(configPath, environment = process.env, options = {}) {
   }
   if (modelCatalogJson) fields.push("model_catalog_json = " + JSON.stringify(modelCatalogJson));
   if (config.effort) fields.push("model_reasoning_effort = " + JSON.stringify(config.effort));
+  for (const key of PRESERVED_NATIVE_FIELDS) {
+    if (Object.hasOwn(config.preserved || {}, key)) fields.push(key + " = " + tomlValue(config.preserved[key]));
+  }
   if (provider) {
     fields.push("model_provider = " + JSON.stringify(config.name));
     fields.push("", "[model_providers." + JSON.stringify(config.name) + "]");
@@ -72,7 +87,8 @@ function readProvider(configPath, environment = process.env, options = {}) {
       "query_params", "env_http_headers", "request_max_retries", "stream_max_retries", "stream_idle_timeout_ms", "supports_websockets"];
     for (const key of allowed) if (provider[key] !== undefined) fields.push(key + " = " + tomlValue(provider[key]));
   }
-  return {name: config.name, model: config.model, effort: config.effort, modelCatalogJson, environment: forwarded, toml: fields.join("\n") + "\n"};
+  return {name: config.name, model: config.model, effort: config.effort, modelCatalogJson,
+    preserved: config.preserved || {}, environment: forwarded, toml: fields.join("\n") + "\n"};
 }
 
 function tomlValue(value) {

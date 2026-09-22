@@ -11,6 +11,10 @@ test('provider mirror preserves the native model catalog cache',()=>{
    'model = "gpt-6-astra"',
    'model_catalog_json = "models.json"',
    'model_reasoning_effort = "max"',
+   'service_tier = "fast"',
+   'personality = "pragmatic"',
+   'model_verbosity = "low"',
+   'disable_response_storage = true',
    '[model_providers.custom]',
    'name = "OpenAI"',
    'base_url = "https://example.invalid/v1"',
@@ -21,5 +25,9 @@ test('provider mirror preserves the native model catalog cache',()=>{
  assert.equal(mirrored.modelCatalogJson,'models.json');
  assert.deepEqual(JSON.parse(fs.readFileSync(target+'/models.json','utf8')),{models:[]});
  assert.match(fs.readFileSync(target+'/config.toml','utf8'),/model_catalog_json = "models\.json"/);
+ assert.match(fs.readFileSync(target+'/config.toml','utf8'),/service_tier = "fast"/);
+ assert.match(fs.readFileSync(target+'/config.toml','utf8'),/personality = "pragmatic"/);
+ assert.match(fs.readFileSync(target+'/config.toml','utf8'),/model_verbosity = "low"/);
+ assert.match(fs.readFileSync(target+'/config.toml','utf8'),/disable_response_storage = true/);
  assert.equal(settings.model,'gpt-6-astra');
 });
