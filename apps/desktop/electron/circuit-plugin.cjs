@@ -77,7 +77,6 @@ function attachInvocationIdentity(error, request, scope) {
   const context = current.context && typeof current.context === 'object' && !Array.isArray(current.context)
     ? current.context
     : {};
-  if (context.invocation) return target;
   target.toolError = {
     ...current,
     context: {...context, invocation: invocationIdentity(request, scope?.pending)},

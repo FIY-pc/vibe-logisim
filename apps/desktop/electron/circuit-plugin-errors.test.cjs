@@ -91,7 +91,10 @@ test('domain failures preserve the workspace and observation binding', async () 
       code: error.code,
       message: error.message,
       retryable: true,
-      context: {service: 'simulation-worker'},
+      context: {
+        service: 'simulation-worker',
+        invocation: {projectId: 'foreign-project', revisionId: 'stale-revision', callId: 'stale-call'},
+      },
     };
     throw error;
   }});
