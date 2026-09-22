@@ -4,6 +4,19 @@ const {harnessResultEvent} = require('./harness-result.cjs');
 const {splitModelContent} = require('./model-tool-output.cjs');
 const {circuitActionResult} = require('./circuit-action-result.cjs');
 
+function hostToolError(code, message, {retryable = false, hint = null, context = null} = {}) {
+  const error = new Error(message);
+  error.code = code;
+  error.toolError = {
+    code,
+    message,
+    retryable,
+    ...(hint ? {hint} : {}),
+    ...(context && typeof context === 'object' ? {context} : {}),
+  };
+  return error;
+}
+
 function enrichNoCircuitOpen(error, workspaceIndex) {
   const toolError = error?.toolError;
   if (!toolError || toolError.code !== 'NO_CIRCUIT_OPEN') return error;
@@ -125,18 +138,48 @@ class CircuitPlugin {
     const execute = async () => {
       scope.assertCurrent();
       const tool = this.registry?.get(request.tool);
-      if (!tool) throw new Error('电路工具未注册或未向模型开放：' + request.tool);
+      if (!tool) {
+        throw hostToolError('TOOL_NOT_REGISTERED', '电路工具未注册或未向模型开放：' + request.tool, {
+          hint: '只调用当前插件目录中已开放的工具。',
+          context: {tool: request.tool || null},
+        });
+      }
       const args = request.arguments;
-      if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('工具参数必须为对象');
+      if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        throw hostToolError('INVALID_ARGUMENT', '工具参数必须为对象', {
+          hint: '将 arguments 改为当前工具声明的 JSON 对象。',
+        });
+      }
       const work = scope.pending.work;
-      if (!work || !this.workspace?.synchronize) throw new Error('请先打开文件夹工作区');
+      if (!work || !this.workspace?.synchronize) {
+        throw hostToolError('WORKSPACE_NOT_OPEN', '请先打开文件夹工作区', {
+          hint: '先打开一个文件夹工作区，再调用电路工具。',
+        });
+      }
       // Host actions must be validated before even selecting or refreshing a file.
       if (tool.owner === 'host') {
-        for (const name of tool.inputSchema.required || []) {
-          if (typeof args[name] !== 'string' || !args[name].trim()) throw new Error('工具参数需要非空 ' + name);
+        const required = tool.inputSchema.required || [];
+        for (const name of required) {
+          if (typeof args[name] !== 'string' || !args[name].trim()) {
+            throw hostToolError('INVALID_ARGUMENT', '工具参数需要非空 ' + name, {
+              hint: `补充 ${name} 后再调用此工具。`,
+              context: {path: name, expected: '非空字符串'},
+            });
+          }
         }
-        if (Object.keys(args).some(key => !Object.hasOwn(tool.inputSchema.properties, key))) throw new Error('工具包含未声明的参数');
-        if(args.circuit !== undefined && (typeof args.circuit !== 'string' || !args.circuit.trim()))throw new Error('工具参数需要非空 circuit');
+        const unknown = Object.keys(args).filter(key => !Object.hasOwn(tool.inputSchema.properties, key));
+        if (unknown.length) {
+          throw hostToolError('INVALID_ARGUMENT', '工具包含未声明的参数', {
+            hint: '删除未出现在工具声明中的参数后重试。',
+            context: {unknownParameters: unknown.sort()},
+          });
+        }
+        if (args.circuit !== undefined && (typeof args.circuit !== 'string' || !args.circuit.trim())) {
+          throw hostToolError('INVALID_ARGUMENT', '工具参数需要非空 circuit', {
+            hint: '补充目标电路定义名后再调用此工具。',
+            context: {path: 'circuit', expected: '非空字符串'},
+          });
+        }
       }
       const viewVersion = this.workspace.canvasVersion();
       const session = await this.workspace.synchronize(work, request.tool === 'open_circuit' ? args.path : null, scope.assertCurrent, {navigate:request.tool==='open_circuit'});
@@ -152,7 +195,11 @@ class CircuitPlugin {
       };
       let domainArgs = args;
       if (request.tool === 'simulate_circuit' && args.vectorsFile !== undefined) {
-        if (typeof this.workspace.resolveFile !== 'function') throw new Error('文件输入需要已打开共享文件夹');
+        if (typeof this.workspace.resolveFile !== 'function') {
+          throw hostToolError('WORKSPACE_NOT_OPEN', '文件输入需要已打开共享文件夹', {
+            hint: '先打开文件夹工作区，再使用 vectorsFile。',
+          });
+        }
         domainArgs = {...args, vectorsFile: this.workspace.resolveFile(work, args.vectorsFile)};
       }
       let result;
@@ -164,7 +211,12 @@ class CircuitPlugin {
         throw enrichNoCircuitOpen(error, work.workspaceIndex);
       }
       scope.assertCurrent();
-      if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('电路工具没有返回有效结果');
+      if (!result || typeof result !== 'object' || Array.isArray(result)) {
+        throw hostToolError('TOOL_INVALID_RESULT', '电路工具没有返回有效结果', {
+          hint: '不要把该结果当作电路事实；检查当前插件连接后再决定是否重试。',
+          context: {tool: request.tool},
+        });
+      }
       const separated = splitModelContent(result);
       result = separated.publicResult;
       if (request.tool === 'simulate_circuit' && result.vectorsFile && args.vectorsFile !== undefined) {
