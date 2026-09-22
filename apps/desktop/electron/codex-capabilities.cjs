@@ -41,6 +41,15 @@ const DISABLED_CODEX_FEATURES = Object.freeze(
     .map(([feature]) => feature),
 );
 
+// This is the report's semantic list. `DISABLED_CODEX_FEATURES` intentionally
+// omits memories because that feature is handled separately in THREAD_CONFIG;
+// the external capability report must still describe it as disabled.
+const DISABLED_FEATURES = Object.freeze(
+  Object.entries(FEATURE_POLICY)
+    .filter(([, [state]]) => state === 'disabled')
+    .map(([feature]) => feature),
+);
+
 const THREAD_CONFIG = Object.freeze({
   ...Object.fromEntries(DISABLED_CODEX_FEATURES.map(feature => [`features.${feature}`, false])),
   'features.memories': false,
@@ -76,7 +85,7 @@ function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = nu
     schema: 'vibe-logisim.harness/v1',
     signature: POLICY_SIGNATURE,
     base: BASE_CAPABILITIES,
-    disabledFeatures: Object.keys(FEATURE_POLICY),
+    disabledFeatures: DISABLED_FEATURES,
     enforced: {
       approval: 'never',
       sandbox: 'external-systemd',
@@ -84,7 +93,7 @@ function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = nu
       modelSelection: 'native-catalog',
     },
     nativeProfile,
-    circuitPlugin: plugin
+    dynamicToolHost: plugin
       ? {
         id: plugin.id || null,
         version: plugin.version || null,
@@ -109,6 +118,7 @@ function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = nu
 module.exports = {
   BASE_CAPABILITIES,
   DISABLED_CODEX_FEATURES,
+  DISABLED_FEATURES,
   FEATURE_POLICY,
   POLICY_SIGNATURE,
   THREAD_CONFIG,

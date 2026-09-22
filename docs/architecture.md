@@ -18,7 +18,7 @@
 
 依赖方向为 `transport → application → project/runtime/collaboration → infrastructure`，共享领域契约位于 `domain`。`core/composition.js` 组合前端控制器；Electron IPC 与服务 HTTP 是传输边界。
 
-面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；`AgentToolHost` 和 `AgentContextHost` 只负责把领域工具与上下文接入动态回合；Circuit Plugin 与 `CircuitContextProvider` 负责电路工具、上下文投影、宿主绑定以及原生运行实现。工作区索引只提供文件身份和轻量目录导航，电路运行反馈通过显式工具返回，不在回合之间自动聚合成状态，也不规定模型必须遵循的工作流。
+面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；`AgentToolHost` 和 `AgentContextHost` 只负责把领域工具与上下文接入动态回合；能力报告通过 `dynamicToolHost` 描述当前领域适配器，Circuit Plugin 与 `CircuitContextProvider` 负责电路工具、上下文投影、宿主绑定以及原生运行实现。工作区索引只提供文件身份和轻量目录导航，电路运行反馈通过显式工具返回，不在回合之间自动聚合成状态，也不规定模型必须遵循的工作流。
 
 长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；领域观察的模型返回视图由 `electron/model-result-projection.cjs` 拥有，文件操作回执由 `electron/circuit-action-result.cjs` 拥有，二者不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。工作区收束后的领域事件由 workspace adapter 的 `finishEvent()` 产生，Codex backend 不再判断候选字段。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
 
