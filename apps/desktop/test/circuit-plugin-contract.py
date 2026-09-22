@@ -58,7 +58,7 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(manifest["schema"], "vibe-logisim.circuit-plugin/v1")
                 self.assertEqual(manifest["id"], "vibe-logisim.circuit")
                 self.assertTrue(manifest["availability"]["workspaceOpen"])
-                self.assertIn("harness_run", {item["name"] for item in manifest["capabilities"]})
+                self.assertNotIn("harness_run", {item["name"] for item in manifest["capabilities"]})
                 self.assertIn("compare_circuit", {item["name"] for item in manifest["capabilities"]})
                 self.assertIn("harness_run", manifest["registeredToolNames"])
                 self.assertEqual(set(manifest["hostTools"]), {"open_circuit", "submit_circuit", "checkout_candidate"})

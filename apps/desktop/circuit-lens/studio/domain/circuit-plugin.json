@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.33.0",
+  "version": "1.34.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -1166,7 +1166,7 @@
       "category": "observe",
       "sourceMutation": false,
       "candidate": false,
-      "exposure": "direct",
+      "exposure": "hidden",
       "owner": "studio",
       "label": "运行电路"
     },

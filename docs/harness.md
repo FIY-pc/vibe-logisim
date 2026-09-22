@@ -77,13 +77,15 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.29.0 的 `wire_candidate` 将新增部件的几何接触拒绝转为结构化恢复反馈：`PLACEMENT_PORT_ON_EXISTING_WIRE` 给出端口位置和已有导线，`AMBIGUOUS_PORT_CONTACT` 给出冲突端口，`UNDECLARED_PORT_CONTACT` 给出贴合端口及显式连接要求，`COMPONENT_PLACEMENT_CONFLICT` 给出占用位置和已有部件。原有拒绝条件没有放宽，也没有自动替模型移动元件或猜测连接；这些事实只帮助模型生成下一次修正请求。工具契约版本随之更新，旧线程不会伪装成拥有新上下文。
 
-1.30.0 的 `SimulationWorker` 将仿真、trace 和 `harness_run` 共用的原生服务边界错误分为 `NATIVE_RUNTIME_TIMEOUT`、`NATIVE_RUNTIME_EXITED`、`NATIVE_RUNTIME_PROTOCOL`、`NATIVE_RUNTIME_DISCONNECTED` 和 `NATIVE_RUNTIME_START_FAILED`，并携带服务、阶段、超时上限及 worker 已停止的信息。原生进程仍在错误后销毁并于下一次调用重启；这些错误只描述运行设施状态，不把超时冒充电路功能结论，也不规定模型必须重试。
+1.30.0 的 `SimulationWorker` 将仿真和 trace 共用的原生服务边界错误分为 `NATIVE_RUNTIME_TIMEOUT`、`NATIVE_RUNTIME_EXITED`、`NATIVE_RUNTIME_PROTOCOL`、`NATIVE_RUNTIME_DISCONNECTED` 和 `NATIVE_RUNTIME_START_FAILED`，并携带服务、阶段、超时上限及 worker 已停止的信息。原生进程仍在错误后销毁并于下一次调用重启；这些错误只描述运行设施状态，不把超时冒充电路功能结论，也不规定模型必须重试。
 
 1.31.0 将同一类 native failure 统一到静态观察、组件目录和渲染 worker。底层 worker 仍保留 `RuntimeError` 兼容性，进入 Circuit Plugin 后才转换为带 `service`、`phase`、`operation`、`circuit`、artifact 和 runtime 摘要的工具错误；原生组件拒绝仍保持普通领域拒绝，不会被误报成宿主故障。
 
 1.32.0 补齐不经过常驻 worker 的 `CircuitWorkbench` 构造命令：编译超时、命令超时和无效 XML 响应分别在 `native-command` 边界转成同一套 native failure。正常的原生拒绝和位宽/属性错误仍按领域错误返回，避免把“电路被拒绝”与“宿主没有得到有效响应”混在一起。
 
 1.33.0 让成功和失败共用同一份调用身份。工具失败的 `context.invocation` 会保留 `projectId`、`revisionId`、`observationId`、`threadId`、`turnId`、`callId` 和 `tool`；它只描述这次请求绑定到哪里，不复制参数、路径或 native 输出。这样模型收到 native、工作区或参数错误时，仍能判断错误属于当前哪一版电路，再决定修复、重新观察或重试；失败不会因此变成功，也不引入固定的观察/验证顺序。
+
+1.34.0 将 `harness_run` 从模型可见目录中隐藏。它与 `simulate_circuit`、`trace_circuit` 和 `evaluate_circuit` 没有模型独有能力，历史真实轨迹中也没有被模型采用；底层共享执行器和内部评测入口继续保留。模型面只保留语义更明确、覆盖范围更清楚的入口，减少工具选择和契约上下文负担。
 
 独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
 
@@ -123,9 +125,9 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.21 在源码 `04e1aa3` 上的一次真实模型修复已完整交付：同一027失败计数器、028修复提示和8分钟时限下，`gpt-6-astra / xhigh` 于348.587秒结束并给出final，首次写文件命令于208.705秒开始。模型11次工具调用无失败，通过Python直接改XML并submit刷新画布；没有使用 `wire_candidate`，两次inspect均显式选择 `netFormat:"bits"`，没有消费 `netGroups`；一次trace和一次evaluate采用 `inputClocks`。修正后的Adder方向与Register七角色确实出现在首次结果，但本次不能归因为它们或groups带来的提速。最终产物 `b3c414c5f6e0111bc1da44a756dd76395e54549ebabbc2cb8e4408244aebe86c` 经39个真实Electron输入采样、停止/重开及独立267采样通过；模型自给期望的5个evaluate案例单独记录。模型额外将preset悬空列为原因并接0，悬空导致原故障或接0必要性的因果均未独立证明。此前超时记录保留，只记单次完整成功，不作版本因果A/B或成功率结论。见 [真实回合摘要](../experiments/031-observation-semantics/model-repair-1.21/summary.json)、[工具输入输出](../experiments/031-observation-semantics/model-repair-1.21/tool-calls.json)与[原始oracle](../experiments/031-observation-semantics/model-repair-1.21/oracle.json)；本次归档没有运行新模型或测试。
 
-`harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
+共享 native 执行器的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
-`harness_run` 的 native 实验仍按完整 rows 计算反馈并保存完整观察；模型传输默认只返回有限行。trace 可用 `rowStart` / `rowLimit`（默认 0 / 32，最多 256）取另一段；simulate 复用 `simulate_circuit` 的失败、未知和通过样本抽样。这样大批量运行不会把重复行全部塞进上下文，`rowCount`、计数和首个反例仍对应完整实验。
+所有 native 实验仍按完整 rows 计算反馈并保存完整观察；模型传输默认只返回有限行。trace 可用 `rowStart` / `rowLimit`（默认 0 / 32，最多 256）取另一段；simulate 复用 `simulate_circuit` 的失败、未知和通过样本抽样。这样大批量运行不会把重复行全部塞进上下文，`rowCount`、计数和首个反例仍对应完整实验。
 
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
 
@@ -208,7 +210,7 @@ Electron 宿主边界也使用同一错误语义，而不是把所有失败降�
 
 如果需要判断“在声明范围内是否真的 work”，使用 [Harness 评测契约](harness-evaluation-contract.md)。它把结构观察、实际运行、期望比对、失败/未知和身份绑定放在同一证据边界中，但不要求用户或模型按固定顺序执行这些动作。
 
-插件 1.7.0 的 `trace_circuit` 暴露 `inputEvents` / `buttonEvents`，与 `evaluate_circuit`、`harness_run` 共用现有执行器。初始化输入传播、可选复位按钮脉冲之后，执行 tick 0 事件再采样；后续每步先推进原生 tick 并传播，再依次执行输入事件、按钮事件和采样。同类事件按列表顺序逐个传播，值持续到下一次修改。原生 Clock 的高低持续时间决定何时翻转，tick 不等于时钟沿；以 Pin 作为时钟时由输入事件驱动。分页参数只选返回行，每次调用都会从新状态重跑，不是继续上一轮。
+插件 1.7.0 的 `trace_circuit` 暴露 `inputEvents` / `buttonEvents`，与 `evaluate_circuit` 共用现有执行器。初始化输入传播、可选复位按钮脉冲之后，执行 tick 0 事件再采样；后续每步先推进原生 tick 并传播，再依次执行输入事件、按钮事件和采样。同类事件按列表顺序逐个传播，值持续到下一次修改。原生 Clock 的高低持续时间决定何时翻转，tick 不等于时钟沿；以 Pin 作为时钟时由输入事件驱动。分页参数只选返回行，每次调用都会从新状态重跑，不是继续上一轮。
 
 ## 当前实现边界
 
