@@ -13,7 +13,8 @@ const {spawn} = require('node:child_process');
 const {once} = require('node:events');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const {CircuitToolRegistry} = require('../electron/circuit-tools.cjs');
-const registry = new CircuitToolRegistry(catalog, Object.fromEntries(catalog.hostTools.map(name => [name, () => {}])));
+const registry = new CircuitToolRegistry(catalog, Object.fromEntries(catalog.tools
+  .filter(tool => tool.owner === 'host').map(tool => [tool.name, () => {}])));
 const renderTool = registry.tools.find(tool => tool.name === 'render_circuit');
 const {dynamicToolResponse, modelMediaEvidence} = require('../electron/model-tool-output.cjs');
 

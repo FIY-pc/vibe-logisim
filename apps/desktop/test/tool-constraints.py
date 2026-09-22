@@ -19,7 +19,8 @@ class ToolConstraints(unittest.TestCase):
         projected = subprocess.check_output(['node', '-e', '''
 const catalog = require('./circuit-lens/studio/domain/circuit-plugin.json');
 const {CircuitToolRegistry} = require('./electron/circuit-tools.cjs');
-console.log(JSON.stringify(new CircuitToolRegistry(catalog, Object.fromEntries(catalog.hostTools.map(n=>[n,()=>{}]))).tools));
+console.log(JSON.stringify(new CircuitToolRegistry(catalog, Object.fromEntries(catalog.tools
+  .filter(t=>t.owner==='host').map(t=>[t.name,()=>{}]))).tools));
 '''], cwd=DESKTOP, text=True)
         cls.projected = {t['name']: t for t in json.loads(projected)}
 

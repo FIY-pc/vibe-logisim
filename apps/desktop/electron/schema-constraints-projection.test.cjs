@@ -7,7 +7,8 @@ const {createHash} = require('node:crypto');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const projection = require('./schema-constraints-projection.cjs');
 const {CircuitToolRegistry} = require('./circuit-tools.cjs');
-const executors = Object.fromEntries(catalog.hostTools.map(name => [name, () => {}]));
+const executors = Object.fromEntries(catalog.tools.filter(tool => tool.owner === 'host')
+  .map(tool => [tool.name, () => {}]));
 
 test('projection preserves executable catalog, optionality, descriptions and hidden exposure', () => {
   const original = structuredClone(catalog);

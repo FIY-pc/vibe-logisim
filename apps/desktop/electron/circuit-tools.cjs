@@ -30,14 +30,12 @@ class CircuitToolRegistry {
       if (records.has(raw.name)) throw invalid('重复工具：' + raw.name);
       records.set(raw.name, freeze(structuredClone(raw)));
     }
-    const assertNames = (names, expected, label) => {
-      if (!Array.isArray(names) || names.length !== new Set(names).size
-          || names.length !== expected.length || names.some(name => !expected.includes(name))) throw invalid(label);
-    };
     const owned = owner => [...records.values()].filter(tool => tool.owner === owner).map(tool => tool.name);
-    assertNames(manifest.registeredToolNames, owned('studio'), 'Studio 工具定义与执行器清单不一致');
-    assertNames(manifest.hostTools, owned('host'), '宿主工具归属不一致');
-    assertNames(owned('host'), Object.keys(hostExecutors), '宿主工具缺少执行器');
+    const hostTools = owned('host');
+    const executors = Object.keys(hostExecutors);
+    if (hostTools.length !== executors.length || hostTools.some(name => !executors.includes(name))) {
+      throw invalid('工具 owner 与宿主执行器清单不一致');
+    }
     this.records = records;
     this.identity = freeze({id:manifest.id, version:manifest.version, schema:manifest.schema, resultSchema:manifest.resultSchema});
     this.tools = freeze([...records.values()].filter(tool => tool.exposure === 'direct')

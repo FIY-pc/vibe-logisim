@@ -16,7 +16,8 @@ const {dynamicToolResponse, CODE_MODE_RESULT_CONTRACT} = require('../electron/mo
 
 const rawTools = catalog.tools.filter(t => t.exposure === 'direct')
   .map(({type, name, description, inputSchema}) => ({type, name, description, inputSchema}));
-const registry = new CircuitToolRegistry(catalog, Object.fromEntries(catalog.hostTools.map(name => [name, () => {}])));
+const registry = new CircuitToolRegistry(catalog, Object.fromEntries(catalog.tools
+  .filter(tool => tool.owner === 'host').map(tool => [tool.name, () => {}])));
 const outputArg = process.argv.slice(2).find(arg => !arg.startsWith('--'));
 const output = outputArg ? path.resolve(outputArg) : null;
 const baselineOnly = process.argv.includes('--baseline-only');

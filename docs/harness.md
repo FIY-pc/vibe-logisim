@@ -51,7 +51,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 ## 插件契约
 
-插件的唯一目录位于 `studio/domain/circuit-plugin.json`。Studio 的可执行注册位于 `studio.application.circuit_plugin.CircuitPlugin`；Electron 通过 `electron/circuit-tools.cjs` 加载并校验同一份目录，再由 `electron/circuit-plugin.cjs` 负责宿主执行器、串行调用和失效检查。没有第二份手写工具清单：目录描述协议，两个运行时分别验证自己拥有的执行边界。两侧保持相同的插件 ID、版本和能力名称：
+插件的唯一目录位于 `studio/domain/circuit-plugin.json`。Studio 的可执行注册位于 `studio.application.circuit_plugin.CircuitPlugin`；Electron 通过 `electron/circuit-tools.cjs` 加载并校验同一份目录，再由 `electron/circuit-plugin.cjs` 负责宿主执行器、串行调用和失效检查。每个工具的 `owner` 和 `exposure` 是唯一来源，`registeredToolNames`、`hostTools` 等对外清单由目录派生，不在 JSON 中另行手写。两个运行时分别验证自己拥有的执行边界，两侧保持相同的插件 ID、版本和能力名称：
 
 | 字段 | 作用 |
 | --- | --- |

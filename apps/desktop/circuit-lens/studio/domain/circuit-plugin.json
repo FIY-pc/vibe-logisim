@@ -1545,31 +1545,5 @@
       "owner": "studio",
       "label": "原生加载预检"
     }
-  ],
-  "registeredToolNames": [
-    "read_kept_observation",
-    "read_project_resource",
-    "inspect_circuit",
-    "check_native_loadability",
-    "describe_component",
-    "render_circuit",
-    "wire_candidate",
-    "reroute_candidate",
-    "move_candidate",
-    "edit_candidate",
-    "trace_circuit",
-    "build_candidate",
-    "simulate_circuit",
-    "harness_run",
-    "compare_circuit",
-    "list_verifications",
-    "run_verification",
-    "evaluate_circuit",
-    "import_candidate"
-  ],
-  "hostTools": [
-    "open_circuit",
-    "submit_circuit",
-    "checkout_candidate"
   ]
 }

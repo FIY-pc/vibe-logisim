@@ -18,7 +18,9 @@ assert.equal(registry.get("harness_run").category, "observe");
 assert.equal(registry.get("import_candidate"), null, "internal candidate import must stay hidden");
 plugin.configure(catalog);
 assert.throws(() => plugin.configure({...catalog, version: "9.0.0"}), /版本/);
-assert.throws(() => plugin.configure({...catalog, hostTools: catalog.hostTools.slice(1)}), /归属/);
+const mismatchedOwner = {...catalog, tools: catalog.tools.map(tool =>
+  tool.name === 'open_circuit' ? {...tool, owner:'studio'} : tool)};
+assert.throws(() => plugin.configure(mismatchedOwner), /owner|执行器/);
 const updated = {...catalog, version:"1.2.0"};
 assert.throws(() => plugin.configure(updated, {live:true}), /重新连接/);
 assert.equal(plugin.registry.identity.version, catalog.version, 'failed handshake must preserve the active contract');
