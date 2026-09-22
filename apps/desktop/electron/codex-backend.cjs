@@ -50,7 +50,7 @@ const THREAD_CONFIG = Object.freeze({
   allow_login_shell: false,
 });
 
-const { CircuitPlugin } = require("./circuit-plugin.cjs");
+const { CircuitPlugin, attachInvocationIdentity } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
@@ -1481,17 +1481,15 @@ class CodexBackend extends EventEmitter {
         return dynamicToolResponse(result);
       };
       Promise.resolve().then(invoke)
-        .catch(error => ({
-          contentItems: [{type: "inputText", text: JSON.stringify({
-            error: error.toolError || {
-              code: error.code || "CIRCUIT_TOOL_FAILED",
-              message: plainError(error),
-              retryable: false,
-              hint: "检查当前工作区和连接状态后再决定是否重试。",
-            },
-          })}],
-          success: false,
-        }))
+        .catch(error => {
+          const enriched = attachInvocationIdentity(error, request, {pending: this.pendingTurn});
+          return {
+            contentItems: [{type: "inputText", text: JSON.stringify({
+              error: enriched.toolError,
+            })}],
+            success: false,
+          };
+        })
         .then(result => {
           // An interrupted, switched or restarted turn has no response target.
           if (current() && this.child?.stdin?.writable) {

@@ -46,6 +46,43 @@ function enrichNoCircuitOpen(error, workspaceIndex) {
   return error;
 }
 
+function invocationIdentity(request, pending) {
+  return {
+    projectId: pending?.projectId || null,
+    revisionId: pending?.revisionId || null,
+    observationId: pending?.observationId || null,
+    threadId: request?.threadId || null,
+    turnId: request?.turnId || null,
+    callId: request?.callId || null,
+    tool: request?.tool || null,
+  };
+}
+
+// Keep the same bounded binding on failed calls as on successful calls. The
+// model needs to know which workspace/revision an error belongs to before it
+// decides whether to repair, observe, or retry. Do not copy arguments, paths,
+// or native stderr into this identity.
+function attachInvocationIdentity(error, request, scope) {
+  const target = error && typeof error === 'object' ? error : new Error(String(error));
+  const current = target.toolError && typeof target.toolError === 'object'
+    ? target.toolError
+    : {
+      code: target.code || 'CIRCUIT_TOOL_FAILED',
+      message: target.message || String(target),
+      retryable: false,
+      hint: '检查当前工作区和连接状态后再决定是否重试。',
+    };
+  const context = current.context && typeof current.context === 'object' && !Array.isArray(current.context)
+    ? current.context
+    : {};
+  if (context.invocation) return target;
+  target.toolError = {
+    ...current,
+    context: {...context, invocation: invocationIdentity(request, scope?.pending)},
+  };
+  return target;
+}
+
 // Owns only domain tool execution. Thread admission, stop, reconnect and the
 // model loop remain in CodexBackend. All tools share the selected document, so
 // synchronization plus execution is one serialized operation.
@@ -186,12 +223,7 @@ class CircuitPlugin {
       scope.assertCurrent();
       scope.updateBinding(session);
       const identity = {
-        projectId: scope.pending.projectId,
-        revisionId: scope.pending.revisionId,
-        threadId: request.threadId,
-        turnId: request.turnId,
-        callId: request.callId,
-        tool: request.tool,
+        ...invocationIdentity(request, scope.pending),
       };
       let domainArgs = args;
       if (request.tool === 'simulate_circuit' && args.vectorsFile !== undefined) {
@@ -227,11 +259,7 @@ class CircuitPlugin {
         result = {...result,canvas:result.canvas ?? this.workspace.canvasState(result)};
         result = circuitActionResult(result, args);
       }
-      const finalIdentity = {
-        ...identity,
-        projectId: scope.pending.projectId,
-        revisionId: scope.pending.revisionId,
-      };
+      const finalIdentity = invocationIdentity(request, scope.pending);
       if (tool.candidate && result.id?.startsWith('candidate-')) {
         work.candidate = result;
         scope.emit({type:'candidate-ready', candidateId:result.id, title:result.title});
@@ -241,10 +269,12 @@ class CircuitPlugin {
       if (harnessEvent) scope.emit(harnessEvent);
       return {...result, invocation:finalIdentity, modelContentItems:separated.modelContentItems};
     };
-    const operation = this.queue.then(execute, execute);
+    const operation = this.queue.then(execute, execute).catch(error => {
+      throw attachInvocationIdentity(error, request, scope);
+    });
     this.queue = operation.catch(() => {});
     return operation;
   }
 }
 
-module.exports = {CircuitPlugin};
+module.exports = {CircuitPlugin, attachInvocationIdentity};

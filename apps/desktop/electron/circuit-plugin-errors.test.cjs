@@ -51,11 +51,14 @@ test('host boundary failures preserve a structured recovery contract', async () 
 
   const missing = await rejected(value.call({tool: 'open_circuit', arguments: {}}, scope()));
   assert.equal(missing.toolError.code, 'INVALID_ARGUMENT');
-  assert.deepEqual(missing.toolError.context, {path: 'path', expected: '非空字符串'});
+  assert.deepEqual(missing.toolError.context.path, 'path');
+  assert.deepEqual(missing.toolError.context.expected, '非空字符串');
+  assert.equal(missing.toolError.context.invocation.tool, 'open_circuit');
 
   const unknown = await rejected(value.call({tool: 'open_circuit', arguments: {path: 'main.circ', typo: true}}, scope()));
   assert.equal(unknown.toolError.code, 'INVALID_ARGUMENT');
-  assert.deepEqual(unknown.toolError.context, {unknownParameters: ['typo']});
+  assert.deepEqual(unknown.toolError.context.unknownParameters, ['typo']);
+  assert.equal(unknown.toolError.context.invocation.tool, 'open_circuit');
   assert.equal(synchronizeCalls, 0, 'host validation must happen before workspace refresh');
 
   const absent = await rejected(plugin({workspace: {}}).call(
@@ -68,7 +71,8 @@ test('invalid domain results are distinguishable from domain failures', async ()
   const value = plugin({invoke: async () => null});
   const error = await rejected(value.call({tool: 'inspect_circuit', arguments: {circuit: 'main'}}, scope()));
   assert.equal(error.toolError.code, 'TOOL_INVALID_RESULT');
-  assert.deepEqual(error.toolError.context, {tool: 'inspect_circuit'});
+  assert.equal(error.toolError.context.tool, 'inspect_circuit');
+  assert.equal(error.toolError.context.invocation.tool, 'inspect_circuit');
 });
 
 test('a hidden or unknown tool cannot cross the host dispatch boundary', async () => {
@@ -76,5 +80,32 @@ test('a hidden or unknown tool cannot cross the host dispatch boundary', async (
   const error = await rejected(value.call({tool: 'import_candidate', arguments: {}}, scope()));
   assert.equal(error.toolError.code, 'TOOL_NOT_REGISTERED');
   assert.equal(error.toolError.context.tool, 'import_candidate');
+  assert.equal(error.toolError.context.invocation.tool, 'import_candidate');
 });
 
+test('domain failures preserve the workspace and observation binding', async () => {
+  const value = plugin({invoke: async () => {
+    const error = new Error('native runtime rejected the circuit');
+    error.code = 'NATIVE_RUNTIME_PROTOCOL';
+    error.toolError = {
+      code: error.code,
+      message: error.message,
+      retryable: true,
+      context: {service: 'simulation-worker'},
+    };
+    throw error;
+  }});
+  const callScope = scope();
+  callScope.pending.observationId = 'observation-1';
+  const error = await rejected(value.call({
+    tool: 'simulate_circuit',
+    arguments: {circuit: 'main', vectors: [{inputs: {A: 0}}]},
+    threadId: 'thread-1', turnId: 'turn-1', callId: 'call-1',
+  }, callScope));
+  assert.equal(error.toolError.code, 'NATIVE_RUNTIME_PROTOCOL');
+  assert.deepEqual(error.toolError.context.invocation, {
+    projectId: 'project-1', revisionId: 'revision-1', observationId: 'observation-1',
+    threadId: 'thread-1', turnId: 'turn-1', callId: 'call-1', tool: 'simulate_circuit',
+  });
+  assert.equal(error.toolError.context.service, 'simulation-worker');
+});

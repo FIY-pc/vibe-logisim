@@ -83,6 +83,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.32.0 补齐不经过常驻 worker 的 `CircuitWorkbench` 构造命令：编译超时、命令超时和无效 XML 响应分别在 `native-command` 边界转成同一套 native failure。正常的原生拒绝和位宽/属性错误仍按领域错误返回，避免把“电路被拒绝”与“宿主没有得到有效响应”混在一起。
 
+1.33.0 让成功和失败共用同一份调用身份。工具失败的 `context.invocation` 会保留 `projectId`、`revisionId`、`observationId`、`threadId`、`turnId`、`callId` 和 `tool`；它只描述这次请求绑定到哪里，不复制参数、路径或 native 输出。这样模型收到 native、工作区或参数错误时，仍能判断错误属于当前哪一版电路，再决定修复、重新观察或重试；失败不会因此变成功，也不引入固定的观察/验证顺序。
+
 独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
