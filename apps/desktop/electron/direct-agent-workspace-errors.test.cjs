@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {DirectAgentWorkspace} = require('./direct-agent-workspace.cjs');
@@ -54,6 +57,31 @@ test('prepare rejects a stale UI revision before starting a model turn', async (
       return true;
     },
   );
+});
+
+test('prepare permits folder-only turns without a circuit revision binding', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-folder-turn-'));
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  const workspace = {
+    folder: {current: {id: 'folder-1', root, activeFile: null}},
+    backend: {
+      async session() {
+        return {
+          workspace: {id: 'project-1'},
+          revision: {id: 'revision-current'},
+          sourceStatus: {stale: false},
+        };
+      },
+    },
+    async run(operation) { return operation(); },
+    async saveWorking() {},
+    async refresh() {},
+  };
+  const agent = new DirectAgentWorkspace(workspace);
+  const result = await agent.prepare(null);
+  assert.equal(result.revisionId, null);
+  assert.equal(result.workspaceIndex.revisionId, 'revision-current');
+  assert.equal(workspace.turnActive, true);
 });
 
 test('prepare does not start a model turn when workspace refresh reports a conflict', async () => {
