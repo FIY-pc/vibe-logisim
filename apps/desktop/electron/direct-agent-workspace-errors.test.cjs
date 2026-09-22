@@ -74,3 +74,13 @@ test('prepare does not start a model turn when workspace refresh reports a confl
   await assert.rejects(agent.prepare('revision-current'), /磁盘文件已改变/);
   assert.equal(reported, null);
 });
+
+test('abort releases the direct-workspace turn guard', async () => {
+  const workspace = {
+    turnActive: true,
+    folder: {assert() {}},
+  };
+  const agent = new DirectAgentWorkspace(workspace);
+  await agent.abort({folderId: 'folder-1'});
+  assert.equal(workspace.turnActive, false);
+});

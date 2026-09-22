@@ -646,6 +646,7 @@ class CodexBackend extends EventEmitter {
     if (changesWorkspace) this.workspaceTransitioning = true;
     this.turnStarting = true;
     let generation = this.childEpoch;
+    let preparedWork = null;
     try {
       const startPromise = this.start();
       if (this.status === "ready") this.#setStatus("busy");
@@ -669,6 +670,7 @@ class CodexBackend extends EventEmitter {
           this.#assertWorkspace(requestEpoch, generation);
         }
         const work = this.agentWorkspace ? await this.agentWorkspace.prepare(revisionId) : null;
+        preparedWork = work;
         const turnCwd = work ? path.posix.join(this.runtimeWorkDir, work.relative) : this.runtimeWorkDir;
         this.currentCwd = turnCwd;
         await this.#ensureThread(workspaceKey, revisionId, requestEpoch, generation);
@@ -756,6 +758,19 @@ class CodexBackend extends EventEmitter {
       });
     } catch (error) {
       const ownsPending = this.pendingTurn?.clientMessageId === clientMessageId;
+      const pendingWork = this.pendingTurn?.work || preparedWork;
+      const canAbortPreparedWork = !this.activeTurnId
+        && requestEpoch === this.workspaceEpoch
+        && generation === this.childEpoch;
+      if (canAbortPreparedWork && pendingWork && typeof this.agentWorkspace?.abort === "function") {
+        try {
+          await this.agentWorkspace.abort(pendingWork, {
+            isCurrent: () => requestEpoch === this.workspaceEpoch && generation === this.childEpoch,
+          });
+        } catch (cleanupError) {
+          this.emit("event", {type:"warning", message:"模型尚未开始，但工作区收束失败：" + plainError(cleanupError)});
+        }
+      }
       if (ownsPending && !this.activeTurnId && this.pendingTurn?.epoch === this.workspaceEpoch) {
         this.pendingTurn = null;
       }

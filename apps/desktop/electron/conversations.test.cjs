@@ -233,3 +233,26 @@ test('a provider model rejection invalidates the catalog and blocks a repeated n
   assert.equal(requests.filter(request=>request.method==='thread/start').length,1);
   assert.equal(requests.filter(request=>request.method==='turn/start').length,1);
 });
+
+test('a turn admission failure releases a prepared direct workspace', async t => {
+  const root=makeRoot(t), key='folder:direct-admission-failure';
+  let aborted = 0;
+  const agentWorkspace = {
+    async prepare() { return {projectId:'project-1', revisionId:'revision-one', relative:'.', workspaceIndex:{}}; },
+    async abort() { aborted += 1; },
+  };
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json',agentWorkspace});
+  backend.start=async()=>{backend.status='ready';};
+  backend.model='test-model';
+  backend.child={stdin:{destroyed:false,writable:true,write(line){
+    const request=JSON.parse(line);if(!request.id)return;
+    const pending=backend.pending.get(String(request.id));clearTimeout(pending.timeout);backend.pending.delete(String(request.id));
+    if(request.method==='thread/start'){pending.resolve({thread:{id:'thread-direct-failure',turns:[]}});return;}
+    if(request.method==='turn/start'){pending.reject(new Error('turn admission failed'));return;}
+    pending.resolve({});
+  }}};
+  const context={folder:{id:'folder-aaaaaaaaaaaaaaaa'},revisionId:'revision-one'};
+  await assert.rejects(()=>backend.ask({question:'开始构建',context,workspaceKey:key}),/turn admission failed/);
+  assert.equal(aborted,1);
+  assert.equal(backend.pendingTurn,null);
+});

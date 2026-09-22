@@ -114,6 +114,15 @@ class DirectAgentWorkspace {
     await this.workspace.run(() => this.workspace.refresh({checkpoint:true,title:'AI 文件改动'}));
     return null;
   }
+  async abort(binding, {isCurrent = () => true} = {}) {
+    if(!isCurrent())return null;
+    this.assert(binding);
+    // No model turn has started, so there cannot be a model file change to
+    // checkpoint. The important invariant is to release the direct-workspace
+    // turn guard so later human edits create normal history checkpoints.
+    this.workspace.turnActive = false;
+    return null;
+  }
   listRecoveries(){ return []; }
   clearRecovery(){}
 }
