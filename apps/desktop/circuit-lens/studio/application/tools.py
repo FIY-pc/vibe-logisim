@@ -212,11 +212,8 @@ class Workbench:
         return edit_candidate(self, call.arguments)
 
     def _trace_circuit(self, call):
+        row_start, row_limit = self._row_window(call.arguments)
         report = self.trace(call.arguments)
-        row_start = call.arguments.get("rowStart", 0)
-        row_limit = call.arguments.get("rowLimit", 32)
-        if type(row_start) is not int or row_start < 0 or type(row_limit) is not int or not 1 <= row_limit <= 256:
-            raise ValueError("rowStart 必须为非负整数，rowLimit 必须在 1–256 之间")
         rows = report["rows"]
         selected = rows[row_start:row_start + row_limit]
         return {
@@ -246,21 +243,19 @@ class Workbench:
         }
 
     def _harness_run(self, call):
+        mode = call.arguments.get("mode", "trace")
+        row_window = self._row_window(call.arguments) if mode == "trace" else None
         result = self.harness_run(call.arguments)
         observation = result.get("result")
         if not isinstance(observation, dict) or not isinstance(observation.get("rows"), list):
             return result
-        mode = call.arguments.get("mode", "trace")
         if mode == "simulate":
             # Keep the full native observation in the revision record while
             # applying the same bounded sample as simulate_circuit to the
             # model-facing envelope.
             return {**result, "result": self._bounded_simulation_report(observation)}
 
-        row_start = call.arguments.get("rowStart", 0)
-        row_limit = call.arguments.get("rowLimit", 32)
-        if type(row_start) is not int or row_start < 0 or type(row_limit) is not int or not 1 <= row_limit <= 256:
-            raise ValueError("rowStart 必须为非负整数，rowLimit 必须在 1–256 之间")
+        row_start, row_limit = row_window
         rows = observation["rows"]
         selected = rows[row_start:row_start + row_limit]
         return {
@@ -274,6 +269,14 @@ class Workbench:
                 "rowsTruncated": len(selected) != len(rows),
             },
         }
+
+    @staticmethod
+    def _row_window(arguments):
+        row_start = arguments.get("rowStart", 0)
+        row_limit = arguments.get("rowLimit", 32)
+        if type(row_start) is not int or row_start < 0 or type(row_limit) is not int or not 1 <= row_limit <= 256:
+            raise ValueError("rowStart 必须为非负整数，rowLimit 必须在 1–256 之间")
+        return row_start, row_limit
 
     def _compare_circuit(self, call):
         return self.runtime.compare_circuit(call.arguments)
