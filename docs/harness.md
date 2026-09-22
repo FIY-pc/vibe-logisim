@@ -91,6 +91,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 1.36.0 收紧失败调用的身份边界：即使底层异常自带 `context.invocation`，插件也会用当前 thread、turn、call、project 和 revision 覆盖它。错误上下文可以补充恢复信息，但不能把旧回合或其他工作区伪装成当前调用。
 
+1.37.0 让 Studio/HTTP 与 Electron 使用同一条身份边界：成功结果也覆盖底层可能携带的旧 invocation，未知工具的恢复列表只包含模型可见工具，版本或参数错误不再经过应用层预校验而丢失当前调用身份。
+
 独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
 
 1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。

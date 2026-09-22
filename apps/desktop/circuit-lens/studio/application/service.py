@@ -73,10 +73,9 @@ class ApplicationService:
 
     def agent_tool(self, body):
         with self.workspace.lock:
-            # The existing CLI binds tools by revision. New callers can also
-            # bind a project to distinguish projects sharing identical bytes.
-            if body.get("projectId") is not None:
-                self._revision(body)
+            # CircuitPlugin is the single agent-tool boundary. It validates
+            # project/revision and binds the same identity to both success and
+            # failure; pre-validating here would lose that error context.
             return self.workspace.workbench.call(
                 body.get("revisionId"),
                 body.get("tool"),

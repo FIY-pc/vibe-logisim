@@ -185,12 +185,26 @@ class CircuitPlugin:
                     CircuitPlugin._validate_schema_constraints(item, child_schema, f"{path}.{name}")
 
     def invoke(self, invocation: CircuitInvocation) -> dict[str, Any]:
+        identity = {
+            "projectId": invocation.project_id,
+            "revisionId": invocation.revision_id,
+            "observationId": invocation.observation_id,
+            "threadId": invocation.thread_id,
+            "turnId": invocation.turn_id,
+            "callId": invocation.call_id,
+            "tool": invocation.tool,
+        }
         try:
             if not isinstance(invocation.arguments, dict):
                 raise CircuitToolError("INVALID_ARGUMENT", "工具参数必须为对象")
             registered = self._tools.get(invocation.tool)
             if registered is None:
-                raise CircuitToolError("UNKNOWN_TOOL", "Unknown circuit tool", context={"availableTools": list(self.names())})
+                raise CircuitToolError(
+                    "UNKNOWN_TOOL", "Unknown circuit tool",
+                    context={"availableTools": [
+                        name for name, item in self._tools.items() if item.spec.exposure == "direct"
+                    ]},
+                )
             record = self.workspace.history.record
             if invocation.project_id is not None and (not record or invocation.project_id != record["id"]):
                 raise CircuitToolError("STALE_PROJECT", "工程身份已变化，请重新发起操作")
@@ -198,19 +212,17 @@ class CircuitPlugin:
                 raise CircuitToolError("STALE_REVISION", "工程版本已变化，请重新发起操作")
             self._validate_arguments(registered.spec, invocation.arguments)
             result = registered.handler(invocation)
-        except CircuitToolError:
+        except CircuitToolError as error:
+            context = error.context if isinstance(error.context, dict) else {}
+            error.context = {**context, "invocation": identity}
             raise
         except Exception as error:
-            raise tool_error_from_exception(invocation.tool, error) from error
+            failure = tool_error_from_exception(invocation.tool, error)
+            context = failure.context if isinstance(failure.context, dict) else {}
+            failure.context = {**context, "invocation": identity}
+            raise failure from error
         if isinstance(result, dict):
-            result.setdefault("invocation", {
-                "projectId": invocation.project_id,
-                "revisionId": invocation.revision_id,
-                "threadId": invocation.thread_id,
-                "turnId": invocation.turn_id,
-                "callId": invocation.call_id,
-                "tool": invocation.tool,
-            })
+            result["invocation"] = identity
         return result
 
 

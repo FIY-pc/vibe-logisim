@@ -333,6 +333,9 @@ class CircuitPluginContract(unittest.TestCase):
                 invalid_body = {
                     "projectId": workspace.history.record["id"],
                     "revisionId": workspace.revision_id,
+                    "threadId": "thread-invalid",
+                    "turnId": "turn-invalid",
+                    "callId": "call-invalid",
                     "tool": "read_project_resource",
                     "arguments": {},
                 }
@@ -351,10 +354,46 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(error_detail["code"], "INVALID_ARGUMENT")
                 self.assertFalse(error_detail["retryable"])
                 self.assertIn("补齐", error_detail["hint"])
+                self.assertEqual(error_detail["context"]["invocation"], {
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": workspace.revision_id,
+                    "observationId": None,
+                    "threadId": "thread-invalid",
+                    "turnId": "turn-invalid",
+                    "callId": "call-invalid",
+                    "tool": "read_project_resource",
+                })
+
+                unknown_body = {
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": workspace.revision_id,
+                    "threadId": "thread-unknown",
+                    "turnId": "turn-unknown",
+                    "callId": "call-unknown",
+                    "tool": "not_a_circuit_tool",
+                    "arguments": {},
+                }
+                unknown_request = Request(
+                    f"{base}/api/agent/tool",
+                    data=json.dumps(unknown_body).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(HTTPError) as rejected_unknown:
+                    urlopen(unknown_request)
+                with rejected_unknown.exception as response:
+                    unknown_payload = json.loads(response.read())
+                unknown_detail = unknown_payload["error"]
+                self.assertEqual(unknown_detail["code"], "UNKNOWN_TOOL")
+                self.assertNotIn("harness_run", unknown_detail["context"]["availableTools"])
+                self.assertEqual(unknown_detail["context"]["invocation"]["callId"], "call-unknown")
 
                 body = {
                     "projectId": workspace.history.record["id"],
                     "revisionId": workspace.revision_id,
+                    "threadId": "thread-harness",
+                    "turnId": "turn-harness",
+                    "callId": "call-harness",
                     "tool": "harness_run",
                     "arguments": {
                         "mode": "simulate",
@@ -374,6 +413,15 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertEqual(result["schema"], "vibe-logisim.circuit-plugin.result/v1")
                 self.assertEqual(result["feedback"]["status"], "passed")
                 self.assertEqual(result["run"]["kind"], "simulate")
+                self.assertEqual(result["invocation"], {
+                    "projectId": workspace.history.record["id"],
+                    "revisionId": workspace.revision_id,
+                    "observationId": None,
+                    "threadId": "thread-harness",
+                    "turnId": "turn-harness",
+                    "callId": "call-harness",
+                    "tool": "harness_run",
+                })
             finally:
                 if server is not None:
                     server.shutdown()
