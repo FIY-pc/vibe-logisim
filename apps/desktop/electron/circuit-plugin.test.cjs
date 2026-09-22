@@ -20,6 +20,14 @@ assert.equal(registry.get("import_candidate"), null, "internal candidate import 
 const leakedHiddenTool = {...catalog, tools: catalog.tools.map(tool =>
   tool.name === 'trace_circuit' ? {...tool, description: tool.description + ' harness_run'} : tool)};
 assert.throws(() => new CircuitToolRegistry(leakedHiddenTool, hostExecutors), /隐藏工具/);
+const hiddenOnlyChange = {...catalog, tools: catalog.tools.map(tool =>
+  tool.name === 'harness_run' ? {...tool, description: tool.description + ' internal implementation detail'} : tool)};
+assert.equal(new CircuitToolRegistry(hiddenOnlyChange, hostExecutors).signature, registry.signature,
+  'hidden implementation changes must not invalidate the model tool contract');
+const visibleChange = {...catalog, tools: catalog.tools.map(tool =>
+  tool.name === 'trace_circuit' ? {...tool, description: tool.description + ' visible contract change'} : tool)};
+assert.notEqual(new CircuitToolRegistry(visibleChange, hostExecutors).signature, registry.signature,
+  'visible tool changes must invalidate the model tool contract');
 plugin.configure(catalog);
 assert.throws(() => plugin.configure({...catalog, version: "9.0.0"}), /版本/);
 const mismatchedOwner = {...catalog, tools: catalog.tools.map(tool =>

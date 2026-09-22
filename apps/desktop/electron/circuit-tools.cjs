@@ -60,12 +60,13 @@ class CircuitToolRegistry {
     this.identity = freeze({id:manifest.id, version:manifest.version, schema:manifest.schema, resultSchema:manifest.resultSchema});
     this.tools = freeze([...records.values()].filter(tool => tool.exposure === 'direct')
       .map(projectToolInterface).map(describeCodeModeResult));
+    const modelRecords = [...records.values()].filter(tool => tool.exposure === 'direct');
     // Availability changes with the canvas; the executable contract must stay
     // fixed for a live thread because Codex received it when that thread opened.
     // Include rendered descriptions: native resume/fork can retain old tools
     // even when the host passes a new interface with the same catalog version.
     this.signature = createHash('sha256').update(JSON.stringify(canonical({
-      ...this.identity, tools:[...records.values()].sort((a,b) => a.name.localeCompare(b.name)),
+      ...this.identity, tools:modelRecords.sort((a,b) => a.name.localeCompare(b.name)),
       modelTools:[...this.tools].sort((a,b) => a.name.localeCompare(b.name)),
     }))).digest('hex');
   }
