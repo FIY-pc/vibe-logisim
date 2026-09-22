@@ -54,6 +54,41 @@ class _RegisteredTool:
     handler: Handler
 
 
+def validate_catalog(catalog: list[dict[str, Any]]) -> None:
+    """Validate the executable catalog before Studio exposes it over HTTP.
+
+    Electron performs the same boundary check before projecting dynamic tools.
+    Studio does not duplicate schemas or tool names; it only rejects a
+    malformed catalog and prevents hidden implementation names from entering
+    model-facing capability descriptions.
+    """
+    if not isinstance(catalog, list) or not catalog:
+        raise ValueError("电路工具目录为空")
+    names: set[str] = set()
+    hidden: set[str] = set()
+    for item in catalog:
+        if not isinstance(item, dict) or item.get("type") != "function":
+            raise ValueError("电路工具目录包含无效定义")
+        name = item.get("name")
+        if not isinstance(name, str) or not name or name in names:
+            raise ValueError("电路工具目录包含重复或无效名称")
+        if item.get("owner") not in {"studio", "host"}:
+            raise ValueError("电路工具目录包含无效 owner")
+        if item.get("exposure") not in {"direct", "hidden"}:
+            raise ValueError("电路工具目录包含无效 exposure")
+        if not isinstance(item.get("description"), str) or not item["description"].strip():
+            raise ValueError("电路工具目录缺少工具说明")
+        schema = item.get("inputSchema")
+        if not isinstance(schema, dict) or schema.get("type") != "object" or not isinstance(schema.get("properties"), dict):
+            raise ValueError("电路工具目录包含无效 inputSchema")
+        names.add(name)
+        if item["exposure"] == "hidden":
+            hidden.add(name)
+    for item in catalog:
+        if item["exposure"] == "direct" and any(name in item["description"] for name in hidden):
+            raise ValueError("模型可见工具说明引用隐藏工具")
+
+
 class CircuitPlugin:
     """Registry and executor for one circuit-domain plugin instance."""
 
@@ -227,11 +262,13 @@ class CircuitPlugin:
 
 
 def default_specs() -> dict[str, CircuitToolSpec]:
+    catalog = tool_definitions()
+    validate_catalog(catalog)
     return {
         item["name"]: CircuitToolSpec(
             name=item["name"], description=item["description"], category=item["category"],
             input_schema=item["inputSchema"], owner=item["owner"], exposure=item["exposure"],
             source_mutation=item["sourceMutation"], candidate=item["candidate"],
         )
-        for item in tool_definitions()
+        for item in catalog
     }

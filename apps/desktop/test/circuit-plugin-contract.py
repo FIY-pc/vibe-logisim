@@ -18,12 +18,28 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
 
 from studio.domain.tool_errors import CircuitToolError
+from studio.domain.plugin import tool_definitions
+from studio.application.circuit_plugin import default_specs, validate_catalog
 from studio.application.tools import Workbench
 from studio.application.workspace import Workspace
 from studio.transport.http import Handler, LensHTTPServer
 
 
 class CircuitPluginContract(unittest.TestCase):
+    def test_catalog_boundary_is_validated_before_studio_registration(self):
+        specs = default_specs()
+        self.assertEqual(len(specs), 22)
+        self.assertEqual(sum(spec.exposure == "direct" for spec in specs.values()), 19)
+        self.assertEqual(sum(spec.exposure == "hidden" for spec in specs.values()), 3)
+
+        leaked = [
+            {**item, "description": item["description"] + " harness_run"}
+            if item["name"] == "trace_circuit" else item
+            for item in tool_definitions()
+        ]
+        with self.assertRaisesRegex(ValueError, "隐藏工具"):
+            validate_catalog(leaked)
+
     def test_harness_model_rows_are_bounded_without_changing_counts(self):
         rows = [
             {"inputs": {"a": index}, "outputs": {"y": index}, "passed": status, "status": status_name,

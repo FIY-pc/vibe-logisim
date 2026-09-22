@@ -53,6 +53,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 插件的唯一目录位于 `studio/domain/circuit-plugin.json`。Studio 的可执行注册位于 `studio.application.circuit_plugin.CircuitPlugin`；Electron 通过 `electron/circuit-tools.cjs` 加载并校验同一份目录，再由 `electron/circuit-plugin.cjs` 负责宿主执行器、串行调用和失效检查。每个工具的 `owner` 和 `exposure` 是唯一来源，`registeredToolNames`、`hostTools` 等对外清单由目录派生，不在 JSON 中另行手写。两个运行时分别验证自己拥有的执行边界，两侧保持相同的插件 ID、版本和能力名称：
 
+Studio 在注册 handler 前也会校验目录的基本结构、owner、exposure、输入 schema 和隐藏工具引用；Electron 负责动态工具投影、Code Mode 描述补充和模型契约签名。两侧都从同一 JSON 读取，不维护第二份工具名称或参数定义。
+
 | 字段 | 作用 |
 | --- | --- |
 | `schema` | 插件或结果协议版本 |
