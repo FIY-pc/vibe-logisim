@@ -20,6 +20,7 @@ const {DirectAgentWorkspace} = require("./direct-agent-workspace.cjs");
 const {CircuitPlugin} = require("./circuit-plugin.cjs");
 const {AgentToolHost} = require("./agent-tool-host.cjs");
 const {AgentContextHost} = require("./agent-context-host.cjs");
+const {AgentWorkspaceHost} = require("./agent-workspace-host.cjs");
 const {CircuitContextProvider} = require("./circuit-context-host.cjs");
 const {DesktopWorkspace} = require("./desktop-workspace.cjs");
 const {registerFolderIpc} = require("./folder-ipc.cjs");
@@ -219,6 +220,7 @@ async function startApplication() {
   const activeFile = initialTarget?.kind === 'circuit' ? initialTarget.path : initialOpenPath;
   if(folderRoot)await desktopWorkspace.open(folderRoot,{activeFile,conversationKey:initialSession.workspace?.conversationKey});
   agentWorkspace = new DirectAgentWorkspace(desktopWorkspace);
+  const workspaceHost = new AgentWorkspaceHost({adapter:agentWorkspace, mode:'direct'});
   const circuitPlugin = new CircuitPlugin({
     invoke: payload => backend.circuitTool(payload),
     workspace: agentWorkspace,
@@ -238,7 +240,7 @@ async function startApplication() {
     version: app.getVersion(),
     toolHost,
     contextHost,
-    agentWorkspace,
+    workspaceHost,
   });
   codex.on("log", (message) => console.error(`[codex] ${message}`));
   codex.on("event", (event) => {

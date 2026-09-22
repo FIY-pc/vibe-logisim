@@ -29,6 +29,7 @@ const { TurnHealth } = require("./turn-health.cjs");
 const { revertThroughMessage } = require("./conversation-edit.cjs");
 const { dynamicToolResponse, modelMediaEvidence } = require("./model-tool-output.cjs");
 const { DEVELOPER_INSTRUCTIONS } = require('./agent-instructions.cjs');
+const { AgentWorkspaceHost } = require('./agent-workspace-host.cjs');
 
 function delay(milliseconds, value) {
   return new Promise((resolve) => {
@@ -129,6 +130,7 @@ class CodexBackend extends EventEmitter {
     ephemeral = false,
     toolHost = null,
     agentWorkspace = null,
+    workspaceHost = null,
     developerInstructions = DEVELOPER_INSTRUCTIONS,
     contextHost = null,
     includeAgentContext = true,
@@ -149,7 +151,9 @@ class CodexBackend extends EventEmitter {
     this.ephemeral = ephemeral;
     this.toolHost = toolHost;
     this.toolHostState = null;
-    this.agentWorkspace = agentWorkspace;
+    this.workspaceHost = workspaceHost || (agentWorkspace
+      ? new AgentWorkspaceHost({adapter:agentWorkspace})
+      : null);
     // Controlled comparisons can reuse the identical transport/isolation without
     // exposing application-specific instructions to a generic baseline.
     this.developerInstructions = developerInstructions;
@@ -216,7 +220,7 @@ class CodexBackend extends EventEmitter {
       turnId: this.activeTurnId,
       busy: this.finalizing || this.workspaceTransitioning || this.turnStarting || Boolean(this.activeTurnId) || Boolean(this.pendingSteer) || Boolean(this.reconnecting),
       canSteer: Boolean(this.child && !this.stopping && this.status === "busy" && this.activeTurnId && this.pendingTurn && !this.pendingSteer && !this.finalizing && !this.turnStarting && !this.workspaceTransitioning && !this.reconnecting),
-      policy: this.agentWorkspace?.synchronize ? "direct" : this.changeMode,
+      policy: this.workspaceHost?.mode || this.changeMode,
       model: this.model,
       effort: this.effort,
       modelSelection: this.modelSettings.selection,
@@ -631,7 +635,7 @@ class CodexBackend extends EventEmitter {
           await this.#resetWorkspaceNow("workspace-changed", requestEpoch, true);
           this.#assertWorkspace(requestEpoch, generation);
         }
-        const work = this.agentWorkspace ? await this.agentWorkspace.prepare(revisionId) : null;
+        const work = this.workspaceHost ? await this.workspaceHost.prepare(revisionId) : null;
         preparedWork = work;
         const turnCwd = work ? path.posix.join(this.runtimeWorkDir, work.relative) : this.runtimeWorkDir;
         this.currentCwd = turnCwd;
@@ -726,9 +730,9 @@ class CodexBackend extends EventEmitter {
       const canAbortPreparedWork = !this.activeTurnId
         && requestEpoch === this.workspaceEpoch
         && generation === this.childEpoch;
-      if (canAbortPreparedWork && pendingWork && typeof this.agentWorkspace?.abort === "function") {
+      if (canAbortPreparedWork && pendingWork && this.workspaceHost) {
         try {
-          await this.agentWorkspace.abort(pendingWork, {
+          await this.workspaceHost.abort(pendingWork, {
             isCurrent: () => requestEpoch === this.workspaceEpoch && generation === this.childEpoch,
           });
         } catch (cleanupError) {
@@ -1558,11 +1562,11 @@ class CodexBackend extends EventEmitter {
     const modelError = turn.error?.message ? this.#classifyTurnModelError(turn.error.message) : null;
     try {
       if (pending?.work && isCurrent()) {
-        const outcome = await this.agentWorkspace.finish(pending.work, {
+        const outcome = await this.workspaceHost.finish(pending.work, {
           apply:pending.changeMode === "auto", completed:turn.status === "completed", isCurrent});
         if (outcome && isCurrent()) {
           if (Object.hasOwn(outcome, "revisionId")) this.threadRevisionId = outcome.revisionId;
-          const event = this.agentWorkspace.finishEvent?.(outcome);
+          const event = this.workspaceHost.finishEvent(outcome);
           if (event) this.emit("event", event);
         }
       }
@@ -1614,13 +1618,13 @@ class CodexBackend extends EventEmitter {
   }
 
   #settleOrphanedWork(pending) {
-    if (!pending?.work || typeof this.agentWorkspace?.finish !== "function") return;
-    void this.agentWorkspace.finish(pending.work, {
+    if (!pending?.work || !this.workspaceHost) return;
+    void this.workspaceHost.finish(pending.work, {
       apply: false,
       completed: false,
       isCurrent: () => true,
     }).then(outcome => {
-      const event = this.agentWorkspace.finishEvent?.(outcome);
+      const event = this.workspaceHost.finishEvent(outcome);
       if (event) this.emit("event", event);
     }).catch(error => {
       this.emit("event", {type:"error", message:"Codex 连接中断；文件改动仍留在工作区，但历史收束未完成：" + plainError(error)});
