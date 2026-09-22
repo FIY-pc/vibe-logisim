@@ -115,6 +115,7 @@ class CircuitPluginContract(unittest.TestCase):
                 self.assertRegex(result["run"]["id"], r"^run-[0-9a-f]{16}$")
                 self.assertEqual(result["feedback"]["status"], "passed")
                 self.assertEqual(result["feedback"]["checkedCount"], 4)
+                self.assertNotIn("nextActions", result["feedback"])
                 self.assertEqual(result["result"]["passed"], 4)
                 self.assertEqual(result["invocation"]["callId"], "call-contract")
                 self.assertEqual(result["invocation"]["turnId"], "turn-contract")
