@@ -77,6 +77,7 @@ class NativeCircuitRuntime:
             'id': report['runId'],
             'label': '原生运行观察',
             'kind': mode,
+            'mode': mode,
             'status': 'completed',
             'authority': report['authority'],
             'runtimeProfileId': report['runtimeProfileId'],
