@@ -82,7 +82,7 @@
 
 ### 运行观察
 
-`harness_run`、`simulate_circuit` 和 `trace_circuit` 让 native Logisim 实际加载不可变 artifact，执行组合向量或时序事件，并返回每行输入、输出、位表示、tick、振荡和运行身份。运行输入、时钟和按钮是本次实验的 transient stimulus，不是结构修改或自动保存。
+`harness_run`、`simulate_circuit` 和 `trace_circuit` 让 native Logisim 实际加载不可变 artifact，执行组合向量或时序事件，并返回每行输入、输出、位表示、tick、振荡和运行身份。完整 rows 在观察记录中保留；模型传输可以只取有限行，反馈计数仍由完整 native rows 计算。运行输入、时钟和按钮是本次实验的 transient stimulus，不是结构修改或自动保存。
 
 运行观察能回答：
 

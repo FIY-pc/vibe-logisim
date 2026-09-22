@@ -18,11 +18,28 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
 
 from studio.domain.tool_errors import CircuitToolError
+from studio.application.tools import Workbench
 from studio.application.workspace import Workspace
 from studio.transport.http import Handler, LensHTTPServer
 
 
 class CircuitPluginContract(unittest.TestCase):
+    def test_harness_model_rows_are_bounded_without_changing_counts(self):
+        rows = [
+            {"inputs": {"a": index}, "outputs": {"y": index}, "passed": status, "status": status_name,
+             "oscillating": status_name == "unknown"}
+            for index, (status, status_name) in enumerate([
+                (False, "failed")] + [(None, "unknown")] * 12 + [(True, "passed")] * 20)
+        ]
+        report = {"rows": rows, "failed": 1, "unchecked": 12, "passed": 20}
+        bounded = Workbench._bounded_simulation_report(report)
+        self.assertEqual(len(bounded["rows"]), 21)
+        self.assertEqual(bounded["rowCount"], 33)
+        self.assertTrue(bounded["rowsTruncated"])
+        self.assertEqual(bounded["failed"], 1)
+        self.assertEqual(bounded["unchecked"], 12)
+        self.assertEqual(bounded["passed"], 20)
+
     def test_manifest_binding_and_native_evaluation(self):
         source_bytes = (REPO / "archive/tooling/tmp/half_adder.circ").read_bytes()
         with tempfile.TemporaryDirectory(prefix="vibe-circuit-plugin-") as temporary:

@@ -969,7 +969,7 @@
     {
       "type": "function",
       "name": "harness_run",
-      "description": "Run a native circuit experiment. Use mode trace for clocks and sequential behavior or simulate for combinational vectors. This is an observation tool, not a required workflow or a pass verdict. Input Pin labels, Clock components and exact-target watch IDs are available from inspect_circuit; existing context may already contain what you need. Returns the bound revision/artifact, native rows, observed targets and first failure/oscillation when present. Trace uses the same executor and semantics as trace_circuit: fresh state; native tick (except at 0), input events, inputClocks transitions, button events, sample, with propagation after each step/event. Events are unavailable in simulate mode.",
+      "description": "Run a native circuit experiment. Use mode trace for clocks and sequential behavior or simulate for combinational vectors. This is an observation tool, not a required workflow or a pass verdict. Input Pin labels, Clock components and exact-target watch IDs are available from inspect_circuit; existing context may already contain what you need. The full observation is retained with the revision, while the model response returns bounded rows; feedback counts still cover the complete run. Trace uses the same executor and semantics as trace_circuit: fresh state; native tick (except at 0), input events, inputClocks transitions, button events, sample, with propagation after each step/event. Events are unavailable in simulate mode.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1090,7 +1090,7 @@
             },
             "description": "Trace-only. Button component ID from the exact target; tick: 0..ticks inclusive. After input events and inputClocks transitions, apply in same-tick array order, settling each before sampling. State persists; pressed=false releases."
           },
-          "watches": {
+      "watches": {
             "type": "array",
             "maxItems": 24,
             "items": {
@@ -1113,9 +1113,20 @@
                 "port"
               ],
               "additionalProperties": false
-            }
-          },
-          "vectors": {
+        }
+      },
+      "rowStart": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Trace-only returned row offset; the native experiment still starts from fresh state. Defaults to 0."
+      },
+      "rowLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 256,
+        "description": "Trace-only maximum returned rows. Defaults to 32; full rowCount and feedback remain available."
+      },
+      "vectors": {
             "type": "array",
             "minItems": 1,
             "maxItems": 1024,

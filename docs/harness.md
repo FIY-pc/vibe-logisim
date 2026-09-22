@@ -115,6 +115,8 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 `harness_run` 的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
+`harness_run` 的 native 实验仍按完整 rows 计算反馈并保存完整观察；模型传输默认只返回有限行。trace 可用 `rowStart` / `rowLimit`（默认 0 / 32，最多 256）取另一段；simulate 复用 `simulate_circuit` 的失败、未知和通过样本抽样。这样大批量运行不会把重复行全部塞进上下文，`rowCount`、计数和首个反例仍对应完整实验。
+
 1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
 
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
