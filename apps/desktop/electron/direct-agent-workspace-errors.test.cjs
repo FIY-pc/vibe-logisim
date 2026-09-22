@@ -112,3 +112,19 @@ test('abort releases the direct-workspace turn guard', async () => {
   await agent.abort({folderId: 'folder-1'});
   assert.equal(workspace.turnActive, false);
 });
+
+test('finish returns the revision created while refreshing direct file changes', async () => {
+  const workspace = {
+    turnActive: true,
+    folder: {assert() {}},
+    backend: {
+      async session() { return {workspace: {id: 'project-1'}, revision: {id: 'revision-after-write'}}; },
+    },
+    async run(operation) { return operation(); },
+    async refresh() {},
+  };
+  const agent = new DirectAgentWorkspace(workspace);
+  const result = await agent.finish({folderId: 'folder-1'}, {isCurrent: () => true});
+  assert.deepEqual(result, {projectId: 'project-1', revisionId: 'revision-after-write'});
+  assert.equal(workspace.turnActive, false);
+});

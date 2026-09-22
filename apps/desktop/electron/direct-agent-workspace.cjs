@@ -112,7 +112,11 @@ class DirectAgentWorkspace {
     if(!isCurrent())return null;
     this.assert(binding); this.workspace.turnActive = false;
     await this.workspace.run(() => this.workspace.refresh({checkpoint:true,title:'AI 文件改动'}));
-    return null;
+    const session = await this.workspace.backend.session();
+    return {
+      projectId: session?.workspace?.id || null,
+      revisionId: session?.revision?.id || null,
+    };
   }
   async abort(binding, {isCurrent = () => true} = {}) {
     if(!isCurrent())return null;

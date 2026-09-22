@@ -1596,6 +1596,7 @@ class CodexBackend extends EventEmitter {
         const outcome = await this.agentWorkspace.finish(pending.work, {
           apply:pending.changeMode === "auto", completed:turn.status === "completed", isCurrent});
         if (outcome && isCurrent()) {
+          if (Object.hasOwn(outcome, "revisionId")) this.threadRevisionId = outcome.revisionId;
           if (outcome.applied) this.threadRevisionId = outcome.session.revision.id;
           this.emit("event", {type:"circuit-change", ...outcome});
         }
