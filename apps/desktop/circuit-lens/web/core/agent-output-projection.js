@@ -1,6 +1,5 @@
-// The app-server protocol exposes many low-level items for one answer. This
-// model compresses them into a user-facing work process before the DOM sees
-// them. It deliberately owns no rendering, timing, or transport concerns.
+// Keep the transport's item identity and result state together. The view owns
+// the two disclosure levels; this object does not invent a third progress UI.
 export class AgentOutputProjection {
   constructor() { this.clear(); }
 
@@ -16,6 +15,16 @@ export class AgentOutputProjection {
 
   start() { this.status='running'; }
 
+  displayLabel(label,kind) {
+    const text=String(label||'正在处理').replace(/\s+/g,' ').trim();
+    if(kind==='reasoning')return '分析电路与问题';
+    // Some replay and older host events carry the raw shell command as the
+    // label. Keep commands in the detail/title while the live status stays a
+    // calm, human-readable phase name.
+    if(kind==='command'&&/\b(?:python(?:3)?|node|npm|npx|java|javac|cargo|go|rg|grep|find|ls|cat|sed|awk|pwd|git)\b|[\\/]/i.test(text))return '执行本地操作';
+    return text||'正在处理';
+  }
+
   activity({id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null}={}) {
     if(id==null || id==='')return null;
     const key=String(id);
@@ -27,7 +36,7 @@ export class AgentOutputProjection {
       item={id:key,label:'正在处理',status:'running',kind:'tool',detail:null,activityKey:null};
       this.items.set(key,item);this.order.push(key);
     }
-    item.label=String(label||'正在处理').replace(/\s+/g,' ').trim();
+    item.label=this.displayLabel(label,kind);
     item.status=status;
     item.kind=kind||'tool';
     item.detail=detail==null?item.detail:String(detail);
@@ -38,35 +47,4 @@ export class AgentOutputProjection {
 
   finish(status='completed') { this.status=status; }
 
-  runningItem() {
-    for(let i=this.order.length-1;i>=0;i--) {
-      const item=this.items.get(this.order[i]);
-      if(item?.status==='running')return item;
-    }
-    return null;
-  }
-
-  failedCallCount() {
-    return [...this.items.values()].filter(item=>!item.resultStatus&&item.status==='failed').length;
-  }
-
-  unresolvedWarningCount() {
-    return [...this.items.values()].filter(item=>item.status==='warning').length;
-  }
-
-  summary(fallback=null) {
-    const running=this.runningItem();
-    if(this.status==='running')return running?`正在${running.label}…`:fallback||'正在整理结果';
-    if(this.status==='completed') {
-      const count=this.items.size,failed=this.failedCallCount(),warnings=this.unresolvedWarningCount();
-      const mismatches=[...this.items.values()].filter(item=>item.resultStatus==='failed').length;
-      if(mismatches)return `回答完成 · ${mismatches} 个运行结果不匹配 · 查看工作过程`;
-      if(warnings)return `回答完成 · ${warnings} 个结果待确认 · 查看工作过程`;
-      if(failed)return `回答完成 · 过程中 ${failed} 次调用失败 · 查看工作过程`;
-      return count?`已完成 · ${count} 个工作步骤 · 查看工作过程`:'已完成 · 查看工作过程';
-    }
-    if(this.status==='interrupted')return '已停止 · 查看工作过程';
-    if(this.status==='failed')return '未完成 · 查看工作过程';
-    return fallback;
-  }
 }

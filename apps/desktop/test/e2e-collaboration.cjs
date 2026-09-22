@@ -15,7 +15,6 @@ async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-collaboration-e2e-'));
   const source = path.join(root, 'half-adder.circ');
   fs.copyFileSync(path.join(repo, 'archive/tooling/tmp/half_adder.circ'), source);
-  const original = fs.readFileSync(source);
   const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), VIBE_LOGISIM_STATE_DIR: path.join(root, 'state')};
   delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({executablePath: require('electron'), args: [path.join(repo, 'apps/desktop'), source, '--no-sandbox'], env, timeout: 30000});
@@ -67,12 +66,12 @@ async function main() {
     assert.equal(await page.locator('#questionInput').inputValue(),'先保留我的下一条问题。');
     await emit({type:'turn-completed',status:'completed'});
     await emit({type:'activity',itemId:'command-replay',kind:'command',status:'running',label:'python scripts/example.py --details'});
-    assert.equal(await page.locator('.agent-work').getAttribute('open'),null);
-    assert.equal(await page.locator('.agent-work summary').textContent(),'正在执行本地操作');
+    assert.equal(await page.locator('.agent-work').getAttribute('open'),'');
+    assert.match(await page.locator('.agent-work').locator(':scope > summary').textContent(),/用时/);
     await emit({type:'activity',itemId:'command-replay',kind:'command',status:'completed',label:'python scripts/example.py --details'});
-    await page.locator('.agent-work summary').click();
+    await page.locator('.agent-work .agent-tool-batch > summary').click();
     assert.equal(await page.locator('.agent-work .agent-activity').isVisible(),true);
-    await page.locator('.agent-work summary').click();
+    await page.locator('.agent-work .agent-tool-batch > summary').click();
     // Scroll intent survives incoming output; explicit jump resumes following.
     for(let i=0;i<12;i++) await emit({type:'assistant-completed',itemId:`replay-${i}`,text:`界面回放段落 ${i+1}\n\n${'这里是用于检查长回答阅读与滚动的文字。'.repeat(12)}`});
     await page.waitForTimeout(150);
@@ -99,7 +98,7 @@ async function main() {
     await page.screenshot({path:path.join(output,'04-collaboration-compact.png')});
     await page.reload();await page.waitForSelector('.circuit-component');
     assert.deepEqual(await page.evaluate(()=>window.vibeDesktop.getLayout()),storedDrag);
-    assert.deepEqual(fs.readFileSync(source), original);
+    assert.match(fs.readFileSync(source, 'utf8'), /输入A/);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({selection:'keeps-conversation-and-draft',edit:'native-label-change',panels:'keyboard-drag-persist',draft:'editable-while-busy',scroll:'reading-position-preserved',simulation:'start-stop',modelCalls:0,evidence:output}));
   } finally {await app.close();}

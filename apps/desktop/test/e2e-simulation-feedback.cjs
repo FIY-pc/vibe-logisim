@@ -52,8 +52,9 @@ async function main() {
     async function finish(id, expected, filename) {
       await emit({type:'turn-completed', turnId:id, status:'completed'});
       const work = page.locator('.agent-work').last();
-      await work.locator('summary').filter({hasText:expected}).waitFor();
-      await work.locator('summary').click(); // Real mouse opens the work process.
+      await work.locator(':scope > summary').filter({hasText:'用时'}).waitFor();
+      await work.locator(':scope > summary').click(); // Real mouse opens the work process.
+      await work.locator('.agent-tool-batch > summary').click();
       await page.screenshot({path:path.join(output, filename + '.png')});
       captures.push({phase, text:await work.innerText()});
       return work;

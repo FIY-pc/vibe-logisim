@@ -175,7 +175,7 @@ async function run() {
     assert.equal(await page.locator('#askButton').isVisible(), false);
     assert.equal(await page.locator('#interruptButton').isEnabled(), true);
     assert.equal(await page.locator('[aria-label="编辑此问题"]').first().isEnabled(), false);
-    await page.locator('.agent-work summary').click();
+    await page.locator('.agent-work').locator(':scope > summary').click();
     const activity = await page.locator('.agent-activity').elementHandle();
     const work = await page.locator('.agent-work').elementHandle();
     await shot('01-empty-stop'); checks.push(phase);
@@ -203,7 +203,8 @@ async function run() {
     assert.equal(await work.evaluate(node => node.isConnected && node.dataset.status === 'running'), true);
     await app.evaluate(() => global.__steerReplay.emit({type:'activity', itemId:'local-tool-1', kind:'tool',
       activityKey:'local:inspect', label:'本地回放：结合补充意见继续读取', status:'running'}));
-    await page.getByText('本地回放：结合补充意见继续读取', {exact:true}).waitFor();
+    await page.locator('.agent-work').last().locator('.agent-tool-batch > summary').click();
+    await page.locator('.agent-activity-label').filter({hasText:'本地回放：结合补充意见继续读取'}).waitFor();
     assert.equal(await page.locator('.agent-work').count(), 1);
     assert.equal(await page.locator('.agent-activity').count(), 1);
     await shot('03-continuing-same-work'); checks.push(phase);

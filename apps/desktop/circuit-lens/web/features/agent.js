@@ -345,7 +345,7 @@ function handleAgentEvent(event) {
       return;
     }
     if (event.type === "reasoning-delta") {
-      conversation.activity(event.itemId, event.delta || "正在分析选区证据", "running", "reasoning", null, "reasoning");
+      conversation.assistant(event.itemId, event.delta || "", "commentary", true, true);
       return;
     }
     if (event.type === "activity") {

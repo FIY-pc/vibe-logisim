@@ -13,7 +13,7 @@ export class ConversationView {
     this.referenceBindings=new Map();this.turnReferenceBinding=null;this.restoring=false;
     this.messages=new Map();this.activities=new Map();this.follow=true;
     this.output=new AgentOutputProjection();
-    this.frame=null;this.scrollTop=null;this.work=null;this.pending=new Set();this.editing=null;this.editingFollow=null;
+    this.frame=null;this.scrollTop=null;this.work=null;this.toolBatch=null;this.lastContentKind='message';this.workStartedAt=0;this.workElapsedMs=0;this.workClock=null;this.pending=new Set();this.editing=null;this.editingFollow=null;
   }
   mount() {
     const {agentTimeline:node,conversationLatest:latest}=this.ui;
@@ -29,7 +29,8 @@ export class ConversationView {
   }
   clear() {
     this.turnReferenceBinding=null;
-    this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.output.clear();this.work=null;this.follow=true;this.scrollTop=null;
+    if(this.workClock)clearInterval(this.workClock);this.workClock=null;
+    this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.output.clear();this.work=null;this.toolBatch=null;this.lastContentKind='message';this.workStartedAt=0;this.workElapsedMs=0;this.follow=true;this.scrollTop=null;
     this.ui.conversationLatest.hidden=true;this.ui.agentTimeline.replaceChildren(this.ui.agentEmpty);this.ui.agentEmpty.hidden=false;
   }
   user(id,text,context) {
@@ -146,7 +147,11 @@ export class ConversationView {
     if(!m)m=this.create('assistant',key,'');
     if(delta)m.text+=text;else if(text)m.text=text;
     m.phase=phase||m.phase;m.node.dataset.phase=m.phase||'';
-    if(m.phase==='commentary')this.group().append(m.node);
+    if(m.phase==='commentary') {
+      this.breakToolBatch();
+      const work=this.group();
+      if(m.node.parentElement!==work)work.append(m.node);
+    } else this.breakToolBatch();
     m.node.classList.toggle('is-streaming',streaming);m.node.setAttribute('aria-busy',String(streaming));m.footer.hidden=streaming||m.phase==='commentary';
     if(streaming) {this.pending.add(m);this.scroll();}
     else {this.pending.delete(m);this.render(m);this.scroll();}
@@ -155,39 +160,65 @@ export class ConversationView {
   group() {
     if(!this.work) {
       const node=makeElement('details','agent-work');
-      const summary=makeElement('summary');summary.append(icon('ChevronRight'),makeElement('span','','工作过程'));
+      const summary=makeElement('summary');
+      summary.append(icon('ChevronRight'),makeElement('span','agent-work-title'));
       node.append(summary);this.ui.agentTimeline.append(node);this.work=node;
     }
     return this.work;
   }
   start() {
+    if(this.workClock)clearInterval(this.workClock);
     this.work=null;
+    this.toolBatch=null;
+    this.lastContentKind='message';
     this.activities.clear();
     this.output.beginTurn();
+    this.workStartedAt=Date.now();
+    this.workElapsedMs=0;
     this.group().dataset.status='running';
+    this.group().open=true;
     this.output.start();
-    this.updateWork('正在思考');
+    this.updateWork();
+    this.workClock=setInterval(()=>this.updateWork(),1000);
     this.scroll();
   }
-  updateWork(fallback=null) {
-    const summary=this.group().querySelector('summary span');
-    summary.textContent=this.output.summary(fallback)||fallback||'工作过程';
+  formatDuration(ms) {
+    const seconds=Math.max(0,Math.round(ms/1000));
+    if(seconds<60)return `${seconds}s`;
+    const minutes=Math.floor(seconds/60),rest=seconds%60;
+    return `${minutes}m ${String(rest).padStart(2,'0')}s`;
+  }
+  updateWork() {
+    if(!this.work)return;
+    const title=this.work.querySelector('.agent-work-title');
+    if(title)title.textContent=`用时 ${this.formatDuration(this.workElapsedMs || (this.workStartedAt?Date.now()-this.workStartedAt:0))}`;
   }
   activity(id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null) {
     if(!id)return;this.ui.agentEmpty.hidden=true;
+    if(status==='running'&&this.output.status!=='running') this.output.start();
     const projected=this.output.activity({id,label,status,kind,detail,activityKey,resultStatus});
     if(!projected)return;
+    const work=this.group();
+    if(status==='running') {
+      work.dataset.status='running';
+      work.open=true;
+      if(!this.workStartedAt)this.workStartedAt=Date.now();
+    }
+    if(kind==='reasoning')return;
+    if(this.toolBatch===null || this.lastContentKind!=='tool')this.toolBatch=this.createToolBatch(work);
+    this.lastContentKind='tool';
+    const batch=this.toolBatch;
     let node=this.activities.get(String(id));
     if(!node) {
       node=makeElement('div','agent-activity');node.append(makeElement('span','agent-activity-label'),makeElement('span','agent-activity-status'));
-      this.group().append(node);this.activities.set(String(id),node);
+      batch.body.append(node);this.activities.set(String(id),node);batch.ids.push(String(id));
     }
     const item=projected.item;
     node.dataset.status=item.status;
     if(item.resultStatus)node.dataset.resultStatus=item.resultStatus;
     if(item.activityKey)node.dataset.activityKey=item.activityKey;
     const text=item.label;
-    node.querySelector('.agent-activity-label').textContent=kind==='reasoning'?'分析电路与问题':text;
+    node.querySelector('.agent-activity-label').textContent=item.kind==='reasoning'?'分析电路与问题':text;
     node.querySelector('.agent-activity-status').textContent=item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?'调用失败':'完成';
     if(item.detail) {
       node.title=item.detail;
@@ -197,13 +228,42 @@ export class ConversationView {
         error.textContent=item.detail;
       }
     }
+    this.updateToolBatch(batch);
     this.updateWork();
     this.scroll();
+  }
+  createToolBatch(work) {
+    const batch=makeElement('details','agent-tool-batch');
+    const summary=makeElement('summary');
+    summary.append(icon('ChevronRight'),makeElement('span','agent-tool-batch-label','工具调用'),makeElement('small','agent-tool-batch-meta'));
+    const body=makeElement('div','agent-tool-batch-body');
+    batch.append(summary,body);work.append(batch);
+    batch.open=false;
+    return {node:batch,body,label:summary.querySelector('.agent-tool-batch-label'),meta:summary.querySelector('.agent-tool-batch-meta'),ids:[]};
+  }
+  updateToolBatch(batch) {
+    if(!batch)return;
+    const labels=batch.ids.map(id=>this.activities.get(id)?.querySelector('.agent-activity-label')?.textContent).filter(Boolean);
+    const unique=[...new Set(labels)];
+    batch.label.textContent=unique.slice(0,2).join('、') || '工具调用';
+    if(unique.length>2)batch.label.textContent+='…';
+    batch.meta.textContent=batch.ids.length>1?`${batch.ids.length} 项`:'';
+    batch.node.dataset.status=batch.ids.some(id=>this.activities.get(id)?.dataset.status==='running')?'running':
+      batch.ids.some(id=>this.activities.get(id)?.dataset.status==='failed')?'failed':'completed';
+  }
+  breakToolBatch() {
+    this.toolBatch=null;this.lastContentKind='message';
   }
   finish(status='completed') {
     for(const message of this.pending)this.render(message);this.pending.clear();
     this.ui.agentTimeline.querySelectorAll('.is-streaming').forEach(node=>{node.classList.remove('is-streaming');node.setAttribute('aria-busy','false');const m=this.messages.get(node.dataset.itemId);if(m)m.footer.hidden=m.phase==='commentary';});
-    if(this.work){this.work.dataset.status=status;this.output.finish(status);this.updateWork();}
+    if(this.work){
+      this.workElapsedMs=this.workStartedAt?Date.now()-this.workStartedAt:0;
+      this.work.dataset.status=status;this.output.finish(status);this.updateWork();
+      this.work.open=false;
+    }
+    if(this.workClock)clearInterval(this.workClock);this.workClock=null;
+    this.toolBatch=null;
     this.scroll();
   }
   system(text,kind='warning') {
@@ -217,7 +277,8 @@ export class ConversationView {
       if(m.type==='assistant')this.assistant(m.id,m.text,m.phase);
     }
     this.restoring=false;
-    if(this.work)this.updateWork('查看工作过程');this.scroll();
+    if(this.work){this.output.finish('completed');this.work.dataset.status='completed';this.work.open=false;this.updateWork();}
+    this.scroll();
   }
   setBusy(value) {
     this.busy=value;
