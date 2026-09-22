@@ -66,12 +66,14 @@ function updateComposerState() {
     ui.questionInput.disabled = !projectState.session || !ports.draftReady();
     ui.questionInput.placeholder = busy ? "继续写下你的想法…" : "一起构思、修改，或问一个问题…";
     ui.askButton.replaceChildren(icon("ArrowUp"));
-    ui.askButton.disabled = agentState.submitting || (busy && !canSteer) || projectState.projectBusy || (!ready && !canSteer) || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged) || !hasQuestion;
+    ui.askButton.disabled = agentState.submitting || (busy && !canSteer) || projectState.projectBusy || Boolean(agentState.modelConfigurationError) || (!ready && !canSteer) || !ports.draftReady() || (!projectState.folder && (!projectState.session || !projectState.circuit)) || (!projectState.folder && projectState.sourceChanged) || !hasQuestion;
     ui.askButton.setAttribute("aria-label", canSteer ? "追加到当前任务" : "发送问题");
     if (canSteer) {
       ui.askButton.title = "追加到当前任务";
     } else if (projectState.sourceChanged) {
       ui.askButton.title = projectState.folder ? "向 AI 讨论或修复当前文件，画布仍显示此前可读版本" : "先重新载入并建立当前版本的上下文";
+    } else if (agentState.modelConfigurationError) {
+      ui.askButton.title = "先在 AI 设置中选择当前连接支持的模型";
     } else if (!ready) {
       ui.askButton.title = agentState.status === "auth-required"
         ? "打开 AI 设置查看连接与登录"
@@ -243,6 +245,7 @@ function applyAgentState(snapshot = {}) {
     agentState.busy = Boolean(snapshot.busy || snapshot.status === "busy");
     agentState.canSteer = Boolean(snapshot.canSteer);
     agentState.turnId = snapshot.turnId || null;
+    agentState.modelConfigurationError = snapshot.modelConfigurationError || null;
     const labels = {
       idle: "等待启动",
       starting: "正在连接本机 Codex…",

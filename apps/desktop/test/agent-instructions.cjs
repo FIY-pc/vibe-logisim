@@ -85,7 +85,9 @@ async function replay(root) {
   try {
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     fs.writeFileSync(path.join(process.env.CODEX_HOME, 'config.toml'), [
-      'model = "gpt-5.4"', 'model_provider = "local_fixture"',
+      // Keep the protocol fixture on a model identifier exposed by the local
+      // app-server catalog; the production backend now validates inheritance.
+      'model = "gpt-5.6-sol"', 'model_provider = "local_fixture"',
       '[model_providers.local_fixture]', 'name = "Local protocol fixture"',
       `base_url = "http://127.0.0.1:${server.address().port}/v1"`,
       'wire_api = "responses"', 'requires_openai_auth = false', 'supports_websockets = false',

@@ -7,6 +7,7 @@ const path = require('node:path');
 const {ConversationStore} = require('./conversation-store.cjs');
 const {ConversationDraftStore} = require('./conversation-drafts.cjs');
 const {CodexBackend} = require('./codex-backend.cjs');
+const {AgentModelError} = require('./model-errors.cjs');
 const pluginManifest = require('../circuit-lens/studio/domain/circuit-plugin.json');
 const makeRoot = t => {const root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-conversations-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));return root;};
 
@@ -147,4 +148,23 @@ test('changed developer instructions start a fresh native thread instead of resu
   assert.equal(requests.filter(request=>request.method==='thread/fork').length, 0);
   assert.equal(requests.filter(request=>request.method==='thread/start').length, 2);
   changed.child = null;
+});
+
+test('an invalid inherited model is rejected before a turn can admit a native thread', async t => {
+  const root=makeRoot(t), key='folder:invalid-inherited-model';
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json'});
+  backend.start=async()=>{backend.status='ready';};
+  backend.child={stdin:{destroyed:false}};
+  backend.modelConfigurationError=new AgentModelError('MODEL_UNAVAILABLE',
+    '本机配置的模型「stale-model」不在当前连接的模型目录中，请打开模型列表并选择可用模型。',
+    {phase:'config',model:'stale-model'});
+  const context={folder:{id:'folder-aaaaaaaaaaaaaaaa'},revisionId:'revision-one'};
+  await assert.rejects(()=>backend.ask({question:'开始构建',context,workspaceKey:key}),error=>{
+    assert.equal(error.code,'MODEL_UNAVAILABLE');
+    assert.equal(error.phase,'config');
+    assert.match(error.message,/stale-model/);
+    return true;
+  });
+  assert.equal(backend.threadId,null);
+  assert.equal(backend.conversationId,null);
 });

@@ -55,7 +55,7 @@ const { CircuitPlugin, modelErrorPayload } = require("./circuit-plugin.cjs");
 const { writeProvider } = require("./provider-config.cjs");
 const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
-const { classifyModelError } = require("./model-errors.cjs");
+const { AgentModelError, classifyModelError } = require("./model-errors.cjs");
 const { TurnHealth } = require("./turn-health.cjs");
 const { revertThroughMessage } = require("./conversation-edit.cjs");
 const { dynamicToolResponse, modelMediaEvidence } = require("./model-tool-output.cjs");
@@ -212,6 +212,7 @@ class CodexBackend extends EventEmitter {
     this.lastStderr = "";
     this.status = "idle";
     this.statusDetail = null;
+    this.modelConfigurationError = null;
     this.account = null;
     this.threadId = null;
     this.workspaceKey = null;
@@ -253,6 +254,7 @@ class CodexBackend extends EventEmitter {
       model: this.model,
       effort: this.effort,
       modelSelection: this.modelSettings.selection,
+      modelConfigurationError: this.modelConfigurationError?.asJSON?.() || null,
       inheritedModel: this.inheritedModel || null,
       inheritedEffort: this.inheritedEffort || null,
       providerName: this.providerName || "本机 Codex",
@@ -354,13 +356,27 @@ class CodexBackend extends EventEmitter {
       // The native Codex config is the default. An app-level preference may
       // override it only after the current app-server catalog validates it.
       // This prevents an old model identifier from reaching turn/start.
+      this.modelConfigurationError = null;
       try {
         await this.modelSettings.list();
         const selected = this.modelSettings.selection;
-        this.model = selected?.model || this.inheritedModel || null;
-        this.effort = selected ? selected.effort : (this.inheritedEffort || null);
+        if (selected) {
+          this.model = selected.model;
+          this.effort = selected.effort;
+          this.modelConfigurationError = null;
+        } else {
+          const configured = this.modelSettings.validateConfigured(this.inheritedModel, this.inheritedEffort);
+          this.model = configured?.model || null;
+          this.effort = configured?.effort || null;
+          this.modelConfigurationError = null;
+        }
         this.#setStatus(this.status);
-      } catch (_) {
+      } catch (error) {
+        if (error instanceof AgentModelError && error.phase === "config") {
+          this.modelConfigurationError = error;
+          this.model = null;
+          this.effort = null;
+        }
         // The inherited configuration remains usable if catalog refresh is
         // temporarily unavailable; the picker will expose the error later.
       }
@@ -626,6 +642,9 @@ class CodexBackend extends EventEmitter {
       this.#assertWorkspace(requestEpoch, generation);
       if (this.status === "auth-required") {
         throw new Error("请先在 AI 设置中登录 ChatGPT。");
+      }
+      if (this.modelConfigurationError && !this.modelSettings.selection) {
+        throw this.modelConfigurationError;
       }
       if (!this.child || !["ready", "busy"].includes(this.status)) {
         throw new Error("Codex App Server 当前不可用。");

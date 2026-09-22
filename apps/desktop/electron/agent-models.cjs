@@ -1,7 +1,7 @@
 "use strict";
 const fs = require("node:fs");
 const path = require("node:path");
-const {classifyModelError} = require("./model-errors.cjs");
+const {AgentModelError, classifyModelError} = require("./model-errors.cjs");
 
 // Model discovery and local preferences are separate from conversation transport.
 // The catalog comes from the same app-server that will execute the next turn.
@@ -104,6 +104,22 @@ class AgentModels {
     this.loading = loading;
     try { return await loading; }
     finally { if (this.loading === loading) this.loading = null; }
+  }
+
+  validateConfigured(model, effort) {
+    if (!model) return null;
+    const entry = this.catalog?.find(item => item.model === model);
+    if (!entry) {
+      throw new AgentModelError("MODEL_UNAVAILABLE",
+        `本机配置的模型「${model}」不在当前连接的模型目录中，请打开模型列表并选择可用模型。`,
+        {retryable:false, phase:"config", model});
+    }
+    if (effort && !entry.efforts.some(item => item.value === effort)) {
+      throw new AgentModelError("MODEL_UNAVAILABLE",
+        `本机配置的思考深度「${effort}」不适用于模型「${model}」，请打开模型列表重新选择。`,
+        {retryable:false, phase:"config", model});
+    }
+    return {model:entry.model, effort:effort ?? null};
   }
 
   async validate(selection) {

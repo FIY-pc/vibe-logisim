@@ -93,8 +93,10 @@ export function createController({ui, ports}) {
       ui.modelChoice.append(button);
     }
     if (!ui.modelChoice.childElementCount) ui.modelChoice.append(makeElement('p', 'model-empty', '没有找到这个模型'));
-    ui.modelDescription.hidden = !chosen || models.some(model => model.model === chosen);
-    ui.modelDescription.textContent = '之前选择的模型目前不可用，请重新选择。';
+    const configurationIssue = state.modelConfigurationError;
+    const unavailableSelection = chosen && !models.some(model => model.model === chosen);
+    ui.modelDescription.hidden = !configurationIssue && !unavailableSelection;
+    ui.modelDescription.textContent = configurationIssue?.message || '之前选择的模型目前不可用，请重新选择。';
     positionModel();
   }
 

@@ -31,6 +31,18 @@ test('stale app preference is cleared after the current catalog is known',async(
  assert.equal(fs.readFileSync(preferencesPath,'utf8'),'null');
 });
 
+test('inherited model and reasoning effort are checked against the live catalog',async()=>{
+ const settings=new AgentModels({preferencesPath:null,request:async()=>({data:[
+  {model:'current',supportedReasoningEfforts:[{reasoningEffort:'high'}],defaultReasoningEffort:'high'}
+ ],nextCursor:null})});
+ await settings.list();
+ assert.deepEqual(settings.validateConfigured('current','high'),{model:'current',effort:'high'});
+ assert.throws(()=>settings.validateConfigured('old','high'),error=>{
+  assert.equal(error.code,'MODEL_UNAVAILABLE');assert.equal(error.phase,'config');return true;
+ });
+ assert.throws(()=>settings.validateConfigured('current','xhigh'),/不适用于模型/);
+});
+
 test('reconnected model catalog cannot be overwritten by an old connection response',async()=>{
  let release, calls=0;
  const settings=new AgentModels({preferencesPath:null,request:()=>++calls===1 ? new Promise(resolve=>release=resolve) : Promise.resolve({data:[{model:'new',supportedReasoningEfforts:[]}],nextCursor:null})});
