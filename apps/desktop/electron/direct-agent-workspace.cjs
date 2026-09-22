@@ -28,6 +28,14 @@ class DirectAgentWorkspace {
       try{await w.refresh({checkpoint:true});}catch(error){w.report(error);}
       session = await w.backend.session();
     });
+    const currentRevisionId = session?.revision?.id || null;
+    if (currentRevisionId !== revisionId) {
+      throw workspaceToolError('STALE_WORKSPACE_CONTEXT',
+        '发送前工作区版本已经变化，请重新读取当前电路后再发送。', {
+          hint: '当前文件已经保留；重新打开或重新选择当前电路后再继续。',
+          context: {expectedRevisionId: revisionId || null, currentRevisionId},
+        });
+    }
     w.turnActive = true;
     const workspaceIndex = buildWorkspaceIndex({
       root: w.folder.current.root,

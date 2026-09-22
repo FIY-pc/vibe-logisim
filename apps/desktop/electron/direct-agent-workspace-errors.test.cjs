@@ -28,3 +28,30 @@ test('missing subcircuit returns available definitions as structured recovery co
   assert.equal(changes[0].type, 'changed');
 });
 
+test('prepare rejects a stale UI revision before starting a model turn', async () => {
+  let sessionReads = 0;
+  const workspace = {
+    folder: {current: {id: 'folder-1', root: '/tmp', activeFile: 'main.circ'}},
+    backend: {
+      async session() {
+        sessionReads += 1;
+        return {workspace: {id: 'project-1'}, revision: {id: sessionReads === 1 ? 'revision-old' : 'revision-current'}};
+      },
+    },
+    async run(operation) { return operation(); },
+    async saveWorking() {},
+    async refresh() {},
+    report() {},
+  };
+  const agent = new DirectAgentWorkspace(workspace);
+  await assert.rejects(
+    agent.prepare('revision-old'),
+    error => {
+      assert.equal(error.toolError.code, 'STALE_WORKSPACE_CONTEXT');
+      assert.deepEqual(error.toolError.context, {
+        expectedRevisionId: 'revision-old', currentRevisionId: 'revision-current',
+      });
+      return true;
+    },
+  );
+});
