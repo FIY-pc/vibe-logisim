@@ -23,7 +23,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 这里的“工具”是模型使用 harness 的接口，不是 harness 的全部。当前连接状态里的 `harness` 字段会报告 `vibe-logisim.harness/v1`：基础能力（原生 thread/turn/history、真实工作区文件、shell、搜索、模型目录、turn steering）、桌面宿主强制的边界（外部 systemd 隔离、无审批、关闭 login shell），以及电路插件的版本、契约签名和模型可见工具。Codex 原生功能如果需要额外的浏览器、MCP、插件、计划、子 agent 或 UI 请求处理，会在同一份能力政策中标记为 `disabled`；这不是把 agent 限制成电路专用 agent，而是避免模型看到一个宿主实际上接不住的接口。
 
-状态里的摘要只保留能力签名和名称。需要查看每项禁用的边界与原因时，桌面只读接口 `agent.getCapabilities()` 返回同一份 `vibe-logisim.harness/v1` 的详细报告。
+状态里的摘要只保留能力签名和名称。启动连接时，Base Harness 还通过同一个 app-server 的 `config/read` 读取 `nativeProfile`，把实际生效的模型行为配置与宿主强制策略分开；读取失败会明确标成 `unavailable`，不会把 profile 文件内容当成已生效的证据。需要查看每项禁用的边界与原因时，桌面只读接口 `agent.getCapabilities()` 返回同一份 `vibe-logisim.harness/v1` 的详细报告。
 
 能力政策位于 [`codex-capabilities.cjs`](../apps/desktop/electron/codex-capabilities.cjs)，生命周期仍位于 `codex-backend.cjs`。新增一项原生能力时，先补齐它的宿主/工作区契约，再从政策中解除禁用；不能只删一个 `--disable` 参数就把并发写文件或未处理的 server request 暴露给模型。
 

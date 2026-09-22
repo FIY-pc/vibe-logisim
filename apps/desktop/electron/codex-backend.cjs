@@ -185,6 +185,7 @@ class CodexBackend extends EventEmitter {
     this.status = "idle";
     this.statusDetail = null;
     this.modelConfigurationError = null;
+    this.effectiveNativeConfig = null;
     this.account = null;
     this.threadId = null;
     this.workspaceKey = null;
@@ -239,6 +240,7 @@ class CodexBackend extends EventEmitter {
       harness: capabilitySnapshot({
         plugin: this.circuitManifestState,
         directTools: this.circuitTools.registry?.tools?.map(tool => tool.name) || [],
+        nativeProfile: this.effectiveNativeConfig,
       }),
       messages: this.history.slice(-60),
     };
@@ -248,6 +250,7 @@ class CodexBackend extends EventEmitter {
     return capabilitySnapshot({
       plugin: this.circuitManifestState,
       directTools: this.circuitTools.registry?.tools?.map(tool => tool.name) || [],
+      nativeProfile: this.effectiveNativeConfig,
       detail: true,
     });
   }
@@ -332,6 +335,25 @@ class CodexBackend extends EventEmitter {
       this.#notify("initialized", {});
       const accountState = await this.#request("account/read", { refreshToken: false });
       this.account = accountState?.account || null;
+      try {
+        const configState = await this.#request("config/read", {includeLayers: false});
+        const config = configState?.config || {};
+        this.effectiveNativeConfig = {
+          status: "ready",
+          model: config.model || null,
+          reasoningEffort: config.model_reasoning_effort || null,
+          reasoningSummary: config.model_reasoning_summary || null,
+          modelVerbosity: config.model_verbosity || null,
+          serviceTier: config.service_tier || null,
+          webSearch: config.web_search || null,
+          responseStorage: config.additional?.disable_response_storage === true ? "disabled" : null,
+        };
+      } catch (error) {
+        this.effectiveNativeConfig = {
+          status: "unavailable",
+          message: shortText(error?.message || error || "无法读取 Codex 有效配置", 240),
+        };
+      }
       if (!this.account && accountState?.requiresOpenaiAuth) {
         this.#setStatus("auth-required");
       } else {
@@ -921,6 +943,7 @@ class CodexBackend extends EventEmitter {
 
   async stop() {
     this.loginId = null;
+    this.effectiveNativeConfig = null;
     const child = this.child;
     if (!child) {
       this.startPromise = null;
@@ -936,6 +959,7 @@ class CodexBackend extends EventEmitter {
     this.workspaceKey = null;
     this.conversationId = null;
     this.threadRevisionId = null;
+    this.effectiveNativeConfig = null;
     const processGroupId = this.processGroupId;
     this.stopping = true;
     this.child = null;
@@ -1664,6 +1688,7 @@ class CodexBackend extends EventEmitter {
     this.threadId = null;
     this.workspaceKey = null;
     this.threadRevisionId = null;
+    this.effectiveNativeConfig = null;
     this.conversationId = null;
     this.#rejectPending(new Error("Codex App Server exited."));
     if (expected) {

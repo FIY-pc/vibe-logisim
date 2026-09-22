@@ -71,7 +71,7 @@ const POLICY_SIGNATURE = createHash('sha256')
   .update(JSON.stringify({featurePolicy: FEATURE_POLICY, thread: THREAD_CONFIG, base: BASE_CAPABILITIES}), 'utf8')
   .digest('hex');
 
-function capabilitySnapshot({plugin = null, directTools = [], detail = false} = {}) {
+function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = null, detail = false} = {}) {
   const report = {
     schema: 'vibe-logisim.harness/v1',
     signature: POLICY_SIGNATURE,
@@ -83,6 +83,7 @@ function capabilitySnapshot({plugin = null, directTools = [], detail = false} = 
       loginShell: false,
       modelSelection: 'native-catalog',
     },
+    nativeProfile,
     circuitPlugin: plugin
       ? {
         id: plugin.id || null,
