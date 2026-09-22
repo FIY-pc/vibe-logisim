@@ -60,6 +60,11 @@ test('selected conversations resume their own native threads; busy turns and mis
   const context={folder:{id:'folder-aaaaaaaaaaaaaaaa'},revisionId:'revision-one'};
   const a=backend.conversationState(key).activeId;
   await backend.ask({question:'全加器',context,workspaceKey:key});
+  const inheritedThread=requests.find(request=>request.method==='thread/start');
+  const inheritedTurn=requests.find(request=>request.method==='turn/start');
+  assert.equal('model' in inheritedThread.params,false);
+  assert.equal('model' in inheritedTurn.params,false);
+  assert.equal('effort' in inheritedTurn.params,false);
   const liveHistory=backend.history;
   await backend.resumeWorkspace({workspaceKey:key,revisionId:context.revisionId});
   assert.equal(backend.history,liveHistory,'restoring a circuit must not replace live conversation state');
@@ -79,6 +84,30 @@ test('selected conversations resume their own native threads; busy turns and mis
   await assert.rejects(()=>backend.ask({question:'再试',context,workspaceKey:key}),/原始会话暂时不可用/);
   assert.equal(requests.filter(r=>r.method==='thread/start').length,2);
   assert.equal(backend.conversations.get(key,b).threadId,'thread-2');
+});
+
+test('an explicit app model is sent as an override while inherited config stays native', async t => {
+  const root=makeRoot(t),key='folder:model-override';
+  const backend=new CodexBackend({workDir:root,profileDir:root+'/profile',sessionStorePath:root+'/sessions.json'});
+  const requests=[];let serial=0;
+  backend.start=async()=>{backend.status='ready';};backend.model='local-model';backend.effort='high';
+  backend.child={stdin:{destroyed:false,write(line){
+    const request=JSON.parse(line);requests.push(request);
+    if(!request.id)return;
+    const pending=backend.pending.get(String(request.id));clearTimeout(pending.timeout);backend.pending.delete(String(request.id));
+    const result=request.method==='thread/start'?{thread:{id:'thread-model-override',turns:[]}}:
+      request.method==='turn/start'?{turn:{id:'turn-'+(++serial)}}:{};
+    pending.resolve(result);
+  }}};
+  const context={folder:{id:'folder-aaaaaaaaaaaaaaaa'},revisionId:'revision-one'};
+  await backend.ask({question:'沿用本机设置',context,workspaceKey:key});
+  await backend.invalidateRevision();
+  backend.modelSettings.save({model:'selected-model',effort:'high'});
+  backend.model='selected-model';backend.effort='high';
+  await backend.ask({question:'使用应用选择',context,workspaceKey:key});
+  const turns=requests.filter(request=>request.method==='turn/start');
+  assert.equal(turns.length,2);
+  assert.deepEqual({model:turns[1].params.model,effort:turns[1].params.effort},{model:'selected-model',effort:'high'});
 });
 
 test('a changed circuit plugin contract starts a capable thread while retaining local conversation history', async t => {

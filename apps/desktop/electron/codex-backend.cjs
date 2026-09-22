@@ -732,8 +732,7 @@ class CodexBackend extends EventEmitter {
             // systemd is the external sandbox. Nesting Codex's bubblewrap here
             // fails under the service's filesystem namespace on this host.
             sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
-            ...(this.model ? {model:this.model} : {}),
-            ...(this.effort ? {effort:this.effort} : {}),
+            ...this.#nativeModelOverrides({includeEffort:true}),
             runtimeWorkspaceRoots: [turnCwd],
             ...(this.includeCircuitContext ? {additionalContext: additionalContext(turnCwd, work?.workspaceIndex || null)} : {}),
           });
@@ -1004,7 +1003,7 @@ class CodexBackend extends EventEmitter {
             cwd: this.currentCwd || this.runtimeWorkDir,
             approvalPolicy: "never",
             sandbox: "danger-full-access",
-            ...(this.model ? {model:this.model} : {}),
+            ...this.#nativeModelOverrides(),
             dynamicTools: this.circuitTool ? this.circuitTools.registry.tools : [],
             config: THREAD_CONFIG,
             developerInstructions: this.developerInstructions,
@@ -1021,7 +1020,7 @@ class CodexBackend extends EventEmitter {
           cwd: this.currentCwd || this.runtimeWorkDir,
           approvalPolicy: "never",
           sandbox: "danger-full-access",
-          ...(this.model ? {model:this.model} : {}),
+          ...this.#nativeModelOverrides(),
           config: THREAD_CONFIG,
           serviceName: "vibe_logisim",
           ephemeral: this.ephemeral,
@@ -1178,7 +1177,7 @@ class CodexBackend extends EventEmitter {
           const fork = await forkThroughReply({source, messageId:request.messageId,
             request:(method, params) => this.#request(method, params), assertCurrent:() => this.#assertWorkspace(epoch, generation),
             options:{cwd:this.currentCwd || this.runtimeWorkDir, approvalPolicy:'never', sandbox:'danger-full-access',
-              config:THREAD_CONFIG, developerInstructions:this.developerInstructions, ...(this.model ? {model:this.model} : {})}});
+              config:THREAD_CONFIG, developerInstructions:this.developerInstructions, ...this.#nativeModelOverrides()}});
           this.#assertWorkspace(epoch, generation);
           state = this.conversations.fork(workspaceKey, {sourceId:source.id, sourceThreadId:source.threadId,
             messageId:request.messageId, turnId:fork.turnId, threadId:fork.thread.id, messageContexts:fork.messageContexts,
@@ -1614,6 +1613,15 @@ class CodexBackend extends EventEmitter {
       this.modelSettings.invalidate();
     }
     return modelError;
+  }
+
+  #nativeModelOverrides({includeEffort = false} = {}) {
+    const selection = this.modelSettings.selection;
+    if (!selection?.model) return {};
+    return {
+      model: selection.model,
+      ...(includeEffort && selection.effort ? {effort:selection.effort} : {}),
+    };
   }
 
   #handleProcessError(error, generation) {

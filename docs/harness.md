@@ -25,7 +25,7 @@ Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作�
 
 开发环境的 Codex 连接以启动时的本机 `CODEX_HOME/config.toml` 为默认配置。宿主只建立隔离的运行 profile，并镜像 provider、当前模型、思考深度和 `model_catalog_json` 指向的本地 catalog；认证仍沿用本机登录状态，不复制另一份轮换凭据。这样隔离的是运行目录和工作目录，配置语义仍来自本机 Codex。
 
-模型列表始终从同一个 app-server 的 `model/list` 读取。Vibe Logisim 保存的模型选择只是当前应用的可选覆盖，必须同时通过该 catalog 的模型 ID 和 supported reasoning efforts 校验后才能进入 `thread/start` 或 `turn/start`。失效的旧选择会被清除并回到本机配置；没有应用覆盖时不自行挑选 catalog 默认模型。界面中的“轻度 / 中 / 高 / 极高 / 最高 / Ultra”只是 native effort ID 的显示翻译，选项集合和可用深度由 catalog 决定。
+模型列表始终从同一个 app-server 的 `model/list` 读取。Vibe Logisim 保存的模型选择只是当前应用的可选覆盖，必须同时通过该 catalog 的模型 ID 和 supported reasoning efforts 校验后才能进入 `thread/start` 或 `turn/start`。失效的旧选择会被清除并回到本机配置；没有应用覆盖时不自行挑选 catalog 默认模型，也不把继承值重复作为请求 override，交给隔离 profile 中镜像的 Codex 配置决定。界面中的“轻度 / 中 / 高 / 极高 / 最高 / Ultra”只是 native effort ID 的显示翻译，选项集合和可用深度由 catalog 决定。
 
 “跟随本机配置”也走同一条边界：继承的 `model` 和 reasoning effort 会在连接建立后对照当前 catalog 预检。预检失败时宿主在发送前阻止 thread admission，并把具体配置错误交给模型设置界面；不会把一个已经失效的本机配置直接送到 provider，再等待 404 才反馈。
 
