@@ -40,6 +40,7 @@ test("restart retains draft; interruption publishes without applying; rebase arc
   assert.equal(result.applied, false);
   assert.equal(calls[0].arguments.circuitXml, draft);
   assert.equal(restarted.readRecovery(projectId).candidateId, result.candidate.id);
+  assert.deepEqual(restarted.finishEvent(result), {type:'circuit-change', ...result});
   const rebased = await new AgentWorkspace({root, backend}).prepare("b".repeat(64));
   assert.match(fs.readFileSync(path.join(rebased.directory, "design.circ"), "utf8"), /bbbb/);
   const drafts = fs.readdirSync(path.join(rebased.directory, "drafts"));

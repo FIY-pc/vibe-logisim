@@ -87,17 +87,17 @@ function isMissingThreadError(error) {
 }
 
 function workspaceChangedError() {
-  const error = new Error("电路工作区已经变化，这条问题没有发送；请基于当前电路重新提问。");
+  const error = new Error("工作区已经变化，这条问题没有发送；请基于当前工作区重新提问。");
   error.code = "WORKSPACE_CHANGED";
   return error;
 }
 
 
 
-function itemActivity(item, circuitRegistry) {
+function itemActivity(item, toolHost) {
   if (!item || typeof item !== "object") return null;
   if (item.type === "reasoning") {
-    return { kind: "reasoning", label: "分析电路与问题", activityKey: "reasoning" };
+    return { kind: "reasoning", label: "分析当前任务", activityKey: "reasoning" };
   }
   if (item.type === "commandExecution") {
     const label = commandActivityLabel(item.command);
@@ -107,7 +107,7 @@ function itemActivity(item, circuitRegistry) {
     return { kind: "tool", label: "调用外部工具", activityKey: `mcp:${item.server || "unknown"}:${item.tool || "unknown"}`, detail: `${shortText(item.server, 80)} / ${shortText(item.tool, 100)}` };
   }
   if (item.type === "dynamicToolCall") {
-    return { kind: "tool", label: circuitRegistry?.label(item.tool) || "使用电路工具", activityKey: `circuit:${item.tool || "unknown"}`, detail: item.tool || null };
+    return { kind: "tool", label: toolHost?.label(item.tool) || "使用动态工具", activityKey: `tool:${item.tool || "unknown"}`, detail: item.tool || null };
   }
   if (item.type === "webSearch") {
     return { kind: "web", label: "检索资料", activityKey: "web-search" };
@@ -190,9 +190,9 @@ class CodexBackend extends EventEmitter {
     this.workspaceTransitioning = false;
     this.workspaceEpoch = 0;
     this.workspaceOperation = Promise.resolve();
-    // Native circuit calls are serialized like a host-side tool executor. A
+    // Native dynamic calls are serialized like a host-side tool executor. A
     // stopped or superseded turn is checked again when its queued call starts.
-    this.circuitGeneration = 0;
+    this.toolGeneration = 0;
     this.completedTurnIds = new Set();
     this.pendingSteer = null;
     this.history = [];
@@ -583,10 +583,10 @@ class CodexBackend extends EventEmitter {
     }
     const revisionId = context?.revisionId;
     if (!context?.folder && (typeof revisionId !== "string" || !revisionId)) {
-      throw new Error("电路上下文没有绑定 revision。");
+      throw new Error("工作区上下文没有绑定 revision。");
     }
     if (typeof workspaceKey !== "string" || !workspaceKey) {
-      throw new Error("电路上下文没有稳定的 workspace identity。");
+      throw new Error("工作区上下文没有稳定的 workspace identity。");
     }
     const preparedContext = this.contextHost?.prepare(context) || null;
     const clientMessageId = `vibe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -809,7 +809,7 @@ class CodexBackend extends EventEmitter {
     if (!threadId || !turnId) return { interrupted: false };
     // A native call may still be finishing in the host. Its result must not
     // be delivered to Codex after the user stopped this turn.
-    this.circuitGeneration += 1;
+    this.toolGeneration += 1;
     await this.#request("turn/interrupt", { threadId, turnId });
     return { interrupted: true, turnId };
   }
@@ -1424,7 +1424,7 @@ class CodexBackend extends EventEmitter {
         });
         return;
       }
-      const activity = itemActivity(item, this.toolHost?.registry);
+      const activity = itemActivity(item, this.toolHost);
       if (activity) {
         // New model activity proves the retry resumed even without text deltas.
         // A previous tool may finish while the stream is still retrying.
@@ -1471,7 +1471,7 @@ class CodexBackend extends EventEmitter {
     if (method === "item/tool/call") {
       const epoch = this.workspaceEpoch;
       const generation = this.childEpoch;
-      const circuitGeneration = this.circuitGeneration;
+      const toolGeneration = this.toolGeneration;
       const request = {
         ...params,
         threadId: params.threadId || this.pendingTurn?.threadId || null,
@@ -1479,16 +1479,16 @@ class CodexBackend extends EventEmitter {
         turnId: params.turnId || this.pendingTurn?.turnId || null,
       };
       const current = () => generation === this.childEpoch && epoch === this.workspaceEpoch
-        && circuitGeneration === this.circuitGeneration
+        && toolGeneration === this.toolGeneration
         && this.#matchesCurrentTurn(request);
       const allowed = Boolean(this.toolHost && this.toolHost.get(params.tool) && current());
       const invoke = async () => {
-        if (!allowed || !current()) throw new Error("电路工具调用已过期或未授权");
+        if (!allowed || !current()) throw new Error("动态工具调用已过期或未授权");
         const pending = this.pendingTurn;
         const scope = {
           pending,
           assertCurrent: () => {
-            if (!current() || this.pendingTurn !== pending) throw new Error("电路工具调用已过期");
+            if (!current() || this.pendingTurn !== pending) throw new Error("动态工具调用已过期");
           },
           updateBinding: session => {
             const revisionId = session?.revision?.id;
@@ -1520,7 +1520,7 @@ class CodexBackend extends EventEmitter {
             this.#write({id: message.id, result});
           }
         })
-        .catch(error => this.emit("log", "Circuit tool response dropped: " + plainError(error)));
+        .catch(error => this.emit("log", "Dynamic tool response dropped: " + plainError(error)));
       return;
     }
     if (method === "item/tool/requestUserInput" && this.#matchesCurrentTurn(params)) {
@@ -1563,7 +1563,8 @@ class CodexBackend extends EventEmitter {
         if (outcome && isCurrent()) {
           if (Object.hasOwn(outcome, "revisionId")) this.threadRevisionId = outcome.revisionId;
           if (outcome.applied) this.threadRevisionId = outcome.session.revision.id;
-          if (outcome.applied || outcome.candidate) this.emit("event", {type:"circuit-change", ...outcome});
+          const event = this.agentWorkspace.finishEvent?.(outcome);
+          if (event) this.emit("event", event);
         }
       }
     } catch (error) {
@@ -1620,7 +1621,8 @@ class CodexBackend extends EventEmitter {
       completed: false,
       isCurrent: () => true,
     }).then(outcome => {
-      if (outcome?.applied || outcome?.candidate) this.emit("event", {type:"circuit-change", ...outcome});
+      const event = this.agentWorkspace.finishEvent?.(outcome);
+      if (event) this.emit("event", event);
     }).catch(error => {
       this.emit("event", {type:"error", message:"Codex 连接中断；文件改动仍留在工作区，但历史收束未完成：" + plainError(error)});
     });

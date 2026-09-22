@@ -160,5 +160,8 @@ class AgentWorkspace {
       projectId:binding.projectId, revisionId:binding.revisionId, candidateId:candidate.id});
     return {candidate, applied:Boolean(session), session};
   }
+  finishEvent(outcome) {
+    return outcome?.applied || outcome?.candidate ? {type:'circuit-change', ...outcome} : null;
+  }
 }
 module.exports = {AgentWorkspace};

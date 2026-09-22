@@ -20,7 +20,7 @@
 
 面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；`AgentToolHost` 和 `AgentContextHost` 只负责把领域工具与上下文接入动态回合；Circuit Plugin 与 `CircuitContextProvider` 负责电路工具、上下文投影、宿主绑定以及原生运行实现。工作区索引只提供文件身份和轻量目录导航，电路运行反馈通过显式工具返回，不在回合之间自动聚合成状态，也不规定模型必须遵循的工作流。
 
-长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；领域观察的模型返回视图由 `electron/model-result-projection.cjs` 拥有，文件操作回执由 `electron/circuit-action-result.cjs` 拥有，二者不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
+长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；领域观察的模型返回视图由 `electron/model-result-projection.cjs` 拥有，文件操作回执由 `electron/circuit-action-result.cjs` 拥有，二者不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。工作区收束后的领域事件由 workspace adapter 的 `finishEvent()` 产生，Codex backend 不再判断候选字段。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
 
 `electron/canvas-navigation.cjs` 桥接模型的可选子电路导航与 renderer 的实际图面状态。文件夹/工程/修订绑定随请求传递，显示结果由 `features/project.js` 确认；旧选区和文件的 main 属性不是显示证据。导航是瞬时状态，不创建选区、修订或保存。人工后续导航使旧请求失效，renderer 重载/关闭清除确认状态；无界面或未确认显示会显式返回，文件加载仍有独立结果。
 
