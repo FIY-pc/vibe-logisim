@@ -28,6 +28,8 @@ test('provider mirror preserves the native model catalog cache',()=>{
  assert.match(fs.readFileSync(target+'/config.toml','utf8'),/service_tier = "fast"/);
  assert.match(fs.readFileSync(target+'/config.toml','utf8'),/personality = "pragmatic"/);
  assert.match(fs.readFileSync(target+'/config.toml','utf8'),/model_verbosity = "low"/);
- assert.match(fs.readFileSync(target+'/config.toml','utf8'),/disable_response_storage = true/);
+ // Codex 0.153.x --strict-config rejects this legacy key; mirroring it made
+ // the embedded app-server exit before initialize, killing the AI panel.
+ assert.doesNotMatch(fs.readFileSync(target+'/config.toml','utf8'),/disable_response_storage/);
  assert.equal(settings.model,'gpt-6-astra');
 });

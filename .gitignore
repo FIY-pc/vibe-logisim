@@ -40,3 +40,4 @@ auth.json
 /apps/desktop/workspaces/
 /apps/desktop/docs/
 **/evidence/
+.probe/
