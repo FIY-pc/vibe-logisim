@@ -45,7 +45,11 @@ jobs:
             apps/desktop/electron/agent-workspace.test.cjs `
             apps/desktop/electron/conversations.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `
-            apps/desktop/electron/model-tool-output.test.cjs
+            apps/desktop/electron/model-tool-output.test.cjs `
+            apps/desktop/electron/custom-provider.test.cjs
+      - name: Python server control-channel probe (Windows, host Python)
+        shell: pwsh
+        run: python apps/desktop/test/server-control-probe.py
 
   build:
     runs-on: ubuntu-latest

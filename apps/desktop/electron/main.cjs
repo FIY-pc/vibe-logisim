@@ -190,6 +190,7 @@ async function startApplication() {
   backend.on("exit", (error) => {
     const hadReadyBackend = backendReady;
     backendReady = false;
+    console.error(`[circuit-lens] exited: ${error.message}`);
     if (!quitting && hadReadyBackend) dialog.showErrorBox("Circuit Lens 已停止", error.message);
   });
 
