@@ -251,6 +251,16 @@ def touching_ports(prepared, baseline, added_keys, added_aliases=None):
     return pairs
 
 
+def _component_label(component):
+    attributes = component.get("attributes")
+    if isinstance(attributes, dict):
+        return attributes.get("label")
+    for item in attributes or []:
+        if isinstance(item, dict) and item.get("name") == "label":
+            return item.get("value", item.get("standard"))
+    return None
+
+
 def contact_partition(reference, pairs, resolved, added_aliases=None):
     """Accept contacts only when their exact port pair was explicitly requested."""
     added_aliases = added_aliases or {}
@@ -380,9 +390,8 @@ def _wire_candidate(workbench, args, directory):
         for c in focus["components"]:
             for end in c["ends"]:
                 loc = (end["location"]["x"], end["location"]["y"])
-                label = c.get("attributes", {}).get("label") if isinstance(c.get("attributes"), dict) else None
                 ports_at.setdefault(loc, []).append({"component": c.get("componentId"), "factory": c.get("factoryName") or c.get("factory"),
-                                                     "label": label, "port": end["index"], "width": end.get("width")})
+                                                     "label": _component_label(c), "port": end["index"], "width": end.get("width")})
         conflicts = []
         for b in bad[:6]:
             pts = b.get("points", [])
@@ -465,9 +474,8 @@ def _wire_candidate(workbench, args, directory):
                 for net in port_bits(end):
                     root = partition.root(net)
                     drivers[root].add(net)
-                    label = c.get("attributes", {}).get("label") if isinstance(c.get("attributes"), dict) else None
                     entry = {"component": c.get("componentId"), "factory": c.get("factoryName") or c.get("factory"),
-                             "label": label, "port": end["index"], "location": end.get("location")}
+                             "label": _component_label(c), "port": end["index"], "location": end.get("location")}
                     if entry not in driver_ports[root]:
                         driver_ports[root].append(entry)
     merged = [ports_ for root, ports_ in driver_ports.items() if len(drivers[root]) > 1]
