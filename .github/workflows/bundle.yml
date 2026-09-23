@@ -129,6 +129,8 @@ jobs:
           $env:VIBE_PROBE_SERVER = Join-Path $root 'resources\product\apps\desktop\circuit-lens\server.py'
           $env:PATH = (Join-Path $root 'resources\runtime\java\bin') + ';' + $env:PATH
           & $py apps/desktop/test/server-control-probe.py
+          $env:VIBE_PROBE_PYTHON = $py
+          & $py apps/desktop/test/server-sibling-kill-probe.py
       - name: Smoke test the packaged app
         shell: pwsh
         run: |
