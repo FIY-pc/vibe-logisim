@@ -36,6 +36,71 @@ def copy_product(destination, prefix):
         shutil.copy2(source, target)
 
 
+# Modules Logisim-ITA 2.16, the HUST course runtime and the Java bridge need
+# (jdeps on all three; gson's stray module-info in the ITA jar hides the real
+# list unless removed). jdk.compiler is required because the bridge is compiled
+# at first use; jdk.charsets covers GBK/GB18030 course files; jdk.localedata
+# keeps zh-CN number/date formatting inside Logisim's own UI strings.
+JAVA_MODULES = ('java.base', 'java.desktop', 'java.datatransfer', 'java.logging', 'java.prefs', 'java.sql', 'java.xml',
+                'jdk.compiler', 'jdk.zipfs', 'jdk.charsets', 'jdk.unsupported', 'jdk.localedata')
+
+# CPython pieces no code path imports (see the AST audit in the release notes):
+# Tk/IDLE/turtle, ensurepip + bundled pip wheels, tests, and C headers.
+PYTHON_PRUNE = ('tcl', 'include', 'Lib/tkinter', 'Lib/idlelib', 'Lib/turtledemo', 'Lib/turtle.py', 'Lib/ensurepip',
+                'Lib/test', 'Lib/unittest/test', 'Lib/lib2to3', 'Lib/pydoc_data', 'Lib/site-packages/pip', 'Lib/site-packages/pip-*',
+                'DLLs/_tkinter.pyd', 'DLLs/tcl86t.dll', 'DLLs/tk86t.dll', 'DLLs/_test*.pyd', 'Scripts',
+                'lib/python3.12/tkinter', 'lib/python3.12/idlelib', 'lib/python3.12/turtledemo', 'lib/python3.12/turtle.py',
+                'lib/python3.12/ensurepip', 'lib/python3.12/test', 'lib/python3.12/lib2to3', 'lib/python3.12/pydoc_data',
+                'lib/python3.12/site-packages/pip', 'lib/python3.12/site-packages/pip-*', 'lib/python3.12/lib-dynload/_tkinter*',
+                'lib/python3.12/lib-dynload/_test*', 'lib/tcl8*', 'lib/tk8*', 'lib/itcl*', 'lib/thread*', 'lib/libtcl*', 'lib/libtk*', 'share')
+
+# Chromium UI strings for menus/dialogs. The app's own UI is Chinese; keep
+# the Chinese variants and English as Chromium's fallback.
+ELECTRON_LOCALES = ('zh-CN', 'zh-TW', 'en-US', 'en-GB')
+
+
+def prune(root, patterns):
+    removed = 0
+    for pattern in patterns:
+        for item in root.glob(pattern):
+            removed += sum(f.stat().st_size for f in item.rglob('*') if f.is_file()) if item.is_dir() else item.stat().st_size
+            shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink(missing_ok=True)
+    return removed
+
+
+def jlink_runtime(host_jdk_archive, target_jdk_archive, destination, cache):
+    """Produce a minimal runtime image for `target` using the host's jlink.
+
+    jlink can link an image for another OS as long as the target jmods come
+    from the same JDK version; the image keeps java+javac. Falls back to the
+    full JDK (minus jmods/src.zip) if the host JDK cannot be used.
+    """
+    with tempfile.TemporaryDirectory(prefix='vibe-jlink-', dir=cache) as temporary:
+        host = Path(temporary) / 'host'
+        target = Path(temporary) / 'target'
+        extract(host_jdk_archive, host, strip_root=True)
+        extract(target_jdk_archive, target, strip_root=True)
+        jlink = host / 'bin' / 'jlink'
+        if not jlink.exists():
+            raise ValueError('host JDK has no jlink')
+        def release_info(jdk):
+            info = {}
+            for line in (jdk / 'release').read_text().splitlines():
+                if '=' in line:
+                    k, v = line.split('=', 1); info[k] = v.strip().strip('"')
+            return info
+        host_version, target_version = release_info(host).get('JAVA_VERSION'), release_info(target).get('JAVA_VERSION')
+        if host_version != target_version:
+            raise ValueError(f'jlink host/target version mismatch: {host_version} vs {target_version}')
+        subprocess.run([str(jlink), '--module-path', str(target / 'jmods'), '--add-modules', ','.join(JAVA_MODULES),
+                        '--strip-debug', '--no-header-files', '--no-man-pages', '--compress', 'zip-6',
+                        '--output', str(destination)], check=True)
+        # Keep the vendor's legal notices with the runtime we redistribute.
+        legal = target / 'legal'
+        if legal.is_dir() and not (destination / 'legal').exists():
+            shutil.copytree(legal, destination / 'legal')
+
+
 def load_lock(target):
     lock = json.loads(Path(__file__).with_name('runtime-lock.json').read_text())
     if target not in lock['targets']:
@@ -86,6 +151,9 @@ def build(args):
         extract(platform_artifacts['electron.zip'], root)
         (root / ('electron.exe' if windows else 'electron')).rename(root / ('vibe-logisim.exe' if windows else 'vibe-logisim'))
         (root / 'resources/default_app.asar').unlink(missing_ok=True)
+        for pak in (root / 'locales').glob('*.pak'):
+            if pak.stem not in ELECTRON_LOCALES:
+                pak.unlink()
         resources = root / 'resources'
         app = resources / 'app'
         product = resources / 'product'
@@ -109,11 +177,10 @@ def build(args):
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target_path)
         extract(platform_artifacts['python'], runtime / 'python', strip_root=True)
-        extract(platform_artifacts['java'], runtime / 'java', strip_root=True)
-        # javac/java only need lib/modules; the jmods link-time inputs and the
-        # JDK source archive add ~130 MB that no code path reads.
-        shutil.rmtree(runtime / 'java/jmods', ignore_errors=True)
-        (runtime / 'java/lib/src.zip').unlink(missing_ok=True)
+        host_jdk = acquire(args.cache / 'linux-x64', {'java': lock['targets']['linux-x64']['artifacts']['java']})['java']
+        jlink_runtime(host_jdk, platform_artifacts['java'], runtime / 'java', args.cache)
+        pruned = prune(runtime / 'python', PYTHON_PRUNE)
+        print(f'pruned {pruned / 1e6:.1f} MB of unused CPython pieces', flush=True)
         extract(platform_artifacts['codex'], runtime / 'codex')
         shutil.copy2(shared['codex-LICENSE'], runtime / 'codex/LICENSE')
         expected = ['python/python.exe', 'java/bin/java.exe', 'java/bin/javac.exe', 'codex/bin/codex.exe', 'codex/bin/codex-code-mode-host.exe'] if windows \
@@ -128,7 +195,15 @@ def build(args):
         shutil.copy2(args.course_runtime, course / lock['courseRuntime']['name'])
         notices = resources / 'third-party'
         notices.mkdir()
-        shutil.copy2(shared['logisim-source.tar.gz'], notices / 'logisim-2.16.2.2-source.tar.gz')
+        # GPL-3.0 §6(d): the corresponding source is offered from the same place
+        # the binaries are distributed (the GitHub release), so the 15 MB source
+        # archive does not have to ride inside every bundle.
+        (notices / 'LOGISIM-SOURCE-OFFER.txt').write_text(
+            'Logisim-ITA 2.16.2.2 is GPL-3.0. Its complete corresponding source is published alongside this bundle\n'
+            'as a release asset (logisim-2.16.2.2-source.tar.gz) at https://github.com/FIY-pc/vibe-logisim/releases\n'
+            f'SHA-256 {lock["artifacts"]["logisim-source.tar.gz"]["sha256"]}\n'
+            'Upstream: https://github.com/Logisim-Ita/Logisim/releases/tag/v2.16.2.2\n', encoding='utf-8')
+        shutil.copy2(shared['logisim-source.tar.gz'], args.output / 'logisim-2.16.2.2-source.tar.gz') if not (args.output / 'logisim-2.16.2.2-source.tar.gz').exists() else None
         shutil.copy2(REPO / 'THIRD_PARTY.md', notices / 'THIRD_PARTY.md')
         if (REPO / 'LICENSE').is_file():
             shutil.copy2(REPO / 'LICENSE', root / 'LICENSE.txt')

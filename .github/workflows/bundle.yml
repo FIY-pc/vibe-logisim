@@ -97,6 +97,7 @@ jobs:
             dist/*.zip
             dist/*.tar.gz
             dist/*.sha256
+            dist/logisim-2.16.2.2-source.tar.gz
           compression-level: 0
           retention-days: 7
 
