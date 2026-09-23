@@ -141,6 +141,8 @@ def arrange_candidate(workbench, args):
         layout = SchematicLayout(before_xml, name, before_focus, **options)
         if args.get("columnGap") is not None:
             layout.column_gap = int(args["columnGap"])
+        if args.get("maxLayerSpan") is not None:
+            layout.max_layer_span = int(args["maxLayerSpan"])
         after_xml = layout.emit()
         artifact.write_text(after_xml, encoding="utf-8")
 
