@@ -402,7 +402,23 @@ def _wire_candidate(workbench, args, directory):
                                hint="下列线束把不同位宽的端口接在了一起（这是原有电路的问题，不是本次请求造成的）。用 wire_candidate 的 removeWireIds 拆掉多余导线、把该网改接正确位宽的端口，或直接编辑文件；修好后重试。",
                                context={"widthConflicts": conflicts, "conflictCount": len(bad)})
     if len({identity(c) for c in components_before}) != len(components_before):
-        raise ValueError("存在同类型同位置的重叠部件，无法唯一绑定端口；请先在编辑器中分开")
+        groups = defaultdict(list)
+        for c in components_before:
+            groups[identity(c)].append(c)
+        overlaps = []
+        for (factory, loc), members in groups.items():
+            if len(members) < 2:
+                continue
+            def attrs(c):
+                items = c.get("attributes") or []
+                return {i.get("name"): i.get("value", i.get("standard")) for i in items if isinstance(i, dict)} if isinstance(items, list) else dict(items)
+            identical = all(attrs(m) == attrs(members[0]) for m in members[1:])
+            overlaps.append({"factory": factory, "location": {"x": loc[0], "y": loc[1]}, "count": len(members),
+                             "label": _component_label(members[0]), "identicalDuplicates": identical,
+                             "componentIds": [m.get("componentId") for m in members][:6]})
+        raise CircuitToolError("TOOL_REJECTED", "存在同类型同位置的重叠部件，无法唯一绑定端口",
+                               hint="identicalDuplicates=true 的组是完全相同的重复元件（通常是脚本重复写入的 Tunnel），直接删掉多余的那份即可；其余的请移开一个再重试。",
+                               context={"overlaps": overlaps[:12], "overlapCount": len(overlaps)})
     added_attrs = {}
     parts = prepare_parts(workbench, artifact, name, additions, aliases, document.projection['libraries'])
     wiring_libraries = {lib['name'] for lib in document.projection['libraries'] if lib['desc'] == '#Wiring'}
