@@ -26,7 +26,10 @@ async function choose(search, label) { await page.locator('#addComponentTool').c
 async function attribute(name, value) { const field = page.locator('#objectInspector [data-attribute="' + name + '"]'); if (await field.evaluate(e => e.tagName) === 'SELECT') await field.selectOption(value); else { await field.fill(value); await field.press('Enter'); } await page.waitForFunction(() => !document.querySelector('#placementToolbar .placement-loading')); await page.locator('#circuitCanvas').focus(); }
 async function place(x, y) { const old = (await session()).revision.id, p = await world(x, y); await page.mouse.move(p.x, p.y); await page.locator('.placement-ghost').waitFor(); await page.mouse.click(p.x, p.y); await waitUntil(() => session().then(s => s.revision.id !== old && s), {timeout: 60000}); await idle(); }
 async function launch() {
-  app = await _electron.launch({executablePath: executable, args: windows ? ['--no-sandbox'] : [], chromiumSandbox: !windows, cwd: root, env, timeout: 120000});
+  // Chromium's SUID sandbox needs a root-owned 4755 chrome-sandbox helper or user
+  // namespaces; zip-extracted bundles on CI runners have neither, so allow opting out.
+  const noSandbox = windows || Boolean(process.env.VIBE_SMOKE_NO_SANDBOX);
+  app = await _electron.launch({executablePath: executable, args: noSandbox ? ['--no-sandbox'] : [], chromiumSandbox: !noSandbox, cwd: root, env, timeout: 120000});
   page = await app.firstWindow(); page.setDefaultTimeout(60000); page.on('pageerror', e => errors.push(e.stack));
   await page.setViewportSize({width: 1500, height: 960});
   app.process().stderr.on('data', data => fs.appendFileSync(path.join(root, 'app.log'), data));
@@ -87,7 +90,13 @@ async function launch() {
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   console.error('FAILED', phase, root, error);
-  if (page) { await page.screenshot({path: path.join(out, 'failure.png')}).catch(() => {}); console.error(await page.locator('#canvasStatus').innerText().catch(() => '')); console.error(errors); }
+  if (page) {
+    await page.screenshot({path: path.join(out, 'failure.png')}).catch(() => {});
+    const diag = await page.evaluate(() => ({toast: document.querySelector('#toast')?.textContent, canvasStatus: document.querySelector('#canvasStatus')?.textContent, empty: document.querySelector('#emptyState')?.hidden, alerts: [...document.querySelectorAll('[role=alert]')].filter(e => !e.hidden && e.textContent.trim()).map(e => e.textContent.trim()), body: document.body.innerText.slice(0, 1500)})).catch(e => ({diagError: String(e)}));
+    const sess = await session().catch(e => ({sessionError: String(e)}));
+    console.error('DIAG', JSON.stringify(diag, null, 1)); console.error('SESSION', JSON.stringify(sess).slice(0, 1500)); console.error(errors);
+    fs.writeFileSync(path.join(out, 'diag.json'), JSON.stringify({diag, session: sess, errors}, null, 1));
+  }
   try { console.error('--- app.log ---\n' + fs.readFileSync(path.join(root, 'app.log'), 'utf8').slice(-6000)); } catch {}
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({platform: process.platform, success: false, phase, error: String(error), log}, null, 2));
   process.exitCode = 1;

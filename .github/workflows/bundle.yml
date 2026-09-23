@@ -19,6 +19,34 @@ env:
   COURSE_RUNTIME_SHA256: b2400702fb9e8e4c71c512d7e09678a788039f402be55164209cde4cee8fc996
 
 jobs:
+  # Fast feedback on the host code paths the Windows port touched (path
+  # handling, folder workspace, provider config, capability report). Runs
+  # before any 1 GB bundle is built.
+  unit-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Node unit tests (Windows)
+        shell: pwsh
+        run: |
+          node --test `
+            apps/desktop/electron/folder-workspace.test.cjs `
+            apps/desktop/electron/folder-import.test.cjs `
+            apps/desktop/electron/folder-operations.test.cjs `
+            apps/desktop/electron/codex-capabilities.test.cjs `
+            apps/desktop/electron/provider-config.test.cjs `
+            apps/desktop/electron/agent-workspace.test.cjs `
+            apps/desktop/electron/conversations.test.cjs `
+            apps/desktop/electron/startup-target.test.cjs `
+            apps/desktop/electron/model-tool-output.test.cjs
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -129,7 +157,7 @@ jobs:
           echo "Executable: $exe"
           # GitHub runners have no systemd --user session; the AI status is
           # allowed to be 'unavailable' here, the manual path is what is checked.
-          VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE=1 xvfb-run -a node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
+          VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE=1 VIBE_SMOKE_NO_SANDBOX=1 xvfb-run -a node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
       - uses: actions/upload-artifact@v4
         if: always()
         with:
