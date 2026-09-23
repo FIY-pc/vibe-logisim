@@ -8,7 +8,10 @@ for _stream in (sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"): _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 repo = Path(__file__).resolve().parents[3]
-server = repo / "apps/desktop/circuit-lens/server.py"
+# VIBE_PROBE_SERVER lets CI point at the server.py inside an unpacked bundle
+# (resources/product/apps/desktop/circuit-lens/server.py) using the bundled python.
+server = Path(os.environ.get("VIBE_PROBE_SERVER") or (repo / "apps/desktop/circuit-lens/server.py")).resolve()
+print("python:", sys.executable, sys.version.split()[0]); print("server:", server)
 state = Path(tempfile.mkdtemp(prefix="vibe-probe-state-"))
 folder = Path(tempfile.mkdtemp(prefix="vibe-probe-folder-")) / "我的电路 workspace"
 folder.mkdir()
@@ -17,8 +20,15 @@ env.pop("PYTHONUTF8", None); env.pop("PYTHONIOENCODING", None)
 proc = subprocess.Popen([sys.executable, "-u", str(server), "--host", "127.0.0.1", "--port", "0", "--no-browser",
                          "--desktop-control", "--state-dir", str(state)],
                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                        cwd=str(repo), env=env)
-ready = json.loads(proc.stdout.readline())
+                        cwd=str(server.parent), env=env)
+first = proc.stdout.readline()
+try:
+    ready = json.loads(first)
+except json.JSONDecodeError:
+    try: proc.wait(timeout=5)
+    except subprocess.TimeoutExpired: proc.kill(); proc.wait()
+    print("server did not announce ready. first line:", repr(first[:200])); print("exit code:", proc.returncode)
+    print("--- server stderr ---"); print(proc.stderr.read()[-6000:]); sys.exit(1)
 print("ready:", ready)
 base = ready["baseUrl"]; token = ready.get("controlToken")
 def http(path):

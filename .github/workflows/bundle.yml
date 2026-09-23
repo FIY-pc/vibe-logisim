@@ -121,6 +121,14 @@ jobs:
           Get-ChildItem unpacked
       - name: Install Playwright driver (test harness only; the bundle is self-contained)
         run: npm --prefix apps/desktop ci --ignore-scripts
+      - name: Probe the bundled Python service directly (no Electron)
+        shell: pwsh
+        run: |
+          $root = (Get-ChildItem unpacked -Directory | Select-Object -First 1).FullName
+          $py = Join-Path $root 'resources\runtime\python\python.exe'
+          $env:VIBE_PROBE_SERVER = Join-Path $root 'resources\product\apps\desktop\circuit-lens\server.py'
+          $env:PATH = (Join-Path $root 'resources\runtime\java\bin') + ';' + $env:PATH
+          & $py apps/desktop/test/server-control-probe.py
       - name: Smoke test the packaged app
         shell: pwsh
         run: |

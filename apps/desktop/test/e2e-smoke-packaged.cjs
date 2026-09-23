@@ -106,6 +106,7 @@ async function launch() {
     console.error('DIAG', JSON.stringify(diag, null, 1)); console.error('SESSION', JSON.stringify(sess).slice(0, 1500)); console.error(errors);
     fs.writeFileSync(path.join(out, 'diag.json'), JSON.stringify({diag, session: sess, errors}, null, 1));
   }
+  await new Promise(r => setTimeout(r, 4000)); // let child 'exit' diagnostics reach stderr
   try { const appLog = fs.readFileSync(path.join(root, 'app.log'), 'utf8'); console.error('--- app.log (main process stderr) ---\n' + appLog.slice(-8000)); fs.writeFileSync(path.join(out, 'app.log'), appLog); } catch {}
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({platform: process.platform, success: false, phase, error: String(error), log}, null, 2));
   process.exitCode = 1;
