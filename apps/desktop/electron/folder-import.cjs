@@ -50,10 +50,28 @@ async function importFiles(folder, {folderId, path:relative = '', sources, files
         const target = path.join(destination, name);
         try {
           if (input.directory) {
-            await fsp.mkdir(target); // Exclusive reservation; no existing directory is merged.
-            try {await fsp.rename(input.staged, target);}
-            catch (error) {await fsp.rmdir(target).catch(()=>{});throw error;}
-          } else await fsp.link(input.staged, target); // Atomic no-clobber publication.
+            // POSIX rename() replaces an empty directory atomically, so mkdir
+            // reserved the name first. Windows refuses that (EPERM), so rename
+            // the staged tree into place directly; rename onto an existing
+            // name fails with EEXIST/EPERM/ENOTEMPTY and we try the next one.
+            if (process.platform === 'win32') {
+              try {await fsp.rename(input.staged, target);}
+              catch (error) {if (['EEXIST','EPERM','ENOTEMPTY'].includes(error.code) && fs.existsSync(target)) continue;throw error;}
+            } else {
+              await fsp.mkdir(target); // Exclusive reservation; no existing directory is merged.
+              try {await fsp.rename(input.staged, target);}
+              catch (error) {await fsp.rmdir(target).catch(()=>{});throw error;}
+            }
+          } else {
+            // Atomic no-clobber publication. Hard links need the same NTFS/ext
+            // volume; FAT/exFAT drives fall back to an exclusive copy.
+            try {await fsp.link(input.staged, target);}
+            catch (error) {
+              if (error.code === 'EEXIST') throw error;
+              if (!['EPERM','EXDEV','ENOTSUP','EOPNOTSUPP','EINVAL'].includes(error.code)) throw error;
+              await fsp.copyFile(input.staged, target, fs.constants.COPYFILE_EXCL);
+            }
+          }
         } catch (error) {if (error.code === 'EEXIST') continue;throw error;}
         items.push({name, path:path.join(relative, name).split(path.sep).join('/'), kind:input.directory?'directory':'file'});
         break;

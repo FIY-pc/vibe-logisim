@@ -47,7 +47,16 @@ async function launch() {
   if (!process.env.VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE) assert.notEqual(state.status, 'unavailable', 'bundled Codex app-server failed to start: ' + state.detail);
   phase = 'create circuit';
   await app.evaluate(({dialog}, folder) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [folder]}); }, folder);
-  await page.locator('#openButton').click(); await page.locator('#newFileMenu').click(); await page.getByRole('menuitem', {name: '新建电路', exact: true}).click();
+  // Call the same IPC the button uses, but with a hard timeout so a hang in
+  // the main process surfaces as a diagnosable error instead of a UI wait.
+  const opened = await Promise.race([
+    page.evaluate(() => window.vibeDesktop.folder.open().then(r => ({ok: true, r})).catch(e => ({ok: false, error: String(e && e.message || e)}))),
+    new Promise(resolve => setTimeout(() => resolve({ok: false, error: 'folder.open() did not return within 60s'}), 60000)),
+  ]);
+  note('folder.open -> ' + JSON.stringify(opened).slice(0, 300));
+  assert.ok(opened.ok, 'folder open failed: ' + opened.error);
+  await page.waitForFunction(() => document.querySelector('#emptyState')?.hidden || !document.querySelector('#newFileMenu')?.hidden, null, {timeout: 60000}).catch(() => {});
+  await page.locator('#newFileMenu').click(); await page.getByRole('menuitem', {name: '新建电路', exact: true}).click();
   const nameBox = page.getByRole('textbox', {name: '文件名称', exact: true}); await nameBox.fill('与门验证.circ'); await nameBox.press('Enter');
   await waitUntil(() => session().then(s => s.folder?.activeFile === '与门验证.circ' && s), {timeout: 60000}); await idle();
   assert.ok(fs.existsSync(path.join(folder, '与门验证.circ')), 'circuit file written to the real folder');
@@ -97,7 +106,7 @@ async function launch() {
     console.error('DIAG', JSON.stringify(diag, null, 1)); console.error('SESSION', JSON.stringify(sess).slice(0, 1500)); console.error(errors);
     fs.writeFileSync(path.join(out, 'diag.json'), JSON.stringify({diag, session: sess, errors}, null, 1));
   }
-  try { console.error('--- app.log ---\n' + fs.readFileSync(path.join(root, 'app.log'), 'utf8').slice(-6000)); } catch {}
+  try { const appLog = fs.readFileSync(path.join(root, 'app.log'), 'utf8'); console.error('--- app.log (main process stderr) ---\n' + appLog.slice(-8000)); fs.writeFileSync(path.join(out, 'app.log'), appLog); } catch {}
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({platform: process.platform, success: false, phase, error: String(error), log}, null, 2));
   process.exitCode = 1;
 } finally { if (app) await app.close().catch(() => {}); } })();
