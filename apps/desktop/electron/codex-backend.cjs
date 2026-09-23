@@ -306,8 +306,13 @@ class CodexBackend extends EventEmitter {
       stdio: ["pipe", "pipe", "pipe"],
       shell: false,
       windowsHide: true,
-      detached: process.platform !== "win32",
+      // Linux: own process group so the whole tree can be signalled.
+      // Windows: `detached` gives the child its own console/process group, so
+      // stopping it cannot broadcast console control events to the sibling
+      // Python service; with windowsHide no window is shown.
+      detached: true,
     });
+    if (process.platform === "win32") child.unref?.();
     this.child = child;
     this.processGroupId = child.pid || null;
     this.stdoutLines = readline.createInterface({ input: child.stdout });

@@ -59,6 +59,15 @@ def main(argv: list[str] | None = None) -> int:
         url = f"http://{host}:{port}/"
         app.set_base_url(url.rstrip("/"))
         if args.desktop_control:
+            # The Electron parent owns this process; it stops us by closing
+            # stdin. On Windows a sibling process exiting (or taskkill on it)
+            # can broadcast CTRL_C/CTRL_BREAK to every process sharing the
+            # console, which would end serve_forever() as a silent
+            # KeyboardInterrupt. Ignore console signals in this mode.
+            import signal
+            for name in ("SIGINT", "SIGBREAK"):
+                if hasattr(signal, name):
+                    signal.signal(getattr(signal, name), signal.SIG_IGN)
             server.control_token = secrets.token_urlsafe(32)
             control = DesktopControl(server)
             control.send(
@@ -81,8 +90,9 @@ def main(argv: list[str] | None = None) -> int:
             threading.Timer(0.35, lambda: webbrowser.open(url)).start()
         try:
             server.serve_forever(poll_interval=0.25)
+            print("[circuit-lens] server loop ended (shutdown requested)", file=sys.stderr, flush=True)
         except KeyboardInterrupt:
-            pass
+            print("[circuit-lens] server loop interrupted by console signal", file=sys.stderr, flush=True)
     except LensError as error:
         print(f"{error.code}: {error.message}", file=sys.stderr)
         return 65

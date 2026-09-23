@@ -47,6 +47,8 @@ class DesktopControl:
         finally:
             # The Electron parent owns this process. EOF means that owner is
             # gone, so do not leave an orphaned localhost service behind.
+            sys.stderr.write("[circuit-lens] desktop control channel closed (stdin EOF); shutting down\n")
+            sys.stderr.flush()
             self.server.shutdown()
 
     def _handle(self, line: str) -> None:
