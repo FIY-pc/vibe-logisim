@@ -15,6 +15,11 @@ from studio.infrastructure.files import sha256_bytes
 
 class LensHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
+    # The renderer requests ~90 modules in one burst on load. Python's default
+    # listen backlog is 5; Linux quietly retries SYNs beyond it, Windows answers
+    # them with RST, which surfaced in Electron as ECONNREFUSED on the very
+    # next control request (folder open). Size the backlog for the burst.
+    request_queue_size = 256
 
     def __init__(self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], app: Workspace, web_root: Path):
         super().__init__(address, handler)

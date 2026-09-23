@@ -362,7 +362,7 @@ class LensBackend extends EventEmitter {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), endpoint === "/api/agent/tool" || endpoint.startsWith("/api/candidate/diff") ? 180_000 : CONTROL_TIMEOUT_MS);
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      const request = () => fetch(`${this.baseUrl}${endpoint}`, {
         method,
         headers: {
           Accept: "application/json",
@@ -374,6 +374,18 @@ class LensBackend extends EventEmitter {
         cache: "no-store",
         signal: controller.signal,
       });
+      let response;
+      // A refused loopback connect while the service process is alive means
+      // the listen backlog was momentarily full (Windows resets instead of
+      // queueing). Retry briefly rather than failing the user's action.
+      for (let attempt = 0; ; attempt++) {
+        try { response = await request(); break; }
+        catch (error) {
+          const refused = error?.cause?.code === "ECONNREFUSED" || error?.code === "ECONNREFUSED";
+          if (!refused || attempt >= 5 || !this.child || controller.signal.aborted) throw error;
+          await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+        }
+      }
       const contentType = response.headers.get("content-type") || "";
       const payload = contentType.includes("json") ? await response.json() : await response.text();
       if (!response.ok) {
