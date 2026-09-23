@@ -161,17 +161,6 @@ class NativeCircuitRuntime:
                              **({'reason': reason} if reason else {})})
         profile = self.workspace.observer.profile(response.get('runtimeVersion'))
         finished = time.perf_counter()
-        always_unknown = [w for w in resolved_watches if rows and all(r['values'].get(w['name']) is None for r in rows)]
-        unknown_note = None
-        if always_unknown:
-            parts = []
-            for w in always_unknown:
-                where = f"{w['factory']}{'「' + w['label'] + '」' if w['label'] else ''} 端口 {w['port']}({w['semanticRole'] or w['direction']})"
-                if w['connectedPeers'] == 0:
-                    parts.append(f"{w['name']} 观察的是 {where}，该端口所在网络没有任何其他元件——它没有被驱动。如果你想看的是同名寄存器/信号，请把 component 换成那个元件的 componentId。")
-                else:
-                    parts.append(f"{w['name']} 观察的是 {where}，网络上有 {w['connectedPeers']} 个对端但整段时间都是 X：检查驱动源是否本身为 X（未接时钟/使能/片选、ROM 无内容、位宽冲突）。")
-            unknown_note = ' '.join(parts)
         report = {
             'schema': RESULT_SCHEMA,
             'plugin': {'id': PLUGIN_ID, 'version': PLUGIN_VERSION},

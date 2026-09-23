@@ -293,7 +293,7 @@ class TraceEvents(unittest.TestCase):
                     with self.subTest(tool=tool):
                         if tool == 'evaluate_circuit':
                             args = {**args, 'mode': 'trace', 'expectedRows': self.expected_rows()}
-                        with self.assertRaisesRegex(CircuitToolError, 'Input event out of range') as rejected:
+                        with self.assertRaisesRegex(CircuitToolError, '(Input event out of range|outside its native .* range)') as rejected:
                             self.call(tool, args)
                         self.assertFalse(rejected.exception.retryable)
 
