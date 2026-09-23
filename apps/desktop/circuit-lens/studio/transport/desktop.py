@@ -14,6 +14,17 @@ class DesktopControl:
     def __init__(self, server: LensHTTPServer):
         self.server = server
         self.write_lock = threading.Lock()
+        # The channel carries user paths and circuit names. On Windows the
+        # inherited console code page (e.g. cp1252/gbk) cannot encode them and
+        # a UnicodeEncodeError here would silently end the control thread and
+        # shut the whole service down. The parent always speaks UTF-8.
+        for stream in (sys.stdin, sys.stdout):
+            reconfigure = getattr(stream, "reconfigure", None)
+            if reconfigure is not None:
+                reconfigure(encoding="utf-8", errors="surrogateescape")
+        reconfigure = getattr(sys.stderr, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
 
     def send(self, value: dict[str, Any]) -> None:
         value = {"schema": DESKTOP_CONTROL_SCHEMA, **value}
@@ -37,6 +48,13 @@ class DesktopControl:
                     )
                     continue
                 self._handle(line)
+        except BaseException:
+            # Say why the service is going away; a bare daemon-thread death
+            # leaves the parent with nothing but ECONNREFUSED.
+            import traceback
+            sys.stderr.write("[circuit-lens] desktop control channel failed:\n" + traceback.format_exc())
+            sys.stderr.flush()
+            raise
         finally:
             # The Electron parent owns this process. EOF means that owner is
             # gone, so do not leave an orphaned localhost service behind.

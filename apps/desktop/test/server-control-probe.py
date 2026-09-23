@@ -4,12 +4,16 @@ code so a platform-specific crash is diagnosable without Electron."""
 import json, os, subprocess, sys, tempfile, time, urllib.request
 from pathlib import Path
 
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"): _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 repo = Path(__file__).resolve().parents[3]
 server = repo / "apps/desktop/circuit-lens/server.py"
 state = Path(tempfile.mkdtemp(prefix="vibe-probe-state-"))
 folder = Path(tempfile.mkdtemp(prefix="vibe-probe-folder-")) / "我的电路 workspace"
 folder.mkdir()
-env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONUTF8": "1"}
+env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+env.pop("PYTHONUTF8", None); env.pop("PYTHONIOENCODING", None)
 proc = subprocess.Popen([sys.executable, "-u", str(server), "--host", "127.0.0.1", "--port", "0", "--no-browser",
                          "--desktop-control", "--state-dir", str(state)],
                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
