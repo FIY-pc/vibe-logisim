@@ -117,11 +117,12 @@ function isolatedSpawn(agent, codexArgs, environment) {
       // The writable staging project is the execution workspace. System paths
       // remain read-only; do not prohibit Python, shell or generated programs.
       "--property=UMask=0077",
-      "--property=MemoryMax=2147483648",
-      // App Server plus the V8 tool host each create a worker pool. A 64-task
-      // combined cap can prevent the host from starting on multi-core machines.
-      "--property=TasksMax=256",
-      "--property=CPUQuota=200%",
+      // A long construction turn legitimately runs several JVMs (Logisim
+      // simulation, RARS, the bridge compiler) next to the app-server and the
+      // V8 tool host; 2 GB / 256 tasks was sized for short turns.
+      "--property=MemoryMax=6442450944",
+      "--property=TasksMax=1024",
+      "--property=CPUQuota=400%",
       `--working-directory=${sandboxWork}`,
     ];
     // systemd copies these values from its environment; values never appear
