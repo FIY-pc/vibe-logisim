@@ -372,7 +372,26 @@ def _wire_candidate(workbench, args, directory):
         # The remaining native graph, not the original shorted graph, is the
         # authority for requested joins and preservation of every other bit net.
     if any(baseline.get("coverage", {}).get(k, 0) for k in ("invalidBundleEnds", "widthIncompatibilities")):
-        raise ValueError("剩余电路仍有位宽冲突，无法确认连接；可调整要移除的导线或直接编辑文件")
+        # Point at the offending bundles so the model fixes the existing short
+        # instead of guessing which of its own connections was at fault.
+        focus = baseline["focus"]
+        bad = [b for b in focus.get("wireBundles", []) if not b.get("valid", True)]
+        ports_at = {}
+        for c in focus["components"]:
+            for end in c["ends"]:
+                loc = (end["location"]["x"], end["location"]["y"])
+                label = c.get("attributes", {}).get("label") if isinstance(c.get("attributes"), dict) else None
+                ports_at.setdefault(loc, []).append({"component": c.get("componentId"), "factory": c.get("factoryName") or c.get("factory"),
+                                                     "label": label, "port": end["index"], "width": end.get("width")})
+        conflicts = []
+        for b in bad[:6]:
+            pts = b.get("points", [])
+            touching = [q for p_ in pts for q in ports_at.get((p_["x"], p_["y"]), [])]
+            widths = sorted({q["width"] for q in touching if q.get("width")})
+            conflicts.append({"bundleId": b.get("bundleId"), "points": pts[:8], "portWidths": widths, "ports": touching[:8], "wireIds": b.get("wireIds", [])[:12]})
+        raise CircuitToolError("TOOL_REJECTED", "当前电路本身已有位宽冲突的线束，先修好它再连线",
+                               hint="下列线束把不同位宽的端口接在了一起（这是原有电路的问题，不是本次请求造成的）。用 wire_candidate 的 removeWireIds 拆掉多余导线、把该网改接正确位宽的端口，或直接编辑文件；修好后重试。",
+                               context={"widthConflicts": conflicts, "conflictCount": len(bad)})
     if len({identity(c) for c in components_before}) != len(components_before):
         raise ValueError("存在同类型同位置的重叠部件，无法唯一绑定端口；请先在编辑器中分开")
     added_attrs = {}
