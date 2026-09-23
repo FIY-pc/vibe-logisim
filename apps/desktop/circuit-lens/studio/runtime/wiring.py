@@ -439,13 +439,30 @@ def _wire_candidate(workbench, args, directory):
     contacts = contact_partition(reference, touching, resolved, added_aliases)
     # Full-port output drivers may fan out, but must never merge with another driver.
     drivers = defaultdict(set)
+    driver_ports = defaultdict(list)
     for c in reference["focus"]["components"]:
         for end in c["ends"]:
             if end["direction"] == "output":
                 for net in port_bits(end):
-                    drivers[partition.root(net)].add(net)
-    if any(len(group) > 1 for group in drivers.values()):
-        raise ValueError("连接计划会合并多个原本独立的输出驱动，已拒绝")
+                    root = partition.root(net)
+                    drivers[root].add(net)
+                    label = c.get("attributes", {}).get("label") if isinstance(c.get("attributes"), dict) else None
+                    entry = {"component": c.get("componentId"), "factory": c.get("factoryName") or c.get("factory"),
+                             "label": label, "port": end["index"], "location": end.get("location")}
+                    if entry not in driver_ports[root]:
+                        driver_ports[root].append(entry)
+    merged = [ports_ for root, ports_ in driver_ports.items() if len(drivers[root]) > 1]
+    if merged:
+        # Name the drivers so the model can pick a different source port or
+        # insert a multiplexer, instead of retrying the same plan blind.
+        blame = []
+        for group in merged[:4]:
+            causing = [conn for conn, a_, b_ in resolved if any(
+                partition.root(bit) in {partition.root(n) for n in port_bits(a_[1])} for bit in port_bits(b_[1]))]
+            blame.append({"outputPorts": group[:6], "requestedConnections": causing[:3]})
+        raise CircuitToolError("TOOL_REJECTED", "连接计划会合并多个原本独立的输出驱动，已拒绝",
+                               hint="下列输出端口会被接到同一网络。输出不能并联：改接其中一个，或先用 Multiplexer / Controlled Buffer 做选择。",
+                               context={"mergedDrivers": blame})
     # Placement itself may realize ONLY the explicitly permitted contacts. Then
     # translate requested joins to prepared IDs solely for geometric routing.
     if ports(reference).keys() != ports(prepared).keys():
