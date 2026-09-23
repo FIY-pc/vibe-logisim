@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 import hashlib
+import json
 import io
 import xml.etree.ElementTree as ET
 import zipfile
@@ -11,6 +12,44 @@ from studio.domain.component_directory import component_directory, directory_opt
 from studio.domain.port_connections import connection_options, port_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.net_groups import group_bit_nets
+
+def netlist_signature(components):
+    """Connectivity fingerprint independent of geometry and component ids.
+
+    Each port is named (factory, label, endIndex, port width); ports sharing a
+    net form one group; Tunnels are dropped (they are a wiring means, not a
+    semantic); groups of one real port are dropped. The digest changes when and
+    only when which-ports-are-connected changes, so a model can compare it
+    before and after an edit instead of re-simulating.
+    """
+    groups, constants = {}, {}
+    for c in components:
+        if c.get('factory') == 'Tunnel':
+            continue
+        for e in c.get('ends', []):
+            bits = e.get('netBits') or []
+            if not bits:
+                continue
+            key = tuple(sorted(b['netId'] for b in bits))
+            if c.get('factory') == 'Constant':
+                value = (c.get('attributes') or {}).get('value') if isinstance(c.get('attributes'), dict) else None
+                constants.setdefault(key, set()).add((str(value).lower(), e.get('width')))
+                continue
+            groups.setdefault(key, []).append((c.get('factory') or '', c.get('label') or '', e.get('index'), e.get('width')))
+    canonical = []
+    for key, ports in groups.items():
+        if key in constants:
+            # A shared Constant driving N inputs and N private Constants are the
+            # same circuit: record each driven port with its constant value.
+            for port in ports:
+                canonical.append((('const',) + tuple(sorted(constants[key])), port))
+        elif len(ports) >= 2:
+            canonical.append(tuple(sorted(ports)))
+    canonical.sort(key=lambda g: json.dumps(g, ensure_ascii=False))
+    digest = hashlib.sha256(json.dumps(canonical, ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
+    return {'sha256': digest, 'groups': len(canonical), 'ports': sum(len(g) for g in canonical),
+            'note': 'Ports grouped by shared net, keyed by (factory,label,port,width), Tunnels excluded; equal digests mean identical connectivity regardless of layout.'}
+
 
 class InspectionService:
     def __init__(self, workspace, tools):
@@ -83,7 +122,8 @@ class InspectionService:
         clocks = [{'component': c['componentId'], 'factory': c['factory'], 'label': c.get('label'), 'location': c.get('location')} for c in circuit['components'] if c['factory'] == 'Clock']
         if view.get('observerError'):
             stimuli = None
-        result = {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': connectivity, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
+        signature = netlist_signature(circuit['components']) if not view.get('observerError') else None
+        result = {'revisionId': self.workspace.revision_id, 'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime' if not view.get('observerError') else 'geometry-only', 'netlistSignature': signature, 'counts': {'components': len(circuit['components']), 'wireSegments': len(circuit['wires']), 'scope': 'native-loaded' if not view.get('observerError') else 'source-geometry'}, 'error': view.get('observerError'), 'components': compact, 'nets': circuit.get('nets', []) if args.get('includeNets') else [], 'stimulusSchema': stimuli, 'clockSchema': clocks, 'instances': circuit.get('instances', []), 'connectivityIssues': connectivity, 'unknowns': view.get('unknowns', []), 'parents': [{'circuit': c['name'], 'instances': [i for i in c.get('instances', []) if i.get('target') == name]} for c in structure if any((i.get('target') == name for i in c.get('instances', [])))]}
         result['artifactSha256'] = hashlib.sha256((directory / 'artifact.circ').read_bytes()).hexdigest() if directory else self.workspace.artifact_sha256
         if args.get('includeNets'):
             result['netFormat'] = net_format
