@@ -2,7 +2,7 @@
 
 ## 环境
 
-当前桌面开发版在 Linux 上使用。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
+桌面开发版在 Linux 上开发和验收；Windows 通过打包版本支持（见分发说明），源码直接运行未在 Windows 上验收。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
 
 开发启动的内嵌 AI 需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包已内置这些程序和 Python、Java、Logisim，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
 

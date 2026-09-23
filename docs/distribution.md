@@ -2,7 +2,7 @@
 
 普通使用者解压一个包，打开 `vibe-logisim`，即可打开文件夹、创建或编辑电路、运行仿真、预览资料。无需安装 Node、Python、Java、Codex、Logisim 或 Poppler。AI 面板提供 ChatGPT 登录和取消入口，浏览器完成登录后自动更新连接；退出登录在 AI 设置里。未登录不影响人工编辑和仿真。
 
-目前提供 **Linux x86_64 本地验收构建**，不是已公开发布的安装器。基础系统仍需桌面图形库（Electron 的 GTK/NSS 等）、glibc 和 systemd 用户服务；AI 继续使用 systemd 隔离。其他发行版、Windows、macOS、自动更新和签名尚未验收。
+，不是已公开发布的安装器。基础系统仍需桌面图形库（Electron 的 GTK/NSS 等）、glibc 和 systemd 用户服务；AI 继续使用 systemd 隔离。其他发行版、Windows、macOS、自动更新和签名尚未验收。
 
 ## 构建
 
@@ -37,16 +37,26 @@ PDF.js 在没有 Node 权限、无远程网络的独立 Chromium 进程里渲染
 
 ## 验收
 
-解压后运行：
+跨平台冒烟（Linux 或 Windows 都能跑，CI 使用的就是它）：
 
 ```sh
-node apps/desktop/test/e2e-packaged.cjs /path/to/vibe-logisim-0.1.1-linux-x64/vibe-logisim
+node apps/desktop/test/e2e-smoke-packaged.cjs /path/to/vibe-logisim-<版本>-<目标>/vibe-logisim[.exe] [输出目录]
+```
+
+它在全新应用状态下启动打包程序：打开文件夹、新建电路、放置与门和引脚、连线、用内置 Java+Logisim 跑四组真值、关闭重开、确认内置 Codex 到达登录/就绪状态。不发送模型请求。
+
+Linux 上更完整的验收（含 PDF 预览与登录 URL 拦截）：
+
+```sh
+node apps/desktop/test/e2e-packaged.cjs /path/to/vibe-logisim-<版本>-linux-x64/vibe-logisim
 ```
 
 脚本在仓库外、全新应用状态和包含空格的文件夹运行真正的打包程序。将系统 Python、Java、Codex、Poppler 命令设为调用即失败；从 UI 放元件、连线、切换输入、核对与门四种真值、关闭重开，再从文件树打开两页 PDF 并检查图像和文字。还通过真实内置 App Server 发起/取消登录，仅拦截浏览器打开，不提交凭据或发起模型生成。报告和截图留在脚本返回的临时目录。
 
 这些证据覆盖一个真实的小电路任务和本机打包环境，不能代替干净发行版矩阵测试、完成登录后的模型构建质量或复杂课设验收。
 
-## 公开分发尚缺的材料
+## 发布
 
-目前没有给产物自动增加上传或发布步骤。课程 `logisim-ita-cn-20200118.exe` 的原始分发许可和对应修改源码未明确，不能把标准 Logisim-ITA 的许可自动套用到它上面；项目自身开源许可证也尚未选定。当前完整包明确标记为本地验收用途。标准 Logisim-ITA 为 GPL-3.0，包内附对应标签源码；其他运行环境的许可证保留在各自目录。正式发布前还需要完成整个发行包的第三方来源与许可核对。
+推送 `v*` 标签后，`bundle` 工作流构建两个目标、各自冒烟通过后把压缩包和 `.sha256` 上传到同名 GitHub Release。课程运行文件不进 git，由 CI 从私有的 `build-inputs` 预发布下载并校验 SHA-256。
+
+项目源码为 GPL-3.0。标准 Logisim-ITA 为 GPL-3.0，包内附对应标签源码；CPython、Temurin、Codex（Apache-2.0）、PDF.js（Apache-2.0）的许可证保留在各自目录。课程发布的 `logisim-ita-cn-20200118.exe` 按课程原样附带、不作修改，由 Java 当作 jar 加载；它的对应源码没有随课程发布，这一点在 THIRD_PARTY.md 中如实记录。
