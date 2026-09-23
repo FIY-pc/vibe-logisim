@@ -108,6 +108,7 @@ function workspaceChangedError() {
 function transitionWorkspace(reason, operation, { preserveConversation = false } = {}) {
   const generation = ++workspaceGeneration;
   workspaceTransitioning = true;
+  if (codex?.snapshot().busy) console.error(`[workspace] transition '${reason}' while a turn is running (preserveConversation=${preserveConversation})`);
   // Invalidate old turn bindings immediately, even when the project and its
   // conversation survive this change of circuit state.
   const reset = (preserveConversation ? codex?.invalidateRevision(reason) : codex?.resetWorkspace(reason)) || Promise.resolve();
