@@ -147,6 +147,34 @@ class InspectionService:
             }
         return result
 
+    def _width_conflicts(self, artifact, circuit):
+        """Invalid (width-incompatible) bundles with the ports they touch."""
+        try:
+            document = self.workspace.observer.run_full(artifact, circuit)
+        except Exception:
+            return None
+        focus = document.get('focus') or {}
+        bad = [b for b in focus.get('wireBundles', []) if not b.get('valid', True)]
+        if not bad:
+            return {'count': 0}
+        def label(c):
+            for item in c.get('attributes') or []:
+                if isinstance(item, dict) and item.get('name') == 'label':
+                    return item.get('value', item.get('standard'))
+            return None
+        ports_at = {}
+        for c in focus.get('components', []):
+            for end in c.get('ends', []):
+                loc = (end['location']['x'], end['location']['y'])
+                ports_at.setdefault(loc, []).append({'component': c.get('componentId'), 'factory': c.get('factoryName'),
+                                                     'label': label(c), 'port': end['index'], 'width': end.get('width')})
+        items = []
+        for b in bad[:6]:
+            touching = [q for p_ in b.get('points', []) for q in ports_at.get((p_['x'], p_['y']), [])]
+            items.append({'bundleId': b.get('bundleId'), 'portWidths': sorted({q['width'] for q in touching if q.get('width')}),
+                          'ports': touching[:12], 'points': b.get('points', [])[:8]})
+        return {'count': len(bad), 'bundles': items}
+
     def check_native_loadability(self, args):
         """Load one definition through the native runtime without building a view.
 
@@ -185,6 +213,20 @@ class InspectionService:
                         'authority': 'native-loader',
                         'circuit': circuit,
                         'error': {'code': 'NATIVE_CHECK_UNAVAILABLE', 'message': str(error) or '原生加载预检不可用'},
+                    }
+                # Loadable is not the same as electrically sane. A file that joins
+                # a 1-bit and a 32-bit port (e.g. a Tunnel label reused across
+                # widths) loads fine and then simulates as all-X. Report it here,
+                # in the write receipt, so the model fixes it immediately instead of
+                # discovering it three tools later.
+                conflicts = self._width_conflicts(artifact, circuit)
+                if conflicts is not None and conflicts.get('count'):
+                    return {
+                        'status': 'loadable',
+                        'authority': 'native-loader',
+                        'circuit': circuit,
+                        'electrical': {'status': 'width-conflict', **conflicts,
+                                       'hint': '同一线束接了不同位宽的端口，仿真会输出 X。检查列出的 Tunnel 标签是否被不同位宽的信号复用，或导线端点是否落在别的端口上。'},
                     }
         except Exception as error:
             return {

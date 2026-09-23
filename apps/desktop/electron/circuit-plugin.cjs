@@ -142,15 +142,19 @@ class CircuitPlugin {
           const status = ['loadable', 'not-loadable', 'unavailable', 'unknown'].includes(observed.status)
             ? observed.status
             : error ? 'not-loadable' : 'unknown';
+          const electrical = observed?.electrical && typeof observed.electrical === 'object' ? observed.electrical : null;
           return {...session, nativeLoadability: {
             status,
             circuit,
             authority: observed?.authority || 'native-loader',
             ...(error ? {error} : {}),
+            ...(electrical ? {electrical} : {}),
             note: status === 'not-loadable'
               ? '文件刷新成功，但原生 Logisim 无法加载当前电路定义；这不是功能正确性结论。'
               : status === 'loadable'
-                ? '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。'
+                ? (electrical
+                  ? `原生 Logisim 已加载当前电路定义，但有 ${electrical.count} 个线束把不同位宽的端口接在一起（见 electrical）；这样的电路仿真会得到 X，先修好再验证。`
+                  : '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。')
                 : '文件刷新成功，但原生加载性预检不可用；这不是功能正确性结论。',
           }};
         } catch (error) {
