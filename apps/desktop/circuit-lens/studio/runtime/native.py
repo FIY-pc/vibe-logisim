@@ -3,6 +3,7 @@ from __future__ import annotations
 
 
 import hashlib
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -75,7 +76,7 @@ class NativeOperations:
             request_path = Path(directory) / 'request.xml'
             request_path.write_bytes(ET.tostring(request, encoding='utf-8'))
             try:
-                result = observer._run_captured(['java', '-Djava.awt.headless=true', '-cp', str(classes) + ':' + str(runtime), 'com.cburch.logisim.file.CircuitWorkbench', str(artifact), str(request_path), str(output or '')], timeout=60)
+                result = observer._run_captured(['java', '-Djava.awt.headless=true', '-cp', os.pathsep.join([str(classes), str(runtime)]), 'com.cburch.logisim.file.CircuitWorkbench', str(artifact), str(request_path), str(output or '')], timeout=60)
             except subprocess.TimeoutExpired as error:
                 raise self._runtime_failure(
                     'NATIVE_RUNTIME_TIMEOUT', '原生 CircuitWorkbench 响应超时（60 秒）',

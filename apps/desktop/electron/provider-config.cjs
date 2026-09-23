@@ -28,7 +28,7 @@ function readProvider(configPath, environment = process.env, options = {}) {
   ].join("\n");
   let config;
   try {
-    config = JSON.parse(execFileSync(environment.VIBE_LOGISIM_PYTHON || "python3", ["-c", program, configPath],
+    config = JSON.parse(execFileSync(environment.VIBE_LOGISIM_PYTHON || (process.platform === "win32" ? "python" : "python3"), ["-c", program, configPath],
       {encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000}));
   } catch (_) {
     throw new Error("无法解析本机 Codex 的 TOML 配置。");

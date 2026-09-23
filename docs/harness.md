@@ -21,7 +21,7 @@ Vibe Logisim 使用 Codex 作为基础 Agent Harness，并通过 Circuit Plugin 
 
 Codex 基础 Harness 决定模型如何持续工作。它拥有回合、工作目录、上下文、工具调用、权限、事件流和历史等生命周期。电路插件不创建第二套 thread、turn、审批或模型循环，它只提供模型在电路世界中的可调用能力。
 
-这里的“工具”是模型使用 harness 的接口，不是 harness 的全部。当前连接状态里的 `harness` 字段会报告 `vibe-logisim.harness/v1`：基础能力（原生 thread/turn/history、真实工作区文件、shell、搜索、模型目录、turn steering）、桌面宿主强制的边界（外部 systemd 隔离、无审批、关闭 login shell），以及动态工具宿主的版本、契约签名和模型可见工具，字段名为 `dynamicToolHost`。Codex 原生功能如果需要额外的浏览器、MCP、插件、计划、子 agent 或 UI 请求处理，会在同一份能力政策中标记为 `disabled`；这不是把 agent 限制成电路专用 agent，而是避免模型看到一个宿主实际上接不住的接口。
+这里的“工具”是模型使用 harness 的接口，不是 harness 的全部。当前连接状态里的 `harness` 字段会报告 `vibe-logisim.harness/v1`：基础能力（原生 thread/turn/history、真实工作区文件、shell、搜索、模型目录、turn steering）、桌面宿主强制的边界（外部 systemd 隔离、无审批、关闭 login shell）、当前工作区模式，以及动态工具宿主的版本、契约签名和模型可见工具，字段名为 `dynamicToolHost`。Codex 原生功能如果需要额外的浏览器、MCP、插件、计划、子 agent 或 UI 请求处理，会在同一份能力政策中标记为 `disabled`；这不是把 agent 限制成电路专用 agent，而是避免模型看到一个宿主实际上接不住的接口。
 
 Base Harness 与领域插件之间通过 `electron/agent-tool-host.cjs`、`electron/agent-context-host.cjs` 和 `electron/agent-workspace-host.cjs` 的最小适配边界连接。Base Harness 只要求宿主能够准备当前动态工具契约、提供模型可见工具、按名称检查调用、分发调用并生成该插件的错误 envelope；上下文宿主负责把领域上下文投影成 binding、evidence 和 `additionalContext`；工作区宿主负责回合开始、失败清理和收束。Base Harness 不导入 `CircuitPlugin`、不读取电路 manifest，也不理解电路动作、上下文字段或错误 schema。电路插件仍负责自己的执行器、工作区同步、串行队列和领域结果；电路上下文由 `circuit-context-host.cjs` 投影。这样“工具/上下文是模型接口”与“它们需要宿主才能真实执行”分别落在清晰的两层，新增领域插件不需要修改 Codex 回合生命周期。
 
@@ -53,7 +53,7 @@ Base Harness 与领域插件之间通过 `electron/agent-tool-host.cjs`、`elect
 
 按需参考通过只读挂载 `/tmp/vibe-circuit-reference/` 提供，来源为 `apps/desktop/circuit-knowledge/`，开发版和独立包使用同一内容。它不写入用户文件夹，也不强制每轮读取。`java-runtime.md` 包含支持运行文件的 CLI 语义、正确的 Pin API 与一次性 Java 进程退出示例，供模型选择独立验证时复用。
 
-动态工具能力与原生会话绑定。每条本地对话保存创建线程时的插件契约签名；应用升级插件后，旧签名不会被假装成当前能力继续恢复。宿主会保留本地可见消息，启动带新工具集合的线程并替换绑定，同时记录被替换的线程。这样新增能力是一次明确的会话能力更新，旧线程和旧证据仍可追溯，模型也不会在一个没有新工具的线程里误以为工具存在。
+动态工具能力与原生会话绑定。每条本地对话保存创建线程时的插件契约签名和工作区模式；应用升级插件或切换 direct/staging 语义后，旧签名不会被假装成当前能力继续恢复。宿主会保留本地可见消息，启动带新工具集合或新工作区语义的线程并替换绑定，同时记录被替换的线程。这样新增能力是一次明确的会话能力更新，旧线程和旧证据仍可追溯，模型也不会在一个没有新工具或不同文件修改语义的线程里误以为能力相同。
 
 Base Harness 的线程契约现在同时保存工作模式、插件签名和 `developerInstructionsSha256`。只有三者都匹配时才 resume 原生线程；指令内容变化也会启动带当前说明的新线程，同时保留本地可见消息，不把旧消息伪装成新线程的原生上下文。原因是对本机 Codex 0.153.3 的真实 localhost 回放显示，`thread/resume` 或 `thread/fork` 即使收到新版 `developerInstructions`，后续模型请求仍沿用源线程的有效说明；因此不能把协议字段存在当成指令已更新的证据。用户主动从相同契约的回复创建分支仍使用原生 `thread/fork`，那条路径保留原生历史和工具结果。
 

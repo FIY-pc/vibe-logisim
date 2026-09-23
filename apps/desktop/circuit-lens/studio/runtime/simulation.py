@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import queue
 import re
@@ -118,7 +119,7 @@ class Simulation:
         init = directory / "init.xml"
         init.write_bytes(ET.tostring(request, encoding="utf-8"))
         self.log = (directory / "runtime.log").open("w")
-        self.process = subprocess.Popen(["java", "-Djava.awt.headless=true", "-cp", str(classes) + ":" + str(observer.runtime_jar),
+        self.process = subprocess.Popen(["java", "-Djava.awt.headless=true", "-cp", os.pathsep.join([str(classes), str(observer.runtime_jar)]),
             "com.cburch.logisim.file.CircuitSession", str(artifact), str(init)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, text=True, encoding="utf-8")
         process = self.process

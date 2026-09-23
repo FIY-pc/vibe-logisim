@@ -1,22 +1,6 @@
 {
-  "schema": 1,
-  "platform": "linux-x64",
+  "schema": 2,
   "artifacts": {
-    "python.tar.gz": {
-      "version": "CPython 3.12.14, python-build-standalone 20260901",
-      "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-      "sha256": "72748da13197c1fb161e3afeef20a6a385ff24f2165e6e2758e47008e7faba4c"
-    },
-    "java.tar.gz": {
-      "version": "Temurin 21.0.12.1+1",
-      "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz",
-      "sha256": "ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94"
-    },
-    "codex.tar.gz": {
-      "version": "Codex 0.154.0 (official Linux musl package)",
-      "url": "https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
-      "sha256": "fc6e3e3b85f2cf7d664520ee5c66a7fe4aa12bae7d46834f47e2f165fd0d6f78"
-    },
     "codex-LICENSE": {
       "url": "https://raw.githubusercontent.com/openai/codex/rust-v0.154.0/LICENSE",
       "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc"
@@ -31,9 +15,59 @@
       "sha256": "91864a5b475e77357ab3fac8bc18e87d709601c0af88351ef8d620a49b5101c2"
     }
   },
+  "targets": {
+    "linux-x64": {
+      "electron": {
+        "version": "44.2.0",
+        "url": "https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-linux-x64.zip",
+        "sha256": "574f7d8cd2a82d77812849729a282b86639b050de120d58b138a126d16b48692"
+      },
+      "artifacts": {
+        "python": {
+          "version": "CPython 3.12.14, python-build-standalone 20260901",
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+          "sha256": "72748da13197c1fb161e3afeef20a6a385ff24f2165e6e2758e47008e7faba4c"
+        },
+        "java": {
+          "version": "Temurin 21.0.12.1+1",
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94"
+        },
+        "codex": {
+          "version": "Codex 0.154.0 (official Linux musl package)",
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
+          "sha256": "fc6e3e3b85f2cf7d664520ee5c66a7fe4aa12bae7d46834f47e2f165fd0d6f78"
+        }
+      }
+    },
+    "win32-x64": {
+      "electron": {
+        "version": "44.2.0",
+        "url": "https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-win32-x64.zip",
+        "sha256": "4021363e3090d67a144ebedb90765cf193b0e61f300c519c83f0174502a481da"
+      },
+      "artifacts": {
+        "python": {
+          "version": "CPython 3.12.14, python-build-standalone 20260901",
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14+20260901-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+          "sha256": "7c45c9622400d578709a9b2cddbe8124cc21d382409d9f13406d706d28e31b14"
+        },
+        "java": {
+          "version": "Temurin 21.0.12.1+1",
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip",
+          "sha256": "f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e"
+        },
+        "codex": {
+          "version": "Codex 0.154.0 (official Windows MSVC package)",
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-pc-windows-msvc.tar.gz",
+          "sha256": "94cc5b3632769504c809f6c0364b693c0dfddc5c30c8361095d2263a07ac45a4"
+        }
+      }
+    }
+  },
   "courseRuntime": {
     "name": "logisim-ita-cn-20200118.exe",
     "sha256": "b2400702fb9e8e4c71c512d7e09678a788039f402be55164209cde4cee8fc996",
-    "distribution": "local-evaluation-only; source and redistribution terms not yet established"
+    "distribution": "course-issued Logisim runtime; bundled unmodified, loaded by Java as a jar"
   }
 }

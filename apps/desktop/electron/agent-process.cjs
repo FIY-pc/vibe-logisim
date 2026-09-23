@@ -2,16 +2,29 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const WINDOWS = process.platform === "win32";
+
+function executableCandidates(directory, command) {
+  if (!WINDOWS) return [path.join(directory, command)];
+  // CreateProcess would append PATHEXT itself; do the same here so a bare
+  // "codex" resolves to codex.exe when we stat it ahead of spawning.
+  const extensions = (process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";").filter(Boolean);
+  const base = path.join(directory, command);
+  return path.extname(command) ? [base] : [base, ...extensions.map(ext => base + ext.toLowerCase()), ...extensions.map(ext => base + ext)];
+}
+
 function resolveExecutable(command) {
-  const candidates = command.includes(path.sep)
-    ? [path.resolve(command)]
-    : String(process.env.PATH || "/usr/bin:/bin")
+  const explicit = command.includes(path.sep) || (WINDOWS && (command.includes("/") || /^[A-Za-z]:/.test(command)));
+  const candidates = explicit
+    ? executableCandidates(path.dirname(path.resolve(command)), path.basename(command))
+    : String(process.env.PATH || (WINDOWS ? "" : "/usr/bin:/bin"))
       .split(path.delimiter)
       .filter(Boolean)
-      .map((directory) => path.join(directory, command));
+      .flatMap((directory) => executableCandidates(directory, command));
   for (const candidate of candidates) {
     try {
-      fs.accessSync(candidate, fs.constants.X_OK);
+      fs.accessSync(candidate, WINDOWS ? fs.constants.F_OK : fs.constants.X_OK);
+      if (!fs.statSync(candidate).isFile()) continue;
       return fs.realpathSync(candidate);
     } catch (_) {
       // Keep looking through PATH.
@@ -20,10 +33,22 @@ function resolveExecutable(command) {
   throw new Error(`找不到可执行文件：${command}`);
 }
 
+// The isolation contract the rest of the harness relies on:
+//   linux  -> systemd-run transient unit, workspace bind-mounted at /tmp/workspace,
+//             Codex told it runs inside an external sandbox.
+//   win32  -> no OS-level confinement is available without extra drivers; the
+//             process runs directly and Codex's own workspace-write sandbox
+//             policy is used instead (see codex-backend #sandboxPolicy).
+function isolationKind() {
+  if (process.platform === "linux") return "systemd-linux";
+  if (WINDOWS) return "codex-workspace-write";
+  return null;
+}
 
 function isolatedSpawn(agent, codexArgs, environment) {
+    if (WINDOWS) return directSpawn(agent, codexArgs, environment);
     if (process.platform !== "linux") {
-      throw new Error("当前开发版只在 Linux 上提供本地 Circuit Agent 隔离；其他平台暂不裸跑 Codex。");
+      throw new Error("当前版本只支持 Linux 和 Windows 上运行内置 AI；macOS 尚未验收。");
     }
     const systemdRun = resolveExecutable("systemd-run");
     const codex = resolveExecutable(agent.codex);
@@ -31,9 +56,11 @@ function isolatedSpawn(agent, codexArgs, environment) {
     const sandboxProfile = "/tmp/codex";
     const sandboxWork = "/tmp/workspace";
     const circuitReference = path.resolve(__dirname, '../circuit-knowledge');
-    const readOnlyPaths = [[circuitReference, '/tmp/vibe-circuit-reference']];
+    const referenceMount = '/tmp/vibe-circuit-reference';
+    const readOnlyPaths = [[circuitReference, referenceMount]];
     if (agent.runtimeRoot) readOnlyPaths.push([agent.runtimeRoot, '/tmp/vibe-runtime']);
     agent.runtimeWorkDir = sandboxWork;
+    agent.referencePath = referenceMount;
     const unit = `vibe-logisim-agent-${process.pid}-${Date.now().toString(36)}.service`;
     let sandboxCodex = codex;
     let sandboxCodeModeHost = codeModeHost;
@@ -125,4 +152,33 @@ function isolatedSpawn(agent, codexArgs, environment) {
     };
   }
 
-module.exports = {isolatedSpawn, resolveExecutable};
+// Windows: spawn codex.exe directly. The workspace the model sees is the
+// user's real folder path. `environment` is already the reduced allow-list
+// built by CodexBackend#childEnvironment; we only add what Windows itself
+// needs to run a process (DLL search, TLS, temp dir, PATHEXT).
+function directSpawn(agent, codexArgs, environment) {
+    const codex = resolveExecutable(agent.codex);
+    // Fail early with the same message the Linux path would give.
+    resolveExecutable(process.env.VIBE_LOGISIM_CODE_MODE_HOST || "codex-code-mode-host");
+    agent.runtimeWorkDir = agent.workDir;
+    agent.referencePath = path.resolve(__dirname, '../circuit-knowledge');
+    const env = {...environment};
+    for (const name of ["SYSTEMROOT", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP",
+      "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SystemDrive", "USERNAME", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE"]) {
+      if (process.env[name] && !(name in env)) env[name] = process.env[name];
+    }
+    if (!env.TEMP && !env.TMP) env.TEMP = env.TMP = require('node:os').tmpdir();
+    const runtimeBins = agent.runtimeRoot
+      ? [path.join(agent.runtimeRoot, 'codex', 'bin'), path.join(agent.runtimeRoot, 'python'), path.join(agent.runtimeRoot, 'java', 'bin')]
+      : [path.dirname(codex)];
+    env.PATH = [...runtimeBins, environment.PATH || process.env.PATH || ""].filter(Boolean).join(path.delimiter);
+    return {
+      command: codex,
+      args: codexArgs,
+      cwd: agent.workDir,
+      env,
+      unit: null,
+    };
+  }
+
+module.exports = {isolatedSpawn, resolveExecutable, isolationKind};

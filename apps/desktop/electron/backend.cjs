@@ -22,7 +22,7 @@ function delay(milliseconds, value) {
 class LensBackend extends EventEmitter {
   constructor({
     repoRoot,
-    python = process.env.VIBE_LOGISIM_PYTHON || "python3",
+    python = process.env.VIBE_LOGISIM_PYTHON || (process.platform === "win32" ? "python" : "python3"),
     stateDir = process.env.VIBE_LOGISIM_STATE_DIR || null,
   }) {
     super();

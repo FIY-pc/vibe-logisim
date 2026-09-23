@@ -2,6 +2,8 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {EventEmitter}=require('node:events');
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
+// Relative paths cross into the renderer and the model as '/'-joined strings on every platform.
+const slash=value=>String(value).split(path.sep).join('/');
 const ignored=new Set(['.git','node_modules','.venv','__pycache__','.codex','.ssh','.config','.local','codex-home','circuit-agent']);
 function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const temp=file+'.'+crypto.randomUUID()+'.tmp';try{fs.writeFileSync(temp,JSON.stringify(value,null,2),{flag:'wx',mode:0o600});fs.renameSync(temp,file);}finally{fs.rmSync(temp,{force:true});}}
 
@@ -16,7 +18,7 @@ class FolderWorkspace extends EventEmitter {
     const id='folder-'+hash(root).slice(0,16);let record;
     try{record=JSON.parse(await fs.promises.readFile(this.recordFile(id),'utf8'));if(record.root!==root)throw new Error('工作区记录与文件夹不匹配');}
     catch(error){if(error.code!=='ENOENT')throw error;record={id,root,name:path.basename(root),activeFile:null,conversationKey:conversationKey||'folder:'+hash(root)};}
-    if(activeFile){const relative=path.relative(root,path.resolve(activeFile));if(!relative.startsWith('..')&&!path.isAbsolute(relative))record.activeFile=relative;}
+    if(activeFile){const relative=slash(path.relative(root,path.resolve(activeFile)));if(!relative.startsWith('..')&&!path.isAbsolute(relative))record.activeFile=relative;}
     if(record.activeFile&&!fs.existsSync(path.join(root,record.activeFile)))record.activeFile=null;
     this.close();this.current=record;this.listed=new Set(['']);this.persist();
     atomic(path.join(this.stateRoot,'recent.json'),{root});
@@ -39,7 +41,7 @@ class FolderWorkspace extends EventEmitter {
   clearDocument(){if(this.current){this.current.activeFile=null;this.persist();}}
   list(relative='',hidden=false){
     const folder=this.resolve(relative);this.listed.add(relative);
-    const entries=fs.readdirSync(folder,{withFileTypes:true}).filter(e=>hidden||!e.name.startsWith('.')).map(e=>({name:e.name,path:path.join(relative,e.name),kind:e.isDirectory()?'directory':e.isSymbolicLink()?'link':'file'}));
+    const entries=fs.readdirSync(folder,{withFileTypes:true}).filter(e=>hidden||!e.name.startsWith('.')).map(e=>({name:e.name,path:slash(path.join(relative,e.name)),kind:e.isDirectory()?'directory':e.isSymbolicLink()?'link':'file'}));
     return entries.sort((a,b)=>(a.kind==='directory'?0:1)-(b.kind==='directory'?0:1)||a.name.localeCompare(b.name,'zh-CN',{numeric:true}));
   }
   read(relative,max=32*1024*1024){const file=this.resolve(relative),stat=fs.statSync(file);if(!stat.isFile())throw new Error('请选择文件');if(stat.size>max)throw new Error('文件较大，请使用系统应用打开');return {item:{id:relative,name:path.basename(file),path:relative,size:stat.size,modifiedAt:stat.mtimeMs},bytes:fs.readFileSync(file)};}

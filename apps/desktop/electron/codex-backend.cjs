@@ -22,13 +22,13 @@ const {
 } = require('./codex-capabilities.cjs');
 
 const { writeProvider } = require("./provider-config.cjs");
-const {isolatedSpawn, resolveExecutable} = require("./agent-process.cjs");
+const {isolatedSpawn, resolveExecutable, isolationKind} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
 const { AgentModelError, classifyModelError } = require("./model-errors.cjs");
 const { TurnHealth } = require("./turn-health.cjs");
 const { revertThroughMessage } = require("./conversation-edit.cjs");
 const { dynamicToolResponse, modelMediaEvidence } = require("./model-tool-output.cjs");
-const { DEVELOPER_INSTRUCTIONS } = require('./agent-instructions.cjs');
+const { DEVELOPER_INSTRUCTIONS, REFERENCE_PATH_TOKEN, DEFAULT_REFERENCE_PATH } = require('./agent-instructions.cjs');
 const { AgentWorkspaceHost } = require('./agent-workspace-host.cjs');
 
 function delay(milliseconds, value) {
@@ -142,7 +142,8 @@ class CodexBackend extends EventEmitter {
     this.runtimeRoot = runtimeRoot;
     this.loginId = null;
     this.workDir = path.resolve(workDir);
-    this.runtimeWorkDir = "/workspace";
+    this.runtimeWorkDir = process.platform === "win32" ? this.workDir : "/workspace";
+    this.referencePath = null;
     this.profileDir = path.resolve(profileDir || path.join(workDir, "codex-home"));
     this.sessionStorePath = sessionStorePath;
     this.conversations = new ConversationStore(sessionStorePath);
@@ -156,9 +157,12 @@ class CodexBackend extends EventEmitter {
       : null);
     // Controlled comparisons can reuse the identical transport/isolation without
     // exposing application-specific instructions to a generic baseline.
-    this.developerInstructions = developerInstructions;
+    this.developerInstructionsTemplate = typeof developerInstructions === "string" ? developerInstructions : null;
+    this.developerInstructions = typeof developerInstructions === "string"
+      ? developerInstructions.split(REFERENCE_PATH_TOKEN).join(DEFAULT_REFERENCE_PATH)
+      : developerInstructions;
     this.developerInstructionsSha256 = createHash("sha256")
-      .update(String(developerInstructions ?? ""), "utf8").digest("hex");
+      .update(String(this.developerInstructions ?? ""), "utf8").digest("hex");
     this.contextHost = contextHost;
     this.includeAgentContext = includeAgentContext;
     this.captureModelMedia = captureModelMedia;
@@ -231,12 +235,13 @@ class CodexBackend extends EventEmitter {
       modelCatalog: this.modelSettings.state(),
       transmission: this.health.snapshot(),
       canReconnect: this.canReconnect(),
-      isolation: "systemd-linux",
+      isolation: isolationKind(),
       accountMode: this.runtimeRoot ? "application" : "shared",
       signingIn: Boolean(this.loginId),
       harness: capabilitySnapshot({
         plugin: this.toolHostState,
         directTools: this.toolHost?.tools?.map(tool => tool.name) || [],
+        workspaceMode: this.workspaceHost?.mode || null,
         nativeProfile: this.effectiveNativeConfig,
       }),
       messages: this.history.slice(-60),
@@ -247,6 +252,7 @@ class CodexBackend extends EventEmitter {
     return capabilitySnapshot({
       plugin: this.toolHostState,
       directTools: this.toolHost?.tools?.map(tool => tool.name) || [],
+      workspaceMode: this.workspaceHost?.mode || null,
       nativeProfile: this.effectiveNativeConfig,
       detail: true,
     });
@@ -280,7 +286,7 @@ class CodexBackend extends EventEmitter {
       "-c",
       'web_search="live"',
       "-c",
-      'sandbox_mode="danger-full-access"',
+      `sandbox_mode="${this.#sandboxMode()}"`,
       "-c",
       'approval_policy="never"',
       "-c",
@@ -290,6 +296,7 @@ class CodexBackend extends EventEmitter {
     );
     const generation = ++this.childEpoch;
     const spawnSpec = isolatedSpawn(this, args, this.#childEnvironment());
+    this.#applyReferencePath();
     this.isolationUnit = spawnSpec.unit;
     const child = spawn(spawnSpec.command, spawnSpec.args, {
       cwd: spawnSpec.cwd,
@@ -555,9 +562,42 @@ class CodexBackend extends EventEmitter {
       ["unavailable", "stopped"].includes(this.status);
   }
 
+  // Linux: systemd is the external sandbox, so Codex itself runs unrestricted
+  // inside it (nesting bubblewrap fails under the service namespace). Windows
+  // has no equivalent OS confinement here, so Codex's own workspace-write
+  // sandbox is the boundary: writes are limited to the opened folder and the
+  // profile, everything else is read-only, network stays on for the model.
+  #sandboxMode() {
+    return process.platform === "win32" ? "workspace-write" : "danger-full-access";
+  }
+
+  #sandboxPolicy(turnCwd) {
+    if (process.platform === "win32") {
+      const roots = [...new Set([this.workDir, turnCwd, this.profileDir].filter(Boolean))];
+      return { type: "workspaceWrite", writableRoots: roots, networkAccess: true,
+        excludeTmpdirEnvVar: false, excludeSlashTmp: false };
+    }
+    return { type: "externalSandbox", networkAccess: "enabled" };
+  }
+
+  #joinRuntimePath(root, relative) {
+    if (!relative) return root;
+    return process.platform === "win32" ? path.join(root, relative) : path.posix.join(root, relative);
+  }
+
+  // The developer instructions mention where read-only references live. The
+  // mount point differs per platform and is only known after isolatedSpawn.
+  #applyReferencePath() {
+    if (!this.referencePath || !this.developerInstructionsTemplate) return;
+    const rendered = this.developerInstructionsTemplate.split(REFERENCE_PATH_TOKEN).join(this.referencePath);
+    if (rendered === this.developerInstructions) return;
+    this.developerInstructions = rendered;
+    this.developerInstructionsSha256 = createHash("sha256").update(rendered, "utf8").digest("hex");
+  }
+
   #childEnvironment() {
     const environment = {
-      PATH: process.env.PATH || "/usr/bin:/bin",
+      PATH: process.env.PATH || (process.platform === "win32" ? "" : "/usr/bin:/bin"),
       HOME: this.profileDir,
       CODEX_HOME: this.profileDir,
       LANG: process.env.LANG || "C.UTF-8",
@@ -613,6 +653,8 @@ class CodexBackend extends EventEmitter {
     this.turnStarting = true;
     let generation = this.childEpoch;
     let preparedWork = null;
+    let editedHistory = null;
+    let editedMessageContexts = null;
     try {
       const startPromise = this.start();
       if (this.status === "ready") this.#setStatus("busy");
@@ -637,20 +679,35 @@ class CodexBackend extends EventEmitter {
         }
         const work = this.workspaceHost ? await this.workspaceHost.prepare(revisionId) : null;
         preparedWork = work;
-        const turnCwd = work ? path.posix.join(this.runtimeWorkDir, work.relative) : this.runtimeWorkDir;
+        const turnCwd = work ? this.#joinRuntimePath(this.runtimeWorkDir, work.relative) : this.runtimeWorkDir;
         this.currentCwd = turnCwd;
         await this.#ensureThread(workspaceKey, revisionId, requestEpoch, generation);
         this.#assertWorkspace(requestEpoch, generation);
         if (editMessageId) {
           const source = this.conversations.get(workspaceKey, this.conversationId);
+          const previousThreadId = this.threadId;
           const edited = await revertThroughMessage({
             source,
             messageId:editMessageId,
             request:(method, params) => this.#request(method, params),
             assertCurrent:() => this.#assertWorkspace(requestEpoch, generation),
           });
+          if (edited.threadId && edited.threadId !== previousThreadId) {
+            this.threadId = edited.threadId;
+            this.threadRevisionId = revisionId;
+          }
           this.history = this.#historyFromThread(edited.thread, edited.messageContexts);
+          editedHistory = this.history.slice();
+          editedMessageContexts = edited.messageContexts;
           if (!this.ephemeral) {
+            if (edited.threadId && edited.threadId !== previousThreadId) {
+              this.conversations.rebind(workspaceKey, {
+                threadId:edited.threadId,
+                messages:this.history,
+                toolContract:this.#threadContract(),
+                reason:'edit-history-recovered',
+              });
+            }
             this.conversations.replaceHistory(workspaceKey, {
               threadId:this.threadId,
               messages:this.history,
@@ -697,9 +754,7 @@ class CodexBackend extends EventEmitter {
             input: [{ type: "text", text: question, text_elements: [] }],
             cwd: turnCwd,
             approvalPolicy: "never",
-            // systemd is the external sandbox. Nesting Codex's bubblewrap here
-            // fails under the service's filesystem namespace on this host.
-            sandboxPolicy: { type: "externalSandbox", networkAccess: "enabled" },
+            sandboxPolicy: this.#sandboxPolicy(turnCwd),
             ...this.#nativeModelOverrides({includeEffort:true}),
             runtimeWorkspaceRoots: [turnCwd],
             ...(this.includeAgentContext && preparedContext
@@ -715,6 +770,7 @@ class CodexBackend extends EventEmitter {
           throw error;
         }
         const returnedTurnId = result?.turn?.id || null;
+        if (!returnedTurnId) throw new Error("Codex 未返回新的回合；编辑内容尚未开始回答，请重新发送。");
         if (returnedTurnId) this.#bindPendingTurn(returnedTurnId, threadId, true);
         this.#assertWorkspace(requestEpoch, generation);
         if (returnedTurnId && !this.completedTurnIds.has(returnedTurnId)) {
@@ -741,6 +797,18 @@ class CodexBackend extends EventEmitter {
       }
       if (ownsPending && !this.activeTurnId && this.pendingTurn?.epoch === this.workspaceEpoch) {
         this.pendingTurn = null;
+        if (editMessageId && editedHistory) {
+          this.history = editedHistory;
+          if (!this.ephemeral) {
+            this.conversations.replaceHistory(workspaceKey, {
+              threadId:this.threadId,
+              messages:this.history,
+              messageContexts:editedMessageContexts,
+            });
+            this.emit("event", {type:"conversations-changed", workspaceKey, ...this.conversations.state(workspaceKey)});
+          }
+          this.emit("event", {type:"history", messages:this.history.slice(-60)});
+        }
       }
       if (error?.code !== "WORKSPACE_CHANGED") {
         this.emit("event", { type: "error", message: plainError(error) });
@@ -973,6 +1041,7 @@ class CodexBackend extends EventEmitter {
     const currentToolContract = this.#threadContract();
     const contractCompatible = Boolean(savedThreadId &&
       savedWorkspace?.toolContract?.mode === currentToolContract.mode &&
+      (savedWorkspace.toolContract.workspaceMode ?? null) === (currentToolContract.workspaceMode ?? null) &&
       savedWorkspace.toolContract.signature === currentToolContract.signature &&
       savedWorkspace.toolContract.harnessSignature === currentToolContract.harnessSignature &&
       savedWorkspace.toolContract.developerInstructionsSha256 === currentToolContract.developerInstructionsSha256);
@@ -987,7 +1056,7 @@ class CodexBackend extends EventEmitter {
             threadId: resumableThreadId,
             cwd: this.currentCwd || this.runtimeWorkDir,
             approvalPolicy: "never",
-            sandbox: "danger-full-access",
+            sandbox: this.#sandboxMode(),
             ...this.#nativeModelOverrides(),
             dynamicTools: this.toolHost?.tools || [],
             config: THREAD_CONFIG,
@@ -1004,7 +1073,7 @@ class CodexBackend extends EventEmitter {
         result = await this.#request("thread/start", {
           cwd: this.currentCwd || this.runtimeWorkDir,
           approvalPolicy: "never",
-          sandbox: "danger-full-access",
+          sandbox: this.#sandboxMode(),
           ...this.#nativeModelOverrides(),
           config: THREAD_CONFIG,
           serviceName: "vibe_logisim",
@@ -1161,7 +1230,7 @@ class CodexBackend extends EventEmitter {
           if (this.status === 'auth-required') throw new Error('请先登录，再创建对话分支');
           const fork = await forkThroughReply({source, messageId:request.messageId,
             request:(method, params) => this.#request(method, params), assertCurrent:() => this.#assertWorkspace(epoch, generation),
-            options:{cwd:this.currentCwd || this.runtimeWorkDir, approvalPolicy:'never', sandbox:'danger-full-access',
+            options:{cwd:this.currentCwd || this.runtimeWorkDir, approvalPolicy:'never', sandbox:this.#sandboxMode(),
               config:THREAD_CONFIG, developerInstructions:this.developerInstructions, ...this.#nativeModelOverrides()}});
           this.#assertWorkspace(epoch, generation);
           state = this.conversations.fork(workspaceKey, {sourceId:source.id, sourceThreadId:source.threadId,
@@ -1201,6 +1270,7 @@ class CodexBackend extends EventEmitter {
   #threadContract() {
     return {
       mode: this.toolHost?.mode || 'base',
+      workspaceMode: this.workspaceHost?.mode || null,
       signature: this.toolHostState?.signature || null,
       ...(this.toolHostState || {}),
       harnessSignature: POLICY_SIGNATURE,

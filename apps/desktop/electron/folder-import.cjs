@@ -55,7 +55,7 @@ async function importFiles(folder, {folderId, path:relative = '', sources, files
             catch (error) {await fsp.rmdir(target).catch(()=>{});throw error;}
           } else await fsp.link(input.staged, target); // Atomic no-clobber publication.
         } catch (error) {if (error.code === 'EEXIST') continue;throw error;}
-        items.push({name, path:path.join(relative, name), kind:input.directory?'directory':'file'});
+        items.push({name, path:path.join(relative, name).split(path.sep).join('/'), kind:input.directory?'directory':'file'});
         break;
       }
     }

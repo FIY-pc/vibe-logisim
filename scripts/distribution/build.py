@@ -1,22 +1,25 @@
-"""Build a relocatable Linux desktop from explicit product inputs.
+"""Build a relocatable desktop bundle from explicit product inputs.
 
 Run from a developer checkout. The resulting application needs no npm, Python,
-Java, Codex or Poppler installation. Course runtime bundles are LOCAL evaluation
-artifacts until the course binary's source/redistribution terms are established.
+Java or Codex installation. Bundles for every target are assembled from pinned
+archives, so a Linux machine can produce the Windows bundle as well; nothing is
+compiled at build time. Course runtime bundles remain LOCAL evaluation
+artifacts until the course binary's source/redistribution terms are settled.
 """
 import argparse
 import json
 from pathlib import Path
-import platform
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import zipfile
 
 from artifacts import acquire, extract, sha256
 
 REPO = Path(__file__).resolve().parents[2]
 DESKTOP = REPO / 'apps/desktop'
+TARGETS = ('linux-x64', 'win32-x64')
 
 
 def copy_product(destination, prefix):
@@ -33,29 +36,55 @@ def copy_product(destination, prefix):
         shutil.copy2(source, target)
 
 
-def build(args):
-    if platform.system() != 'Linux' or platform.machine() != 'x86_64':
-        raise ValueError('This target currently builds and validates Linux x86_64 only.')
+def load_lock(target):
     lock = json.loads(Path(__file__).with_name('runtime-lock.json').read_text())
+    if target not in lock['targets']:
+        raise ValueError(f'Unknown target {target}; known: {", ".join(sorted(lock["targets"]))}')
+    return lock
+
+
+def write_zip(root, archive, name):
+    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
+        for item in sorted(root.rglob('*')):
+            output.write(item, Path(name) / item.relative_to(root))
+
+
+def usage_text(target, version):
+    common = ('Vibe Logisim ' + version + '\n\n解压整个文件夹后，双击 {launcher} 即可使用。\n'
+              '无需另外安装 Python、Java 或 Codex。打开你的文件夹，选择或新建 .circ 电路。\n'
+              'AI 面板可以登录 ChatGPT，也可以在「AI 设置」里填写 OpenAI 兼容接口的地址和密钥。\n\n')
+    if target == 'win32-x64':
+        return common.format(launcher='vibe-logisim.exe') + (
+            '首次运行时 Windows 可能提示“未知发布者”，选择“更多信息 → 仍要运行”。\n'
+            '内置 AI 只能修改你打开的文件夹，其他位置只读。\n'
+            '课程运行文件 logisim-ita-cn-20200118.exe 是课程发布的 Logisim 运行包，由内置 Java 加载，不会单独运行。\n')
+    return common.format(launcher='vibe-logisim') + (
+        '当前支持 Linux x86_64 桌面（glibc、GTK3、systemd 用户服务）。\n'
+        '课程运行文件的公开分发许可及对应源码仍待落实。\n')
+
+
+def build(args):
+    target = args.target
+    lock = load_lock(target)
+    spec = lock['targets'][target]
     metadata = json.loads((DESKTOP / 'package.json').read_text())
-    electron = DESKTOP / 'node_modules/electron/dist'
-    if not (electron / 'electron').is_file():
-        raise ValueError('Run npm ci in apps/desktop before building.')
-    installed = (electron / 'version').read_text().strip().removeprefix('v')
-    if installed != metadata['devDependencies']['electron']:
-        raise ValueError('Electron does not match the locked desktop version.')
     if sha256(args.course_runtime) != lock['courseRuntime']['sha256']:
         raise ValueError('The supplied course runtime does not match the supported version.')
-    artifacts = acquire(args.cache, lock['artifacts'])
-    name = f'vibe-logisim-{metadata["version"]}-linux-x64'
+    if spec['electron']['version'] != metadata['devDependencies']['electron']:
+        raise ValueError('runtime-lock.json Electron does not match the locked desktop version.')
+    shared = acquire(args.cache, lock['artifacts'])
+    platform_artifacts = acquire(args.cache / target, {**spec['artifacts'], 'electron.zip': spec['electron']})
+    name = f'vibe-logisim-{metadata["version"]}-{target}'
     args.output.mkdir(parents=True, exist_ok=True)
-    archive = args.output / f'{name}.tar.gz'
+    suffix = '.zip' if target.startswith('win32') else '.tar.gz'
+    archive = args.output / f'{name}{suffix}'
     if archive.exists() or (args.output / name).exists():
         raise ValueError(f'Refusing to replace existing artifact: {archive}')
+    windows = target.startswith('win32')
     with tempfile.TemporaryDirectory(prefix='vibe-build-', dir=args.output) as temporary:
         root = Path(temporary) / name
-        shutil.copytree(electron, root, symlinks=True)
-        (root / 'electron').rename(root / 'vibe-logisim')
+        extract(platform_artifacts['electron.zip'], root)
+        (root / ('electron.exe' if windows else 'electron')).rename(root / ('vibe-logisim.exe' if windows else 'vibe-logisim'))
         (root / 'resources/default_app.asar').unlink(missing_ok=True)
         resources = root / 'resources'
         app = resources / 'app'
@@ -72,48 +101,68 @@ def build(args):
         pdf = app / 'node_modules/pdfjs-dist'
         for item in ('build', 'cmaps', 'standard_fonts', 'wasm', 'LICENSE', 'package.json'):
             source = DESKTOP / 'node_modules/pdfjs-dist' / item
-            target = pdf / item
-            if source.is_dir(): shutil.copytree(source, target)
+            if not source.exists():
+                raise ValueError('Run npm ci in apps/desktop before building (pdfjs-dist missing).')
+            target_path = pdf / item
+            if source.is_dir(): shutil.copytree(source, target_path)
             else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
-        extract(artifacts['python.tar.gz'], runtime / 'python', strip_root=True)
-        extract(artifacts['java.tar.gz'], runtime / 'java', strip_root=True)
-        extract(artifacts['codex.tar.gz'], runtime / 'codex')
-        shutil.copy2(artifacts['codex-LICENSE'], runtime / 'codex/LICENSE')
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target_path)
+        extract(platform_artifacts['python'], runtime / 'python', strip_root=True)
+        extract(platform_artifacts['java'], runtime / 'java', strip_root=True)
+        # javac/java only need lib/modules; the jmods link-time inputs and the
+        # JDK source archive add ~130 MB that no code path reads.
+        shutil.rmtree(runtime / 'java/jmods', ignore_errors=True)
+        (runtime / 'java/lib/src.zip').unlink(missing_ok=True)
+        extract(platform_artifacts['codex'], runtime / 'codex')
+        shutil.copy2(shared['codex-LICENSE'], runtime / 'codex/LICENSE')
+        expected = ['python/python.exe', 'java/bin/java.exe', 'java/bin/javac.exe', 'codex/bin/codex.exe', 'codex/bin/codex-code-mode-host.exe'] if windows \
+            else ['python/bin/python3', 'java/bin/java', 'java/bin/javac', 'codex/bin/codex', 'codex/bin/codex-code-mode-host']
+        missing = [p for p in expected if not (runtime / p).exists()]
+        if missing:
+            raise ValueError('Runtime layout mismatch, electron/runtime-paths.cjs expects: ' + ', '.join(missing))
         native = product / 'apps/desktop/circuit-lens/native/Logisim-ITA.jar'
-        shutil.copy2(artifacts['logisim.jar'], native)
+        shutil.copy2(shared['logisim.jar'], native)
         course = product / 'workspaces/hust-riscv/original/course-package'
         course.mkdir(parents=True)
         shutil.copy2(args.course_runtime, course / lock['courseRuntime']['name'])
         notices = resources / 'third-party'
         notices.mkdir()
-        shutil.copy2(artifacts['logisim-source.tar.gz'], notices / 'logisim-2.16.2.2-source.tar.gz')
+        shutil.copy2(shared['logisim-source.tar.gz'], notices / 'logisim-2.16.2.2-source.tar.gz')
         shutil.copy2(REPO / 'THIRD_PARTY.md', notices / 'THIRD_PARTY.md')
-        (resources / 'runtime-manifest.json').write_text(json.dumps({**lock, 'electron': installed,
+        if (REPO / 'LICENSE').is_file():
+            shutil.copy2(REPO / 'LICENSE', root / 'LICENSE.txt')
+        (resources / 'runtime-manifest.json').write_text(json.dumps({
+            'schema': lock['schema'], 'target': target, 'artifacts': {**lock['artifacts'], **spec['artifacts']},
+            'electron': spec['electron']['version'], 'courseRuntime': lock['courseRuntime'],
             'pdfjs': json.loads((pdf / 'package.json').read_text())['version'],
-            'productVersion': metadata['version'], 'distribution': 'local-evaluation'}, indent=2))
-        (root / '使用说明.txt').write_text('Vibe Logisim\n\n解压整个文件夹后，打开 vibe-logisim 即可使用。\n无需安装 Python、Java、Codex 或 Poppler。打开你的文件夹，选择或新建 .circ 电路；AI 面板可登录 ChatGPT。\n\n此构建用于本地验收，尚未公开发布。当前支持 Linux x86_64 桌面（glibc、GTK3、systemd 用户服务）。课程运行文件的公开分发许可及对应源码仍待落实。\n')
+            'productVersion': metadata['version'], 'distribution': args.distribution}, indent=2, ensure_ascii=False))
+        (root / '使用说明.txt').write_text(usage_text(target, metadata['version']), encoding='utf-8')
         # Manifest excludes itself. It records shipped bytes, not a claim of
         # reproducible compilation or of third-party license clearance.
-        inventory = {str(p.relative_to(root)): sha256(p) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()}
+        inventory = {str(p.relative_to(root)).replace('\\', '/'): sha256(p) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()}
         (resources / 'files.sha256.json').write_text(json.dumps(inventory, indent=2))
         if args.unpacked:
             shutil.move(root, args.output / name)
-            print(json.dumps({'directory': str(args.output / name), 'distribution': 'local-evaluation'}), flush=True)
+            print(json.dumps({'directory': str(args.output / name), 'target': target, 'distribution': args.distribution}), flush=True)
             return
-        staging = Path(temporary) / 'application.tar.gz'
-        with tarfile.open(staging, 'w:gz', compresslevel=6) as output:
-            output.add(root, arcname=name)
+        staging = Path(temporary) / ('application' + suffix)
+        if windows:
+            write_zip(root, staging, name)
+        else:
+            with tarfile.open(staging, 'w:gz', compresslevel=6) as output:
+                output.add(root, arcname=name)
         staging.replace(archive)
     (archive.with_suffix(archive.suffix + '.sha256')).write_text(f'{sha256(archive)}  {archive.name}\n')
-    print(json.dumps({'archive': str(archive), 'bytes': archive.stat().st_size, 'distribution': 'local-evaluation'}), flush=True)
+    print(json.dumps({'archive': str(archive), 'bytes': archive.stat().st_size, 'target': target, 'distribution': args.distribution}), flush=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--target', choices=TARGETS, default='linux-x64')
     parser.add_argument('--cache', type=Path, default=Path(tempfile.gettempdir()) / 'vibe-distribution-cache')
     parser.add_argument('--course-runtime', type=Path, required=True)
+    parser.add_argument('--distribution', default='release', help='Label recorded in runtime-manifest.json')
     parser.add_argument('--unpacked', action='store_true', help='Prepare a directory for packaged-app acceptance before compression')
     build(parser.parse_args())

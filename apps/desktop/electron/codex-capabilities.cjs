@@ -1,6 +1,10 @@
 'use strict';
 
 const {createHash} = require('node:crypto');
+const {isolationKind} = require('./agent-process.cjs');
+
+const WORKSPACE_ISOLATION = isolationKind() || 'unsupported';
+const ENFORCED_SANDBOX = process.platform === 'win32' ? 'codex-workspace-write' : 'external-systemd';
 
 // The embedded Codex process has two different kinds of capability:
 // Base Harness lifecycle (thread/turn/files/shell/model) and native Codex
@@ -73,14 +77,14 @@ const BASE_CAPABILITIES = Object.freeze({
   modelCatalog: 'native',
   dynamicTools: true,
   codeMode: true,
-  workspaceIsolation: 'systemd-linux',
+  workspaceIsolation: WORKSPACE_ISOLATION,
 });
 
 const POLICY_SIGNATURE = createHash('sha256')
   .update(JSON.stringify({featurePolicy: FEATURE_POLICY, thread: THREAD_CONFIG, base: BASE_CAPABILITIES}), 'utf8')
   .digest('hex');
 
-function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = null, detail = false} = {}) {
+function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = null, workspaceMode = null, detail = false} = {}) {
   const report = {
     schema: 'vibe-logisim.harness/v1',
     signature: POLICY_SIGNATURE,
@@ -88,9 +92,12 @@ function capabilitySnapshot({plugin = null, directTools = [], nativeProfile = nu
     disabledFeatures: DISABLED_FEATURES,
     enforced: {
       approval: 'never',
-      sandbox: 'external-systemd',
+      sandbox: ENFORCED_SANDBOX,
       loginShell: false,
       modelSelection: 'native-catalog',
+    },
+    workspace: {
+      mode: workspaceMode,
     },
     nativeProfile,
     dynamicToolHost: plugin

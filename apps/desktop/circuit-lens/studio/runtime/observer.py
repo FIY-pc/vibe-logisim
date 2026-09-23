@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -266,19 +267,32 @@ class ObserverRuntime:
         kind: str,
         ids: list[str],
     ) -> dict[str, Any]:
+        # Same two steps as observer/query-precompiled.sh, run directly so the
+        # query also works where no POSIX shell exists (Windows).
         classes = self.prepare()
-        command = [
-            str(self.query_runner),
-            str(artifact),
-            circuit,
-            str(rectangle["x"]),
-            str(rectangle["y"]),
-            str(rectangle["width"]),
-            str(rectangle["height"]),
-            kind,
-            *ids,
+        observe = [
+            "java",
+            "-Djava.awt.headless=true",
+            f"-Dobserver.runtime.jar={self.runtime_jar}",
+            f"-Dobserver.bundle.path={classes}",
+            "-cp", os.pathsep.join([str(self.runtime_jar), str(classes)]),
+            "com.cburch.logisim.circuit.ExactRuntimeObserver",
+            "--compact", str(artifact), circuit,
+            str(rectangle["x"]), str(rectangle["y"]), str(rectangle["width"]), str(rectangle["height"]),
         ]
-        return self._run_json(command, self._environment(classes))
+        environment = self._environment(classes)
+        try:
+            observed = self._run_captured(observe, timeout=60, environment=environment)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("Exact observer timed out after 60 seconds.") from error
+        if observed.returncode != 0:
+            raise RuntimeError("Exact observer failed: " + ((observed.stderr or observed.stdout).strip()[-4000:] or "no diagnostics"))
+        try:
+            completed = subprocess.run([sys.executable, str(self.query_program), kind, *ids], input=observed.stdout,
+                                       capture_output=True, text=True, env=environment, timeout=60)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("Exact observer query timed out after 60 seconds.") from error
+        return self._decode_json_result(completed)
 
     def _run_json(self, command: list[str], environment: dict[str, str]) -> dict[str, Any]:
         try:
@@ -289,6 +303,9 @@ class ObserverRuntime:
             )
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("Exact observer timed out after 60 seconds.") from error
+        return self._decode_json_result(completed)
+
+    def _decode_json_result(self, completed: subprocess.CompletedProcess[str]) -> dict[str, Any]:
         try:
             document = json.loads(completed.stdout) if completed.stdout.strip() else None
         except json.JSONDecodeError as error:
