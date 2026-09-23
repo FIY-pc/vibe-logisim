@@ -372,6 +372,7 @@
         <label>接口地址<input id="providerBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" /></label>
         <label>API 密钥<input id="providerApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" /></label>
         <label>模型名称<input id="providerModel" type="text" autocomplete="off" spellcheck="false" placeholder="例如 gpt-5.4、deepseek-chat" /></label>
+        <label>上下文窗口（token，可选）<input id="providerContext" type="number" min="32000" max="2000000" step="1000" placeholder="默认 256000；越大越少中途压缩" /></label>
         <div class="provider-actions"><button id="providerClear" class="quiet-button" hidden>恢复默认</button><button id="providerSave" class="primary-button">保存并连接</button></div>
       </details>
       <p id="connectionError" class="model-error" role="alert" hidden></p>

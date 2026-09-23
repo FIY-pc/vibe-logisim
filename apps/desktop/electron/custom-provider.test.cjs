@@ -23,7 +23,7 @@ test('a student endpoint becomes provider.toml plus a strict-config-safe catalog
   assert.match(mirrored.toml, /env_key = "VIBE_LOGISIM_PROVIDER_TOKEN"/);
   assert.match(mirrored.toml, /wire_api = "responses"/);
   assert.equal(mirrored.environment.VIBE_LOGISIM_PROVIDER_TOKEN, 'sk-abcdefghijklmnop');
-  assert.deepEqual(readCustomProvider(profile), {name: '自定义接口', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', effort: 'medium', apiKeyHint: 'sk-a••••mnop'});
+  assert.deepEqual(readCustomProvider(profile), {name: '自定义接口', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', effort: 'medium', contextWindow: 256000, apiKeyHint: 'sk-a••••mnop'});
   clearCustomProvider(profile);
   assert.equal(readCustomProvider(profile), null);
   assert.equal(fs.existsSync(path.join(profile, CATALOG_FILE)), false);

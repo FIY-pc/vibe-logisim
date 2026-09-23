@@ -48,10 +48,17 @@ function validate(settings) {
   const efforts = ["low", "medium", "high"];
   const effort = efforts.includes(settings.effort) ? settings.effort : "medium";
   const name = String(settings.name || "").trim().slice(0, 40) || "自定义接口";
-  return {baseUrl, apiKey, model, effort, name};
+  // Context window drives Codex's auto-compaction. Too small and a long
+  // construction turn compacts every few minutes and loses its working state
+  // (observed on a course task: 2 compactions in 16 min at 128k). Frontier
+  // models via relays accept 200k+; let the student say what their model has.
+  let contextWindow = Number(settings.contextWindow);
+  if (!Number.isFinite(contextWindow) || contextWindow <= 0) contextWindow = 256000;
+  contextWindow = Math.max(32000, Math.min(2000000, Math.round(contextWindow)));
+  return {baseUrl, apiKey, model, effort, name, contextWindow};
 }
 
-function catalogEntry(model, effort) {
+function catalogEntry(model, effort, contextWindow = 256000) {
   // Every field below is required by Codex 0.153/0.154's catalog parser
   // (verified with --strict-config); values are neutral for a generic model.
   return {
@@ -83,8 +90,8 @@ function catalogEntry(model, effort) {
     web_search_tool_type: "text",
     truncation_policy: {mode: "tokens", limit: 10000},
     supports_image_detail_original: false,
-    context_window: 128000,
-    max_context_window: 128000,
+    context_window: contextWindow,
+    max_context_window: contextWindow,
     comp_hash: "0",
     effective_context_window_percent: 95,
     experimental_supported_tools: [],
@@ -105,6 +112,7 @@ function providerToml(settings) {
     `model_provider = ${JSON.stringify(PROVIDER_ID)}`,
     `model_catalog_json = ${JSON.stringify(CATALOG_FILE)}`,
     `model_reasoning_effort = ${JSON.stringify(settings.effort)}`,
+    `model_context_window = ${settings.contextWindow}`,
     "",
     `[model_providers.${PROVIDER_ID}]`,
     `name = ${JSON.stringify(settings.name)}`,
@@ -128,7 +136,7 @@ function saveCustomProvider(profileDir, input) {
     fs.writeFileSync(temp, contents, {mode: 0o600});
     fs.renameSync(temp, target);
   };
-  writeAtomic(catalogPath, JSON.stringify({models: [catalogEntry(settings.model, settings.effort)]}));
+  writeAtomic(catalogPath, JSON.stringify({models: [catalogEntry(settings.model, settings.effort, settings.contextWindow)]}));
   writeAtomic(providerPath, providerToml(settings));
   const {apiKey, ...visible} = settings;
   return {...visible, apiKeyHint: maskKey(apiKey)};
@@ -144,8 +152,9 @@ function readCustomProvider(profileDir) {
   const text = fs.readFileSync(providerPath, "utf8");
   const pick = key => { const match = text.match(new RegExp(`^${key} = "((?:[^"\\\\]|\\\\.)*)"`, "m")); return match ? JSON.parse(`"${match[1]}"`) : null; };
   if (pick("model_provider") !== PROVIDER_ID) return null;
+  const window = text.match(/^model_context_window = (\d+)/m);
   return {name: pick("name"), baseUrl: pick("base_url"), model: pick("model"), effort: pick("model_reasoning_effort") || "medium",
-    apiKeyHint: maskKey(pick("experimental_bearer_token") || "")};
+    contextWindow: window ? Number(window[1]) : null, apiKeyHint: maskKey(pick("experimental_bearer_token") || "")};
 }
 
 function maskKey(key) {

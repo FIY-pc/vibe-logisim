@@ -10,6 +10,7 @@ const {execFileSync} = require("node:child_process");
 // --strict-config, so only keys that Codex 0.153.x accepts at the top level
 // may be mirrored; `disable_response_storage` is no longer such a key.
 const PRESERVED_NATIVE_FIELDS = Object.freeze([
+  "model_context_window",
   "service_tier",
   "personality",
   "model_reasoning_summary",
@@ -23,7 +24,7 @@ function readProvider(configPath, environment = process.env, options = {}) {
     "import json,sys,tomllib",
     "with open(sys.argv[1], 'rb') as f: c=tomllib.load(f)",
     "name=c.get('model_provider', 'openai')",
-    "preserved={key:c[key] for key in ('service_tier','personality','model_reasoning_summary','model_verbosity') if key in c}",
+    "preserved={key:c[key] for key in ('model_context_window','service_tier','personality','model_reasoning_summary','model_verbosity') if key in c}",
     "print(json.dumps({'model':c.get('model'), 'effort':c.get('model_reasoning_effort'), 'modelCatalogJson':c.get('model_catalog_json'), 'name':name, 'provider':c.get('model_providers', {}).get(name), 'preserved':preserved}))",
   ].join("\n");
   let config;

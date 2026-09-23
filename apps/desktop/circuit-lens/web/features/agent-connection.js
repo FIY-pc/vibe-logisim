@@ -61,14 +61,14 @@ export function createController({ui,ports}) {
     ui.providerClear.hidden=!custom;
     ui.providerSave.disabled=providerPending||state.busy;ui.providerClear.disabled=providerPending||state.busy;
     ui.providerSave.textContent=providerPending?'正在连接…':'保存并连接';
-    if(custom&&!ui.providerForm.dataset.filled){ui.providerBaseUrl.value=custom.baseUrl||'';ui.providerModel.value=custom.model||'';ui.providerForm.dataset.filled='1';}
+    if(custom&&!ui.providerForm.dataset.filled){ui.providerBaseUrl.value=custom.baseUrl||'';ui.providerModel.value=custom.model||'';ui.providerContext.value=custom.contextWindow||'';ui.providerForm.dataset.filled='1';}
   }
   async function saveProvider(event) {
     event?.preventDefault();
     if(providerPending)return;
     providerPending=true;ui.connectionError.hidden=true;renderProviderForm();
     try {
-      const settings={baseUrl:ui.providerBaseUrl.value,apiKey:ui.providerApiKey.value,model:ui.providerModel.value};
+      const settings={baseUrl:ui.providerBaseUrl.value,apiKey:ui.providerApiKey.value,model:ui.providerModel.value,contextWindow:ui.providerContext.value?Number(ui.providerContext.value):undefined};
       if(!settings.apiKey&&state.customProvider)throw new Error('请重新输入 API 密钥（出于安全，已保存的密钥不会显示）');
       const snapshot=await window.vibeDesktop.agent.configureProvider({action:'save',settings});
       ui.providerApiKey.value='';ui.providerForm.dataset.filled='';
@@ -90,7 +90,7 @@ export function createController({ui,ports}) {
   function mountAgentConnection() {
     ui.providerSave.addEventListener('click',saveProvider);
     ui.providerClear.addEventListener('click',clearProvider);
-    for(const input of [ui.providerBaseUrl,ui.providerApiKey,ui.providerModel])input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();saveProvider();}});
+    for(const input of [ui.providerBaseUrl,ui.providerApiKey,ui.providerModel,ui.providerContext])input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();saveProvider();}});
     if(!window.vibeDesktop?.agent)return;
     ui.connectionClose.replaceChildren(icon('X'));
     ui.connectionChooseModel.addEventListener('click',()=>{ui.connectionDialog.close();ports.openModelPicker();});
