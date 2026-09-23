@@ -118,7 +118,7 @@ class Simulation:
         request = self.views.request('session', self.views.current)
         init = directory / "init.xml"
         init.write_bytes(ET.tostring(request, encoding="utf-8"))
-        self.log = (directory / "runtime.log").open("w")
+        self.log = (directory / "runtime.log").open("w", encoding="utf-8")
         self.process = subprocess.Popen(["java", "-Djava.awt.headless=true", "-cp", os.pathsep.join([str(classes), str(observer.runtime_jar)]),
             "com.cburch.logisim.file.CircuitSession", str(artifact), str(init)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, text=True, encoding="utf-8")
@@ -365,7 +365,7 @@ class Simulation:
         with self.frames:
             sample = self.samples.get(id)
         if sample is None and path.is_file():
-            sample = json.loads(path.read_text())
+            sample = json.loads(path.read_text(encoding="utf-8"))
         if not sample or sample["revisionId"] != revision or sample["projectId"] != self.w.history.record["id"]:
             raise ValueError("所见运行时刻已过期，请重新查看后再问")
         if circuit is not None and sample["circuit"] != circuit:

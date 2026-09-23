@@ -13,7 +13,7 @@ from typing import Any
 
 # This catalog is shipped with Studio and discovered over the local protocol.
 # Electron does not carry a second copy of tool names/descriptions/schemas.
-_CATALOG = json.loads(Path(__file__).with_name("circuit-plugin.json").read_text())
+_CATALOG = json.loads(Path(__file__).with_name("circuit-plugin.json").read_text(encoding="utf-8"))
 PLUGIN_SCHEMA = _CATALOG["schema"]
 RESULT_SCHEMA = _CATALOG["resultSchema"]
 PLUGIN_ID = _CATALOG["id"]

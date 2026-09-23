@@ -89,7 +89,7 @@ class ProjectHistory:
             # A status read compares bytes with the saved manifest. It does not
             # need to parse the whole circuit and rebuild a ProjectPackage.
             directory = self.workspace.state_root / 'revisions' / self.record['diskRevisionId']
-            expected = json.loads((directory / 'metadata.json').read_text())
+            expected = json.loads((directory / 'metadata.json').read_text(encoding="utf-8"))
             current_sha = hashlib.sha256(source.read_bytes()).hexdigest()
             changed = current_sha != expected['artifactSha256']
             for item in expected.get('dependencies', []):
@@ -180,7 +180,7 @@ class ProjectHistory:
         if applied:
             file = self.workspace.state_root / 'candidates' / applied['candidateId'] / 'candidate.json'
             if file.is_file():
-                candidate = json.loads(file.read_text())
+                candidate = json.loads(file.read_text(encoding="utf-8"))
                 if candidate.get('artifactSha256') == package.artifact_sha256:
                     evidence = {'candidateId': candidate['id'], 'checks': candidate.get('checks', []), 'executionReviews': candidate.get('executionReviews', [])}
         return {'entry': entry, 'currentRevisionId': self.record['currentRevisionId'], 'circuits': circuits, 'evidence': evidence, 'observations': self.observation_summaries(directory), 'countScope': 'serialized-components-and-wire-segments'}
@@ -188,7 +188,7 @@ class ProjectHistory:
     def observation_summaries(self, directory):
         summaries = []
         for file in sorted((directory / 'observations').glob('*.json')):
-            report = json.loads(file.read_text())
+            report = json.loads(file.read_text(encoding="utf-8"))
             summaries.append({k: report[k] for k in ('id', 'kind', 'circuit', 'authority', 'ticks', 'passed', 'failed', 'rowCount') if k in report})
         return summaries
 
@@ -212,7 +212,7 @@ class ProjectHistory:
             if proof:
                 archive.writestr('evidence.json', json.dumps(proof, ensure_ascii=False))
                 candidate_dir = w.state_root / 'candidates' / proof['candidateId']
-                candidate = json.loads((candidate_dir / 'candidate.json').read_text())
+                candidate = json.loads((candidate_dir / 'candidate.json').read_text(encoding="utf-8"))
                 if candidate['artifactSha256'] != w.artifact_sha256:
                     raise ValueError('候选观察记录与导出版本不匹配')
                 for dep in candidate.get('dependencies', []):
@@ -266,7 +266,7 @@ class ProjectHistory:
         if source.is_symlink():
             raise ValueError('源文件已被替换为链接，已停止保存，请重新确认保存位置')
         current = w.package
-        disk = json.loads((w.state_root / 'revisions' / self.record['diskRevisionId'] / 'metadata.json').read_text())
+        disk = json.loads((w.state_root / 'revisions' / self.record['diskRevisionId'] / 'metadata.json').read_text(encoding="utf-8"))
         if [(d['name'], d['sha256']) for d in current.dependencies] != [(d['name'], d['sha256']) for d in disk.get('dependencies', [])] or [(r['id'], r['sha256']) for r in current.resources] != [(r['id'], r['sha256']) for r in disk.get('resources', [])]:
             raise ValueError('当前版本的组件库或资料与磁盘不同，请导出完整工程包')
         payload = w.frozen_path.read_bytes()

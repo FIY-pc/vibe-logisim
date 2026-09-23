@@ -91,7 +91,7 @@ class NativeWorker:
         temporary = Path(tempfile.mkdtemp(prefix='compile-', dir=target.parent))
         try:
             result = subprocess.run(['javac', '-encoding', 'UTF-8', '-cp', str(runtime),
-                '-d', str(temporary), *map(str, self.sources)], capture_output=True, text=True, timeout=60)
+                '-d', str(temporary), *map(str, self.sources)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
             if result.returncode: raise ValueError(result.stderr[-4000:])
             # Another workspace can prepare the same runtime concurrently.
             if not target.exists(): temporary.rename(target)

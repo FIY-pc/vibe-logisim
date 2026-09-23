@@ -43,7 +43,7 @@ class CandidateService:
             raise self._missing_candidate(candidate_id)
         directory = self.workspace.state_root / 'candidates' / candidate_id
         try:
-            metadata = json.loads((directory / 'candidate.json').read_text())
+            metadata = json.loads((directory / 'candidate.json').read_text(encoding="utf-8"))
         except FileNotFoundError as error:
             raise self._missing_candidate(candidate_id) from error
         self._access().require(metadata, allow_applied=allow_applied)
@@ -73,7 +73,7 @@ class CandidateService:
         access = self._access()
         for file in (self.workspace.state_root / 'candidates').glob('*/candidate.json'):
             try:
-                metadata = json.loads(file.read_text())
+                metadata = json.loads(file.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
             if isinstance(metadata, dict) and access.is_pending(metadata):
@@ -163,7 +163,7 @@ class CandidateService:
     @staticmethod
     def _save(directory, metadata):
         temporary = directory / ('.candidate-' + uuid.uuid4().hex + '.tmp')
-        temporary.write_text(json.dumps(metadata, ensure_ascii=False, indent=2))
+        temporary.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary.replace(directory / 'candidate.json')
 
     def archive(self, candidate_id):

@@ -118,7 +118,7 @@ class ProjectPackage:
 
     @classmethod
     def from_snapshot(cls, directory, source):
-        metadata = json.loads((directory / "metadata.json").read_text())
+        metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
         result = cls.__new__(cls)
         result.contents, result.resource_contents = {}, {}
         result.errors = metadata.get("dependencyErrors", [])

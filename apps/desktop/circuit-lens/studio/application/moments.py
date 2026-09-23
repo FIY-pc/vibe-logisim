@@ -29,7 +29,7 @@ class Moments:
     def read(self, project, id):
         path = self.path(project,id)
         if not path.is_file(): raise ValueError('未找到这份留存观察')
-        result = json.loads(path.read_text())
+        result = json.loads(path.read_text(encoding="utf-8"))
         if result['projectId'] != project: raise ValueError('观察不属于当前工程')
         return result
 
@@ -38,7 +38,7 @@ class Moments:
         return {k:v for k,v in moment.items() if k not in {'render','sample'}}
 
     def list(self, project):
-        items = [json.loads(p.read_text()) for p in self.directory(project).glob('live-*.json')]
+        items = [json.loads(p.read_text(encoding="utf-8")) for p in self.directory(project).glob('live-*.json')]
         return [self.summary(m) for m in sorted(items,key=lambda m:m['createdAt'],reverse=True) if not m.get('archived')]
 
     def capture(self, body):

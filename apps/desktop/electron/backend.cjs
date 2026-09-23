@@ -73,7 +73,7 @@ class LensBackend extends EventEmitter {
 
     this.child = spawn(this.python, args, {
       cwd: this.repoRoot,
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1" },
       stdio: ["pipe", "pipe", "pipe"],
       shell: false,
       windowsHide: true,

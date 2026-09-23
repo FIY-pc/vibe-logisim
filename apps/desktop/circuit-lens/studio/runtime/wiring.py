@@ -483,7 +483,7 @@ def _wire_candidate(workbench, args, directory):
         if after.get("coverage", {}).get(key, 0) > baseline.get("coverage", {}).get(key, 0):
             raise ValueError("新增连接产生了电气冲突，未发布候选")
     check_interfaces(workbench, previous_artifact, artifact, name, added_pins)
-    (directory / "wiring-observation.json").write_text(json.dumps(after, ensure_ascii=False))
+    (directory / "wiring-observation.json").write_text(json.dumps(after, ensure_ascii=False), encoding="utf-8")
     inherited = [dict(c) for c in parent.get("changes", []) if c["circuit"] != name] if parent else []
     # Retain native images for unchanged modules in a composed candidate.
     if parent:

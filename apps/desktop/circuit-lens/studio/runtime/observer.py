@@ -289,7 +289,7 @@ class ObserverRuntime:
             raise RuntimeError("Exact observer failed: " + ((observed.stderr or observed.stdout).strip()[-4000:] or "no diagnostics"))
         try:
             completed = subprocess.run([sys.executable, str(self.query_program), kind, *ids], input=observed.stdout,
-                                       capture_output=True, text=True, env=environment, timeout=60)
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace", env=environment, timeout=60)
         except subprocess.TimeoutExpired as error:
             raise RuntimeError("Exact observer query timed out after 60 seconds.") from error
         return self._decode_json_result(completed)
