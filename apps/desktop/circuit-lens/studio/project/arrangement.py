@@ -116,7 +116,8 @@ def arrange_candidate(workbench, args):
             before = source.read_bytes()
     if args.get("artifactSha256") and hashlib.sha256(before).hexdigest() != args["artifactSha256"]:
         raise CircuitToolError("STALE_REVISION", "整理所引用的电路已变化",
-                               hint="使用同一次 inspect_circuit 的 artifactSha256。")
+                               hint="传入当前文件的 artifactSha256（先 inspect_circuit 一次），或省略 artifactSha256 直接整理当前文件。",
+                               context={"currentArtifactSha256": hashlib.sha256(before).hexdigest()})
     candidate_id = "candidate-" + uuid.uuid4().hex[:16]
     directory = w.state_root / "candidates" / candidate_id
     directory.mkdir(parents=True)
@@ -165,11 +166,26 @@ def arrange_candidate(workbench, args):
         if not equivalent:
             # Never publish a candidate whose connectivity differs from the source.
             shutil.rmtree(directory, ignore_errors=True)
+            # Name the groups so the caller knows WHICH net changed (label,
+            # factories, ports) instead of guessing parameters.
+            name_of = {v: k for k, v in identity.items()}
+            def describe(group):
+                ports, consts = group
+                items = []
+                for ident_key, port in sorted(ports, key=str):
+                    loc, factory = name_of.get(ident_key, ((None, None), str(ident_key)))
+                    comp = next((c for c in before_focus["components"] if (c["location"]["x"], c["location"]["y"]) == loc and c["factoryName"] == factory), None)
+                    items.append({"factory": factory, "label": _attr(comp, "label") if comp else None, "port": port, "location": {"x": loc[0], "y": loc[1]} if loc[0] is not None else None})
+                labels = sorted({t for c in before_focus["components"] if c["factoryName"] == "Tunnel"
+                                 for e in c["ends"] for t in [_attr(c, "label")] if t and any(
+                                     (e["location"]["x"], e["location"]["y"]) == (i["location"]["x"], i["location"]["y"]) for i in items if i["location"])})
+                return {"ports": items[:8], "tunnelLabels": labels[:4], "constants": sorted(consts)}
             raise CircuitToolError(
                 "ARRANGE_NOT_EQUIVALENT",
                 f"整理结果的连通性与原电路不一致（丢失 {len(lost)} 组、新增 {len(gained)} 组、无效线束 {len(invalid)}），已丢弃。",
-                hint="这是工具缺陷或电路含有工具未覆盖的结构；请把该电路与错误报告一起反馈，不要用手写脚本绕过。",
-                context={"lost": len(lost), "gained": len(gained), "invalidBundles": len(invalid), "report": layout.report},
+                hint="下面列出了改变的网络（端口与 Tunnel 标签）。可以把这些标签加入 keepTunnels 让它们保留 Tunnel 后重试；同时请把该电路和这份报告反馈给维护者，这是布局引擎的缺陷。",
+                context={"lost": [describe(g) for g in list(lost)[:6]], "gained": [describe(g) for g in list(gained)[:6]],
+                         "invalidBundles": len(invalid), "report": layout.report},
             )
         metrics_before = readability(before_xml, name)
         metrics_after = readability(after_xml, name)

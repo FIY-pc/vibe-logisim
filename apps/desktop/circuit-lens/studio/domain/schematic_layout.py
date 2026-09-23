@@ -80,13 +80,16 @@ class SchematicLayout:
         """The fixed observation panel is the cluster above the largest vertical
         gap between non-tunnel components (the generated body starts below it).
         Returns the y below which components are free to move; None = no panel."""
-        ys = sorted({c["bounds"]["y"] for c in self.components if c["factoryName"] != "Tunnel"})
-        if len(ys) < 4:
-            return None
+        real = [c for c in self.components if c["factoryName"] != "Tunnel"]
+        ys = sorted({c["bounds"]["y"] for c in real})
+        if len(ys) < 4 or len(real) < 40:
+            return None                      # small circuits have no fixed panel
         gaps = [(ys[i + 1] - ys[i], ys[i], ys[i + 1]) for i in range(len(ys) - 1)]
         gap, top, bottom = max(gaps)
-        # Require a real separation and keep at least a handful of components above.
-        if gap < 150 or sum(1 for y in ys if y <= top) < 4:
+        above = sum(1 for c in real if c["bounds"]["y"] <= top)
+        # A panel is a substantial cluster (course templates: 60-80 parts)
+        # separated by a real gap; a 3-row full adder is not a panel + body.
+        if gap < 150 or above < 12 or above < len(real) // 4:
             return None
         return (top + bottom) // 2
 
@@ -125,7 +128,9 @@ class SchematicLayout:
             return True
         if self.panel_below_y is not None:
             return c["bounds"]["y"] < self.panel_below_y
-        return c["factoryName"] in PANEL_FACTORIES
+        # No detected panel: everything is body. Input/output Pins then take
+        # their natural place as sources on the left and sinks on the right.
+        return False
 
     def plan(self):
         nets, bits_of = self._nets()
@@ -201,27 +206,55 @@ class SchematicLayout:
         return out_edges
 
     def _layers(self):
-        """Stage layering for synchronous designs.
+        """Signal-flow layering.
 
-        Registers (and other clocked/storage parts) are the stage boundaries.
-        Stage(register) = 1 + max stage of registers that reach its inputs
-        through combinational logic (longest path on the register-only graph,
-        back-edges cut by DFS so PC->adder->PC does not diverge). Combinational
-        logic sits in the stage of the earliest register that drives it; parts
-        driven by no register (constants, ROM) are sources.
-        Layer index: register of stage s -> 2s+1; logic driven by stage s -> 2s+2;
-        sources -> 0. This keeps each stage's registers in one column with the
-        stage's logic immediately to the right, which is how people draw it.
+        Longest path from sources over the body graph (all nets, splitters as
+        pass-through, back-edges cut by DFS) gives every part a depth.
+        Registers are stage boundaries: stage(r) = longest register-to-register
+        path; when registers carry stage prefixes (EX.*, MEM.*) the groups are
+        ordered by median depth so bypass/feedback paths do not spread one
+        stage over many columns. Layers:
+            pre-register logic .......... its depth (0..K)
+            register of stage s ......... K+1 + 2s
+            logic driven by stage s ..... K+1 + 2s + 1
+        Pure combinational circuits have no registers, so layer == depth.
         """
         out_edges = self._graph(all_nets=True)
         ids = [c["componentId"] for c in self.body]
         storage = {cid for cid in ids if self.by_id[cid]["factoryName"] in
                    ("Register", "ROM", "RAM", "Counter", "D Flip-Flop", "J-K Flip-Flop", "S-R Flip-Flop", "T Flip-Flop", "Random")}
-        # register -> registers reachable through combinational nodes only
+        indeg = {u: 0 for u in ids}
+        for u, vs in out_edges.items():
+            for v in vs:
+                if v in indeg:
+                    indeg[v] += 1
+        # DFS from sources (registers first so feedback into them is the cut edge)
+        state, order, forward = {}, [], defaultdict(set)
+        def dfs(u):
+            state[u] = 1
+            for v in sorted(out_edges.get(u, ())):
+                if v not in indeg or state.get(v) == 1:
+                    continue
+                forward[u].add(v)
+                if v not in state:
+                    dfs(v)
+            state[u] = 2
+            order.append(u)
+        roots = sorted(ids, key=lambda u: (u not in storage, indeg[u], u))
+        for u in roots:
+            if u not in state:
+                dfs(u)
+        depth = {u: 0 for u in ids}
+        for u in reversed(order):
+            for v in forward.get(u, ()):
+                depth[v] = max(depth[v], depth[u] + 1)
+        if not storage:
+            self.stage_of = {}
+            return self._compact(depth)
+        # register stages: longest register->register path over the cut DAG
         reach = defaultdict(set)
-        comb_from = defaultdict(set)     # register -> combinational nodes it drives (transitively)
         for r in storage:
-            seen, stack = set(), list(out_edges.get(r, ()))
+            seen, stack = set(), list(forward.get(r, ()))
             while stack:
                 v = stack.pop()
                 if v in seen:
@@ -230,32 +263,12 @@ class SchematicLayout:
                 if v in storage:
                     reach[r].add(v)
                 else:
-                    comb_from[r].add(v)
-                    stack.extend(out_edges.get(v, ()))
-        # longest path over registers with DFS back-edge cutting
-        state, order, forward = {}, [], defaultdict(set)
-        def dfs(u):
-            state[u] = 1
-            for v in sorted(reach.get(u, ())):
-                if state.get(v) == 1:
-                    continue
-                forward[u].add(v)
-                if v not in state:
-                    dfs(v)
-            state[u] = 2
-            order.append(u)
-        for u in sorted(storage):
-            if u not in state:
-                dfs(u)
-        stage = {u: 0 for u in storage}
+                    stack.extend(forward.get(v, ()))
+        stage = {r: 0 for r in storage}
         for u in reversed(order):
-            for v in forward.get(u, ()):
-                stage[v] = max(stage[v], stage[u] + 1)
-        # Naming is the author's own statement of the stage structure
-        # ("EX.ALU_OP", "MEM.RD"). When registers carry such prefixes, group
-        # them by prefix and order the groups by their median computed depth;
-        # this collapses the fan of depths produced by bypass/feedback paths
-        # into the intended columns. Registers without a prefix keep depth.
+            if u in storage:
+                for v in reach.get(u, ()):
+                    stage[v] = max(stage[v], stage[u] + 1)
         prefix_of = {}
         for r in storage:
             label = _attr(self.by_id[r], "label") or ""
@@ -265,25 +278,38 @@ class SchematicLayout:
             groups = defaultdict(list)
             for r, pfx in prefix_of.items():
                 groups[pfx].append(stage[r])
-            ordered = sorted(groups, key=lambda p: sorted(groups[p])[len(groups[p]) // 2])
-            rank = {p: i for i, p in enumerate(ordered)}
-            # Un-prefixed registers slot in by depth relative to the group medians.
-            medians = [sorted(groups[p])[len(groups[p]) // 2] for p in ordered]
+            ordered = sorted(groups, key=lambda p_: sorted(groups[p_])[len(groups[p_]) // 2])
+            rank = {p_: i for i, p_ in enumerate(ordered)}
+            medians = [sorted(groups[p_])[len(groups[p_]) // 2] for p_ in ordered]
             for r in storage:
-                if r in prefix_of:
-                    stage[r] = rank[prefix_of[r]]
-                else:
-                    stage[r] = sum(1 for m in medians if m < stage[r])
-        layer = {}
+                stage[r] = rank[prefix_of[r]] if r in prefix_of else sum(1 for m in medians if m < stage[r])
+        # which registers drive each combinational node (transitively, via forward)
+        drivers = defaultdict(set)
         for r in storage:
-            layer[r] = 2 * stage[r] + 1
-        for cid in ids:
-            if cid in storage:
-                continue
-            drivers = [stage[r] for r in storage if cid in comb_from[r]]
-            layer[cid] = 2 * min(drivers) + 2 if drivers else 0
-        # Compact: renumber used layers densely; merge layers holding a single
-        # part into the neighbouring layer on the left (avoids one-part columns).
+            seen, stack = set(), list(forward.get(r, ()))
+            while stack:
+                v = stack.pop()
+                if v in seen or v in storage:
+                    continue
+                seen.add(v)
+                drivers[v].add(r)
+                stack.extend(forward.get(v, ()))
+        pre = [u for u in ids if u not in storage and not drivers[u]]
+        K = max((depth[u] for u in pre), default=-1)
+        layer = {}
+        for u in ids:
+            if u in storage:
+                layer[u] = K + 1 + 2 * stage[u]
+            elif drivers[u]:
+                layer[u] = K + 1 + 2 * min(stage[r] for r in drivers[u]) + 1
+            else:
+                layer[u] = depth[u]
+        self.stage_of = stage
+        return self._compact(layer)
+
+    @staticmethod
+    def _compact(layer):
+        """Renumber densely; merge single-part layers leftwards."""
         used = sorted(set(layer.values()))
         dense = {l: i for i, l in enumerate(used)}
         layer = {cid: dense[l] for cid, l in layer.items()}
@@ -293,13 +319,11 @@ class SchematicLayout:
         remap, shift = {}, 0
         for l in sorted(counts):
             if counts[l] == 1 and l > 0:
-                remap[l] = remap.get(l - 1, l - 1 - shift) if (l - 1) in remap else l - 1 - shift
                 shift += 1
+                remap[l] = l - shift
             else:
                 remap[l] = l - shift
-        layer = {cid: remap[l] for cid, l in layer.items()}
-        self.stage_of = stage
-        return layer
+        return {cid: remap[l] for cid, l in layer.items()}
 
     def _place(self):
         layer = self._layers()
@@ -405,12 +429,19 @@ class SchematicLayout:
             if cls not in ("wire", "constant"):
                 continue
             ports = self.nets[key]
-            # Does this net leave the body (panel port, or a real port that is
-            # not part of the body)? Then the body needs exactly one tunnel left
-            # standing as the bridge; wiring joins the rest of the body ports.
-            leaves_body = any(cid not in self.tunnels and cid not in body_ids for cid, idx in ports)
-            body_tunnels = [cid for cid, idx in ports if cid in self.tunnels and not self._is_panel(self.tunnels[cid])]
-            keep = set(body_tunnels[:1]) if leaves_body else set()
+            # Which real ports of this net will actually be joined by wires? Only
+            # placed body components (they have a layer). Anything else — panel
+            # parts, pinned parts, parts the layering skipped — keeps its own
+            # tunnel, and the wired group keeps exactly one tunnel as the bridge.
+            wired = [(cid, idx) for cid, idx in ports if cid not in self.tunnels and cid in self.layer]
+            unwired = [(cid, idx) for cid, idx in ports if cid not in self.tunnels and cid not in self.layer]
+            if len(wired) < 2:
+                continue                      # nothing to wire; leave all tunnels
+            unwired_points = {(self.by_id[cid]["ends"][idx]["location"]["x"], self.by_id[cid]["ends"][idx]["location"]["y"]) for cid, idx in unwired}
+            body_tunnels = [cid for cid, idx in ports if cid in self.tunnels
+                            and (self.tunnels[cid]["location"]["x"], self.tunnels[cid]["location"]["y"]) not in unwired_points
+                            and not self._is_panel(self.tunnels[cid])]
+            keep = set(body_tunnels[:1]) if unwired else set()
             for cid in body_tunnels:
                 if cid not in keep:
                     drop_tunnels.add(cid)
