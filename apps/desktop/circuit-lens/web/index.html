@@ -366,6 +366,14 @@
       <section class="model-connection"><div><strong id="modelConnection">本机 Codex</strong><span id="modelConnectionStatus"></span></div><button class="quiet-button" id="modelReconnect">重新连接</button></section>
       <dl class="connection-facts"><div><dt>当前模型</dt><dd><span id="connectionModel"></span> <button id="connectionChooseModel" class="quiet-button">更改</button></dd></div><div><dt>模型偏好</dt><dd id="connectionPreference"></dd></div></dl>
       <section class="connection-help"><p id="connectionHelp"></p><button id="connectionLogout" class="quiet-button" hidden>退出登录</button></section>
+      <details class="provider-form" id="providerForm">
+        <summary><span>使用自己的 API 接口</span><small id="providerSummary"></small></summary>
+        <p>填写任意 OpenAI 兼容的 <code>/v1</code> 地址（需支持 Responses 接口）、密钥和模型名称。密钥只保存在本机。</p>
+        <label>接口地址<input id="providerBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" /></label>
+        <label>API 密钥<input id="providerApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" /></label>
+        <label>模型名称<input id="providerModel" type="text" autocomplete="off" spellcheck="false" placeholder="例如 gpt-5.4、deepseek-chat" /></label>
+        <div class="provider-actions"><button id="providerClear" class="quiet-button" hidden>恢复默认</button><button id="providerSave" class="primary-button">保存并连接</button></div>
+      </details>
       <p id="connectionError" class="model-error" role="alert" hidden></p>
     </dialog>
     <dialog id="finderDialog" class="finder-dialog" aria-labelledby="finderTitle">

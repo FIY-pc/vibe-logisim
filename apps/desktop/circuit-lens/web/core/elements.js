@@ -65,6 +65,7 @@ export const ui = Object.fromEntries(
       "agentTabLight",
       "conversationPicker","conversationTitle","conversationNew","conversationMenu","conversationSearch","conversationError","conversationBusy","conversationList","conversationArchive","conversationFolder",
       "agentSettings","connectionDialog","connectionClose","connectionModel","connectionPreference","connectionError","modelSearch",
+      "providerForm","providerSummary","providerBaseUrl","providerApiKey","providerModel","providerSave","providerClear",
       "composerPreferences", "agentMode", "agentModel", "agentEffort", "modeMenu", "modeOptions", "modeError", "effortMenu", "effortOptions", "effortError", "attachMaterials",  
       "proposalTab",
       "proposalCount",

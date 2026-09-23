@@ -470,6 +470,20 @@ function registerIpc() {
       return codex.snapshot();
     } catch (error) { await codex.cancelLogin().catch(() => {}); throw error; }
   });
+  ipcMain.handle('vibe-logisim:agent-provider', async (event, request) => {
+    if (!isTrustedRenderer(event)) throw new Error('Untrusted renderer.');
+    if (workspaceTransitioning) throw workspaceChangedError();
+    ++workspaceGeneration;
+    workspaceTransitioning = true;
+    try {
+      const state = request?.action === 'clear' ? await codex.clearCustomProvider() : await codex.configureCustomProvider(request?.settings || {});
+      const current = await backend.session();
+      if (current.folder && codex.status === 'ready') {
+        await codex.resumeWorkspace({workspaceKey:current.folder.conversationKey, revisionId:current.revision?.id});
+      }
+      return state;
+    } finally { workspaceTransitioning = false; }
+  });
   ipcMain.handle("vibe-logisim:review-recovery", async (event, request) => {
     if (!isTrustedRenderer(event)) throw new Error("Untrusted renderer.");
     if (workspaceTransitioning || codex?.snapshot().busy) throw new Error("请等当前任务结束后查看草稿");

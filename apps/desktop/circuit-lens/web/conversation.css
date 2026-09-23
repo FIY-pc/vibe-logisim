@@ -126,6 +126,7 @@
 .agent-status-light[data-state="ready"],.agent-status-light[data-state="ready"]+div #agentStatusText{display:none}
 .agent-tab-light[data-state="ready"],.agent-tab-light[data-state="idle"]{display:none}
 .connection-facts #connectionChooseModel{font-size:12px;margin-left:8px}
+.provider-form{border-top:1px solid var(--line);padding:12px 22px 20px;font-size:12px}.provider-form summary{cursor:pointer;display:flex;justify-content:space-between;gap:12px;font-weight:600;list-style:none}.provider-form summary::-webkit-details-marker{display:none}.provider-form summary::before{content:"▸";margin-right:6px;color:var(--muted)}.provider-form[open] summary::before{content:"▾"}.provider-form summary small{font-weight:400;color:var(--muted);overflow-wrap:anywhere;text-align:right}.provider-form p{margin:10px 0 12px;color:var(--muted);line-height:1.7}.provider-form code{font-size:11px}.provider-form label{display:flex;flex-direction:column;gap:4px;margin:0 0 10px;color:var(--muted)}.provider-form input{font:inherit;font-size:12px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink);background:#fff}.provider-form input:focus{outline:2px solid #4c7bd955;border-color:#4c7bd9}.provider-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.provider-actions button{font-size:12px}
 
 #agentTab[aria-selected="true"] .agent-tab-light{display:none}
 .agent-system-message details{margin-top:8px}.agent-system-message summary{cursor:pointer}.agent-system-message pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}

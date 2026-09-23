@@ -22,6 +22,7 @@ const {
 } = require('./codex-capabilities.cjs');
 
 const { writeProvider } = require("./provider-config.cjs");
+const { saveCustomProvider, clearCustomProvider, readCustomProvider } = require("./custom-provider.cjs");
 const {isolatedSpawn, resolveExecutable, isolationKind} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
 const { AgentModelError, classifyModelError } = require("./model-errors.cjs");
@@ -236,7 +237,8 @@ class CodexBackend extends EventEmitter {
       transmission: this.health.snapshot(),
       canReconnect: this.canReconnect(),
       isolation: isolationKind(),
-      accountMode: this.runtimeRoot ? "application" : "shared",
+      accountMode: this.runtimeRoot || this.customProvider ? "application" : "shared",
+      customProvider: this.customProvider || null,
       signingIn: Boolean(this.loginId),
       harness: capabilitySnapshot({
         plugin: this.toolHostState,
@@ -410,9 +412,11 @@ class CodexBackend extends EventEmitter {
       // Windows and some mounted filesystems do not expose POSIX modes.
     }
 
-    if (this.runtimeRoot) {
+    this.customProvider = readCustomProvider(this.profileDir);
+    if (this.runtimeRoot || this.customProvider) {
       // A standalone installation owns its login. Never import or duplicate
       // another Codex installation's rotating credentials or private config.
+      // The same applies once the user configured their own endpoint in-app.
       this.sharedAuthPath = null;
       const provider = writeProvider(path.join(this.profileDir, "provider.toml"), this.profileDir);
       this.inheritedModel = provider.model || null;
@@ -505,6 +509,28 @@ class CodexBackend extends EventEmitter {
     this.account = null;
     this.modelSettings.invalidate();
     this.#setStatus('auth-required');
+    return this.snapshot();
+  }
+
+  // In-app OpenAI-compatible endpoint. Writes provider.toml + a one-entry
+  // catalog into the profile, then restarts the app-server so #prepareProfile
+  // picks it up. The key never enters argv or this snapshot.
+  async configureCustomProvider(settings) {
+    if (this.snapshot().busy) throw new Error("请先停止当前回答，再修改 AI 接口设置。");
+    const visible = saveCustomProvider(this.profileDir, settings);
+    this.modelSettings.save(null);
+    await this.reconnect();
+    if (this.status === "unavailable") {
+      throw new Error(this.statusDetail || "接口设置已保存，但连接未能建立。");
+    }
+    return {...this.snapshot(), customProvider: visible};
+  }
+
+  async clearCustomProvider() {
+    if (this.snapshot().busy) throw new Error("请先停止当前回答，再修改 AI 接口设置。");
+    clearCustomProvider(this.profileDir);
+    this.modelSettings.save(null);
+    await this.reconnect();
     return this.snapshot();
   }
 
