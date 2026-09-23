@@ -161,6 +161,17 @@ class NativeCircuitRuntime:
                              **({'reason': reason} if reason else {})})
         profile = self.workspace.observer.profile(response.get('runtimeVersion'))
         finished = time.perf_counter()
+        always_unknown = [w for w in resolved_watches if rows and all(r['values'].get(w['name']) is None for r in rows)]
+        unknown_note = None
+        if always_unknown:
+            parts = []
+            for w in always_unknown:
+                where = f"{w['factory']}{'「' + w['label'] + '」' if w['label'] else ''} 端口 {w['port']}({w['semanticRole'] or w['direction']})"
+                if w['connectedPeers'] == 0:
+                    parts.append(f"{w['name']} 观察的是 {where}，该端口所在网络没有任何其他元件——它没有被驱动。如果你想看的是同名寄存器/信号，请把 component 换成那个元件的 componentId。")
+                else:
+                    parts.append(f"{w['name']} 观察的是 {where}，网络上有 {w['connectedPeers']} 个对端但整段时间都是 X：检查驱动源是否本身为 X（未接时钟/使能/片选、ROM 无内容、位宽冲突）。")
+            unknown_note = ' '.join(parts)
         report = {
             'schema': RESULT_SCHEMA,
             'plugin': {'id': PLUGIN_ID, 'version': PLUGIN_VERSION},
@@ -299,9 +310,28 @@ class NativeCircuitRuntime:
             if component is None:
                 raise ValueError('观察端口不存在，请先 inspect_circuit 读取候选')
             return ET.SubElement(request, tag, factory=component['factoryName'], x=str(component['location']['x']), y=str(component['location']['y']), **attrs)
+        resolved_watches = []
         for watch in watches:
             label, port = (watch.get('name'), watch.get('port'))
             select('watch', watch, name=label, port=str(port))
+            component = components[watch.get('component')]
+            end = next((e for e in component['ends'] if e['index'] == port), None)
+            attrs = component.get('attributes') or []
+            comp_label = next((x.get('value', x.get('standard')) for x in attrs if isinstance(x, dict) and x.get('name') == 'label'), None)
+            # Is anything besides this port on the same net? A watch on an
+            # output-only Pin that nothing drives is the classic "all X" trap.
+            net_ids = {b['netId'] for b in (end.get('netBits') or [])} if end else set()
+            peers = 0
+            for other in components.values():
+                for oe in other['ends']:
+                    if (other['componentId'], oe['index']) == (component['componentId'], port):
+                        continue
+                    if any(b['netId'] in net_ids for b in (oe.get('netBits') or [])) and other['factoryName'] != 'Tunnel':
+                        peers += 1
+            resolved_watches.append({'name': label, 'component': component['componentId'], 'factory': component['factoryName'],
+                                     'label': comp_label, 'port': port, 'width': end.get('width') if end else None,
+                                     'direction': end.get('direction') if end else None, 'semanticRole': end.get('semanticRole') if end else None,
+                                     'connectedPeers': peers})
         normalized_inputs = self._values(inputs, '输入')
         self._assert_known_inputs(normalized_inputs, self._input_labels(observation['focus']['components']))
         for pin, value in normalized_inputs.items():
@@ -344,6 +374,17 @@ class NativeCircuitRuntime:
         profile = self.workspace.observer.profile(response.get('runtimeVersion'), runtime_jar=runtime_jar)
         finished = time.perf_counter()
         rows = [{'tick': int(row.get('tick')), 'oscillating': row.get('oscillating') == 'true', 'values': {s.get('name'): int(s.get('value')) if 'value' in s.attrib else None for s in row}, 'bits': {s.get('name'): s.get('bits') for s in row}} for row in response]
+        always_unknown = [w for w in resolved_watches if rows and all(r['values'].get(w['name']) is None for r in rows)]
+        unknown_note = None
+        if always_unknown:
+            parts = []
+            for w in always_unknown:
+                where = f"{w['factory']}{'「' + w['label'] + '」' if w['label'] else ''} 端口 {w['port']}({w['semanticRole'] or w['direction']})"
+                if w['connectedPeers'] == 0:
+                    parts.append(f"{w['name']} 观察的是 {where}，该端口所在网络没有任何其他元件——它没有被驱动。如果你想看的是同名寄存器/信号，请把 component 换成那个元件的 componentId。")
+                else:
+                    parts.append(f"{w['name']} 观察的是 {where}，网络上有 {w['connectedPeers']} 个对端但整段时间都是 X：检查驱动源是否本身为 X（未接时钟/使能/片选、ROM 无内容、位宽冲突）。")
+            unknown_note = ' '.join(parts)
         report = {
             'schema': RESULT_SCHEMA,
             'plugin': {'id': PLUGIN_ID, 'version': PLUGIN_VERSION},
@@ -361,6 +402,7 @@ class NativeCircuitRuntime:
             'ticks': ticks,
             'inputs': inputs,
             'watches': watches,
+            'watchTargets': resolved_watches,
             'resetButton': args.get('resetButton'),
             'buttonEvents': button_events,
             'inputEvents': input_events,
@@ -369,6 +411,7 @@ class NativeCircuitRuntime:
             'program': program,
             'programScope': 'In-memory stimulus only; candidate ROM is unchanged' if program else 'Candidate ROM contents',
             'rows': rows,
+            **({'alwaysUnknown': [w['name'] for w in always_unknown], 'alwaysUnknownNote': unknown_note} if always_unknown else {}),
             'note': 'Each call starts fresh. A native tick follows Clock high/low durations and need not be a transition or cycle. Sample 0 follows initialization and tick-0 events; later samples follow native tick/settling, explicit input events, inputClocks transitions, then button events. Each event settles in list order; values persist. inputClocks toggle their supplied initial value at firstTick, then after highTicks/lowTicks through lastTick inclusive. Native Clock components are independent; set data by t-1 to affect their edge at t.',
         }
         report['binding'] = binding_for(self.workspace, circuit=name, candidate_id=candidate_id, artifact_sha256=artifact_sha, runtime_profile=profile)
