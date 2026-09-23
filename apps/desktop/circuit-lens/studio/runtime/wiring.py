@@ -28,6 +28,10 @@ def point(value):
 
 
 def identity(component):
+    # Two Tunnels with different labels may legitimately share a point (that
+    # is how one port joins two named nets); only same-label Tunnels overlap.
+    if component.get("factoryName") == "Tunnel":
+        return component["factoryName"], point(component["location"]), _component_label(component)
     return component["factoryName"], point(component["location"])
 
 

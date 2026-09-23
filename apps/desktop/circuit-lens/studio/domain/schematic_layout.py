@@ -589,8 +589,49 @@ class SchematicLayout:
             element = self.element_of.get(cid)
             if element is not None and element in list(circuit):
                 circuit.remove(element)
+        # Nets that stay Tunnels: a body port was connected to its Tunnel either
+        # directly (same point) or through a short wire. The component moved and
+        # the body wires were rebuilt, so re-anchor one Tunnel per label right on
+        # the port's new location; the old Tunnel elements of that net go.
+        reanchored = 0
+        for key, cls in self.classes.items():
+            if cls not in ("tunnel", "global"):
+                continue
+            labels = sorted({_attr(self.tunnels[cid], "label") for cid, idx in self.nets[key] if cid in self.tunnels and _attr(self.tunnels[cid], "label")})
+            if not labels:
+                continue
+            body_ports = [(cid, idx) for cid, idx in self.nets[key] if cid not in self.tunnels and cid in self.layer]
+            if not body_ports:
+                continue
+            # drop this net's body-side tunnels (panel-side ones stay where they are)
+            for cid, idx in self.nets[key]:
+                if cid in self.tunnels and not self._is_panel(self.tunnels[cid]):
+                    element = self.element_of.get(cid)
+                    if element is not None and element in list(circuit):
+                        circuit.remove(element)
+                    self.drop_tunnels.add(cid)
+            for cid, idx in body_ports:
+                end = self.moved[cid]["ends"][idx]
+                px, py = end["location"]["x"], end["location"]["y"]
+                b = self.moved[cid]["bounds"]
+                d = {"west": px - b["x"], "east": b["x"] + b["width"] - px, "north": py - b["y"], "south": b["y"] + b["height"] - py}
+                edge = min(d, key=d.get)
+                facing = {"west": "east", "east": "west", "north": "south", "south": "north"}[edge]
+                step = {"west": (-10, 0), "east": (10, 0), "north": (0, -10), "south": (0, 10)}[edge]
+                for k, label in enumerate(labels):
+                    # first label sits on the port; further labels chain outward on a
+                    # short stub so nothing overlaps and every label still joins the net
+                    tx, ty = px + step[0] * k, py + step[1] * k
+                    el = ET.SubElement(circuit, "comp", {"lib": "0", "name": "Tunnel", "loc": f"({tx},{ty})"})
+                    ET.SubElement(el, "a", {"name": "facing", "val": facing})
+                    ET.SubElement(el, "a", {"name": "width", "val": str(end.get("width") or 1)})
+                    ET.SubElement(el, "a", {"name": "label", "val": label})
+                    if k:
+                        ET.SubElement(circuit, "wire", {"from": f"({min(px, tx)},{min(py, ty)})", "to": f"({max(px, tx)},{max(py, ty)})"})
+                    reanchored += 1
+        self.report["tunnelsReanchored"] = reanchored
         self.report["tunnelsRemoved"] = len(self.drop_tunnels)
-        self.report["tunnelsKept"] = len(self.tunnels) - len(self.drop_tunnels)
+        self.report["tunnelsKept"] = len(self.tunnels) - len(self.drop_tunnels) + reanchored
         # Localised constants: emit the synthetic components the router placed.
         for sid, cx, cy, facing, width, value, _consumer in self.synthetic_constants:
             if _consumer in self.failed_constant_consumers:
