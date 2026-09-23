@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {CodexBackend} = require('./codex-backend.cjs');
+const {POLICY_SIGNATURE} = require('./codex-capabilities.cjs');
+const contractFor = backend => ({mode:'base', workspaceMode:null, signature:null, harnessSignature:POLICY_SIGNATURE, developerInstructionsSha256:backend.developerInstructionsSha256});
 const {revertThroughMessage} = require('./conversation-edit.cjs');
 
 const turns = [1, 2, 3].map(n => ({id:`turn-${n}`, status:'completed', items:[
@@ -101,7 +103,7 @@ test('backend edits a stored conversation through thread/revert before starting 
     {type:'user', id:turn.items[0].clientId, text:turn.items[0].content[0].text},
     {type:'assistant', id:turn.items[1].id, text:turn.items[1].text, phase:turn.items[1].phase},
   ]);
-  backend.conversations.remember(key, {threadId:'source', messages});
+  backend.conversations.remember(key, {threadId:'source', messages, toolContract:contractFor(backend)});
   for (let n = 1; n <= 3; n++) backend.conversations.remember(key, {
     messageId:`user-${n}`, context:{selectionId:`sel-${n}`},
   });
@@ -157,7 +159,7 @@ test('backend reattaches an edit to superseded native history before turn/start'
   for (let n = 1; n <= 3; n++) backend.conversations.remember(key, {
     messageId:`user-${n}`, context:{selectionId:`sel-${n}`},
   });
-  backend.conversations.rebind(key, {threadId:'replacement', messages, toolContract:{signature:'current'}});
+  backend.conversations.rebind(key, {threadId:'replacement', messages, toolContract:contractFor(backend)});
 
   const requests = [];
   let reverted = false;
