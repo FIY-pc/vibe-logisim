@@ -28,8 +28,8 @@ from studio.transport.http import Handler, LensHTTPServer
 class CircuitPluginContract(unittest.TestCase):
     def test_catalog_boundary_is_validated_before_studio_registration(self):
         specs = default_specs()
-        self.assertEqual(len(specs), 22)
-        self.assertEqual(sum(spec.exposure == "direct" for spec in specs.values()), 19)
+        self.assertEqual(len(specs), 23)
+        self.assertEqual(sum(spec.exposure == "direct" for spec in specs.values()), 20)
         self.assertEqual(sum(spec.exposure == "hidden" for spec in specs.values()), 3)
 
         leaked = [

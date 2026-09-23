@@ -40,6 +40,7 @@ class Workbench:
             "reroute_candidate": self._reroute_candidate,
             "move_candidate": self._move_candidate,
             "edit_candidate": self._edit_candidate,
+            "arrange_candidate": self._arrange_candidate,
             "trace_circuit": self._trace_circuit,
             "simulate_circuit": self._simulate_circuit,
             "harness_run": self._harness_run,
@@ -210,6 +211,12 @@ class Workbench:
             raise ValueError("源工程已变化，请先重新载入")
         from studio.project.attribute_edits import edit_candidate
         return edit_candidate(self, call.arguments)
+
+    def _arrange_candidate(self, call):
+        if self.workspace.source_status().get("stale"):
+            raise ValueError("源工程已变化，请先重新载入")
+        from studio.project.arrangement import arrange_candidate
+        return arrange_candidate(self, call.arguments)
 
     def _trace_circuit(self, call):
         row_start, row_limit = self._row_window(call.arguments)

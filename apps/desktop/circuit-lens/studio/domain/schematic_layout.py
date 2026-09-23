@@ -67,6 +67,7 @@ class SchematicLayout:
         self.keep_tunnels = set(keep_tunnels)
         self.localise_constants = localise_constants
         self.report = {"nets": {}, "moved": 0, "wires": 0, "tunnelsRemoved": 0, "tunnelsKept": 0, "constantsPlaced": 0, "unrouted": []}
+        self.column_gap = COLUMN_GAP
         self.panel_below_y = panel_below_y if panel_below_y is not None else self._detect_panel()
         self.report["panelBelowY"] = self.panel_below_y
         self._bind_xml()
@@ -263,7 +264,7 @@ class SchematicLayout:
                     placement[cid] = (dx, dy)
                     y += b["height"] + ROW_GAP
                     y = _snap(y)
-                x_cursor += width + COLUMN_GAP
+                x_cursor += width + self.column_gap
         self.placement = placement
         self.layer = layer
         self.report["moved"] = sum(1 for cid, (dx, dy) in placement.items() if dx or dy)

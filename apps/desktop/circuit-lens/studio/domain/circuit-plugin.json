@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.38.0",
+  "version": "1.39.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -17,7 +17,8 @@
             "type": "string"
           },
           "circuit": {
-            "type": "string", "minLength": 1,
+            "type": "string",
+            "minLength": 1,
             "description": "Optional exact circuit definition name, including any symbols."
           }
         },
@@ -157,12 +158,31 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "circuit": {"type": "string", "minLength": 1, "maxLength": 1024},
-          "library": {"type": "string", "maxLength": 1024},
-          "tool": {"type": "string", "minLength": 1, "maxLength": 1024},
-          "attributes": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 4096}}
+          "circuit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "library": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "tool": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          }
         },
-        "required": ["circuit"],
+        "required": [
+          "circuit"
+        ],
         "additionalProperties": false
       },
       "category": "observe",
@@ -194,8 +214,16 @@
           "componentDirectory": {
             "type": "object",
             "properties": {
-              "maxBytes": {"type": "integer", "minimum": 1024, "maximum": 32000},
-              "cursor": {"type": "string", "minLength": 1, "maxLength": 80}
+              "maxBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 32000
+              },
+              "cursor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              }
             },
             "additionalProperties": false
           },
@@ -209,28 +237,58 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "componentId": {"type": "string"},
-                    "port": {"type": "integer", "minimum": 0}
+                    "componentId": {
+                      "type": "string"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
                   },
-                  "required": ["componentId", "port"],
+                  "required": [
+                    "componentId",
+                    "port"
+                  ],
                   "additionalProperties": false
                 }
               },
-              "maxBytes": {"type": "integer", "minimum": 1024, "maximum": 32000, "default": 24000},
-              "cursor": {"type": "string", "maxLength": 80}
+              "maxBytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 32000,
+                "default": 24000
+              },
+              "cursor": {
+                "type": "string",
+                "maxLength": 80
+              }
             },
-            "required": ["ports"],
+            "required": [
+              "ports"
+            ],
             "additionalProperties": false
           },
-          "includeWires": {"type": "boolean"},
-          "wireOffset": {"type": "integer", "minimum": 0},
-          "wireLimit": {"type": "integer", "minimum": 1, "maximum": 512},
+          "includeWires": {
+            "type": "boolean"
+          },
+          "wireOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wireLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 512
+          },
           "includeNets": {
             "type": "boolean"
           },
           "netFormat": {
             "type": "string",
-            "enum": ["groups", "bits"],
+            "enum": [
+              "groups",
+              "bits"
+            ],
             "description": "With includeNets=true: groups (default) returns netGroups with exact lane mappings; bits returns original per-bit nets. Components and connectivityIssues remain unchanged."
           }
         },
@@ -256,7 +314,11 @@
             "minLength": 1,
             "maxLength": 256
           },
-          "candidateId": {"type": "string", "minLength": 26, "maxLength": 26},
+          "candidateId": {
+            "type": "string",
+            "minLength": 26,
+            "maxLength": 26
+          },
           "viewport": {
             "type": "object",
             "properties": {
@@ -474,7 +536,11 @@
             "description": "Native wire IDs from the same source/candidate inspection (includeWires=true); removes only these segments before routing. Select all necessary segments explicitly; no geometric or logical net guessing.",
             "maxItems": 512,
             "uniqueItems": true,
-            "items": {"type": "string", "minLength": 1, "maxLength": 128}
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
           },
           "additions": {
             "type": "array",
@@ -662,6 +728,69 @@
       "exposure": "direct",
       "owner": "studio",
       "label": "修改元件属性"
+    },
+    {
+      "type": "function",
+      "name": "arrange_candidate",
+      "description": "Use this to make a circuit READABLE without changing what it does: re-place the body components into left-to-right signal-flow layers and replace placeholder Tunnels with real orthogonal wires, in ONE operation. Routing is a global optimisation; do not route nets one at a time with wire_candidate and do not write your own router. The fixed panel (top cluster of Pins/probes/displays, or pinnedComponentIds) never moves and keeps its Tunnel bridges; nets with very high fan-out (clock/reset/run) stay Tunnels; a shared Constant driving many inputs becomes a private Constant beside each input. Supply circuit and artifactSha256 from the same inspect_circuit. Optional: keepTunnels (labels to leave as Tunnels), pinnedComponentIds, localiseConstants (default true), columnGap (px between layers, default 220), panelBelowY (override the panel/body split), candidateId to compose. Returns a candidate only if connectivity is PROVEN identical: every group of ports sharing a net is re-observed and compared before/after (constants per driven port), and the result loads natively with no width conflicts; otherwise ARRANGE_NOT_EQUIVALENT and nothing is published. The result includes readability metrics (tunnels, wire segments, crossings, wire length, extent) before/after and the arrangement report (unrouted nets that kept their Tunnels). Look at it with render_circuit(candidateId), adjust parameters and re-run, then checkout_candidate to write it. Behavioural correctness is unchanged by construction; simulate only if you changed something else.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "circuit": {
+            "type": "string"
+          },
+          "artifactSha256": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "keepTunnels": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "pinnedComponentIds": {
+            "type": "array",
+            "maxItems": 2048,
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          "localiseConstants": {
+            "type": "boolean"
+          },
+          "columnGap": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 1000
+          },
+          "panelBelowY": {
+            "type": "integer",
+            "minimum": -100000,
+            "maximum": 100000
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "circuit",
+          "artifactSha256"
+        ],
+        "additionalProperties": false
+      },
+      "category": "construct",
+      "sourceMutation": false,
+      "candidate": true,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "整理布局与连线"
     },
     {
       "type": "function",
@@ -1090,7 +1219,7 @@
             },
             "description": "Trace-only. Button component ID from the exact target; tick: 0..ticks inclusive. After input events and inputClocks transitions, apply in same-tick array order, settling each before sampling. State persists; pressed=false releases."
           },
-      "watches": {
+          "watches": {
             "type": "array",
             "maxItems": 24,
             "items": {
@@ -1113,20 +1242,20 @@
                 "port"
               ],
               "additionalProperties": false
-        }
-      },
-      "rowStart": {
-        "type": "integer",
-        "minimum": 0,
-        "description": "Trace-only returned row offset; the native experiment still starts from fresh state. Defaults to 0."
-      },
-      "rowLimit": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 256,
-        "description": "Trace-only maximum returned rows. Defaults to 32; full rowCount and feedback remain available."
-      },
-      "vectors": {
+            }
+          },
+          "rowStart": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Trace-only returned row offset; the native experiment still starts from fresh state. Defaults to 0."
+          },
+          "rowLimit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256,
+            "description": "Trace-only maximum returned rows. Defaults to 32; full rowCount and feedback remain available."
+          },
+          "vectors": {
             "type": "array",
             "minItems": 1,
             "maxItems": 1024,
@@ -1402,16 +1531,67 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "circuit": {"type": "string"},
-          "reference": {"type": "string", "enum": ["previous_revision", "revision"]},
-          "referenceRevisionId": {"type": "string"},
-          "mode": {"type": "string", "enum": ["trace"]},
-          "ticks": {"type": "integer", "minimum": 1, "maximum": 10000},
-          "inputs": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 4294967295}},
-          "resetButton": {"type": "string", "description": "Pulse this Button press/settle/release/settle after initial inputs settle, before tick-0 events."},
+          "circuit": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string",
+            "enum": [
+              "previous_revision",
+              "revision"
+            ]
+          },
+          "referenceRevisionId": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "trace"
+            ]
+          },
+          "ticks": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          },
+          "resetButton": {
+            "type": "string",
+            "description": "Pulse this Button press/settle/release/settle after initial inputs settle, before tick-0 events."
+          },
           "watches": {
-            "type": "array", "minItems": 1, "maxItems": 24,
-            "items": {"type": "object", "properties": {"name": {"type": "string"}, "component": {"type": "string"}, "port": {"type": "integer", "minimum": 0}}, "required": ["name", "component", "port"], "additionalProperties": false}
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 24,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "component": {
+                  "type": "string"
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "name",
+                "component",
+                "port"
+              ],
+              "additionalProperties": false
+            }
           },
           "inputClocks": {
             "type": "array",
@@ -1452,19 +1632,89 @@
           },
           "inputEvents": {
             "description": "Trace-only. Top-level input Pin label from stimulusSchema (including Pins used as clocks); value must fit Pin width. tick: 0..ticks inclusive, after native tick/settling (at 0, after initialization), before inputClocks transitions, buttons and sampling. Same-tick array order; settle each event; values persist.",
-            "type": "array", "maxItems": 1000,
-            "items": {"type": "object", "properties": {"tick": {"type": "integer", "minimum": 0}, "name": {"type": "string"}, "value": {"type": "integer", "minimum": 0, "maximum": 4294967295}}, "required": ["tick", "name", "value"], "additionalProperties": false}
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "tick": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              },
+              "required": [
+                "tick",
+                "name",
+                "value"
+              ],
+              "additionalProperties": false
+            }
           },
           "buttonEvents": {
             "description": "Trace-only. Button component ID from the exact target; tick: 0..ticks inclusive. After input events and inputClocks transitions, apply in same-tick array order, settling each before sampling. State persists; pressed=false releases.",
-            "type": "array", "maxItems": 1000,
-            "items": {"type": "object", "properties": {"component": {"type": "string"}, "tick": {"type": "integer", "minimum": 0}, "pressed": {"type": "boolean"}}, "required": ["component", "tick", "pressed"], "additionalProperties": false}
+            "type": "array",
+            "maxItems": 1000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "component": {
+                  "type": "string"
+                },
+                "tick": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "pressed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "component",
+                "tick",
+                "pressed"
+              ],
+              "additionalProperties": false
+            }
           },
           "program": {
-            "type": "object", "properties": {"component": {"type": "string"}, "words": {"type": "array", "minItems": 1, "maxItems": 4096, "items": {"type": "integer", "minimum": 0, "maximum": 4294967295}}}, "required": ["component", "words"], "additionalProperties": false
+            "type": "object",
+            "properties": {
+              "component": {
+                "type": "string"
+              },
+              "words": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4096,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                }
+              }
+            },
+            "required": [
+              "component",
+              "words"
+            ],
+            "additionalProperties": false
           }
         },
-        "required": ["circuit", "mode", "ticks", "inputs", "watches"],
+        "required": [
+          "circuit",
+          "mode",
+          "ticks",
+          "inputs",
+          "watches"
+        ],
         "additionalProperties": false
       },
       "category": "observe",
@@ -1498,10 +1748,16 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "id": {"type": "string"},
-          "circuit": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "circuit": {
+            "type": "string"
+          }
         },
-        "required": ["id"],
+        "required": [
+          "id"
+        ],
         "additionalProperties": false
       },
       "category": "evaluate",
@@ -1544,9 +1800,15 @@
       "inputSchema": {
         "type": "object",
         "properties": {
-          "circuit": {"type": "string", "minLength": 1, "maxLength": 1024}
+          "circuit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
         },
-        "required": ["circuit"],
+        "required": [
+          "circuit"
+        ],
         "additionalProperties": false
       },
       "category": "observe",
