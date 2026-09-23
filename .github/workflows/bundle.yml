@@ -143,6 +143,48 @@ jobs:
           path: smoke-out
           if-no-files-found: ignore
 
+  # Real model turns through the in-app "own API endpoint" form on the
+  # packaged Windows app. Needs repository secrets; skipped when absent
+  # (forks, PRs). Costs API quota, so it runs only on main pushes and tags.
+  smoke-ai-windows:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      VIBE_TEST_BASE_URL: ${{ secrets.VIBE_TEST_BASE_URL }}
+      VIBE_TEST_API_KEY: ${{ secrets.VIBE_TEST_API_KEY }}
+      VIBE_TEST_MODEL: ${{ secrets.VIBE_TEST_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-win32-x64
+          path: bundle
+      - name: Unpack bundle
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem bundle/*.zip | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath unpacked
+      - name: Install Playwright driver
+        run: npm --prefix apps/desktop ci --ignore-scripts
+      - name: AI smoke (two real model turns)
+        shell: pwsh
+        run: |
+          if (-not $env:VIBE_TEST_API_KEY) { Write-Host "No VIBE_TEST_* secrets; skipping AI smoke."; exit 0 }
+          $exe = (Get-ChildItem unpacked -Recurse -Filter vibe-logisim.exe | Select-Object -First 1).FullName
+          $env:VIBE_SMOKE_ROOT = "$env:RUNNER_TEMP"
+          node apps/desktop/test/e2e-smoke-ai-packaged.cjs "$exe" smoke-ai-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-ai-windows
+          path: smoke-ai-out
+          if-no-files-found: ignore
+
   smoke-linux:
     needs: build
     runs-on: ubuntu-latest

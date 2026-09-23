@@ -4,9 +4,17 @@ import {icon} from '../core/chat-dom.js';
 export const modelDependencies = ['project', 'agent'];
 export const dependencies = ['askAgent', 'appendDraftText', 'draftReady', 'draftReceipt', 'hasSelection', 'openDesktopFile', 'showToast'];
 
+// Build prompts adapt to what is open: an empty circuit is built in place
+// (that is what a student who just clicked 新建电路 expects); otherwise a new
+// file is created so existing work stays untouched. Structured construction
+// (wire_candidate) avoids the hand-written-XML failure modes seen in real
+// runs: diagonal wires and accidental shorts at crossings.
+const HOW = '优先使用 wire_candidate 等结构化电路工具放置元件和连线，然后用 simulate_circuit 核对真值表；用清晰的连线和布局表达电路。';
 const buildAdder = {
   id: 'build', label: '构建一个全加器', icon: 'CircuitBoard',
-  prompt: '帮我在工作区中新建一份全加器电路，输入为 A、B、Cin，输出为 Sum、Cout。用清晰的连线和布局表达电路，简要说明原理和如何操作它。保留已有文件。',
+  prompt: emptyOpen => (emptyOpen
+    ? '在当前打开的这个空电路里构建一个全加器，输入为 A、B、Cin，输出为 Sum、Cout。'
+    : '帮我在工作区中新建一份全加器电路，输入为 A、B、Cin，输出为 Sum、Cout。保留已有文件。') + HOW + '最后简要说明原理和如何操作它。',
 };
 const basics = {
   id: 'explain', label: '认识与门、或门和非门', icon: 'BookOpen',
@@ -14,7 +22,9 @@ const basics = {
 };
 const counter = {
   id: 'check', label: '构建一个计数器', icon: 'Timer',
-  prompt: '帮我在工作区中新建一份四位二进制计数器电路，带时钟和复位输入，能直观看到计数变化。合理布局和连线，简要说明怎么启动、单步和复位。保留已有文件。',
+  prompt: emptyOpen => (emptyOpen
+    ? '在当前打开的这个空电路里构建一个四位二进制计数器，带时钟和复位输入，能直观看到计数变化。'
+    : '帮我在工作区中新建一份四位二进制计数器电路，带时钟和复位输入，能直观看到计数变化。保留已有文件。') + HOW + '最后简要说明怎么启动、单步和复位。',
 };
 
 export function createController({models: {project, agent}, ui, ports}) {
@@ -24,9 +34,11 @@ export function createController({models: {project, agent}, ui, ports}) {
   function actions() {
     const readable = project.circuit && !project.sourceChanged &&
       (project.circuit.components.length || project.circuit.wires.length);
-    if (!readable) return [buildAdder, basics, counter];
+    const emptyOpen = Boolean(project.circuit && !project.sourceChanged && !readable);
+    const resolve = starter => typeof starter.prompt === 'function' ? {...starter, prompt: starter.prompt(emptyOpen)} : starter;
+    if (!readable) return [buildAdder, basics, counter].map(resolve);
     const target = ports.hasSelection() ? '选中的部分' : '当前电路';
-    return [buildAdder, {
+    return [resolve(buildAdder), {
       id: 'explain', label: `讲解一下${target}`, icon: 'BookOpen',
       prompt: `请结合实际电路讲解${target}：它要完成什么功能，输入和输出是什么，信号怎样流动，各部分为什么这样连接。用初学者能理解的方式说明，先不要修改文件。`,
     }, {

@@ -55,7 +55,10 @@ async function launch() {
   ]);
   note('folder.open -> ' + JSON.stringify(opened).slice(0, 300));
   assert.ok(opened.ok, 'folder open failed: ' + opened.error);
-  await page.waitForFunction(() => document.querySelector('#emptyState')?.hidden || !document.querySelector('#newFileMenu')?.hidden, null, {timeout: 60000}).catch(() => {});
+  // The file toolbar appears when the renderer receives the folder event.
+  // Nudge it with a state read if that event raced ahead of the listener.
+  const toolbar = await page.waitForFunction(() => !document.querySelector('#fileActions')?.hidden, null, {timeout: 15000}).then(() => true).catch(() => false);
+  if (!toolbar) { note('file toolbar hidden after open; state=' + JSON.stringify(await page.evaluate(() => window.vibeDesktop.folder.state())).slice(0, 200)); await page.locator('#openButton').click().catch(() => {}); await page.waitForFunction(() => !document.querySelector('#fileActions')?.hidden, null, {timeout: 30000}); }
   await page.locator('#newFileMenu').click(); await page.getByRole('menuitem', {name: '新建电路', exact: true}).click();
   const nameBox = page.getByRole('textbox', {name: '文件名称', exact: true}); await nameBox.fill('与门验证.circ'); await nameBox.press('Enter');
   await waitUntil(() => session().then(s => s.folder?.activeFile === '与门验证.circ' && s), {timeout: 60000}); await idle();
