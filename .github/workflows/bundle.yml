@@ -203,7 +203,7 @@ jobs:
           path: bundle
       - name: Unpack bundle
         run: |
-          mkdir unpacked && tar xzf bundle/*.tar.gz -C unpacked
+          mkdir unpacked && tar xzf bundle/vibe-logisim-*-linux-x64.tar.gz -C unpacked
           ls unpacked
       - name: Install Playwright driver (test harness only)
         run: npm --prefix apps/desktop ci --ignore-scripts
