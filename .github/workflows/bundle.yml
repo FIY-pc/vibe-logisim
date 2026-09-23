@@ -1,0 +1,155 @@
+name: bundle
+
+# Cross-builds the Linux and Windows bundles from pinned runtime archives,
+# then smoke-tests each bundle on its real OS (open folder, build an AND gate,
+# native truth table via bundled Java+Logisim, restart, bundled Codex starts).
+# No model turn is sent; no credentials are involved.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  COURSE_RUNTIME_SHA256: b2400702fb9e8e4c71c512d7e09678a788039f402be55164209cde4cee8fc996
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux-x64, win32-x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install desktop dependencies (pdfjs-dist is copied into the bundle)
+        run: npm --prefix apps/desktop ci
+      - name: Fetch course runtime (build input kept out of git)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p workspaces/hust-riscv/original/course-package
+          gh release download build-inputs --repo "$GITHUB_REPOSITORY" --pattern 'logisim-ita-cn-20200118.exe' --dir workspaces/hust-riscv/original/course-package
+          echo "$COURSE_RUNTIME_SHA256  workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe" | sha256sum -c -
+      - name: Cache pinned runtime archives
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vibe-distribution
+          key: runtimes-${{ matrix.target }}-${{ hashFiles('scripts/distribution/runtime-lock.json') }}
+      - name: Build bundle
+        run: |
+          python3 scripts/distribution/build.py \
+            --target ${{ matrix.target }} \
+            --output dist \
+            --cache ~/.cache/vibe-distribution \
+            --course-runtime workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          compression-level: 0
+          retention-days: 7
+
+  smoke-windows:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-win32-x64
+          path: bundle
+      - name: Unpack bundle
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem bundle/*.zip | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath unpacked
+          Get-ChildItem unpacked
+      - name: Install Playwright driver (test harness only; the bundle is self-contained)
+        run: npm --prefix apps/desktop ci --ignore-scripts
+      - name: Smoke test the packaged app
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem unpacked -Recurse -Filter vibe-logisim.exe | Select-Object -First 1).FullName
+          Write-Host "Executable: $exe"
+          $env:VIBE_SMOKE_ROOT = "$env:RUNNER_TEMP"
+          node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-windows
+          path: smoke-out
+          if-no-files-found: ignore
+
+  smoke-linux:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-linux-x64
+          path: bundle
+      - name: Unpack bundle
+        run: |
+          mkdir unpacked && tar xzf bundle/*.tar.gz -C unpacked
+          ls unpacked
+      - name: Install Playwright driver (test harness only)
+        run: npm --prefix apps/desktop ci --ignore-scripts
+      - name: Smoke test the packaged app under Xvfb
+        run: |
+          sudo apt-get install -y -qq xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1 >/dev/null
+          exe=$(find unpacked -maxdepth 2 -name vibe-logisim -type f | head -1)
+          echo "Executable: $exe"
+          # GitHub runners have no systemd --user session; the AI status is
+          # allowed to be 'unavailable' here, the manual path is what is checked.
+          VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE=1 xvfb-run -a node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-linux
+          path: smoke-out
+          if-no-files-found: ignore
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, smoke-windows, smoke-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          merge-multiple: true
+          path: dist
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release upload "${GITHUB_REF_NAME}" dist/* --repo "$GITHUB_REPOSITORY" --clobber

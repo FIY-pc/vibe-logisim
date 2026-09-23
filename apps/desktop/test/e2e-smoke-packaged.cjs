@@ -39,7 +39,9 @@ async function launch() {
   phase = 'agent reaches auth-required (bundled Codex app-server started)';
   const state = await waitUntil(() => agent().then(s => (s.status === 'auth-required' || s.status === 'ready' || s.status === 'unavailable') && s), {timeout: 120000});
   note(`agent status=${state.status} isolation=${state.isolation} detail=${state.detail || ''}`);
-  assert.notEqual(state.status, 'unavailable', 'bundled Codex app-server failed to start: ' + state.detail);
+  // Headless CI Linux runners have no systemd --user session, so the AI path
+  // cannot start there; the manual editing path is still verified.
+  if (!process.env.VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE) assert.notEqual(state.status, 'unavailable', 'bundled Codex app-server failed to start: ' + state.detail);
   phase = 'create circuit';
   await app.evaluate(({dialog}, folder) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [folder]}); }, folder);
   await page.locator('#openButton').click(); await page.locator('#newFileMenu').click(); await page.getByRole('menuitem', {name: '新建电路', exact: true}).click();
