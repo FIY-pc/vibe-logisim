@@ -4,6 +4,7 @@ import com.cburch.logisim.data.Location;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.filechooser.FileFilter;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -93,6 +94,37 @@ public final class NativeCircuitLoader {
         List<String> reported = new ArrayList<>();
         Loader loader = new Loader(null) {
             @Override public void showError(String description) { reported.add(description); }
+
+            /**
+             * The stock resolver takes the library path recorded in the file
+             * literally and, when it cannot be read, asks through a Swing
+             * dialog — which in these windowless workers is a
+             * HeadlessException with no message. 2.7.1-era files record the
+             * original author's own machine path (C:\作业\…, /Users/…), so
+             * only the basename can mean anything here; look for it next to
+             * the file being loaded, the same rule the studio applies when it
+             * accepts the project. A library that is not there either is a
+             * plain load failure.
+             */
+            @Override File getFileFor(String name, FileFilter filter) {
+                String plugin = com.cburch.logisim.plugin.PluginLoader.check(name);
+                if (plugin != null) name = plugin;
+                File file = new File(name);
+                if (!file.isAbsolute()) {
+                    File directory = getCurrentDirectory();
+                    if (directory != null) file = new File(directory, name);
+                }
+                if (file.canRead()) return file;
+                String base = name.replace('\\', '/');
+                base = base.substring(base.lastIndexOf('/') + 1);
+                File directory = getCurrentDirectory();
+                if (!base.isEmpty() && directory != null) {
+                    File beside = new File(directory, base);
+                    if (beside.canRead()) return beside;
+                }
+                throw new LoaderException(
+                    "缺少组件库：" + (base.isEmpty() ? name : base) + "。需与电路文件放在同一目录。");
+            }
         };
         LogisimFile loaded;
         try {
