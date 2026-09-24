@@ -132,20 +132,18 @@ public final class ExactRuntimeObserver {
                 );
             }
 
-            Loader loader = new Loader(null) {
-                @Override
-                public void showError(String description) {
-                    // A GUI error dialog masks the useful loader diagnostic in headless mode.
-                    // Do not continue with a partially loaded circuit and call it exact evidence.
-                    throw new IllegalStateException("Logisim load error: " + description);
-                }
-            };
+            // Coverage-checked load: the runtime's dialog-and-continue reports
+            // (attribute values this runtime defaults, e.g. 2.7.1 Flip-Flop
+            // trigger=high) are kept as messages; openChecked verifies per
+            // circuit that no comp or wire of the source document was dropped,
+            // so continuing is still exact evidence of what the runtime runs.
+            java.util.List<String> loaderWarnings = new java.util.ArrayList<>();
             ByteArrayOutputStream loaderOutput = new ByteArrayOutputStream();
             PrintStream originalOut = System.out;
             LogisimFile file;
             try {
                 System.setOut(new PrintStream(loaderOutput, true, "UTF-8"));
-                file = com.cburch.logisim.file.NativeCircuitLoader.open(loader, artifact.toFile());
+                file = com.cburch.logisim.file.NativeCircuitLoader.openChecked(artifact.toFile(), loaderWarnings);
             } finally {
                 System.setOut(originalOut);
             }
@@ -157,6 +155,16 @@ public final class ExactRuntimeObserver {
             ExactRuntimeObserver observer = new ExactRuntimeObserver(
                 file, focus, region, options.compact
             );
+            if (!loaderWarnings.isEmpty()) {
+                List<Object> retained = new ArrayList<>();
+                for (String message = file.getMessage(); message != null; message = file.getMessage()) {
+                    retained.add(message);
+                }
+                for (String warning : loaderWarnings) {
+                    retained.add("loader: " + warning);
+                }
+                observer.retainedLoaderMessages = retained;
+            }
             Map<String, Object> document = observer.observe(
                 artifact, runtimeJar, runtimeDigest, observerSource, observerBundle,
                 loaderOutput.toString("UTF-8")
@@ -257,7 +265,9 @@ public final class ExactRuntimeObserver {
         if (!loaderMessages.isEmpty()) {
             unknowns.add(obj(
                 "code", "LOADER_MESSAGES_PRESENT",
-                "claim", "The runtime loader emitted messages; component coverage may be incomplete.",
+                "claim", "The runtime loader emitted messages; comp/wire coverage was verified "
+                    + "against the source document, but attribute values named in loader "
+                    + "messages fell back to runtime defaults.",
                 "messages", loaderMessages
             ));
         }

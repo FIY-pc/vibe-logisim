@@ -2,6 +2,8 @@ package com.cburch.logisim.file;
 
 import com.cburch.logisim.data.Location;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -14,12 +16,7 @@ import org.xml.sax.helpers.DefaultHandler;
 public final class NativeCircuitLoader {
     private NativeCircuitLoader() {}
 
-    /**
-     * Checks every circuit definition in this XML file, then delegates unchanged.
-     * The caller must keep the file stable between preflight and native loading.
-     * Referenced external circuit libraries are outside this file's preflight.
-     */
-    public static LogisimFile open(Loader loader, File file) throws Exception {
+    private static Element parseProject(File file) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -35,7 +32,16 @@ public final class NativeCircuitLoader {
             @Override public void error(SAXParseException error) throws SAXParseException { throw error; }
             @Override public void fatalError(SAXParseException error) throws SAXParseException { throw error; }
         });
-        Element project = parser.parse(file).getDocumentElement();
+        return parser.parse(file).getDocumentElement();
+    }
+
+    /**
+     * Checks every circuit definition in this XML file, then delegates unchanged.
+     * The caller must keep the file stable between preflight and native loading.
+     * Referenced external circuit libraries are outside this file's preflight.
+     */
+    public static LogisimFile open(Loader loader, File file) throws Exception {
+        Element project = parseProject(file);
         // Match native direct-child definitions, including uninstantiated children.
         for (Node node = project.getFirstChild(); node != null; node = node.getNextSibling()) {
             if (!(node instanceof Element) || !node.getNodeName().equals("circuit")) continue;
@@ -68,6 +74,68 @@ public final class NativeCircuitLoader {
             }
         }
         return loader.openLogisimFile(file);
+    }
+
+    /**
+     * Loads with the stock runtime's dialog-and-continue error handling made
+     * observable. Logisim reports non-fatal problems (an attribute value the
+     * current runtime no longer accepts, e.g. 2.7.1 Flip-Flop trigger=high)
+     * through Loader.showError and keeps loading with the default value; the
+     * headless Loaders here used to turn every such report into a hard failure.
+     * This entry collects the reports instead, then only accepts the loaded file
+     * after verifying per circuit that every comp and wire element of the source
+     * document is present, so a report can never hide a dropped component (an
+     * unknown factory, a skipped library). Verified reports are appended to
+     * warnings; structural loss still fails the load. Files that load without
+     * reports are returned exactly as before, unverified.
+     */
+    public static LogisimFile openChecked(File file, List<String> warnings) throws Exception {
+        List<String> reported = new ArrayList<>();
+        Loader loader = new Loader(null) {
+            @Override public void showError(String description) { reported.add(description); }
+        };
+        LogisimFile loaded;
+        try {
+            loaded = open(loader, file);
+        } catch (Exception error) {
+            if (reported.isEmpty()) throw error;
+            throw new IllegalStateException("Logisim load error: " + String.join("；", reported), error);
+        }
+        if (!reported.isEmpty()) {
+            String loss = coverageLoss(loaded, file);
+            if (loss != null) {
+                throw new IllegalStateException(
+                    "Logisim load error: " + String.join("；", reported) + "（" + loss + "）");
+            }
+            warnings.addAll(reported);
+        }
+        return loaded;
+    }
+
+    /** Compares per-circuit comp/wire element counts against the loaded file. */
+    private static String coverageLoss(LogisimFile loaded, File file) throws Exception {
+        Element project = parseProject(file);
+        StringBuilder loss = new StringBuilder();
+        for (Node node = project.getFirstChild(); node != null; node = node.getNextSibling()) {
+            if (!(node instanceof Element) || !node.getNodeName().equals("circuit")) continue;
+            Element circuitElement = (Element) node;
+            String name = circuitElement.getAttribute("name");
+            int comps = 0, wires = 0;
+            for (Node child = circuitElement.getFirstChild(); child != null; child = child.getNextSibling()) {
+                if (!(child instanceof Element)) continue;
+                if (child.getNodeName().equals("comp")) comps++;
+                else if (child.getNodeName().equals("wire")) wires++;
+            }
+            com.cburch.logisim.circuit.Circuit circuit = loaded.getCircuit(name);
+            int loadedComps = circuit == null ? -1 : circuit.getNonWires().size();
+            int loadedWires = circuit == null ? -1 : circuit.getWires().size();
+            if (loadedComps == comps && loadedWires == wires) continue;
+            if (loss.length() > 0) loss.append("；");
+            loss.append("电路 \"").append(name).append("\" 加载后覆盖不完整：comp ")
+                .append(loadedComps).append("/").append(comps)
+                .append("，wire ").append(loadedWires).append("/").append(wires);
+        }
+        return loss.length() == 0 ? null : loss.toString();
     }
 
     /**

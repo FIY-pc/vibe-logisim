@@ -19,15 +19,17 @@ public final class CircuitWorker {
         final String stdout;
         final List<Object> messages = new ArrayList<>();
         Loaded(File path) throws Exception {
-            Loader loader = new Loader(null) {
-                @Override public void showError(String message) { throw new IllegalStateException(message); }
-            };
+            // Coverage-checked load: non-fatal runtime reports (attribute values
+            // this runtime defaults, e.g. 2.7.1 trigger=high) become messages in
+            // the observation; a dropped comp or wire still fails the load.
+            List<String> warnings = new ArrayList<>();
             ByteArrayOutputStream log = new ByteArrayOutputStream();
             PrintStream previous = System.out;
-            try { System.setOut(new PrintStream(log,true,"UTF-8")); file=NativeCircuitLoader.open(loader, path); }
+            try { System.setOut(new PrintStream(log,true,"UTF-8")); file=NativeCircuitLoader.openChecked(path, warnings); }
             finally { System.setOut(previous); }
             stdout=log.toString("UTF-8");
             String message; while((message=file.getMessage())!=null)messages.add(message);
+            for(String warning:warnings)messages.add("loader: "+warning);
         }
     }
     private final Map<String,Loaded> files=new LinkedHashMap<String,Loaded>(4,.75f,true) {
