@@ -107,7 +107,7 @@ public final class NativeCircuitLoader {
              * plain load failure.
              */
             @Override File getFileFor(String name, FileFilter filter) {
-                String plugin = com.cburch.logisim.plugin.PluginLoader.check(name);
+                String plugin = pluginAlias(name);
                 if (plugin != null) name = plugin;
                 File file = new File(name);
                 if (!file.isAbsolute()) {
@@ -142,6 +142,21 @@ public final class NativeCircuitLoader {
             warnings.addAll(reported);
         }
         return loaded;
+    }
+
+    /**
+     * Logisim-ITA maps some library names through PluginLoader.check; the
+     * 2.7.1-era course jars have no such package, and these sources must
+     * compile against either runtime. Resolve it reflectively.
+     */
+    private static String pluginAlias(String name) {
+        try {
+            Class<?> plugin = Class.forName("com.cburch.logisim.plugin.PluginLoader");
+            Object mapped = plugin.getMethod("check", String.class).invoke(null, name);
+            return mapped instanceof String ? (String) mapped : null;
+        } catch (ReflectiveOperationException | LinkageError error) {
+            return null;
+        }
     }
 
     /** Compares per-circuit comp/wire element counts against the loaded file. */
