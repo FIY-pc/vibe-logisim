@@ -243,6 +243,17 @@ class RoutingClearance(unittest.TestCase):
         self.assertEqual(segments[-1][1],(220,100))
         self.assertTrue(all(p not in router.blocked for a,b in segments for p in router.grid(a,b)))
 
+    def test_search_window_follows_circuits_drawn_above_the_origin(self):
+        # Course files put the observation panel at negative y. The window used
+        # to be clamped at 0, so every route to a port above the origin failed
+        # with "留出更多空间" although the space was empty.
+        pin = lambda x, y: {'factoryName': 'Pin', 'bounds': dict(x=x - 10, y=y - 10, width=20, height=20),
+                            'ends': [{'location': {'x': x, 'y': y}, 'netBits': [{'netId': 'n1', 'bit': 0}], 'direction': 'input'}]}
+        router = Router({'focus': {'components': [pin(300, -250), pin(500, -250)], 'wires': [], 'wireBundles': []}}, Partition())
+        self.assertLess(router.extent[1], -250)
+        segments = router.path({(300, -250)}, (500, -250), ('n1',))
+        self.assertEqual((segments[0][0], segments[-1][1]), ((300, -250), (500, -250)))
+
     @unittest.skipUnless(os.environ.get('VIBE_ROUTING_EVIDENCE'),'optional frozen real artifacts')
     def test_frozen_real_artifacts(self):
         cases = [

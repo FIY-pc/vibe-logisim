@@ -109,7 +109,11 @@ function itemActivity(item, toolHost) {
     return { kind: "tool", label: "调用外部工具", activityKey: `mcp:${item.server || "unknown"}:${item.tool || "unknown"}`, detail: `${shortText(item.server, 80)} / ${shortText(item.tool, 100)}` };
   }
   if (item.type === "dynamicToolCall") {
-    return { kind: "tool", label: toolHost?.label(item.tool) || "使用动态工具", activityKey: `tool:${item.tool || "unknown"}`, detail: item.tool || null };
+    // The episode ledger classifies `circuit:` activities as domain tool use
+    // (visual observation, native runs, verification); anything the host does
+    // not know stays a generic dynamic tool.
+    const domain = item.tool && toolHost?.get?.(item.tool) ? "circuit" : "tool";
+    return { kind: "tool", label: toolHost?.label(item.tool) || "使用动态工具", activityKey: `${domain}:${item.tool || "unknown"}`, detail: item.tool || null };
   }
   if (item.type === "webSearch") {
     return { kind: "web", label: "检索资料", activityKey: "web-search" };
@@ -1830,4 +1834,4 @@ class CodexBackend extends EventEmitter {
   }
 }
 
-module.exports = { CodexBackend, itemErrorText };
+module.exports = { CodexBackend, itemErrorText, itemActivity };

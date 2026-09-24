@@ -98,10 +98,12 @@ class Router:
             bundle = next(b for b in focus["wireBundles"] if b["bundleId"] == wire["bundleId"])
             bus = tuple(b["netId"] for b in bundle.get("bitNets", [])) or ("floating", wire["bundleId"])
             self.add(point(wire["from"]), point(wire["to"]), owners[wire["bundleId"]], bus)
-        self.extent = (max(0, min(p[0] for p in self.all_points) - 100),
-                       max(0, min(p[1] for p in self.all_points) - 100),
+        # Logisim coordinates may be negative (a panel drawn above the origin);
+        # the search window must follow the circuit, not the origin.
+        self.extent = (min(p[0] for p in self.all_points) - 100,
+                       min(p[1] for p in self.all_points) - 100,
                        max(p[0] for p in self.all_points) + 240,
-                       max(p[1] for p in self.all_points) + 240) if self.all_points else (0,0,6000,6000)
+                       max(p[1] for p in self.all_points) + 240) if self.all_points else (0, 0, 6000, 6000)
 
     def owner(self, bits):
         return tuple(self.partition.root(b["netId"]) for b in sorted(bits, key=lambda b: b["bit"]))

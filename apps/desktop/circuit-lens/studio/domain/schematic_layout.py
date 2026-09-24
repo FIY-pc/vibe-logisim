@@ -86,10 +86,17 @@ class SchematicLayout:
             return None                      # small circuits have no fixed panel
         gaps = [(ys[i + 1] - ys[i], ys[i], ys[i + 1]) for i in range(len(ys) - 1)]
         gap, top, bottom = max(gaps)
-        above = sum(1 for c in real if c["bounds"]["y"] <= top)
+        cluster = [c for c in real if c["bounds"]["y"] <= top]
+        above = len(cluster)
         # A panel is a substantial cluster (course templates: 60-80 parts)
         # separated by a real gap; a 3-row full adder is not a panel + body.
-        if gap < 150 or above < 12 or above < len(real) // 4:
+        # Its size relative to the body says nothing (a 330-part CPU still has
+        # the same 80-part panel); its composition does: an observation panel
+        # is mostly I/O and annotation, a body slice is mostly logic.
+        if gap < 150 or above < 12:
+            return None
+        io = sum(1 for c in cluster if c["factoryName"] in PANEL_FACTORIES)
+        if above < len(real) // 4 and io * 2 < above:
             return None
         return (top + bottom) // 2
 
@@ -417,6 +424,57 @@ class SchematicLayout:
             e["location"] = {"x": e["location"]["x"] + dx, "y": e["location"]["y"] + dy}
         return m
 
+    def _port_edge(self, moved_component, idx):
+        """The body edge a port sits on (as its outward Tunnel facing and the
+        outward grid step), in moved coordinates."""
+        end = moved_component["ends"][idx]
+        px, py = end["location"]["x"], end["location"]["y"]
+        b = moved_component["bounds"]
+        d = {"west": px - b["x"], "east": b["x"] + b["width"] - px, "north": py - b["y"], "south": b["y"] + b["height"] - py}
+        edge = min(d, key=d.get)
+        facing = {"west": "east", "east": "west", "north": "south", "south": "north"}[edge]
+        step = {"west": (-GRID, 0), "east": (GRID, 0), "north": (0, -GRID), "south": (0, GRID)}[edge]
+        return (px, py), facing, step
+
+    def _reanchor_plan(self):
+        """Nets that stay Tunnels and have a placed body port: (labels, body
+        ports) per net. emit() puts one Tunnel per label on each such port,
+        chained outward on 10 px stubs; the router must keep those cells free."""
+        plan = []
+        for key, cls in self.classes.items():
+            if cls not in ("tunnel", "global"):
+                continue
+            labels = sorted({_attr(self.tunnels[cid], "label") for cid, idx in self.nets[key] if cid in self.tunnels and _attr(self.tunnels[cid], "label")})
+            body_ports = [(cid, idx) for cid, idx in self.nets[key] if cid not in self.tunnels and cid in self.layer]
+            if labels and body_ports:
+                plan.append((key, labels, body_ports))
+        return plan
+
+    @staticmethod
+    def _split_at_endpoints(wires):
+        """Split every segment at the interior points where another segment
+        ends. Logisim merges two collinear wires that meet at a point where no
+        third wire ends, so a '+' made of two branches leaving a trunk from
+        opposite sides loses its junction on load; a trunk split there is a
+        real 4-way node instead."""
+        ends_x, ends_y = defaultdict(set), defaultdict(set)
+        for a, b in wires:
+            for p in (a, b):
+                ends_x[p[0]].add(p[1])
+                ends_y[p[1]].add(p[0])
+        out = []
+        for a, b in wires:
+            if a[0] == b[0]:
+                lo, hi = sorted((a[1], b[1]))
+                cuts = sorted(y for y in ends_x.get(a[0], ()) if lo < y < hi)
+                pts = [(a[0], y) for y in (lo, *cuts, hi)]
+            else:
+                lo, hi = sorted((a[0], b[0]))
+                cuts = sorted(x for x in ends_y.get(a[1], ()) if lo < x < hi)
+                pts = [(x, a[1]) for x in (lo, *cuts, hi)]
+            out.extend(zip(pts, pts[1:]))
+        return out
+
     def _route(self):
         moved = {c["componentId"]: self._moved(c) for c in self.components}
         panel_points = {(e["location"]["x"], e["location"]["y"]) for c in self.components if self._is_panel(c) for e in c["ends"]}
@@ -472,6 +530,39 @@ class SchematicLayout:
         # normal, carrying the consumer's net bits so the stub is routed as a
         # normal 2-pin net (shortest first) instead of pasted blindly afterwards.
         self.synthetic_constants = []
+        occupied = [c["bounds"] for cid, c in moved.items() if cid not in self.tunnels and cid not in drop_tunnels and c["factoryName"] not in ("Text", "Tunnel")]
+
+        def collides(rect, skip=None):
+            return any(o is not skip and rect["x"] < o["x"] + o["width"] and o["x"] < rect["x"] + rect["width"] and
+                       rect["y"] < o["y"] + o["height"] and o["y"] < rect["y"] + rect["height"] for o in occupied)
+
+        def constant_bounds(cx, cy, facing, body):
+            # Logisim draws a Constant entirely behind its output port: facing
+            # east the body spans [cx-body, cx], facing west [cx, cx+body]; the
+            # port is on the body's edge, so the stub cell in front stays free.
+            if facing == "east":
+                return {"x": cx - body, "y": cy - 8, "width": body, "height": 16}
+            if facing == "west":
+                return {"x": cx, "y": cy - 8, "width": body, "height": 16}
+            if facing == "south":
+                return {"x": cx - body // 2, "y": cy - 16, "width": body, "height": 16}
+            # north: the observer reports the body hanging below the port
+            # (200,500 -> y 500..516), i.e. the label box, not the arrow side.
+            return {"x": cx - body // 2, "y": cy, "width": body, "height": 16}
+
+        def stub_bounds(px, py, cx, cy):
+            # The straight stub from the port to the Constant, one grid cell thick,
+            # excluding the port cell itself (which sits on the consumer's edge).
+            x0, x1 = sorted((px, cx)); y0, y1 = sorted((py, cy))
+            if x0 == x1:
+                return {"x": x0 - 4, "y": (y0 + 1 if py == y0 else y0), "width": 8, "height": max(1, y1 - y0 - 1)}
+            return {"x": (x0 + 1 if px == x0 else x0), "y": y0 - 4, "width": max(1, x1 - x0 - 1), "height": 8}
+
+        # Consumer ports that get no local Constant (boxed in, or the stub failed
+        # to route) reach the shared Constant through its label instead: emit()
+        # puts a fresh labelled Tunnel on the port and on the driver.
+        self.failed_constant_consumers = set()
+
         for key, cls in self.classes.items():
             if cls != "constant":
                 continue
@@ -487,20 +578,48 @@ class SchematicLayout:
                 b = moved[cid]["bounds"]
                 d = {"west": px - b["x"], "east": b["x"] + b["width"] - px, "north": py - b["y"], "south": b["y"] + b["height"] - py}
                 edge = min(d, key=d.get)
-                cx, cy, facing = {"west": (px - 30, py, "east"), "east": (px + 30, py, "west"), "north": (px, py - 30, "south"), "south": (px, py + 30, "north")}[edge]
+                dx, dy, facing = {"west": (-1, 0, "east"), "east": (1, 0, "west"), "north": (0, -1, "south"), "south": (0, 1, "north")}[edge]
+                # Native Constant body: 16 px up to 8 bits, then 10 px per further
+                # hex digit of the bit width (26 px at 9-12 bits ... 76 px at 29-32),
+                # regardless of the value printed (measured with the observer).
+                body_px = 16 + 10 * max(0, (width + 3) // 4 - 2)
+                # A gate's side pins sit 10 px from a stacked neighbour, so a fixed
+                # 30 px offset lands the Constant on that neighbour's body. Step
+                # outward along the port normal until body and stub are clear; a
+                # port boxed in on that side keeps its Tunnel rather than getting
+                # a Constant pasted onto a neighbour.
+                placed = None
+                for step in range(3, 16):
+                    cx, cy = px + dx * step * GRID, py + dy * step * GRID
+                    bounds = constant_bounds(cx, cy, facing, body_px)
+                    if not collides(bounds) and not collides(stub_bounds(px, py, cx, cy), skip=b):
+                        placed = (cx, cy, bounds)
+                        break
+                if placed is None:
+                    self.failed_constant_consumers.add((cid, idx))
+                    continue
+                cx, cy, bounds = placed
                 sid = f"const:{cid}:{idx}"
                 bits = [{"bit": i, "netId": f"{sid}:b{i}"} for i in range(width)]
                 consumer_bits = [{"bit": i, "netId": f"{sid}:b{i}#consumer"} for i in range(width)]
                 for i in range(width):
                     partition.join(f"{sid}:b{i}", f"{sid}:b{i}#consumer")
                 end["netBits"] = consumer_bits
-                half = 8 if width == 1 else 38
-                synthetic = {"componentId": sid, "factoryName": "Constant", "location": {"x": cx, "y": cy},
-                             "bounds": {"x": cx - (16 if facing == "west" else 0) - (half - 8 if facing in ("east", "west") else 0), "y": cy - 8, "width": 2 * half if facing in ("east", "west") else 16, "height": 16},
+                synthetic = {"componentId": sid, "factoryName": "Constant", "location": {"x": cx, "y": cy}, "bounds": bounds,
                              "attributes": [], "ends": [{"index": 0, "location": {"x": cx, "y": cy}, "width": width, "direction": "output", "netBits": bits}]}
                 moved[sid] = synthetic
+                occupied.append(bounds)
+                occupied.append(stub_bounds(px, py, cx, cy))
                 self.synthetic_constants.append((sid, cx, cy, facing, width, value, (cid, idx)))
-        focus_components = [c for cid, c in moved.items() if cid not in drop_tunnels]
+        # Body-side Tunnels of nets that stay tunnels are re-anchored on their
+        # moved ports at emission; until then they stand at their old spot,
+        # where a moved body component may now have a port. Keep them out of
+        # the router's world so a stale tunnel end does not claim that port.
+        reanchor_tunnels = set()
+        self.reanchor = self._reanchor_plan()
+        for key, labels, body_ports in self.reanchor:
+            reanchor_tunnels.update(cid for cid, idx in self.nets[key] if cid in self.tunnels and not self._is_panel(self.tunnels[cid]))
+        focus_components = [c for cid, c in moved.items() if cid not in drop_tunnels and cid not in reanchor_tunnels]
         # Panel wires did not move and stay; body wiring is rebuilt.
         bundle_by_id = {b["bundleId"]: b for b in self.focus.get("wireBundles", [])}
         kept_wires, kept_bundles = [], []
@@ -513,6 +632,14 @@ class SchematicLayout:
                     kept_bundles.append(bundle)
         self.kept_wires = kept_wires
         router = Router({"focus": {"components": focus_components, "wires": kept_wires, "wireBundles": kept_bundles}}, partition)
+        # A port that gets several re-anchored labels chains them outward on
+        # 10 px stubs (see emit); those cells are copper of that net, so no
+        # other route may run through them.
+        for key, labels, body_ports in self.reanchor:
+            for cid, idx in body_ports:
+                (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
+                for k in range(1, len(labels)):
+                    router.blocked.add((px + sx * k, py + sy * k))
         jobs = []
         for key, cls in self.classes.items():
             if cls != "wire":
@@ -527,7 +654,6 @@ class SchematicLayout:
             jobs.append((False, 20, ("const", sid), [(sid, 0), (cid, idx)]))
         jobs.sort(key=lambda j: (j[0], j[1]))
         wires = []
-        self.failed_constant_consumers = set()
         for _, _, key, ports in jobs:
             ends = [moved[cid]["ends"][idx] for cid, idx in ports]
             ends.sort(key=lambda e: (e.get("direction") != "output"))
@@ -544,16 +670,11 @@ class SchematicLayout:
                         if cid in self.tunnels:
                             drop_tunnels.discard(cid)
                 else:
-                    # constant stub: this consumer keeps its tunnel; the shared driver stays.
-                    consumer = ports[1]
-                    self.failed_constant_consumers.add(consumer)
-                    for k2, cls2 in self.classes.items():
-                        if cls2 == "constant" and consumer in self.nets[k2]:
-                            for cid, idx in self.nets[k2]:
-                                if cid in self.tunnels and (self.tunnels[cid]["location"]["x"], self.tunnels[cid]["location"]["y"]) == (self.by_id[consumer[0]]["ends"][consumer[1]]["location"]["x"] + self.placement.get(consumer[0], (0, 0))[0], self.by_id[consumer[0]]["ends"][consumer[1]]["location"]["y"] + self.placement.get(consumer[0], (0, 0))[1]):
-                                    drop_tunnels.discard(cid)
+                    # constant stub: this consumer falls back to the shared Constant's label.
+                    self.failed_constant_consumers.add(ports[1])
                 continue
             wires.extend(routed)
+        wires = self._split_at_endpoints(wires)
         self.wires, self.drop_tunnels, self.moved = wires, drop_tunnels, moved
         self.report["wires"] = len(wires)
         return wires
@@ -594,15 +715,23 @@ class SchematicLayout:
         # the body wires were rebuilt, so re-anchor one Tunnel per label right on
         # the port's new location; the old Tunnel elements of that net go.
         reanchored = 0
-        for key, cls in self.classes.items():
-            if cls not in ("tunnel", "global"):
-                continue
-            labels = sorted({_attr(self.tunnels[cid], "label") for cid, idx in self.nets[key] if cid in self.tunnels and _attr(self.tunnels[cid], "label")})
-            if not labels:
-                continue
-            body_ports = [(cid, idx) for cid, idx in self.nets[key] if cid not in self.tunnels and cid in self.layer]
-            if not body_ports:
-                continue
+
+        def anchor_tunnels(cid, idx, labels):
+            (px, py), facing, step = self._port_edge(self.moved[cid], idx)
+            width = self.moved[cid]["ends"][idx].get("width") or 1
+            for k, label in enumerate(labels):
+                # first label sits on the port; further labels chain outward on a
+                # short stub (cells the router kept free) so every label joins the net
+                tx, ty = px + step[0] * k, py + step[1] * k
+                el = ET.SubElement(circuit, "comp", {"lib": "0", "name": "Tunnel", "loc": f"({tx},{ty})"})
+                ET.SubElement(el, "a", {"name": "facing", "val": facing})
+                ET.SubElement(el, "a", {"name": "width", "val": str(width)})
+                ET.SubElement(el, "a", {"name": "label", "val": label})
+                if k:
+                    ET.SubElement(circuit, "wire", {"from": f"({min(px, tx)},{min(py, ty)})", "to": f"({max(px, tx)},{max(py, ty)})"})
+            return len(labels)
+
+        for key, labels, body_ports in self.reanchor:
             # drop this net's body-side tunnels (panel-side ones stay where they are)
             for cid, idx in self.nets[key]:
                 if cid in self.tunnels and not self._is_panel(self.tunnels[cid]):
@@ -611,24 +740,28 @@ class SchematicLayout:
                         circuit.remove(element)
                     self.drop_tunnels.add(cid)
             for cid, idx in body_ports:
-                end = self.moved[cid]["ends"][idx]
-                px, py = end["location"]["x"], end["location"]["y"]
-                b = self.moved[cid]["bounds"]
-                d = {"west": px - b["x"], "east": b["x"] + b["width"] - px, "north": py - b["y"], "south": b["y"] + b["height"] - py}
-                edge = min(d, key=d.get)
-                facing = {"west": "east", "east": "west", "north": "south", "south": "north"}[edge]
-                step = {"west": (-10, 0), "east": (10, 0), "north": (0, -10), "south": (0, 10)}[edge]
-                for k, label in enumerate(labels):
-                    # first label sits on the port; further labels chain outward on a
-                    # short stub so nothing overlaps and every label still joins the net
-                    tx, ty = px + step[0] * k, py + step[1] * k
-                    el = ET.SubElement(circuit, "comp", {"lib": "0", "name": "Tunnel", "loc": f"({tx},{ty})"})
-                    ET.SubElement(el, "a", {"name": "facing", "val": facing})
-                    ET.SubElement(el, "a", {"name": "width", "val": str(end.get("width") or 1)})
-                    ET.SubElement(el, "a", {"name": "label", "val": label})
-                    if k:
-                        ET.SubElement(circuit, "wire", {"from": f"({min(px, tx)},{min(py, ty)})", "to": f"({max(px, tx)},{max(py, ty)})"})
-                    reanchored += 1
+                reanchored += anchor_tunnels(cid, idx, labels)
+        # Consumers of a localised Constant that got no Constant of their own
+        # (boxed in, or the stub failed to route) reach the shared driver by its
+        # label: one Tunnel on the consumer port, one on the driver's output.
+        for key, cls in self.classes.items():
+            if cls != "constant":
+                continue
+            failed = [(cid, idx) for cid, idx in self.nets[key] if (cid, idx) in self.failed_constant_consumers]
+            if not failed:
+                continue
+            labels = sorted({_attr(self.tunnels[cid], "label") for cid, idx in self.nets[key] if cid in self.tunnels and _attr(self.tunnels[cid], "label")})[:1]
+            if not labels:
+                continue
+            driver = next(cid for cid, idx in self.nets[key] if cid in self.constants)
+            for cid, idx in failed:
+                reanchored += anchor_tunnels(cid, idx, labels)
+            # The driver's own Tunnel moved with it if it was kept as the bridge
+            # to panel consumers; otherwise it was dropped and needs a new one.
+            driver_port = (self.by_id[driver]["ends"][0]["location"]["x"], self.by_id[driver]["ends"][0]["location"]["y"])
+            if not any(cid in self.tunnels and cid not in self.drop_tunnels and (self.tunnels[cid]["location"]["x"], self.tunnels[cid]["location"]["y"]) == driver_port
+                       for cid, idx in self.nets[key]):
+                reanchored += anchor_tunnels(driver, 0, labels)
         self.report["tunnelsReanchored"] = reanchored
         self.report["tunnelsRemoved"] = len(self.drop_tunnels)
         self.report["tunnelsKept"] = len(self.tunnels) - len(self.drop_tunnels) + reanchored
