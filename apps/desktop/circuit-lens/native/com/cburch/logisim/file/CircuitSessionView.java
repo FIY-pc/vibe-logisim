@@ -22,12 +22,16 @@ final class CircuitSessionView {
     private static Component find(Circuit circuit, Element item) {
         Location loc = Location.create(Integer.parseInt(item.getAttribute("x")), Integer.parseInt(item.getAttribute("y")));
         Component found = null;
-        for (Component c : circuit.getNonWires())
-            if (c.getLocation().equals(loc) && c.getFactory().getName().equals(item.getAttribute("factory"))) {
-                if (found != null) throw new IllegalArgumentException("Ambiguous component");
-                found = c;
-            }
-        if (found == null) throw new IllegalArgumentException("Missing component");
+        int matches = 0;
+        for (Component c : circuit.getNonWires()) {
+            if (!c.getLocation().equals(loc) || !c.getFactory().getName().equals(item.getAttribute("factory"))) continue;
+            matches++;
+            found = c;
+        }
+        // (x, y, factory) is the whole selector; stacked exact copies are unaddressable by design.
+        if (matches > 1) throw new IllegalArgumentException("元件定位有歧义: " + loc + " 处堆叠了 "
+                + matches + " 个 " + item.getAttribute("factory") + "；请删除或移开重复元件后重试");
+        if (found == null) throw new IllegalArgumentException("找不到元件: " + item.getAttribute("factory") + " " + loc);
         return found;
     }
 

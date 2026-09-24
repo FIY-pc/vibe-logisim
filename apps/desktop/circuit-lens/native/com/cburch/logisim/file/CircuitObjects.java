@@ -21,12 +21,17 @@ final class CircuitObjects {
     private static Component selected(Circuit circuit, Element request) {
         Location location = Location.create(Integer.parseInt(request.getAttribute("x")), Integer.parseInt(request.getAttribute("y")));
         Component target = null;
+        int matches = 0;
         for (Component component : circuit.getNonWires()) {
             if (!component.getLocation().equals(location)
                     || !component.getFactory().getName().equals(request.getAttribute("factory"))) continue;
-            if (target != null) throw new IllegalArgumentException("元件定位有歧义: " + request.getAttribute("factory") + " " + location);
+            matches++;
             target = component;
         }
+        // (x, y, factory) is the whole selector, so stacked exact copies are
+        // unaddressable by design; the count turns the failure into the fix.
+        if (matches > 1) throw new IllegalArgumentException("元件定位有歧义: " + location + " 处堆叠了 "
+                + matches + " 个 " + request.getAttribute("factory") + "；请删除或移开重复元件后重试");
         if (target == null) throw new IllegalArgumentException("找不到元件: " + request.getAttribute("factory") + " " + location);
         return target;
     }
@@ -77,13 +82,7 @@ final class CircuitObjects {
     static void describe(LogisimFile file, Element request, Document result) {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
-        Component target = null;
-        Location loc = Location.create(Integer.parseInt(request.getAttribute("x")), Integer.parseInt(request.getAttribute("y")));
-        for (Component c : circuit.getNonWires()) if (c.getLocation().equals(loc) && c.getFactory().getName().equals(request.getAttribute("factory"))) {
-            if (target != null) throw new IllegalArgumentException("Ambiguous component");
-            target = c;
-        }
-        if (target == null) throw new IllegalArgumentException("Missing component");
+        Component target = selected(circuit, request);
         if (request.getTagName().equals("memory")) {
             result.getDocumentElement().appendChild(StudioMemory.page(target, null, request, result));
             return;

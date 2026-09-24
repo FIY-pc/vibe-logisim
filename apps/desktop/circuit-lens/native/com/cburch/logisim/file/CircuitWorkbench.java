@@ -151,13 +151,16 @@ public final class CircuitWorkbench {
     private static Component selected(Circuit circuit, Element selector) {
         Location location = Location.create(Integer.parseInt(selector.getAttribute("x")), Integer.parseInt(selector.getAttribute("y")));
         Component found = null;
+        int matches = 0;
         for (Component c : circuit.getNonWires()) {
-            if (c.getLocation().equals(location) && c.getFactory().getName().equals(selector.getAttribute("factory"))) {
-                if (found != null) throw new IllegalArgumentException("Ambiguous component");
-                found = c;
-            }
+            if (!c.getLocation().equals(location) || !c.getFactory().getName().equals(selector.getAttribute("factory"))) continue;
+            matches++;
+            found = c;
         }
-        if (found == null) throw new IllegalArgumentException("Unknown component");
+        // (x, y, factory) is the whole selector; stacked exact copies are unaddressable by design.
+        if (matches > 1) throw new IllegalArgumentException("元件定位有歧义: " + location + " 处堆叠了 "
+                + matches + " 个 " + selector.getAttribute("factory") + "；请删除或移开重复元件后重试");
+        if (found == null) throw new IllegalArgumentException("找不到元件: " + selector.getAttribute("factory") + " " + location);
         return found;
     }
     private static final class TraceEvent {
