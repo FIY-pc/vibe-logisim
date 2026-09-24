@@ -1003,13 +1003,30 @@ public final class ExactRuntimeObserver {
         return null;
     }
 
+    /**
+     * IDs are derived from the component's anchor location ("c1300_540" for
+     * (1300,540); "cm20_40" for (-20,40)), so a part that is not moved keeps its
+     * ID across edits elsewhere in the circuit and a caller that placed a part
+     * can address it without another discovery page. Parts sharing one anchor
+     * are disambiguated by a "_2", "_3", ... suffix in COMPONENT_ORDER.
+     */
     private static Map<Component, String> assignComponentIds(Circuit circuit) {
         Map<Component, String> result = new IdentityHashMap<Component, String>();
-        int index = 0;
+        Map<String, Integer> occupants = new HashMap<String, Integer>();
         for (Component component : sortedComponents(circuit)) {
-            result.put(component, String.format(Locale.ROOT, "c%03d", index++));
+            String base = locationId(component.getLocation());
+            int seen = occupants.merge(base, 1, Integer::sum);
+            result.put(component, seen == 1 ? base : base + "_" + seen);
         }
         return result;
+    }
+
+    private static String locationId(Location location) {
+        return "c" + coordinateToken(location.getX()) + "_" + coordinateToken(location.getY());
+    }
+
+    private static String coordinateToken(int value) {
+        return value < 0 ? "m" + (-value) : Integer.toString(value);
     }
 
     private static List<Component> sortedComponents(Circuit circuit) {

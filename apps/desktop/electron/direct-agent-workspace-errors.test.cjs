@@ -128,3 +128,26 @@ test('finish returns the revision created while refreshing direct file changes',
   assert.deepEqual(result, {projectId: 'project-1', revisionId: 'revision-after-write'});
   assert.equal(workspace.turnActive, false);
 });
+
+test('synchronize remembers the revision loaded before the refresh for the write receipt', async () => {
+  const revisions = ['revision-before-write', 'revision-after-write'];
+  const workspace = {
+    folder: {assert() {}, current: {id: 'folder-1', root: '/tmp', activeFile: 'main.circ'}},
+    backend: {
+      async session() { return {workspace: {id: 'project-1'}, revision: {id: revisions[0]}}; },
+    },
+    async run(operation) { return operation(); },
+    async refresh() { if (revisions.length > 1) revisions.shift(); },
+    async select() { throw new Error('a plain refresh must not reselect the file'); },
+  };
+  const agent = new DirectAgentWorkspace(workspace);
+  const binding = {folderId: 'folder-1', revisionId: 'revision-before-write'};
+  const session = await agent.synchronize(binding);
+  assert.equal(session.revision.id, 'revision-after-write');
+  assert.equal(binding.revisionId, 'revision-after-write');
+  assert.equal(binding.previousRevisionId, 'revision-before-write');
+
+  const unchanged = await agent.synchronize(binding);
+  assert.equal(unchanged.revision.id, 'revision-after-write');
+  assert.equal(binding.previousRevisionId, 'revision-after-write', 'no disk change means previous equals current');
+});

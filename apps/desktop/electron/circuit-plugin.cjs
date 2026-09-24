@@ -120,6 +120,7 @@ class CircuitPlugin {
         try {
           // This is an internal, bounded observer call. It does not create a
           // second model tool item or turn submit into a behavior verdict.
+          const previousRevisionId = scope.pending.work?.previousRevisionId || null;
           const observed = await this.invokeDomain({
             projectId: scope.pending.projectId,
             revisionId: scope.pending.revisionId,
@@ -127,7 +128,7 @@ class CircuitPlugin {
             turnId: request?.turnId || null,
             callId: request?.callId ? `${request.callId}:loadability` : null,
             tool: 'check_native_loadability',
-            arguments: {circuit},
+            arguments: {circuit, ...(previousRevisionId ? {previousRevisionId} : {})},
           });
           if (!observed || typeof observed !== 'object' || Array.isArray(observed)) {
             return {...session, nativeLoadability: {
@@ -137,25 +138,34 @@ class CircuitPlugin {
             }};
           }
           const error = observed?.error && typeof observed.error === 'object'
-            ? {code: observed.error.code || 'EXACT_OBSERVER_FAILED', message: observed.error.message || '原生观察失败'}
+            ? {code: observed.error.code || 'EXACT_OBSERVER_FAILED', message: observed.error.message || '原生观察失败',
+               ...(typeof observed.error.hint === 'string' && observed.error.hint ? {hint: observed.error.hint} : {})}
             : observed?.error ? {code: 'EXACT_OBSERVER_FAILED', message: String(observed.error)} : null;
           const status = ['loadable', 'not-loadable', 'unavailable', 'unknown'].includes(observed.status)
             ? observed.status
             : error ? 'not-loadable' : 'unknown';
           const electrical = observed?.electrical && typeof observed.electrical === 'object' ? observed.electrical : null;
+          const fileChange = observed?.fileChange && typeof observed.fileChange === 'object' ? observed.fileChange : null;
+          const notes = [status === 'not-loadable'
+            ? '文件刷新成功，但原生 Logisim 无法加载当前电路定义；这不是功能正确性结论。'
+            : status === 'loadable'
+              ? (electrical
+                ? `原生 Logisim 已加载当前电路定义，但有 ${electrical.count} 个线束把不同位宽的端口接在一起（见 electrical）；这样的电路仿真会得到 X，先修好再验证。`
+                : '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。')
+              : '文件刷新成功，但原生加载性预检不可用；这不是功能正确性结论。'];
+          if (fileChange && fileChange.changed === false) {
+            notes.push('文件内容与上次工具调用时相同：这次提交没有带来任何改动。若你刚写了文件，确认写的是当前打开的这个 .circ 路径且写入已落盘。');
+          } else if (fileChange?.outsideTarget?.length) {
+            notes.push(`注意：这次写入还改动了目标电路之外的定义：${fileChange.outsideTarget.join('、')}（见 fileChange.circuits）。若这不是任务要求的，先还原这些定义，别让已通过的子电路失效。`);
+          }
           return {...session, nativeLoadability: {
             status,
             circuit,
             authority: observed?.authority || 'native-loader',
             ...(error ? {error} : {}),
             ...(electrical ? {electrical} : {}),
-            note: status === 'not-loadable'
-              ? '文件刷新成功，但原生 Logisim 无法加载当前电路定义；这不是功能正确性结论。'
-              : status === 'loadable'
-                ? (electrical
-                  ? `原生 Logisim 已加载当前电路定义，但有 ${electrical.count} 个线束把不同位宽的端口接在一起（见 electrical）；这样的电路仿真会得到 X，先修好再验证。`
-                  : '原生 Logisim 已加载当前电路定义；这不是功能正确性结论。')
-                : '文件刷新成功，但原生加载性预检不可用；这不是功能正确性结论。',
+            ...(fileChange ? {fileChange} : {}),
+            note: notes.join(' '),
           }};
         } catch (error) {
           return {...session, nativeLoadability: {

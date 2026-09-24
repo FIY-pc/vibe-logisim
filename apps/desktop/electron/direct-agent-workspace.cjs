@@ -53,9 +53,15 @@ class DirectAgentWorkspace {
   async synchronize(binding, relative = null, assertCurrent = () => {}, {navigate=false} = {}) {
     this.assert(binding);
     assertCurrent();
+    let previous = null;
     await this.workspace.run(async () => {
       assertCurrent();
       this.assert(binding);
+      // The revision loaded before this refresh. When the model edited the
+      // file directly, refresh() imports the new bytes as a new revision and
+      // the write receipt diffs the two to report which definitions changed.
+      const before = relative ? null : await this.workspace.backend.session();
+      previous = before?.revision?.id || null;
       if(relative) await this.workspace.select(relative,{notify:!navigate});
       else await this.workspace.refresh({checkpoint:false});
     });
@@ -64,6 +70,7 @@ class DirectAgentWorkspace {
     this.assert(binding);
     binding.projectId = session.workspace?.id || null;
     binding.revisionId = session.revision?.id || null;
+    binding.previousRevisionId = previous;
     binding.sourceName = this.workspace.folder.current.activeFile;
     return session;
   }

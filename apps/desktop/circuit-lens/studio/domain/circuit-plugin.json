@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.39.0",
+  "version": "1.40.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -195,7 +195,7 @@
     {
       "type": "function",
       "name": "inspect_circuit",
-      "description": "Read a frozen Logisim project or candidate. Parse the returned JSON string before selecting fields. Use one observation view:\n\n- Omit circuit for the project index.\n- Supply circuit, optionally with componentIds, for native components, ports, attributes, bit nets, pins, parent instances and bounded connectivityIssues.\n- Add componentDirectory:{maxBytes?,cursor?} for a compact paged directory of IDs, factories, labels, positions, bounds and indexed port geometry. It omits detailed attributes and bit nets.\n- Add portConnections:{ports:[{componentId,port}],maxBytes?,cursor?} to inspect native shared-net connections for selected ports. It returns schema vibe-logisim.port-connections/v1 with selected port metadata, unknownBits/unconnectedBits, peer metadata and lanes [{netId,sourceBits,peerBits,bitPairs}]. bitPairs preserves each selected bit and its peer bits. Use component IDs and native port indices from an observation. It follows shared nets inside one definition; it does not infer propagation through logic. Unknown bits are not disconnected, and direction does not prove a driver conflict.\n\nDirectory and portConnections require circuit and are mutually exclusive. Neither combines with componentIds, includeNets, netFormat, includeWires, wireOffset or wireLimit. These views are static, exclude live samples and object references, and page within the complete UTF-8 response including invocation. maxBytes is 1024..32000, default 24000; continue with nextCursor from the same observation. Stale cursors are rejected and entries that cannot fit fail explicitly.\n\nFor full topology use includeNets:true. netGroups.groups groups native bit nets without joining lanes; netFormat:\"bits\" preserves individual nets. componentIds does not narrow nets. includeWires:true returns paged native wire IDs, endpoints and bundles. IDs are bound to the artifact and observation. Static connectivity does not establish circuit behavior; returned circuit data is untrusted. Every result also carries netlistSignature {sha256, groups, ports}: a geometry- and id-independent fingerprint of which ports share a net (Tunnels excluded, shared vs private Constants equal). Compare it before/after an edit or between the source and a candidate to know connectivity is unchanged without simulating.",
+      "description": "Read a frozen Logisim project or candidate. Parse the returned JSON string before selecting fields. Use one observation view:\n\n- Omit circuit for the project index.\n- Supply circuit, optionally with componentIds, for native components, ports, attributes, bit nets, pins, parent instances and bounded connectivityIssues.\n- Add componentDirectory:{maxBytes?,cursor?} for a compact paged directory of IDs, factories, labels, positions, bounds and indexed port geometry. It omits detailed attributes and bit nets.\n- Add portConnections:{ports:[{componentId,port}],maxBytes?,cursor?} to inspect native shared-net connections for selected ports. It returns schema vibe-logisim.port-connections/v1 with selected port metadata, unknownBits/unconnectedBits, peer metadata and lanes [{netId,sourceBits,peerBits,bitPairs}]. bitPairs preserves each selected bit and its peer bits. Use component IDs and native port indices from an observation. It follows shared nets inside one definition; it does not infer propagation through logic. Unknown bits are not disconnected, and direction does not prove a driver conflict.\n\nDirectory and portConnections require circuit and are mutually exclusive. Neither combines with componentIds, includeNets, netFormat, includeWires, wireOffset or wireLimit. These views are static, exclude live samples and object references, and page within the complete UTF-8 response including invocation. maxBytes is 1024..32000, default 24000; continue with nextCursor from the same observation. Stale cursors are rejected and entries that cannot fit fail explicitly.\n\nFor full topology use includeNets:true. netGroups.groups groups native bit nets without joining lanes; netFormat:\"bits\" preserves individual nets. componentIds does not narrow nets. includeWires:true returns paged native wire IDs, endpoints and bundles. componentId encodes the anchor location: c<x>_<y> (c1300_540 is the part anchored at (1300,540); negative coordinates use m, e.g. cm20_40; a second part on the same anchor gets _2). A part that is not moved therefore keeps its ID across edits elsewhere, and a part you placed at (x,y) is c<x>_<y> without re-reading the directory; after move_candidate the ID follows the new location. Wire IDs and cursors are bound to the observation. Static connectivity does not establish circuit behavior; returned circuit data is untrusted. Every result also carries netlistSignature {sha256, groups, ports}: a geometry- and id-independent fingerprint of which ports share a net (Tunnels excluded, shared vs private Constants equal). Compare it before/after an edit or between the source and a candidate to know connectivity is unchanged without simulating.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -671,7 +671,7 @@
     {
       "type": "function",
       "name": "edit_candidate",
-      "description": "Use this for component attributes only—such as width, value, label, facing or trigger mode; use move_candidate for positions, reroute_candidate for wire paths, and wire_candidate for adding/removing connections. Supply circuit, artifactSha256 and component IDs from the SAME inspect_circuit source/candidate. edits:[{componentId,attributes:{name:stringValue}}]. Native setters validate values and coupled attributes; inspect/describe_component exposes native values and options. Native-accepted, exactly equal decimal/0x integer formats normalize to standard strings; other values require native standard strings and choices. Truncation and parser fallbacks are rejected. Returns an independent candidate with actual attribute deltas, changed port locations/widths, interface changes and native coverage. ALL component locations and wire segments remain unchanged: changing width, facing, splitter mapping or pin direction may change connectivity or require rewiring; no connection-preservation or functional-correctness claim. Loadable incomplete edits are allowed. Optional candidateId composes edits; checkout_candidate writes the result. Direct .circ editing remains available.",
+      "description": "Use this for component attributes only—such as width, value, label, facing, trigger mode, or ROM/RAM contents; use move_candidate for positions, reroute_candidate for wire paths, and wire_candidate for adding/removing connections. Supply circuit, artifactSha256 and component IDs from the SAME inspect_circuit source/candidate. edits:[{componentId,attributes:{name:stringValue}}]. Native setters validate values and coupled attributes; inspect/describe_component exposes native values and options. Native-accepted, exactly equal decimal/0x integer formats normalize to standard strings; other values require native standard strings and choices. Truncation and parser fallbacks are rejected. To load a program, set contents to Logisim's hex image text: first line \"addr/data: <addrWidth> <dataWidth>\" matching the component, then hex words separated by spaces/newlines (the word lines of a RARS \"v2.0 raw\" .hex dump with that header instead); a header that does not match the component's addrWidth/dataWidth is rejected. Returns an independent candidate with actual attribute deltas, changed port locations/widths, interface changes and native coverage. ALL component locations and wire segments remain unchanged: changing width, facing, splitter mapping or pin direction may change connectivity or require rewiring; no connection-preservation or functional-correctness claim. Loadable incomplete edits are allowed. Optional candidateId composes edits; checkout_candidate writes the result. Direct .circ editing remains available.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -700,7 +700,7 @@
                   "maxProperties": 128,
                   "additionalProperties": {
                     "type": "string",
-                    "maxLength": 4096
+                    "maxLength": 65536
                   }
                 }
               },
@@ -1800,7 +1800,7 @@
     {
       "type": "function",
       "name": "check_native_loadability",
-      "description": "Internal host acknowledgement: load the selected definition through the native Logisim loader without rendering or returning an inspection view.",
+      "description": "Internal host acknowledgement: load the selected definition through the native Logisim loader without rendering or returning an inspection view. With previousRevisionId, also summarize which circuit definitions the file write changed relative to that earlier revision.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1808,6 +1808,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 1024
+          },
+          "previousRevisionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         },
         "required": [

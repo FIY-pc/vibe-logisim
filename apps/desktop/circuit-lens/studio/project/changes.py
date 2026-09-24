@@ -89,6 +89,60 @@ def definition_diff(before, after, old_native=None, new_native=None):
             "scope": "components-and-physical-wire-segments"}
 
 
+def circuit_changes(before, after, target=None, sample=6):
+    """Per-definition summary of what a file write changed, for the write receipt.
+
+    Counts only (plus a few located samples), never full item lists: the writer
+    already knows what it meant to change. The value is in the definitions it
+    did not mean to touch, so circuits other than ``target`` are listed under
+    ``outsideTarget``.
+    """
+    old = {c.get("name"): c for c in before.findall("circuit")} if before is not None else {}
+    new = {c.get("name"): c for c in after.findall("circuit")} if after is not None else {}
+
+    def located(c):
+        item = {"factory": c.get("name"), "location": point(c.get("loc"))}
+        label = next((a.get("val") for a in c.findall("a") if a.get("name") == "label"), None)
+        if label:
+            item["label"] = label
+        return item
+
+    circuits = []
+    for name in dict.fromkeys([*old, *new]):
+        a, b = old.get(name), new.get(name)
+        if signature(a) == signature(b):
+            continue
+        entry = {"circuit": name, "status": "added" if a is None else "removed" if b is None else "modified",
+                 "components": {"before": len(a.findall("comp")) if a is not None else 0,
+                                "after": len(b.findall("comp")) if b is not None else 0},
+                 "wires": {"before": len(a.findall("wire")) if a is not None else 0,
+                           "after": len(b.findall("wire")) if b is not None else 0}}
+        if entry["status"] == "modified":
+            pairs, removed, added = component_pairs(a, b)
+            modified = [(x, y) for x, y in pairs if signature(x) != signature(y)]
+            wires_before = Counter(tuple(sorted((w.get("from"), w.get("to")))) for w in a.findall("wire"))
+            wires_after = Counter(tuple(sorted((w.get("from"), w.get("to")))) for w in b.findall("wire"))
+            entry["componentChanges"] = {"added": len(added), "removed": len(removed), "modified": len(modified)}
+            entry["wireChanges"] = {"added": sum((wires_after - wires_before).values()),
+                                    "removed": sum((wires_before - wires_after).values())}
+            samples = [{"change": "added", **located(c)} for c in added[:sample]]
+            samples += [{"change": "removed", **located(c)} for c in removed[:max(0, sample - len(samples))]]
+            samples += [{"change": "modified", **located(y)} for _, y in modified[:max(0, sample - len(samples))]]
+            if samples:
+                entry["samples"] = samples
+            other = lambda root: tuple(signature(c) for c in root if c.tag not in {"comp", "wire"})
+            if other(a) != other(b):
+                entry["appearanceOrSettingsChanged"] = True
+        circuits.append(entry)
+
+    def settings(root):
+        return None if root is None else (sorted(root.attrib.items()), tuple(signature(c) for c in root if c.tag != "circuit"))
+    return {"circuits": circuits,
+            "outsideTarget": [c["circuit"] for c in circuits if target is not None and c["circuit"] != target],
+            "projectSettingsChanged": settings(before) != settings(after),
+            "scope": "serialized-components-and-wire-segments"}
+
+
 def attach_diff(workbench, directory, metadata):
     w = workbench.workspace
     before = ET.fromstring(w.frozen_path.read_bytes())

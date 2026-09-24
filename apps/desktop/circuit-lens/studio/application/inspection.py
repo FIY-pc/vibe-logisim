@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import io
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -12,6 +13,7 @@ from studio.domain.component_directory import component_directory, directory_opt
 from studio.domain.port_connections import connection_options, port_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.net_groups import group_bit_nets
+from studio.project.changes import circuit_changes
 
 def netlist_signature(components):
     """Connectivity fingerprint independent of geometry and component ids.
@@ -175,6 +177,45 @@ class InspectionService:
                           'ports': touching[:12], 'points': b.get('points', [])[:8]})
         return {'count': len(bad), 'bundles': items}
 
+    def file_change(self, previous_revision_id, target):
+        """What the current file changed relative to an earlier frozen revision.
+
+        The receipt of a direct file write is the only moment the host can tell
+        the model which definitions it touched. Circuits outside ``target`` are
+        the interesting part: a passing subcircuit edited by accident.
+        """
+        w = self.workspace
+        if not isinstance(previous_revision_id, str) or not previous_revision_id:
+            return None
+        current = {'previousRevisionId': previous_revision_id, 'revisionId': w.revision_id}
+        if previous_revision_id == w.revision_id:
+            return {**current, 'changed': False, 'circuits': [], 'outsideTarget': []}
+        earlier = w.state_root / 'revisions' / previous_revision_id / 'artifact.circ'
+        if not earlier.is_file():
+            return {**current, 'changed': True, 'unavailable': '上一版本的快照已不可用，无法列出改动的电路。'}
+        try:
+            before = ET.fromstring(earlier.read_bytes())
+            after = ET.fromstring(w.frozen_path.read_bytes())
+        except ET.ParseError as error:
+            return {**current, 'changed': True, 'unavailable': '无法解析快照：' + str(error)}
+        return {**current, 'changed': True, **circuit_changes(before, after, target)}
+
+    def _load_failure_hint(self, message):
+        """Explain the native loader's terse XML errors in terms of the fix."""
+        libraries = [(lib.get('name'), lib.get('desc')) for lib in
+                     (self.workspace.raw_project or {}).get('libraries', []) if isinstance(lib, dict)]
+        declared = ' 当前文件声明的库: ' + ', '.join(f"{name}={desc}" for name, desc in libraries) if libraries else ''
+        if re.search(r"component `[^']*' not found", message):
+            return ('手写的 <comp> 缺少 lib 属性时，Logisim 只在本文件的子电路里找这个名字。'
+                    '给它加上所属库的 lib 编号（从同类已有元件的 <comp lib="…"> 或文件开头的 <lib name="…" desc="#库名"> 复制；'
+                    '子电路实例不写 lib）。用 build_candidate 放置元件可避免这类问题。' + declared)
+        if re.search(r"missing from library `", message):
+            return ('元件名或 lib 编号不匹配：该库里没有这个名字。元件名必须是 Logisim 的原生名称'
+                    '（如 "Multiplexer"、"Register"、"AND Gate"），lib 编号要与元件所属库一致。' + declared)
+        if re.search(r"library `[^']*' not found", message):
+            return '引用的 lib 编号在本文件的 <lib> 声明里不存在；用已声明的编号，或按现有 <lib> 形式补充声明。' + declared
+        return None
+
     def check_native_loadability(self, args):
         """Load one definition through the native runtime without building a view.
 
@@ -188,6 +229,8 @@ class InspectionService:
         circuit = args.get('circuit')
         if not circuit or circuit not in {item.get('name') for item in self.workspace.raw_project['circuits']}:
             raise CircuitToolError('UNKNOWN_CIRCUIT', '请求的电路定义不存在。', context={'circuit': circuit})
+        change = self.file_change(args.get('previousRevisionId'), circuit)
+        extra = {'fileChange': change} if change is not None else {}
         prerequisite = self.workspace.observer.prerequisite_error()
         if prerequisite:
             return {
@@ -195,17 +238,21 @@ class InspectionService:
                 'authority': 'native-loader',
                 'circuit': circuit,
                 'error': {'code': 'NATIVE_RUNTIME_UNAVAILABLE', 'message': prerequisite},
+                **extra,
             }
         try:
             with self.workspace.observation_artifact() as artifact:
                 try:
                     self.workspace.observer.check_loadability(artifact, circuit)
                 except ValueError as error:
+                    message = str(error) or '原生加载失败'
+                    hint = self._load_failure_hint(message)
                     return {
                         'status': 'not-loadable',
                         'authority': 'native-loader',
                         'circuit': circuit,
-                        'error': {'code': 'NATIVE_LOAD_FAILED', 'message': str(error) or '原生加载失败'},
+                        'error': {'code': 'NATIVE_LOAD_FAILED', 'message': message, **({'hint': hint} if hint else {})},
+                        **extra,
                     }
                 except Exception as error:
                     return {
@@ -213,6 +260,7 @@ class InspectionService:
                         'authority': 'native-loader',
                         'circuit': circuit,
                         'error': {'code': 'NATIVE_CHECK_UNAVAILABLE', 'message': str(error) or '原生加载预检不可用'},
+                        **extra,
                     }
                 # Loadable is not the same as electrically sane. A file that joins
                 # a 1-bit and a 32-bit port (e.g. a Tunnel label reused across
@@ -227,6 +275,7 @@ class InspectionService:
                         'circuit': circuit,
                         'electrical': {'status': 'width-conflict', **conflicts,
                                        'hint': '同一线束接了不同位宽的端口，仿真会输出 X。检查列出的 Tunnel 标签是否被不同位宽的信号复用，或导线端点是否落在别的端口上。'},
+                        **extra,
                     }
         except Exception as error:
             return {
@@ -234,8 +283,9 @@ class InspectionService:
                 'authority': 'native-loader',
                 'circuit': circuit,
                 'error': {'code': 'NATIVE_CHECK_UNAVAILABLE', 'message': str(error) or '原生加载预检不可用'},
+                **extra,
             }
-        return {'status': 'loadable', 'authority': 'native-loader', 'circuit': circuit}
+        return {'status': 'loadable', 'authority': 'native-loader', 'circuit': circuit, **extra}
 
     def resource(self, args):
         resource = next((r for r in self.workspace.package.resources if r['id'] == args.get('resourceId')), None)

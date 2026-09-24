@@ -19,7 +19,8 @@ public final class NativeAttributeAdapter {
         Object value=attrs.getValue(attr);
         return !attrs.isReadOnly(attr)&&attrs.isToSave(attr)&&(value instanceof String
             ||value instanceof Number||value instanceof Boolean||value instanceof BitWidth
-            ||value instanceof Direction||value instanceof AttributeOption||value instanceof Color);
+            ||value instanceof Direction||value instanceof AttributeOption||value instanceof Color
+            ||value instanceof com.cburch.hex.HexModel);
     }
 
     /** Keep native error hints useful without dumping a whole library/bus. */
@@ -111,6 +112,24 @@ public final class NativeAttributeAdapter {
         Object value;String standard;
         try { value=attr.parse(raw);standard=value==null?null:attr.toStandardString(value); }
         catch(RuntimeException invalid) { throw invalidValue(attrs,attr,"属性值无效: "+name+"="+raw,null); }
+        if(value instanceof com.cburch.hex.HexModel) {
+            // Memory images (ROM/RAM contents) carry their own geometry. The native
+            // setter keeps a mismatched image silently, so require the header to
+            // match the component's addrWidth/dataWidth, and accept any image the
+            // native hex parser reads (not only a byte-identical standard string).
+            com.cburch.hex.HexModel image=(com.cburch.hex.HexModel)value;
+            int imageAddrBits=64-Long.numberOfLeadingZeros(image.getLastOffset()),imageDataBits=image.getValueWidth();
+            Attribute<?> addr=attrs.getAttribute("addrWidth"),data=attrs.getAttribute("dataWidth");
+            int addrBits=addr==null?imageAddrBits:((BitWidth)attrs.getValue(addr)).getWidth();
+            int dataBits=data==null?imageDataBits:((BitWidth)attrs.getValue(data)).getWidth();
+            if(imageAddrBits!=addrBits||imageDataBits!=dataBits)
+                throw new IllegalArgumentException("存储内容的地址/数据位宽 ("+imageAddrBits+"/"+imageDataBits
+                    +") 与元件的 addrWidth/dataWidth ("+addrBits+"/"+dataBits+") 不一致；"
+                    +"内容首行应为 \"addr/data: "+addrBits+" "+dataBits+"\"，或先改元件位宽");
+            try { attrs.setValue(attr,value); }
+            catch(RuntimeException incompatible) { throw new IllegalArgumentException("属性值与当前配置不兼容: "+name); }
+            return attr.toStandardString(attrs.getValue(attrs.getAttribute(name)));
+        }
         if(standard==null||(strict&&!raw.equals(standard)&&!sameInteger(value,raw,standard)))
             throw invalidValue(attrs,attr,"属性值无效或不是原生标准格式: "+name+"="+raw,standard);
         List<Choice> choices=choices(attrs,attr);
