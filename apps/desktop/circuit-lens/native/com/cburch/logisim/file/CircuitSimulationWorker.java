@@ -5,7 +5,9 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import javax.xml.parsers.*;
 import javax.xml.transform.*;
 import javax.xml.transform.dom.DOMSource;
@@ -47,17 +49,18 @@ public final class CircuitSimulationWorker {
     }
 
     private static LogisimFile loadFresh(Path artifact) throws Exception {
-        Loader loader = new Loader(null) {
-            @Override public void showError(String message) { throw new IllegalStateException(message); }
-        };
+        List<String> warnings = new ArrayList<>();
         PrintStream previous = System.out;
         ByteArrayOutputStream loaderOutput = new ByteArrayOutputStream();
+        LogisimFile file;
         try {
             System.setOut(new PrintStream(loaderOutput, true, StandardCharsets.UTF_8));
-            return NativeCircuitLoader.open(loader, artifact.toFile());
+            file = NativeCircuitLoader.openChecked(artifact.toFile(), warnings);
         } finally {
             System.setOut(previous);
         }
+        for (String warning : warnings) System.err.println("loader: " + warning);
+        return file;
     }
 
     private void execute(Element envelope, Path runtime, String runtimeSha) throws Exception {

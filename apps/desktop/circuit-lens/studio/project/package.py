@@ -10,7 +10,7 @@ libraries, by content digest; other dependencies retain geometry-only support.
 
 import hashlib
 import json
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import xml.etree.ElementTree as ET
 
 COURSE_DIRECTORY = Path("workspaces/hust-riscv/original/course-package")
@@ -56,11 +56,15 @@ class ProjectPackage:
             if len(parts) != 3 or parts[0] != "jar":
                 self.errors.append(f"暂不支持此工程依赖：{descriptor}")
                 continue
-            relative = PurePosixPath(parts[1])
-            if relative.is_absolute() or len(relative.parts) != 1 or "\\" in parts[1]:
-                self.errors.append(f"目前只支持与电路同目录的课程 JAR：{parts[1]}")
+            # 2.7.1-era files record the author's own jar path (C:\作业\…,
+            # /Users/…); only the basename is meaningful on another machine.
+            # Match it in the circuit's directory, where the checks below
+            # (no links out, size, trust digest) still decide acceptance.
+            name = parts[1].replace("\\", "/").rsplit("/", 1)[-1]
+            if not name:
+                self.errors.append(f"无法从工程依赖中识别 JAR 文件名:{descriptor}")
                 continue
-            original = source.parent / relative.name
+            original = source.parent / name
             try:
                 if original.resolve().parent != source.parent.resolve():
                     raise ValueError("组件库不能通过链接访问工程目录之外")
@@ -68,23 +72,23 @@ class ProjectPackage:
                     raise ValueError("组件库超过 32 MB")
                 payload = original.read_bytes()
             except FileNotFoundError:
-                missing_libraries.append(relative.name)
+                missing_libraries.append(name)
                 continue
             except PermissionError:
-                self.errors.append(f"没有权限读取组件库 {relative.name}，请检查文件的读取权限。")
+                self.errors.append(f"没有权限读取组件库 {name}，请检查文件的读取权限。")
                 continue
             except (OSError, ValueError) as error:
-                self.errors.append(f"无法读取 {relative.name}：{error}")
+                self.errors.append(f"无法读取 {name}：{error}")
                 continue
             sha = digest(payload)
             self.dependencies.append({
-                "name": relative.name, "descriptor": descriptor,
+                "name": name, "descriptor": descriptor,
                 "sha256": sha, "sourcePath": str(original),
             })
             if TRUSTED_LIBRARIES.get(sha) != parts[2]:
-                self.errors.append(f"尚未支持此组件库版本：{relative.name} ({sha[:12]})")
+                self.errors.append(f"尚未支持此组件库版本：{name} ({sha[:12]})")
                 continue
-            self.contents[relative.name] = payload
+            self.contents[name] = payload
         if missing_libraries:
             self.errors.append("缺少组件库：" + "、".join(dict.fromkeys(missing_libraries)) + "。需与电路文件放在同一目录。")
         self.dependencies.sort(key=lambda item: item["descriptor"])

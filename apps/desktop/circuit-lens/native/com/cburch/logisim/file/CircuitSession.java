@@ -276,8 +276,9 @@ public final class CircuitSession {
         f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
         DocumentBuilder parser = f.newDocumentBuilder();
-        Loader loader = new Loader(null) { @Override public void showError(String description) { throw new IllegalStateException(description); } };
-        CircuitSession session = new CircuitSession(NativeCircuitLoader.open(loader, new File(args[0])), parser.parse(new File(args[1])).getDocumentElement());
+        List<String> loaderMessages = new ArrayList<>();
+        CircuitSession session = new CircuitSession(NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages), parser.parse(new File(args[1])).getDocumentElement());
+        for (String message : loaderMessages) System.err.println("loader: " + message);
         session.startWorkers(protocol);
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String line;

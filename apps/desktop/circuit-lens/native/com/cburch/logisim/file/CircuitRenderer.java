@@ -11,7 +11,9 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import javax.imageio.ImageIO;
 
 /** Read-only drawing of one frozen project. No propagation or simulation commands. */
@@ -30,10 +32,9 @@ public final class CircuitRenderer {
         try {
             File artifact = new File(args[0]);
             verify(artifact, args[1]); verify(new File(args[2]), args[3]);
-            Loader loader = new Loader(null) {
-                @Override public void showError(String description) { throw new IllegalStateException(description); }
-            };
-            LogisimFile file = NativeCircuitLoader.open(loader, artifact);
+            List<String> warnings = new ArrayList<>();
+            LogisimFile file = NativeCircuitLoader.openChecked(artifact, warnings);
+            for (String warning : warnings) System.err.println("loader: " + warning);
             protocol.println("ready");
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
             String line;

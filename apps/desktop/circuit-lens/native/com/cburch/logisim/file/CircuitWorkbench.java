@@ -293,10 +293,8 @@ public final class CircuitWorkbench {
             // guessed from the selected filename or host configuration.
             Path runtime = Paths.get(Pin.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             String runtimeSha = digest(runtime), artifactSha = digest(Paths.get(args[0]));
-            Loader loader = new Loader(null) {
-                @Override public void showError(String description) { throw new IllegalStateException(description); }
-            };
-            LogisimFile file = NativeCircuitLoader.open(loader, new File(args[0]));
+            List<String> loaderMessages = new ArrayList<>();
+            LogisimFile file = NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages);
             Document result = factory.newDocumentBuilder().newDocument();
             result.appendChild(result.createElement("result"));
             result.getDocumentElement().setAttribute("runtimeJarSha256", runtimeSha);
@@ -309,18 +307,20 @@ public final class CircuitWorkbench {
             } else if (request.getDocumentElement().getTagName().equals("component-template") || request.getDocumentElement().getTagName().equals("place-component")) {
                 CircuitPalette.describe(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("check-existing-ports")) {
-                Loader otherLoader = new Loader(null) { @Override public void showError(String message) { throw new IllegalStateException(message); } };
-                CircuitPalette.preserveExistingPorts(file, NativeCircuitLoader.open(otherLoader, new File(args[2])), request.getDocumentElement().getAttribute("circuit"));
+                CircuitPalette.preserveExistingPorts(file, NativeCircuitLoader.openChecked(new File(args[2]), loaderMessages), request.getDocumentElement().getAttribute("circuit"));
             } else if (request.getDocumentElement().getTagName().equals("build")) {
                 build(file, request.getDocumentElement());
-                try (OutputStream out = new FileOutputStream(args[2])) { file.write(out, loader); }
+                // Writing stays strict: a report during save means the artifact
+                // on disk would not round-trip, unlike the tolerated load-time
+                // tool defaults that openChecked verifies coverage for.
+                Loader writeLoader = new Loader(null) {
+                    @Override public void showError(String description) { throw new IllegalStateException(description); }
+                };
+                try (OutputStream out = new FileOutputStream(args[2])) { file.write(out, writeLoader); }
             } else if (request.getDocumentElement().getTagName().equals("interface")) {
                 CircuitInterface.describe(file, request.getDocumentElement(), result);
             } else if (request.getDocumentElement().getTagName().equals("check-interface")) {
-                Loader otherLoader = new Loader(null) {
-                    @Override public void showError(String description) { throw new IllegalStateException(description); }
-                };
-                LogisimFile other = NativeCircuitLoader.open(otherLoader, new File(args[2]));
+                LogisimFile other = NativeCircuitLoader.openChecked(new File(args[2]), loaderMessages);
                 String name = request.getDocumentElement().getAttribute("circuit");
                 CircuitInterface.check(file, other, name);
             } else if (request.getDocumentElement().getTagName().equals("simulate")) {
@@ -334,6 +334,10 @@ public final class CircuitWorkbench {
             } else throw new IllegalArgumentException("Unknown operation");
             if (!artifactSha.equals(digest(Paths.get(args[0]))) || !runtimeSha.equals(digest(runtime)))
                 throw new IllegalStateException("Native execution inputs changed during operation");
+            if (!loaderMessages.isEmpty()) {
+                for (String message : loaderMessages) System.err.println("loader: " + message);
+                result.getDocumentElement().setAttribute("loaderMessages", String.join("；", loaderMessages));
+            }
             TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result), new StreamResult(protocol));
             System.exit(0);
         } catch (Throwable error) {
