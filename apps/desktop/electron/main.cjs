@@ -243,6 +243,16 @@ async function startApplication() {
     toolHost,
     contextHost,
     workspaceHost,
+    // Chromium reads the Windows/macOS system proxy (Clash, v2rayN…) and the
+    // proxy env on Linux; the Codex child only reads env, so CodexBackend
+    // resolves here and forwards. The preflight probe runs in an in-memory
+    // session pinned to the very same route.
+    resolveProxy: url => session.defaultSession.resolveProxy(url),
+    probeFetch: async proxyConfig => {
+      const probeSession = session.fromPartition('vibe-provider-probe');
+      await probeSession.setProxy(proxyConfig);
+      return (input, init) => probeSession.fetch(input, init);
+    },
   });
   codex.on("log", (message) => console.error(`[codex] ${message}`));
   codex.on("event", (event) => {
@@ -478,6 +488,7 @@ function registerIpc() {
     // Preflight probes only talk to the student's endpoint; the workspace and
     // the running app-server are untouched, so no transition is needed.
     if (action === 'discover' || action === 'test') return codex.probeCustomProvider(action, request?.settings || {});
+    if (action === 'network') return codex.networkStatus(request?.settings?.baseUrl || null);
     if (action !== 'save' && action !== 'clear') throw new Error('无效的接口设置操作。');
     if (workspaceTransitioning) throw workspaceChangedError();
     ++workspaceGeneration;

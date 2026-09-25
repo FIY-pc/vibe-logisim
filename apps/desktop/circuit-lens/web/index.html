@@ -403,6 +403,7 @@
       <footer class="connection-footer">
         <div class="model-connection"><span id="connectionLight" data-state="idle" aria-hidden="true"></span><div><strong id="modelConnection"></strong><span id="modelConnectionStatus"></span></div><button class="quiet-button" id="modelReconnect">重新连接</button></div>
         <div class="connection-model-row"><span>当前模型</span><span id="connectionModel"></span><button id="connectionChooseModel" class="quiet-button">更改</button></div>
+        <div class="connection-network-row" id="connectionNetwork" data-kind="unknown"><span class="network-dot" aria-hidden="true"></span><div><span id="connectionNetworkLabel">正在检测网络…</span><small id="connectionNetworkDetail" hidden></small></div><button id="connectionNetworkRefresh" class="quiet-button" title="重新检测系统代理">重新检测</button></div>
       </footer>
       <p id="connectionError" class="model-error" role="alert" hidden></p>
     </dialog>

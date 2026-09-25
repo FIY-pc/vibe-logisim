@@ -15,6 +15,11 @@ export function createController({ui,ports}) {
   let tab = 'chatgpt', tabChosen = false, formEdited = false;
   let discovered = null, discoveredFor = null, discovering = null, discoverTimer = null;
   let probe = null, listOpen = false;
+  // System proxy: `network.active` = what the running AI engine was started
+  // with (from agent state); `network.current` = a fresh resolution when the
+  // dialog opens or the student clicks 重新检测. They differ after toggling
+  // Clash/v2rayN "system proxy" — then reconnecting applies the new route.
+  let network = {current:null, active:null, stale:false, checking:false, error:null};
 
   const busy = () => Boolean(state.busy) || providerPending || accountPending;
   const endpointSignature = () => `${ui.providerBaseUrl.value.trim()}\n${ui.providerApiKey.value ? 'typed' : state.customProvider ? 'saved:' + state.customProvider.baseUrl : 'none'}`;
@@ -23,9 +28,37 @@ export function createController({ui,ports}) {
   // ---------------------------------------------------------------- dialog
   function updateAgentConnection(snapshot) {
     state = {...state, ...snapshot};
+    if (snapshot && 'network' in snapshot) { network.active = snapshot.network || null; if (!network.current) network.current = network.active; network.stale = Boolean(network.current && network.active && (network.current.proxyUrl || null) !== (network.active.proxyUrl || null)); }
     ports.updateAgentPreferences(state);
     renderPane(); renderForm(); renderFooter(); renderNotice();
+    if (ui.connectionDialog.open) renderNetwork();
   }
+
+  // -------------------------------------------------------------- network
+  // Wording comes from the main process (system-proxy.cjs describe()); the
+  // dialog only displays it.
+  const routeOf = net => net?.description || {kind:'unknown', label:'正在检测网络…', sentence:''};
+
+  async function checkNetwork() {
+    if (network.checking) return;
+    network.checking = true; network.error = null; renderNetwork();
+    try {
+      const result = await window.vibeDesktop.agent.configureProvider({action:'network', settings:{baseUrl:tab === 'api' ? ui.providerBaseUrl.value.trim() || undefined : undefined}});
+      network.current = result.current || null; network.active = result.active || network.active; network.stale = Boolean(result.stale);
+    } catch (error) { network.error = error.message; }
+    finally { network.checking = false; renderNetwork(); renderPane(); }
+  }
+
+  function renderNetwork() {
+    const row = ui.connectionNetwork;
+    const route = routeOf(network.current);
+    row.dataset.kind = network.checking && !network.current ? 'unknown' : network.stale ? 'stale' : route.kind;
+    ui.connectionNetworkLabel.textContent = network.checking ? `${route.label === '正在检测网络…' ? '' : route.label + ' · '}正在重新检测…` : network.error ? `网络检测失败：${network.error}` : route.label;
+    const detail = network.stale ? `系统代理设置已变化（当前 ${routeOf(network.current).label}，AI 引擎仍在用 ${routeOf(network.active).label}）。点「重新连接」后生效。` : route.sentence;
+    ui.connectionNetworkDetail.textContent = detail; ui.connectionNetworkDetail.hidden = !detail;
+    ui.connectionNetworkRefresh.disabled = network.checking;
+  }
+
 
   function selectTab(name, {byUser = false} = {}) {
     tab = name; if (byUser) tabChosen = true;
@@ -42,6 +75,7 @@ export function createController({ui,ports}) {
     selectTab(which || (tabChosen ? tab : state.customProvider ? 'api' : state.account && state.accountMode === 'application' ? 'chatgpt' : 'api'));
     ui.connectionError.hidden = true;
     ui.connectionDialog.showModal();
+    renderNetwork(); void checkNetwork();
     if (tab === 'api') (ui.providerBaseUrl.value ? ui.providerSave : ui.providerBaseUrl).focus();
   }
 
@@ -53,7 +87,9 @@ export function createController({ui,ports}) {
     else if (custom) setCard('inactive', 'ChatGPT 登录未启用', `当前使用自定义接口 ${custom.baseUrl}。切换到 ChatGPT 会停用这个接口。`);
     else if (account) setCard('signed-in', account.type === 'chatgpt' ? `已登录 ChatGPT${account.planType ? ` · ${account.planType}` : ''}` : '已通过 API 密钥连接 OpenAI', shared ? '沿用这台电脑上 Codex 的登录。' : '模型由 OpenAI 提供，AI 的改动会直接写进你打开的文件夹。');
     else setCard('signed-out', '未登录', shared ? '开发环境沿用本机 Codex 的登录，请在终端运行 codex login。' : '用你的 ChatGPT 账号登录，在浏览器里完成后自动回到这里。');
-    ui.chatgptNote.textContent = custom ? '只有 ChatGPT 账号（Plus/Pro/Team 或免费额度）能走这条路；没有账号的话请留在「自定义接口」。' : '需要能访问 chatgpt.com 的网络；模型由 OpenAI 提供，不需要填写任何密钥。没有账号或无法访问时，用旁边的「自定义接口」。';
+    const route = routeOf(network.current);
+    const routeLine = route.kind === 'proxy' ? `访问 chatgpt.com 会经过${route.label}。` : route.kind === 'unsupported' ? route.sentence : route.kind === 'direct' && !account ? '未检测到系统代理：能直接打开 chatgpt.com 的网络才能登录成功，否则先在代理软件里开启「系统代理」，再点右下角「重新检测」。' : '';
+    ui.chatgptNote.textContent = custom ? '只有 ChatGPT 账号（Plus/Pro/Team 或免费额度）能走这条路；没有账号的话请留在「自定义接口」。' : `模型由 OpenAI 提供，不需要填写任何密钥。${routeLine}没有账号或无法访问时，用旁边的「自定义接口」。`;
     const login = ui.connectionLogin;
     login.hidden = Boolean(account) && !state.signingIn && !custom;
     login.textContent = state.signingIn ? '取消登录' : custom ? '停用接口并登录 ChatGPT' : '登录 ChatGPT';
@@ -238,7 +274,7 @@ export function createController({ui,ports}) {
     ui.connectionChooseModel.disabled = !isReady(state) || busy();
     ui.modelReconnect.disabled = accountPending || reconnecting || state.canReconnect === false || state.signingIn;
     ui.modelReconnect.textContent = reconnecting ? '正在连接…' : t?.phase === 'retrying' ? '停止并重新连接' : '重新连接';
-    ui.modelReconnect.hidden = state.status === 'auth-required' && state.accountMode === 'application' && !state.customProvider;
+    ui.modelReconnect.hidden = state.status === 'auth-required' && state.accountMode === 'application' && !state.customProvider && !network.stale;
     if (modelIssue) { ui.connectionError.textContent = `${state.modelConfigurationError ? '模型配置' : '模型目录'}：${modelIssue.message}`; ui.connectionError.hidden = false; }
     else if (/^(模型配置|模型目录)：/.test(ui.connectionError.textContent)) { ui.connectionError.textContent = ''; ui.connectionError.hidden = true; }
   }
@@ -272,6 +308,7 @@ export function createController({ui,ports}) {
     if (reconnecting) return; reconnecting = true; ui.connectionError.hidden = true; updateAgentConnection({});
     try {
       ports.applyAgentState(await window.vibeDesktop.agent.reconnect()); await ports.loadCandidates();
+      network.stale = false; if (ui.connectionDialog.open) void checkNetwork();
       ports.showToast('连接已恢复，可以继续提问'); if (ui.modelDialog.open || ui.effortMenu.matches(':popover-open')) await ports.refreshModelOptions(true);
     } catch (error) { const snapshot = await window.vibeDesktop.agent.getState().catch(() => ({status:'unavailable'})); ports.applyAgentState({...snapshot, detail:error.message}); ui.connectionError.textContent = error.message; ui.connectionError.hidden = false; ports.showToast('重新连接未完成：' + error.message); }
     finally { reconnecting = false; updateAgentConnection({}); }
@@ -294,6 +331,7 @@ export function createController({ui,ports}) {
     ui.connectionLogout.addEventListener('click', () => accountAction('logout'));
     ui.connectionChooseModel.addEventListener('click', () => { ui.connectionDialog.close(); ports.openModelPicker(); });
     ui.modelReconnect.addEventListener('click', reconnectAgent); ui.agentReconnect.addEventListener('click', reconnectAgent);
+    ui.connectionNetworkRefresh.addEventListener('click', () => { void checkNetwork(); });
     ui.agentReviewChanges.addEventListener('click', () => { ports.loadCandidates(); ports.switchReviewTab('proposal'); });
     ui.providerForm.addEventListener('submit', event => { event.preventDefault(); void saveProvider(); });
     ui.providerForce.addEventListener('click', () => saveProvider({skipTest:true}));

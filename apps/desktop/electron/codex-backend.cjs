@@ -24,6 +24,7 @@ const {
 const { writeProvider } = require("./provider-config.cjs");
 const { saveCustomProvider, clearCustomProvider, readCustomProvider, readStoredApiKey, validate: validateCustomProvider, validateEndpoint } = require("./custom-provider.cjs");
 const { discoverModels, testResponses, ProbeError } = require("./provider-probe.cjs");
+const { resolveSystemProxy, childEnvironment: proxyEnvironment, sessionConfig: proxySessionConfig } = require("./system-proxy.cjs");
 const {isolatedSpawn, resolveExecutable, isolationKind} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
 const { AgentModelError, classifyModelError } = require("./model-errors.cjs");
@@ -142,9 +143,19 @@ class CodexBackend extends EventEmitter {
     includeAgentContext = true,
     captureModelMedia = false,
     captureCodeMode = false,
+    // Electron's session.resolveProxy(url) → "PROXY host:port; DIRECT". Absent
+    // outside Electron (tests): only the proxy env variables are consulted.
+    resolveProxy = null,
+    // (network) → fetch bound to an Electron session routed like the child.
+    // Absent: Node's global fetch (direct).
+    probeFetch = null,
   }) {
     super();
     this.codex = codex;
+    this.resolveProxy = typeof resolveProxy === "function" ? resolveProxy : null;
+    this.probeFetch = typeof probeFetch === "function" ? probeFetch : null;
+    // System proxy the running child was started with (null until first start).
+    this.network = null;
     this.runtimeRoot = runtimeRoot;
     this.loginId = null;
     this.workDir = path.resolve(workDir);
@@ -244,6 +255,7 @@ class CodexBackend extends EventEmitter {
       isolation: isolationKind(),
       accountMode: this.runtimeRoot || this.customProvider ? "application" : "shared",
       customProvider: this.customProvider || null,
+      network: this.network,
       signingIn: Boolean(this.loginId),
       harness: capabilitySnapshot({
         plugin: this.toolHostState,
@@ -284,6 +296,9 @@ class CodexBackend extends EventEmitter {
     this.#setStatus("starting");
     this.lastStderr = "";
     this.stopping = false;
+    // Resolved per start so toggling Clash/v2rayN "system proxy" takes effect
+    // on the next 重新连接. Resolved against the endpoint this child will use.
+    this.network = await this.resolveNetwork(this.customProvider?.baseUrl || "https://chatgpt.com/");
 
     const args = ["app-server", "--listen", "stdio://", "--strict-config"];
     for (const feature of DISABLED_CODEX_FEATURES) args.push("--disable", feature);
@@ -302,7 +317,7 @@ class CodexBackend extends EventEmitter {
       "allow_login_shell=false",
     );
     const generation = ++this.childEpoch;
-    const spawnSpec = isolatedSpawn(this, args, this.#childEnvironment());
+    const spawnSpec = isolatedSpawn(this, args, {...this.#childEnvironment(), ...proxyEnvironment(this.network)});
     this.#applyReferencePath();
     this.isolationUnit = spawnSpec.unit;
     const child = spawn(spawnSpec.command, spawnSpec.args, {
@@ -526,18 +541,34 @@ class CodexBackend extends EventEmitter {
   // run one tiny Responses turn. Nothing is written and the app-server is not
   // touched. A blank key means "the saved one", same as saving. Returns a
   // plain result object so the form can show message and hint separately.
+  // System proxy for `targetUrl` as the child would see it. Never throws.
+  async resolveNetwork(targetUrl) {
+    return resolveSystemProxy({targetUrl, env: process.env, resolver: this.resolveProxy});
+  }
+
+  // Live view for the settings dialog: what a child started *now* would use,
+  // next to what the running child actually uses (`snapshot().network`).
+  async networkStatus(targetUrl) {
+    const current = await this.resolveNetwork(targetUrl || this.customProvider?.baseUrl || "https://chatgpt.com/");
+    return {current, active: this.network, stale: Boolean(this.network && this.child && (current.proxyUrl || null) !== (this.network.proxyUrl || null))};
+  }
+
   async probeCustomProvider(action, settings = {}) {
     const storedApiKey = readStoredApiKey(this.profileDir);
     try {
       if (action === "discover") {
         const {baseUrl, apiKey} = validateEndpoint(settings, {storedApiKey});
-        const found = await discoverModels({baseUrl, apiKey});
-        return found ? {ok: true, models: found.models, filtered: found.filtered} : {ok: true, models: null};
+        const network = await this.resolveNetwork(baseUrl);
+        const fetch = this.probeFetch ? await this.probeFetch(proxySessionConfig(network)) : undefined;
+        const found = await discoverModels({baseUrl, apiKey, fetch, network});
+        return found ? {ok: true, models: found.models, filtered: found.filtered, network} : {ok: true, models: null, network};
       }
       if (action === "test") {
         const {baseUrl, apiKey, model, effort} = validateCustomProvider(settings, {storedApiKey});
-        const result = await testResponses({baseUrl, apiKey, model, effort});
-        return {ok: true, model, elapsedMs: result.elapsedMs};
+        const network = await this.resolveNetwork(baseUrl);
+        const fetch = this.probeFetch ? await this.probeFetch(proxySessionConfig(network)) : undefined;
+        const result = await testResponses({baseUrl, apiKey, model, effort, fetch, network});
+        return {ok: true, model, elapsedMs: result.elapsedMs, network};
       }
       throw new Error("无效的接口检测操作。");
     } catch (error) {

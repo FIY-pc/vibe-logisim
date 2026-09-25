@@ -65,7 +65,7 @@ export const ui = Object.fromEntries(
       "agentTabLight",
       "conversationPicker","conversationTitle","conversationNew","conversationMenu","conversationSearch","conversationError","conversationBusy","conversationList","conversationArchive","conversationFolder",
       "agentSettings","connectionDialog","connectionClose","connectionModel","connectionError","modelSearch",
-      "connectionTabChatgpt","connectionTabApi","connectionPaneChatgpt","connectionPaneApi","accountCard","accountTitle","accountDetail","chatgptNote","connectionLogin","connectionLight",
+      "connectionTabChatgpt","connectionTabApi","connectionPaneChatgpt","connectionPaneApi","accountCard","accountTitle","accountDetail","chatgptNote","connectionLogin","connectionLight","connectionNetwork","connectionNetworkLabel","connectionNetworkDetail","connectionNetworkRefresh",
       "providerForm","providerBaseUrl","providerApiKey","providerModel","providerDiscover","providerModelList","providerModelStatus","providerAdvanced","providerEffort","providerContext",
       "providerProbe","providerProbeTitle","providerProbeHint","providerForce","providerSave","providerClear",
       "composerPreferences", "agentMode", "agentModel", "agentEffort", "modeMenu", "modeOptions", "modeError", "effortMenu", "effortOptions", "effortError", "attachMaterials",  

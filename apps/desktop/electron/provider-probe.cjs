@@ -10,9 +10,15 @@
 // Both run in the Electron main process before anything is written to the
 // profile, so a wrong key, a chat-completions-only relay or a mistyped model
 // name is reported in the settings form instead of surfacing as a raw
-// app-server exit. Uses Node's global fetch on purpose: the Codex child does
-// not receive HTTP(S)_PROXY either, so a probe through Electron's net module
-// (which honours the system proxy) could pass while the real turn fails.
+// app-server exit.
+//
+// Network route: the caller passes `fetch` bound to an Electron session whose
+// proxy is set from the same system-proxy resolution the Codex child gets in
+// its environment (see system-proxy.cjs), so a probe that passes here takes
+// the route the real turn will take. Errors from that session are Chromium's
+// "net::ERR_*" strings and TimeoutError; Node's fetch (tests) gives
+// ECONNREFUSED-style codes. Both are mapped below. `network` (the resolution
+// result) only shapes the hints.
 
 const DEFAULT_TIMEOUT_MS = 20000;
 const RESPONSES_TIMEOUT_MS = 30000;
@@ -70,18 +76,37 @@ function withTimeout(timeoutMs, run) {
   return run(controller.signal).finally(() => clearTimeout(timer));
 }
 
-function networkError(error, seconds) {
-  if (error?.name === "AbortError") {
-    return new ProbeError("timeout", `接口 ${seconds} 秒没有响应`, {hint: "检查地址是否正确、网络是否可达；有些接口需要挂代理。"});
-  }
+// One sentence about the route, appended to network-level hints.
+function routeHint(network) {
+  if (!network) return "";
+  if (network.unsupported) return `${network.unsupported}，这次是直接连接的。`;
+  if (network.proxyUrl) return `这次通过${network.source === "env" ? "环境变量里的代理" : "系统代理"} ${network.hostPort} 连接；确认代理软件在运行、节点可用。`;
+  return "这次是直接连接（未检测到系统代理）；如果这个接口需要代理，先在代理软件里开启「系统代理」再试。";
+}
+
+function networkError(error, seconds, network = null) {
+  const route = routeHint(network);
+  const name = error?.name || "";
   const cause = error?.cause || error;
-  const code = cause?.code || "";
-  if (/ENOTFOUND|EAI_AGAIN/.test(code)) return new ProbeError("network", "找不到这个域名", {hint: "检查接口地址是否拼写正确。"});
-  if (/ECONNREFUSED/.test(code)) return new ProbeError("network", "连接被拒绝", {hint: "端口或地址不对，或者服务没有启动。"});
-  if (/CERT|SSL|TLS|self.signed|UNABLE_TO_VERIFY/i.test(code + " " + (cause?.message || ""))) {
-    return new ProbeError("network", "HTTPS 证书无法验证", {hint: "接口证书不可信；可以换成官方域名或联系接口提供方。"});
+  const code = String(cause?.code || "");
+  const text = `${code} ${error?.message || ""} ${cause?.message || ""}`;
+  if (name === "AbortError" || name === "TimeoutError" || /ERR_TIMED_OUT|ERR_CONNECTION_TIMED_OUT|ETIMEDOUT/.test(text)) {
+    return new ProbeError("timeout", `接口 ${seconds} 秒没有响应`, {hint: `检查地址是否正确、网络是否可达。${route}`.trim()});
   }
-  return new ProbeError("network", "无法连接到接口" + (cause?.message ? `：${String(cause.message).slice(0, 160)}` : ""), {hint: "检查网络和接口地址。"});
+  if (/ERR_PROXY_CONNECTION_FAILED|ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_AUTH|ERR_MANDATORY_PROXY|ERR_NO_SUPPORTED_PROXIES|ERR_PROXY_CERTIFICATE_INVALID/.test(text)) {
+    const where = network?.hostPort ? ` ${network.hostPort}` : "";
+    if (/ERR_PROXY_AUTH/.test(text)) return new ProbeError("proxy", `代理${where} 要求账号密码`, {hint: "保存前的检测不能带代理账号；可以「跳过检测直接保存」，AI 引擎会使用环境变量里的完整代理地址。"});
+    return new ProbeError("proxy", `连不上代理${where}`, {hint: "代理软件没有运行、端口不对，或节点不可用。修好后重试；不需要代理时在代理软件里关闭「系统代理」。"});
+  }
+  if (/ENOTFOUND|EAI_AGAIN|ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED/.test(text)) return new ProbeError("network", "找不到这个域名", {hint: `检查接口地址是否拼写正确。${network?.proxyUrl ? "" : route}`.trim()});
+  if (/ECONNREFUSED|ERR_CONNECTION_REFUSED|ERR_UNSAFE_PORT/.test(text)) return new ProbeError("network", "连接被拒绝", {hint: `端口或地址不对，或者服务没有启动。${network?.proxyUrl ? route : ""}`.trim()});
+  if (/ECONNRESET|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|ERR_EMPTY_RESPONSE|ERR_CONNECTION_ABORTED/.test(text)) return new ProbeError("network", "连接被中断", {hint: `接口在响应前断开了连接。${route}`.trim()});
+  if (/CERT|ERR_SSL|SSL|TLS|self.signed|UNABLE_TO_VERIFY/i.test(text)) {
+    return new ProbeError("network", "HTTPS 连接失败（证书或协议）", {hint: "接口证书不可信，或地址写了 https 但服务只有 http；可以换成官方域名或联系接口提供方。"});
+  }
+  if (/ERR_NETWORK_CHANGED|ERR_INTERNET_DISCONNECTED|ERR_ADDRESS_UNREACHABLE|ENETUNREACH|EHOSTUNREACH/.test(text)) return new ProbeError("network", "网络不可达", {hint: `检查本机网络连接。${route}`.trim()});
+  const detail = String(cause?.message || error?.message || "").replace(/^net::/, "").slice(0, 160);
+  return new ProbeError("network", "无法连接到接口" + (detail ? `：${detail}` : ""), {hint: `检查网络和接口地址。${route}`.trim()});
 }
 
 function authError(status, body, text) {
@@ -93,7 +118,7 @@ function authError(status, body, text) {
 // null when the endpoint has no list (404/405/HTML/empty). Throws ProbeError
 // only for authentication and network failures — a missing list is not an
 // error, students can still type the model name.
-async function discoverModels({baseUrl, apiKey, fetch: fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS}) {
+async function discoverModels({baseUrl, apiKey, fetch: fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, network = null}) {
   const url = joinUrl(baseUrl, "/models");
   const started = Date.now();
   let response;
@@ -105,7 +130,7 @@ async function discoverModels({baseUrl, apiKey, fetch: fetchImpl = globalThis.fe
       signal,
     }));
   } catch (error) {
-    throw networkError(error, Math.round(timeoutMs / 1000));
+    throw networkError(error, Math.round(timeoutMs / 1000), network);
   }
   const text = await readBodyText(response);
   const body = parseJson(text);
@@ -171,7 +196,7 @@ async function readResponsesStream(response, limit = 256 * 1024) {
 // One minimal turn through POST /responses, shaped like Codex's real request
 // (streaming, reasoning effort, encrypted reasoning include, store:false).
 // Resolves {ok:true, ...} or throws ProbeError with a student-facing message.
-async function testResponses({baseUrl, apiKey, model, effort = "medium", fetch: fetchImpl = globalThis.fetch, timeoutMs = RESPONSES_TIMEOUT_MS}) {
+async function testResponses({baseUrl, apiKey, model, effort = "medium", fetch: fetchImpl = globalThis.fetch, timeoutMs = RESPONSES_TIMEOUT_MS, network = null}) {
   const url = joinUrl(baseUrl, "/responses");
   const seconds = Math.round(timeoutMs / 1000);
   const payload = {
@@ -200,7 +225,7 @@ async function testResponses({baseUrl, apiKey, model, effort = "medium", fetch: 
       return {response: result, stream};
     });
   } catch (error) {
-    throw networkError(error, seconds);
+    throw networkError(error, seconds, network);
   }
   const {response: http, text, stream} = response;
   const elapsedMs = Date.now() - started;

@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { PROXY_ENV_KEYS } = require("./system-proxy.cjs");
 
 const WINDOWS = process.platform === "win32";
 
@@ -126,8 +127,11 @@ function isolatedSpawn(agent, codexArgs, environment) {
       `--working-directory=${sandboxWork}`,
     ];
     // systemd copies these values from its environment; values never appear
-    // in argv, generated TOML, or another active authentication profile.
-    for (const key of Object.keys(agent.providerEnvironment || {})) args.push(`--setenv=${key}`);
+    // in argv, generated TOML, or another active authentication profile. The
+    // proxy variables (system proxy resolved by CodexBackend) ride along the
+    // same way so the sandboxed child reaches the endpoint like the probe did.
+    const passThrough = [...Object.keys(agent.providerEnvironment || {}), ...PROXY_ENV_KEYS.filter(key => key in environment)];
+    for (const key of passThrough) args.push(`--setenv=${key}`);
     args.push(
       "/usr/bin/env",
       `HOME=${sandboxProfile}`,
@@ -140,7 +144,7 @@ function isolatedSpawn(agent, codexArgs, environment) {
       agent.runtimeRoot ? "/tmp/vibe-runtime/python/bin/python3" : (process.env.VIBE_LOGISIM_PYTHON || "/usr/bin/python3"),
       "-c",
       "import os,sys; os.execvpe(sys.argv[2],sys.argv[2:],{k:os.environ[k] for k in sys.argv[1].split(',') if k in os.environ})",
-      ["HOME", "CODEX_HOME", "PATH", "SSL_CERT_FILE", "LANG", "LC_ALL", "NO_COLOR", ...Object.keys(agent.providerEnvironment || {})].join(","),
+      ["HOME", "CODEX_HOME", "PATH", "SSL_CERT_FILE", "LANG", "LC_ALL", "NO_COLOR", ...passThrough].join(","),
       sandboxCodex,
       ...codexArgs,
     );

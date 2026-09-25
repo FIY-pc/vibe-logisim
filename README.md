@@ -31,6 +31,7 @@ macOS 暂未提供安装包，欢迎有 Mac 的同学来帮忙验收。
 内置的 AI 引擎是 [OpenAI Codex](https://github.com/openai/codex) 的 app-server。自定义接口需要满足两点：
 
 - 支持 **Responses API**（`POST /v1/responses`，流式）。国内主流中转站基本都支持；只提供 `chat/completions` 的接口目前用不了。
+- **系统代理**：应用会读取系统代理（Clash、v2rayN 等开启「系统代理」后的设置，或 `HTTPS_PROXY` 环境变量），AI 引擎和保存前的检测都走同一条路；AI 设置右下角会显示当前检测到的代理。只支持 HTTP 代理（Clash 默认 7890 端口即可），纯 SOCKS 端口不行。改了代理设置后点「重新连接」生效。
 - 模型要有基本的工具调用和写代码能力，越强的模型电路做得越好。课程作业级别的电路，GPT-5 系列、DeepSeek V3/R1、Qwen3 等都能用。
 
 AI 只能读写你打开的那个文件夹（Windows 上由 Codex 的 workspace-write 沙箱限制，Linux 上由 systemd 隔离），不会碰电脑上的其他文件。
@@ -38,6 +39,7 @@ AI 只能读写你打开的那个文件夹（Windows 上由 Codex 的 workspace-
 ## 常见问题
 
 - **打开课程电路提示缺少库**：`cs3410.jar`、`riscv-probe.jar` 等课程组件库要和 `.circ` 放在同一目录（保持课程压缩包原样解压即可）。
+- **登录 ChatGPT 或连 OpenAI 一直失败**：先看 AI 设置右下角的网络一行。显示「直连」说明没检测到系统代理——在代理软件里开启「系统代理」（TUN 模式也可以），再点「重新检测」和「重新连接」。显示「代理不支持」是因为只开了 SOCKS 端口，改用 HTTP 或混合端口。
 - **AI 面板显示“接口连接失败 / 连接已断开”**：点“检查 API 接口设置”重新保存一次，保存前的检测会直接告诉你是地址、密钥还是模型的问题（常见：地址少了 `/v1`；接口只支持 chat/completions）。ChatGPT 登录失效则点“登录 ChatGPT”重新登录。
 - **Windows 杀毒软件拦截**：压缩包里带有 `logisim-ita-cn-20200118.exe`，这是课程发布的 Logisim 运行包，由内置 Java 当作 jar 加载，不会独立运行。
 - **和课程 Logisim 的兼容性**：文件格式完全一致，可以随时用原版 Logisim 打开同一个文件核对。
