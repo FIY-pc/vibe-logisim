@@ -474,11 +474,16 @@ function registerIpc() {
   });
   ipcMain.handle('vibe-logisim:agent-provider', async (event, request) => {
     if (!isTrustedRenderer(event)) throw new Error('Untrusted renderer.');
+    const action = request?.action;
+    // Preflight probes only talk to the student's endpoint; the workspace and
+    // the running app-server are untouched, so no transition is needed.
+    if (action === 'discover' || action === 'test') return codex.probeCustomProvider(action, request?.settings || {});
+    if (action !== 'save' && action !== 'clear') throw new Error('无效的接口设置操作。');
     if (workspaceTransitioning) throw workspaceChangedError();
     ++workspaceGeneration;
     workspaceTransitioning = true;
     try {
-      const state = request?.action === 'clear' ? await codex.clearCustomProvider() : await codex.configureCustomProvider(request?.settings || {});
+      const state = action === 'clear' ? await codex.clearCustomProvider() : await codex.configureCustomProvider(request?.settings || {});
       const current = await backend.session();
       if (current.folder && codex.status === 'ready') {
         await codex.resumeWorkspace({workspaceKey:current.folder.conversationKey, revisionId:current.revision?.id});

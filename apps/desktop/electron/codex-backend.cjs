@@ -22,7 +22,8 @@ const {
 } = require('./codex-capabilities.cjs');
 
 const { writeProvider } = require("./provider-config.cjs");
-const { saveCustomProvider, clearCustomProvider, readCustomProvider } = require("./custom-provider.cjs");
+const { saveCustomProvider, clearCustomProvider, readCustomProvider, readStoredApiKey, validate: validateCustomProvider, validateEndpoint } = require("./custom-provider.cjs");
+const { discoverModels, testResponses, ProbeError } = require("./provider-probe.cjs");
 const {isolatedSpawn, resolveExecutable, isolationKind} = require("./agent-process.cjs");
 const { AgentModels } = require("./agent-models.cjs");
 const { AgentModelError, classifyModelError } = require("./model-errors.cjs");
@@ -521,12 +522,36 @@ class CodexBackend extends EventEmitter {
     return this.snapshot();
   }
 
-  // In-app OpenAI-compatible endpoint. Writes provider.toml + a one-entry
-  // catalog into the profile, then restarts the app-server so #prepareProfile
-  // picks it up. The key never enters argv or this snapshot.
+  // Preflight for the settings form: ask the endpoint for its model list or
+  // run one tiny Responses turn. Nothing is written and the app-server is not
+  // touched. A blank key means "the saved one", same as saving. Returns a
+  // plain result object so the form can show message and hint separately.
+  async probeCustomProvider(action, settings = {}) {
+    const storedApiKey = readStoredApiKey(this.profileDir);
+    try {
+      if (action === "discover") {
+        const {baseUrl, apiKey} = validateEndpoint(settings, {storedApiKey});
+        const found = await discoverModels({baseUrl, apiKey});
+        return found ? {ok: true, models: found.models, filtered: found.filtered} : {ok: true, models: null};
+      }
+      if (action === "test") {
+        const {baseUrl, apiKey, model, effort} = validateCustomProvider(settings, {storedApiKey});
+        const result = await testResponses({baseUrl, apiKey, model, effort});
+        return {ok: true, model, elapsedMs: result.elapsedMs};
+      }
+      throw new Error("无效的接口检测操作。");
+    } catch (error) {
+      if (error instanceof ProbeError) return {ok: false, code: error.code, message: error.message, hint: error.hint || null, status: error.status};
+      return {ok: false, code: "invalid", message: plainError(error), hint: null};
+    }
+  }
+
+  // In-app OpenAI-compatible endpoint. Writes provider.toml + the catalog
+  // into the profile, then restarts the app-server so #prepareProfile picks
+  // it up. The key never enters argv or this snapshot.
   async configureCustomProvider(settings) {
     if (this.snapshot().busy) throw new Error("请先停止当前回答，再修改 AI 接口设置。");
-    const visible = saveCustomProvider(this.profileDir, settings);
+    const visible = saveCustomProvider(this.profileDir, settings, {storedApiKey: readStoredApiKey(this.profileDir)});
     this.modelSettings.save(null);
     await this.reconnect();
     if (this.status === "unavailable") {

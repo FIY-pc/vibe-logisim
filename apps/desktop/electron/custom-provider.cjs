@@ -2,8 +2,9 @@
 
 // A student-supplied OpenAI-compatible endpoint (relay, DeepSeek, Qwen, ...)
 // becomes a normal Codex model provider: we write provider.toml, which
-// provider-config.cjs already mirrors into the isolated profile, plus a
-// one-entry model catalog so the model passes Codex's catalog precheck. The
+// provider-config.cjs already mirrors into the isolated profile, plus a model
+// catalog so the chosen model (and every other model the endpoint listed)
+// passes Codex's catalog precheck and shows up in the in-app model picker. The
 // API key is kept as experimental_bearer_token in provider.toml (0600) and is
 // forwarded to the app-server only through an environment variable.
 
@@ -13,6 +14,9 @@ const path = require("node:path");
 const PROVIDER_ID = "custom";
 const CATALOG_FILE = "custom-catalog.json";
 const PROVIDER_FILE = "provider.toml";
+const EFFORTS = ["none", "low", "medium", "high"];
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/;
+const MAX_CATALOG_MODELS = 400;
 
 // Codex's own instructions template is GPT-specific and ~21 KB. A generic
 // OpenAI-compatible model gets a short equivalent; the circuit domain context
@@ -33,20 +37,27 @@ function normaliseBaseUrl(value) {
   try { parsed = new URL(url); } catch { throw new Error("接口地址格式不正确"); }
   if (parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("接口地址不能包含账号、查询参数或锚点");
   // Codex appends /responses itself; accept both ".../v1" and ".../v1/".
-  parsed.pathname = parsed.pathname.replace(/\/+$/, "").replace(/\/(responses|chat\/completions)$/, "");
+  parsed.pathname = parsed.pathname.replace(/\/+$/, "").replace(/\/(responses|chat\/completions|models)$/, "");
   return parsed.origin + parsed.pathname;
 }
 
-function validate(settings) {
+// Address + key only: enough to ask the endpoint for its model list. A blank
+// key means "keep the one already saved" so students never retype it.
+function validateEndpoint(settings, {storedApiKey = null} = {}) {
   const baseUrl = normaliseBaseUrl(settings.baseUrl);
-  const apiKey = String(settings.apiKey || "").trim();
+  let apiKey = String(settings.apiKey || "").trim();
+  if (!apiKey && storedApiKey) apiKey = storedApiKey;
   if (!apiKey) throw new Error("请填写 API 密钥");
   if (/[\r\n"\\]/.test(apiKey) || apiKey.length > 512) throw new Error("API 密钥格式不正确");
+  return {baseUrl, apiKey};
+}
+
+function validate(settings, options = {}) {
+  const {baseUrl, apiKey} = validateEndpoint(settings, options);
   const model = String(settings.model || "").trim();
-  if (!model) throw new Error("请填写模型名称，例如 deepseek-chat");
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/.test(model)) throw new Error("模型名称只能包含字母、数字和 . _ : / -");
-  const efforts = ["low", "medium", "high"];
-  const effort = efforts.includes(settings.effort) ? settings.effort : "medium";
+  if (!model) throw new Error("请填写或选择模型名称，例如 deepseek-chat");
+  if (!MODEL_ID.test(model)) throw new Error("模型名称只能包含字母、数字和 . _ : / -");
+  const effort = EFFORTS.includes(settings.effort) ? settings.effort : "medium";
   const name = String(settings.name || "").trim().slice(0, 40) || "自定义接口";
   // Context window drives Codex's auto-compaction. Too small and a long
   // construction turn compacts every few minutes and loses its working state
@@ -55,10 +66,17 @@ function validate(settings) {
   let contextWindow = Number(settings.contextWindow);
   if (!Number.isFinite(contextWindow) || contextWindow <= 0) contextWindow = 256000;
   contextWindow = Math.max(32000, Math.min(2000000, Math.round(contextWindow)));
-  return {baseUrl, apiKey, model, effort, name, contextWindow};
+  // The chosen model always leads; the rest is whatever the endpoint listed.
+  const models = [model];
+  for (const candidate of Array.isArray(settings.models) ? settings.models : []) {
+    const id = String(candidate || "").trim();
+    if (id && MODEL_ID.test(id) && !models.includes(id)) models.push(id);
+    if (models.length >= MAX_CATALOG_MODELS) break;
+  }
+  return {baseUrl, apiKey, model, effort, name, contextWindow, models};
 }
 
-function catalogEntry(model, effort, contextWindow = 256000) {
+function catalogEntry(model, effort, contextWindow = 256000, priority = 1) {
   // Every field below is required by Codex 0.153/0.154's catalog parser
   // (verified with --strict-config); values are neutral for a generic model.
   return {
@@ -67,6 +85,7 @@ function catalogEntry(model, effort, contextWindow = 256000) {
     description: "自定义 OpenAI 兼容接口的模型",
     default_reasoning_level: effort,
     supported_reasoning_levels: [
+      {effort: "none", description: "不发送思考深度"},
       {effort: "low", description: "更快"},
       {effort: "medium", description: "均衡"},
       {effort: "high", description: "更深入的推理"},
@@ -74,7 +93,7 @@ function catalogEntry(model, effort, contextWindow = 256000) {
     shell_type: "unified_exec",
     visibility: "list",
     supported_in_api: true,
-    priority: 1,
+    priority,
     additional_speed_tiers: [],
     service_tiers: [],
     availability_nux: null,
@@ -126,8 +145,8 @@ function providerToml(settings) {
 
 // Writes provider.toml + catalog into the profile directory. Returns the
 // validated settings (without the key) for the caller to report.
-function saveCustomProvider(profileDir, input) {
-  const settings = validate(input || {});
+function saveCustomProvider(profileDir, input, options = {}) {
+  const settings = validate(input || {}, options);
   fs.mkdirSync(profileDir, {recursive: true, mode: 0o700});
   const catalogPath = path.join(profileDir, CATALOG_FILE);
   const providerPath = path.join(profileDir, PROVIDER_FILE);
@@ -136,7 +155,8 @@ function saveCustomProvider(profileDir, input) {
     fs.writeFileSync(temp, contents, {mode: 0o600});
     fs.renameSync(temp, target);
   };
-  writeAtomic(catalogPath, JSON.stringify({models: [catalogEntry(settings.model, settings.effort, settings.contextWindow)]}));
+  const catalog = settings.models.map((model, index) => catalogEntry(model, settings.effort, settings.contextWindow, index + 1));
+  writeAtomic(catalogPath, JSON.stringify({models: catalog}));
   writeAtomic(providerPath, providerToml(settings));
   const {apiKey, ...visible} = settings;
   return {...visible, apiKeyHint: maskKey(apiKey)};
@@ -146,15 +166,36 @@ function clearCustomProvider(profileDir) {
   for (const name of [PROVIDER_FILE, CATALOG_FILE]) fs.rmSync(path.join(profileDir, name), {force: true});
 }
 
-function readCustomProvider(profileDir) {
+function readProviderText(profileDir) {
   const providerPath = path.join(profileDir, PROVIDER_FILE);
   if (!fs.existsSync(providerPath)) return null;
   const text = fs.readFileSync(providerPath, "utf8");
   const pick = key => { const match = text.match(new RegExp(`^${key} = "((?:[^"\\\\]|\\\\.)*)"`, "m")); return match ? JSON.parse(`"${match[1]}"`) : null; };
   if (pick("model_provider") !== PROVIDER_ID) return null;
+  return {text, pick};
+}
+
+// Main-process only: the saved key, so a re-save with a blank key field keeps
+// working. Never put the result into a snapshot or IPC reply.
+function readStoredApiKey(profileDir) {
+  const parsed = readProviderText(profileDir);
+  return parsed ? parsed.pick("experimental_bearer_token") || null : null;
+}
+
+function readCustomProvider(profileDir) {
+  const parsed = readProviderText(profileDir);
+  if (!parsed) return null;
+  const {text, pick} = parsed;
   const window = text.match(/^model_context_window = (\d+)/m);
-  return {name: pick("name"), baseUrl: pick("base_url"), model: pick("model"), effort: pick("model_reasoning_effort") || "medium",
-    contextWindow: window ? Number(window[1]) : null, apiKeyHint: maskKey(pick("experimental_bearer_token") || "")};
+  const model = pick("model");
+  let models = [model];
+  try {
+    const catalog = JSON.parse(fs.readFileSync(path.join(profileDir, CATALOG_FILE), "utf8"));
+    const slugs = (catalog.models || []).map(entry => entry.slug).filter(slug => typeof slug === "string" && MODEL_ID.test(slug));
+    if (slugs.length) models = [model, ...slugs.filter(slug => slug !== model)];
+  } catch (_) { /* the catalog is rebuilt on the next save */ }
+  return {name: pick("name"), baseUrl: pick("base_url"), model, effort: pick("model_reasoning_effort") || "medium",
+    contextWindow: window ? Number(window[1]) : null, apiKeyHint: maskKey(pick("experimental_bearer_token") || ""), models};
 }
 
 function maskKey(key) {
@@ -163,4 +204,5 @@ function maskKey(key) {
   return key.slice(0, 4) + "••••" + key.slice(-4);
 }
 
-module.exports = {saveCustomProvider, clearCustomProvider, readCustomProvider, validate, catalogEntry, PROVIDER_ID, CATALOG_FILE, PROVIDER_FILE};
+module.exports = {saveCustomProvider, clearCustomProvider, readCustomProvider, readStoredApiKey, validate, validateEndpoint, catalogEntry, maskKey,
+  EFFORTS, PROVIDER_ID, CATALOG_FILE, PROVIDER_FILE};

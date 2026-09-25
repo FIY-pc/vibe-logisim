@@ -145,7 +145,7 @@ async function editObject(component, change) {
   }
 
 function draftPrompt(text) {
-    if (!agentState.enabled) { ports.showToast("在桌面版中连接本机 Codex 后可对话"); return; }
+    if (!agentState.enabled) { ports.showToast("在桌面版中连接 AI 后可对话"); return; }
     ports.appendDraftText(text);
     ports.switchReviewTab("agent"); ports.openReviewPanel(); ports.resizeQuestion(); ports.updateComposerState(); ui.questionInput.focus();
   }

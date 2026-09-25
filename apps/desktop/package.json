@@ -1,6 +1,6 @@
 {
   "name": "vibe-logisim-desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Native desktop shell for the Vibe Logisim Circuit Lens",
   "main": "electron/main.cjs",

@@ -76,8 +76,8 @@ function updateComposerState() {
       ui.askButton.title = "先在 AI 设置中选择当前连接支持的模型";
     } else if (!ready) {
       ui.askButton.title = agentState.status === "auth-required"
-        ? "打开 AI 设置查看连接与登录"
-        : "正在等待本机 Codex";
+        ? "打开 AI 设置连接 AI"
+        : "正在等待 AI 引擎";
     } else if (!hasQuestion) {
       ui.askButton.title = "输入一个关于当前电路的问题";
     } else {
@@ -248,19 +248,19 @@ function applyAgentState(snapshot = {}) {
     agentState.modelConfigurationError = snapshot.modelConfigurationError || null;
     const labels = {
       idle: "等待启动",
-      starting: "正在连接本机 Codex…",
+      starting: "正在启动 AI 引擎…",
       ready: "已连接",
       busy: "正在处理",
-      "auth-required": "需要登录",
-      unavailable: snapshot.detail || "本机 Codex 不可用",
-      stopped: "Codex 已停止",
+      "auth-required": snapshot.accountMode === "application" ? "尚未连接 AI" : "需要登录",
+      unavailable: snapshot.detail || "AI 引擎不可用",
+      stopped: "AI 引擎已停止",
     };
     const lightState = ["ready", "busy", "starting", "auth-required", "unavailable"].includes(agentState.status)
       ? agentState.status
       : "idle";
     ui.agentStatusLight.dataset.state = lightState;
     ui.agentTabLight.dataset.state = lightState;
-    ui.agentStatusText.textContent = labels[agentState.status] || "本机 Codex 状态未知";
+    ui.agentStatusText.textContent = labels[agentState.status] || "AI 引擎状态未知";
     ports.updateAgentConnection(snapshot);
     ports.renderConversationHeader();
     updateComposerState();

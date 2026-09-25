@@ -79,8 +79,13 @@ export function createController({ui, ports}) {
   function renderModels() {
     ui.modelChoice.replaceChildren();
     const query = ui.modelSearch.value.trim().toLowerCase();
-    const chosen = state.modelSelection?.model || '';
-    const entries = [{model:'', name:'跟随本机配置', description:state.inheritedModel || '使用本机设置'}, ...models];
+    const chosen = state.modelSelection?.model || (state.customProvider ? state.model || '' : '');
+    // The "inherit" row means "whatever the connection's config.toml says".
+    // For a student endpoint that is exactly the model they typed in AI 设置,
+    // so the row would duplicate a catalog entry; hide it there.
+    const inheritRow = state.customProvider ? [] : [{model:'', name:state.accountMode === 'application' ? '默认模型' : '跟随本机配置',
+      description:state.inheritedModel ? `连接默认：${state.inheritedModel}` : state.accountMode === 'application' ? '使用连接的默认设置' : '使用本机设置'}];
+    const entries = [...inheritRow, ...models];
     for (const model of entries.filter(model => (model.name + ' ' + model.model).toLowerCase().includes(query))) {
       const button = row(model.name, descriptions[model.description] || model.description || model.model, model.model === chosen);
       button.classList.add('model-option'); button.dataset.model = model.model;

@@ -62,16 +62,21 @@ async function waitTurn(label) {
   if (blockers.length) note('open overlays before settings: ' + blockers.join(','));
   await page.locator('#agentSettings').click({timeout: 15000}).catch(async () => { await page.locator('#agentTab').click().catch(() => {}); await page.locator('#agentSettings').click(); });
   await page.locator('#connectionDialog[open]').waitFor();
-  await page.locator('#providerForm summary').click();
+  await page.locator('#connectionTabApi').click();
   await page.locator('#providerBaseUrl').fill(baseUrl); await page.locator('#providerApiKey').fill(apiKey); await page.locator('#providerModel').fill(model);
+  await page.keyboard.press('Escape'); // close the model suggestion list if discovery opened it
   await page.locator('#providerSave').click();
-  await page.waitForFunction(() => document.querySelector('#providerSave').textContent === '保存并连接' && !document.querySelector('#providerSave').disabled, null, {timeout: 120000});
-  const formError = await page.locator('#connectionError').innerText().catch(() => '');
-  s = await agent(); note(`after save: status=${s.status} model=${s.model}/${s.effort} catalog=${s.modelCatalog?.status} custom=${s.customProvider?.model} err=${formError}`);
+  // Save runs a preflight (GET /models is skipped here, POST /responses is not) and closes the dialog once connected;
+  // a failed preflight stays open with the reason in #providerProbe.
+  await page.waitForFunction(() => !document.querySelector('#connectionDialog').open ||
+    (!document.querySelector('#providerProbe').hidden && document.querySelector('#providerProbe').dataset.kind === 'error'), null, {timeout: 180000});
+  const stillOpen = await page.evaluate(() => document.querySelector('#connectionDialog').open);
+  const formError = stillOpen ? await page.locator('#providerProbe').innerText().catch(() => '') : '';
+  s = await agent(); note(`after save: status=${s.status} model=${s.model}/${s.effort} catalog=${s.modelCatalog?.status} custom=${s.customProvider?.model} err=${formError.replace(/\n/g, ' ')}`);
   await page.screenshot({path: path.join(out, '01-provider-configured.png')});
   assert.equal(s.status, 'ready', 'agent not ready after configuring endpoint: ' + (formError || s.detail));
   assert.ok(!JSON.stringify(s).includes(apiKey), 'API key leaked into renderer state');
-  await page.locator('#connectionClose').click();
+  if (stillOpen) await page.locator('#connectionClose').click();
   phase = 'turn 1: read-only question';
   await page.locator('#questionInput').fill('用一句话说明全加器的 Cout 如何由 A、B、Cin 得到。不要修改任何文件。');
   await page.locator('#askButton').click();
