@@ -36,8 +36,13 @@ class Router:
     passages or moving fixed anchors. A route may branch anywhere on its own
     bus. Compressed polylines keep straight crossings from becoming junctions.
     """
-    def __init__(self, document, partition):
+    def __init__(self, document, partition, *, crossing_cost=24, visit_cap=200000):
         self.partition = partition
+        self.visit_cap = visit_cap
+        # Cost of crossing a foreign straight wire (one grid step is 10, a bend
+        # 18). Manual edits keep the default; a global re-layout may raise it
+        # so that a short detour beats a crossing.
+        self.crossing_cost = crossing_cost
         self.connected = Partition()
         self.segment_buses = []
         self.segments = []
@@ -180,7 +185,7 @@ class Router:
                 end = state
                 break
             visits += 1
-            if visits > 200000:
+            if visits > self.visit_cap:
                 break
             for dx, dy, axis in ((10, 0, 0), (-10, 0, 0), (0, 10, 1), (0, -10, 1)):
                 q = p[0] + dx, p[1] + dy
@@ -196,7 +201,7 @@ class Router:
                 if foreign_next and (q == target or any(s[1] == axis or s[2] for s in foreign_next)):
                     continue
                 following = (q, axis)
-                new_cost = distance + 10 + (18 if incoming not in (-1, axis) else 0) + 24 * bool(foreign_next)
+                new_cost = distance + 10 + (18 if incoming not in (-1, axis) else 0) + self.crossing_cost * bool(foreign_next)
                 new_cost += max(self.clearance_cost.get((p, axis), 0),
                                 self.clearance_cost.get((q, axis), 0))
                 # A manually placed segment should end at its new bend, not

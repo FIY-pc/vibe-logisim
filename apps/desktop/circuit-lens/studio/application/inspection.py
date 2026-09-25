@@ -32,7 +32,8 @@ def netlist_signature(components):
             bits = e.get('netBits') or []
             if not bits:
                 continue
-            key = tuple(sorted(b['netId'] for b in bits))
+            # ordered (bit, thread) vector: the same threads in another bit order is another net
+            key = tuple((b['bit'], b['netId']) for b in sorted(bits, key=lambda b: b['bit']))
             if c.get('factory') == 'Constant':
                 value = (c.get('attributes') or {}).get('value') if isinstance(c.get('attributes'), dict) else None
                 constants.setdefault(key, set()).add((str(value).lower(), e.get('width')))

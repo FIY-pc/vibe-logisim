@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.40.0",
+  "version": "1.41.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -732,7 +732,7 @@
     {
       "type": "function",
       "name": "arrange_candidate",
-      "description": "Use this to make a circuit READABLE without changing what it does: re-place the body components into left-to-right signal-flow layers and replace placeholder Tunnels with real orthogonal wires, in ONE operation. Routing is a global optimisation; do not route nets one at a time with wire_candidate and do not write your own router. The fixed panel (top cluster of Pins/probes/displays, or pinnedComponentIds) never moves and keeps its Tunnel bridges; nets with very high fan-out (clock/reset/run) stay Tunnels; a shared Constant driving many inputs becomes a private Constant beside each input. Supply circuit; artifactSha256 is optional (omit it to arrange the current file, or pass the one from your latest inspect_circuit to guard against concurrent edits). Optional: keepTunnels (labels to leave as Tunnels), pinnedComponentIds, localiseConstants (default true), columnGap (px between layers, default 220), maxLayerSpan (a wired net may span at most this many placement layers, default 2 = register→logic→register; longer cross-stage and feedback nets keep Tunnels, raise it to wire more), panelBelowY (override the panel/body split), candidateId to compose. Returns a candidate only if connectivity is PROVEN identical: every group of ports sharing a net is re-observed and compared before/after (constants per driven port), and the result loads natively with no width conflicts; otherwise ARRANGE_NOT_EQUIVALENT and nothing is published. The result includes readability metrics (tunnels, wire segments, crossings, wire length, extent) before/after and the arrangement report (unrouted nets that kept their Tunnels). Look at it with render_circuit(candidateId), adjust parameters and re-run, then checkout_candidate to write it. Behavioural correctness is unchanged by construction; simulate only if you changed something else.",
+      "description": "Use this to make a circuit READABLE without changing what it does: re-place the body components into left-to-right signal-flow layers and replace placeholder Tunnels with real orthogonal wires, in ONE operation. Routing is a global optimisation; do not route nets one at a time with wire_candidate and do not write your own router. The fixed panel (top cluster of Pins/probes/displays, or pinnedComponentIds) never moves and keeps its Tunnel bridges; nets with very high fan-out (clock/reset/run), backward (feedback/write-back) nets and long nets stay Tunnels, each Tunnel on a short lead off its port as in hand-drawn work; a shared Constant driving many inputs becomes a private Constant beside each input. Registers named with pipeline stages (EX.PC, IF/ID) become stage columns; otherwise parts follow signal depth. Supply circuit; artifactSha256 is optional (omit it to arrange the current file, or pass the one from your latest inspect_circuit to guard against concurrent edits). Optional: keepTunnels (labels to leave as Tunnels), pinnedComponentIds, localiseConstants (default true), columnGap (px between layers, default 160; channels grow with the wires that pass through them), tunnelSpan (px from driver to consumer above which a named net keeps its Tunnels instead of being wired, default 800 for one consumer, scaled down for fan-out; measured on 233 hand-drawn HUST CPUs, which tunnel two thirds of nets beyond ~600 px; lower it for more Tunnels and fewer crossings, raise it to wire more), maxLayerSpan (hard cap in placement columns, default 8), panelBelowY (override the panel/body split), candidateId to compose. Returns a candidate only if connectivity is PROVEN identical: every group of ports sharing a net is re-observed and compared before/after (constants per driven port), and the result loads natively with no width conflicts; otherwise ARRANGE_NOT_EQUIVALENT and nothing is published. The result includes readability metrics (tunnels, wire segments, crossings, wire length, extent) before/after and the arrangement report (unrouted nets that kept their Tunnels). Look at it with render_circuit(candidateId), adjust parameters and re-run, then checkout_candidate to write it. Behavioural correctness is unchanged by construction; simulate only if you changed something else.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -782,6 +782,11 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 64
+          },
+          "tunnelSpan": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 5000
           }
         },
         "required": [

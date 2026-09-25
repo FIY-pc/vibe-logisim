@@ -21,7 +21,7 @@ import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
-from studio.domain.schematic_layout import SchematicLayout
+from studio.domain.schematic_layout import SchematicLayout, TUNNEL_SPAN
 from studio.domain.tool_errors import CircuitToolError
 
 
@@ -64,7 +64,8 @@ def netlist_signature(focus, identity_of_loc, moved_map=None):
             bits = e.get("netBits") or []
             if not bits:
                 continue
-            key = tuple(sorted(b["netId"] for b in bits))
+            # ordered (bit, thread) vector: same threads in another bit order is another net
+            key = tuple((b["bit"], b["netId"]) for b in sorted(bits, key=lambda b: b["bit"]))
             if comp["factoryName"] == "Constant":
                 val = _attr(comp, "value")
                 const_driven.setdefault(key, set()).add((str(val).lower(), e["width"]))
@@ -144,6 +145,10 @@ def arrange_candidate(workbench, args):
             layout.column_gap = int(args["columnGap"])
         if args.get("maxLayerSpan") is not None:
             layout.max_layer_span = int(args["maxLayerSpan"])
+        if args.get("tunnelSpan") is not None:
+            # px from driver to consumer above which a named 1-consumer net is
+            # tunnelled (default TUNNEL_SPAN[1]); the fan-out steps scale with it
+            layout.tunnel_span_scale = int(args["tunnelSpan"]) / TUNNEL_SPAN[1]
         after_xml = layout.emit()
         artifact.write_text(after_xml, encoding="utf-8")
 
