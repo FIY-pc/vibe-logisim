@@ -8,7 +8,9 @@ const {waitUntil}=require('./support/wait-until.cjs');
 const repo=path.resolve(__dirname,'../../..');
 const root=fs.mkdtempSync(path.join(os.homedir(),'.local/share/vibe-logisim-dev/runs/canvas-handoff-'));
 const folder=path.join(root,'workspace');fs.mkdirSync(folder);
-const source=path.join(repo,'workspaces/hust-riscv/vibe-course-2026-ccab-2434/电路框架-cpu21-riscv');
+// A course package directory holding cpu21-riscv.circ, cs3410.jar and riscv-probe.jar; not part of the repository.
+const source=process.env.VIBE_COURSE_PACKAGE;
+if(!source){console.log('SKIP: set VIBE_COURSE_PACKAGE to a directory containing cpu21-riscv.circ, cs3410.jar, riscv-probe.jar');process.exit(0);}
 for(const name of ['cpu21-riscv.circ','cs3410.jar','riscv-probe.jar'])fs.copyFileSync(path.join(source,name),path.join(folder,name));
 const file=path.join(folder,'cpu21-riscv.circ'),original=fs.readFileSync(file);
 const entry=path.join(root,'main.cjs');

@@ -1,5 +1,7 @@
 # 面向模型的 Harness 与电路插件
 
+> 文中形如「记录 0NN」或「实验 0NN」的编号指开发过程中的内部实验记录，不随本仓库发布；正文已保留其结论。
+
 Vibe Logisim 使用 Codex 作为基础 Agent Harness，并通过 Circuit Plugin 把电路领域能力接入 Codex。两者服务不同的边界。
 
 ```text
@@ -47,7 +49,7 @@ Base Harness 与领域插件之间通过 `electron/agent-tool-host.cjs`、`elect
 
 切换当前文件或电路时可以保留同一个对话线程，但会立即清空宿主的当前 revision binding；会话历史仍然存在，下一次问题或电路工具调用再绑定新的 session revision。UI 不会在切换期间继续显示旧电路版本。
 
-用户可在当前任务运行时追加意见，通过原生 `turn/steer` 进入同一回合。宿主复用当前选区、资料和留存观察的准备路径；前端在准备前捕获活动回合，原生拒绝后保留草稿，不自动重启任务。消息在原生确认后进入对话，正在执行的工作记录保持连续。补充消息不提供按整轮回退的编辑按钮，原问题仍可在运行结束后编辑。协议与鼠标交互的验证边界见 [032](../experiments/032-live-steering/README.md)。
+用户可在当前任务运行时追加意见，通过原生 `turn/steer` 进入同一回合。宿主复用当前选区、资料和留存观察的准备路径；前端在准备前捕获活动回合，原生拒绝后保留草稿，不自动重启任务。消息在原生确认后进入对话，正在执行的工作记录保持连续。补充消息不提供按整轮回退的编辑按钮，原问题仍可在运行结束后编辑。协议与鼠标交互的验证边界见 记录 032。
 
 插件能力是用户驱动的。模型可以直接编辑工作目录中的 `.circ` 文件，之后请求观察；也可以使用候选构建工具；可以先完成整张电路再运行实验。插件提供可靠动作和证据，不规定动作顺序。
 
@@ -71,9 +73,9 @@ Base Harness 的线程契约现在同时保存工作模式、插件签名和 `de
 
 Direct workspace 的回合收束还会返回刷新后的 project/revision 身份，Base Harness 随即更新会话快照；模型写入文件导致 Circuit Lens 产生新 revision 后，UI 不会继续显示旧版本。
 
-`edit_candidate` 提供与原生组件库共用规则的批量属性修改。以现有组件属性 clone 为起点，检查动态选项与耦合字段，写入实际差异，再原生重载核对。输入绑定完整 artifact SHA 和组件ID；候选可组合、观察或直接 checkout。位置和实体线路保持，属性引起的端口与接口变化明确返回，父图冲突可作为后续编辑的反馈。已有父实例不会禁止引脚属性变化；不会自动猜测重接线意图。其验证只证明属性被接受，功能是否正确仍由具体运行决定，见 [033](../experiments/033-attribute-editing/README.md)。 真实模型已在普通扩位任务中自主采用并保存正确文件，但4分钟外部期限内没有最终回复；采用证据与完整任务完成分开记录。
+`edit_candidate` 提供与原生组件库共用规则的批量属性修改。以现有组件属性 clone 为起点，检查动态选项与耦合字段，写入实际差异，再原生重载核对。输入绑定完整 artifact SHA 和组件ID；候选可组合、观察或直接 checkout。位置和实体线路保持，属性引起的端口与接口变化明确返回，父图冲突可作为后续编辑的反馈。已有父实例不会禁止引脚属性变化；不会自动猜测重接线意图。其验证只证明属性被接受，功能是否正确仍由具体运行决定，见 记录 033。 真实模型已在普通扩位任务中自主采用并保存正确文件，但4分钟外部期限内没有最终回复；采用证据与完整任务完成分开记录。
 
-1.23已完成一次新的真实从零构建：内置模型在空白工程中做8位四功能ALU、保存并最终回复，独立原生穷举及真实鼠标接手通过。模型自行选择直接Python/XML、元件查询和产品仿真，没有使用候选构建helper；这一成功属于能力组合，不能据此归因某个工具或宣称全课程完成。该任务暴露的整数格式拒绝在1.24修复，见 [035](../experiments/035-alu-construction/README.md)。
+1.23已完成一次新的真实从零构建：内置模型在空白工程中做8位四功能ALU、保存并最终回复，独立原生穷举及真实鼠标接手通过。模型自行选择直接Python/XML、元件查询和产品仿真，没有使用候选构建helper；这一成功属于能力组合，不能据此归因某个工具或宣称全课程完成。该任务暴露的整数格式拒绝在1.24修复，见 记录 035。
 
 ## 插件契约
 
@@ -93,15 +95,15 @@ Studio 在注册 handler 前也会校验目录的基本结构、owner、exposure
 | `result` | 原始观察或运行报告 |
 | `feedback` | 有明确期望时的比较结果，没有期望时保持 `observed` |
 
-模型传输出口由 `electron/model-result-projection.cjs` 提供规范视图：已知 metadata 仅在整值严格相等时保留一个规范位置；`inspect` 的组件链接仅在与既有模板精确一致时省略逐组件副本。观察、未知位、错误、新字段、保存/磁盘状态及图片不变；UI 和历史继续使用原始对象。不向模型发送解码协议，也不截断电路信息。具体规则及同一原始对象的测量见 [010](../experiments/010-model-efficiency/README.md)。
+模型传输出口由 `electron/model-result-projection.cjs` 提供规范视图：已知 metadata 仅在整值严格相等时保留一个规范位置；`inspect` 的组件链接仅在与既有模板精确一致时省略逐组件副本。观察、未知位、错误、新字段、保存/磁盘状态及图片不变；UI 和历史继续使用原始对象。不向模型发送解码协议，也不截断电路信息。具体规则及同一原始对象的测量见 记录 010。
 
-1.23 起，`open_circuit`、`submit_circuit`、`checkout_candidate` 的结果由 `electron/circuit-action-result.cjs` 单独定义为 `vibe-logisim.circuit-action/v1`：文件相对路径、当前电路、可用电路名、工程/版本/文件摘要、保存状态、磁盘状态、连接索引可用性，以及写回时的候选 ID。`file:null` 表示没有选中电路；加载、索引可用与保存均不代表功能验证通过。先用完整 session 更新宿主绑定，再生成回执；UI/历史仍使用完整 session。旧 UI session 的模型去重规则已删除，电路观察继续由观察工具提供。实际输出与交付等待的边界见 [034](../experiments/034-host-action-receipts/README.md)。
+1.23 起，`open_circuit`、`submit_circuit`、`checkout_candidate` 的结果由 `electron/circuit-action-result.cjs` 单独定义为 `vibe-logisim.circuit-action/v1`：文件相对路径、当前电路、可用电路名、工程/版本/文件摘要、保存状态、磁盘状态、连接索引可用性，以及写回时的候选 ID。`file:null` 表示没有选中电路；加载、索引可用与保存均不代表功能验证通过。先用完整 session 更新宿主绑定，再生成回执；UI/历史仍使用完整 session。旧 UI session 的模型去重规则已删除，电路观察继续由观察工具提供。实际输出与交付等待的边界见 记录 034。
 
 1.25 起 `open_circuit({path,circuit?})` 可以让人接手指定子电路定义；省略 circuit 保留当前图面。回执的 `activeCircuit` 只来自同工程/修订的 renderer 确认，`canvas.status` 区分 shown、loading、superseded、failed、unknown、unavailable，不再从 Studio 的旧选区猜测。后续人工操作优先；不改文件 main、构造选区或切换会话。原始课设副本的生产插件→真实 Electron 交接已核对，模型由机械调用方代替，未声称模型自主采用。鼠标切模块、延迟请求让位、源文件/修订/会话保持见 `apps/desktop/test/e2e-canvas-handoff.cjs`。
 
-随后原始课设真实回合实际采用指定子电路open，但20分钟内无final且未改文件，不能称课设完成。[036](../experiments/036-single-cycle-model/README.md)保留结果及实际失败请求。未打开电路的inspect返回 `NO_CIRCUIT_OPEN`；trace的 `domain/trace_targets.py` 用同次原生观察统一报告无效观察名称/元件/端口、reset和ROM目标，返回真实元件及可用端口，不推断正确接法。原生输入检查也按当前引脚真实位宽报告向量索引/事件tick、输入名、提供值和允许范围。1.26 的 `inspect_circuit.portConnections` 为指定端口提供同一定义内原生共享位网的对端、端点元数据、坐标和逐 lane 位映射，按完整连接分页；它不穿过逻辑器件推断信号传播，不把方向当作驱动冲突结论。上述能力复用现有观察身份和结构化错误出口，没有新工具或强制步骤。
+随后原始课设真实回合实际采用指定子电路open，但20分钟内无final且未改文件，不能称课设完成。记录 036保留结果及实际失败请求。未打开电路的inspect返回 `NO_CIRCUIT_OPEN`；trace的 `domain/trace_targets.py` 用同次原生观察统一报告无效观察名称/元件/端口、reset和ROM目标，返回真实元件及可用端口，不推断正确接法。原生输入检查也按当前引脚真实位宽报告向量索引/事件tick、输入名、提供值和允许范围。1.26 的 `inspect_circuit.portConnections` 为指定端口提供同一定义内原生共享位网的对端、端点元数据、坐标和逐 lane 位映射，按完整连接分页；它不穿过逻辑器件推断信号传播，不把方向当作驱动冲突结论。上述能力复用现有观察身份和结构化错误出口，没有新工具或强制步骤。
 
-当前源码的下一次真实课设回合已经说明了提交流程的另一个责任边界：模型直接编辑 `.circ` 后，文件可能已经落盘但原生 Logisim 仍无法加载。例如模型给 ROM 写入了不符合原生内存内容格式的 XML；旧 `submit_circuit` 只刷新工作区，模型要到后续观察才看到错误。1.28 的宿主 `submit_circuit` 在刷新后通过隐藏的原生加载预检，只加载当前定义而不构造完整观察视图，并在 `vibe-logisim.circuit-action/v1` 回执的 `nativeLoadability` 中保留状态和受限错误信息。这是提交后的即时反馈，不是强制验证流程，也不是行为正确性结论。实际回合没有采用1.26新增的 `portConnections`，所以不能把工具存在当成模型已经获得收益；完整记录见 [037](../experiments/037-single-cycle-model-1.26/README.md)。
+当前源码的下一次真实课设回合已经说明了提交流程的另一个责任边界：模型直接编辑 `.circ` 后，文件可能已经落盘但原生 Logisim 仍无法加载。例如模型给 ROM 写入了不符合原生内存内容格式的 XML；旧 `submit_circuit` 只刷新工作区，模型要到后续观察才看到错误。1.28 的宿主 `submit_circuit` 在刷新后通过隐藏的原生加载预检，只加载当前定义而不构造完整观察视图，并在 `vibe-logisim.circuit-action/v1` 回执的 `nativeLoadability` 中保留状态和受限错误信息。这是提交后的即时反馈，不是强制验证流程，也不是行为正确性结论。实际回合没有采用1.26新增的 `portConnections`，所以不能把工具存在当成模型已经获得收益；完整记录见 记录 037。
 
 1.29.0 的 `wire_candidate` 将新增部件的几何接触拒绝转为结构化恢复反馈：`PLACEMENT_PORT_ON_EXISTING_WIRE` 给出端口位置和已有导线，`AMBIGUOUS_PORT_CONTACT` 给出冲突端口，`UNDECLARED_PORT_CONTACT` 给出贴合端口及显式连接要求，`COMPONENT_PLACEMENT_CONFLICT` 给出占用位置和已有部件。原有拒绝条件没有放宽，也没有自动替模型移动元件或猜测连接；这些事实只帮助模型生成下一次修正请求。工具契约版本随之更新，旧线程不会伪装成拥有新上下文。
 
@@ -125,13 +127,13 @@ Studio 在注册 handler 前也会校验目录的基本结构、owner、exposure
 
 模型契约签名只包含实际发送给 Codex 的 19 个 direct 工具及其渲染后声明；隐藏的 Studio 内部工具仍由完整目录校验和执行，但其实现或说明变化不会迫使一个没有模型可见变化的会话重连。模型可见工具变化仍会使旧 thread 失效，避免继续使用过期声明。
 
-独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 [039](../experiments/039-workspace-index/README.md)。
+独立坏文件修复回合显示，该反馈已进入模型的真实判断：模型在同一个 Code Mode 脚本中依次提交多个文件，读到目标文件的 `not-loadable` 与原生 `contents is null` 后，明确定位损坏文件并继续检查。它在7分钟观察上限内没有完成修复，证据只支持“即时反馈被采用”，不支持“模型已修复”。广任务中曾加入一句非强制节奏提示，但真实回合没有因此提前写文件，已删除；不继续用提示词堆叠代替产品能力。工作区索引的真实回合记录见 记录 039。
 
-1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 [012](../experiments/012-tool-constraints/README.md)。
+1.9.1 的模型接口经 `electron/schema-constraints-projection.cjs` 从现有 schema 自动补充整数、数值/项数/字符数/字段数量界限；原生 Code Mode 的 TypeScript 声明实际会丢失这些信息。只追加可见说明，不改变执行规则、optional/required 或调用流程。契约签名包含发送给模型的实际声明；当前 Codex 的 resume/fork 不更新旧工具，因此沿用已有新原生绑定机制，不假装旧线程已收到新接口。具体真实协议回放及上下文边界见 记录 012。
 
-1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；[返回类型验收](../experiments/012-tool-constraints/RESULT-TYPE.md)证明传输与字段解析。[020 真实模型对照](../experiments/020-result-contract/README.md)中有/无说明均完成同一只读验证任务、完整覆盖且只穷举一遍；没有观察到减少重跑，不将单次耗时差当因果收益。
+1.10.0 由 `electron/model-tool-output.cjs` 同时声明实际返回格式：本机 Code Mode 返回字符串，普通 JSON 结果需先 `JSON.parse`，带图结果使用工具原有的 image() 示例。native DynamicToolSpec 没有返回 schema，不能假设 `Promise<unknown>` 的实际结果是对象。此说明随真实模型工具契约签名更新，执行与 UI 对象不变。触发它的真实问题是 1.9.4 模型误读计数字段后重复穷举；返回类型验收证明传输与字段解析。020 真实模型对照中有/无说明均完成同一只读验证任务、完整覆盖且只穷举一遍；没有观察到减少重跑，不将单次耗时差当因果收益。
 
-原生属性适配在 `observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java`：编辑器下拉项可能是包装对象，须经克隆 AttributeSet 的原生 setter 转为保存值。模型元件查询、人工模板/编辑和观察器使用同一边界；两种 Logisim 的实际拆线器位分组、连线仿真、非法配置及撤销已验证，见 [013](../experiments/013-component-attributes/README.md)。这不增加特定任务工具，也不改变直接编辑 `.circ` 的能力。
+原生属性适配在 `observer/src/com/cburch/logisim/circuit/NativeAttributeAdapter.java`：编辑器下拉项可能是包装对象，须经克隆 AttributeSet 的原生 setter 转为保存值。模型元件查询、人工模板/编辑和观察器使用同一边界；两种 Logisim 的实际拆线器位分组、连线仿真、非法配置及撤销已验证，见 记录 013。这不增加特定任务工具，也不改变直接编辑 `.circ` 的能力。
 
 当前能力类别包括：
 
@@ -147,35 +149,35 @@ Studio 在注册 handler 前也会校验目录的基本结构、owner、exposure
 
 1.14.0 的 `wire_candidate` 移除组件白名单，新增部件复用人工 palette 的真实工具、默认属性、序列化和端口。`factory` 使用原生 tool 名称；可选 `library` 使用当前工程库 ID，空字符串表示项目子电路，省略时仅接受目录中唯一的可放置同名工具。自定义封装及属性由运行时解释，不在 Python 中猜端口位置；一次 `component-templates` 请求取得全部新增部件，仍由已有路由器按完整端口连线。连接 `name` 是可选说明。该版本不新增 Pin/Tunnel；1.17.0 放开无父实例定义的 Pin 构建（见下文），直接文件编辑继续开放。未知库、名字歧义、属性错误和子电路循环在布线前拒绝，并带出对应新增部件 id；失败只清理本次未发布候选。
 
-1.16.0 允许请求中明确相连的两个同宽端口直接贴合（新增与已有、新增与新增）。已有导线占用、第三个端口和未请求的接触仍拒绝。只有发生贴合时才独立加载新增部件，保留 Splitter 等原生部件内部的逐位连接；以贴合前的位网为基准核对允许的接触及最终连线，避免原生加载已合并网络后掩盖短接或多个驱动。无接触构建复用正常观察，不为每个新增元件追加加载。真实失败请求的恢复、图面和独立行为结果见 [026](../experiments/026-explicit-port-contact/README.md)。
+1.16.0 允许请求中明确相连的两个同宽端口直接贴合（新增与已有、新增与新增）。已有导线占用、第三个端口和未请求的接触仍拒绝。只有发生贴合时才独立加载新增部件，保留 Splitter 等原生部件内部的逐位连接；以贴合前的位网为基准核对允许的接触及最终连线，避免原生加载已合并网络后掩盖短接或多个驱动。无接触构建复用正常观察，不为每个新增元件追加加载。真实失败请求的恢复、图面和独立行为结果见 记录 026。
 
-1.17.0 的 `wire_candidate` 支持在没有父实例的定义中新增原生 Pin，包括产品新建的空白 main。原有引脚必须保持不变，新增集合必须与请求一致；已有父实例时给出明确原因和接口编辑/直接文件编辑路径，不猜父电路接线。元件目录、模板和连接校验继续共用。后续 wire/move/reroute 对比前一个候选的接口，保留相对源文件的 `interfacePreserved: false`，不会把合法扩展的接口误当作破坏。只改变当前定义且无父实例时，不逐一加载无关定义。助手活动的失败详情也不再被工具名覆盖。真实空白计数器回合暴露了这两个阻碍，但原回合超时且输出冲突，未完成任务；修正后的从空白构建/继续编辑是生产入口验证，不是新的模型自主成功，见 [027](../experiments/027-counter-from-blank/README.md)。
+1.17.0 的 `wire_candidate` 支持在没有父实例的定义中新增原生 Pin，包括产品新建的空白 main。原有引脚必须保持不变，新增集合必须与请求一致；已有父实例时给出明确原因和接口编辑/直接文件编辑路径，不猜父电路接线。元件目录、模板和连接校验继续共用。后续 wire/move/reroute 对比前一个候选的接口，保留相对源文件的 `interfacePreserved: false`，不会把合法扩展的接口误当作破坏。只改变当前定义且无父实例时，不逐一加载无关定义。助手活动的失败详情也不再被工具名覆盖。真实空白计数器回合暴露了这两个阻碍，但原回合超时且输出冲突，未完成任务；修正后的从空白构建/继续编辑是生产入口验证，不是新的模型自主成功，见 记录 027。
 
-1.18.0 在普通 `inspect_circuit` 的 `connectivityIssues` 中新增 `multipleOutputPeers`：从完整原生位网归并多个标为 output 的端口，给出组件/端口 ID、位置、原生提示和位映射，局部选择也带出选区外相关端口。默认最多16组、每组8个端口、每端口32个位映射，所有省略均标出，完整 nets 保持可读；没有新增原生查询。它是静态连接事实，不能把三态/未激活输出或原生方向元数据当作实际驱动冲突。真实失败计数器的寄存器、多路器和常量输出共网现可直接定位，正常32位扇出与原请求恢复产物不报告该项，见 [028](../experiments/028-construction-feedback/README.md)。
+1.18.0 在普通 `inspect_circuit` 的 `connectivityIssues` 中新增 `multipleOutputPeers`：从完整原生位网归并多个标为 output 的端口，给出组件/端口 ID、位置、原生提示和位映射，局部选择也带出选区外相关端口。默认最多16组、每组8个端口、每端口32个位映射，所有省略均标出，完整 nets 保持可读；没有新增原生查询。它是静态连接事实，不能把三态/未激活输出或原生方向元数据当作实际驱动冲突。真实失败计数器的寄存器、多路器和常量输出共网现可直接定位，正常32位扇出与原请求恢复产物不报告该项，见 记录 028。
 
-1.19.0 的 `wire_candidate` 可用 `removeWireIds` 显式删去已有原生导线段，再新增部件或按端口重连；也支持只删除或只放置。删除要求同一 source/candidate 观察的 `artifactSha256`，导线 ID 严格匹配该原件；端口引用在删除前绑定，避免重载编号变化。复用人工删线的几何减法，原生拆分后的半段可独立选择；不自动猜测整条信号路径或清理未选支线。连接证明以删线后的原生位网为基准，仅允许请求中的新合并，保留其余端口位关系、原组件与接口。候选仍独立，checkout 写入共享文件并进入原有撤销机制；直接文件/脚本编辑继续开放。真实失败计数器的4段删除+2对重连约0.118秒完成，独立原生运行、真实鼠标操作、宿主写回/撤销通过；不是新模型自主采用或整轮提速证据，见 [029](../experiments/029-topology-repair/README.md)。
+1.19.0 的 `wire_candidate` 可用 `removeWireIds` 显式删去已有原生导线段，再新增部件或按端口重连；也支持只删除或只放置。删除要求同一 source/candidate 观察的 `artifactSha256`，导线 ID 严格匹配该原件；端口引用在删除前绑定，避免重载编号变化。复用人工删线的几何减法，原生拆分后的半段可独立选择；不自动猜测整条信号路径或清理未选支线。连接证明以删线后的原生位网为基准，仅允许请求中的新合并，保留其余端口位关系、原组件与接口。候选仍独立，checkout 写入共享文件并进入原有撤销机制；直接文件/脚本编辑继续开放。真实失败计数器的4段删除+2对重连约0.118秒完成，独立原生运行、真实鼠标操作、宿主写回/撤销通过；不是新模型自主采用或整轮提速证据，见 记录 029。
 
-1.20.0 的时序入口共用 `inputClocks` 周期输入激励：`[{name:"CLK"}]` 从 `inputs.CLK` 的初值开始，于第1步翻转，此后每步翻转。可指定 `firstTick`、`lastTick`、`highTicks` 和 `lowTicks`；停止后保持末值。同一步先按原顺序执行 `inputEvents`，再按声明顺序翻转周期输入，最后执行按钮事件，每项独立传播。一个Pin只能由一种输入事件来源驱动；原生Clock依然在这些输入事件之前推进，并非同一时间单位下的物理时钟。周期激励展开为现有原生事件，执行摘要来自展开序列，返回与留存报告保持紧凑参数；Java按tick索引事件及绑定端口，不再逐步扫描全部事件。适用于 trace/evaluate/harness/compare 的时序模式，不是必需的验证步骤。实际原生与宿主消费结果见 [030](../experiments/030-clock-stimuli/README.md)。
+1.20.0 的时序入口共用 `inputClocks` 周期输入激励：`[{name:"CLK"}]` 从 `inputs.CLK` 的初值开始，于第1步翻转，此后每步翻转。可指定 `firstTick`、`lastTick`、`highTicks` 和 `lowTicks`；停止后保持末值。同一步先按原顺序执行 `inputEvents`，再按声明顺序翻转周期输入，最后执行按钮事件，每项独立传播。一个Pin只能由一种输入事件来源驱动；原生Clock依然在这些输入事件之前推进，并非同一时间单位下的物理时钟。周期激励展开为现有原生事件，执行摘要来自展开序列，返回与留存报告保持紧凑参数；Java按tick索引事件及绑定端口，不再逐步扫描全部事件。适用于 trace/evaluate/harness/compare 的时序模式，不是必需的验证步骤。实际原生与宿主消费结果见 记录 030。
 
 1.21.0 将 `inspect_circuit(includeNets:true)` 的默认连接视图改为 `netGroups`：具有相同端点/切片结构的原生位网合并展示，`netIds[i]` 与每个 contact/slice 的 `bits[i]` 仍一一对应，反向拆线和同端口多位短接不被折叠为猜测的总线。无法归组的记录原样保留；`netFormat:"bits"` 可直接读取逐位原记录。分组发生在模型观察边界，原生位网、组件和连接诊断不改写。失败计数器的真实宿主模型出口从24,424 B降至20,128 B；这不是模型耗时或成功率证明。
 
-同版新增共享 `NativePortSemantics`，按实际加载的类及其 SHA-256 校准已核实的 HUST/ITA 实现：Adder 的第4端口实际输出进位，虽原生 EndData 声明为输入；观察和元件模板现返回 `direction:output`，同时保留 `nativeDirection:input` 与 `directionSource`。两个运行库的 Register 都按原生实现给出七个端口角色及状态元件分类，移除此前对 HUST 的错误排除。模板、组件详情、选区、目录、位网和连接反馈共用这些语义；未知实现继续使用原生声明，不根据名称或 tooltip 猜测。没有改动运行库端口对象或执行逻辑，方向仍不意味着输出此刻正在驱动。具体实现事实、原生运行及宿主出口见 [031](../experiments/031-observation-semantics/README.md)。
+同版新增共享 `NativePortSemantics`，按实际加载的类及其 SHA-256 校准已核实的 HUST/ITA 实现：Adder 的第4端口实际输出进位，虽原生 EndData 声明为输入；观察和元件模板现返回 `direction:output`，同时保留 `nativeDirection:input` 与 `directionSource`。两个运行库的 Register 都按原生实现给出七个端口角色及状态元件分类，移除此前对 HUST 的错误排除。模板、组件详情、选区、目录、位网和连接反馈共用这些语义；未知实现继续使用原生声明，不根据名称或 tooltip 猜测。没有改动运行库端口对象或执行逻辑，方向仍不意味着输出此刻正在驱动。具体实现事实、原生运行及宿主出口见 记录 031。
 
-1.21 在源码 `04e1aa3` 上的一次真实模型修复已完整交付：同一027失败计数器、028修复提示和8分钟时限下，`gpt-6-astra / xhigh` 于348.587秒结束并给出final，首次写文件命令于208.705秒开始。模型11次工具调用无失败，通过Python直接改XML并submit刷新画布；没有使用 `wire_candidate`，两次inspect均显式选择 `netFormat:"bits"`，没有消费 `netGroups`；一次trace和一次evaluate采用 `inputClocks`。修正后的Adder方向与Register七角色确实出现在首次结果，但本次不能归因为它们或groups带来的提速。最终产物 `b3c414c5f6e0111bc1da44a756dd76395e54549ebabbc2cb8e4408244aebe86c` 经39个真实Electron输入采样、停止/重开及独立267采样通过；模型自给期望的5个evaluate案例单独记录。模型额外将preset悬空列为原因并接0，悬空导致原故障或接0必要性的因果均未独立证明。此前超时记录保留，只记单次完整成功，不作版本因果A/B或成功率结论。见 [真实回合摘要](../experiments/031-observation-semantics/model-repair-1.21/summary.json)、[工具输入输出](../experiments/031-observation-semantics/model-repair-1.21/tool-calls.json)与[原始oracle](../experiments/031-observation-semantics/model-repair-1.21/oracle.json)；本次归档没有运行新模型或测试。
+1.21 在源码 `04e1aa3` 上的一次真实模型修复已完整交付：同一027失败计数器、028修复提示和8分钟时限下，`gpt-6-astra / xhigh` 于348.587秒结束并给出final，首次写文件命令于208.705秒开始。模型11次工具调用无失败，通过Python直接改XML并submit刷新画布；没有使用 `wire_candidate`，两次inspect均显式选择 `netFormat:"bits"`，没有消费 `netGroups`；一次trace和一次evaluate采用 `inputClocks`。修正后的Adder方向与Register七角色确实出现在首次结果，但本次不能归因为它们或groups带来的提速。最终产物 `b3c414c5f6e0111bc1da44a756dd76395e54549ebabbc2cb8e4408244aebe86c` 经39个真实Electron输入采样、停止/重开及独立267采样通过；模型自给期望的5个evaluate案例单独记录。模型额外将preset悬空列为原因并接0，悬空导致原故障或接0必要性的因果均未独立证明。此前超时记录保留，只记单次完整成功，不作版本因果A/B或成功率结论。见 真实回合摘要、工具输入输出与原始oracle；本次归档没有运行新模型或测试。
 
 共享 native 执行器的反馈状态只有在每一行都有明确期望、传播已稳定且全部匹配时才是 `passed`；已稳定样本存在确定的不匹配时是 `failed`；需要比较的信号未知或运行振荡时是 `unknown`；没有完整比较条件且没有上述异常时是 `observed`。这个状态描述本次实验，不推动模型进入下一步。
 
 所有 native 实验仍按完整 rows 计算反馈并保存完整观察；模型传输默认只返回有限行。trace 可用 `rowStart` / `rowLimit`（默认 0 / 32，最多 256）取另一段；simulate 复用 `simulate_circuit` 的失败、未知和通过样本抽样。这样大批量运行不会把重复行全部塞进上下文，`rowCount`、计数和首个反例仍对应完整实验。
 
-1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 [原生链路验收](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)，历史 episode 保持原样。
+1.10.1 的 `simulate_circuit` / `trace_circuit` 在原生报告生成边界使用相同的 `observation_feedback`，附上真实运行已有的 run ID、stimulus 和 runtime 身份；保持原先顶层 rows/passed/failed/unchecked。汇总先于传输采样与分页，不能因未返回的第 41 行存在未知或反例而误报整批通过。未断言的 trace 可以是已观察或振荡未知，不能通过。现有事件与评测记录器直接接收这份反馈，不从工具完成、调用次数或空身份推断验证；一次调用只记录一次。见 原生链路验收，历史 episode 保持原样。
 
 桌面宿主把所有带 `feedback` 的结果投影成同一类 Harness 事件：保留旧式 native `session` 以支持已有的对象定位，同时使用 `binding` 和 `run` 识别所有结果类型。外部验证器没有 native session 也能显示自己的 label、通过/失败/未确定状态和有限输出预览；原始完整结果仍只作为模型工具结果返回。未确定结果在工作过程中显示“待确认”，不会伪装成通过或普通完成。
 
 右栏投影保留每次调用的 `resultStatus`：后续传输层“工具完成”不能覆盖实际反例或未知，另一批通过也不能自动将前一批反例标为恢复。工具请求失败的重试仍沿用原有处理；运行不匹配、未确定与普通已观察分别显示，不把测得反例说成工具没有执行。
 
-`inspect_circuit` 的 `connectivityIssues` 由 `domain/connectivity_feedback.py` 根据完整原生位网生成。1.9.2 修正了“有网络编号就算已连接”的漏报：`unconnectedInputs` / `unconnectedOutputs` 按端口列出没有其他端口 contact 的位；导线段可以存在。`inputsWithoutOutputPeer` 另列有 peer 但没有被原生标为 output 的位，不重复前一类；`unknownPorts` 与 `widthIncompatibilities` 保留未知和冲突。省略 nets 或筛选组件不缩减判断所用网络。原生方向标签不等于实际驱动，浮空输入也可能有合法默认值，因此这些是静态事实，不是功能成败或强制提交条件。两种实际运行时的总线、浮空、冲突反例与历史产物证据见 [014](../experiments/014-wire-construction/CONNECTIVITY.md)。
+`inspect_circuit` 的 `connectivityIssues` 由 `domain/connectivity_feedback.py` 根据完整原生位网生成。1.9.2 修正了“有网络编号就算已连接”的漏报：`unconnectedInputs` / `unconnectedOutputs` 按端口列出没有其他端口 contact 的位；导线段可以存在。`inputsWithoutOutputPeer` 另列有 peer 但没有被原生标为 output 的位，不重复前一类；`unknownPorts` 与 `widthIncompatibilities` 保留未知和冲突。省略 nets 或筛选组件不缩减判断所用网络。原生方向标签不等于实际驱动，浮空输入也可能有合法默认值，因此这些是静态事实，不是功能成败或强制提交条件。两种实际运行时的总线、浮空、冲突反例与历史产物证据见 记录 014。
 
-`inspect_circuit(circuit, componentDirectory: {maxBytes?, cursor?})` 提供可选组件目录。1.15.0 起直接包含组件位置、边界、子电路目标和端口坐标、位宽、方向与原生角色说明，可据此布局和接线，无需仅为几何再查完整详情。属性和详细位网按既有 componentIds 路径读取。页面按实际 UTF-8 JSON 字节预算生成，默认 24,000、上限 32,000，包含身份与游标；未知端口保留 null。游标绑定工程、版本、候选和完整静态观察/运行环境，过期拒绝，单条过大明确报错，不切断或跳过条目。原始全文和 Code Mode 自行筛选仍可用。原有分页证据见 [018](../experiments/018-inspection-discovery/README.md)，用目录完成原生子电路构建的实际消费见 [025](../experiments/025-context-observation/README.md)。
+`inspect_circuit(circuit, componentDirectory: {maxBytes?, cursor?})` 提供可选组件目录。1.15.0 起直接包含组件位置、边界、子电路目标和端口坐标、位宽、方向与原生角色说明，可据此布局和接线，无需仅为几何再查完整详情。属性和详细位网按既有 componentIds 路径读取。页面按实际 UTF-8 JSON 字节预算生成，默认 24,000、上限 32,000，包含身份与游标；未知端口保留 null。游标绑定工程、版本、候选和完整静态观察/运行环境，过期拒绝，单条过大明确报错，不切断或跳过条目。原始全文和 Code Mode 自行筛选仍可用。原有分页证据见 记录 018，用目录完成原生子电路构建的实际消费见 记录 025。
 
 每轮会话上下文的 `binding.plugin` 只携带插件身份与版本；完整工具说明由原生 dynamicTools 提供一次，不在应用上下文中再复制 capabilities。原始 context 仍保留给 UI，选区、运行观察、留存时刻和资料引用照常传送。
 
@@ -215,9 +217,9 @@ Studio 在注册 handler 前也会校验目录的基本结构、owner、exposure
 
 回合初始的工作区上下文还会附带 `currentSource`：它只记录当前文件相对路径、绑定 revision、冻结 SHA、磁盘 SHA 和 `alignment`（`aligned`、`changed-on-disk`、`missing` 或 `unknown`）。它是宿主的文件身份和导航上下文，不是电路观察结果，也不自动携带上一次仿真或验证的结论。加载性、行为和评测结果只通过对应的显式电路工具返回；模型需要时可以重新观察，用户留存的冻结时刻则通过 `read_kept_observation` 主动读取。这样一次局部运行不会在下一回合伪装成当前电路状态，也不会把历史证据变成隐含工作流。
 
-候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 [023](../experiments/023-simultaneous-layout/README.md)；反馈可恢复不等于已证明模型耗时改善。
+候选编号缺失或拼写不完整时，`CANDIDATE_NOT_FOUND` 附当前工程、当前 revision 的最多五个完整候选编号与标题；读取和 checkout 的桌面通道均保留同一结构化反馈。编号仍严格匹配，不按前缀自动选中或写入。此修正来自 1.13 真实模型将编号少抄一位后连续失败的记录，见 记录 023；反馈可恢复不等于已证明模型耗时改善。
 
-1.9.4 的原生加载共用 `NativeCircuitLoader`，在 Logisim WireRepair 前拒绝非水平/垂直导线，给出具体定义、序号及端点。它不自动换路线，不把坐标对齐规则扩大成网格/非零长度限制；直接编辑文件仍受支持。常驻 worker 的意外结束附退出码及有界 stderr，具体 observer 错误会传到渲染和交互启动。两种 JAR 的兼容、拒绝后的正常处理及源/结构不变证据见 [017](../experiments/017-native-wire-validation/README.md)。这是执行边界的故障反馈，不要求提交前先验证，也不证明功能正确。
+1.9.4 的原生加载共用 `NativeCircuitLoader`，在 Logisim WireRepair 前拒绝非水平/垂直导线，给出具体定义、序号及端点。它不自动换路线，不把坐标对齐规则扩大成网格/非零长度限制；直接编辑文件仍受支持。常驻 worker 的意外结束附退出码及有界 stderr，具体 observer 错误会传到渲染和交互启动。两种 JAR 的兼容、拒绝后的正常处理及源/结构不变证据见 记录 017。这是执行边界的故障反馈，不要求提交前先验证，也不证明功能正确。
 
 插件边界还会执行工具目录中声明的 `minimum/maximum/minItems/maxItems` 以及嵌套对象约束。越界参数在进入 native runtime 或工作区命令前就返回带路径的 `INVALID_ARGUMENT`，并给出可修正的边界；目录是约束的唯一来源，执行器不再各自重复维护一套上限。
 
@@ -265,11 +267,11 @@ Electron 宿主边界也使用同一错误语义，而不是把所有失败降�
 
 模型整图和 viewport 都使用白底 RGB 原生 renderer，不能直接传递依赖网页背景的透明 overview。`region` 为电路坐标，`scale` 为每电路单位的像素数，并返回 `imageSha256`；静态图中的 X 不是运行结果。同版本同区域复用已有 renderer LRU，仍返回图像，避免模型压缩上下文后无法重看。切工程、修订或运行环境期间生成的旧图会被拒绝。
 
-1.10.0 增加可选 `candidateId`，允许在 checkout 前查看候选整图或 viewport；省略时仍查看当前电路。`application/candidate_render.py` 复用候选 owner/base/artifact/依赖检查和白底 renderer，原生观察提供图面边界；不修改源文件、结构历史或候选 UI PNG。返回真实候选 SHA、candidateId、baseRevisionId 和本次实际预览 runtime，拒绝其他工程、过期基线以及运行中变化。每次预览仍有一次 native overview 以取得边界，不宣称更快。生产生成的两种候选、两种 JAR 和 Code Mode 图像字节传递见 [019](../experiments/019-candidate-render/README.md)。
+1.10.0 增加可选 `candidateId`，允许在 checkout 前查看候选整图或 viewport；省略时仍查看当前电路。`application/candidate_render.py` 复用候选 owner/base/artifact/依赖检查和白底 renderer，原生观察提供图面边界；不修改源文件、结构历史或候选 UI PNG。返回真实候选 SHA、candidateId、baseRevisionId 和本次实际预览 runtime，拒绝其他工程、过期基线以及运行中变化。每次预览仍有一次 native overview 以取得边界，不宣称更快。生产生成的两种候选、两种 JAR 和 Code Mode 图像字节传递见 记录 019。
 
 **Code Mode 的最后一段传输也要验证。** 当前本机 Codex 0.153.3 会将动态工具的 `inputText`/`inputImage` 转换为换行拼接的字符串。直接 `text(await tools.render_circuit(...))` 会打印 base64，不能让模型看到图。工具 catalog 提供原生 Code Mode 调用示例：保留 metadata 文本，并把独立 data URL 行传给 `image(...)`。普通直接工具调用仍返回原生 `inputImage`。`node apps/desktop/test/native-tool-images.cjs` 用真实 Codex 和 localhost Responses 回放检查下一次模型请求中的 `input_image`，覆盖反例和 catalog 示例，不访问真实服务商或消耗模型额度。这证明传输契约，不证明某次真实模型回合采用了示例。
 
-[实验 006-v3](../experiments/006-visual-feedback/results/2026-09-19-native-v3/README.md)另行记录了一次真实模型轨迹：原生上下文包含 2 张图片、0 段 base64 文本；模型在 8 分 24 秒结束，冻结文件独立仿真 8/8 通过。图面消除了穿过门体的线，但仍有长绕线和扩大的面积，布局目标没有因功能通过而自动完成。单轮结果不能证明通用增益。
+实验 006-v3另行记录了一次真实模型轨迹：原生上下文包含 2 张图片、0 段 base64 文本；模型在 8 分 24 秒结束，冻结文件独立仿真 8/8 通过。图面消除了穿过门体的线，但仍有长绕线和扩大的面积，布局目标没有因功能通过而自动完成。单轮结果不能证明通用增益。
 
 ## 可选的布局移动
 
@@ -277,7 +279,7 @@ Electron 宿主边界也使用同一错误语义，而不是把所有失败降�
 
 `project/layout_document.py` 供人工编辑和模型入口共同应用 XML 布局，更新 Pin 的自定义封装引用。`project/moving.py` 负责独立产物、原生重载、全部端口位连接关系和外部接口检查；失败不发布候选或修改源文件。新位置若压到别的信号线，布线器提前返回具体端点冲突，不做无效路径搜索。工具只执行指定移动，不自动设计版式，也不承诺移动后的线最短。可选 `reroute_candidate` 可以继续整理遗留折线。
 
-[实际使用与图面](../experiments/007-local-rerouting/results/2026-09-21-move/README.md)：外层助手通过模型工具入口移动真实产物上的 XOR/NOT/AND，原生检查保留 177 个端口位关系，随后局部重布线；最终文件经独立 65,536 组及真实 Electron 输入、停止、重开验证。没有调用嵌入模型，不能据此声称自主采用率或整轮加速。
+实际使用与图面：外层助手通过模型工具入口移动真实产物上的 XOR/NOT/AND，原生检查保留 177 个端口位关系，随后局部重布线；最终文件经独立 65,536 组及真实 Electron 输入、停止、重开验证。没有调用嵌入模型，不能据此声称自主采用率或整轮加速。
 
 ## 可选的局部导线整理
 
@@ -289,13 +291,13 @@ Electron 宿主边界也使用同一错误语义，而不是把所有失败降�
 
 候选可以继续组合、查看和仿真；模型选择 `checkout_candidate` 时才写入共享工作文件，随后仍可查看改动和撤销。直接改 `.circ` 不受限制。这个可选计算工具不要求用户采用候选工作流。它拒绝过期摘要、未知位宽、冲突网络和闭合回路；不承诺路径总会缩短，矩形元件障碍也不覆盖文字标签，美观和功能仍应按任务判断。
 
-1.10.1 的共享 `domain/routing.py` 对器件边缘附近增加有限代价，并优先让端口沿向外方向引出一格，再转弯；不新增硬障碍、移动元件或生成 Tunnel。重新布线、按端口连线和人工移动复用这一几何规则。真实产物 A/B 保留局部改善与变差的区域，原生端口位关系和独立行为检查分开验证，见 [间隙与引出报告](../experiments/007-local-rerouting/CLEARANCE.md)。这只是局部走线偏好，未解决全图布局、外置标签和密集拆线器。
+1.10.1 的共享 `domain/routing.py` 对器件边缘附近增加有限代价，并优先让端口沿向外方向引出一格，再转弯；不新增硬障碍、移动元件或生成 Tunnel。重新布线、按端口连线和人工移动复用这一几何规则。真实产物 A/B 保留局部改善与变差的区域，原生端口位关系和独立行为检查分开验证，见 间隙与引出报告。这只是局部走线偏好，未解决全图布局、外置标签和密集拆线器。
 
-仿真执行现在由独立的串行 `SimulationWorker` 持有 warm JVM。[021 运行时调查](../experiments/021-simulation-runtime/README.md)显示固定成本主要来自 JVM/首次加载；同一 JVM 直接复用 `LogisimFile` 又会保留 ROM program overlay 并累积 Project/Simulator 线程。因此 worker 只复用 JVM，每个请求重新加载 immutable artifact；runtime 切换、超时、协议错误或 native/domain 异常都会销毁它。`NativeWorker` 的只读缓存仍不能承担仿真，也没有被扩成仿真池。
+仿真执行现在由独立的串行 `SimulationWorker` 持有 warm JVM。021 运行时调查显示固定成本主要来自 JVM/首次加载；同一 JVM 直接复用 `LogisimFile` 又会保留 ROM program overlay 并累积 Project/Simulator 线程。因此 worker 只复用 JVM，每个请求重新加载 immutable artifact；runtime 切换、超时、协议错误或 native/domain 异常都会销毁它。`NativeWorker` 的只读缓存仍不能承担仿真，也没有被扩成仿真池。
 
 当前每次原生 `simulate`/`trace` 已在 finally 中关闭其 `Project` 的 Simulator；后续 021 复测的线程和文件引用不再增长。这个修复只负责请求内生命周期回收，不能把可变 `LogisimFile` 变成可复用快照，所以 warm worker 仍坚持每请求重载 artifact，异常后不继续复用。
 
-`routing.lengthBefore/lengthAfter` 是所选/提出路径的长度，`circuitWireLengthBefore/circuitWireLengthAfter` 是原生规范化后的整图线长；重叠线可能被运行时合并，两者不能混用。[实验 007](../experiments/007-local-rerouting/README.md)分别保存直接工具计算、开放任务采用几何观察，以及真实模型自行调用局部布线器的结果；局部布线已被实际使用，但整轮效率和图面质量还不能由单次试跑推广。
+`routing.lengthBefore/lengthAfter` 是所选/提出路径的长度，`circuitWireLengthBefore/circuitWireLengthAfter` 是原生规范化后的整图线长；重叠线可能被运行时合并，两者不能混用。实验 007分别保存直接工具计算、开放任务采用几何观察，以及真实模型自行调用局部布线器的结果；局部布线已被实际使用，但整轮效率和图面质量还不能由单次试跑推广。
 
 ## Episode 级效果评测
 
@@ -314,9 +316,9 @@ Electron 宿主边界也使用同一错误语义，而不是把所有失败降�
 
 v2 将 v1 的 `invalidCalls/recoveryCalls` 改成 `failedCalls/laterSuccessesOfSameActivity`：非零退出可能是帮助输出或主动终止，后续同类命令成功也不能证明修复了此前问题。旧实验保持原始 schema，不倒改历史数据。实验 006 runner 可显式加 `--capture-commands` 保存有界命令和输出，便于受控夹具诊断；默认关闭，不进入产品历史或 ledger。此文件可能包含私有正文，发布实验前需单独审阅。
 
-可运行的对照入口见 [实验 005](../experiments/005-harness-effect/README.md)。三组共用当前直接文件工作区、隔离方式、模型配置和原生 JAR，分别比较通用能力、增加工具、增加产品指令及上下文。最终冻结文件由独立 Java 客户端调用上游 Logisim 检查，不复用被测插件的 evaluator。预检不调用模型；真实回合必须显式启用。插件反馈事件统计看不到 A 组自建 shell 验证，因此不能用零次插件事件断言模型没有验证。
+可运行的对照入口见 实验 005。三组共用当前直接文件工作区、隔离方式、模型配置和原生 JAR，分别比较通用能力、增加工具、增加产品指令及上下文。最终冻结文件由独立 Java 客户端调用上游 Logisim 检查，不复用被测插件的 evaluator。预检不调用模型；真实回合必须显式启用。插件反馈事件统计看不到 A 组自建 shell 验证，因此不能用零次插件事件断言模型没有验证。
 
-[通用任务 runner](../experiments/lib/README.md)复用生产工作区与 Codex host，可指定 fixture、任务、冻结文件和独立 oracle；[双实例时序任务](../experiments/009-sequential-hierarchy/README-scenario.md)用于跨模块、使能、同步复位及边沿验证。先停止模型再冻结工作区，功能判断不依赖模型自述。受控实验的有界正文记录包含宿主参数拒绝、checkout/submit 和 shell 退出结果，不只记录已进入 Studio 的调用；正文不写入产品历史或 Episode Ledger。
+通用任务 runner复用生产工作区与 Codex host，可指定 fixture、任务、冻结文件和独立 oracle；双实例时序任务用于跨模块、使能、同步复位及边沿验证。先停止模型再冻结工作区，功能判断不依赖模型自述。受控实验的有界正文记录包含宿主参数拒绝、checkout/submit 和 shell 退出结果，不只记录已进入 Studio 的调用；正文不写入产品历史或 Episode Ledger。
 
 评测器可以事后把结构、接口、运行行为和用户目标建成 milestone DAG，允许不同轨迹达到同一结果。它不能把产品变成固定的“先观察、再构建、再验证”向导；用户和模型仍可以先完整构建，再请求验证，或直接编辑文件后运行。
 

@@ -1,5 +1,7 @@
 # 开发与验证
 
+> 文中形如「记录 0NN」或「实验 0NN」的编号指开发过程中的内部实验记录，不随本仓库发布；正文已保留其结论。
+
 ## 环境
 
 桌面开发版在 Linux 上开发和验收；Windows 通过打包版本支持（见分发说明），源码直接运行未在 Windows 上验收。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
@@ -64,13 +66,13 @@ node apps/desktop/test/rerouting-workspace.cjs
 
 后一个脚本还经过生产 Electron 宿主模块、文件夹、插件和 Studio：生成候选、写入真实工作文件、仿真、渲染、保存文件历史并撤销；检查其他文件未变。它不启动模型或窗口，不应标记为鼠标/UI 验收。
 
-`routing-clearance.py` 用两种原生运行文件检查四方向引脚、绕无关器件、窄通道与直连；默认不需要真实课设样本。历史真实产物的前后图、连接与行为证明及性能范围见 [007 间隙报告](../experiments/007-local-rerouting/CLEARANCE.md)。
+`routing-clearance.py` 用两种原生运行文件检查四方向引脚、绕无关器件、窄通道与直连；默认不需要真实课设样本。历史真实产物的前后图、连接与行为证明及性能范围见 007 间隙报告。
 
-原生仿真反馈到评测记录的完整链路可用 `node apps/desktop/test/simulation-evidence.cjs /absolute/new-evidence-directory` 验证。两个 JAR 的生产插件调用覆盖明确预期、空预期、未知、振荡、行采样/分页与候选身份，检查文件与结构历史不变；不启动模型。它只证明实际执行结果正确进入事件，独立任务 oracle 仍另行判断任务成功，见 [008 反馈报告](../experiments/008-native-verification/SIMULATION-FEEDBACK.md)。
+原生仿真反馈到评测记录的完整链路可用 `node apps/desktop/test/simulation-evidence.cjs /absolute/new-evidence-directory` 验证。两个 JAR 的生产插件调用覆盖明确预期、空预期、未知、振荡、行采样/分页与候选身份，检查文件与结构历史不变；不启动模型。它只证明实际执行结果正确进入事件，独立任务 oracle 仍另行判断任务成功，见 008 反馈报告。
 
-其结果可交给 `node apps/desktop/test/e2e-simulation-feedback.cjs /absolute/native-evidence-directory /absolute/new-ui-evidence`：在真实 Electron 回放已保存的原生事件，并以明确夹具补上工具完成事件，鼠标展开工作过程，核对完成不覆盖未知/反例、另一批通过不抹掉前一批反例、无断言只显示观察。它没有模型调用，证据来源与 UI 回放范围见 [截图](../experiments/008-native-verification/results/2026-09-20-feedback-ui/README.md)。
+其结果可交给 `node apps/desktop/test/e2e-simulation-feedback.cjs /absolute/native-evidence-directory /absolute/new-ui-evidence`：在真实 Electron 回放已保存的原生事件，并以明确夹具补上工具完成事件，鼠标展开工作过程，核对完成不覆盖未知/反例、另一批通过不抹掉前一批反例、无断言只显示观察。它没有模型调用，证据来源与 UI 回放范围见 截图。
 
-仿真批量调用的启动成本调查见 [021](../experiments/021-simulation-runtime/README.md)。`measure.py` 和 `thread_lifetime.py` 只做有限的两 JAR 测量，不修改生产路径、不启动模型；它们证明的是每次 JVM 的成本和直接复用已加载 Logisim 图的污染/资源边界。不要把调查结果当作 warm worker 已经存在，或把它替代 UI/任务闭环验收。
+仿真批量调用的启动成本调查见 记录 021。`measure.py` 和 `thread_lifetime.py` 只做有限的两 JAR 测量，不修改生产路径、不启动模型；它们证明的是每次 JVM 的成本和直接复用已加载 Logisim 图的污染/资源边界。不要把调查结果当作 warm worker 已经存在，或把它替代 UI/任务闭环验收。
 
 模型视觉观察的像素与原生协议验收：
 
@@ -115,21 +117,21 @@ node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electro
 python3 -m unittest -v apps/desktop/test/trace-events.py
 ```
 
-它区分原生 Clock、Pin 时钟和 Button 时钟，检查输入事件与按钮事件顺序、保持、使能、复位、分页重跑，以及仿真不写回源文件或结构历史。真实模型的通用跨模块对照另见 [双实例寄存器场景](../experiments/009-sequential-hierarchy/README-scenario.md)，必须显式启用，不属于常规测试。
+它区分原生 Clock、Pin 时钟和 Button 时钟，检查输入事件与按钮事件顺序、保持、使能、复位、分页重跑，以及仿真不写回源文件或结构历史。真实模型的通用跨模块对照另见 双实例寄存器场景，必须显式启用，不属于常规测试。
 
 原生元件查询与人工放置的共享契约可用 `python3 -m unittest -v apps/desktop/test/describe-component.py` 检查：将模型查询返回的 XML 插入新文件，再由原生观察器核对实际端口、位宽、方向和属性；覆盖库 ID、库工具默认值、子电路、不同逻辑门配置、寄存器、非法属性、只读查询及人工输入格式兼容。不调用模型，不需要个人电路。
 
-`python3 apps/desktop/test/component-attributes.py -v` 进一步检查两种原生运行文件的拆线器位分组：模型模板、直接 XML 加载、按真实端口接线后的输出、人工编辑/撤销及独立 observer 编译。共享属性适配器属于 worker、native、observer 的编译和缓存依赖；新增 Java 源也须随独立包分发。证据与责任判断见 [013](../experiments/013-component-attributes/README.md)。
+`python3 apps/desktop/test/component-attributes.py -v` 进一步检查两种原生运行文件的拆线器位分组：模型模板、直接 XML 加载、按真实端口接线后的输出、人工编辑/撤销及独立 observer 编译。共享属性适配器属于 worker、native、observer 的编译和缓存依赖；新增 Java 源也须随独立包分发。证据与责任判断见 记录 013。
 
-`node apps/desktop/test/native-tool-constraints.cjs /tmp/new-tool-constraints-capture` 使用真实 Codex app-server 与本地合成 Responses，核对模型实际收到的界限、旧线程恢复/分支限制；不读认证、不调用远端模型。纯投影与执行校验另用 `node --test apps/desktop/electron/schema-constraints-projection.test.cjs` 和 `python3 apps/desktop/test/tool-constraints.py`，见 [012](../experiments/012-tool-constraints/README.md)。
+`node apps/desktop/test/native-tool-constraints.cjs /tmp/new-tool-constraints-capture` 使用真实 Codex app-server 与本地合成 Responses，核对模型实际收到的界限、旧线程恢复/分支限制；不读认证、不调用远端模型。纯投影与执行校验另用 `node --test apps/desktop/electron/schema-constraints-projection.test.cjs` 和 `python3 apps/desktop/test/tool-constraints.py`，见 记录 012。
 
-该协议探针也核对实际 Code Mode 返回 string、普通 JSON 解析及 Unicode/null 字段保真；结果中的 passed 是明确夹具，不冒充电路仿真。可选组件目录的完整条目/字节预算/过期游标由 `python3 apps/desktop/test/inspection-discovery.py -v` 验证；真实保存的大电路观察及原生传输见 [018](../experiments/018-inspection-discovery/README.md)。候选应用前预览可用 `python3 apps/desktop/test/candidate-render.py -v` 检查两种 JAR 的真实生成候选、白底图像、文件不变与过期拒绝；图片传输及复现路径见 [019](../experiments/019-candidate-render/README.md)。这些入口均不调用远端模型。
+该协议探针也核对实际 Code Mode 返回 string、普通 JSON 解析及 Unicode/null 字段保真；结果中的 passed 是明确夹具，不冒充电路仿真。可选组件目录的完整条目/字节预算/过期游标由 `python3 apps/desktop/test/inspection-discovery.py -v` 验证；真实保存的大电路观察及原生传输见 记录 018。候选应用前预览可用 `python3 apps/desktop/test/candidate-render.py -v` 检查两种 JAR 的真实生成候选、白底图像、文件不变与过期拒绝；图片传输及复现路径见 记录 019。这些入口均不调用远端模型。
 
-从空白接口构建组合算术电路的真实 base/full 回合、独立 oracle 与鼠标操作见 [011](../experiments/011-saturating-adder/README.md)。真实模型仅显式 `--run-model` 才启动；UI 脚本接受产物绝对路径，在临时副本操作 Pin，不启动模型。校准电路与模型产物结果必须分别报告。 默认结果目录为 `$XDG_STATE_HOME/vibe-logisim-experiments`（未设置则 `~/.local/state/vibe-logisim-experiments`）；`--output-root` 可指定其他持久目录，`--timeout-minutes` 明确实验预算。长回合及并行工作树不要放易随重启清空的 `/tmp`，遗失产物不能计入成功或功能失败。
+从空白接口构建组合算术电路的真实 base/full 回合、独立 oracle 与鼠标操作见 记录 011。真实模型仅显式 `--run-model` 才启动；UI 脚本接受产物绝对路径，在临时副本操作 Pin，不启动模型。校准电路与模型产物结果必须分别报告。 默认结果目录为 `$XDG_STATE_HOME/vibe-logisim-experiments`（未设置则 `~/.local/state/vibe-logisim-experiments`）；`--output-root` 可指定其他持久目录，`--timeout-minutes` 明确实验预算。长回合及并行工作树不要放易随重启清空的 `/tmp`，遗失产物不能计入成功或功能失败。
 
 `python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。它验证完整线程契约匹配时才 resume，developer 指令变化时使用当前说明启动新线程，并验证显式分支保留原生历史；不能仅凭 resume/fork 参数接受成功就声称旧线程已更新。
 
-`node apps/desktop/test/e2e-delivery-links.cjs [可选电路路径]` 在真实 Electron 用鼠标点击合成聊天引用，确认工作区资料预览、模型原生路径打开画布、移动映射、跨文件夹和历史歧义处理。文件和状态均使用临时副本，不启动模型；[使用真实模型产物的记录](../experiments/010-model-efficiency/delivery-ui/README.md)区分模型任务结果与这个界面回放。
+`node apps/desktop/test/e2e-delivery-links.cjs [可选电路路径]` 在真实 Electron 用鼠标点击合成聊天引用，确认工作区资料预览、模型原生路径打开画布、移动映射、跨文件夹和历史歧义处理。文件和状态均使用临时副本，不启动模型；使用真实模型产物的记录区分模型任务结果与这个界面回放。
 
 交互改动优先在独立临时文件夹和独立状态目录启动真实 Electron，通过鼠标/键盘走用户流程，核对保存文件、原生行为与重开结果。AI 状态可用明确标注的回放验证；真实模型回合单独考虑额度和必要性。
 

@@ -2,6 +2,9 @@
   "name": "vibe-logisim-desktop",
   "version": "0.3.0",
   "private": true,
+  "license": "GPL-3.0-only",
+  "repository": {"type": "git", "url": "https://github.com/FIY-pc/vibe-logisim.git"},
+  "homepage": "https://github.com/FIY-pc/vibe-logisim",
   "description": "Native desktop shell for the Vibe Logisim Circuit Lens",
   "main": "electron/main.cjs",
   "scripts": {
