@@ -32,7 +32,7 @@ macOS 暂未提供安装包，欢迎有 Mac 的同学来帮忙验收。
 
 - 支持 **Responses API**（`POST /v1/responses`，流式）。国内主流中转站基本都支持；只提供 `chat/completions` 的接口目前用不了。
 - **系统代理**：应用会读取系统代理（Clash、v2rayN 等开启「系统代理」后的设置，或 `HTTPS_PROXY` 环境变量），AI 引擎和保存前的检测都走同一条路；AI 设置右下角会显示当前检测到的代理。只支持 HTTP 代理（Clash 默认 7890 端口即可），纯 SOCKS 端口不行。改了代理设置后点「重新连接」生效。
-- 模型要有基本的工具调用和写代码能力，越强的模型电路做得越好。课程作业级别的电路，GPT-5 系列、DeepSeek V3/R1、Qwen3 等都能用。
+- 模型要有基本的工具调用和写代码能力，越强的模型电路做得越好。课程作业级别的电路，GPT-6 系列、DeepSeek V4 等都能用。
 
 AI 只能读写你打开的那个文件夹（Windows 上由 Codex 的 workspace-write 沙箱限制，Linux 上由 systemd 隔离），不会碰电脑上的其他文件。
 
