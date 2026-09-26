@@ -43,6 +43,7 @@ jobs:
             apps/desktop/electron/codex-capabilities.test.cjs `
             apps/desktop/electron/provider-config.test.cjs `
             apps/desktop/electron/agent-workspace.test.cjs `
+            apps/desktop/electron/direct-agent-workspace-errors.test.cjs `
             apps/desktop/electron/conversations.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `
             apps/desktop/electron/model-tool-output.test.cjs `
