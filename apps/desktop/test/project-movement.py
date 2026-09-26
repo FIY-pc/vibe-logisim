@@ -8,6 +8,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 
 
@@ -38,6 +40,7 @@ class Movement(unittest.TestCase):
     def scene(self):
         return self.workspace.workbench.inspect({'circuit':self.circuit})
 
+    @skip_unless_samples(REPO, 'exports/if-id-collaboration/stage6-if-id.circ')
     def test_entire_course_module_moves_its_internal_wires_and_keeps_parent_interface(self):
         self.open(REPO/'exports/if-id-collaboration/stage6-if-id.circ','IF_ID')
         before = self.scene()
@@ -57,6 +60,7 @@ class Movement(unittest.TestCase):
             if a.get('name')!='IF_ID':self.assertEqual(ET.tostring(a),ET.tostring(b))
         self.assertEqual(self.source.read_bytes(),self.original)
 
+    @skip_unless_samples(REPO, 'archive/tooling/tmp/half_adder.circ')
     def test_fanout_port_move_and_failed_move_leave_the_design_usable(self):
         source=REPO/'archive/tooling/tmp/half_adder.circ'
         name=ET.parse(source).find('main').get('name')

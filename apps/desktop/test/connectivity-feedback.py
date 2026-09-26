@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import runtime_versions
 from studio.application.workspace import Workspace
 from studio.domain.connectivity_feedback import connectivity_feedback
 
@@ -156,7 +158,7 @@ class ConnectivityFeedback(unittest.TestCase):
         self.assertLessEqual(sum(n['contacts'].visits for n in scene['nets']), 4 * count * width)
 
     def test_native_counterexamples(self):
-        for version in ('2.16.2.2', '2.15.0'):
+        for version in runtime_versions(REPO):
             with self.subTest(runtime=version), tempfile.TemporaryDirectory(prefix='vibe-connectivity-') as directory:
                 root = Path(directory)
                 source = root / 'fixture.circ'

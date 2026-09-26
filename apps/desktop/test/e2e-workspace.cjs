@@ -11,6 +11,8 @@ const { chromium } = require("playwright");
 
 const repoRoot = path.resolve(__dirname, "../../..");
 const circuit = process.env.VIBE_E2E_CIRCUIT || path.join(repoRoot, "archive/tooling/tmp/half_adder.circ");
+const { requireSamples } = require("./support/samples.cjs");
+if (!process.env.VIBE_E2E_CIRCUIT) requireSamples(repoRoot, "archive/tooling/tmp/half_adder.circ");
 const chrome = process.env.VIBE_CHROME || [
   path.join(os.homedir(), ".local/bin/google-chrome"), "/usr/bin/google-chrome", "/usr/bin/chromium",
 ].find(fs.existsSync);

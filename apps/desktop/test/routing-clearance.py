@@ -20,6 +20,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import runtime_versions
 from studio.application.workspace import Workspace
 from studio.domain.routing import Router, Partition, point
 from studio.domain import rerouting
@@ -155,7 +157,7 @@ class RoutingClearance(unittest.TestCase):
         return result, after
 
     def test_native_leads_in_four_orientations_and_both_runtimes(self):
-        for version in ('2.16.2.2', '2.15.0'):
+        for version in runtime_versions(REPO):
             for rotation in range(4):
                 with self.subTest(version=version, rotation=rotation):
                     before = self.open(fixture(rotation=rotation, version=version), f'lead-{version}-{rotation}')
@@ -183,7 +185,7 @@ class RoutingClearance(unittest.TestCase):
                     self.records[-1]['simulation'] = {'passed':simulated['passed'],'failed':simulated['failed']}
 
     def test_native_obstacle_bypass_and_wire_candidate(self):
-        for version in ('2.16.2.2','2.15.0'):
+        for version in runtime_versions(REPO):
             before = self.open(fixture(kind='obstacle',version=version), 'obstacle-'+version)
             wire_ids = {wire['wireId'] for wire in before['focus']['wires'] if wire['from']['y'] != 500}
             if self.baseline:

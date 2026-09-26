@@ -7,11 +7,14 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 from studio.domain.tool_errors import CircuitToolError
 
 
 class CandidateMovement(unittest.TestCase):
+    @skip_unless_samples(REPO, 'experiments/005-harness-effect/fixtures/half-adder.circ')
     def test_move_compose_and_reject_without_touching_source(self):
         original = (REPO / 'experiments/005-harness-effect/fixtures/half-adder.circ').read_bytes()
         with tempfile.TemporaryDirectory() as directory:

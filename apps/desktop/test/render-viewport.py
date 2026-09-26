@@ -15,6 +15,9 @@ from PIL import Image, ImageChops
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import requires_samples
+requires_samples(REPO, 'exports/branch-editing/stage6-if-id.circ', 'exports/branch-editing/cs3410.jar', 'exports/branch-editing/riscv-probe.jar')
 from studio.application.workspace import Workspace
 from studio.domain.errors import LensError
 

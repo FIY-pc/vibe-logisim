@@ -96,6 +96,7 @@ def main():
                           fractionalPixelMapping=True, browserSnapshotRoundtrip=True,
                           rejectsOversizeAndOldInstance=True, sourceUnchanged=True, modelTurns=0)
             output = REPO / 'apps/desktop/docs/product/evidence/2026-09-16-adaptive-render/native.json'
+            output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(report, indent=2) + '\n')
             print(json.dumps(report))
         finally:

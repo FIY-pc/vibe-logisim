@@ -13,6 +13,8 @@ const {CircuitPlugin} = require('../electron/circuit-plugin.cjs');
 
 async function main() {
   const repo = path.resolve(__dirname, '../../..');
+  const {requireSamples} = require('./support/samples.cjs');
+  requireSamples(repo, 'experiments/007-local-rerouting/results/2026-09-21-model-1.11/final.circ');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-file-vectors-'));
   const folder = path.join(root, 'folder');
   fs.mkdirSync(path.join(folder, 'circuits'), {recursive:true});

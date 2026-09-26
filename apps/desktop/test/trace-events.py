@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 
 from studio.application.workspace import Workspace
 from studio.domain.tool_errors import CircuitToolError
@@ -176,6 +178,7 @@ class TraceEvents(unittest.TestCase):
         }
         return [{'tick': tick, 'values': {name: values[tick] for name, values in signals.items()}} for tick in range(10)]
 
+    @skip_unless_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
     def test_register_capture_hold_reset_and_sampling_on_both_runtimes(self):
         for version, jar in RUNTIMES:
             with self.subTest(runtime=version), self.opened(version) as source:
@@ -221,6 +224,7 @@ class TraceEvents(unittest.TestCase):
                     self.assertEqual({key: row['values'][key] for key in ('pinQ', 'buttonQ', 'Capture', 'Reset')},
                                      {'pinQ': 0, 'buttonQ': 0, 'Capture': 0, 'Reset': 0})
 
+    @skip_unless_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
     def test_native_tick_is_not_always_a_clock_transition(self):
         for version, _jar in RUNTIMES:
             with self.subTest(runtime=version), self.opened(version, high_duration=2):
@@ -283,6 +287,7 @@ class TraceEvents(unittest.TestCase):
                             })
                         native.assert_not_called()
 
+    @skip_unless_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
     def test_pin_width_overflow_is_rejected_by_actual_logisim(self):
         # The public scalar limit is uint32; the native Pin enforces its own
         # narrower width. A 4-bit value of 16 must fail, never wrap to zero.

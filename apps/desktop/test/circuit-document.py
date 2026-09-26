@@ -6,6 +6,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.project.document import CircuitDocument
 from studio.runtime.geometry import parse_raw_project
 
@@ -55,6 +57,7 @@ class Document(unittest.TestCase):
             self.assertEqual(after.projection['circuits'][0]['wireCount'], 1)
             self.assertEqual(before.data, data)
 
+    @skip_unless_samples(REPO, 'exports/interface-editing/stage6-if-id.circ')
     def test_course_edits_do_not_rewrite_other_modules(self):
         source = (REPO / 'exports/interface-editing/stage6-if-id.circ').read_bytes()
         document = CircuitDocument.parse(source, 'course.circ')

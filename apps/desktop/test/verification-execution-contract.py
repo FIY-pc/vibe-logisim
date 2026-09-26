@@ -17,6 +17,8 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
+sys.path.insert(0, str(REPO / "apps/desktop/test"))
+from support.samples import skip_unless_samples
 
 from studio.application.workspace import Workspace
 
@@ -25,6 +27,7 @@ SOURCE_FIXTURE = REPO / "archive/tooling/tmp/half_adder.circ"
 LENSCTL = REPO / "apps/desktop/circuit-lens/lensctl.py"
 
 
+@skip_unless_samples(REPO, "archive/tooling/tmp/half_adder.circ")
 class VerificationExecutionContract(unittest.TestCase):
     @contextmanager
     def opened(self, recipe: dict):

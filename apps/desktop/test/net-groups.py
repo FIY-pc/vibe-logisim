@@ -24,6 +24,9 @@ sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[3]
 RUNS = Path.home() / '.local/share/vibe-logisim-dev/runs'
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import requires_samples
+requires_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
 
 
 def encoded(value):
@@ -324,6 +327,9 @@ def main():
                 ('027-bad-counter', 'experiments/027-counter-from-blank/model-1.16/after.circ',
                  '32178318c1f838b20cacc547c7a56039ba0d8e68a7a303740ceb0e3147418093'),
             ):
+                if not (REPO / relative).exists():
+                    print(f'SKIP {label}: sample not in the repository: {relative}', flush=True)
+                    continue
                 result = observe(root, label, REPO / relative, 'main', runtimes[1][1], digest)
                 report['observations'].append(result)
                 print(json.dumps(result, ensure_ascii=False), flush=True)

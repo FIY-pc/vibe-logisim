@@ -26,6 +26,8 @@ import unittest
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
+sys.path.insert(0, str(REPO / "apps/desktop/test"))
+from support.samples import skip_unless_samples
 
 from studio.application.workspace import Workspace
 
@@ -83,6 +85,7 @@ def pid_is_alive(pid: int) -> bool:
     return len(fields) > 2 and fields[2] != "Z"
 
 
+@skip_unless_samples(REPO, "archive/tooling/tmp/half_adder.circ")
 class VerificationHardening(unittest.TestCase):
     @contextmanager
     def opened(self, recipes: list[dict]):

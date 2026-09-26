@@ -10,6 +10,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import runtime_versions
 from studio.application.workspace import Workspace
 from studio.domain.tool_errors import CircuitToolError
 
@@ -85,7 +87,7 @@ class EvaluationIntegrity(unittest.TestCase):
                     native.assert_not_called()
 
     def test_defined_mismatch_unknown_and_matching_values_agree_in_both_modes(self):
-        for version in ('2.16.2.2', '2.15.0'):
+        for version in runtime_versions(REPO):
             with self.subTest(runtime=version), self.opened(version):
                 for expected, status, reason in [({'Stable': 0}, 'passed', None),
                                                  ({'Stable': 1}, 'failed', 'mismatch'),
@@ -113,7 +115,7 @@ class EvaluationIntegrity(unittest.TestCase):
                 self.assertEqual(observed['feedback']['status'], 'observed')
 
     def test_oscillation_cannot_pass_even_when_watched_output_is_defined_and_matches(self):
-        for version in ('2.16.2.2', '2.15.0'):
+        for version in runtime_versions(REPO):
             with self.subTest(runtime=version), self.opened(version):
                 args = {**self.trace, 'inputEvents': [{'tick': 1, 'name': 'Enable', 'value': 1}]}
                 expected = [{'tick': i, 'values': {'Stable': 0}} for i in range(3)]

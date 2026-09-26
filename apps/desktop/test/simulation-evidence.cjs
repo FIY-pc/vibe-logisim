@@ -15,6 +15,8 @@ const {CircuitPlugin} = require('../electron/circuit-plugin.cjs');
 const {EpisodeLedger, digest} = require('../electron/episode-ledger.cjs');
 
 const repo = path.resolve(__dirname, '../../..');
+const {requireSamples} = require('./support/samples.cjs');
+requireSamples(repo, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe');
 const runtimes = [
   ['2.16.2.2', 'apps/desktop/circuit-lens/native/Logisim-ITA.jar'],
   ['2.15.0', 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe'],

@@ -13,6 +13,10 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
+REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import COURSE_RUNTIME, skip_unless_samples
+
 spec = importlib.util.spec_from_file_location('describe_fixture', Path(__file__).with_name('describe-component.py'))
 describe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(describe)
@@ -36,6 +40,7 @@ def document_with(fixture, component):
 
 
 class ComponentAttributes(unittest.TestCase):
+    @skip_unless_samples(REPO, COURSE_RUNTIME)
     def test_hust_integer_formats_across_describe_add_and_edit(self):
         # Replay the real value="0" request on the official blank HUST main.
         original = (describe.REPO / 'apps/desktop/electron/templates/blank.circ').read_bytes()

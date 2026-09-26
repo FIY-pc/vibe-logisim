@@ -11,6 +11,8 @@ const {_electron} = require('playwright');
 const {waitUntil} = require('./support/wait-until.cjs');
 
 const repo = path.resolve(__dirname, '../../..');
+const {requireSamples} = require('./support/samples.cjs');
+requireSamples(repo, 'exports/interface-editing/stage6-if-id.circ', 'exports/interface-editing/cs3410.jar', 'exports/interface-editing/riscv-probe.jar');
 
 function visibleDetail() {
   const svg = document.querySelector('#circuitCanvas');

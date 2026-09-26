@@ -19,6 +19,8 @@
 
 请准备两个运行文件：基础环境检查使用前者，新建电路及 `source="2.15.*"` 的课程电路使用后者。课程 `.exe` 含 Java 运行类，由 Java 加载，不通过 Wine 启动。它们都是被 Git 忽略的本地依赖。
 
+前者可从 [Logisim-Ita/Logisim 的 v2.16.2.2 发布页](https://github.com/Logisim-Ita/Logisim/releases/tag/v2.16.2.2) 下载 `Logisim-ITA.jar`（`scripts/distribution/runtime-lock.json` 记录的是同一地址），放到上表路径、核对 SHA-256 即可；后者来自课程发布的安装包，本仓库不提供。
+
 课程组件库 `cs3410.jar`、`riscv-probe.jar` 与引用它们的 `.circ` 放在同一目录。当前只加载已支持摘要的课程库；任意外部库和不同 Logisim 分支尚不保证兼容。详见 `studio/project/package.py`。
 
 ## 启动
@@ -109,7 +111,7 @@ node apps/desktop/test/e2e-render-density.cjs
 node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electron/folder-import.test.cjs apps/desktop/electron/folder-operations.test.cjs
 ```
 
-`apps/desktop/test/` 保存桌面和原生运行验证脚本。许多历史脚本依赖本地 `exports/`、`archive/` 下的课程样本；它们没有随仓库分发，不能把干净检出直接运行这些脚本的缺样本失败解释成产品回归。现有 `npm run test:e2e` 也是需要样本的浏览器服务验证，不覆盖完整 Electron 体验。
+`apps/desktop/test/` 保存桌面和原生运行验证脚本。许多历史脚本依赖本地 `exports/`、`archive/`、`experiments/` 下的样本电路或课程运行文件；它们没有随仓库分发。缺少样本时这些脚本会打印 `SKIP: sample files not in the repository …` 并以 0 退出，unittest 模块则只跳过依赖样本的用例（守卫见 `apps/desktop/test/support/samples.py` 与 `samples.cjs`）；这既不是通过也不是回归。现有 `npm run test:e2e` 也是需要样本的浏览器服务验证，不覆盖完整 Electron 体验。
 
 安装两种 Logisim 运行文件后，可用自包含寄存器电路验证时序输入与采样，无需课程材料或模型额度：
 

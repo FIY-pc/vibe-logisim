@@ -11,10 +11,13 @@ from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 from studio.domain.errors import LensError
 
 
+@skip_unless_samples(REPO, 'archive/tooling/tmp/half_adder.circ')
 class CandidateLifecycle(unittest.TestCase):
     def test_rejected_edit_never_publishes_prepared_snapshot(self):
         original = (REPO / 'archive/tooling/tmp/half_adder.circ').read_bytes()

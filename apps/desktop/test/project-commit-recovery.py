@@ -10,10 +10,13 @@ from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 from studio.project import store as storage
 
 
+@skip_unless_samples(REPO, 'archive/tooling/tmp/half_adder.circ')
 class CommitRecovery(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='vibe-commit-recovery-')

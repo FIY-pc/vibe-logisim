@@ -14,6 +14,9 @@ import xml.etree.ElementTree as ET
 
 repo = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(repo / "apps/desktop/circuit-lens"))
+if len(sys.argv) < 4:
+    print(next((line.strip() for line in __doc__.splitlines() if line.strip().startswith("usage:")), "usage: see the module docstring"))
+    sys.exit(2)
 from studio.runtime.observer import ObserverRuntime          # noqa: E402
 from studio.project.package import ProjectPackage             # noqa: E402
 from studio.domain.schematic_layout import SchematicLayout    # noqa: E402

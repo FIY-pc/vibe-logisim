@@ -8,6 +8,8 @@ const path = require('node:path');
 const {_electron} = require('playwright');
 const {waitUntil} = require('./support/wait-until.cjs');
 const repo = path.resolve(__dirname, '../../..');
+const {requireSamples} = require('./support/samples.cjs');
+requireSamples(repo, 'exports/if-id-collaboration/stage6-if-id.circ', 'exports/if-id-collaboration/cs3410.jar', 'exports/if-id-collaboration/riscv-probe.jar');
 const output = path.join(repo, 'apps/desktop/docs/product/evidence/2026-09-15-branch-editing');
 fs.mkdirSync(output, {recursive:true});
 

@@ -7,6 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 const {_electron: electron} = require('playwright');
 const repo = path.resolve(__dirname, '../../..');
+const {requireSamples} = require('./support/samples.cjs');
+requireSamples(repo, 'archive/tooling/tmp/half_adder.circ');
 
 // Exercises the actual Electron preload, filesystem preferences, native
 // circuit editing and UI. Message events are a labelled deterministic replay;

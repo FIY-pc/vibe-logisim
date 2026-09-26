@@ -16,6 +16,8 @@ const {_electron} = require('playwright');
 const {waitUntil} = require('./support/wait-until.cjs');
 const {startFakeResponsesServer} = require('./support/fake-responses-server.cjs');
 const repo = path.resolve(__dirname, '../../..');
+const {requireSamples} = require('./support/samples.cjs');
+requireSamples(repo, 'exports/interface-editing/stage6-if-id.circ');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-provider-proxy-'));
 const folder = path.join(root, '我的电路'); fs.mkdirSync(folder);
 fs.copyFileSync(path.join(repo, 'exports/interface-editing/stage6-if-id.circ'), path.join(folder, 'stage6-if-id.circ'));

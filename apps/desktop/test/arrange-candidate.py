@@ -10,6 +10,9 @@ from pathlib import Path
 
 repo = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(repo / "apps/desktop/circuit-lens"))
+if len(sys.argv) < 3:
+    print(next((line.strip() for line in __doc__.splitlines() if line.strip().startswith("usage:")), "usage: see the module docstring"))
+    sys.exit(2)
 from studio.application.workspace import Workspace  # noqa: E402
 
 src = Path(sys.argv[1]).resolve(); circuit = sys.argv[2]; out = Path(sys.argv[3]).resolve() if len(sys.argv) > 3 else None

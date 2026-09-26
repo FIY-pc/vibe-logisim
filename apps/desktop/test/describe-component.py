@@ -15,10 +15,12 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import runtime_versions
 from studio.application.workspace import Workspace
 from studio.domain.tool_errors import CircuitToolError
 
-RUNTIMES = ('2.16.2.2', '2.15.0')
+RUNTIMES = runtime_versions(REPO)
 
 
 def project(version):

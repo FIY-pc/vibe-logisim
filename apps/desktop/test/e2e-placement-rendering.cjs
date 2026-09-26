@@ -9,7 +9,9 @@ const {_electron} = require('playwright');
 const {waitUntil} = require('./support/wait-until.cjs');
 
 const repo = path.resolve(__dirname, '../../..');
-const original = path.resolve(process.argv[2] || 'exports/interface-editing/full_adder.circ');
+const {requireSamples} = require('./support/samples.cjs');
+const original = process.argv[2] ? path.resolve(process.argv[2]) : path.join(repo, 'exports/interface-editing/full_adder.circ');
+if (!process.argv[2]) requireSamples(repo, 'exports/interface-editing/full_adder.circ');
 const bytes = fs.readFileSync(original);
 const root = fs.mkdtempSync('/tmp/vibe-placement-rendering-');
 const folder = root + '/电路'; fs.mkdirSync(folder);

@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 REPO = Path(__file__).resolve().parents[3]
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 from studio.domain.connectivity_feedback import connectivity_feedback
 
@@ -163,6 +165,7 @@ class PeerFacts(unittest.TestCase):
 
 
 class NativePeerFacts(unittest.TestCase):
+    @skip_unless_samples(REPO, 'experiments/027-counter-from-blank/model-1.16/after.circ')
     def test_failed_counter_and_bus_fanout(self):
         output = OPTIONS.output.resolve()
         output.mkdir(parents=True, exist_ok=False)

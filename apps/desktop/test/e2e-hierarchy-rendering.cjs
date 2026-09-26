@@ -7,6 +7,8 @@ const path = require('node:path');
 const {_electron} = require('playwright');
 const {waitUntil} = require('./support/wait-until.cjs');
 const repo = path.resolve(__dirname, '../../..');
+const {requireSamples} = require('./support/samples.cjs');
+requireSamples(repo, 'exports/branch-editing/stage6-if-id.circ', 'exports/branch-editing/cs3410.jar', 'exports/branch-editing/riscv-probe.jar');
 const output = path.join(repo, 'apps/desktop/docs/product/evidence/2026-09-15-hierarchy-rendering');
 fs.mkdirSync(output, {recursive:true});
 

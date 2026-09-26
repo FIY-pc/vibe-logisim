@@ -15,6 +15,8 @@ from PIL import Image
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import runtime_versions, skip_unless_samples
 from studio.application.workspace import Workspace
 from studio.domain.errors import LensError
 from studio.domain.tool_errors import CircuitToolError
@@ -47,7 +49,7 @@ class CandidateRender(unittest.TestCase):
         cls.w = Workspace(REPO, cls.root / 'state', REPO / 'apps/desktop/circuit-lens/lensctl.py', 'candidate-render')
         cls.addClassCleanup(cls.w.close)
         cls.cases = []
-        for version in ('2.16.2.2', '2.15.0'):
+        for version in runtime_versions(REPO):
             source = cls.root / (version + '.circ')
             source.write_bytes(fixture(version))
             cls.w.open_path(source)
@@ -205,6 +207,7 @@ class CandidateRender(unittest.TestCase):
             finally:
                 w.renderer.worker = original_worker
 
+    @skip_unless_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
     def test_runtime_switch_before_and_during_render(self):
         runtime = self.w.observer.runtime_jar
         other = REPO / 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe'

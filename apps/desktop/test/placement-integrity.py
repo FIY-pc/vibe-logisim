@@ -4,6 +4,9 @@ import sys, tempfile, xml.etree.ElementTree as ET
 from unittest.mock import patch
 REPO=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(REPO/'apps/desktop/circuit-lens'))
+sys.path.insert(0,str(REPO/'apps/desktop/test'))
+from support.samples import requires_course_runtime
+requires_course_runtime(REPO)
 from studio.application.workspace import Workspace
 root=Path(tempfile.mkdtemp(prefix='vibe-placement-integrity-'));source=root/'test.circ'
 text=(REPO/'apps/desktop/electron/templates/blank.circ').read_text().replace('<circuit name="main"/>','<circuit name="main"><comp lib="0" name="Pin" loc="(200,200)"><a name="width" val="8"/></comp></circuit>')

@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
+sys.path.insert(0, str(REPO / "apps/desktop/test"))
+from support.samples import skip_unless_samples
 
 from studio.infrastructure.files import sha256_file
 from studio.runtime.observer import ObserverRuntime
@@ -63,6 +65,7 @@ def output_value(response: bytes) -> str | None:
     return output.get("value")
 
 
+@skip_unless_samples(REPO, "workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe")
 class SimulationWorkerLifecycle(unittest.TestCase):
     def setUp(self) -> None:
         for path in (RUNTIME, SECOND_RUNTIME):

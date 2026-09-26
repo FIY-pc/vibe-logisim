@@ -9,6 +9,8 @@ from pathlib import Path
 
 REPO=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(REPO/'apps/desktop/circuit-lens'))
+sys.path.insert(0,str(REPO/'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 
 
@@ -89,6 +91,7 @@ class InterfaceEditing(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'共享接点'):self.apply(draft)
         self.assertEqual(self.w.revision_id,before)
 
+    @skip_unless_samples(REPO, 'exports/layout-editing/stage6-if-id.circ', 'exports/layout-editing/cs3410.jar', 'exports/layout-editing/riscv-probe.jar')
     def test_course_parent_rewire_and_one_undo(self):
         for name in ['stage6-if-id.circ','cs3410.jar','riscv-probe.jar']:shutil.copy(REPO/'exports/layout-editing'/name,self.root/name)
         self.source=self.root/'stage6-if-id.circ';self.original=self.source.read_bytes()

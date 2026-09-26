@@ -16,6 +16,8 @@ import zipfile
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 
 RUNTIMES = [
@@ -99,6 +101,7 @@ def save_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + '\n')
 
 
+@skip_unless_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
 class NativePortSemantics(unittest.TestCase):
     def test_both_installed_implementations_and_product_paths(self):
         with tempfile.TemporaryDirectory(prefix='vibe-port-semantics-') as temporary:

@@ -12,6 +12,9 @@ import time
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import requires_samples
+requires_samples(REPO, 'exports/interface-editing/stage6-if-id.circ', 'exports/interface-editing/cs3410.jar', 'exports/interface-editing/riscv-probe.jar')
 from studio.application.workspace import Workspace
 
 root = Path(tempfile.mkdtemp(prefix='vibe-worker-'))

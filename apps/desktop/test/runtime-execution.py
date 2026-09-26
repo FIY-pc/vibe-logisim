@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import skip_unless_samples
 from studio.application.workspace import Workspace
 
 RUNTIMES = [
@@ -25,6 +27,7 @@ def fixture(version):
     <a name="output" val="true"/><a name="facing" val="west"/></comp>
     <wire from="(80,80)" to="(180,80)"/></circuit></project>'''
 
+@skip_unless_samples(REPO, 'workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe')
 class RuntimeExecution(unittest.TestCase):
     def test_both_runtimes_and_standalone_recipe(self):
         reference = (REPO / 'apps/desktop/circuit-knowledge/java-runtime.md').read_text()

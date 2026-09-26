@@ -16,6 +16,8 @@ from urllib.request import Request, urlopen
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "apps/desktop/circuit-lens"))
+sys.path.insert(0, str(REPO / "apps/desktop/test"))
+from support.samples import skip_unless_samples
 
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.plugin import tool_definitions
@@ -56,6 +58,7 @@ class CircuitPluginContract(unittest.TestCase):
         self.assertEqual(bounded["unchecked"], 12)
         self.assertEqual(bounded["passed"], 20)
 
+    @skip_unless_samples(REPO, "archive/tooling/tmp/half_adder.circ")
     def test_manifest_binding_and_native_evaluation(self):
         source_bytes = (REPO / "archive/tooling/tmp/half_adder.circ").read_bytes()
         with tempfile.TemporaryDirectory(prefix="vibe-circuit-plugin-") as temporary:
@@ -239,6 +242,7 @@ class CircuitPluginContract(unittest.TestCase):
             finally:
                 workspace.close()
 
+    @skip_unless_samples(REPO, "archive/tooling/scripts/fixtures/live-interaction.circ")
     def test_historical_trace_comparison_is_native_and_explicit(self):
         source_bytes = (REPO / "archive/tooling/scripts/fixtures/live-interaction.circ").read_bytes()
         with tempfile.TemporaryDirectory(prefix="vibe-circuit-compare-") as temporary:
@@ -276,6 +280,7 @@ class CircuitPluginContract(unittest.TestCase):
             finally:
                 workspace.close()
 
+    @skip_unless_samples(REPO, "archive/tooling/tmp/half_adder.circ")
     def test_workspace_verifier_binds_external_oracle_to_revision(self):
         source_bytes = (REPO / "archive/tooling/tmp/half_adder.circ").read_bytes()
         with tempfile.TemporaryDirectory(prefix="vibe-circuit-verifier-") as temporary:
@@ -321,6 +326,7 @@ class CircuitPluginContract(unittest.TestCase):
             finally:
                 workspace.close()
 
+    @skip_unless_samples(REPO, "archive/tooling/tmp/half_adder.circ")
     def test_http_plugin_discovery_and_tool_call(self):
         source_bytes = (REPO / "archive/tooling/tmp/half_adder.circ").read_bytes()
         with tempfile.TemporaryDirectory(prefix="vibe-circuit-plugin-http-") as temporary:

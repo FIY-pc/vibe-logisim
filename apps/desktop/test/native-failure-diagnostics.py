@@ -14,6 +14,8 @@ import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
+sys.path.insert(0, str(REPO / 'apps/desktop/test'))
+from support.samples import runtime_versions
 from studio.runtime.worker import NativeWorker
 from studio.application.workspace import Workspace
 from studio.infrastructure.files import sha256_file
@@ -58,7 +60,7 @@ public class CircuitWorker {
             root = Path(directory)
             workspace = Workspace(REPO, root / 'state', REPO / 'apps/desktop/circuit-lens/lensctl.py', 'native-boundary')
             try:
-                for version in ['2.16.2.2', '2.15.0']:
+                for version in runtime_versions(REPO):
                     with self.subTest(runtime=version):
                         good = root / (version + '.circ')
                         good.write_text(f'''<project source="{version}" version="1.0"><lib name="0" desc="#Wiring"/>
