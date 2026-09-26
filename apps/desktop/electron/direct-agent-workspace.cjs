@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('node:fs');
+const path = require('node:path');
 const {buildWorkspaceIndex} = require('./workspace-index.cjs');
 
 function workspaceToolError(code, message, {hint = null, context = null} = {}) {
@@ -13,6 +14,74 @@ function workspaceToolError(code, message, {hint = null, context = null} = {}) {
     ...(context && typeof context === 'object' ? {context} : {}),
   };
   return error;
+}
+
+// FolderWorkspace.resolve() rejects paths it will not touch with a bare
+// message. For the model that has to become an actionable error: it usually
+// passed an absolute path (its cwd is the real folder) and needs the
+// workspace-relative form, or it named a file that is not in the workspace.
+function pathToolError(error, requested, folder, workspaceIndex) {
+  const message = String(error?.message || '');
+  const kind = /文件路径无效/.test(message) ? 'invalid'
+    : /不在当前工作区内/.test(message) ? 'outside'
+    : /链接指向工作区之外/.test(message) ? 'link'
+    : error?.code === 'ENOENT' ? 'missing' : null;
+  if (!kind) return error;
+  const root = folder?.current?.root || null;
+  const activeFile = folder?.current?.activeFile || null;
+  const files = Array.isArray(workspaceIndex?.circuits) ? workspaceIndex.circuits.map(file => file.path) : [];
+  let suggestedPath = null;
+  if (typeof requested === 'string' && root && path.isAbsolute(requested)) {
+    const relative = path.relative(root, path.resolve(requested)).split(path.sep).join('/');
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) suggestedPath = relative;
+  }
+  if (!suggestedPath && typeof requested === 'string' && requested) {
+    const tail = requested.split(/[\\/]/).filter(Boolean).pop();
+    const byName = files.filter(file => file.split('/').pop() === tail);
+    if (byName.length === 1) suggestedPath = byName[0];
+  }
+  const example = suggestedPath || files[0] || activeFile || 'design.circ';
+  const hint = kind === 'invalid'
+    ? `path 必须是相对工作区根目录的路径（例如 "${example}"），不能是绝对路径或含有空字符。${suggestedPath ? `这个文件就在工作区内，请改用 path="${suggestedPath}" 重试。` : '从 context.availableFiles 中选择目标 .circ；如果你刚新建了文件，先确认它写在工作区目录里。'}`
+    : kind === 'outside'
+      ? `这个路径解析到了工作区目录之外。只能打开当前工作区（${root}）里的文件；${suggestedPath ? `工作区里有同名文件，请改用 path="${suggestedPath}"。` : '从 context.availableFiles 中选择，或先把文件放进工作区。'}`
+      : kind === 'missing'
+        ? `工作区里没有这个文件。${suggestedPath ? `有一个同名文件，请改用 path="${suggestedPath}"。` : '从 context.availableFiles 中选择目标 .circ；如果你刚新建了文件，先确认它已经写到工作区目录里（写入的目录就是当前工作区），不要根据文件名猜测路径。'}`
+        : '这个路径是指向工作区之外的链接；请让用户直接打开链接目标所在的文件夹。';
+  const code = kind === 'invalid' ? 'INVALID_PATH' : kind === 'missing' ? 'FILE_NOT_FOUND' : 'FILE_OUTSIDE_WORKSPACE';
+  const text = kind === 'missing' ? '文件不存在' : message;
+  const wrapped = workspaceToolError(code, `${text}: ${requested}`, {
+    hint,
+    context: {
+      requestedPath: requested,
+      ...(suggestedPath ? {suggestedPath} : {}),
+      workspaceRoot: root,
+      activeFile,
+      availableFiles: files.slice(0, 40),
+      availableFilesTruncated: files.length > 40 || Boolean(workspaceIndex?.truncated),
+    },
+  });
+  wrapped.cause = error;
+  return wrapped;
+}
+
+// The model's cwd is the user's folder (on Windows the same path the host
+// sees), so it naturally passes absolute paths and, on a POSIX host, sometimes
+// backslashes. Accept what unambiguously names a file inside the workspace;
+// anything else is left as written so the error can explain it.
+function normalizeRequestedPath(requested, root) {
+  if (typeof requested !== 'string' || !root) return requested;
+  let value = requested.trim();
+  if (path.isAbsolute(value)) {
+    const relative = path.relative(root, path.resolve(value));
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return requested;
+    value = relative.split(path.sep).join('/');
+  }
+  if (path.sep === '/' && value.includes('\\') && !fs.existsSync(path.join(root, value))) {
+    const slashed = value.replace(/\\/g, '/');
+    if (fs.existsSync(path.join(root, slashed))) value = slashed;
+  }
+  return value;
 }
 
 // Codex writes the same directory the human sees. The host keeps optional
@@ -62,7 +131,11 @@ class DirectAgentWorkspace {
       // the write receipt diffs the two to report which definitions changed.
       const before = relative ? null : await this.workspace.backend.session();
       previous = before?.revision?.id || null;
-      if(relative) await this.workspace.select(relative,{notify:!navigate});
+      if(relative) {
+        const target = normalizeRequestedPath(relative, this.workspace.folder.current?.root);
+        try { await this.workspace.select(target,{notify:!navigate}); }
+        catch (error) { throw pathToolError(error, relative, this.workspace.folder, binding.workspaceIndex); }
+      }
       else await this.workspace.refresh({checkpoint:false});
     });
     const session = await this.workspace.backend.session();
@@ -137,4 +210,4 @@ class DirectAgentWorkspace {
   listRecoveries(){ return []; }
   clearRecovery(){}
 }
-module.exports = {DirectAgentWorkspace};
+module.exports = {DirectAgentWorkspace, normalizeRequestedPath};

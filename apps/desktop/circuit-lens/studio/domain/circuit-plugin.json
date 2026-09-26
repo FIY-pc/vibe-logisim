@@ -14,7 +14,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "Path of the .circ file relative to the workspace root, with / separators (e.g. \"design.circ\" or \"sub/alu.circ\"), as listed in context.availableFiles. A file you just wrote must be inside the workspace folder to be opened."
           },
           "circuit": {
             "type": "string",

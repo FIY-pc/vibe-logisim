@@ -12,6 +12,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import platform
 import shutil
 import uuid
 import xml.etree.ElementTree as ET
@@ -295,11 +296,28 @@ def contact_partition(reference, pairs, resolved, added_aliases=None):
     return contacts
 
 
+class PartitionMismatch(ValueError):
+    """A port bit whose native net disagrees with the expected partition.
+
+    `key`/`bit` is the port that failed; `other`/`other_bit` is the earlier port
+    whose net it was expected to share (missing join) or not share (short).
+    """
+
+    def __init__(self, message, *, kind, key, bit, other, other_bit, expected_root, before_net, after_net, other_after_net):
+        super().__init__(message)
+        self.kind = kind
+        self.key, self.bit = key, bit
+        self.other, self.other_bit = other, other_bit
+        self.expected_root = expected_root
+        self.before_net, self.after_net, self.other_after_net = before_net, after_net, other_after_net
+
+
 def compare_partition(before, after, expected=None):
     """Equality of partitions, not equality of ephemeral observer net IDs."""
     old, new = ports(before), ports(after)
     expected = expected or Partition()
     forward, backward = {}, {}
+    first_seen = {}  # (root or observed net) -> (port key, bit) that claimed it first
     count = 0
     for key, end in old.items():
         other = new.get(key)
@@ -310,11 +328,104 @@ def compare_partition(before, after, expected=None):
         for bit, (old_net, got) in enumerate(zip(port_bits(end), port_bits(other))):
             wanted = expected.root(old_net)
             if forward.setdefault(wanted, got) != got:
-                raise ValueError(f"要求连接的信号仍然断开: {key} bit {bit}")
+                other_key, other_bit = first_seen[("wanted", wanted)]
+                raise PartitionMismatch(
+                    f"要求连接的信号仍然断开: {key} bit {bit}", kind="disconnected",
+                    key=key, bit=bit, other=other_key, other_bit=other_bit, expected_root=wanted,
+                    before_net=old_net, after_net=got, other_after_net=forward[wanted])
             if backward.setdefault(got, wanted) != wanted:
-                raise ValueError(f"出现未要求的短接: {key} bit {bit}")
+                other_key, other_bit = first_seen[("got", got)]
+                raise PartitionMismatch(
+                    f"出现未要求的短接: {key} bit {bit}", kind="short",
+                    key=key, bit=bit, other=other_key, other_bit=other_bit, expected_root=wanted,
+                    before_net=old_net, after_net=got, other_after_net=got)
+            first_seen.setdefault(("wanted", wanted), (key, bit))
+            first_seen.setdefault(("got", got), (key, bit))
             count += 1
     return count
+
+
+def _port_report(key, observation, model_ids=None):
+    """One port as the model can address it: the id it used, factory, label, port, location, nets."""
+    identity_, index = key
+    components = {identity(c): c for c in observation["focus"]["components"]}
+    component = components.get(identity_) or {}
+    end = next((e for e in component.get("ends", []) if e["index"] == index), {})
+    return {
+        "component": (model_ids or {}).get(identity_) or component.get("componentId"),
+        "factory": component.get("factoryName") or identity_[0],
+        "label": _component_label(component),
+        "port": index,
+        "portName": end.get("runtimeTooltip"),
+        "width": end.get("width"),
+        "direction": end.get("direction"),
+        "location": end.get("location") or {"x": identity_[1][0], "y": identity_[1][1]},
+        "netBits": [b.get("netId") for b in end.get("netBits", [])],
+    }
+
+
+def _wires_at(observation, location):
+    """Native wires that end at or pass through a point, with their bit nets."""
+    if not location:
+        return []
+    p = (location["x"], location["y"])
+    bundles = {b["bundleId"]: b for b in observation["focus"].get("wireBundles", [])}
+    found = []
+    for wire in observation["focus"].get("wires", []):
+        a, b = point(wire["from"]), point(wire["to"])
+        on = ((a[0] == b[0] == p[0] and min(a[1], b[1]) <= p[1] <= max(a[1], b[1]))
+              or (a[1] == b[1] == p[1] and min(a[0], b[0]) <= p[0] <= max(a[0], b[0])))
+        if on:
+            bundle = bundles.get(wire.get("bundleId"), {})
+            found.append({"wireId": wire.get("wireId"), "from": wire["from"], "to": wire["to"],
+                          "endsHere": p in (a, b), "bundleId": wire.get("bundleId"),
+                          "netBits": [b_.get("netId") for b_ in bundle.get("bitNets", [])]})
+    return found[:8]
+
+
+def disconnected_after_routing(mismatch, *, aliases, after, resolved, signals, wires_before, artifact):
+    """Turn the post-routing partition failure into an actionable, reportable error.
+
+    The bare message names one port; the model (and a bug report) needs the pair
+    that should have shared a net, which requested connection(s) covered it,
+    whether the router drew anything for it, what copper actually touches the
+    failing port after the native reload, and which bytes were observed.
+    """
+    # aliases: model-facing id -> component identity (native id for existing
+    # parts, the request alias for added ones). Report what the model used.
+    model_ids = {key: model_id for model_id, key in aliases.items()}
+    failing, other = _port_report(mismatch.key, after, model_ids), _port_report(mismatch.other, after, model_ids)
+    def touches(connection_entry, report):
+        return any(ep.get("component") == report["component"] and ep.get("port") == report["port"]
+                   for ep in (connection_entry.get("from"), connection_entry.get("to")))
+    involved = [dict(s, segments=s.get("segments", [])) for s in signals if touches(s, failing) or touches(s, other)]
+    requested = [c for c, _, _ in resolved if touches({"from": c.get("from"), "to": c.get("to")}, failing)
+                 or touches({"from": c.get("from"), "to": c.get("to")}, other)]
+    drawn = sum(len(s.get("segments", [])) for s in involved)
+    if mismatch.kind == "short":
+        code, hint = "TOOL_REJECTED", "布线后这两个端口被接到了同一网络，但请求里没有要求它们相连。多半是新导线经过了另一条导线的端点或另一个端口；换个位置、或先移开挡路的元件后重试。"
+    elif not requested:
+        code, hint = "TOOL_REJECTED", "这两个端口在本次请求之前是同一网络，布线后却分开了。这不是请求本身的问题；把 context 原样反馈给开发者，并考虑直接编辑文件完成这条连线。"
+    elif drawn == 0:
+        code, hint = "TOOL_REJECTED", "路由器认为这条连接已经通过现有导线相连，没有画新线，但原生引擎重新加载后两个端口仍在不同网络。用 inspect_circuit(includeWires=true) 查看 context.wiresAtFailingPort 里的导线是否真的到达端口（端点必须落在端口坐标上），必要时先 removeWireIds 拆掉可疑导线再重试，或直接编辑文件。"
+    else:
+        code, hint = "TOOL_REJECTED", "已为这条连接画了新导线，但原生引擎重新加载后两个端口仍在不同网络。检查 context.wiresAtFailingPort：若没有导线端点正好落在端口坐标上，说明端口位置与几何不一致（元件属性改变了端口位置，或元件不在 10 格点上）；把 context 反馈给开发者，并考虑直接编辑文件。"
+    return CircuitToolError(
+        code, str(mismatch), hint=hint,
+        context={
+            "kind": mismatch.kind,
+            "failingPort": failing, "expectedSameNetAs": other,
+            "bit": mismatch.bit, "otherBit": mismatch.other_bit,
+            "netsAfterReload": {"failingPort": mismatch.after_net, "otherPort": mismatch.other_after_net},
+            "requestedConnections": [{"name": c.get("name"), "from": c.get("from"), "to": c.get("to")} for c in requested][:4],
+            "routedForThese": [{"name": s.get("name"), "segments": s.get("segments", [])} for s in involved][:4],
+            "segmentsDrawnForThese": drawn,
+            "wiresAtFailingPort": _wires_at(after, failing.get("location")),
+            "wiresBefore": wires_before, "wiresAfter": len(after["focus"].get("wires", [])),
+            "artifactSha256": (after.get("revision") or {}).get("artifactSha256") or hashlib.sha256(artifact.read_bytes()).hexdigest(),
+            "environment": {"os": platform.system(), "javaVersion": (after.get("runtime") or {}).get("javaVersion"),
+                            "runtimeJarSha256": (after.get("runtime") or {}).get("jarSha256")},
+        })
 
 
 
@@ -542,7 +653,12 @@ def _wire_candidate(workbench, args, directory):
     write()
     render_path = directory / (hashlib.sha256(name.encode()).hexdigest() + ".png")
     after = workspace.observer.run_full(artifact, name, render_path)
-    checked_bits = compare_partition(reference, after, partition)
+    try:
+        checked_bits = compare_partition(reference, after, partition)
+    except PartitionMismatch as mismatch:
+        raise disconnected_after_routing(
+            mismatch, aliases=aliases, after=after, resolved=resolved, signals=signals,
+            wires_before=len(prepared["focus"].get("wires", [])), artifact=artifact) from mismatch
     for key in ("invalidBundleEnds", "widthIncompatibilities"):
         if after.get("coverage", {}).get(key, 0) > baseline.get("coverage", {}).get(key, 0):
             raise ValueError("新增连接产生了电气冲突，未发布候选")

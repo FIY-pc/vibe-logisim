@@ -221,7 +221,7 @@ Studio 在注册 handler 前也会校验目录的基本结构、owner、exposure
 
 插件边界还会执行工具目录中声明的 `minimum/maximum/minItems/maxItems` 以及嵌套对象约束。越界参数在进入 native runtime 或工作区命令前就返回带路径的 `INVALID_ARGUMENT`，并给出可修正的边界；目录是约束的唯一来源，执行器不再各自重复维护一套上限。
 
-Electron 宿主边界也使用同一错误语义，而不是把所有失败降级为 `CIRCUIT_TOOL_FAILED`：未声明或隐藏工具返回 `TOOL_NOT_REGISTERED`，宿主参数校验返回带 `context.path` 或 `context.unknownParameters` 的 `INVALID_ARGUMENT`，没有共享文件夹返回 `WORKSPACE_NOT_OPEN`，指定不存在的子电路返回带 `context.availableCircuits` 的 `CIRCUIT_NOT_FOUND`，执行器没有返回对象返回 `TOOL_INVALID_RESULT`。这些错误只描述调用边界和恢复线索，不替模型判断电路是否正确；Studio/native 返回的领域错误仍原样保留。这样模型能够区分“修参数/打开工作区/检查插件连接”和“电路本身被 native runtime 拒绝”。
+Electron 宿主边界也使用同一错误语义，而不是把所有失败降级为 `CIRCUIT_TOOL_FAILED`：未声明或隐藏工具返回 `TOOL_NOT_REGISTERED`，宿主参数校验返回带 `context.path` 或 `context.unknownParameters` 的 `INVALID_ARGUMENT`，没有共享文件夹返回 `WORKSPACE_NOT_OPEN`，指定不存在的子电路返回带 `context.availableCircuits` 的 `CIRCUIT_NOT_FOUND`，执行器没有返回对象返回 `TOOL_INVALID_RESULT`。`open_circuit` 的 `path` 参数解析失败时同样结构化：绝对路径或含空字符返回 `INVALID_PATH`，解析到工作区之外返回 `FILE_OUTSIDE_WORKSPACE`，文件不存在返回 `FILE_NOT_FOUND`；三者都带 `context.requestedPath`、`workspaceRoot`、`activeFile` 与索引中的 `availableFiles`，并在工作区里有唯一同名文件时给出 `suggestedPath`。落在工作区内的绝对路径（模型的 cwd 就是用户文件夹）会被直接换算成相对路径打开，不再报错。这些错误只描述调用边界和恢复线索，不替模型判断电路是否正确；Studio/native 返回的领域错误仍原样保留。这样模型能够区分“修参数/打开工作区/检查插件连接”和“电路本身被 native runtime 拒绝”。
 
 ## 身份与证据
 
