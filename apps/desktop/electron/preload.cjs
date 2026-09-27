@@ -56,6 +56,22 @@ contextBridge.exposeInMainWorld(
     getAppInfo: () => ipcRenderer.invoke("vibe-logisim:app-info"),
     copyText: value => ipcRenderer.invoke("vibe-logisim:copy-text", value),
     openWebLink: value => ipcRenderer.invoke("vibe-logisim:open-web-link", value),
+    diagnostics: Object.freeze({
+      preview: options => ipcRenderer.invoke('vibe-logisim:diagnostics-preview', options),
+      export: options => ipcRenderer.invoke('vibe-logisim:diagnostics-export', options),
+      openLogs: () => ipcRenderer.invoke('vibe-logisim:diagnostics-open-logs'),
+    }),
+    updates: Object.freeze({
+      status: () => ipcRenderer.invoke('vibe-logisim:update-status'),
+      setPreference: enabled => ipcRenderer.invoke('vibe-logisim:update-preference', enabled),
+      checkNow: () => ipcRenderer.invoke('vibe-logisim:update-check-now'),
+      dismiss: version => ipcRenderer.invoke('vibe-logisim:update-dismiss', version),
+      onAvailable: callback => {
+        const listener = (_event, value) => callback(value);
+        ipcRenderer.on('vibe-logisim:update-available', listener);
+        return () => ipcRenderer.removeListener('vibe-logisim:update-available', listener);
+      },
+    }),
     attachMaterials: request => ipcRenderer.invoke("vibe-logisim:attach-materials",request),
     drafts:Object.freeze({
       open:request=>ipcRenderer.invoke('vibe-logisim:draft-open',request),

@@ -299,6 +299,8 @@ export function createController({ui,ports}) {
     ui.agentConfigureApi.textContent = custom ? '检查 API 接口设置' : '填写 API 接口';
     ui.agentConfigureApi.disabled = busy();
     ui.agentReviewChanges.hidden = !t || unconnected;
+    // Only real failures invite a report; the first-run "not connected yet" state is not one.
+    ui.agentReportIssue.hidden = Boolean(state.signingIn) || reconnecting || unconnected || !(t?.phase === 'failed' || ['unavailable','stopped'].includes(state.status));
     ui.agentStatusText.textContent = unconnected ? (state.signingIn ? '等待登录完成' : application ? '尚未连接 AI' : '未登录') : reconnecting ? '正在连接' : t?.phase === 'retrying' ? '等待连接恢复' : disconnected ? '连接需要处理' : state.busy ? '正在结束回答' : '可以继续提问';
     if (t?.phase === 'retrying' || disconnected) { const light = unconnected ? 'idle' : 'unavailable'; ui.agentStatusLight.dataset.state = light; ui.agentTabLight.dataset.state = light; }
   }

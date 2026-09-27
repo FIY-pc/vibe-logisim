@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const {
@@ -31,6 +32,11 @@ const {registerConversationIpc}=require('./conversation-ipc.cjs');
 const {ConversationDraftStore}=require('./conversation-drafts.cjs');
 const {registerDraftIpc}=require('./draft-ipc.cjs');
 const {resolveStartupTarget}=require('./startup-target.cjs');
+const {DiagnosticsLog,createRedactor,knownWorkspaceRoots}=require('./diagnostics-log.cjs');
+const {probeJavaVersion}=require('./diagnostics-bundle.cjs');
+const {UpdateChecker}=require('./update-check.cjs');
+const {registerFeedbackIpc}=require('./feedback-ipc.cjs');
+const {readStoredApiKey,readCustomProvider}=require('./custom-provider.cjs');
 
 // The desktop launcher may close its diagnostic pipe before child-process
 // shutdown finishes. Losing a log line must not crash the main process.
@@ -38,13 +44,27 @@ process.stderr.on("error", (error) => {
   if (error.code !== "EPIPE") process.nextTick(() => { throw error; });
 });
 
+// The user's own environment, before the bundled runtime sets JAVA_HOME and
+// friends: diagnostics report which of a few known variables were set.
+const startupEnvironment = {...process.env};
 const {repoRoot, runtimeRoot} = require('./runtime-paths.cjs').configureRuntime(app);
 const preloadPath = path.join(__dirname, "preload.cjs");
+// Everything the app logs goes to userData/logs (and stderr) through one
+// redactor, so a log file can be attached to a public issue as it is.
+const homeAliases = shortHomeAliases();
+const redact = createRedactor({homeDir: os.homedir(), homeAliases, username: accountName(), hostname: os.hostname()});
+const diagnostics = new DiagnosticsLog({directory: path.join(app.getPath('userData'), 'logs'), redact});
+refreshRedaction();
+const UPDATE_CHECK_DELAY_MS = 5000;
 const backend = new LensBackend({ repoRoot,
   stateDir: process.env.VIBE_LOGISIM_STATE_DIR || (runtimeRoot ? path.join(app.getPath('userData'), 'circuit-state') : null) });
 
 let mainWindow = null;
 let codex = null;
+let toolHost = null;
+let updates = null;
+let updateCheckScheduled = false;
+let javaProbe = null;
 let agentWorkspace = null;
 let desktopWorkspace = null;
 let materials = null;
@@ -62,6 +82,46 @@ if (!instanceLock) {
   app.quit();
 } else {
   registerLifecycle();
+}
+
+// Windows can hand out the home directory in its 8.3 short form (TEMP on some
+// machines and CI runners: C:\Users\RUNNER~1\…). Recover that spelling by
+// comparing a few such paths with their long form, so it is masked too.
+function shortHomeAliases() {
+  if (process.platform !== 'win32') return [];
+  const home = os.homedir(), aliases = new Set();
+  for (const candidate of [os.tmpdir(), process.env.APPDATA, process.env.LOCALAPPDATA]) {
+    try {
+      if (!candidate) continue;
+      const long = fs.realpathSync.native(candidate);
+      if (!long.toLowerCase().startsWith(home.toLowerCase() + path.sep)) continue;
+      const suffix = long.slice(home.length);
+      if (candidate.toLowerCase().endsWith(suffix.toLowerCase())) aliases.add(candidate.slice(0, candidate.length - suffix.length));
+    } catch { /* a missing directory has no alias to offer */ }
+  }
+  aliases.delete(home);
+  return [...aliases];
+}
+
+function accountName() {
+  try { return os.userInfo().username; } catch { return process.env.USERNAME || process.env.USER || null; }
+}
+
+function agentProfileDir() { return path.join(app.getPath('userData'), 'circuit-agent', 'codex-home'); }
+// Main process only, for masking and the final bundle check; never sent anywhere.
+function storedApiKey() {
+  try { return readStoredApiKey(agentProfileDir()); } catch { return null; }
+}
+
+// Keys, workspace roots and the custom endpoint change while the app runs.
+function refreshRedaction() {
+  let custom = null;
+  try { custom = readCustomProvider(agentProfileDir()); } catch { /* an unreadable profile has nothing to mask */ }
+  redact.update({
+    secrets: [storedApiKey(), ...redact.secrets()].filter(Boolean),
+    workspaceRoots: knownWorkspaceRoots(path.join(app.getPath('userData'), 'folder-workspaces')),
+    endpoints: custom?.baseUrl ? [custom.baseUrl] : [],
+  });
 }
 
 function startupTarget(argv, workingDirectory = process.cwd()) {
@@ -108,7 +168,7 @@ function workspaceChangedError() {
 function transitionWorkspace(reason, operation, { preserveConversation = false } = {}) {
   const generation = ++workspaceGeneration;
   workspaceTransitioning = true;
-  if (codex?.snapshot().busy) console.error(`[workspace] transition '${reason}' while a turn is running (preserveConversation=${preserveConversation})`);
+  if (codex?.snapshot().busy) diagnostics.write('main', `[workspace] transition '${reason}' while a turn is running (preserveConversation=${preserveConversation})`);
   // Invalidate old turn bindings immediately, even when the project and its
   // conversation survive this change of circuit state.
   const reset = (preserveConversation ? codex?.invalidateRevision(reason) : codex?.resetWorkspace(reason)) || Promise.resolve();
@@ -134,7 +194,7 @@ async function restoreAgentConversation() {
     if (!session.folder || generation !== workspaceGeneration || workspaceTransitioning) return;
     await codex.resumeWorkspace({ workspaceKey: session.folder.conversationKey, revisionId: session.revision?.id });
   } catch (error) {
-    console.error(`[codex] Conversation restore: ${error.message}`);
+    diagnostics.write('codex', `Conversation restore: ${error.message}`);
   }
 }
 
@@ -156,7 +216,12 @@ function registerLifecycle() {
     }
   });
 
+  // Logged only; the existing exit and dialog behaviour stays as it was.
+  app.on('render-process-gone', (_event, _contents, details) => diagnostics.write('main', `渲染进程退出：${details.reason}（退出码 ${details.exitCode}）`));
+  app.on('child-process-gone', (_event, details) => diagnostics.write('main', `子进程退出：${details.type}${details.name ? ` ${details.name}` : ''} ${details.reason}（退出码 ${details.exitCode}）`));
+
   app.whenReady().then(startApplication).catch((error) => {
+    diagnostics.write('main', `启动失败：${error.stack || error.message}`);
     dialog.showErrorBox("Vibe Logisim 无法启动", error.message);
     app.quit();
   });
@@ -183,15 +248,21 @@ function registerLifecycle() {
 }
 
 async function startApplication() {
+  diagnostics.write('main', `Vibe Logisim ${app.getVersion()}（${app.isPackaged ? '安装包' : '源码运行'}）启动 · Electron ${process.versions.electron} · Chrome ${process.versions.chrome} · Node ${process.versions.node} · ${process.platform} ${process.arch} ${os.release()} · 界面语言 ${app.getLocale()}`);
   Menu.setApplicationMenu(null);
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 
-  backend.on("log", (message) => console.error(`[circuit-lens] ${message}`));
+  // Successful GETs (about 90 static files per window load, then polling)
+  // would bury the lines that matter: edits (POST), failures and tracebacks.
+  backend.on("log", (message) => {
+    const kept = message.split(/\r?\n/).filter(line => !/"GET \S+ HTTP\/[\d.]+" [23]\d\d\b/.test(line)).join('\n');
+    if (kept.trim()) diagnostics.write('studio', kept);
+  });
   backend.on("exit", (error) => {
     const hadReadyBackend = backendReady;
     backendReady = false;
-    console.error(`[circuit-lens] exited: ${error.message}`);
+    diagnostics.write('studio', `exited: ${error.message}`);
     if (!quitting && hadReadyBackend) dialog.showErrorBox("Circuit Lens 已停止", error.message);
   });
 
@@ -221,16 +292,19 @@ async function startApplication() {
     : initialOpenPath ? path.dirname(initialOpenPath) : desktopWorkspace.folder.recent();
   const activeFile = initialTarget?.kind === 'circuit' ? initialTarget.path : initialOpenPath;
   if(folderRoot)await desktopWorkspace.open(folderRoot,{activeFile,conversationKey:initialSession.workspace?.conversationKey});
+  refreshRedaction();
   agentWorkspace = new DirectAgentWorkspace(desktopWorkspace);
   const workspaceHost = new AgentWorkspaceHost({adapter:agentWorkspace, mode:'direct'});
   const circuitPlugin = new CircuitPlugin({
     invoke: payload => backend.circuitTool(payload),
     workspace: agentWorkspace,
   });
-  const toolHost = new AgentToolHost({
+  toolHost = new AgentToolHost({
     plugin: circuitPlugin,
     manifest: () => backend.circuitPlugin(),
     mode: 'circuit',
+    // The last failed calls, with the request the model sent, for bug reports.
+    failures: {redact, onFailure: record => diagnostics.write('tool', `${record.tool} 失败：${record.error.code} ${record.error.message}\n${JSON.stringify({context:record.context, arguments:record.arguments})}`)},
   });
   const contextHost = new AgentContextHost({provider:new CircuitContextProvider()});
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
@@ -254,15 +328,24 @@ async function startApplication() {
       return (input, init) => probeSession.fetch(input, init);
     },
   });
-  codex.on("log", (message) => console.error(`[codex] ${message}`));
+  codex.on("log", (message) => diagnostics.write('codex', message));
   codex.on("event", (event) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send("vibe-logisim:agent-event", event);
     }
   });
+  updates = new UpdateChecker({
+    currentVersion: app.getVersion(),
+    stateDir: app.getPath('userData'),
+    // Chromium's network stack: the Windows system proxy applies here too.
+    fetch: (url, init) => session.defaultSession.fetch(url, init),
+    feedUrl: app.isPackaged ? undefined : process.env.VIBE_LOGISIM_UPDATE_URL,
+    forcedOff: process.env.VIBE_LOGISIM_NO_UPDATE_CHECK === '1',
+    log: message => diagnostics.write('update', message),
+  });
   registerIpc();
   createWindow(ready.baseUrl);
-  codex.start().then(restoreAgentConversation).catch((error) => console.error(`[codex] ${error.message}`));
+  codex.start().then(restoreAgentConversation).catch((error) => diagnostics.write('codex', error.message));
   if (pendingOpenTarget) {
     const queued = pendingOpenTarget;
     pendingOpenTarget = null;
@@ -283,9 +366,10 @@ async function openFolder(root, activeFile = null) {
       // The folder has its own lifecycle. Agent startup reports its failure in
       // the conversation pane; it must not turn a successful folder open into
       // an error or mask a filesystem failure from the operation above.
-      await codex.start().catch(error => console.error(`[codex] ${error.message}`));
+      await codex.start().catch(error => diagnostics.write('codex', error.message));
     }
   });
+  refreshRedaction();
   await restoreAgentConversation();
   return result;
 }
@@ -307,6 +391,9 @@ function registerIpc() {
     generation:()=>workspaceGeneration,begin:()=>{workspaceTransitioning=true;return ++workspaceGeneration;},end:token=>{if(token===workspaceGeneration)workspaceTransitioning=false;}});
   registerDraftIpc({ipcMain,codex,store:new ConversationDraftStore(path.join(app.getPath('userData'),'conversation-drafts')),backend,trusted:isTrustedRenderer,transitioning:()=>workspaceTransitioning,generation:()=>workspaceGeneration,dialog,window:()=>mainWindow});
   registerMaterialIpc({ipcMain,dialog,nativeImage,store:materials,backend,codex:()=>codex,trusted:isTrustedRenderer,window:()=>mainWindow,transitioning:()=>workspaceTransitioning,generation:()=>workspaceGeneration});
+  registerFeedbackIpc({ipcMain,dialog,shell,app,trusted:isTrustedRenderer,window:()=>mainWindow,log:diagnostics,redact,updates,collect:collectDiagnostics,homeDir:[os.homedir(),...homeAliases],
+    activeCircuit:()=>{const current=desktopWorkspace.folder.current;return current?.activeFile?desktopWorkspace.folder.resolve(current.activeFile):null;},
+    secrets:()=>[storedApiKey(),...redact.secrets()].filter(Boolean)});
   const layoutPath = path.join(app.getPath("userData"), "workspace-layout.json");
   ipcMain.handle("vibe-logisim:layout-read", event => {
     if (!isTrustedRenderer(event)) throw new Error("Untrusted renderer.");
@@ -485,6 +572,8 @@ function registerIpc() {
   ipcMain.handle('vibe-logisim:agent-provider', async (event, request) => {
     if (!isTrustedRenderer(event)) throw new Error('Untrusted renderer.');
     const action = request?.action;
+    // A key typed into the form is masked in logs even before it is saved.
+    if (typeof request?.settings?.apiKey === 'string' && request.settings.apiKey.trim()) redact.addSecret(request.settings.apiKey.trim());
     // Preflight probes only talk to the student's endpoint; the workspace and
     // the running app-server are untouched, so no transition is needed.
     if (action === 'discover' || action === 'test') return codex.probeCustomProvider(action, request?.settings || {});
@@ -494,7 +583,7 @@ function registerIpc() {
     ++workspaceGeneration;
     workspaceTransitioning = true;
     try {
-      const state = action === 'clear' ? await codex.clearCustomProvider() : await codex.configureCustomProvider(request?.settings || {});
+      const state = await (action === 'clear' ? codex.clearCustomProvider() : codex.configureCustomProvider(request?.settings || {})).finally(refreshRedaction);
       const current = await backend.session();
       if (current.folder && codex.status === 'ready') {
         await codex.resumeWorkspace({workspaceKey:current.folder.conversationKey, revisionId:current.revision?.id});
@@ -559,6 +648,36 @@ function registerIpc() {
     if (!codex) return { interrupted: false };
     return codex.interrupt();
   });
+}
+
+// Raw facts for the diagnostics bundle; diagnostics-bundle.cjs reduces them
+// to a redacted report.
+async function collectDiagnostics() {
+  javaProbe ||= probeJavaVersion(runtimeRoot ? require('./runtime-paths.cjs').runtimeLayout(runtimeRoot).java : 'java');
+  const [session, network, java] = await Promise.all([
+    backend.session().catch(error => ({error: error.message})),
+    codex ? codex.networkStatus().catch(() => null) : null,
+    javaProbe,
+  ]);
+  return {
+    generatedAt: new Date(),
+    app: {name: app.getName(), version: app.getVersion(), packaged: app.isPackaged, electron: process.versions.electron,
+      chrome: process.versions.chrome, node: process.versions.node, locale: app.getLocale()},
+    system: {platform: process.platform, arch: process.arch, release: os.release(), version: os.version?.() || null, memoryGiB: Math.round(os.totalmem() / 2 ** 30)},
+    userDataPath: app.getPath('userData'), homeDir: os.homedir(), tempDir: os.tmpdir(), env: startupEnvironment,
+    java, keyLength: storedApiKey()?.length || 0,
+    agent: codex?.snapshot() || null, capabilities: codex?.capabilityReport?.() || null, network,
+    workspace: desktopWorkspace?.snapshot() || null, session, toolFailures: toolHost?.recentFailures() || [],
+  };
+}
+
+function scheduleUpdateCheck() {
+  if (updateCheckScheduled || !updates) return;
+  updateCheckScheduled = true;
+  setTimeout(async () => {
+    const status = await updates.check();
+    if (status.available && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('vibe-logisim:update-available', status);
+  }, UPDATE_CHECK_DELAY_MS);
 }
 
 function validateCandidateRequest(request) {
@@ -638,7 +757,15 @@ function createWindow(baseUrl) {
   mainWindow.webContents.on("will-attach-webview", (event) => event.preventDefault());
   mainWindow.webContents.on('will-prevent-unload',()=>{quitRequested=false;});
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  // Renderer errors are otherwise invisible in the packaged app.
+  mainWindow.webContents.on('console-message', (event, legacyLevel, legacyMessage, legacyLine, legacySource) => {
+    const level = event?.level ?? ['verbose', 'info', 'warning', 'error'][legacyLevel];
+    if (level !== 'warning' && level !== 'error') return;
+    const source = String(event?.sourceId ?? legacySource ?? '').replace(/^https?:\/\/[^/]+/, '');
+    diagnostics.write('renderer', `${level === 'error' ? '错误' : '警告'}：${event?.message ?? legacyMessage}${source ? `（${source}:${event?.lineNumber ?? legacyLine}）` : ''}`);
+  });
+  mainWindow.webContents.on('preload-error', (_event, _path, error) => diagnostics.write('renderer', `preload 出错：${error?.stack || error}`));
+  mainWindow.once("ready-to-show", () => { mainWindow?.show(); scheduleUpdateCheck(); });
   mainWindow.on("closed", () => {
     desktopWorkspace.canvas.reset();
     mainWindow = null;

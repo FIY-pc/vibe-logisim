@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="simulation.css" />
   <link rel="stylesheet" href="/files.css" />
   <link rel="stylesheet" href="/components.css" />
+  <link rel="stylesheet" href="/feedback.css" />
 </head>
   <body>
     <div class="app-shell" id="appShell">
@@ -49,6 +50,7 @@
             <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 6h5l2-2h7v12H3z" /></svg>
             打开文件夹
           </button>
+          <button class="icon-button" id="appMenuButton" aria-label="更多" title="更多：反馈问题、日志、检查更新" aria-haspopup="menu" aria-expanded="false"></button>
           <button class="icon-button panel-toggle" id="toggleReview" aria-label="收起工作栏" aria-controls="reviewPanel" aria-expanded="true"></button>
         </div>
       </header>
@@ -64,6 +66,13 @@
 
       <div class="stale-banner" id="connectionWarning" hidden role="status">
         工程进度已保留，但外部工具连接信息暂时无法更新；正在重试。你可以继续编辑。
+      </div>
+
+      <div class="update-banner" id="updateBanner" hidden role="status">
+        <span id="updateText"></span>
+        <button id="updateOpen">查看下载</button>
+        <button id="updateDismiss">忽略此版本</button>
+        <button id="updateClose" class="icon-button" aria-label="关闭提示"></button>
       </div>
 
       <main class="workbench" id="workbench">
@@ -238,7 +247,7 @@
             </div>
             <aside class="agent-notice" id="agentNotice" hidden>
               <div role="status"><strong id="agentNoticeTitle"></strong><p id="agentNoticeText"></p></div>
-              <div class="agent-notice-actions"><button class="quiet-button" id="agentReconnect">重新连接</button><button class="quiet-button" id="agentConfigureApi" hidden>填写 API 接口</button><button class="quiet-button" id="agentReviewChanges">查看已生成改动</button></div>
+              <div class="agent-notice-actions"><button class="quiet-button" id="agentReconnect">重新连接</button><button class="quiet-button" id="agentConfigureApi" hidden>填写 API 接口</button><button class="quiet-button" id="agentReviewChanges">查看已生成改动</button><button class="quiet-button" id="agentReportIssue" hidden>反馈这个问题</button></div>
               <details><summary>错误详情</summary><pre id="agentNoticeDetails"></pre></details>
             </aside>
             <div class="agent-timeline" id="agentTimeline" tabindex="0" role="log" aria-live="polite" aria-relevant="additions text">
@@ -341,6 +350,28 @@
       </form>
     </dialog>
     <div id="fileMenu" popover="manual" role="menu" aria-label="文件操作"></div>
+    <div id="appMenu" popover="manual" role="menu" aria-label="更多"></div>
+    <dialog id="feedbackDialog" class="feedback-dialog" aria-labelledby="feedbackTitle">
+      <header>
+        <div><h2 id="feedbackTitle">反馈问题</h2>
+          <p>诊断包可以直接附到 GitHub 上的公开 issue：不含 API 密钥、对话内容和电路，路径里的用户名和工作区位置已替换。文件名里仍可能有你的姓名或学号，发之前看一眼下面的预览。</p></div>
+        <button id="feedbackClose" class="icon-button" aria-label="关闭反馈"></button>
+      </header>
+      <label class="feedback-option"><input type="checkbox" id="feedbackIncludeCircuit" /> 附上当前电路文件（公开后任何人都能下载）</label>
+      <section class="feedback-preview" aria-label="诊断包预览">
+        <h3>摘要</h3>
+        <pre id="feedbackSummary"></pre>
+        <h3>诊断包内容</h3>
+        <ul id="feedbackEntries"></ul>
+      </section>
+      <p id="feedbackError" class="feedback-error" role="alert" hidden></p>
+      <footer>
+        <button id="feedbackSave" class="primary-button">保存诊断包…</button>
+        <button id="feedbackCopy" class="quiet-button">复制摘要</button>
+        <button id="feedbackOpenIssue" class="quiet-button">打开 GitHub 反馈页</button>
+        <span>在反馈页粘贴摘要，把诊断包拖进附件栏</span>
+      </footer>
+    </dialog>
     <dialog id="fileChanges" class="file-changes-dialog"><header><h2>文件改动</h2><button id="fileChangesClose" class="icon-button" aria-label="关闭文件改动">×</button></header><div class="file-changes-body"><div id="fileChangeList"></div><div id="fileDiff"></div></div></dialog>
     <dialog id="materialsDialog" class="materials-dialog workspace-file" aria-labelledby="materialsTitle">
       <header class="materials-header"><h2 id="materialsTitle">文件预览</h2><button id="filePreviewExternal" class="quiet-button" type="button">用系统应用打开</button><button id="materialsClose" class="chat-action" aria-label="关闭文件预览"></button></header>
