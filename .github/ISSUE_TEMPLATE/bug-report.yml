@@ -12,7 +12,7 @@ body:
     attributes:
       label: 版本
       description: 「…」菜单最下面「关于 Vibe Logisim」后面的版本号
-      placeholder: 0.3.2
+      placeholder: 0.3.3
     validations:
       required: true
   - type: input
