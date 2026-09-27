@@ -70,6 +70,19 @@ node apps/desktop/test/rerouting-workspace.cjs
 
 `routing-clearance.py` 用两种原生运行文件检查四方向引脚、绕无关器件、窄通道与直连；默认不需要真实课设样本。历史真实产物的前后图、连接与行为证明及性能范围见 007 间隙报告。
 
+整理电路（`arrange_candidate`）只能改变画法的原生验收（内联夹具，不依赖课程材料，不调用模型）：
+
+```sh
+python3 -m unittest apps/desktop/test/arrange-fidelity.py apps/desktop/test/schematic-panel-detection.py
+```
+
+经生产工作台整理后重新观察，逐项核对：
+- 面板探针接进主体的连线不丢。探针的位宽随所接网络而定，观察器不报它的网络位，整理和等价检查都按它所在的导线补齐。
+- 带自定义外观的子电路，端口引用跟随引脚移动，使用它的电路里实例端口不变。
+- 默认外观的子电路，同一朝向的引脚保持原有顺序。另有对照用例证明运行时确实按引脚位置排列端口。
+- 载入时被合并成一根的共线导线不会被当作旧线删掉。
+- 目标电路之外的字节不变。
+
 原生仿真反馈到评测记录的完整链路可用 `node apps/desktop/test/simulation-evidence.cjs /absolute/new-evidence-directory` 验证。两个 JAR 的生产插件调用覆盖明确预期、空预期、未知、振荡、行采样/分页与候选身份，检查文件与结构历史不变；不启动模型。它只证明实际执行结果正确进入事件，独立任务 oracle 仍另行判断任务成功，见 008 反馈报告。
 
 其结果可交给 `node apps/desktop/test/e2e-simulation-feedback.cjs /absolute/native-evidence-directory /absolute/new-ui-evidence`：在真实 Electron 回放已保存的原生事件，并以明确夹具补上工具完成事件，鼠标展开工作过程，核对完成不覆盖未知/反例、另一批通过不抹掉前一批反例、无断言只显示观察。它没有模型调用，证据来源与 UI 回放范围见 截图。
