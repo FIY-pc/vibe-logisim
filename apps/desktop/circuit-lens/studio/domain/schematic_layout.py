@@ -32,6 +32,12 @@ Connectivity contract (what makes the result provably equivalent):
   its ports that port gets a Tunnel that still names the same net.
 - A panel port whose copper was rebuilt gets a Tunnel of the same label on the
   panel side, so the fixed panel never needs to move.
+- A port of unknown width (a Probe) belongs to the net of the copper it
+  stands on, like any other port (resolve_unknown_widths).
+- Circuits that use this one see the same instance: a custom appearance's
+  ports follow their Pins; without one, the Pins of each facing keep their
+  order, which is what the default appearance is built from
+  (interface_signature). Only this definition is rewritten in the file.
 """
 from __future__ import annotations
 
@@ -40,6 +46,7 @@ import copy
 import math
 import re
 import xml.etree.ElementTree as ET
+from xml.parsers import expat
 
 from studio.domain.routing import Router, Partition
 
@@ -76,6 +83,12 @@ TRANSPOSE_ROUNDS = 12       # adjacent-swap rounds after the sweeps
 PANEL_MIN_GAP = 40          # whitespace between the panel's last row and the body's first row
 PANEL_MIN_PARTS = 12        # a panel is a substantial cluster (course templates: 60-80 parts)
 PANEL_IO_SHARE = 0.6        # ... made mostly of I/O and annotation (course panels 0.74-0.9; a logic slice < 0.3)
+# ... that shows or drives something for a person (course panels: 20-50 of
+# these); a column of interface Pins above the logic of a helper circuit is
+# its inputs, not a panel.
+PANEL_DISPLAYS = {"Probe", "Hex Digit Display", "LED", "Button", "RiscV Probe", "7-Segment Display", "DotMatrix", "TTY",
+                  "Keyboard", "Joystick", "DIP Switch"}
+PANEL_MIN_DISPLAYS = 4
 TEXT_ATTACH_DISTANCE = 60   # a Text this close to a body part is its caption and moves with it
 LABEL_ABBREVIATIONS = {"Multiplexer": "MUX", "Demultiplexer": "DMX", "Decoder": "DEC", "Priority Encoder": "ENC", "Adder": "ADD",
                        "Subtractor": "SUB", "Multiplier": "MUL", "Divider": "DIV", "Negator": "NEG", "Comparator": "CMP", "Shifter": "SHL",
@@ -131,19 +144,138 @@ class _UnionFind:
             self.parent[ra] = rb
 
 
+def resolve_unknown_widths(focus):
+    """Give ports of unknown width the net of the copper they stand on.
+
+    The observer reports a port's net bits per declared bit, so a port whose
+    width is only settled at run time -- a Probe, typically a panel display
+    wired to a statistics Counter -- comes back with none. Such a port looks
+    unconnected: a re-layout would delete its copper without replacing it and
+    a netlist comparison would not notice. Logisim gives it the width of the
+    bundle it touches, and so does this: the bits of the wire bundle through
+    the port's point, else those of another port on the same point. Ends that
+    touch nothing stay empty. Idempotent; returns the number of ends resolved."""
+    at_point = {}
+    for bundle in focus.get("wireBundles", []):
+        bits = [b for b in bundle.get("bitNets", []) if b.get("netId")]
+        if bits and bundle.get("valid", True):
+            for p in bundle.get("points", []):
+                at_point[(p["x"], p["y"])] = bits
+    for c in focus["components"]:
+        for e in c["ends"]:
+            if e.get("netBits"):
+                at_point.setdefault((e["location"]["x"], e["location"]["y"]), e["netBits"])
+    resolved = 0
+    for c in focus["components"]:
+        for e in c["ends"]:
+            if e.get("width") is None and not e.get("netBits"):
+                bits = at_point.get((e["location"]["x"], e["location"]["y"]))
+                if bits:
+                    e["netBits"] = [{"bit": b["bit"], "netId": b["netId"]} for b in bits]
+                    e["width"] = max(b["bit"] for b in bits) + 1
+                    resolved += 1
+    return resolved
+
+
+def _facing(element):
+    a = element.find("a[@name='facing']")
+    return a.get("val") if a is not None else "east"
+
+
+def _pin_order_key(facing):
+    """Logisim's default appearance puts the Pins of one facing on one edge of
+    the instance, in the order of their y (x for north- and south-facing Pins)."""
+    if facing in ("north", "south"):
+        return lambda p: (p[0], p[1])
+    return lambda p: (p[1], p[0])
+
+
+def interface_signature(circuit, identify=lambda p: p):
+    """What an instance of this circuit looks like from outside, as far as
+    moving its parts can change it. `circuit` is the <circuit> element;
+    `identify` maps a Pin location to a stable identity (the original
+    location, for a re-laid-out circuit).
+
+    A custom appearance (<appear>) fixes every port on the instance and names
+    its Pin by location: the pairs (port position, Pin). Without one, Logisim
+    derives the instance from the Pins themselves: per facing, the Pins in
+    order. Moving a Pin past another of the same facing swaps two ports in
+    every circuit that uses this one, without changing a single connection
+    inside it."""
+    pins = [(_loc(e.get("loc")), _facing(e)) for e in circuit.findall("comp") if e.get("name") == "Pin"]
+    appear = circuit.find("appear")
+    if appear is not None:
+        ports = []
+        for port in appear.iter("circ-port"):
+            try:
+                p = tuple(int(v) for v in port.get("pin", "").split(","))
+            except ValueError:
+                p = None
+            ports.append((port.get("x"), port.get("y"), identify(p) if p and len(p) == 2 else None))
+        return ("custom", tuple(sorted(ports, key=str)), tuple(sorted((identify(p) for p, _f in pins), key=str)))
+    groups = defaultdict(list)
+    for p, f in pins:
+        groups[f].append(p)
+    return ("default", tuple(sorted((f, tuple(identify(p) for p in sorted(ps, key=_pin_order_key(f)))) for f, ps in groups.items())))
+
+
+def _circuit_span(raw, name):
+    """Byte offsets of <circuit name=...>...</circuit> in the UTF-8 file, or
+    None (absent, or an empty element)."""
+    parser = expat.ParserCreate()
+    found, depth = {}, [0]
+
+    def start(tag, attrs):
+        depth[0] += 1
+        if tag == "circuit" and depth[0] == 2 and attrs.get("name") == name and "start" not in found:
+            found["start"] = parser.CurrentByteIndex
+
+    def end(tag):
+        if tag == "circuit" and depth[0] == 2 and "start" in found and "end" not in found:
+            found["end"] = parser.CurrentByteIndex
+        depth[0] -= 1
+
+    parser.StartElementHandler, parser.EndElementHandler = start, end
+    parser.Parse(raw, True)
+    if "end" not in found or found["end"] == found["start"]:
+        return None
+    return found["start"], raw.index(b">", found["end"]) + 1
+
+
+def splice_circuit(source, name, circuit):
+    """The file text with only this <circuit> replaced by `circuit`. The XML
+    declaration, libraries, options, toolbar and every other definition stay
+    byte for byte what the author (or their Logisim) wrote."""
+    tail, circuit.tail = circuit.tail, None
+    try:
+        text = ET.tostring(circuit, encoding="unicode").replace(" />", "/>")
+    finally:
+        circuit.tail = tail
+    raw = source.encode("utf-8")
+    span = _circuit_span(raw, name)
+    if span is None:
+        raise ValueError(f"circuit {name!r} not found in the source text")
+    if b"\r\n" in raw[span[0]:span[1]]:
+        text = text.replace("\n", "\r\n")
+    return (raw[:span[0]] + text.encode("utf-8") + raw[span[1]:]).decode("utf-8")
+
+
 class SchematicLayout:
     def __init__(self, xml_text, circuit_name, focus, *, pinned_ids=(), keep_tunnels=(), localise_constants=True, panel_below_y=None):
+        self.source, self.circuit_name = xml_text, circuit_name
         self.tree = ET.ElementTree(ET.fromstring(xml_text))
         root = self.tree.getroot()
         self.circuit = next(c for c in root.findall("circuit") if c.get("name") == circuit_name)
         self.wiring_lib = next((lib.get("name") for lib in root.findall("lib") if lib.get("desc") == "#Wiring"), "0")
+        resolved = resolve_unknown_widths(focus)
         self.focus = focus
         self.components = focus["components"]
         self.by_id = {c["componentId"]: c for c in self.components}
         self.pinned = set(pinned_ids)
         self.keep_tunnels = set(keep_tunnels)
         self.localise_constants = localise_constants
-        self.report = {"nets": {}, "moved": 0, "wires": 0, "tunnelsRemoved": 0, "tunnelsKept": 0, "constantsPlaced": 0, "unrouted": [], "synthesizedLabels": []}
+        self.report = {"nets": {}, "moved": 0, "wires": 0, "tunnelsRemoved": 0, "tunnelsKept": 0, "constantsPlaced": 0, "unrouted": [], "synthesizedLabels": [],
+                       "portsWidthFromNet": resolved}
         self.column_gap = COLUMN_GAP
         # A named net that runs backwards (consumer left of its driver: write-
         # back, branch target, feedback) keeps its Tunnels, as in any hand-drawn
@@ -173,7 +305,10 @@ class SchematicLayout:
         Composition, not size ratio or gap size, is the criterion: an 80-part
         panel over a 330-part CPU is still a panel, and a student who leaves
         60 px instead of the template's 250 px between panel and body has still
-        drawn a panel. A sparse first stage of pure logic is body."""
+        drawn a panel. A sparse first stage of pure logic is body, and so is a
+        column of interface Pins over the logic of a helper circuit: a panel
+        shows something (probes, displays, buttons). A course page before the
+        student has drawn anything is all panel; nothing on it moves."""
         real = sorted((c for c in self.components if c["factoryName"] != "Tunnel"), key=lambda c: c["bounds"]["y"])
         if len(real) < 40 or len({c["bounds"]["y"] for c in real}) < 4:
             return None
@@ -186,14 +321,16 @@ class SchematicLayout:
             bottom = max(bottom if bottom is not None else -10 ** 9, c["bounds"]["y"] + c["bounds"]["height"])
         bands.append((current, bottom))
         best, cluster = None, []
-        for i, (band, bottom) in enumerate(bands[:-1]):
+        for i, (band, bottom) in enumerate(bands):
             io_band = sum(1 for c in band if c["factoryName"] in PANEL_FACTORIES)
             if io_band < PANEL_IO_SHARE * len(band):
                 break                       # a logic row: the body starts here
             cluster.extend(band)
             io = sum(1 for c in cluster if c["factoryName"] in PANEL_FACTORIES)
-            if len(cluster) >= PANEL_MIN_PARTS and io >= PANEL_IO_SHARE * len(cluster):
-                best = (bottom + bands[i + 1][0][0]["bounds"]["y"]) // 2
+            shows = sum(1 for c in cluster if c["factoryName"] in PANEL_DISPLAYS)
+            if len(cluster) >= PANEL_MIN_PARTS and io >= PANEL_IO_SHARE * len(cluster) and shows >= PANEL_MIN_DISPLAYS:
+                below = bands[i + 1][0][0]["bounds"]["y"] if i + 1 < len(bands) else bottom + PANEL_MIN_GAP
+                best = (bottom + below) // 2
         return best
 
     # ---- observation -> model -------------------------------------------------
@@ -668,8 +805,73 @@ class SchematicLayout:
                 demoted += 1
         self.report["nets"]["demotedToTunnel"] = demoted
 
+    def _pinout_ranks(self, layer, one_layer):
+        """Without a custom appearance an instance's ports are this circuit's
+        Pins, per facing in the order of their position (interface_signature):
+        re-ordering two Pins of one facing swaps two ports in every circuit
+        that uses this one. The Pins of one facing keep their order inside a
+        layer (_hold_pinout); with one_layer they also share a layer -- the
+        first when they only drive (inputs), the last when any is driven
+        (outputs, at the right edge as drawn by hand) -- which makes the order
+        hold across the sheet (see _place). Returns {cid: (facing, rank)},
+        empty for a custom appearance, which fixes its ports itself."""
+        if self.circuit.find("appear") is not None:
+            return {}
+        groups = defaultdict(list)
+        for cid in layer:
+            if self.by_id[cid]["factoryName"] == "Pin":
+                groups[_attr(self.by_id[cid], "facing") or "east"].append(cid)
+        ranks = {}
+        for facing, cids in groups.items():
+            key = _pin_order_key(facing)
+            cids.sort(key=lambda cid: key((self.by_id[cid]["location"]["x"], self.by_id[cid]["location"]["y"])))
+            driven = any(e.get("direction") == "input" for cid in cids for e in self.by_id[cid]["ends"])
+            target = (max if driven else min)(layer[cid] for cid in cids)
+            for rank, cid in enumerate(cids):
+                if one_layer:
+                    layer[cid] = target
+                ranks[cid] = (facing, rank)
+        return ranks
+
+    def _pinout_kept(self, placement):
+        """Do the Pins of every facing still come in their original order?"""
+        seen = defaultdict(list)
+        for cid, (facing, rank) in self.pin_rank.items():
+            dx, dy = placement.get(cid, (0, 0))
+            loc = self.by_id[cid]["location"]
+            seen[facing].append((_pin_order_key(facing)((loc["x"] + dx, loc["y"] + dy)), rank))
+        return all([rank for _p, rank in sorted(pins)] == sorted(rank for _p, rank in pins) for pins in seen.values())
+
+    def _hold_pinout(self, ids):
+        """Put the Pins of each facing back in their original order in `ids`
+        (one layer, top to bottom), in the slots they occupy; other parts keep
+        their places."""
+        slots = defaultdict(list)
+        for i, cid in enumerate(ids):
+            if cid in self.pin_rank:
+                slots[self.pin_rank[cid][0]].append(i)
+        for positions in slots.values():
+            for i, cid in zip(positions, sorted((ids[i] for i in positions), key=lambda cid: self.pin_rank[cid][1])):
+                ids[i] = cid
+
     def _place(self):
+        """Placement, keeping the pinout (_pinout_ranks). Output Pins usually
+        stand in different columns, next to what drives them; when that puts
+        two of one facing out of order, the placement is redone with every
+        facing's Pins in one column (costlier: long nets to the right edge
+        become Tunnels)."""
+        classes = dict(self.classes)
+        placement = self._place_once(one_layer=False)
+        if not self._pinout_kept(placement):
+            self.classes = classes           # _demote re-classifies on each pass
+            placement = self._place_once(one_layer=True)
+        self.report["pinsOneColumn"] = self._pinout_layers
+        return placement
+
+    def _place_once(self, one_layer):
         depth_layer = self._layers()
+        self.pin_rank = self._pinout_ranks(depth_layer, one_layer)
+        self._pinout_layers = one_layer
         column, x_offset = self._pack_columns(depth_layer)
         self._demote(depth_layer, column, x_offset)
         layer = column                       # shelf parts are not in it (see _pack_columns)
@@ -708,6 +910,7 @@ class SchematicLayout:
         order = {}
         for l, ids in by_layer.items():
             ids.sort(key=lambda cid: (self.by_id[cid]["location"]["y"], depth_layer[cid], self.by_id[cid]["location"]["x"]))
+            self._hold_pinout(ids)
             order[l] = list(ids)
         layers_sorted = sorted(by_layer)
         top_y = {}
@@ -782,6 +985,7 @@ class SchematicLayout:
                     b = barycenter(cid, l)
                     want[cid] = cur[cid] if b is None else b
                 order[l].sort(key=lambda cid: (want[cid], cur[cid]))
+                self._hold_pinout(order[l])
                 top_y[l] = stack(l, want)
 
         # Transposition: swap neighbours in a layer when the straight-line
@@ -831,6 +1035,8 @@ class SchematicLayout:
                     a, b = ids[i], ids[i + 1]
                     if not touching[a] and not touching[b]:
                         continue
+                    if a in self.pin_rank and b in self.pin_rank and self.pin_rank[a][0] == self.pin_rank[b][0]:
+                        continue            # two Pins of one facing: their order is the pinout
                     before = local_crossings((a, b))
                     saved = top_y[l]
                     ids[i], ids[i + 1] = b, a
@@ -1235,16 +1441,51 @@ class SchematicLayout:
         self._place()
         self._route()
         circuit = self.circuit
+        moved_pins = {}
         for cid, element in self.element_of.items():
             dx, dy = self.placement.get(cid, (0, 0))
             if dx or dy:
                 x, y = _loc(element.get("loc"))
                 element.set("loc", f"({x + dx},{y + dy})")
+                if element.get("name") == "Pin":
+                    moved_pins[(x, y)] = (x + dx, y + dy)
+        # A custom appearance names the Pin behind each of its ports by the
+        # Pin's location. Left pointing at the old spot, the port is gone: the
+        # file no longer loads ("Appearance element circ-port not found"), or
+        # the instance loses that connection in every circuit using it. The
+        # port stays where it is on the instance; only the reference follows.
+        repointed = 0
+        appear = circuit.find("appear")
+        for port in appear.iter("circ-port") if appear is not None else ():
+            try:
+                old = tuple(int(v) for v in port.get("pin", "").split(","))
+            except ValueError:
+                continue
+            if old in moved_pins:
+                port.set("pin", "%d,%d" % moved_pins[old])
+                repointed += 1
+        self.report["appearancePortsRepointed"] = repointed
         # Old body wiring goes; panel copper (unchanged coordinates) stays.
-        kept = {((kw["from"]["x"], kw["from"]["y"]), (kw["to"]["x"], kw["to"]["y"])) for kw in self.kept_wires}
-        kept |= {(b, a) for a, b in kept}
+        # Logisim normalises wires on load -- collinear pieces that meet are
+        # merged, a wire is split where another one ends -- so the observed
+        # wires are not always the file's <wire> elements (a 10 px lead drawn
+        # onto the end of a longer wire is one observed wire). A file wire
+        # stays when it lies on kept copper.
+        kept_h, kept_v = defaultdict(list), defaultdict(list)
+        for kw in self.kept_wires:
+            (ax, ay), (bx, by) = (kw["from"]["x"], kw["from"]["y"]), (kw["to"]["x"], kw["to"]["y"])
+            if ay == by:
+                kept_h[ay].append((min(ax, bx), max(ax, bx)))
+            if ax == bx:
+                kept_v[ax].append((min(ay, by), max(ay, by)))
+
+        def on_kept_copper(a, b):
+            if a[1] == b[1] and any(lo <= min(a[0], b[0]) and max(a[0], b[0]) <= hi for lo, hi in kept_h.get(a[1], ())):
+                return True
+            return a[0] == b[0] and any(lo <= min(a[1], b[1]) and max(a[1], b[1]) <= hi for lo, hi in kept_v.get(a[0], ()))
+
         for w in list(circuit.findall("wire")):
-            if (_loc(w.get("from")), _loc(w.get("to"))) not in kept:
+            if not on_kept_copper(_loc(w.get("from")), _loc(w.get("to"))):
                 circuit.remove(w)
         for cid in self.drop_tunnels:
             element = self.element_of.get(cid)
@@ -1365,7 +1606,9 @@ class SchematicLayout:
                     circuit.remove(drv_el)
         for a, b in self.wires:
             ET.SubElement(circuit, "wire", {"from": f"({a[0]},{a[1]})", "to": f"({b[0]},{b[1]})"})
-        return ET.tostring(self.tree.getroot(), encoding="unicode")
+        # Only this definition is rewritten; everything else in the file stays
+        # byte for byte (a student diffing their file sees one circuit change).
+        return splice_circuit(self.source, self.circuit_name, circuit)
 
 
 def netlist_signature(focus, *, ignore_factories=("Tunnel",)):

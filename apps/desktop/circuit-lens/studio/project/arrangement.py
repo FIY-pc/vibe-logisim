@@ -8,7 +8,9 @@ compilation step with a structural proof:
 
   observe -> classify nets -> layered placement -> ordered global routing ->
   emit -> re-observe -> netlist equivalence (every {port} group sharing a net
-  is identical before/after; constants compared per driven port) -> candidate.
+  is identical before/after, ports of unknown width such as Probes included;
+  constants compared per driven port) -> same instance for every circuit that
+  uses this one -> nothing else in the file changed -> candidate.
 
 The model chooses parameters (what stays a tunnel, what is pinned, spacing)
 and judges the rendered result; it never chooses wire geometry.
@@ -21,8 +23,19 @@ import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
-from studio.domain.schematic_layout import SchematicLayout, TUNNEL_SPAN
+from studio.domain.schematic_layout import SchematicLayout, TUNNEL_SPAN, _circuit_span, interface_signature, resolve_unknown_widths
 from studio.domain.tool_errors import CircuitToolError
+
+
+def _circuit_element(xml_text, circuit_name):
+    return next(c for c in ET.fromstring(xml_text).findall("circuit") if c.get("name") == circuit_name)
+
+
+def _outside(xml_text, circuit_name):
+    """The file without this definition's bytes."""
+    raw = xml_text.encode("utf-8")
+    span = _circuit_span(raw, circuit_name)
+    return raw if span is None else raw[:span[0]] + raw[span[1]:]
 
 
 def _attr(component, name):
@@ -129,6 +142,7 @@ def arrange_candidate(workbench, args):
             (directory / filename).write_bytes(data)
         before_full = w.observer.run_full(artifact, name)
         before_focus = before_full["focus"]
+        resolve_unknown_widths(before_focus)
         before_xml = before.decode("utf-8")
         identity = _identity_map(before_xml, name)
         before_sig = netlist_signature(before_focus, identity)
@@ -154,6 +168,7 @@ def arrange_candidate(workbench, args):
 
         after_full = w.observer.run_full(artifact, name, directory / (hashlib.sha256(name.encode()).hexdigest() + ".png"))
         after_focus = after_full["focus"]
+        resolve_unknown_widths(after_focus)
         orig_of = {}
         for comp in before_focus["components"]:
             dx, dy = layout.placement.get(comp["componentId"], (0, 0))
@@ -192,6 +207,26 @@ def arrange_candidate(workbench, args):
                 context={"lost": [describe(g) for g in list(lost)[:6]], "gained": [describe(g) for g in list(gained)[:6]],
                          "invalidBundles": len(invalid), "report": layout.report},
             )
+        # The netlist above is this circuit's inside. Circuits that use it see
+        # its instance: the same ports in the same places, wired to the same Pins.
+        interface_before = interface_signature(_circuit_element(before_xml, name))
+        interface_after = interface_signature(_circuit_element(after_xml, name),
+                                              lambda p: orig_of.get((p, "Pin"), ((None, None), None))[0])
+        if interface_before != interface_after:
+            shutil.rmtree(directory, ignore_errors=True)
+            pins = sorted(({"componentId": c["componentId"], "label": _attr(c, "label")} for c in before_focus["components"] if c["factoryName"] == "Pin"),
+                          key=lambda p: p["componentId"])
+            raise CircuitToolError(
+                "ARRANGE_INTERFACE_CHANGED",
+                "整理会改变这个电路作为子电路时的引脚排列（使用它的电路里端口会对不上），已丢弃。",
+                hint=("没有自定义外观的电路，子电路实例的端口按引脚的位置排序。把这些引脚的元件 ID 加入 pinnedComponentIds 让它们原地不动后重试；"
+                      "同时请把该电路和这份报告反馈给维护者，这是布局引擎的缺陷。"),
+                context={"appearance": interface_before[0], "pins": pins[:48], "report": layout.report},
+            )
+        if _outside(before_xml, name) != _outside(after_xml, name):
+            shutil.rmtree(directory, ignore_errors=True)
+            raise CircuitToolError("ARRANGE_NOT_EQUIVALENT", "整理改动了目标电路之外的内容，已丢弃。",
+                                   hint="这是布局引擎的缺陷，请把该电路反馈给维护者。")
         metrics_before = readability(before_xml, name)
         metrics_after = readability(after_xml, name)
         inherited = [c for c in parent.get("changes", []) if c["circuit"] != name] if parent else []
@@ -208,6 +243,8 @@ def arrange_candidate(workbench, args):
             "netlistEquivalent": True,
             "netGroupsCompared": len(before_sig),
             "interfacePreserved": True,
+            "interfaceChecked": interface_before[0],
+            "otherDefinitionsUnchanged": True,
             "wireGeometryPreserved": False,
         })
         metadata = {
@@ -225,7 +262,8 @@ def arrange_candidate(workbench, args):
             "arrangement": layout.report,
             "readability": {"before": metrics_before, "after": metrics_after},
             "netlist": {"equivalent": True, "groupsCompared": len(before_sig), "invalidBundles": 0},
-            "note": ("连通性已按网表逐端口组核对（不是仿真）。可用 render_circuit(candidateId) 看图，"
+            "note": ("连通性已按网表逐端口组核对（含探针等位宽随网络而定的端口，不是仿真）；作为子电路的引脚排列不变；"
+                     "文件里其他电路一个字节都没改，不需要再恢复。可用 render_circuit(candidateId) 看图，"
                      "调整 keepTunnels / pinnedComponentIds / columnGap 后重新整理；满意后 checkout_candidate 写回。"),
         }
     except Exception:
