@@ -599,7 +599,15 @@ class SchematicLayout:
             loc = self.by_id[port[0]]["ends"][port[1]]["location"]
             return loc["x"], loc["y"]
 
-        copies = {}
+        def centre(cid):
+            b = self.by_id[cid]["bounds"]
+            return b["x"] + b["width"] / 2, b["y"] + b["height"] / 2
+
+        def distance(a, b):
+            (ax, ay), (bx, by) = centre(a), centre(b)
+            return abs(ax - bx) + abs(ay - by)
+
+        found = []
         for key, ports in self.nets.items():
             real = [(cid, idx) for cid, idx in ports if cid not in self.tunnels]
             if any(cid not in self.body_ids for cid, _idx in real):
@@ -609,13 +617,34 @@ class SchematicLayout:
                 if idx > 0 and cid in bus_of:
                     by_bus[bus_of[cid]].append((cid, idx))
             group = max(by_bus.values(), key=len, default=[])
-            if len(group) < 2:
-                continue
+            if len(group) >= 2:
+                found.append((key, real, group))
+        # Each part the copies feed gets one copy for every bit of the bus
+        # (a part fed some bits by one copy and some by another draws two
+        # bundles that cross): the nearest free copy, nearest pairs first, as
+        # long as copies are free; the author put each copy by its part.
+        consumers = defaultdict(set)
+        for key, real, group in found:
+            copies_of = frozenset(cid for cid, _idx in group)
+            consumers[copies_of].update(cid for cid, _idx in real if cid not in copies_of)
+        pairing = {}
+        for copies_of, parts in consumers.items():
+            free, chosen = set(copies_of), {}
+            for d, part, copy in sorted((distance(part, copy), part, copy) for part in parts for copy in copies_of):
+                if part not in chosen and copy in free:
+                    chosen[part] = copy
+                    free.discard(copy)
+            for part in parts:
+                chosen.setdefault(part, min(copies_of, key=lambda c: (distance(part, c), c)))
+            pairing[copies_of] = chosen
+        copies = {}
+        for key, real, group in found:
+            copies_of = frozenset(cid for cid, _idx in group)
             served = {port: [] for port in group}
+            copy_port = {cid: (cid, idx) for cid, idx in group}
             for port in real:
                 if port not in served:
-                    x, y = at(port)
-                    served[min(group, key=lambda g: (abs(at(g)[0] - x) + abs(at(g)[1] - y), g))].append(port)
+                    served[copy_port[pairing[copies_of][port[0]]]].append(port)
             copies[key] = [(port, rest) for port, rest in served.items() if rest]
         return copies
 

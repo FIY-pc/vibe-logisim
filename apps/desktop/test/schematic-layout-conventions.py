@@ -236,6 +236,24 @@ class SplitterCopies(unittest.TestCase):
         copies = self.layout()._splitter_copies()
         self.assertEqual(copies, {((0, 'n'),): [(('s1', 1), [('p', 0)]), (('s2', 1), [('q', 0)])]})
 
+    def test_every_bit_of_a_bus_comes_from_the_same_copy(self):
+        # two bits; the author drew s1 by q and s2 by p, so each part is fed
+        # all its bits by the copy beside it
+        by_id = {
+            's1': comp('s1', 'Splitter', 100, 480, [(0, 0, 'inout', 'b'), (10, 10, 'inout', 'n'), (10, 20, 'inout', 'm')]),
+            's2': comp('s2', 'Splitter', 100, 120, [(0, 0, 'inout', 'b'), (10, 10, 'inout', 'n'), (10, 20, 'inout', 'm')]),
+            'p': comp('p', 'AND Gate', 200, 100, [(0, 10, 'input', 'n'), (0, 30, 'input', 'm')]),
+            'q': comp('q', 'AND Gate', 200, 500, [(0, 10, 'input', 'n'), (0, 30, 'input', 'm')]),
+            'r': comp('r', 'Pin', 0, 300, [(0, 0, 'output', 'b')]),
+        }
+        nets = {((0, 'b'),): [('s1', 0), ('s2', 0), ('r', 0)],
+                ((0, 'n'),): [('s1', 1), ('s2', 1), ('p', 0), ('q', 0)],
+                ((0, 'm'),): [('s1', 2), ('s2', 2), ('p', 1), ('q', 1)]}
+        layout = bare(by_id=by_id, nets=nets, classes={k: 'wire' for k in nets}, tunnels={}, body_ids=set(by_id))
+        copies = layout._splitter_copies()
+        self.assertEqual(copies[((0, 'n'),)], [(('s1', 1), [('q', 0)]), (('s2', 1), [('p', 0)])])
+        self.assertEqual(copies[((0, 'm'),)], [(('s1', 2), [('q', 1)]), (('s2', 2), [('p', 1)])])
+
     def test_a_constant_bus_does_not_connect_its_copies(self):
         layout = self.layout()
         layout.classes[((0, 'b'),)] = 'constant'
