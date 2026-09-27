@@ -16,8 +16,14 @@ HUST CPUs, 2026-09-25):
     the mux it feeds; input Pins stay at the left edge.
   - A chain of parts wired output to input across neighbouring columns is
     drawn straight, output Pins included (their order is the pinout).
+  - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
+    is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
+    and RAM left to right on one row, centres level; the controller above
+    that row, the adders the PC feeds below it. Its sheet is compacted
+    (parts slide left into the channels' free space) and wire vs Tunnel is
+    decided again on the real distances.
 
-No model. Shapes are synthesised; the lead and chain tests observe natively.
+No model. Shapes are synthesised; the lead, chain and CPU tests observe natively.
 """
 import sys
 import tempfile
@@ -27,7 +33,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
 from studio.domain.schematic_layout import (SchematicLayout, PIPELINE_REGISTER_RE, TUNNEL_SPAN,  # noqa: E402
-                                            UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, _attr)
+                                            UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, COMPACT_GAP, _attr)
 
 
 def comp(cid, factory, x, y, ends, label=None, width=40, height=40):
@@ -131,6 +137,94 @@ class SpanDemotion(unittest.TestCase):
     def test_column_cap_still_applies(self):
         self.assertEqual(self.net([3], max_layer_span=2), 'tunnel')
         self.assertEqual(self.net([3, 3], named=False, max_layer_span=2), 'tunnel')
+
+
+class SpineRoles(unittest.TestCase):
+    """_spine names the parts a reader of a single-cycle CPU looks for."""
+
+    def spine(self, parts, nets=()):
+        by_id = {cid: comp(cid, f, 0, 0, [], label=label) for cid, (f, label) in parts.items()}
+        return bare(by_id=by_id, nets={(i,): ports for i, ports in enumerate(nets)})._spine(list(by_id))
+
+    CPU = {'pc': ('Register', 'PC'), 'rom': ('ROM', None), 'ram': ('RAM', None), 'rf': ('◆Regifile', None),
+           'alu': ('◆ALU', None), 'cu': ('◆单周期硬布线控制器', None), 'mux': ('Multiplexer', None)}
+
+    def test_a_cpu_by_its_parts(self):
+        self.assertEqual(self.spine(self.CPU), {'pc': 'PC', 'rom': 'ROM', 'ram': 'RAM', 'rf': 'RegFile', 'alu': 'ALU', 'cu': 'Controller'})
+
+    def test_not_a_cpu_without_a_register_file_and_alu_and_memory(self):
+        self.assertEqual(self.spine({k: v for k, v in self.CPU.items() if k != 'rf'}), {})
+        self.assertEqual(self.spine({k: v for k, v in self.CPU.items() if k not in ('rom', 'ram')}), {})
+
+    def test_names_students_use(self):
+        for name in ('RegFile', 'reg_file', 'MIPS Regifile', '寄存器堆', 'Register File'):
+            self.assertEqual(self.spine({**self.CPU, 'rf': (name, None)})['rf'], 'RegFile', name)
+        for name in ('ALU', 'MIPS ALU', 'alu32', '运算器'):
+            self.assertEqual(self.spine({**self.CPU, 'alu': (name, None)})['alu'], 'ALU', name)
+        self.assertNotIn('x', self.spine({**self.CPU, 'x': ('Evaluate', None)}))
+        self.assertNotIn('r2', self.spine({**self.CPU, 'r2': ('Register', 'IR')}))
+
+    def test_of_several_alus_the_one_wired_to_the_datapath(self):
+        parts = {**self.CPU, 'add': ('◆ALU', None)}          # PC+4 built from a second ALU instance
+        roles = self.spine(parts, nets=[[('rf', 0), ('alu', 0)], [('alu', 1), ('ram', 0)], [('pc', 0), ('add', 0)]])
+        self.assertEqual(roles['alu'], 'ALU')
+        self.assertNotIn('add', roles)
+
+
+class CompactKeepsTheRowApart(unittest.TestCase):
+    def test_a_fixed_layer_does_not_merge_leftwards_but_takes_the_next_one(self):
+        out = SchematicLayout._compact({'a': 0, 'b': 1, 'c': 2}, fixed={1})
+        self.assertEqual((out['a'], out['b'], out['c']), (0, 1, 1))
+
+
+class CompactX(unittest.TestCase):
+    """_compact_x slides parts left into the channels: parts that face each
+    other keep their gap, so does a wired consumer from its driver, a part
+    never goes left of an earlier column, takes a left edge close by, and
+    nothing moves vertically."""
+
+    def run_compact(self, parts, wired=()):
+        by_id, placement, layer = {}, {}, {}
+        for cid, (col, x, y, h, *w) in parts.items():
+            w = w[0] if w else 40
+            by_id[cid] = comp(cid, 'AND Gate', x, y, [(0, 10, 'input', f'{cid}i'), (w, 10, 'output', f'{cid}o')], width=w, height=h)
+            placement[cid], layer[cid] = (0, 0), col
+        nets, classes = {}, {}
+        for i, (d, c) in enumerate(wired):
+            key = ((0, f'w{i}'),)
+            nets[key], classes[key] = [(d, 1), (c, 0)], 'wire'
+        layout = bare(by_id=by_id, nets=nets, classes=classes, bits_of={}, labels_of_net={}, compact_gap=COMPACT_GAP)
+        layout._compact_x(placement, layer)
+        return {cid: (by_id[cid]['bounds']['x'] + placement[cid][0], by_id[cid]['bounds']['y'] + placement[cid][1]) for cid in parts}
+
+    def test_facing_parts_keep_the_gap_and_the_rest_slides_under(self):
+        pos = self.run_compact({'a': (0, 100, 100, 40), 'b': (1, 300, 100, 40), 'c': (2, 500, 400, 40)})
+        self.assertEqual(pos['b'][0] - (pos['a'][0] + 40), COMPACT_GAP)       # same height: they face each other
+        self.assertLess(pos['c'][0], 500)                                       # c faces nothing: it slides left ...
+        self.assertGreater(pos['c'][0], pos['b'][0])                            # ... but not past the column before it
+        self.assertEqual({p[1] for p in pos.values()}, {100, 400})             # nothing moves vertically
+
+    def test_a_part_shares_a_left_edge_close_by(self):
+        # b faces a and lands at 100 + 40 + gap; c faces the narrower a2 and
+        # could stop 20 px short of that -- it takes b's left edge instead
+        pos = self.run_compact({'a': (0, 100, 100, 40), 'a2': (0, 100, 400, 40, 20), 'b': (1, 300, 100, 40), 'c': (1, 300, 400, 40)})
+        self.assertEqual(pos['b'][0], 100 + 40 + COMPACT_GAP)
+        self.assertEqual(pos['c'][0], pos['b'][0])
+
+    def test_a_wired_consumer_keeps_the_gap_from_its_driver(self):
+        # c is 300 px below a, so they do not face each other; the wire between
+        # them still gets the gap to turn in
+        pos = self.run_compact({'a': (0, 100, 100, 40), 'c': (1, 600, 400, 40)}, wired=[('a', 'c')])
+        self.assertEqual(pos['c'][0], pos['a'][0] + 40 + COMPACT_GAP)
+
+
+class FooterWraps(unittest.TestCase):
+    def test_the_footer_wraps_at_the_body_edge(self):
+        layout = bare(footer={'x': 100, 'y': 1000, 'row': 0, 'right': 400})
+        slots = [layout._footer_slot(100, 20) for _ in range(4)]
+        self.assertEqual(slots[:2], [(100, 1000), (240, 1000)])
+        self.assertEqual(slots[2], (100, 1040))                  # 380 + 100 > 400: next row
+        self.assertTrue(all(x + 100 <= 400 or x == 100 for x, y in slots))
 
 
 class Channels(unittest.TestCase):
@@ -316,6 +410,106 @@ class StraightChains(unittest.TestCase):
         ors = sorted((c for c in after['components'] if c['factoryName'] == 'OR Gate'), key=lambda c: c['location']['y'])
         self.assertEqual(net(ors[0], 'output'), net(pins['Y1'], 'input'))
         self.assertEqual(net(ors[1], 'output'), net(pins['Y2'], 'input'))
+
+
+CPU_HEADER = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n<project source="2.7.1" version="1.0">\n'
+              '  <lib desc="#Wiring" name="0"/>\n  <lib desc="#Gates" name="1"/>\n  <lib desc="#Plexers" name="2"/>\n'
+              '  <lib desc="#Arithmetic" name="3"/>\n  <lib desc="#Memory" name="4"/>\n  <main name="cpu"/>\n')
+
+
+def cpu_subcircuit(name, ins, outs):
+    body = ''.join(f'<comp lib="0" loc="(100,{100 + 40 * i})" name="Pin"><a name="width" val="{w}"/><a name="label" val="{n}"/></comp>'
+                   for i, (n, w) in enumerate(ins))
+    body += ''.join(f'<comp lib="0" loc="(400,{100 + 40 * i})" name="Pin"><a name="facing" val="west"/><a name="output" val="true"/>'
+                    f'<a name="width" val="{w}"/><a name="label" val="{n}"/></comp>' for i, (n, w) in enumerate(outs))
+    return f'  <circuit name="{name}">{body}</circuit>\n'
+
+
+class SingleCycleCpu(unittest.TestCase):
+    """A single-cycle CPU drawn with Tunnels only and its parts scattered (the
+    way a first draft comes out): after the layout the PC, ROM, register file,
+    ALU and RAM stand left to right on one row with their centres level, the
+    controller above that row and the adder the PC feeds below it, and the
+    nets are unchanged (the production arrange_candidate proves it)."""
+
+    # part -> (xml, {port: offset from loc}) ; offsets measured with the observer
+    PARTS = {
+        'PC': ('<comp lib="4" loc="({x},{y})" name="Register"><a name="width" val="8"/><a name="label" val="PC"/></comp>',
+               {'Q': (0, 0), 'D': (-30, 0), 'clk': (-20, 20)}),
+        'ROM': ('<comp lib="4" loc="({x},{y})" name="ROM"><a name="addrWidth" val="8"/><a name="dataWidth" val="8"/>'
+                '<a name="contents">addr/data: 8 8\n0\n</a></comp>', {'D': (0, 0), 'A': (-140, 0)}),
+        'ADD': ('<comp lib="3" loc="({x},{y})" name="Adder"><a name="width" val="8"/></comp>', {'A': (-40, -10), 'B': (-40, 10), 'S': (0, 0)}),
+        'ONE': ('<comp lib="0" loc="({x},{y})" name="Constant"><a name="width" val="8"/></comp>', {'out': (0, 0)}),
+        'NPC': ('<comp lib="2" loc="({x},{y})" name="Multiplexer"><a name="width" val="8"/></comp>',
+                {'in0': (-30, -10), 'in1': (-30, 10), 'sel': (-20, 20), 'out': (0, 0)}),
+        'RF': ('<comp loc="({x},{y})" name="RegFile"/>',
+               {'RA': (-30, -20), 'RB': (-30, -10), 'RW': (-30, 0), 'D': (-30, 10), 'WE': (-30, 20), 'CLK': (-30, 30), 'A': (0, 0), 'B': (0, 10)}),
+        'CU': ('<comp loc="({x},{y})" name="Controller"/>',
+               {'INS': (-30, 20), 'WE': (0, 0), 'BSEL': (0, 10), 'JMP': (0, 20), 'OP': (0, 30), 'MSEL': (0, 40), 'STR': (0, 50)}),
+        'BMUX': ('<comp lib="2" loc="({x},{y})" name="Multiplexer"><a name="width" val="8"/></comp>',
+                 {'in0': (-30, -10), 'in1': (-30, 10), 'sel': (-20, 20), 'out': (0, 0)}),
+        'ALU': ('<comp loc="({x},{y})" name="ALU"/>', {'X': (-30, -10), 'Y': (-30, 0), 'OP': (-30, 10), 'R': (0, 0)}),
+        'RAM': ('<comp lib="4" loc="({x},{y})" name="RAM"><a name="addrWidth" val="8"/><a name="dataWidth" val="8"/><a name="bus" val="separate"/></comp>',
+                {'Q': (0, 0), 'A': (-140, 0), 'Din': (-140, 20), 'str': (-110, 40), 'clk': (-70, 40)}),
+        'WB': ('<comp lib="2" loc="({x},{y})" name="Multiplexer"><a name="width" val="8"/></comp>',
+               {'in0': (-30, -10), 'in1': (-30, 10), 'sel': (-20, 20), 'out': (0, 0)}),
+        'CLK': ('<comp lib="0" loc="({x},{y})" name="Clock"/>', {'out': (0, 0)}),
+    }
+    # scattered, the way a first draft places them
+    AT = {'CLK': (100, 100), 'CU': (330, 150), 'RAM': (760, 300), 'WB': (800, 700), 'ALU': (1030, 200), 'BMUX': (1200, 500),
+          'RF': (1430, 300), 'ROM': (560, 820), 'PC': (1600, 600), 'ADD': (240, 500), 'ONE': (120, 520), 'NPC': (900, 900)}
+    NETS = {'pc': ['PC.Q', 'ROM.A', 'ADD.A'], 'one': ['ONE.out', 'ADD.B'], 'pc1': ['ADD.S', 'NPC.in0'], 'npc': ['NPC.out', 'PC.D'],
+            'ins': ['ROM.D', 'CU.INS', 'RF.RA', 'RF.RB', 'RF.RW', 'BMUX.in1'], 'a': ['RF.A', 'ALU.X'], 'b': ['RF.B', 'BMUX.in0', 'RAM.Din'],
+            'y': ['BMUX.out', 'ALU.Y'], 'r': ['ALU.R', 'RAM.A', 'WB.in0', 'NPC.in1'], 'm': ['RAM.Q', 'WB.in1'], 'wb': ['WB.out', 'RF.D'],
+            'we': ['CU.WE', 'RF.WE'], 'bsel': ['CU.BSEL', 'BMUX.sel'], 'jmp': ['CU.JMP', 'NPC.sel'], 'op': ['CU.OP', 'ALU.OP'],
+            'msel': ['CU.MSEL', 'WB.sel'], 'str': ['CU.STR', 'RAM.str'], 'clk': ['CLK.out', 'PC.clk', 'RF.CLK', 'RAM.clk']}
+    WIDTH = {'jmp': 1, 'we': 1, 'bsel': 1, 'msel': 1, 'str': 1, 'clk': 1, 'op': 2}
+
+    def source(self):
+        body = ''
+        for part, (xml, ports) in self.PARTS.items():
+            x, y = self.AT[part]
+            body += xml.format(x=x, y=y)
+        for net, ends in self.NETS.items():
+            for end in ends:
+                part, port = end.split('.')
+                x, y = self.AT[part]
+                dx, dy = self.PARTS[part][1][port]
+                facing = 'north' if dy >= 20 and part in ('NPC', 'BMUX', 'WB', 'RAM', 'PC') else ('west' if dx == 0 else 'east')
+                body += (f'<comp lib="0" loc="({x + dx},{y + dy})" name="Tunnel"><a name="facing" val="{facing}"/>'
+                         f'<a name="width" val="{self.WIDTH.get(net, 8)}"/><a name="label" val="{net}"/></comp>')
+        subs = (cpu_subcircuit('RegFile', [('RA', 8), ('RB', 8), ('RW', 8), ('D', 8), ('WE', 1), ('CLK', 1)], [('A', 8), ('B', 8)])
+                + cpu_subcircuit('ALU', [('X', 8), ('Y', 8), ('OP', 2)], [('R', 8)])
+                + cpu_subcircuit('Controller', [('INS', 8)], [('WE', 1), ('BSEL', 1), ('JMP', 1), ('OP', 2), ('MSEL', 1), ('STR', 1)]))
+        return CPU_HEADER + f'  <circuit name="cpu">{body}</circuit>\n' + subs + '</project>\n'
+
+    def test_datapath_row_controller_above_pc_adder_below(self):
+        from studio.application.workspace import Workspace
+        with tempfile.TemporaryDirectory(prefix='vibe-cpu-') as tmp:
+            src = Path(tmp) / 'cpu.circ'
+            src.write_text(self.source(), encoding='utf-8')
+            w = Workspace(REPO, Path(tmp) / 'state', REPO / 'apps/desktop/circuit-lens/lensctl.py', 'cpu')
+            try:
+                revision = w.open_path(src)['revision']['id']
+                result = w.workbench.call(revision, 'arrange_candidate', {'circuit': 'cpu'})
+                artifact = w.state_root / 'candidates' / result['id'] / 'artifact.circ'
+                after = w.observer.run_full(artifact, 'cpu')['focus']
+            finally:
+                w.close()
+        self.assertTrue(result['netlist']['equivalent'])
+        self.assertEqual(sorted(result['arrangement']['spine']), ['ALU', 'PC', 'RAM', 'ROM', 'RegFile'])
+        by = {}
+        for c in after['components']:
+            name = {'Register': 'PC', 'ROM': 'ROM', 'RegFile': 'RF', 'ALU': 'ALU', 'RAM': 'RAM', 'Controller': 'CU', 'Adder': 'ADD'}.get(c['factoryName'])
+            if name:
+                by[name] = c['bounds']
+        row = ['PC', 'ROM', 'RF', 'ALU', 'RAM']
+        centres = [by[p]['y'] + by[p]['height'] / 2 for p in row]
+        self.assertLessEqual(max(centres) - min(centres), 10, f'datapath centres {centres}')
+        self.assertEqual(sorted(row, key=lambda p: by[p]['x']), row, 'left to right PC, ROM, register file, ALU, RAM')
+        top, bottom = min(by[p]['y'] for p in row), max(by[p]['y'] + by[p]['height'] for p in row)
+        self.assertLess(by['CU']['y'] + by['CU']['height'], top, 'the controller stands above the row')
+        self.assertGreater(by['ADD']['y'], bottom, 'the adder the PC feeds stands below the row')
 
 
 if __name__ == '__main__':
