@@ -28,6 +28,9 @@ HUST CPUs, 2026-09-25):
   - Parts drawn port to port on two or more ports (a Splitter set on a
     decoder's outputs) are placed as one rigid piece: every member moves
     with its host, so the shared ports need no wire.
+  - A Pin facing north (south) whose only wire runs to a port on the bottom
+    (top) edge of a part stands right below (above) that port; several stand
+    in a row in port order, moved sideways as little as their widths need.
   - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
     is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
     and RAM left to right on one row, centres level; the controller above
@@ -268,6 +271,26 @@ class ContactGroups(unittest.TestCase):
 
     def test_parts_sharing_ports_move_with_the_largest(self):
         self.assertEqual(self.layout()._contact_groups(), {'spl': 'dec'})
+
+
+class Satellites(unittest.TestCase):
+    def test_pins_facing_north_stand_below_their_ports_in_a_row(self):
+        rf = comp('rf', 'RegisterFile', 100, 0, [(20, 100, 'input', 'a'), (40, 100, 'input', 'b'), (60, 100, 'input', 'c')], width=100, height=100)
+        pins = [comp(n, 'Pin', x, 500, [(10, 0, 'output', n)], width=20, height=20) for n, x in (('a', 0), ('b', 300), ('c', 600))]
+        for p in pins:
+            p['attributes'].append({'name': 'facing', 'standard': 'north'})
+        body = [rf] + pins
+        nets = {((0, n),): [('rf', i), (n, 0)] for i, n in enumerate('abc')}
+        layout = bare(by_id={c['componentId']: c for c in body}, body=body, body_ids={c['componentId'] for c in body}, tunnels={},
+                      fused={}, nets=nets, classes={k: 'wire' for k in nets})
+        out = layout._satellites()
+        ports = {n: (p['location']['x'] + p['ends'][0]['location']['x'] - p['location']['x'] + out[n][1][0],
+                     p['ends'][0]['location']['y'] + out[n][1][1]) for n, p in zip('abc', pins)}
+        self.assertEqual({n: host for n, (host, _off) in out.items()}, {'a': 'rf', 'b': 'rf', 'c': 'rf'})
+        self.assertEqual(ports['a'], (120, 130))                     # right below its port, SATELLITE_GAP down
+        self.assertTrue(ports['a'][0] < ports['b'][0] < ports['c'][0])
+        self.assertTrue(all(y == 130 for _x, y in ports.values()))
+        self.assertGreaterEqual(ports['b'][0] - ports['a'][0], 20 + 10)   # a Pin's width plus a grid step apart
 
 
 class CompactX(unittest.TestCase):

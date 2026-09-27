@@ -59,6 +59,8 @@ PANEL_FACTORIES = {"Pin", "Probe", "Hex Digit Display", "LED", "Button", "Text",
 GLOBAL_FANOUT = 12          # >= this many ports: keep as tunnel (clock/reset/run)
 CROSSINGS_PER_CONSUMER = 2  # a named net whose copper crosses more wires than this per consumer becomes Tunnels (hand-drawn: p90)
 CROSSINGS_MIN = 6           # ... and at least this many
+SATELLITE_GAP = 30          # a Pin facing north (south) stands this far below (above) the port it feeds
+SATELLITES = {"Pin", "Clock", "Probe", "Button", "LED", "Constant"}
 ROW_GAP = 50                # vertical air between stacked components (registers carry 4 side pins + tunnels)
 COLUMN_GAP = 160            # horizontal air between layers (routing channel)
 MAX_STACK = 2400            # split a layer into sub-columns beyond this height
@@ -160,6 +162,13 @@ def _estimated_geometry(element, x, y):
     else:
         box = (x - w // 2, y - h, x + w // 2, y)
     return [box], [(x, y)]
+
+
+def _edge_of(component, idx):
+    """The edge of the part's bounds its port idx is on (the nearest one)."""
+    b, e = component["bounds"], component["ends"][idx]["location"]
+    d = {"west": e["x"] - b["x"], "east": b["x"] + b["width"] - e["x"], "north": e["y"] - b["y"], "south": b["y"] + b["height"] - e["y"]}
+    return min(d, key=d.get)
 
 
 def _attr(component, name):
@@ -554,7 +563,10 @@ class SchematicLayout:
         self.nets, self.bits_of, self.classes, self.label_of_net, self.labels_of_net = nets, bits_of, classes, label_of_net, labels_of_net
         self.tunnels, self.body, self.constants, self.body_ids = tunnels, body, constants, body_ids
         self.copies = self._splitter_copies()
-        self.fused = self._contact_groups()
+        self.fused, self.relocated = self._contact_groups(), {}
+        for cid, (host, offset) in self._satellites().items():
+            self.fused[cid] = self.fused.get(host, host)
+            self.relocated[cid] = offset
         # Labels already used by any Tunnel of this definition (case-insensitive):
         # a synthesised label must not merge a net into an existing one.
         self.used_labels = {str(el.find("a[@name='label']").get("val")).lower() for el in self.circuit.findall("comp")
@@ -646,6 +658,44 @@ class SchematicLayout:
             fused.update({cid: host for cid in cids if cid != host})
         return fused
 
+    def _satellites(self):
+        """One-port parts facing north or south (a Pin with its port on top)
+        whose only wire runs to a port on the facing edge of one other part:
+        they stand right below (or above) that port, the way people draw the
+        address and enable Pins of a register file, instead of in the input
+        column with a wire round the part. Several on one edge stand in a row
+        in the order of their ports, moved sideways as little as their widths
+        need. Returns {part: (host, (dx, dy) from where the author drew it)}."""
+        net_of = {port: key for key, ports in self.nets.items() for port in ports}
+        rows = defaultdict(list)
+        for c in self.body:
+            cid = c["componentId"]
+            facing = _attr(c, "facing")
+            if c["factoryName"] not in SATELLITES or len(c["ends"]) != 1 or facing not in ("north", "south") or cid in self.fused:
+                continue
+            key = net_of.get((cid, 0))
+            if key is None or self.classes.get(key) != "wire":
+                continue
+            others = [(o, i) for o, i in self.nets[key] if o != cid and o not in self.tunnels]
+            if len(others) != 1 or others[0][0] not in self.body_ids or self.by_id[others[0][0]]["factoryName"] in SATELLITES:
+                continue
+            host, idx = others[0]
+            edge = _edge_of(self.by_id[host], idx)
+            if edge == {"north": "south", "south": "north"}[facing]:
+                rows[(host, edge)].append((self.by_id[host]["ends"][idx]["location"], cid))
+        out = {}
+        for (host, edge), row in rows.items():
+            right = -math.inf
+            for port, cid in sorted(row, key=lambda r: (r[0]["x"], r[1])):
+                c = self.by_id[cid]
+                own, b = c["ends"][0]["location"], c["bounds"]
+                left_of, right_of = own["x"] - b["x"], b["x"] + b["width"] - own["x"]
+                x = port["x"] if right == -math.inf else max(port["x"], GRID * math.ceil((right + GRID + left_of) / GRID))
+                right = x + right_of
+                y = port["y"] + (SATELLITE_GAP if edge == "south" else -SATELLITE_GAP)
+                out[cid] = (host, (x - own["x"], y - own["y"]))
+        return out
+
     def _fused_view(self):
         """by_id, nets, body, body_ids and copies as placement sees them: each
         fused piece (see _contact_groups) is its host with the members' union
@@ -653,16 +703,24 @@ class SchematicLayout:
         by_id, remap = dict(self.by_id), {}
         for host in set(self.fused.values()):
             parts = [host] + sorted(p for p, h in self.fused.items() if h == host)
-            boxes = [self.by_id[m]["bounds"] for m in parts]
+
+            def box(m):
+                b = self.by_id[m]["bounds"]
+                dx, dy = self.relocated.get(m, (0, 0))
+                return {"x": b["x"] + dx, "y": b["y"] + dy, "width": b["width"], "height": b["height"]}
+
+            boxes = [box(m) for m in parts]
             x0, y0 = min(b["x"] for b in boxes), min(b["y"] for b in boxes)
             x1, y1 = max(b["x"] + b["width"] for b in boxes), max(b["y"] + b["height"] for b in boxes)
             ends, seen = [], {}
             for m in parts:
+                dx, dy = self.relocated.get(m, (0, 0))
                 for e in self.by_id[m]["ends"]:
-                    loc = (e["location"]["x"], e["location"]["y"], _key(e.get("netBits") or []))
+                    at = {"x": e["location"]["x"] + dx, "y": e["location"]["y"] + dy}
+                    loc = (at["x"], at["y"], _key(e.get("netBits") or []))
                     if loc not in seen:            # ports drawn onto each other are one port of the piece
                         seen[loc] = len(ends)
-                        ends.append(dict(e, index=len(ends)))
+                        ends.append(dict(e, index=len(ends), location=at))
                     remap[(m, e["index"])] = (host, seen[loc])
             by_id[host] = dict(self.by_id[host], bounds={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}, ends=ends)
         nets = {}
@@ -1258,10 +1316,10 @@ class SchematicLayout:
                 ranks[cid] = (facing, rank)
         return ranks
 
-    def _pinout_kept(self, placement):
+    def _pinout_kept(self, placement, ranks=None):
         """Do the Pins of every facing still come in their original order?"""
         seen = defaultdict(list)
-        for cid, (facing, rank) in self.pin_rank.items():
+        for cid, (facing, rank) in (self.pin_rank if ranks is None else ranks).items():
             dx, dy = placement.get(cid, (0, 0))
             loc = self.by_id[cid]["location"]
             seen[facing].append((_pin_order_key(facing)((loc["x"] + dx, loc["y"] + dy)), rank))
@@ -1292,8 +1350,14 @@ class SchematicLayout:
         finally:
             self.by_id, self.nets, self.body, self.body_ids, self.copies = own
         for part, host in self.fused.items():
-            placement[part] = placement[host]
+            dx, dy = self.relocated.get(part, (0, 0))
+            placement[part] = (placement[host][0] + dx, placement[host][1] + dy)
             self.layer[part] = self.layer[host]
+        if self.relocated and not self._pinout_kept(placement, ranks=self._pinout_ranks({cid: 0 for cid in self.body_ids}, False)):
+            # standing below their ports put two Pins of the pinout out of order: without satellites
+            self.fused = {part: host for part, host in self.fused.items() if part not in self.relocated}
+            self.relocated = {}
+            return self._place()
         return placement
 
     def _place_pieces(self):
