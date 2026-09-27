@@ -19,6 +19,9 @@ HUST CPUs, 2026-09-25):
   - A layer far taller than the column budget (many instances of one
     subcircuit on a test sheet) becomes several columns in the author's
     top-to-bottom order; a layer of ordered interface Pins stays one column.
+  - A net that reaches several copies of one Splitter (Splitters on the
+    same bus) is drawn as one tree per copy: every other port gets copper to
+    the copy the author drew it beside only.
   - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
     is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
     and RAM left to right on one row, centres level; the controller above
@@ -197,6 +200,30 @@ class TallLayersSplit(unittest.TestCase):
     def test_ordered_pins_stay_one_column(self):
         column = self.pack(10, ranked=True)
         self.assertEqual({column[f'p{i}'] for i in range(10)}, {1})
+
+
+class SplitterCopies(unittest.TestCase):
+    def layout(self):
+        # bus b -> Splitters s1 (beside part p) and s2 (beside part q); bit 0 of
+        # both copies is net n, which p and q consume
+        by_id = {
+            's1': comp('s1', 'Splitter', 100, 100, [(0, 0, 'inout', 'b'), (10, 10, 'inout', 'n')]),
+            's2': comp('s2', 'Splitter', 100, 500, [(0, 0, 'inout', 'b'), (10, 10, 'inout', 'n')]),
+            'p': comp('p', 'AND Gate', 200, 100, [(0, 10, 'input', 'n')]),
+            'q': comp('q', 'AND Gate', 200, 500, [(0, 10, 'input', 'n')]),
+            'r': comp('r', 'Pin', 0, 300, [(0, 0, 'output', 'b')]),
+        }
+        nets = {((0, 'b'),): [('s1', 0), ('s2', 0), ('r', 0)], ((0, 'n'),): [('s1', 1), ('s2', 1), ('p', 0), ('q', 0)]}
+        return bare(by_id=by_id, nets=nets, classes={k: 'wire' for k in nets}, tunnels={}, body_ids=set(by_id))
+
+    def test_each_port_is_served_by_the_copy_beside_it(self):
+        copies = self.layout()._splitter_copies()
+        self.assertEqual(copies, {((0, 'n'),): [(('s1', 1), [('p', 0)]), (('s2', 1), [('q', 0)])]})
+
+    def test_a_constant_bus_does_not_connect_its_copies(self):
+        layout = self.layout()
+        layout.classes[((0, 'b'),)] = 'constant'
+        self.assertEqual(layout._splitter_copies(), {})
 
 
 class CompactKeepsTheRowApart(unittest.TestCase):

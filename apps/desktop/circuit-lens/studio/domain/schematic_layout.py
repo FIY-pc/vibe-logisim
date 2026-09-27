@@ -551,6 +551,7 @@ class SchematicLayout:
                 classes[key] = "tunnel"
         self.nets, self.bits_of, self.classes, self.label_of_net, self.labels_of_net = nets, bits_of, classes, label_of_net, labels_of_net
         self.tunnels, self.body, self.constants, self.body_ids = tunnels, body, constants, body_ids
+        self.copies = self._splitter_copies()
         # Labels already used by any Tunnel of this definition (case-insensitive):
         # a synthesised label must not merge a net into an existing one.
         self.used_labels = {str(el.find("a[@name='label']").get("val")).lower() for el in self.circuit.findall("comp")
@@ -562,6 +563,45 @@ class SchematicLayout:
             summary[v] += 1
         self.report["nets"] = dict(summary)
         return classes
+
+    def _splitter_copies(self):
+        """Nets that reach several copies of one Splitter: split ends of
+        Splitters whose combined ends hang on the same bus. Those ends are
+        connected through the bus already, so every other port of the net
+        needs copper to one copy only -- the one the author drew it nearest
+        to -- and the net is drawn as one tree per copy. People split a bus
+        again beside each part it feeds rather than run the bit wires of one
+        Splitter across the sheet; joining the copies bit by bit undoes that.
+        Returns {net: [(copy port, [ports it serves])]}."""
+        bus_of = {}
+        for key, ports in self.nets.items():
+            for cid, idx in ports:
+                if idx == 0 and self.by_id[cid]["factoryName"] == "Splitter" and self.classes.get(key) != "constant":
+                    bus_of[cid] = key
+
+        def at(port):
+            loc = self.by_id[port[0]]["ends"][port[1]]["location"]
+            return loc["x"], loc["y"]
+
+        copies = {}
+        for key, ports in self.nets.items():
+            real = [(cid, idx) for cid, idx in ports if cid not in self.tunnels]
+            if any(cid not in self.body_ids for cid, _idx in real):
+                continue                    # a panel port: the net bridges by label (see _route)
+            by_bus = defaultdict(list)
+            for cid, idx in real:
+                if idx > 0 and cid in bus_of:
+                    by_bus[bus_of[cid]].append((cid, idx))
+            group = max(by_bus.values(), key=len, default=[])
+            if len(group) < 2:
+                continue
+            served = {port: [] for port in group}
+            for port in real:
+                if port not in served:
+                    x, y = at(port)
+                    served[min(group, key=lambda g: (abs(at(g)[0] - x) + abs(at(g)[1] - y), g))].append(port)
+            copies[key] = [(port, rest) for port, rest in served.items() if rest]
+        return copies
 
     # ---- labels ------------------------------------------------------------------
     def _labels_for(self, key):
@@ -1221,6 +1261,10 @@ class SchematicLayout:
         edges = []
         for key, cls in self.classes.items():
             if cls != "wire":
+                continue
+            if key in self.copies:
+                edges.extend((copy, port) for copy, served in self.copies[key] for port in served
+                             if copy[0] in layer and port[0] in layer)
                 continue
             ports = [(cid, idx) for cid, idx in self.nets[key] if cid in layer]
             if len(ports) < 2:
@@ -1935,9 +1979,12 @@ class SchematicLayout:
             ports = [(cid, idx) for cid, idx in self.nets[key] if cid in body_ids]
             if len(ports) < 2:
                 continue
-            xs = [moved[cid]["ends"][idx]["location"]["x"] for cid, idx in ports]
-            ys = [moved[cid]["ends"][idx]["location"]["y"] for cid, idx in ports]
-            jobs.append((len(ports) > 2, (max(xs) - min(xs)) + (max(ys) - min(ys)), key, ports))
+            # one tree per Splitter copy (see _splitter_copies), each from its copy
+            trees = [(("copy", key, i), [copy] + served) for i, (copy, served) in enumerate(self.copies[key])] if key in self.copies else [(key, ports)]
+            for job, ports in trees:
+                xs = [moved[cid]["ends"][idx]["location"]["x"] for cid, idx in ports]
+                ys = [moved[cid]["ends"][idx]["location"]["y"] for cid, idx in ports]
+                jobs.append((len(ports) > 2, (max(xs) - min(xs)) + (max(ys) - min(ys)), job, ports))
         for sid, cx, cy, facing, width, value, (cid, idx) in self.synthetic_constants:
             jobs.append((False, 20, ("const", sid), [(sid, 0), (cid, idx)]))
         jobs.sort(key=lambda j: (j[0], j[1]), reverse=(self.route_order == "long"))
@@ -1995,15 +2042,16 @@ class SchematicLayout:
                     source_port, remaining = ports[0], ports[1:]
                 source = moved[source_port[0]]["ends"][source_port[1]]
                 remaining.sort(key=lambda p: abs(moved[p[0]]["ends"][p[1]]["location"]["x"] - source["location"]["x"]) + abs(moved[p[0]]["ends"][p[1]]["location"]["y"] - source["location"]["y"]))
+                net = key[1] if key[0] == "copy" else key
                 for port in remaining:
                     target = moved[port[0]]["ends"][port[1]]
                     try:
                         wires.extend(router.route(source, target))
                     except ValueError as error:
-                        unrouted.append({"label": self.label_of_net.get(key) if key in self.nets else key[1], "ports": len(ports), "reason": str(error)[:120]})
+                        unrouted.append({"label": self.label_of_net.get(net) if net in self.nets else key[1], "ports": len(ports), "reason": str(error)[:120]})
                         failed_jobs.add(key)
-                        if key in self.nets:
-                            failed_ports[key].append(port)
+                        if net in self.nets:
+                            failed_ports[net].append(port)
                         else:
                             # constant stub: this consumer falls back to the shared Constant's label.
                             failed_consts.add(port)
