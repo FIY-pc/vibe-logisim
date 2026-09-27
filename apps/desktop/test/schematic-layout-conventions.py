@@ -22,6 +22,9 @@ HUST CPUs, 2026-09-25):
   - A net that reaches several copies of one Splitter (Splitters on the
     same bus) is drawn as one tree per copy: every other port gets copper to
     the copy the author drew it beside only.
+  - A wired net whose copper crosses more than two wires per consumer (and
+    at least six) becomes Tunnels when it has a name a reader knows; a net
+    known only by a made-up name stays a wire.
   - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
     is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
     and RAM left to right on one row, centres level; the controller above
@@ -224,6 +227,35 @@ class SplitterCopies(unittest.TestCase):
         layout = self.layout()
         layout.classes[((0, 'b'),)] = 'constant'
         self.assertEqual(layout._splitter_copies(), {})
+
+
+class CrossingHeavyNets(unittest.TestCase):
+    """A driver d feeding c1 and c2 along one row, crossed by seven vertical
+    wires of another net: 7 crossings for 2 consumers."""
+
+    def layout(self, label=None, crossers=7):
+        by_id = {'d': comp('d', 'AND Gate', 0, 0, [(40, 20, 'output', 'n')], label=label),
+                 'c1': comp('c1', 'OR Gate', 500, 0, [(0, 20, 'input', 'n')]),
+                 'c2': comp('c2', 'OR Gate', 900, 0, [(0, 20, 'input', 'n')]),
+                 'v': comp('v', 'NOT Gate', 0, 0, [(0, 0, 'output', 'm')]),
+                 'w': comp('w', 'NOT Gate', 0, 0, [(0, 0, 'input', 'm')])}
+        n, m = ((0, 'n'),), ((0, 'm'),)
+        routed = [(((40, 20), (500, 20)), n), (((500, 20), (900, 20)), n)]
+        routed += [(((100 + 100 * i, -100), (100 + 100 * i, 100)), m) for i in range(crossers)]
+        return bare(by_id=by_id, nets={n: [('d', 0), ('c1', 0), ('c2', 0)], m: [('v', 0), ('w', 0)]},
+                    classes={n: 'wire', m: 'wire'}, tunnels={}, body_ids=set(by_id), labels_of_net={}, routed=routed), n
+
+    def test_a_named_net_that_crosses_much_becomes_tunnels(self):
+        layout, n = self.layout(label='ALU')
+        self.assertEqual(layout._crossing_heavy(), {n})
+
+    def test_a_net_without_a_name_stays_wired(self):
+        layout, _n = self.layout()
+        self.assertEqual(layout._crossing_heavy(), set())
+
+    def test_a_few_crossings_per_consumer_are_fine(self):
+        layout, _n = self.layout(label='ALU', crossers=4)
+        self.assertEqual(layout._crossing_heavy(), set())
 
 
 class CompactKeepsTheRowApart(unittest.TestCase):

@@ -57,6 +57,8 @@ from studio.domain.routing import Router, Partition
 GRID = 10
 PANEL_FACTORIES = {"Pin", "Probe", "Hex Digit Display", "LED", "Button", "Text", "Clock", "Pull Resistor", "RiscV Probe", "Counter", "D Flip-Flop", "Controlled Buffer", "NAND Gate"}
 GLOBAL_FANOUT = 12          # >= this many ports: keep as tunnel (clock/reset/run)
+CROSSINGS_PER_CONSUMER = 2  # a named net whose copper crosses more wires than this per consumer becomes Tunnels (hand-drawn: p90)
+CROSSINGS_MIN = 6           # ... and at least this many
 ROW_GAP = 50                # vertical air between stacked components (registers carry 4 side pins + tunnels)
 COLUMN_GAP = 160            # horizontal air between layers (routing channel)
 MAX_STACK = 2400            # split a layer into sub-columns beyond this height
@@ -2034,6 +2036,7 @@ class SchematicLayout:
                 if len(nets) == 1 and lead not in router.port_owners and lead not in router.blocked:
                     router.port_owners[lead].add(next(iter(nets)))
             wires, failed_ports, failed_consts, unrouted, failed_jobs = [], defaultdict(list), set(), [], set()
+            wire_nets = []                   # the net of every segment in wires
             for _, _, key, ports in sorted(jobs, key=lambda j: j[2] not in first):
                 if key in self.nets:
                     source_port = self.source_of[key]
@@ -2046,7 +2049,9 @@ class SchematicLayout:
                 for port in remaining:
                     target = moved[port[0]]["ends"][port[1]]
                     try:
-                        wires.extend(router.route(source, target))
+                        found = router.route(source, target)
+                        wires.extend(found)
+                        wire_nets.extend([net] * len(found))
                     except ValueError as error:
                         unrouted.append({"label": self.label_of_net.get(net) if net in self.nets else key[1], "ports": len(ports), "reason": str(error)[:120]})
                         failed_jobs.add(key)
@@ -2055,7 +2060,7 @@ class SchematicLayout:
                         else:
                             # constant stub: this consumer falls back to the shared Constant's label.
                             failed_consts.add(port)
-            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs
+            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets
 
         # Ports the router could not reach keep the net by label: emit() puts the
         # net's Tunnel on them and on the routing source, the copper that did
@@ -2068,7 +2073,8 @@ class SchematicLayout:
             retry = route_all(attempt[6])
             if len(retry[5]) < len(attempt[5]):
                 attempt = retry
-        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed = attempt
+        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets = attempt
+        self.routed = list(zip(wires, wire_nets))
         self.report["unrouted"].extend(unrouted)
         self.failed_constant_consumers |= failed_consts
         for key, ports in self.failed_ports.items():
@@ -2114,10 +2120,33 @@ class SchematicLayout:
         drawn and the cheaper drawing is kept (_drawing_cost); when the even
         rule moves nothing more than the chain rule, one drawing is enough."""
         start = dict(self.__dict__)
+        best = self._arrange_once(start, dict(start["classes"]))
+        # A net whose copper crosses many others is drawn with Tunnels when
+        # its label means something to a reader (see _crossing_heavy); the
+        # sheet is placed and routed again around what is left, and kept when
+        # it reads better. Repeated while it helps: the next heaviest nets
+        # show only once the first ones are gone.
+        tunnelled = set()
+        for _round in range(3):
+            self.__dict__.update(best[2])
+            heavy = self._crossing_heavy()
+            if not heavy:
+                break
+            classes = dict(start["classes"])
+            for key in tunnelled | heavy:
+                classes[key] = "tunnel"
+            again = self._arrange_once(start, classes)
+            if again[0] >= best[0]:
+                break
+            best, tunnelled = again, tunnelled | heavy
+        self.__dict__.update(best[2])
+        self.report["tunnelledForCrossings"] = len(tunnelled)
+
+    def _arrange_once(self, start, classes):
         attempts = []
         for balance in ("even", "chains"):
             self.__dict__.update(start)
-            self.classes = dict(start["classes"])
+            self.classes = dict(classes)
             self.report = copy.deepcopy(start["report"])
             self.synthesized, self.used_labels = dict(start["synthesized"]), set(start["used_labels"])
             self.abbr_counter = copy.copy(start["abbr_counter"])
@@ -2127,7 +2156,39 @@ class SchematicLayout:
             attempts.append((self._drawing_cost(), len(attempts), dict(self.__dict__)))
             if not self.even_moves:
                 break
-        self.__dict__.update(min(attempts)[2])
+        return min(attempts, key=lambda a: a[:2])
+
+    def _crossing_heavy(self):
+        """Wired nets whose copper crosses more than CROSSINGS_PER_CONSUMER
+        other wires per consumer (and at least CROSSINGS_MIN) and that have a
+        name a reader knows (the author's Tunnel label, a labelled Pin or
+        part on the net, a clock). Hand-drawn schematics tolerate a few
+        crossings per consumer -- nine in ten wired nets stay within two --
+        and switch to Tunnels beyond; a net known only by a made-up name
+        stays a wire."""
+        horizontal = [(min(a[0], b[0]), max(a[0], b[0]), a[1], k) for (a, b), k in self.routed if a[1] == b[1] and a[0] != b[0]]
+        vertical = [(min(a[1], b[1]), max(a[1], b[1]), a[0], k) for (a, b), k in self.routed if a[0] == b[0] and a[1] != b[1]]
+        count = defaultdict(int)
+        for x0, x1, y, k in horizontal:
+            for y0, y1, x, j in vertical:
+                if k != j and x0 < x < x1 and y0 < y < y1:
+                    count[k] += 1
+                    count[j] += 1
+        heavy = set()
+        for key, n in count.items():
+            if key not in self.nets or self.classes.get(key) != "wire" or n < CROSSINGS_MIN:
+                continue
+            ports = [(cid, idx) for cid, idx in self.nets[key] if cid in self.body_ids]
+            if n > CROSSINGS_PER_CONSUMER * (len(ports) - 1) and self._nameable(key):
+                heavy.add(key)
+        return heavy
+
+    def _nameable(self, key):
+        """Would this net's Tunnels carry a name a reader knows?"""
+        if self.labels_of_net.get(key):
+            return True
+        return any(_attr(self.by_id[cid], "label") or self.by_id[cid]["factoryName"] == "Clock"
+                   for cid, _idx in self.nets[key] if cid not in self.tunnels)
 
     def emit(self):
         self.plan()
