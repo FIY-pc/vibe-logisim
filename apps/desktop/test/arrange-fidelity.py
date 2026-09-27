@@ -15,6 +15,8 @@ circuits and reproduced here on synthetic ones:
   - a lead drawn onto the end of a panel wire is merged with it when Logisim
     loads the file, the observed wire no longer matched the file's two
     <wire> elements, and both were deleted;
+  - a Ground (or Power) shared by several inputs is drawn as a private copy
+    on each of them, and the check has to see the same constant nets;
   - every other definition in the file was re-serialised.
 
 The observer-backed tests go through the production Workbench (open ->
@@ -206,6 +208,35 @@ class MergedLeadsStay(unittest.TestCase):
         button = next(c for c in after['components'] if c['factoryName'] == 'Button')
         probe = next(c for c in after['components'] if c['factoryName'] == 'Probe')
         self.assertEqual(key(button['ends'][0]['netBits']), key(probe['ends'][0]['netBits']))
+
+
+class GroundsGoToTheirPorts(unittest.TestCase):
+    # One Ground ties an input of each of two AND gates low, over a label.
+    SRC = project(circuit('main',
+                          pin(100, 200, 'A') + tunnel(100, 200, 'a', facing='west') +
+                          pin(100, 400, 'B') + tunnel(100, 400, 'b', facing='west') +
+                          '    <comp lib="0" loc="(100,600)" name="Ground"/>\n' + tunnel(100, 600, 'g', facing='north') +
+                          gate('AND Gate', 300, 200, inputs=2) + tunnel(270, 190, 'a') + tunnel(270, 210, 'g') +
+                          gate('AND Gate', 300, 400, inputs=2) + tunnel(270, 390, 'b') + tunnel(270, 410, 'g') +
+                          tunnel(300, 200, 'x', facing='west') + pin(500, 200, 'X', out=True) + tunnel(500, 200, 'x') +
+                          tunnel(300, 400, 'y', facing='west') + pin(500, 400, 'Y', out=True) + tunnel(500, 400, 'y')))
+
+    def test_each_grounded_port_gets_a_ground_of_its_own(self):
+        with tempfile.TemporaryDirectory(prefix='vibe-fidelity-') as tmp:
+            session = Session(tmp, self.SRC)
+            try:
+                result, artifact = session.arrange('main')
+                after = session.observe(artifact, 'main')
+            finally:
+                session.close()
+        self.assertTrue(result['netlist']['equivalent'])
+        grounds = [c for c in after['components'] if c['factoryName'] == 'Ground']
+        gates = [c for c in after['components'] if c['factoryName'] == 'AND Gate']
+        self.assertEqual(len(grounds), 2, 'one Ground per grounded input')
+        low = sorted(key(g['ends'][0]['netBits']) for g in grounds)
+        tied = sorted(key(e['netBits']) for c in gates for e in c['ends'] if key(e['netBits']) in low)
+        self.assertEqual(low, tied, 'every Ground sits on an input of its own')
+        self.assertFalse([c for c in after['components'] if c['factoryName'] == 'Tunnel' and label(c) == 'g'], 'no label is left for the Ground net')
 
 
 class InstancesDoNotChange(unittest.TestCase):

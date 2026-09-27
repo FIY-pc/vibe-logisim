@@ -9,7 +9,7 @@ compilation step with a structural proof:
   observe -> classify nets -> layered placement -> ordered global routing ->
   emit -> re-observe -> netlist equivalence (every {port} group sharing a net
   is identical before/after, ports of unknown width such as Probes included;
-  constants compared per driven port) -> same instance for every circuit that
+  constants, Grounds and Powers compared per driven port) -> same instance for every circuit that
   uses this one -> nothing else in the file changed -> candidate.
 
 The model chooses parameters (what stays a tunnel, what is pinned, spacing)
@@ -23,7 +23,7 @@ import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
-from studio.domain.schematic_layout import SchematicLayout, TUNNEL_SPAN, _circuit_span, interface_signature, resolve_unknown_widths
+from studio.domain.schematic_layout import CONSTANT_SOURCES, SchematicLayout, TUNNEL_SPAN, _circuit_span, interface_signature, resolve_unknown_widths
 from studio.domain.tool_errors import CircuitToolError
 
 
@@ -51,7 +51,7 @@ def _identity_map(xml_text, circuit_name):
     c = next(x for x in root.findall("circuit") if x.get("name") == circuit_name)
     identity, k = {}, 0
     for el in c.findall("comp"):
-        if el.get("name") in ("Tunnel", "Constant"):
+        if el.get("name") == "Tunnel" or el.get("name") in CONSTANT_SOURCES:
             continue
         x, y = map(int, re.findall(r"-?\d+", el.get("loc")))
         identity[((x, y), el.get("name"))] = k
@@ -62,7 +62,7 @@ def _identity_map(xml_text, circuit_name):
 def netlist_signature(focus, identity_of_loc, moved_map=None):
     ident = {}
     for comp in focus["components"]:
-        if comp["factoryName"] in ("Tunnel", "Constant"):
+        if comp["factoryName"] == "Tunnel" or comp["factoryName"] in CONSTANT_SOURCES:
             continue
         key = ((comp["location"]["x"], comp["location"]["y"]), comp["factoryName"])
         if moved_map is not None:
@@ -79,8 +79,9 @@ def netlist_signature(focus, identity_of_loc, moved_map=None):
                 continue
             # ordered (bit, thread) vector: same threads in another bit order is another net
             key = tuple((b["bit"], b["netId"]) for b in sorted(bits, key=lambda b: b["bit"]))
-            if comp["factoryName"] == "Constant":
-                val = _attr(comp, "value")
+            if comp["factoryName"] in CONSTANT_SOURCES:
+                # a Ground or Power drives its fixed value like a Constant
+                val = _attr(comp, "value") if comp["factoryName"] == "Constant" else comp["factoryName"]
                 const_driven.setdefault(key, set()).add((str(val).lower(), e["width"]))
             elif comp["factoryName"] != "Tunnel":
                 groups.setdefault(key, set()).add((ident[comp["componentId"]], e["index"]))

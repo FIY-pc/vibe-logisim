@@ -10,8 +10,9 @@ Methodology (this is the part an LLM should not improvise per wire):
    free to be re-placed. Panel<->body links stay tunnels; body<->body links
    become wires.
 3. Net classes: globals (huge fan-out: clock/reset/run) stay tunnels, as any
-   human schematic does; constant drivers get a private Constant next to each
-   consumer instead of a tunnel; everything else is wired.
+   human schematic does; constant drivers (Constant, Ground, Power) get a
+   private copy next to each consumer instead of a tunnel; everything else is
+   wired.
 4. Placement is a layered drawing (Sugiyama): layer = longest path from
    sources in the signal-flow DAG with register outputs starting a new layer
    (a pipeline stage), barycenter sweeps to reduce crossings, parts wired
@@ -62,6 +63,7 @@ CROSSINGS_MIN = 6           # ... and at least this many
 ABUT_MIN = 3                # parts joined by this many two-port nets whose ports line up are drawn port to port
 SATELLITE_GAP = 30          # a Pin facing north (south) stands this far below (above) the port it feeds
 SATELLITES = {"Pin", "Clock", "Probe", "Button", "LED", "Constant"}
+CONSTANT_SOURCES = ("Constant", "Ground", "Power")   # one-port drivers of a fixed value: a private copy on every consumer port
 ROW_GAP = 50                # vertical air between stacked components (registers carry 4 side pins + tunnels)
 COLUMN_GAP = 160            # horizontal air between layers (routing channel)
 MAX_STACK = 2400            # split a layer into sub-columns beyond this height
@@ -152,6 +154,10 @@ def _estimated_geometry(element, x, y):
     elif name == "Constant":
         bits = int(_attr_of(element, "width") or 1)
         w, h = 16 + 10 * max(0, (bits + 3) // 4 - 2), 16
+    elif name in ("Ground", "Power"):
+        # drawn on the side it faces (14-15 px deep, 16 across)
+        w, h = 16, 16
+        facing = _OPPOSITE[facing]
     else:
         return [(x - 10, y - 10, x + 10, y + 10)], [(x, y)]
     if facing == "east":
@@ -163,6 +169,9 @@ def _estimated_geometry(element, x, y):
     else:
         box = (x - w // 2, y - h, x + w // 2, y)
     return [box], [(x, y)]
+
+
+_OPPOSITE = {"east": "west", "west": "east", "north": "south", "south": "north"}
 
 
 def _edge_of(component, idx):
@@ -540,7 +549,7 @@ class SchematicLayout:
         label_of_net = {key: sorted(labels)[0] for key, labels in labels_of_net.items()}
         body = [c for c in self.components if c["factoryName"] != "Tunnel" and not self._is_panel(c)]
         body_ids = {c["componentId"] for c in body}
-        constants = {c["componentId"]: c for c in body if c["factoryName"] == "Constant"}
+        constants = {c["componentId"]: c for c in body if c["factoryName"] in CONSTANT_SOURCES}
 
         classes = {}
         for key, ports in nets.items():
@@ -658,7 +667,7 @@ class SchematicLayout:
         that is not a Splitter."""
         at = defaultdict(set)
         for c in self.body:
-            if c["factoryName"] in ("Text", "Constant"):
+            if c["factoryName"] == "Text" or c["factoryName"] in CONSTANT_SOURCES:
                 continue
             for e in c["ends"]:
                 at[(e["location"]["x"], e["location"]["y"])].add(c["componentId"])
@@ -701,7 +710,7 @@ class SchematicLayout:
             real = [(cid, idx) for cid, idx in ports if cid not in self.tunnels]
             if self.classes.get(key) != "wire" or len(real) != 2 or real[0][0] == real[1][0]:
                 continue
-            if not all(cid in self.body_ids and cid not in self.fused and self.by_id[cid]["factoryName"] not in ("Text", "Constant") for cid, _i in real):
+            if not all(cid in self.body_ids and cid not in self.fused and self.by_id[cid]["factoryName"] not in ("Text",) + CONSTANT_SOURCES for cid, _i in real):
                 continue
             (a, i), (b, j) = sorted(real)
             links[(a, b)].append((i, j))
@@ -2103,6 +2112,7 @@ class SchematicLayout:
         # edge normal (further out when that cell is taken), carrying the
         # consumer's net bits so the stub is routed as a normal 2-pin net.
         self.synthetic_constants = []
+        self.synthetic_factory = {}
         occupied = [c["bounds"] for cid, c in moved.items() if cid not in self.tunnels and c["factoryName"] not in ("Text", "Tunnel")]
 
         def collides(rect, skip=None):
@@ -2142,6 +2152,7 @@ class SchematicLayout:
             drv = self.by_id[driver]
             value = _attr(drv, "value") or "0x0"
             width = drv["ends"][0]["width"] or 1
+            factory = drv["factoryName"]
             for cid, idx in self.nets[key]:
                 if cid in self.tunnels or cid == driver or cid not in body_ids:
                     continue
@@ -2154,7 +2165,8 @@ class SchematicLayout:
                 # Native Constant body: 16 px up to 8 bits, then 10 px per further
                 # hex digit of the bit width (26 px at 9-12 bits ... 76 px at 29-32),
                 # regardless of the value printed (measured with the observer).
-                body_px = 16 + 10 * max(0, (width + 3) // 4 - 2)
+                # A Ground or Power symbol is 14-15 px deep whatever its width.
+                body_px = 16 + 10 * max(0, (width + 3) // 4 - 2) if factory == "Constant" else 16
                 placed = None
                 for step in range(1, 16):
                     cx, cy = px + dx * step * GRID, py + dy * step * GRID
@@ -2172,12 +2184,13 @@ class SchematicLayout:
                 for i in range(width):
                     partition.join(f"{sid}:b{i}", f"{sid}:b{i}#consumer")
                 end["netBits"] = consumer_bits
-                synthetic = {"componentId": sid, "factoryName": "Constant", "location": {"x": cx, "y": cy}, "bounds": bounds,
+                synthetic = {"componentId": sid, "factoryName": factory, "location": {"x": cx, "y": cy}, "bounds": bounds,
                              "attributes": [], "ends": [{"index": 0, "location": {"x": cx, "y": cy}, "width": width, "direction": "output", "netBits": bits}]}
                 moved[sid] = synthetic
                 occupied.append(bounds)
                 occupied.append(stub_bounds(px, py, cx, cy))
                 self.synthetic_constants.append((sid, cx, cy, facing, width, value, (cid, idx)))
+                self.synthetic_factory[sid] = factory
         # Which body ports will carry Tunnels (decided before routing where
         # possible, so the router keeps their chain cells free):
         #   tunnel/global nets: every body port, all labels of the net;
@@ -2571,10 +2584,13 @@ class SchematicLayout:
         for sid, cx, cy, facing, width, value, consumer in self.synthetic_constants:
             if consumer in self.failed_constant_consumers:
                 continue
-            el = ET.SubElement(circuit, "comp", {"lib": self.wiring_lib, "name": "Constant", "loc": f"({cx},{cy})"})
-            ET.SubElement(el, "a", {"name": "facing", "val": facing})
+            factory = self.synthetic_factory.get(sid, "Constant")
+            el = ET.SubElement(circuit, "comp", {"lib": self.wiring_lib, "name": factory, "loc": f"({cx},{cy})"})
+            # a Constant faces its consumer; a Ground or Power symbol faces away
+            ET.SubElement(el, "a", {"name": "facing", "val": facing if factory == "Constant" else _OPPOSITE[facing]})
             ET.SubElement(el, "a", {"name": "width", "val": str(width)})
-            ET.SubElement(el, "a", {"name": "value", "val": str(value)})
+            if factory == "Constant":
+                ET.SubElement(el, "a", {"name": "value", "val": str(value)})
             self.report["constantsPlaced"] += 1
         # The shared Constant itself stays only while something still reads it
         # by label (panel consumers, consumers without a private Constant).
@@ -2625,7 +2641,7 @@ class SchematicLayout:
                     boxes.append((x1, y0, x1 + w, y1))
             fixed = panel is not None and max(bx[3] for bx in boxes) < panel
             comps.append({"boxes": boxes, "ports": ports or [(x, y)], "fixed": fixed,
-                          "cling": el.get("name") in ("Tunnel", "Constant")})
+                          "cling": el.get("name") == "Tunnel" or el.get("name") in CONSTANT_SOURCES})
             elements.append(el)
         wires, wire_elements = [], []
         for w in circuit.findall("wire"):
