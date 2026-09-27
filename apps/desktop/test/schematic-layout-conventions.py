@@ -28,6 +28,9 @@ HUST CPUs, 2026-09-25):
   - Parts drawn port to port on two or more ports (a Splitter set on a
     decoder's outputs) are placed as one rigid piece: every member moves
     with its host, so the shared ports need no wire.
+  - A Splitter joined to a part by three or more two-port nets whose ports
+    have the same spacing is drawn port to port (abutment), never onto a
+    port of another net.
   - A Pin facing north (south) whose only wire runs to a port on the bottom
     (top) edge of a part stands right below (above) that port; several stand
     in a row in port order, moved sideways as little as their widths need.
@@ -271,6 +274,29 @@ class ContactGroups(unittest.TestCase):
 
     def test_parts_sharing_ports_move_with_the_largest(self):
         self.assertEqual(self.layout()._contact_groups(), {'spl': 'dec'})
+
+
+class Abutment(unittest.TestCase):
+    def layout(self, clash=False):
+        # a decoder's outputs 10 px apart on its bottom edge; a Splitter
+        # elsewhere whose bit ends have the same spacing
+        dec = comp('dec', 'Decoder', 100, 0, [(10, 40, 'output', 'o1'), (20, 40, 'output', 'o2'), (30, 40, 'output', 'o3'),
+                                              (40, 40, 'output', 'x' if clash else 'o4')], width=60, height=40)
+        spl = comp('spl', 'Splitter', 400, 300, [(0, 10, 'inout', 'b'), (10, 0, 'inout', 'o1'), (20, 0, 'inout', 'o2'),
+                                                 (30, 0, 'inout', 'o3'), (40, 0, 'inout', 'o4')], width=50, height=10)
+        body = [dec, spl]
+        nets = {}
+        for c in body:
+            for e in c['ends']:
+                nets.setdefault(((0, e['netBits'][0]['netId']),), []).append((c['componentId'], e['index']))
+        return bare(by_id={c['componentId']: c for c in body}, body=body, body_ids={'dec', 'spl'}, tunnels={}, fused={},
+                    nets=nets, classes={k: 'wire' for k in nets})
+
+    def test_the_splitter_moves_onto_the_ports_it_is_wired_to(self):
+        self.assertEqual(self.layout()._abutments(), {'spl': ('dec', (100 + 10 - 410, 40 - 300))})
+
+    def test_never_onto_a_port_of_another_net(self):
+        self.assertEqual(self.layout(clash=True)._abutments(), {})
 
 
 class Satellites(unittest.TestCase):

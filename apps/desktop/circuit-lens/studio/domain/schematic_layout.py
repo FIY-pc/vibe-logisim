@@ -59,6 +59,7 @@ PANEL_FACTORIES = {"Pin", "Probe", "Hex Digit Display", "LED", "Button", "Text",
 GLOBAL_FANOUT = 12          # >= this many ports: keep as tunnel (clock/reset/run)
 CROSSINGS_PER_CONSUMER = 2  # a named net whose copper crosses more wires than this per consumer becomes Tunnels (hand-drawn: p90)
 CROSSINGS_MIN = 6           # ... and at least this many
+ABUT_MIN = 3                # parts joined by this many two-port nets whose ports line up are drawn port to port
 SATELLITE_GAP = 30          # a Pin facing north (south) stands this far below (above) the port it feeds
 SATELLITES = {"Pin", "Clock", "Probe", "Button", "LED", "Constant"}
 ROW_GAP = 50                # vertical air between stacked components (registers carry 4 side pins + tunnels)
@@ -564,7 +565,7 @@ class SchematicLayout:
         self.tunnels, self.body, self.constants, self.body_ids = tunnels, body, constants, body_ids
         self.copies = self._splitter_copies()
         self.fused, self.relocated = self._contact_groups(), {}
-        for cid, (host, offset) in self._satellites().items():
+        for cid, (host, offset) in {**self._abutments(), **self._satellites()}.items():
             self.fused[cid] = self.fused.get(host, host)
             self.relocated[cid] = offset
         # Labels already used by any Tunnel of this definition (case-insensitive):
@@ -657,6 +658,55 @@ class SchematicLayout:
             host = max(cids, key=rank)
             fused.update({cid: host for cid in cids if cid != host})
         return fused
+
+    def _abutments(self):
+        """A Splitter joined to a part by ABUT_MIN or more two-port nets whose
+        ports have the same spacing on one edge of the part -- its bit ends
+        and a decoder's outputs, both 10 px apart -- is drawn port to port,
+        the way people draw it: those nets then need no wire at all (moved
+        apart, 32 of them run as a bundle across the sheet). The Splitter
+        moves onto the part, never onto a port of another net nor into its
+        body. Returns {Splitter: (part, (dx, dy) from where it was)}."""
+        links = defaultdict(list)
+        for key, ports in self.nets.items():
+            real = [(cid, idx) for cid, idx in ports if cid not in self.tunnels]
+            if self.classes.get(key) != "wire" or len(real) != 2 or real[0][0] == real[1][0]:
+                continue
+            if not all(cid in self.body_ids and cid not in self.fused and self.by_id[cid]["factoryName"] not in ("Text", "Constant") for cid, _i in real):
+                continue
+            (a, i), (b, j) = sorted(real)
+            links[(a, b)].append((i, j))
+
+        def area(cid):
+            b = self.by_id[cid]["bounds"]
+            return b["width"] * b["height"]
+
+        out, hosts = {}, set()
+        for (a, b), pairs in sorted(links.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            if len(pairs) < ABUT_MIN:
+                continue
+            host, part = (a, b) if (area(a), a) >= (area(b), b) else (b, a)
+            if part in out or part in hosts or host in out or self.by_id[part]["factoryName"] != "Splitter":
+                continue                          # people butt a Splitter against a part, not two parts
+            h, m = self.by_id[host], self.by_id[part]
+            ports = [(i, j) if host == a else (j, i) for i, j in pairs]          # (host port, part port)
+            offsets = {(h["ends"][hi]["location"]["x"] - m["ends"][mi]["location"]["x"],
+                        h["ends"][hi]["location"]["y"] - m["ends"][mi]["location"]["y"]) for hi, mi in ports}
+            if len(offsets) != 1 or len({_edge_of(h, hi) for hi, _mi in ports}) != 1:
+                continue                          # not one edge of the host, or the spacings differ
+            dx, dy = next(iter(offsets))
+            hb, mb = h["bounds"], m["bounds"]
+            over_x = min(hb["x"] + hb["width"], mb["x"] + dx + mb["width"]) - max(hb["x"], mb["x"] + dx)
+            over_y = min(hb["y"] + hb["height"], mb["y"] + dy + mb["height"]) - max(hb["y"], mb["y"] + dy)
+            if over_x >= GRID and over_y >= GRID:
+                continue                          # the bodies would overlap
+            nets_at = {(e["location"]["x"], e["location"]["y"]): _key(e.get("netBits") or []) for e in h["ends"]}
+            if any(nets_at.get((e["location"]["x"] + dx, e["location"]["y"] + dy), _key(e.get("netBits") or [])) != _key(e.get("netBits") or [])
+                   for e in m["ends"]):
+                continue                          # a port would land on a port of another net
+            out[part] = (host, (dx, dy))
+            hosts.add(host)
+        return out
 
     def _satellites(self):
         """One-port parts facing north or south (a Pin with its port on top)
