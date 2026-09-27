@@ -8,8 +8,8 @@ HUST CPUs, 2026-09-25):
     wire (6 % of 22.7k corpus tunnels sit on the port; humans draw a lead).
   - Pipeline-register subcircuits are recognised by name (IF/ID, 气泡EX/MEM,
     ◇MEM/WB, 流水IF ...) and belong to the stage they feed.
-  - _compact merges single-part layers leftwards except into or out of a
-    register layer, so a stage boundary keeps its own column.
+  - Every depth keeps a layer of its own (_compact renumbers only): a part
+    merged into the layer before it stood under the parts that feed it.
   - A routing channel is sized by the wired nets that span it, once per net.
   - Without pipeline stages, a part moves right towards its consumers when
     that shortens its wires, so an extender or a constant chain stands beside
@@ -86,17 +86,10 @@ class PipelineRegisterNames(unittest.TestCase):
         self.assertEqual([layout._is_storage(c) for c in 'abcde'], [True, True, True, True, False])
 
 
-class CompactKeepsRegisterColumns(unittest.TestCase):
-    LAYER = {'r1': 0, 'g1': 1, 'r2': 2, 'g2': 3, 'g3': 3}
-
-    def test_single_part_layers_merge_leftwards_by_default(self):
-        out = SchematicLayout._compact(dict(self.LAYER))
-        self.assertEqual(out['r1'], out['g1'])
-        self.assertEqual(out['g1'], out['r2'])
-
-    def test_register_layers_stay_columns_of_their_own(self):
-        out = SchematicLayout._compact(dict(self.LAYER), keep={0, 2})
-        self.assertEqual((out['r1'], out['g1'], out['r2'], out['g2']), (0, 1, 2, 3))
+class CompactRenumbers(unittest.TestCase):
+    def test_every_depth_keeps_its_layer(self):
+        out = SchematicLayout._compact({'r1': 0, 'g1': 2, 'r2': 5, 'g2': 7, 'g3': 7})
+        self.assertEqual((out['r1'], out['g1'], out['r2'], out['g2'], out['g3']), (0, 1, 2, 3, 3))
 
 
 class SpanDemotion(unittest.TestCase):
@@ -275,12 +268,6 @@ class ContactGroups(unittest.TestCase):
 
     def test_parts_sharing_ports_move_with_the_largest(self):
         self.assertEqual(self.layout()._contact_groups(), {'spl': 'dec'})
-
-
-class CompactKeepsTheRowApart(unittest.TestCase):
-    def test_a_fixed_layer_does_not_merge_leftwards_but_takes_the_next_one(self):
-        out = SchematicLayout._compact({'a': 0, 'b': 1, 'c': 2}, fixed={1})
-        self.assertEqual((out['a'], out['b'], out['c']), (0, 1, 1))
 
 
 class CompactX(unittest.TestCase):

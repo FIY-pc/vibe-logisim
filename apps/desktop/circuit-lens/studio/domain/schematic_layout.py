@@ -863,7 +863,7 @@ class SchematicLayout:
             # keep their labels (see _demote).
             self.stage_of = {}
             self._balance(depth, forward)
-            return self._compact(depth, fixed={depth[cid] for cid, role in self.spine.items() if role in SPINE})
+            return self._compact(depth)
         # register stages: longest register->register path over the cut DAG
         reach = defaultdict(set)
         for r in storage:
@@ -938,7 +938,7 @@ class SchematicLayout:
             else:
                 layer[u] = depth[u]
         self.stage_of = stage
-        return self._compact(layer, keep={layer[r] for r in storage})
+        return self._compact(layer)
 
     def _balance(self, depth, forward):
         """Longest-path depth puts every part as far left as its inputs allow:
@@ -999,26 +999,15 @@ class SchematicLayout:
                 break
 
     @staticmethod
-    def _compact(layer, keep=(), fixed=()):
-        """Renumber densely; merge single-part layers leftwards, except into or
-        out of a register layer (`keep`): a stage boundary stays a column of
-        its own even when only one register or one gate sits there. A `fixed`
-        layer (a CPU's ROM, register file ...) does not merge into the one
-        before it, so two parts of the datapath row never share a column."""
-        used = sorted(set(layer.values()))
-        dense = {l: i for i, l in enumerate(used)}
-        keep = {dense[l] for l in keep if l in dense}
-        fixed = {dense[l] for l in fixed if l in dense}
-        layer = {cid: dense[l] for cid, l in layer.items()}
-        counts = defaultdict(int)
-        for l in layer.values():
-            counts[l] += 1
-        remap, shift = {}, 0
-        for l in sorted(counts):
-            if counts[l] == 1 and l > 0 and l not in keep and (l - 1) not in keep and l not in fixed:
-                shift += 1
-            remap[l] = l - shift
-        return {cid: remap[l] for cid, l in layer.items()}
+    def _compact(layer):
+        """Renumber the layers densely. Every depth keeps a column of its own:
+        a part merged into the layer before it stood above or below the
+        parts that feed it, their wire going round it (a register file under
+        the Pins it reads), and a stage boundary with one part lost its
+        column. _pack_columns still shares columns where the budget allows,
+        staggering each depth to the right so wires run left to right."""
+        dense = {l: i for i, l in enumerate(sorted(set(layer.values())))}
+        return {cid: dense[l] for cid, l in layer.items()}
 
     def _pack_columns(self, layer):
         """Min-width layering. Consecutive combinational layers share one
