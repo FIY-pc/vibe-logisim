@@ -1167,7 +1167,15 @@ class SchematicLayout:
                 # top-to-bottom order. Pins whose order is the instance's port
                 # order stay one column (side by side they would interleave).
                 chunk = []
-                for cid in sorted(ids, key=lambda c: (self.by_id[c]["location"]["y"], self.by_id[c]["location"]["x"])) + [None]:
+                pins = [cid for cid in ids if self.by_id[cid]["factoryName"] == "Pin"]
+                if pins:
+                    # the Pins of the layer stay one column: fanned out to
+                    # several, their wires cross each other on the way
+                    col += 1
+                    widths.append(max(self.by_id[c]["bounds"]["width"] for c in pins))
+                    for c in pins:
+                        column[c], offset[c] = col, 0
+                for cid in sorted((c for c in ids if c not in pins), key=lambda c: (self.by_id[c]["location"]["y"], self.by_id[c]["location"]["x"])) + [None]:
                     if chunk and (cid is None or stack_height(chunk + [cid]) > budget):
                         col += 1
                         widths.append(max(self.by_id[c]["bounds"]["width"] for c in chunk))

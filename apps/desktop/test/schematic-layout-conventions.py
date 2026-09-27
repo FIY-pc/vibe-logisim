@@ -66,6 +66,7 @@ def bare(**attrs):
     layout = SchematicLayout.__new__(SchematicLayout)
     layout.column_gap, layout.channel_min, layout.max_layer_span, layout.tunnel_span_scale = COLUMN_GAP, CHANNEL_MIN, 8, 1.0
     layout.report = {'nets': {}}
+    layout.copies, layout.fused, layout.relocated = {}, {}, {}
     for k, v in attrs.items():
         setattr(layout, k, v)
     return layout
@@ -201,6 +202,16 @@ class TallLayersSplit(unittest.TestCase):
     def test_a_short_layer_stays_one_column(self):
         column = self.pack(5)
         self.assertEqual({column[f'p{i}'] for i in range(5)}, {1})
+
+    def test_the_pins_of_a_split_layer_stay_one_column(self):
+        by_id, layer = {'src': comp('src', 'AND Gate', 0, 0, [])}, {'src': 0}
+        for i in range(10):
+            by_id[f'p{i}'] = comp(f'p{i}', 'AND Gate' if i < 4 else 'Pin', 0, 100 * i, [], height=60)
+            layer[f'p{i}'] = 1
+        layout = bare(by_id=by_id, row_gap=20, column_height=200, stagger=10, spine={}, pin_rank={})
+        column, _offset = layout._pack_columns(layer)
+        self.assertEqual(len({column[f'p{i}'] for i in range(4, 10)}), 1)
+        self.assertEqual([column[f'p{i}'] for i in range(4)], [2, 2, 3, 3])
 
     def test_ordered_pins_stay_one_column(self):
         column = self.pack(10, ranked=True)
