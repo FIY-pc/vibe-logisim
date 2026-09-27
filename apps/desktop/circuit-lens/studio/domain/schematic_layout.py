@@ -14,12 +14,15 @@ Methodology (this is the part an LLM should not improvise per wire):
    consumer instead of a tunnel; everything else is wired.
 4. Placement is a layered drawing (Sugiyama): layer = longest path from
    sources in the signal-flow DAG with register outputs starting a new layer
-   (a pipeline stage), barycenter sweeps to reduce crossings, then tight
-   grid-snapped coordinate assignment in sub-columns of bounded height.
+   (a pipeline stage), barycenter sweeps to reduce crossings, parts wired
+   output to input across neighbouring columns aligned into blocks so those
+   wires are straight, then tight grid-snapped coordinate assignment in
+   sub-columns of bounded height.
 5. Routing is global and ordered: short nets first, then longer ones detour
    around them, using the grid A* router that already knows Logisim's rules
    (never end or bend on foreign copper, never pass through a foreign port,
-   prefer a cell of clearance).
+   prefer a cell of clearance); nets that found no way through are routed
+   again first.
 
 Connectivity contract (what makes the result provably equivalent):
 
@@ -65,6 +68,8 @@ PIPELINE_STAGES = ("IF", "ID", "EX", "EXE", "MEM", "MA", "WB")   # canonical sta
 TARGET_ASPECT = 1.5         # width/height the column packing aims at (hand-drawn HUST sheets: p50 1.5-1.8)
 COLUMN_HEIGHT_MIN = 200     # a packed column is never shorter than this
 STAGGER = 30                # x step between successive depths packed into one column
+ROW_SNAP = 20               # a part moves at most this far to share a top with a part in another column
+LEVEL_REACH = 100           # ... and this far to put a port level with the port it is wired to (a straight wire)
 STORAGE = ("Register", "Counter", "D Flip-Flop", "J-K Flip-Flop", "S-R Flip-Flop", "T Flip-Flop", "Random")
 # Students wrap a pipeline register in a subcircuit named after the stages it
 # separates: IF/ID, ID-EX, 气泡EX/MEM, ◇MEM/WB ... (HUST corpus: 21/21 ID/EX
@@ -288,6 +293,7 @@ class SchematicLayout:
         self.stagger = STAGGER
         self.tunnel_span_scale = 1.0         # multiplies TUNNEL_SPAN (1.0 = corpus two-thirds points)
         self.row_gap = ROW_GAP
+        self.balance, self.even_moves = "even", 0      # _balance rule of the drawing being made (see _arrange)
         self.channel_min = CHANNEL_MIN
         self.stack_slack = STACK_SLACK
         self.gap_cap = GAP_CAP
@@ -599,6 +605,7 @@ class SchematicLayout:
             # cycles at registers, so write-back paths run right to left and
             # keep their labels (see _demote).
             self.stage_of = {}
+            self._balance(depth, forward)
             return self._compact(depth)
         # register stages: longest register->register path over the cut DAG
         reach = defaultdict(set)
@@ -675,6 +682,64 @@ class SchematicLayout:
                 layer[u] = depth[u]
         self.stage_of = stage
         return self._compact(layer, keep={layer[r] for r in storage})
+
+    def _balance(self, depth, forward):
+        """Longest-path depth puts every part as far left as its inputs allow:
+        a source, or a part fed only by sources, lands in the first columns
+        however far away its consumers are (an immediate extender next to the
+        instruction splitter, its mux eight columns on). Right to left, a part
+        moves up to just before its nearest consumer when that makes its wires
+        shorter in total: it has more consumers than producers, or it is a
+        one-in, one-out link of a chain that starts at a part free to follow
+        (the chain ends up beside the part it feeds). With self.balance
+        "even", every part with at least as many consumers as producers moves
+        too: no wire gets longer in total, and the rest of the drawing
+        decides whether that helps (see _arrange). Input Pins stay where a reader
+        looks for them. Only for circuits without pipeline stages (whose
+        columns are the stages)."""
+        preds = defaultdict(set)
+        for u, vs in forward.items():
+            for v in vs:
+                if v in depth and u in depth:
+                    preds[v].add(u)
+
+        def consumers(u):
+            return [v for v in forward.get(u, ()) if v in depth]
+
+        def shortens(u):
+            if len(consumers(u)) > len(preds[u]):
+                return True
+            if len(consumers(u)) != 1 or len(preds[u]) != 1:
+                return False
+            # one wire in, one out: moving is worth it only when the chain
+            # feeding u starts at a part that can follow it
+            p, seen = u, {u}
+            while preds[p]:
+                (q,) = preds[p]
+                if q in seen or len(consumers(q)) != 1 or len(preds[q]) > 1 or self.by_id[q]["factoryName"] == "Pin":
+                    return False
+                seen.add(q)
+                p = q
+            return True
+
+        for _round in range(len(depth)):
+            changed = False
+            for u in sorted(depth, key=lambda u: -depth[u]):
+                succ = consumers(u)
+                if not succ or self.by_id[u]["factoryName"] == "Pin":
+                    continue
+                hi = min(depth[v] for v in succ) - 1
+                if hi <= depth[u]:
+                    continue
+                if shortens(u):
+                    depth[u] = hi
+                    changed = True
+                elif self.balance == "even" and len(succ) >= len(preds[u]):
+                    depth[u] = hi
+                    changed = True
+                    self.even_moves += 1
+            if not changed:
+                break
 
     @staticmethod
     def _compact(layer, keep=()):
@@ -768,17 +833,11 @@ class SchematicLayout:
         for cid, col in column.items():
             by_col[col].append(cid)
         widths = {col: max(x_offset[c] + self.by_id[c]["bounds"]["width"] for c in ids) for col, ids in by_col.items()}
-        through = defaultdict(int)
-        for key, cls in self.classes.items():
-            if cls != "wire":
-                continue
-            cols = sorted({column[c] for c, i in self.nets[key] if c in column})
-            for l in range(cols[0], cols[-1]) if len(cols) >= 2 else ():
-                through[l] += 1
+        channel = self._channels(column, [self.nets[key] for key, cls in self.classes.items() if cls == "wire"])
         x_of, cursor = {}, 0
         for col in sorted(by_col):
             x_of[col] = cursor
-            cursor += widths[col] + min(self.column_gap, max(self.channel_min, _snap(self.channel_min + CHANNEL_PER_WIRE * through[col])))
+            cursor += widths[col] + channel(col)
 
         def px(cid, idx):
             c = self.by_id[cid]
@@ -804,6 +863,19 @@ class SchematicLayout:
                 self.classes[key] = "tunnel"
                 demoted += 1
         self.report["nets"]["demotedToTunnel"] = demoted
+
+    def _channels(self, column, nets):
+        """Width of the routing channel right of each column: channel_min plus
+        CHANNEL_PER_WIRE for every wired net that spans it (once per net,
+        however many consumers), capped at column_gap. Counting only the nets
+        that turn in a channel draws a narrower sheet but crowds the channels
+        next to busy columns: more crossings on the course circuits."""
+        need = defaultdict(int)
+        for ports in nets:
+            cols = sorted({column[cid] for cid, idx in ports if cid in column})
+            for l in range(cols[0], cols[-1]) if len(cols) >= 2 else ():
+                need[l] += 1
+        return lambda l: min(self.column_gap, max(self.channel_min, _snap(self.channel_min + CHANNEL_PER_WIRE * need[l])))
 
     def _pinout_ranks(self, layer, one_layer):
         """Without a custom appearance an instance's ports are this circuit's
@@ -906,6 +978,14 @@ class SchematicLayout:
         def height(cid):
             return self.by_id[cid]["bounds"]["height"]
 
+        def on_grid(cid, y):
+            """The top nearest y at which the part's loc (and so every port) is
+            on the grid. A 30 px gate's top is 15 above its loc: snapping the
+            top instead would put its ports 5 px off the neighbour ports they
+            were placed to meet, and the final rounding would pick a side."""
+            below = self.by_id[cid]["location"]["y"] - self.by_id[cid]["bounds"]["y"]
+            return _snap(y + below) - below
+
         # initial order: the author's y (their intent when it exists)
         order = {}
         for l, ids in by_layer.items():
@@ -934,7 +1014,7 @@ class SchematicLayout:
             compact = cursor - self.row_gap
             wanted = {cid: y for cid, y in (desired or {}).items() if cid in tops and y is not None}
             if not wanted:
-                return tops
+                return {cid: on_grid(cid, y) for cid, y in tops.items()}
             offsets = sorted(wanted[cid] - tops[cid] for cid in wanted)
             shift = offsets[len(offsets) // 2]
             tops = {cid: y + shift for cid, y in tops.items()}
@@ -955,7 +1035,7 @@ class SchematicLayout:
             for i in range(1, len(ids)):          # restore order if a clamp broke it
                 a, b = ids[i - 1], ids[i]
                 tops[b] = max(tops[b], tops[a] + height(a) + self.row_gap)
-            return {cid: _snap(y) for cid, y in tops.items()}
+            return {cid: on_grid(cid, y) for cid, y in tops.items()}
 
         for l in layers_sorted:
             top_y[l] = stack(l)
@@ -1051,18 +1131,196 @@ class SchematicLayout:
         # final coordinates follow the neighbours once more (ports line up)
         for l in layers_sorted:
             realign(l)
+
+        def side(cid, idx):
+            b, e = self.by_id[cid]["bounds"], self.by_id[cid]["ends"][idx]["location"]
+            d = {"west": e["x"] - b["x"], "east": b["x"] + b["width"] - e["x"], "north": e["y"] - b["y"], "south": b["y"] + b["height"] - e["y"]}
+            return min(d, key=d.get)
+
+        def align_blocks():
+            """Straight wires between neighbouring columns. The barycenter puts
+            a part where its ports meet its neighbours' on average, which
+            levels almost none of them: each part is aligned instead with one
+            part in the column to its left (an output on that part's right
+            edge wired to an input on its own left edge, the one nearest to
+            where it stands), without two alignments crossing. Aligned parts
+            form a block that moves as one; blocks keep their order and gaps
+            in every column and stay as near as they can to where the
+            barycenter put their parts."""
+            pos = {cid: i for l in layers_sorted for i, cid in enumerate(order[l])}
+            root, off = {}, {}
+            for l in layers_sorted:
+                for cid in order[l]:
+                    root[cid], off[cid] = cid, 0
+            taken = set()
+            aligned = 0
+            for li in range(1, len(layers_sorted)):
+                l, left = layers_sorted[li], layers_sorted[li - 1]
+                if left != l - 1:
+                    continue
+                last = -1
+                for v in order[l]:
+                    if v in self.pin_rank:
+                        continue
+                    options = []
+                    for (a, ai), (b, bi) in touching[v]:
+                        (me, mi), (u, ui) = ((a, ai), (b, bi)) if a == v else ((b, bi), (a, ai))
+                        if u == v or layer.get(u) != left or u in taken or u in self.pin_rank or pos[u] <= last:
+                            continue
+                        if side(u, ui) != "east" or side(v, mi) != "west":
+                            continue
+                        want = top_y[left][u] + port_dy(u, ui) - port_dy(v, mi)
+                        if abs(want - top_y[l][v]) <= LEVEL_REACH:
+                            options.append((abs(want - top_y[l][v]), pos[u], u, ui, mi))
+                    if not options:
+                        continue
+                    _, _, u, ui, mi = min(options)
+                    root[v] = root[u]
+                    off[v] = off[u] + port_dy(u, ui) - port_dy(v, mi)
+                    taken.add(u)
+                    last = pos[u]
+                    aligned += 1
+            members = defaultdict(list)
+            for cid, r in root.items():
+                members[r].append(cid)
+            # separation constraints between blocks, from every column's order
+            after = defaultdict(list)
+            indeg = defaultdict(int)
+            for l in layers_sorted:
+                ids = order[l]
+                for a, b in zip(ids, ids[1:]):
+                    ra, rb = root[a], root[b]
+                    after[ra].append((rb, off[a] + height(a) + self.row_gap - off[b]))
+                    indeg[rb] += 1
+            want = {}
+            for r, ms in members.items():
+                ys = sorted(top_y[layer[m]][m] - off[m] for m in ms)
+                want[r] = on_grid(r, ys[len(ys) // 2])
+            before = defaultdict(list)
+            for ra, succ in after.items():
+                for rb, sep in succ:
+                    before[rb].append((ra, sep))
+            topo, queue = [], [r for r in members if not indeg[r]]
+            while queue:
+                r = queue.pop()
+                topo.append(r)
+                for rb, sep in after[r]:
+                    indeg[rb] -= 1
+                    if not indeg[rb]:
+                        queue.append(rb)
+            if len(topo) < len(members):
+                return 0                    # a cycle (cannot happen with crossing-free alignments): keep the barycenter
+            # Each block as near its wish as the blocks above it allow (pushing
+            # down), and as the blocks below allow (pushing up); both satisfy
+            # every gap, so their mean does too and splits the displacement.
+            down, up = {}, {}
+            for r in topo:
+                down[r] = max([want[r]] + [down[ra] + sep for ra, sep in before[r]])
+            for r in reversed(topo):
+                up[r] = min([want[r]] + [up[rb] - sep for rb, sep in after[r]])
+            y = {}
+            for r in topo:
+                # on the grid; the rounding may take at most one step off a gap
+                y[r] = on_grid(r, (down[r] + up[r]) / 2)
+                for ra, sep in before[r]:
+                    while y[r] < y[ra] + sep - GRID:
+                        y[r] += GRID
+            for l in layers_sorted:
+                for cid in order[l]:
+                    top_y[l][cid] = y[root[cid]] + off[cid]
+            return aligned
+
+        self.report["alignedPairs"] = align_blocks()
+
+        def straight(cid, top):
+            """Wires of this part that are one horizontal segment with it at top."""
+            n = 0
+            for (a, ai), (b, bi) in touching[cid]:
+                (me, mi), (other, oi) = ((a, ai), (b, bi)) if a == cid else ((b, bi), (a, ai))
+                if other != cid and layer[other] != layer[cid] and top + port_dy(me, mi) == port_y(other, oi):
+                    n += 1
+            return n
+
+        def share_rows():
+            """Rows across columns. The barycenter puts a part where its ports
+            meet its neighbours' on average, which leaves most tops 5-10 px from
+            the top of a part in the next column; hand-drawn sheets put about
+            three parts in four on a top shared with another. Each part may move
+            inside the free space of its column onto another part's top (up to
+            ROW_SNAP away) or onto the height where one of its ports meets the
+            port it is wired to (up to LEVEL_REACH away), keeping every such
+            straight wire it has; among the choices with the most straight
+            wires, the one that lets more parts share a top, then the nearest."""
+            count = defaultdict(int)
+            for l in layers_sorted:
+                for cid in order[l]:
+                    count[top_y[l][cid]] += 1
+            def sharing(n):
+                return n if n >= 2 else 0
+            ranked = defaultdict(list)          # facing -> Pins in pinout order
+            for cid, (facing, rank) in self.pin_rank.items():
+                if cid in layer:
+                    ranked[facing].append((rank, cid))
+            for pins in ranked.values():
+                pins.sort()
+
+            def loc_y(cid):
+                return top_y[layer[cid]][cid] + self.by_id[cid]["location"]["y"] - self.by_id[cid]["bounds"]["y"]
+
+            snaps = 0
+            for _round in range(3):
+                changed = False
+                for l in layers_sorted:
+                    ids, tops = order[l], top_y[l]
+                    for i, cid in enumerate(ids):
+                        cur = tops[cid]
+                        lo, hi = -math.inf, math.inf
+                        if i:
+                            lo = tops[ids[i - 1]] + height(ids[i - 1]) + self.row_gap
+                        if i + 1 < len(ids):
+                            hi = tops[ids[i + 1]] - self.row_gap - height(cid)
+                        if cid in self.pin_rank and self.pin_rank[cid][0] in ("east", "west"):
+                            # a Pin keeps its place in the pinout: strictly
+                            # between the Pins ranked before and after it
+                            pins = [c for _r, c in ranked[self.pin_rank[cid][0]]]
+                            k = pins.index(cid)
+                            below = self.by_id[cid]["location"]["y"] - self.by_id[cid]["bounds"]["y"]
+                            if k:
+                                lo = max(lo, loc_y(pins[k - 1]) + GRID - below)
+                            if k + 1 < len(pins):
+                                hi = min(hi, loc_y(pins[k + 1]) - GRID - below)
+                        options = {t for t in count if count[t] and max(lo, cur - ROW_SNAP) <= t <= min(hi, cur + ROW_SNAP)}
+                        for (a, ai), (b, bi) in touching[cid]:
+                            (me, mi), (other, oi) = ((a, ai), (b, bi)) if a == cid else ((b, bi), (a, ai))
+                            if other != cid and layer[other] != l:
+                                t = port_y(other, oi) - port_dy(me, mi)
+                                if max(lo, cur - LEVEL_REACH) <= t <= min(hi, cur + LEVEL_REACH):
+                                    options.add(t)
+                        best, best_key = cur, (straight(cid, cur), 0, 0)
+                        for t in options:
+                            if t == cur or on_grid(cid, t) != t:
+                                continue
+                            gain = (sharing(count[cur] - 1) + sharing(count[t] + 1)) - (sharing(count[cur]) + sharing(count[t]))
+                            k = (straight(cid, t), gain, -abs(t - cur))
+                            if k > best_key:
+                                best, best_key = t, k
+                        if best != cur:
+                            count[cur] -= 1
+                            count[best] += 1
+                            tops[cid] = best
+                            snaps += 1
+                            changed = True
+                if not changed:
+                    break
+            return snaps
+
+        self.report["rowSnaps"] = share_rows()
         segs = [seg(e) for e in edges]
         self.report["placementCrossings"] = sum(1 for i in range(len(segs)) for j in range(i + 1, len(segs)) if crosses(segs[i], segs[j]))
         # Channel widths: a channel between two columns is as wide as the wires
         # that run through it need (every wired net spanning it), never wider
-        # than the caller's column gap.
-        through = defaultdict(int)
-        for (a, ai), (b, bi) in edges:
-            la, lb = sorted((layer[a], layer[b]))
-            for l in range(la, lb):
-                through[l] += 1
-        def channel(l):
-            return min(self.column_gap, max(self.channel_min, _snap(self.channel_min + CHANNEL_PER_WIRE * through[l])))
+        # than the caller's column gap (_channels).
+        channel = self._channels(layer, [self.nets[key] for key, cls in self.classes.items() if cls == "wire"])
 
         # coordinate assignment: sub-columns of bounded height per layer
         panel_bottom = max((c["bounds"]["y"] + c["bounds"]["height"] for c in self.components if self._is_panel(c)), default=0)
@@ -1080,7 +1338,8 @@ class SchematicLayout:
         x_cursor = 100
         placement = {}
         body_bottom = top
-        frame = min((y for l in layers_sorted for y in top_y[l].values()), default=0)
+        # a whole number of grid steps, so every part keeps its grid phase (on_grid)
+        frame = GRID * math.floor(min((y for l in layers_sorted for y in top_y[l].values()), default=0) / GRID)
         for l in layers_sorted:
             ids = order[l]
             columns = [[]]
@@ -1336,48 +1595,6 @@ class SchematicLayout:
                 if panel_ports:
                     self.anchors[(driver, 0)] = self._labels_for(key)
         focus_components = [c for cid, c in moved.items() if cid not in drop_tunnels]
-        router = Router({"focus": {"components": focus_components, "wires": kept_wires, "wireBundles": kept_bundles}}, partition,
-                        crossing_cost=self.crossing_cost, visit_cap=ROUTER_VISIT_CAP)
-        # A port that gets several labels chains them outward on 10 px stubs
-        # (see emit); those cells are copper of that net, so no other route may
-        # run through them.
-        # Every anchored Tunnel stands one cell off its port on a 10 px lead
-        # (as hand-drawn schematics do: 6% of 22.7k corpus tunnels sit on the
-        # port itself), further labels chain outward on 10 px stubs (see emit).
-        # Those cells are copper of that net; no other route may run through
-        # them. They are remembered so emit can tell them from real obstacles.
-        self.reserved = set()
-        for (cid, idx), labels in self.anchors.items():
-            (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
-            lead = (px + sx, py + sy)
-            self.reserved.add(lead)
-            # the lead belongs to the port's net (its own route may still
-            # leave through it: a bridge port is both routed and labelled)
-            router.port_owners.setdefault(lead, set()).add(router.owner(moved[cid]["ends"][idx].get("netBits") or []))
-            for k in range(2, len(labels) + 1):
-                self.reserved.add((px + sx * k, py + sy * k))
-                router.blocked.add((px + sx * k, py + sy * k))
-        # Every other body port keeps the cell in front of it for its own net
-        # too. Pins of a tall pipeline register sit 30 px apart on one edge; a
-        # neighbour's route that runs vertically along that edge would box in
-        # the ports it passes (the router never ends a route on foreign
-        # copper), which is how tall registers lost 3-8 nets to "no room".
-        # Hand-drawn schematics have the same short lead before any bend or
-        # junction. Splitters are excluded: their pins are not on a body edge.
-        claims = defaultdict(set)          # lead cell -> nets of the ports it fronts
-        for c in focus_components:
-            if c["factoryName"] in ("Tunnel", "Text", "Splitter"):
-                continue
-            for idx, end in enumerate(c["ends"]):
-                if (c["componentId"], idx) in self.anchors:
-                    continue
-                (px, py), _facing, (sx, sy) = self._port_edge(c, idx)
-                claims[(px + sx, py + sy)].add(router.owner(end.get("netBits") or []) or ("lead", c["componentId"], idx))
-        for lead, nets in claims.items():
-            # two ports of different nets facing each other across one cell:
-            # the cell stays free, or neither port could be reached
-            if len(nets) == 1 and lead not in router.port_owners and lead not in router.blocked:
-                router.port_owners[lead].add(next(iter(nets)))
         jobs = []
         for key, cls in self.classes.items():
             if cls != "wire":
@@ -1391,30 +1608,88 @@ class SchematicLayout:
         for sid, cx, cy, facing, width, value, (cid, idx) in self.synthetic_constants:
             jobs.append((False, 20, ("const", sid), [(sid, 0), (cid, idx)]))
         jobs.sort(key=lambda j: (j[0], j[1]), reverse=(self.route_order == "long"))
-        wires = []
+
+        def route_all(first):
+            """Every job on a fresh router, the nets in `first` before the rest."""
+            router = Router({"focus": {"components": focus_components, "wires": kept_wires, "wireBundles": kept_bundles}}, partition,
+                            crossing_cost=self.crossing_cost, visit_cap=ROUTER_VISIT_CAP)
+            # A port that gets several labels chains them outward on 10 px stubs
+            # (see emit); those cells are copper of that net, so no other route may
+            # run through them.
+            # Every anchored Tunnel stands one cell off its port on a 10 px lead
+            # (as hand-drawn schematics do: 6% of 22.7k corpus tunnels sit on the
+            # port itself), further labels chain outward on 10 px stubs (see emit).
+            # Those cells are copper of that net; no other route may run through
+            # them. They are remembered so emit can tell them from real obstacles.
+            reserved = set()
+            for (cid, idx), labels in self.anchors.items():
+                (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
+                lead = (px + sx, py + sy)
+                reserved.add(lead)
+                # the lead belongs to the port's net (its own route may still
+                # leave through it: a bridge port is both routed and labelled)
+                router.port_owners.setdefault(lead, set()).add(router.owner(moved[cid]["ends"][idx].get("netBits") or []))
+                for k in range(2, len(labels) + 1):
+                    reserved.add((px + sx * k, py + sy * k))
+                    router.blocked.add((px + sx * k, py + sy * k))
+            # Every other body port keeps the cell in front of it for its own net
+            # too. Pins of a tall pipeline register sit 30 px apart on one edge; a
+            # neighbour's route that runs vertically along that edge would box in
+            # the ports it passes (the router never ends a route on foreign
+            # copper), which is how tall registers lost 3-8 nets to "no room".
+            # Hand-drawn schematics have the same short lead before any bend or
+            # junction. Splitters are excluded: their pins are not on a body edge.
+            claims = defaultdict(set)          # lead cell -> nets of the ports it fronts
+            for c in focus_components:
+                if c["factoryName"] in ("Tunnel", "Text", "Splitter"):
+                    continue
+                for idx, end in enumerate(c["ends"]):
+                    if (c["componentId"], idx) in self.anchors:
+                        continue
+                    (px, py), _facing, (sx, sy) = self._port_edge(c, idx)
+                    claims[(px + sx, py + sy)].add(router.owner(end.get("netBits") or []) or ("lead", c["componentId"], idx))
+            for lead, nets in claims.items():
+                # two ports of different nets facing each other across one cell:
+                # the cell stays free, or neither port could be reached
+                if len(nets) == 1 and lead not in router.port_owners and lead not in router.blocked:
+                    router.port_owners[lead].add(next(iter(nets)))
+            wires, failed_ports, failed_consts, unrouted, failed_jobs = [], defaultdict(list), set(), [], set()
+            for _, _, key, ports in sorted(jobs, key=lambda j: j[2] not in first):
+                if key in self.nets:
+                    source_port = self.source_of[key]
+                    remaining = [p for p in ports if p != source_port]
+                else:
+                    source_port, remaining = ports[0], ports[1:]
+                source = moved[source_port[0]]["ends"][source_port[1]]
+                remaining.sort(key=lambda p: abs(moved[p[0]]["ends"][p[1]]["location"]["x"] - source["location"]["x"]) + abs(moved[p[0]]["ends"][p[1]]["location"]["y"] - source["location"]["y"]))
+                for port in remaining:
+                    target = moved[port[0]]["ends"][port[1]]
+                    try:
+                        wires.extend(router.route(source, target))
+                    except ValueError as error:
+                        unrouted.append({"label": self.label_of_net.get(key) if key in self.nets else key[1], "ports": len(ports), "reason": str(error)[:120]})
+                        failed_jobs.add(key)
+                        if key in self.nets:
+                            failed_ports[key].append(port)
+                        else:
+                            # constant stub: this consumer falls back to the shared Constant's label.
+                            failed_consts.add(port)
+            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs
+
         # Ports the router could not reach keep the net by label: emit() puts the
         # net's Tunnel on them and on the routing source, the copper that did
-        # route stays.
-        self.failed_ports = defaultdict(list)
-        for _, _, key, ports in jobs:
-            if key in self.nets:
-                source_port = self.source_of[key]
-                remaining = [p for p in ports if p != source_port]
-            else:
-                source_port, remaining = ports[0], ports[1:]
-            source = moved[source_port[0]]["ends"][source_port[1]]
-            remaining.sort(key=lambda p: abs(moved[p[0]]["ends"][p[1]]["location"]["x"] - source["location"]["x"]) + abs(moved[p[0]]["ends"][p[1]]["location"]["y"] - source["location"]["y"]))
-            for port in remaining:
-                target = moved[port[0]]["ends"][port[1]]
-                try:
-                    wires.extend(router.route(source, target))
-                except ValueError as error:
-                    self.report["unrouted"].append({"label": self.label_of_net.get(key) if key in self.nets else key[1], "ports": len(ports), "reason": str(error)[:120]})
-                    if key in self.nets:
-                        self.failed_ports[key].append(port)
-                    else:
-                        # constant stub: this consumer falls back to the shared Constant's label.
-                        self.failed_constant_consumers.add(port)
+        # route stays. A route that cannot reach its port was usually boxed in
+        # by nets routed before it (a jog right in front of a dense port edge
+        # such as a multiplexer's inputs 10 px apart); routing the failed nets
+        # first frees most of them.
+        attempt = route_all(set())
+        if attempt[5]:
+            retry = route_all(attempt[6])
+            if len(retry[5]) < len(attempt[5]):
+                attempt = retry
+        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed = attempt
+        self.report["unrouted"].extend(unrouted)
+        self.failed_constant_consumers |= failed_consts
         for key, ports in self.failed_ports.items():
             labels = self._labels_for(key)
             self.anchors[self.source_of[key]] = labels
@@ -1436,10 +1711,46 @@ class SchematicLayout:
         return wires
 
     # ---- emission --------------------------------------------------------------
+    def _drawing_cost(self):
+        """What a reader pays for the routed drawing: one crossing, five bends,
+        a metre of wire and two Tunnels count about the same."""
+        horizontal = [(min(a[0], b[0]), max(a[0], b[0]), a[1]) for a, b in self.wires if a[1] == b[1]]
+        vertical = [(min(a[1], b[1]), max(a[1], b[1]), a[0]) for a, b in self.wires if a[0] == b[0]]
+        crossings = sum(1 for x1, x2, y in horizontal for y1, y2, x in vertical if x1 < x < x2 and y1 < y < y2)
+        axes = defaultdict(set)
+        for a, b in self.wires:
+            for q in (a, b):
+                axes[q].add(a[1] == b[1])
+        bends = sum(1 for seen in axes.values() if len(seen) == 2)
+        length = sum(abs(a[0] - b[0]) + abs(a[1] - b[1]) for a, b in self.wires)
+        tunnels = sum(len(labels) for labels in self.anchors.values())
+        return crossings + bends / 5 + length / 1000 + tunnels / 2
+
+    def _arrange(self):
+        """Place and route. Without pipeline stages the columns can be balanced
+        two ways (_balance) and neither wins everywhere: on the course circuits
+        each draws some CPU with 20-30 crossings fewer than the other. Both are
+        drawn and the cheaper drawing is kept (_drawing_cost); when the even
+        rule moves nothing more than the chain rule, one drawing is enough."""
+        start = dict(self.__dict__)
+        attempts = []
+        for balance in ("even", "chains"):
+            self.__dict__.update(start)
+            self.classes = dict(start["classes"])
+            self.report = copy.deepcopy(start["report"])
+            self.synthesized, self.used_labels = dict(start["synthesized"]), set(start["used_labels"])
+            self.abbr_counter = copy.copy(start["abbr_counter"])
+            self.balance, self.even_moves = balance, 0
+            self._place()
+            self._route()
+            attempts.append((self._drawing_cost(), len(attempts), dict(self.__dict__)))
+            if not self.even_moves:
+                break
+        self.__dict__.update(min(attempts)[2])
+
     def emit(self):
         self.plan()
-        self._place()
-        self._route()
+        self._arrange()
         circuit = self.circuit
         moved_pins = {}
         for cid, element in self.element_of.items():
