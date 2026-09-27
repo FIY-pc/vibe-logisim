@@ -111,6 +111,20 @@ node apps/desktop/test/e2e-render-density.cjs
 node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electron/folder-import.test.cjs apps/desktop/electron/folder-operations.test.cjs
 ```
 
+日志脱敏、诊断包（zip 写入与回读、报告只含路径特征、摘要不含路径、兜底检查）、失败工具调用的缓冲和版本检查（本地假发布源，含超时、403、缓存与开关）：
+
+```sh
+node --test apps/desktop/electron/diagnostics-log.test.cjs apps/desktop/electron/diagnostics-bundle.test.cjs apps/desktop/electron/agent-tool-host.test.cjs apps/desktop/electron/update-check.test.cjs
+```
+
+同一套功能在开发版 Electron 里的完整路径（假发布源触发新版本横幅、忽略此版本、「…」菜单关闭自动检查后重启不再请求、反馈对话框预览与保存、解开诊断包检查路径和姓名学号、预填的反馈页链接与 issue 表单字段一致），不需要样本和模型额度：
+
+```sh
+node apps/desktop/test/e2e-feedback.cjs
+```
+
+开发版可用 `VIBE_LOGISIM_UPDATE_URL` 把版本检查指向本地发布源（打包版忽略）；`VIBE_LOGISIM_NO_UPDATE_CHECK=1` 关闭全部版本检查请求，打包冒烟测试就是这样运行的。
+
 `apps/desktop/test/` 保存桌面和原生运行验证脚本。许多历史脚本依赖本地 `exports/`、`archive/`、`experiments/` 下的样本电路或课程运行文件；它们没有随仓库分发。缺少样本时这些脚本会打印 `SKIP: sample files not in the repository …` 并以 0 退出，unittest 模块则只跳过依赖样本的用例（守卫见 `apps/desktop/test/support/samples.py` 与 `samples.cjs`）；这既不是通过也不是回归。现有 `npm run test:e2e` 也是需要样本的浏览器服务验证，不覆盖完整 Electron 体验。
 
 安装两种 Logisim 运行文件后，可用自包含寄存器电路验证时序输入与采样，无需课程材料或模型额度：

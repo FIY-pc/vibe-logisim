@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 常见问题
+    url: https://github.com/FIY-pc/vibe-logisim#常见问题
+    about: 缺少课程组件库、登录 ChatGPT 失败、接口连接失败、杀毒软件拦截等情况的处理办法

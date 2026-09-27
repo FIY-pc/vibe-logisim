@@ -1,0 +1,55 @@
+name: 问题反馈
+description: 崩溃、报错、AI 连接失败、电路操作或 AI 改图不对
+title: "[问题] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        issue 是公开的，任何人都能看到。应用里右上角「…」→「反馈问题…」可以生成诊断包和摘要：诊断包不含 API 密钥、对话内容和电路，路径里的用户名和工作区位置已经替换。发之前看一眼预览，文件名里可能有你的姓名或学号。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 「…」菜单最下面「关于 Vibe Logisim」后面的版本号
+      placeholder: 0.3.1
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: 系统
+      placeholder: Windows 11 x64
+    validations:
+      required: true
+  - type: input
+    id: connection
+    attributes:
+      label: AI 连接方式
+      description: ChatGPT 账号 / 自定义接口（中转站、DeepSeek 等，写上模型名）/ 未连接
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 做了什么、在哪个电路上、对 AI 说了什么
+      placeholder: |
+        1. 打开文件夹……
+        2. 让 AI……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望与实际
+      description: 本来应该怎样，实际发生了什么（报错原文、截图）
+  - type: textarea
+    id: summary
+    attributes:
+      label: 诊断摘要
+      description: 反馈对话框里点「复制摘要」或「打开 GitHub 反馈页」后，直接粘贴到这里
+      render: text
+  - type: textarea
+    id: attachments
+    attributes:
+      label: 诊断包与截图
+      description: 把「保存诊断包…」得到的 zip 和截图拖到这里
