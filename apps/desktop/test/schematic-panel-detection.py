@@ -64,6 +64,20 @@ class PanelDetection(unittest.TestCase):
     def test_small_circuits_have_no_panel(self):
         self.assertIsNone(detect(circuit(['Pin'] * 6, LOGIC * 4)))
 
+    def test_interface_pins_above_the_logic_are_not_a_panel(self):
+        # A helper circuit drawn with its 14 input Pins above the gates: all
+        # I/O, but nothing that shows a value. Freezing them as a panel would
+        # tie every input to the re-laid-out body by Tunnels.
+        self.assertIsNone(detect(circuit(['Pin'] * 14, ['AND Gate', 'OR Gate', 'NOT Gate'] * 10)))
+
+    def test_a_page_that_is_all_panel_is_a_panel(self):
+        # A course page before anything is drawn on it: the whole page is the
+        # panel, so nothing may move (it used to be taken for body).
+        parts = circuit(COURSE_PANEL, [])
+        y = detect(parts)
+        self.assertIsNotNone(y)
+        self.assertGreater(y, max(p['bounds']['y'] + p['bounds']['height'] for p in parts))
+
 
 if __name__ == '__main__':
     unittest.main()
