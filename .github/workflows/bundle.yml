@@ -49,7 +49,11 @@ jobs:
             apps/desktop/electron/model-tool-output.test.cjs `
             apps/desktop/electron/custom-provider.test.cjs `
             apps/desktop/electron/provider-probe.test.cjs `
-            apps/desktop/electron/system-proxy.test.cjs
+            apps/desktop/electron/system-proxy.test.cjs `
+            apps/desktop/electron/agent-tool-host.test.cjs `
+            apps/desktop/electron/diagnostics-log.test.cjs `
+            apps/desktop/electron/diagnostics-bundle.test.cjs `
+            apps/desktop/electron/update-check.test.cjs
       - name: Python server control-channel probe (Windows, host Python)
         shell: pwsh
         run: python apps/desktop/test/server-control-probe.py
