@@ -25,6 +25,9 @@ HUST CPUs, 2026-09-25):
   - A wired net whose copper crosses more than two wires per consumer (and
     at least six) becomes Tunnels when it has a name a reader knows; a net
     known only by a made-up name stays a wire.
+  - Parts drawn port to port on two or more ports (a Splitter set on a
+    decoder's outputs) are placed as one rigid piece: every member moves
+    with its host, so the shared ports need no wire.
   - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
     is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
     and RAM left to right on one row, centres level; the controller above
@@ -256,6 +259,22 @@ class CrossingHeavyNets(unittest.TestCase):
     def test_a_few_crossings_per_consumer_are_fine(self):
         layout, _n = self.layout(label='ALU', crossers=4)
         self.assertEqual(layout._crossing_heavy(), set())
+
+
+class ContactGroups(unittest.TestCase):
+    def layout(self):
+        # a decoder's three outputs sit on a Splitter's three inputs; a gate
+        # touches the decoder on one port only
+        dec = comp('dec', 'Decoder', 100, 0, [(0, 20, 'input', 'a'), (10, 40, 'output', 'o1'), (20, 40, 'output', 'o2'), (30, 40, 'output', 'o3')],
+                   width=40, height=40)
+        spl = comp('spl', 'Splitter', 110, 40, [(30, 10, 'inout', 'b'), (0, 0, 'inout', 'o1'), (10, 0, 'inout', 'o2'), (20, 0, 'inout', 'o3')],
+                   width=30, height=10)
+        gate = comp('gate', 'NOT Gate', 60, 0, [(0, 20, 'input', 'x'), (40, 20, 'output', 'a')])
+        body = [dec, spl, gate]
+        return bare(by_id={c['componentId']: c for c in body}, body=body)
+
+    def test_parts_sharing_ports_move_with_the_largest(self):
+        self.assertEqual(self.layout()._contact_groups(), {'spl': 'dec'})
 
 
 class CompactKeepsTheRowApart(unittest.TestCase):

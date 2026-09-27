@@ -554,6 +554,7 @@ class SchematicLayout:
         self.nets, self.bits_of, self.classes, self.label_of_net, self.labels_of_net = nets, bits_of, classes, label_of_net, labels_of_net
         self.tunnels, self.body, self.constants, self.body_ids = tunnels, body, constants, body_ids
         self.copies = self._splitter_copies()
+        self.fused = self._contact_groups()
         # Labels already used by any Tunnel of this definition (case-insensitive):
         # a synthesised label must not merge a net into an existing one.
         self.used_labels = {str(el.find("a[@name='label']").get("val")).lower() for el in self.circuit.findall("comp")
@@ -604,6 +605,78 @@ class SchematicLayout:
                     served[min(group, key=lambda g: (abs(at(g)[0] - x) + abs(at(g)[1] - y), g))].append(port)
             copies[key] = [(port, rest) for port, rest in served.items() if rest]
         return copies
+
+    def _contact_groups(self):
+        """Parts drawn port to port on two or more ports -- a Splitter set on
+        a decoder's outputs, a bus split right at a display -- are one rigid
+        piece: moved apart, every shared port becomes a wire of its own (a
+        decoder and its Splitter, 32 ports, drawn as 32 crossing wires).
+        Returns {part: the part it moves with}. That host is a clocked part
+        when there is one (it stays a stage boundary), else the largest part
+        that is not a Splitter."""
+        at = defaultdict(set)
+        for c in self.body:
+            if c["factoryName"] in ("Text", "Constant"):
+                continue
+            for e in c["ends"]:
+                at[(e["location"]["x"], e["location"]["y"])].add(c["componentId"])
+        shared = defaultdict(int)
+        for cids in at.values():
+            ordered = sorted(cids)
+            for i, a in enumerate(ordered):
+                for b in ordered[i + 1:]:
+                    shared[(a, b)] += 1
+        pieces = _UnionFind()
+        members = set()
+        for (a, b), n in shared.items():
+            if n >= 2:
+                pieces.join(a, b)
+                members.update((a, b))
+        by_piece = defaultdict(list)
+        for cid in sorted(members):
+            by_piece[pieces.root(cid)].append(cid)
+
+        def rank(cid):
+            b = self.by_id[cid]["bounds"]
+            return (self._is_storage(cid), self.by_id[cid]["factoryName"] != "Splitter", b["width"] * b["height"], cid)
+
+        fused = {}
+        for cids in by_piece.values():
+            host = max(cids, key=rank)
+            fused.update({cid: host for cid in cids if cid != host})
+        return fused
+
+    def _fused_view(self):
+        """by_id, nets, body, body_ids and copies as placement sees them: each
+        fused piece (see _contact_groups) is its host with the members' union
+        box and all their ports, a net inside one piece has one port."""
+        by_id, remap = dict(self.by_id), {}
+        for host in set(self.fused.values()):
+            parts = [host] + sorted(p for p, h in self.fused.items() if h == host)
+            boxes = [self.by_id[m]["bounds"] for m in parts]
+            x0, y0 = min(b["x"] for b in boxes), min(b["y"] for b in boxes)
+            x1, y1 = max(b["x"] + b["width"] for b in boxes), max(b["y"] + b["height"] for b in boxes)
+            ends, seen = [], {}
+            for m in parts:
+                for e in self.by_id[m]["ends"]:
+                    loc = (e["location"]["x"], e["location"]["y"], _key(e.get("netBits") or []))
+                    if loc not in seen:            # ports drawn onto each other are one port of the piece
+                        seen[loc] = len(ends)
+                        ends.append(dict(e, index=len(ends)))
+                    remap[(m, e["index"])] = (host, seen[loc])
+            by_id[host] = dict(self.by_id[host], bounds={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}, ends=ends)
+        nets = {}
+        for key, ports in self.nets.items():
+            mapped = []
+            for port in ports:
+                port = remap.get(port, port)
+                if port not in mapped:
+                    mapped.append(port)
+            nets[key] = mapped
+        body = [by_id[c["componentId"]] for c in self.body if c["componentId"] not in self.fused]
+        copies = {key: [(remap.get(copy, copy), [remap.get(p, p) for p in served]) for copy, served in groups]
+                  for key, groups in self.copies.items()}
+        return by_id, nets, body, self.body_ids - set(self.fused), copies
 
     # ---- labels ------------------------------------------------------------------
     def _labels_for(self, key):
@@ -1218,6 +1291,23 @@ class SchematicLayout:
                 ids[i] = cid
 
     def _place(self):
+        """Placement of the fused pieces (see _contact_groups): each is placed
+        as one part and all its members move with it, so the ports drawn onto
+        each other stay on each other and need no wire."""
+        if not self.fused:
+            return self._place_pieces()
+        own = self.by_id, self.nets, self.body, self.body_ids, self.copies
+        self.by_id, self.nets, self.body, self.body_ids, self.copies = self._fused_view()
+        try:
+            placement = self._place_pieces()
+        finally:
+            self.by_id, self.nets, self.body, self.body_ids, self.copies = own
+        for part, host in self.fused.items():
+            placement[part] = placement[host]
+            self.layer[part] = self.layer[host]
+        return placement
+
+    def _place_pieces(self):
         """Placement, keeping the pinout (_pinout_ranks). Output Pins usually
         stand in different columns, next to what drives them; when that puts
         two of one facing out of order, the placement is redone with every
