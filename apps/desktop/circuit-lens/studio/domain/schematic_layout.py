@@ -90,6 +90,7 @@ CONTROLLER_RE = re.compile(r"控制器|controller|control\s*unit", re.I)
 COMPACT_GAP = 60            # air right of a part after compaction (hand-drawn: median gap to the right neighbour)
 COMPACT_MARGIN = 40         # parts closer than this vertically face each other (< ROW_GAP: a stack does not)
 COMPACT_ALIGN = 40          # a compacted part moves right up to this far to share a placed part's left edge
+LAYER_SPLIT = 2.5           # a layer this many times taller than the column budget becomes side-by-side columns
 # Hand-drawn sheets are no denser than this (bodies per million px², by body
 # count: a small circuit gets more air than a CPU); compaction stops there.
 DENSITY_MAX = ((12, 210), (20, 165), (100, 100), (math.inf, 75))
@@ -946,6 +947,25 @@ class SchematicLayout:
         widths = []
         for l in sorted(by_layer):
             ids = by_layer[l]
+            if stack_height(ids) > budget * LAYER_SPLIT and not any(cid in row or cid in self.pin_rank for cid in ids):
+                # Parts of one depth do not feed each other, so a layer of many
+                # (six processor instances side by side on a test sheet) need
+                # not be one column 20 times taller than wide: it becomes
+                # columns of the budget's height, filled in the author's
+                # top-to-bottom order. Pins whose order is the instance's port
+                # order stay one column (side by side they would interleave).
+                chunk = []
+                for cid in sorted(ids, key=lambda c: (self.by_id[c]["location"]["y"], self.by_id[c]["location"]["x"])) + [None]:
+                    if chunk and (cid is None or stack_height(chunk + [cid]) > budget):
+                        col += 1
+                        widths.append(max(self.by_id[c]["bounds"]["width"] for c in chunk))
+                        for c in chunk:
+                            column[c], offset[c] = col, 0
+                        chunk = []
+                    if cid is not None:
+                        chunk.append(cid)
+                members = list(ids)
+                continue
             is_reg = any(cid in storage for cid in ids)
             two_on_row = any(cid in row for cid in ids) and any(cid in row for cid in members)
             if col < 0 or is_reg or two_on_row or any(cid in storage for cid in members) or stack_height(members + ids) > budget:

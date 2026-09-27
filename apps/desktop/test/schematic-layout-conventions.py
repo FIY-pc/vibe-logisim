@@ -16,6 +16,9 @@ HUST CPUs, 2026-09-25):
     the mux it feeds; input Pins stay at the left edge.
   - A chain of parts wired output to input across neighbouring columns is
     drawn straight, output Pins included (their order is the pinout).
+  - A layer far taller than the column budget (many instances of one
+    subcircuit on a test sheet) becomes several columns in the author's
+    top-to-bottom order; a layer of ordered interface Pins stays one column.
   - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
     is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
     and RAM left to right on one row, centres level; the controller above
@@ -169,6 +172,31 @@ class SpineRoles(unittest.TestCase):
         roles = self.spine(parts, nets=[[('rf', 0), ('alu', 0)], [('alu', 1), ('ram', 0)], [('pc', 0), ('add', 0)]])
         self.assertEqual(roles['alu'], 'ALU')
         self.assertNotIn('add', roles)
+
+
+class TallLayersSplit(unittest.TestCase):
+    def pack(self, n, ranked=False):
+        by_id, layer = {'src': comp('src', 'Pin', 0, 0, [])}, {'src': 0}
+        for i in range(n):
+            by_id[f'p{i}'] = comp(f'p{i}', 'AND Gate', 0, 100 * (n - i), [], height=60)   # authored bottom-up
+            layer[f'p{i}'] = 1
+        pin_rank = {f'p{i}': i for i in range(n)} if ranked else {}
+        layout = bare(by_id=by_id, row_gap=20, column_height=200, stagger=10, spine={}, pin_rank=pin_rank)
+        column, _offset = layout._pack_columns(layer)
+        return column
+
+    def test_a_layer_of_many_becomes_columns_in_the_authors_order(self):
+        column = self.pack(10)
+        self.assertEqual(column['src'], 0)
+        self.assertEqual([column[f'p{i}'] for i in range(9, -1, -1)], [1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+
+    def test_a_short_layer_stays_one_column(self):
+        column = self.pack(5)
+        self.assertEqual({column[f'p{i}'] for i in range(5)}, {1})
+
+    def test_ordered_pins_stay_one_column(self):
+        column = self.pack(10, ranked=True)
+        self.assertEqual({column[f'p{i}'] for i in range(10)}, {1})
 
 
 class CompactKeepsTheRowApart(unittest.TestCase):
