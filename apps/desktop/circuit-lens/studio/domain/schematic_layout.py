@@ -51,6 +51,7 @@ import re
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
+from studio.domain.compaction import compact_x
 from studio.domain.routing import Router, Partition
 
 GRID = 10
@@ -89,6 +90,9 @@ CONTROLLER_RE = re.compile(r"控制器|controller|control\s*unit", re.I)
 COMPACT_GAP = 60            # air right of a part after compaction (hand-drawn: median gap to the right neighbour)
 COMPACT_MARGIN = 40         # parts closer than this vertically face each other (< ROW_GAP: a stack does not)
 COMPACT_ALIGN = 40          # a compacted part moves right up to this far to share a placed part's left edge
+# Hand-drawn sheets are no denser than this (bodies per million px², by body
+# count: a small circuit gets more air than a CPU); compaction stops there.
+DENSITY_MAX = ((12, 210), (20, 165), (100, 100), (math.inf, 75))
 TUNNEL_SPAN = {1: 800, 2: 600, 3: 500}   # driver->consumer distance (px) above which a named net is tunnelled, by fan-out (corpus 50% points)
 UNNAMED_SPAN_FACTOR = 2     # an unnamed net (label synthesised) is wired up to this multiple of the limit
 CROSSING_COST = 100         # router cost of crossing a foreign wire during a re-layout (manual edits keep 24)
@@ -117,6 +121,42 @@ LABEL_ABBREVIATIONS = {"Multiplexer": "MUX", "Demultiplexer": "DMX", "Decoder": 
 def _loc(text):
     x, y = map(int, re.findall(r"-?\d+", text))
     return x, y
+
+
+def _attr_of(element, name):
+    """An attribute of a <comp> element as written in the file."""
+    for a in element.findall("a"):
+        if a.get("name") == name:
+            return a.get("val")
+    return None
+
+
+def _text_width(text):
+    """Rough width of a label in Logisim's default font (CJK about twice as wide)."""
+    return sum(12 if ord(ch) > 0x2E80 else 7 for ch in text) + 10
+
+
+def _estimated_geometry(element, x, y):
+    """Boxes and ports of a component written by the layout itself (a
+    Tunnel or Constant has no observation yet): Logisim draws a Tunnel's or
+    Constant's body on the side opposite its facing, from the connection point."""
+    name, facing = element.get("name"), _attr_of(element, "facing") or "east"
+    if name == "Tunnel":
+        w, h = _text_width(_attr_of(element, "label") or ""), 20
+    elif name == "Constant":
+        bits = int(_attr_of(element, "width") or 1)
+        w, h = 16 + 10 * max(0, (bits + 3) // 4 - 2), 16
+    else:
+        return [(x - 10, y - 10, x + 10, y + 10)], [(x, y)]
+    if facing == "east":
+        box = (x - w, y - h // 2, x, y + h // 2)
+    elif facing == "west":
+        box = (x, y - h // 2, x + w, y + h // 2)
+    elif facing == "north":
+        box = (x - w // 2, y, x + w // 2, y + h)
+    else:
+        box = (x - w // 2, y - h, x + w // 2, y)
+    return [box], [(x, y)]
 
 
 def _attr(component, name):
@@ -310,6 +350,7 @@ class SchematicLayout:
         self.stack_slack = STACK_SLACK
         self.gap_cap = GAP_CAP
         self.compact_gap = COMPACT_GAP
+        self.sheet_gap = COMPACT_GAP            # least air between parts on the routed sheet (see _compact_sheet); 0 turns that off
         self.spine = {}                      # single-cycle CPU roles found by _layers (see _spine)
         self.settled = False                 # second CPU placement: keep the wire/Tunnel decisions (see _place_settled)
         self.panel_below_y = panel_below_y if panel_below_y is not None else self._detect_panel()
@@ -2188,9 +2229,106 @@ class SchematicLayout:
                     circuit.remove(drv_el)
         for a, b in self.wires:
             ET.SubElement(circuit, "wire", {"from": f"({a[0]},{a[1]})", "to": f"({b[0]},{b[1]})"})
+        if self.sheet_gap:
+            self._compact_sheet(circuit)
         # Only this definition is rewritten; everything else in the file stays
         # byte for byte (a student diffing their file sees one circuit change).
         return splice_circuit(self.source, self.circuit_name, circuit)
+
+    def _compact_sheet(self, circuit):
+        """Squeeze the air out of the routed sheet (compaction.compact_x):
+        everything below the panel moves left as far as its neighbours at the
+        same height allow, keeping every left-to-right order where heights
+        overlap, so crossings, bends and connectivity stay exactly as routed.
+        Geometry of a part comes from its observation; Tunnels and Constants
+        written by emit are estimated from their label and width."""
+        cid_of = {id(el): cid for cid, el in self.element_of.items()}
+        panel = self.panel_below_y
+        comps, elements = [], []
+        for el in circuit.findall("comp"):
+            x, y = _loc(el.get("loc"))
+            c = self.by_id.get(cid_of.get(id(el)))
+            if c is not None:
+                ox, oy = x - c["location"]["x"], y - c["location"]["y"]
+                b = c["bounds"]
+                boxes = [(b["x"] + ox, b["y"] + oy, b["x"] + ox + b["width"], b["y"] + oy + b["height"])]
+                ports = [(e["location"]["x"] + ox, e["location"]["y"] + oy) for e in c["ends"]]
+            else:
+                boxes, ports = _estimated_geometry(el, x, y)
+            label = _attr(c, "label") if c is not None else None
+            if label and c["factoryName"] == "Pin":
+                x0, y0, x1, y1 = boxes[0]
+                w = _text_width(label)
+                side = _attr(c, "labelloc") or "west"
+                if side == "west":
+                    boxes.append((x0 - w, y0, x0, y1))
+                elif side == "east":
+                    boxes.append((x1, y0, x1 + w, y1))
+            fixed = panel is not None and max(bx[3] for bx in boxes) < panel
+            comps.append({"boxes": boxes, "ports": ports or [(x, y)], "fixed": fixed,
+                          "cling": el.get("name") in ("Tunnel", "Constant")})
+            elements.append(el)
+        wires, wire_elements = [], []
+        for w in circuit.findall("wire"):
+            a, b = _loc(w.get("from")), _loc(w.get("to"))
+            wires.append((a, b, panel is not None and max(a[1], b[1]) < panel))
+            wire_elements.append(w)
+        # The Pins of a north or south edge are an instance's ports in x order,
+        # and a consumer that read left to right from its driver keeps doing
+        # so (over a label no wire holds them apart; a wire that turns back
+        # does not either).
+        edge_pins = sorted((comps[i]["ports"][0][0], i) for i, el in enumerate(elements)
+                           if el.get("name") == "Pin" and _attr_of(el, "facing") in ("north", "south"))
+        keep = [((i, xi), (j, xj)) for (xi, i), (xj, j) in zip(edge_pins, edge_pins[1:])]
+        index = {cid_of[id(el)]: i for i, el in enumerate(elements) if id(el) in cid_of}
+        for key in self.nets:
+            ends = [(cid, idx) for cid, idx in self.nets[key] if cid in index and cid in self.moved]
+            drivers = [(index[cid], self.moved[cid]["ends"][idx]["location"]["x"]) for cid, idx in ends
+                       if self.by_id[cid]["ends"][idx].get("direction") == "output"]
+            consumers = [(index[cid], self.moved[cid]["ends"][idx]["location"]["x"]) for cid, idx in ends
+                         if self.by_id[cid]["ends"][idx].get("direction") == "input"]
+            keep += [(d, c) for d in drivers for c in consumers if c[1] > d[1]]
+        bodies = [i for i, (c, el) in enumerate(zip(comps, elements)) if not c["fixed"] and el.get("name") not in ("Tunnel", "Text")]
+        if not bodies:
+            return
+        boxes = [comps[i]["boxes"][0] for i in bodies]
+        width = max(b[2] for b in boxes) - min(b[0] for b in boxes)
+        height = max(b[3] for b in boxes) - min(b[1] for b in boxes)
+        cap = next(v for n, v in DENSITY_MAX if len(bodies) < n)
+        min_width = len(bodies) * 1e6 / (cap * max(height, 1))
+        if width <= min_width:
+            return                              # already as dense as hand-drawn sheets get
+        dx, moved = compact_x(comps, wires, part_gap=self.sheet_gap, keep_order=keep, min_width=min_width, extent_parts=bodies)
+        pins = {}
+        for el, d in zip(elements, dx):
+            if d:
+                x, y = _loc(el.get("loc"))
+                el.set("loc", f"({x + d},{y})")
+                if el.get("name") == "Pin":
+                    pins[(x, y)] = (x + d, y)
+                cid = cid_of.get(id(el))
+                if cid is not None:
+                    px, py = self.placement.get(cid, (0, 0))
+                    self.placement[cid] = (px + d, py)      # the whole move, as callers map parts by it
+                if cid in self.moved:
+                    m = self.moved[cid]
+                    m["location"] = {"x": m["location"]["x"] + d, "y": m["location"]["y"]}
+                    m["bounds"] = dict(m["bounds"], x=m["bounds"]["x"] + d)
+                    m["ends"] = [dict(e, location={"x": e["location"]["x"] + d, "y": e["location"]["y"]}) for e in m["ends"]]
+        for w, (a, b) in zip(wire_elements, moved):
+            w.set("from", f"({a[0]},{a[1]})")
+            w.set("to", f"({b[0]},{b[1]})")
+        appear = circuit.find("appear")
+        for port in appear.iter("circ-port") if appear is not None else ():
+            try:
+                old = tuple(int(v) for v in port.get("pin", "").split(","))
+            except ValueError:
+                continue
+            if old in pins:
+                port.set("pin", "%d,%d" % pins[old])
+        before = max((bx[2] for c in comps for bx in c["boxes"]), default=0)
+        after = max((bx[2] + d for c, d in zip(comps, dx) for bx in c["boxes"]), default=0)
+        self.report["sheetCompactedPx"] = before - after
 
 
 def netlist_signature(focus, *, ignore_factories=("Tunnel",)):
