@@ -10,8 +10,14 @@ HUST CPUs, 2026-09-25):
     ◇MEM/WB, 流水IF ...) and belong to the stage they feed.
   - _compact merges single-part layers leftwards except into or out of a
     register layer, so a stage boundary keeps its own column.
+  - A routing channel is sized by the wired nets that span it, once per net.
+  - Without pipeline stages, a part moves right towards its consumers when
+    that shortens its wires, so an extender or a constant chain stands beside
+    the mux it feeds; input Pins stay at the left edge.
+  - A chain of parts wired output to input across neighbouring columns is
+    drawn straight, output Pins included (their order is the pinout).
 
-No model. Shapes are synthesised; only the lead test observes natively.
+No model. Shapes are synthesised; the lead and chain tests observe natively.
 """
 import sys
 import tempfile
@@ -127,6 +133,55 @@ class SpanDemotion(unittest.TestCase):
         self.assertEqual(self.net([3, 3], named=False, max_layer_span=2), 'tunnel')
 
 
+class Channels(unittest.TestCase):
+    def test_every_net_spanning_a_channel_widens_it_once(self):
+        channel = bare()._channels({'d': 0, 'f1': 1, 'c': 2, 'e': 2}, [[('d', 0), ('c', 0), ('e', 0)]])
+        self.assertEqual([channel(l) for l in range(2)], [70, 70])      # 60 + 8, on the grid; two consumers count once
+        self.assertEqual(channel(2), CHANNEL_MIN)
+        wide = bare()._channels({f'd{i}': 0 for i in range(30)} | {'c': 1}, [[(f'd{i}', 0), ('c', i)] for i in range(30)])
+        self.assertEqual(wide(0), COLUMN_GAP)                # never wider than the column gap
+
+
+class Balance(unittest.TestCase):
+    """Right to left, a part moves up to just before its nearest consumer when
+    that shortens its wires; the "even" rule also moves parts whose wires only
+    stay as long (_arrange draws both and keeps the cheaper drawing)."""
+
+    def run_balance(self, factories, forward, depth, balance='chains'):
+        layout = bare(by_id={cid: comp(cid, f, 0, 0, []) for cid, f in factories.items()}, balance=balance, even_moves=0)
+        depth = dict(depth)
+        layout._balance(depth, {u: set(vs) for u, vs in forward.items()})
+        return depth
+
+    CHAIN = {'a': {'b'}, 'b': {'c'}, 'c': {'d'}, 'd': {'e'}}
+    DEPTH = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4}
+
+    def test_a_source_moves_next_to_its_consumer(self):
+        parts = {c: 'AND Gate' for c in 'abcdes'}
+        depth = self.run_balance(parts, {**self.CHAIN, 's': {'e'}}, {**self.DEPTH, 's': 0})
+        self.assertEqual(depth['s'], 3)
+        self.assertEqual([depth[c] for c in 'abcde'], [0, 1, 2, 3, 4])
+
+    def test_a_chain_follows_its_last_part(self):
+        parts = {c: 'AND Gate' for c in 'abcdetu'}
+        depth = self.run_balance(parts, {**self.CHAIN, 't': {'u'}, 'u': {'e'}}, {**self.DEPTH, 't': 0, 'u': 1})
+        self.assertEqual((depth['t'], depth['u']), (2, 3))
+
+    def test_a_link_whose_producer_cannot_follow_moves_only_when_even(self):
+        parts = {c: 'AND Gate' for c in 'abcdem'}
+        forward = {**self.CHAIN, 'a': {'b', 'm'}, 'm': {'e'}}      # a also feeds b: it cannot follow m
+        depth = {**self.DEPTH, 'm': 1}
+        self.assertEqual(self.run_balance(parts, forward, depth)['m'], 1)
+        self.assertEqual(self.run_balance(parts, forward, depth, 'even')['m'], 3)
+
+    def test_input_pins_and_parts_with_more_producers_stay(self):
+        parts = {**{c: 'AND Gate' for c in 'abcdex'}, 'p': 'Pin', 'q': 'Pin'}
+        depth = self.run_balance(parts, {**self.CHAIN, 'p': {'e'}, 'q': {'x'}, 'a': {'b', 'x'}, 'x': {'e'}},
+                                 {**self.DEPTH, 'p': 0, 'q': 0, 'x': 1})
+        self.assertEqual(depth['p'], 0)
+        self.assertEqual(depth['x'], 1)                      # two producers (a, q), one consumer
+
+
 class TunnelLeads(unittest.TestCase):
     """emit() puts every Tunnel one grid cell off its port on a lead wire; the
     net is unchanged (checked by native re-observation)."""
@@ -187,6 +242,80 @@ class TunnelLeads(unittest.TestCase):
         self.assertEqual(nets_of_inputs, {pins['A'], pins['C']})
         not_gate = next(c for c in after['components'] if c['factoryName'] == 'NOT Gate')
         self.assertEqual(pins['Y'], net(next(e for e in not_gate['ends'] if e['direction'] == 'output')))
+
+
+def xml_pin(x, y, label, out=False):
+    extra = '<a name="output" val="true"/>' if out else ''
+    return (f'<comp lib="0" name="Pin" loc="({x},{y})"><a name="facing" val="{"west" if out else "east"}"/>{extra}'
+            f'<a name="label" val="{label}"/></comp>' + xml_tunnel(x, y, label.lower(), 'east' if out else 'west'))
+
+
+def xml_tunnel(x, y, label, facing):
+    return f'<comp lib="0" name="Tunnel" loc="({x},{y})"><a name="facing" val="{facing}"/><a name="label" val="{label}"/></comp>'
+
+
+def xml_gate(kind, x, y, inputs, output):
+    two = len(inputs) == 2
+    body = f'<comp lib="1" name="{kind}" loc="({x},{y})"><a name="size" val="30"/>' + ('<a name="inputs" val="2"/>' if two else '') + '</comp>'
+    ys = (y - 10, y + 10) if two else (y,)
+    return body + ''.join(xml_tunnel(x - 30, yy, label, 'east') for yy, label in zip(ys, inputs)) + xml_tunnel(x, y, output, 'west')
+
+
+class StraightChains(unittest.TestCase):
+    """Two chains AND -> NOT -> OR -> output Pin, drawn with Tunnels only and
+    the parts scattered: after the layout every wire of a chain is one
+    horizontal segment (output port level with the input it feeds, the
+    output Pins included and still in their order), every part is on the
+    grid, and the nets are unchanged (native re-observation)."""
+
+    SRC = ('<project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><lib desc="#Gates" name="1"/><main name="main"/>'
+           '<circuit name="main">'
+           + xml_pin(100, 100, 'A') + xml_pin(100, 200, 'B') + xml_pin(100, 300, 'S')
+           + xml_gate('AND Gate', 400, 900, ['a', 'b'], 'p1') + xml_gate('NOT Gate', 600, 700, ['p1'], 'q1') + xml_gate('OR Gate', 800, 500, ['q1', 's'], 'y1')
+           + xml_gate('AND Gate', 400, 500, ['b', 's'], 'p2') + xml_gate('NOT Gate', 600, 1100, ['p2'], 'q2') + xml_gate('OR Gate', 800, 1300, ['q2', 'a'], 'y2')
+           + xml_pin(1000, 100, 'Y1', out=True) + xml_pin(1000, 200, 'Y2', out=True)
+           + '</circuit></project>')
+    CHAINS = [('AND Gate', 400, 900), ('NOT Gate', 600, 700), ('OR Gate', 800, 500), ('Pin', 1000, 100)], \
+             [('AND Gate', 400, 500), ('NOT Gate', 600, 1100), ('OR Gate', 800, 1300), ('Pin', 1000, 200)]
+
+    def test_chains_are_straight_on_the_grid_and_equivalent(self):
+        from studio.application.workspace import Workspace
+        with tempfile.TemporaryDirectory(prefix='vibe-chains-') as tmp:
+            root = Path(tmp)
+            src = root / 'chains.circ'
+            src.write_text(self.SRC, encoding='utf-8')
+            w = Workspace(REPO, root / 'state', REPO / 'apps/desktop/circuit-lens/lensctl.py', 'chains')
+            try:
+                w.open_path(src)
+                before = w.observer.run_full(src, 'main')['focus']
+                layout = SchematicLayout(self.SRC, 'main', before)
+                out = root / 'after.circ'
+                out.write_text(layout.emit(), encoding='utf-8')
+                after = w.observer.run_full(out, 'main')['focus']
+            finally:
+                w.close()
+
+        def moved(factory, x, y):
+            return next(c for c in layout.moved.values() if c['factoryName'] == factory
+                        and (c['location']['x'] - layout.placement[c['componentId']][0], c['location']['y'] - layout.placement[c['componentId']][1]) == (x, y))
+
+        for chain in self.CHAINS:
+            parts = [moved(*p) for p in chain]
+            for a, b in zip(parts, parts[1:]):
+                out_y = next(e['location']['y'] for e in a['ends'] if e['direction'] == 'output')
+                in_ys = [e['location']['y'] for e in b['ends'] if e['direction'] == 'input']
+                self.assertIn(out_y, in_ys, f"{a['factoryName']} -> {b['factoryName']} is not a straight wire")
+        for c in layout.moved.values():
+            if c['componentId'] in layout.layer:
+                self.assertEqual((c['location']['x'] % 10, c['location']['y'] % 10), (0, 0), c['factoryName'])
+        pins = {_attr(c, 'label'): c for c in after['components'] if c['factoryName'] == 'Pin'}
+        self.assertLess(pins['Y1']['location']['y'], pins['Y2']['location']['y'], 'the output Pins changed order')
+
+        def net(c, direction):
+            return tuple(sorted(b['netId'] for e in c['ends'] if e['direction'] == direction for b in e.get('netBits') or []))
+        ors = sorted((c for c in after['components'] if c['factoryName'] == 'OR Gate'), key=lambda c: c['location']['y'])
+        self.assertEqual(net(ors[0], 'output'), net(pins['Y1'], 'input'))
+        self.assertEqual(net(ors[1], 'output'), net(pins['Y2'], 'input'))
 
 
 if __name__ == '__main__':
