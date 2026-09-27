@@ -16,7 +16,9 @@ object is constrained only by its nearest neighbour to the left at each
 height (found with a sweep over the objects in x order), and the smallest
 shifts that satisfy all constraints are found by relaxation. Objects that are
 attached to each other (a part and its ports, a vertical run and the port it
-leaves from, collinear runs that meet) move as one group.
+leaves from, collinear runs that meet) move as one group, and so do the parts
+of a column: parts that share a left edge move by one shift, since a column
+pulled into a stagger reads worse than the air it saves.
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ from collections import defaultdict
 GRID = 10
 
 
-def compact_x(components, wires, *, part_gap=30, grid=GRID, keep_order=(), min_width=0, extent_parts=None):
+def compact_x(components, wires, *, part_gap=30, grid=GRID, keep_order=(), min_width=0, extent_parts=None, together=()):
     """components: list of {"boxes": [(x0, y0, x1, y1)], "ports": [(x, y)],
     "fixed": bool}; wires: list of ((ax, ay), (bx, by), fixed) with every wire
     horizontal or vertical. keep_order: pairs ((i, xi), (j, xj)) -- a point
@@ -34,6 +36,9 @@ def compact_x(components, wires, *, part_gap=30, grid=GRID, keep_order=(), min_w
     point at xj of component j whatever their heights (Pins whose order is
     an instance's port order; a driver and a consumer joined by a label, whose
     left-to-right reading no wire holds).
+
+    together: lists of component indices that move by the same shift (a
+    column of parts that share a left edge stays a column).
 
     min_width: the boxes of the components in extent_parts (all when None)
     stay at least this wide from leftmost to rightmost (a density cap); the
@@ -113,6 +118,10 @@ def compact_x(components, wires, *, part_gap=30, grid=GRID, keep_order=(), min_w
             point_node[p] = node
             if fixed:
                 fixed_nodes.add(node)
+
+    for members in together:
+        for i in members[1:]:
+            join(("c", members[0]), ("c", i))
 
     # A label or constant on a short lead stays on its port: it is read as
     # part of that port, and a lead stretched across the sheet reads as a wire.

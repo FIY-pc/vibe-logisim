@@ -1,6 +1,7 @@
 """Routed-sheet compaction (studio/domain/compaction.py): parts, labels and
 vertical runs move left only, things at overlapping heights keep their order
-and at least a grid step apart, so crossings and connectivity stay as routed.
+and at least a grid step apart, so crossings and connectivity stay as routed;
+parts that shared a left edge still do.
 Pure geometry, no model, no JVM."""
 import sys
 import unittest
@@ -74,6 +75,16 @@ class Compaction(unittest.TestCase):
         dx, moved = compact_x([a, b, label], [((640, 120), (650, 120), False)], part_gap=60)
         self.assertEqual(dx[1], dx[2])
         self.assertEqual(moved[0][1][0] - moved[0][0][0], 10)
+
+    def test_a_column_moves_as_one(self):
+        # b and c share a left edge; only c has a neighbour (a) at its height,
+        # so alone b would slide to the sheet's edge and c would stop at a
+        a = part(100, 100)
+        b = part(500, 300)
+        c = part(500, 100)
+        dx, _ = compact_x([a, b, c], [], part_gap=60, together=[[1, 2]])
+        self.assertEqual(dx[1], dx[2])
+        self.assertEqual(500 + dx[2], 200)
 
     def test_no_denser_than_min_width(self):
         parts = [part(100 + 400 * i, 100 * (i % 2)) for i in range(4)]

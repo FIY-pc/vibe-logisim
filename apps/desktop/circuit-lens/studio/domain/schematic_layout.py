@@ -2614,7 +2614,8 @@ class SchematicLayout:
         """Squeeze the air out of the routed sheet (compaction.compact_x):
         everything below the panel moves left as far as its neighbours at the
         same height allow, keeping every left-to-right order where heights
-        overlap, so crossings, bends and connectivity stay exactly as routed.
+        overlap, so crossings, bends and connectivity stay exactly as routed;
+        parts that share a left edge move together and stay a column.
         Geometry of a part comes from its observation; Tunnels and Constants
         written by emit are estimated from their label and width."""
         cid_of = {id(el): cid for cid, el in self.element_of.items()}
@@ -2673,7 +2674,14 @@ class SchematicLayout:
         min_width = len(bodies) * 1e6 / (cap * max(height, 1))
         if width <= min_width:
             return                              # already as dense as hand-drawn sheets get
-        dx, moved = compact_x(comps, wires, part_gap=self.sheet_gap, keep_order=keep, min_width=min_width, extent_parts=bodies)
+        # Parts that share a left edge (a column, as placed) keep sharing it.
+        columns = defaultdict(list)
+        for i in bodies:
+            if elements[i].get("name") not in CONSTANT_SOURCES:
+                columns[comps[i]["boxes"][0][0]].append(i)
+        together = [members for members in columns.values() if len(members) > 1]
+        dx, moved = compact_x(comps, wires, part_gap=self.sheet_gap, keep_order=keep, min_width=min_width, extent_parts=bodies,
+                              together=together)
         pins = {}
         for el, d in zip(elements, dx):
             if d:
