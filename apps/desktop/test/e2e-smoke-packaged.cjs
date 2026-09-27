@@ -6,6 +6,7 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), assert = require('node:assert/strict');
 const {_electron} = require('playwright'), {waitUntil} = require('./support/wait-until.cjs');
+const {readZip} = require('../electron/diagnostics-bundle.cjs');
 const executable = path.resolve(process.argv[2] || 'missing-packaged-executable');
 assert.ok(fs.existsSync(executable), 'Pass the packaged vibe-logisim executable as the first argument');
 const windows = process.platform === 'win32';
@@ -13,7 +14,8 @@ const root = fs.mkdtempSync(path.join(process.env.VIBE_SMOKE_ROOT || os.tmpdir()
 const folder = path.join(root, '我的电路 workspace'); fs.mkdirSync(folder);
 const out = process.argv[3] ? path.resolve(process.argv[3]) : root; fs.mkdirSync(out, {recursive: true});
 // Electron reads XDG_CONFIG_HOME on Linux and APPDATA on Windows for app.getPath('appData').
-const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config')};
+// No release check against GitHub from CI.
+const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
 delete env.ELECTRON_RUN_AS_NODE; delete env.VIBE_LOGISIM_STATE_DIR; delete env.VIBE_LOGISIM_CODEX; delete env.VIBE_LOGISIM_PYTHON;
 let app, page, phase = 'launch'; const errors = [], log = [];
 const note = m => { const line = `[${new Date().toISOString().slice(11, 19)}] ${m}`; log.push(line); console.log(line); };
@@ -97,8 +99,23 @@ async function launch() {
   phase = 'AI settings dialog opens';
   await page.locator('#agentSettings').click(); await page.locator('#connectionDialog[open]').waitFor(); await page.screenshot({path: path.join(out, '03-ai-settings.png')});
   await page.locator('#connectionClose').click();
+  phase = 'diagnostics bundle';
+  const bundlePath = path.join(root, 'diagnostics.zip');
+  await app.evaluate(({dialog, shell}, file) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: file}); shell.showItemInFolder = () => {}; }, bundlePath);
+  // The IPC behind the dialog's 保存诊断包 button, with the circuit attached.
+  const exported = await page.evaluate(() => window.vibeDesktop.diagnostics.export({includeCircuit: true}));
+  const entries = readZip(fs.readFileSync(bundlePath));
+  note('diagnostics: ' + entries.map(entry => `${entry.name}(${entry.data.length})`).join(', '));
+  assert.equal(exported.entries.length, entries.length);
+  for (const name of ['README.txt', 'summary.txt', 'report.json', 'tool-failures.json', 'logs/vibe-logisim.log', 'circuit/current.circ']) assert.ok(entries.some(entry => entry.name === name), name);
+  const report = JSON.parse(entries.find(entry => entry.name === 'report.json').data);
+  assert.equal(report.app.packaged, true);
+  assert.ok(report.java.version, 'bundled Java answers -version: ' + JSON.stringify(report.java));
+  assert.equal(report.workspace.root.nonAscii, true);
+  const bundleText = entries.map(entry => entry.data.toString('utf8')).join('\n');
+  for (const forbidden of [os.homedir(), folder, '我的电路', '与门验证']) assert.equal(bundleText.includes(forbidden), false, 'bundle contains ' + forbidden);
   assert.deepEqual(errors, []);
-  const result = {platform: process.platform, executable, success: true, modelTurns: 0, truthTable: truth, components: 4, wires: 5, reopened: true, agentStatus: state.status, isolation: state.isolation, log};
+  const result = {platform: process.platform, executable, success: true, modelTurns: 0, truthTable: truth, components: 4, wires: 5, reopened: true, agentStatus: state.status, isolation: state.isolation, diagnosticsEntries: entries.length, log};
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   console.error('FAILED', phase, root, error);

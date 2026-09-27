@@ -6,6 +6,7 @@
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), assert = require('node:assert/strict');
 const {_electron} = require('playwright'), {waitUntil} = require('./support/wait-until.cjs');
+const {readZip} = require('../electron/diagnostics-bundle.cjs');
 const executable = path.resolve(process.argv[2] || 'missing-packaged-executable');
 assert.ok(fs.existsSync(executable), 'Pass the packaged vibe-logisim executable as the first argument');
 const {VIBE_TEST_BASE_URL: baseUrl, VIBE_TEST_API_KEY: apiKey, VIBE_TEST_MODEL: model} = process.env;
@@ -14,7 +15,7 @@ const windows = process.platform === 'win32';
 const root = fs.mkdtempSync(path.join(process.env.VIBE_SMOKE_ROOT || os.tmpdir(), 'vibe-ai-smoke-'));
 const folder = path.join(root, '我的电路'); fs.mkdirSync(folder);
 const out = process.argv[3] ? path.resolve(process.argv[3]) : root; fs.mkdirSync(out, {recursive: true});
-const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config')};
+const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
 for (const k of ['ELECTRON_RUN_AS_NODE', 'VIBE_LOGISIM_STATE_DIR', 'VIBE_LOGISIM_CODEX', 'VIBE_LOGISIM_PYTHON', 'VIBE_TEST_API_KEY']) delete env[k];
 const budgetMs = Number(process.env.VIBE_AI_BUDGET_MINUTES || 10) * 60_000;
 let app, page, phase = 'launch'; const log = [];
@@ -94,7 +95,24 @@ async function waitTurn(label) {
   await page.locator('#fitButton').click().catch(() => {}); await page.waitForTimeout(1500);
   await page.screenshot({path: path.join(out, '02-after-build.png')});
   for (const f of after) fs.copyFileSync(path.join(folder, f.name), path.join(out, f.name));
-  const result = {platform: process.platform, success: true, model, turn1Seconds: t1.seconds, turn2Seconds: t2.seconds, circFiles: after, log};
+  phase = 'diagnostics bundle holds no key';
+  // With a real key saved and two real turns logged, neither the bundle nor
+  // the log files on disk may contain the key in any form.
+  const bundlePath = path.join(root, 'diagnostics.zip');
+  await app.evaluate(({dialog, shell}, file) => { dialog.showSaveDialog = async () => ({canceled: false, filePath: file}); shell.showItemInFolder = () => {}; }, bundlePath);
+  await page.evaluate(() => window.vibeDesktop.diagnostics.export({includeCircuit: true}));
+  const entries = readZip(fs.readFileSync(bundlePath));
+  const userData = await app.evaluate(({app}) => app.getPath('userData'));
+  const logs = fs.readdirSync(path.join(userData, 'logs')).map(name => fs.readFileSync(path.join(userData, 'logs', name), 'utf8'));
+  for (const form of new Set([apiKey, encodeURIComponent(apiKey)])) {
+    for (const entry of entries) assert.equal(entry.data.toString('utf8').includes(form), false, 'API key in diagnostics entry ' + entry.name);
+    assert.equal(logs.some(text => text.includes(form)), false, 'API key in a log file');
+  }
+  const report = JSON.parse(entries.find(entry => entry.name === 'report.json').data);
+  assert.equal(report.ai.connection, 'custom');
+  assert.equal(report.ai.customProvider.keyLength, apiKey.length);
+  note(`diagnostics: ${entries.length} entries, no key; tool failures recorded: ${report.toolFailures}`);
+  const result = {platform: process.platform, success: true, model, turn1Seconds: t1.seconds, turn2Seconds: t2.seconds, circFiles: after, diagnosticsEntries: entries.length, toolFailures: report.toolFailures, log};
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify({...result, log: undefined}));
 } catch (error) {
   console.error('FAILED', phase, error);
