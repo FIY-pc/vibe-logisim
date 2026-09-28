@@ -39,13 +39,15 @@ class Router:
     passages or moving fixed anchors. A route may branch anywhere on its own
     bus. Compressed polylines keep straight crossings from becoming junctions.
     """
-    def __init__(self, document, partition, *, crossing_cost=24, visit_cap=200000):
+    def __init__(self, document, partition, *, crossing_cost=24, visit_cap=200000, bend_cost=18):
         self.partition = partition
         self.visit_cap = visit_cap
         # Cost of crossing a foreign straight wire (one grid step is 10, a bend
-        # 18). Manual edits keep the default; a global re-layout may raise it
-        # so that a short detour beats a crossing.
+        # 18). Manual edits keep the defaults; a global re-layout may raise it
+        # so that a short detour beats a crossing, and the cost of a bend so
+        # that a longer straight run beats a corner.
         self.crossing_cost = crossing_cost
+        self.bend_cost = bend_cost
         self.connected = Partition()
         self.segment_buses = []
         self.segments = []
@@ -90,8 +92,9 @@ class Router:
                 # not a new obstacle: fixed junctions and narrow gaps must
                 # remain routable. A port's outward ray is free only along
                 # its axis; turning immediately at the pin still pays. 40 is
-                # slightly more than two bends (2 * 18), so a small detour can
-                # beat tracing the edge. Overlapping halos do not multiply it.
+                # slightly more than two bends at the default cost (2 * 18), so
+                # a small detour can beat tracing the edge; a re-layout's dear
+                # corners trace it instead. Overlapping halos do not multiply it.
                 for x in range((b["x"] // 10) * 10, b["x"] + b["width"] + 10, 10):
                     for y in range((b["y"] // 10) * 10, b["y"] + b["height"] + 10, 10):
                         for axis in (0, 1):
@@ -204,10 +207,21 @@ class Router:
             raise ValueError(f"无法在目标位置保持连线，请留出更多空间：{target}")
         tx, ty = target
         queue, cost, previous = [], {}, {}
+        bend_cost = self.bend_cost
+
+        def estimate(q, axis):
+            """A lower bound of the cost to the target: its distance, and a
+            corner unless the target is straight ahead (or behind: a U-turn
+            has two). Exact on an empty sheet, so A* stays optimal and a
+            dear corner does not widen the search."""
+            dx, dy = tx - q[0], ty - q[1]
+            straight = (dx == 0 and axis != 0) or (dy == 0 and axis != 1)
+            return abs(dx) + abs(dy) + (0 if straight else bend_cost)
+
         for p in sorted(starts):
             state = (p, -1)
             cost[state] = 0
-            heapq.heappush(queue, (abs(p[0] - tx) + abs(p[1] - ty), 0, state))
+            heapq.heappush(queue, (estimate(p, -1), 0, state))
         end = None
         visits = 0
         # the loop below runs millions of times on a full re-layout: names bound once
@@ -242,7 +256,7 @@ class Router:
                 if foreign_next and (q == target or any(s[1] == axis or s[2] for s in foreign_next)):
                     continue
                 following = (q, axis)
-                new_cost = distance + 10 + (18 if incoming not in (-1, axis) else 0) + (crossing_cost if foreign_next else 0)
+                new_cost = distance + 10 + (bend_cost if incoming not in (-1, axis) else 0) + (crossing_cost if foreign_next else 0)
                 new_cost += max(clearance.get((p, axis), 0), clearance.get((q, axis), 0))
                 # A manually placed segment should end at its new bend, not
                 # become a dangling stub when its connector doubles back.
@@ -252,7 +266,7 @@ class Router:
                     continue
                 cost[following] = new_cost
                 previous[following] = state
-                push(queue, (new_cost + abs(q[0] - tx) + abs(q[1] - ty), new_cost, following))
+                push(queue, (new_cost + estimate(q, axis), new_cost, following))
         if end is None:
             raise ValueError(f"无法在目标位置保持连线，请留出更多空间：{target}")
         path = []

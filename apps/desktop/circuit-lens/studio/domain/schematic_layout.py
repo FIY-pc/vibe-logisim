@@ -105,6 +105,7 @@ DENSITY_MAX = ((12, 210), (20, 165), (100, 100), (math.inf, 75))
 TUNNEL_SPAN = {1: 800, 2: 600, 3: 500}   # driver->consumer distance (px) above which a named net is tunnelled, by fan-out (corpus 50% points)
 UNNAMED_SPAN_FACTOR = 2     # an unnamed net (label synthesised) is wired up to this multiple of the limit
 CROSSING_COST = 100         # router cost of crossing a foreign wire during a re-layout (manual edits keep 24)
+BEND_COST = 400             # ... and of a corner (manual edits keep 18): a reader minds a corner about four times a crossing
 SHELF_WIDTH = 400           # a part at least this wide and 4x wider than tall goes on the shelf above the body
 SHELF_GAP = 120             # between the shelf and the body
 ROUTER_VISIT_CAP = 600000   # A* budget per route on a re-layout (sheets are wider than a manual edit)
@@ -363,6 +364,7 @@ class SchematicLayout:
         # columns. Unnamed nets are always wired (see _place).
         self.max_layer_span = 8
         self.crossing_cost = CROSSING_COST
+        self.bend_cost = BEND_COST
         self.route_order = "short"           # short nets first (long ones detour around them) | "long"
         self.column_height = None            # packed-column height budget; None = from TARGET_ASPECT (see _pack_columns)
         self.stagger = STAGGER
@@ -2352,7 +2354,7 @@ class SchematicLayout:
         def route_all(first):
             """Every job on a fresh router, the nets in `first` before the rest."""
             router = Router({"focus": {"components": focus_components, "wires": kept_wires, "wireBundles": kept_bundles}}, partition,
-                            crossing_cost=self.crossing_cost, visit_cap=ROUTER_VISIT_CAP)
+                            crossing_cost=self.crossing_cost, visit_cap=ROUTER_VISIT_CAP, bend_cost=self.bend_cost)
             # A port that gets several labels chains them outward on 10 px stubs
             # (see emit); those cells are copper of that net, so no other route may
             # run through them.

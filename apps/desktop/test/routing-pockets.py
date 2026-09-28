@@ -1,6 +1,7 @@
 """Router: a target no route can reach is recognised from the few cells
 around it (Router.boxed_in) instead of by flooding the whole sheet, and the
-answer is the one A* gives. Pure geometry, no model, no JVM."""
+answer is the one A* gives; a dear corner (a re-layout's bend cost) buys a
+route with fewer corners. Pure geometry, no model, no JVM."""
 import sys
 import unittest
 from pathlib import Path
@@ -41,6 +42,23 @@ class Pockets(unittest.TestCase):
         owner = r.owner(source['netBits'])
         self.assertFalse(r.boxed_in((100, 100), {(300, 100)}, owner))
         self.assertTrue(r.route(source, target))
+
+
+class Corners(unittest.TestCase):
+    def route(self, bend_cost):
+        # a driver's output at (100, 100) and a consumer's input at (400, 300),
+        # nothing between: two corners take the shortest way round the
+        # consumer's edge, one corner runs along it
+        parts = [part('driver', 60, 80, 40, 40, [(100, 100, 'output', 'n')]),
+                 part('consumer', 400, 280, 40, 40, [(400, 300, 'input', 'n')])]
+        r = Router({'focus': {'components': parts, 'wires': [], 'wireBundles': []}}, Partition(), bend_cost=bend_cost)
+        source = {'location': {'x': 100, 'y': 100}, 'netBits': [{'bit': 0, 'netId': 'n'}]}
+        target = {'location': {'x': 400, 'y': 300}, 'netBits': [{'bit': 0, 'netId': 'n2'}]}
+        return r.route(source, target)
+
+    def test_a_dear_corner_buys_a_route_with_fewer_corners(self):
+        self.assertEqual(len(self.route(18)), 3)          # three segments, two corners
+        self.assertEqual(len(self.route(400)), 2)         # two segments, one corner
 
 
 if __name__ == '__main__':
