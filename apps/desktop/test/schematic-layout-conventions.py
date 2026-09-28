@@ -7,7 +7,8 @@ HUST CPUs, 2026-09-25):
   - A Tunnel never stands on the port itself: one grid cell off it, on a lead
     wire (6 % of 22.7k corpus tunnels sit on the port; humans draw a lead).
     On ports 10 px apart every other lead is longer, so that no two flags
-    lie on top of each other.
+    lie on top of each other; a row on a bottom or top edge turns its flags
+    sideways in a V.
   - Pipeline-register subcircuits are recognised by name (IF/ID, 气泡EX/MEM,
     ◇MEM/WB, 流水IF ...) and belong to the stage they feed.
   - Every depth keeps a layer of its own (_compact renumbers only): a part
@@ -447,9 +448,20 @@ class StaggeredLeads(unittest.TestCase):
     def test_every_other_flag_stands_a_label_further_out(self):
         part = comp('m', 'Multiplexer', 100, 0, [(0, 10 * k, 'input', f'n{k}') for k in range(1, 5)], width=40, height=60)
         layout = bare(by_id={'m': part}, layer={'m': 0}, anchors={('m', k): ['abc'] for k in range(4)})
-        steps = layout._lead_steps({'m': part}, self.Router())
+        steps, turned = layout._lead_steps({'m': part}, self.Router())
         # a flag 'abc' is 31 px long: the second one's tip stands 40 px out
         self.assertEqual([steps[('m', k)] for k in range(4)], [1, 4, 1, 4])
+        self.assertEqual(turned, {})
+
+    def test_a_row_on_a_bottom_edge_turns_its_flags_sideways_in_a_v(self):
+        # upright flags on ports 10 px apart cover the neighbours' leads however
+        # long: the left half points left, the right half right, leads growing
+        # towards the middle so each ends above the flags beside it
+        part = comp('s', 'Splitter', 100, 0, [(10 * k, 20, 'inout', f'n{k}') for k in range(1, 5)], width=50, height=20)
+        layout = bare(by_id={'s': part}, layer={'s': 0}, anchors={('s', k): ['abc'] for k in range(4)})
+        steps, turned = layout._lead_steps({'s': part}, self.Router())
+        self.assertEqual([steps[('s', k)] for k in range(4)], [1, 3, 3, 1])
+        self.assertEqual([turned[('s', k)] for k in range(4)], ['east', 'east', 'west', 'west'])
 
 
 class TunnelLeads(unittest.TestCase):

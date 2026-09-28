@@ -1912,7 +1912,13 @@ class SchematicLayout:
         the flags placed before it: on a column of inputs every other flag
         stands a label further out, its lead in the gap between two flags.
         A lead never runs through a flag, a body, a foreign port or the cell
-        in front of one, and stops at LEAD_MAX (then it stays one cell)."""
+        in front of one, and stops at LEAD_MAX (then it stays one cell).
+        A row of Tunnels on a north or south edge (a Splitter's fan) cannot
+        do that: an upright flag is as wide as its label and covers the
+        neighbours' leads however long they are. Its flags turn sideways in
+        a V -- the left half pointing left with leads growing towards the
+        middle, the right half pointing right -- so every lead ends above
+        the flags beside it. Returns ({port: steps}, {port: turned facing})."""
         fronts = {}
         for c in moved.values():
             if c["factoryName"] in ("Tunnel", "Text") or c["componentId"] not in self.layer:
@@ -1949,7 +1955,75 @@ class SchematicLayout:
             return ((x, y) for x in range(GRID * math.ceil((b[0] + 3) / GRID), int(b[2] - 3) + 1, GRID)
                     for y in range(GRID * math.ceil((b[1] + 3) / GRID), int(b[3] - 3) + 1, GRID))
 
-        taken, steps = set(), {}
+        taken, steps, turned = set(), {}, {}
+
+        def fits(port, n, facing):
+            """(lead and chain cells, flags) of the port's Tunnels n steps out;
+            None when a flag runs into something, False when the lead does
+            (a longer one would too)."""
+            cid, idx = port
+            labels = self.anchors[port]
+            (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
+            owner = router.owner(moved[cid]["ends"][idx].get("netBits") or [])
+            cells = [(px + sx * k, py + sy * k) for k in range(1, n + len(labels))]
+            for q in cells[:n - 1]:
+                if (q in router.blocked or q in taken or any(own != owner for own in router.port_owners.get(q, ()))
+                        or fronts.get(q, port) != port or any(inside(q, f) for f in near((q[0], q[1], q[0], q[1])))):
+                    return False
+            if any(q in router.blocked or q in taken or fronts.get(q, port) != port for q in cells[n - 1:]):
+                return None
+            flags = [box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)]
+            if any(overlap(f, b) for f in flags for b in near(f)) or any(q in taken for f in flags for q in points(f)):
+                return None
+            return cells, flags
+
+        def place(port, n, cells, flags):
+            steps[port] = n
+            for f in flags:
+                for bx in range(int(f[0]) // 100, int(f[2]) // 100 + 1):
+                    for by in range(int(f[1]) // 100, int(f[3]) // 100 + 1):
+                        buckets[(bx, by)].append(f)
+            taken.update(cells)
+
+        rows = defaultdict(list)
+        for port, labels in self.anchors.items():
+            (px, py), facing, _step = self._port_edge(moved[port[0]], port[1])
+            if facing in ("north", "south") and len(labels) == 1:
+                rows[(port[0], facing, py)].append((px, port))
+        for (cid, facing, py), members in sorted(rows.items(), key=lambda kv: str(kv[0])):
+            members.sort()
+            runs = [[members[0]]]
+            for m in members[1:]:
+                if m[0] - runs[-1][-1][0] <= 2 * GRID:
+                    runs[-1].append(m)
+                else:
+                    runs.append([m])
+            for run in runs:
+                upright = [box((px, py + (GRID if facing == "north" else -GRID)), facing, self.anchors[port][0]) for px, port in run]
+                if not any(overlap(a, b) for a, b in zip(upright, upright[1:])):
+                    continue
+                half = (len(run) + 1) // 2
+                plan = [(port, 1 + 2 * rank, "east") if rank < half else (port, 1 + 2 * (len(run) - 1 - rank), "west")
+                        for rank, (_px, port) in enumerate(run)]
+                if max(n for _p, n, _f in plan) > LEAD_MAX:
+                    continue
+                done = []
+                for port, n, side in plan:
+                    fit = fits(port, n, side)
+                    if not fit:
+                        break
+                    done.append((port, n, side, fit))
+                    place(port, n, *fit)
+                if len(done) < len(plan):
+                    for port, n, side, (cells, flags) in done:          # the row stays upright
+                        del steps[port]
+                        taken.difference_update(cells)
+                        for f in flags:
+                            for bx in range(int(f[0]) // 100, int(f[2]) // 100 + 1):
+                                for by in range(int(f[1]) // 100, int(f[3]) // 100 + 1):
+                                    buckets[(bx, by)].remove(f)
+                    continue
+                turned.update((port, side) for port, n, side, _fit in done)
 
         def edge_key(port):
             cid, idx = port
@@ -1957,37 +2031,24 @@ class SchematicLayout:
             return cid, facing, py, px
 
         for port in sorted(self.anchors, key=edge_key):
+            if port in steps:
+                continue
             cid, idx = port
             labels = self.anchors[port]
             (px, py), facing, (sx, sy) = self._port_edge(moved[cid], idx)
-            owner = router.owner(moved[cid]["ends"][idx].get("netBits") or [])
             best = None
             for n in range(1, LEAD_MAX + 1):
-                cells = [(px + sx * k, py + sy * k) for k in range(1, n + len(labels))]
-                q = cells[n - 2] if n > 1 else None
-                if q is not None and (q in router.blocked or q in taken or any(own != owner for own in router.port_owners.get(q, ()))
-                                      or fronts.get(q, port) != port or any(inside(q, f) for f in near((q[0], q[1], q[0], q[1])))):
-                    break                       # the lead cannot pass this cell
-                if any(q in router.blocked or q in taken or fronts.get(q, port) != port for q in cells[n - 1:]):
-                    continue
-                flags = [box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)]
-                if any(overlap(f, b) for f in flags for b in near(f)) or any(q in taken for f in flags for q in points(f)):
-                    continue
-                best = (n, cells, flags)
-                break
+                fit = fits(port, n, facing)
+                if fit is False:
+                    break                       # the lead cannot pass a cell
+                if fit is not None:
+                    best = (n, *fit)
+                    break
             if best is None:
-                n = 1
                 cells = [(px + sx * k, py + sy * k) for k in range(1, len(labels) + 1)]
-                flags = [box(cell, facing, label) for cell, label in zip(cells, labels)]
-            else:
-                n, cells, flags = best
-            steps[port] = n
-            for f in flags:
-                for bx in range(int(f[0]) // 100, int(f[2]) // 100 + 1):
-                    for by in range(int(f[1]) // 100, int(f[3]) // 100 + 1):
-                        buckets[(bx, by)].append(f)
-            taken.update(cells)
-        return steps
+                best = (1, cells, [box(cell, facing, label) for cell, label in zip(cells, labels)])
+            place(port, *best)
+        return steps, turned
 
     def _port_edge(self, moved_component, idx):
         """The body edge a port sits on (as its outward Tunnel facing and the
@@ -2220,7 +2281,7 @@ class SchematicLayout:
             # Those cells are copper of that net; no other route may run through
             # them. They are remembered so emit can tell them from real obstacles.
             reserved = set()
-            leads = self._lead_steps(moved, router) if stagger else {}
+            leads, turned = self._lead_steps(moved, router) if stagger else ({}, {})
             for (cid, idx), labels in self.anchors.items():
                 (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
                 n = leads.get((cid, idx), 1)
@@ -2299,7 +2360,7 @@ class SchematicLayout:
                         else:
                             # constant stub: this consumer falls back to the shared Constant's label.
                             failed_consts.add(port)
-            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets, leads
+            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets, leads, turned
 
         # Ports the router could not reach keep the net by label: emit() puts the
         # net's Tunnel on them and on the routing source, the copper that did
@@ -2317,7 +2378,7 @@ class SchematicLayout:
             plain = route_all(attempt[6], stagger=False)
             if len(plain[5]) < len(attempt[5]):
                 attempt = plain
-        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets, self.lead_steps = attempt
+        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets, self.lead_steps, self.lead_facing = attempt
         self.routed = list(zip(wires, wire_nets))
         self.report["unrouted"].extend(unrouted)
         self.failed_constant_consumers |= failed_consts
@@ -2522,6 +2583,7 @@ class SchematicLayout:
         def anchor_tunnels(cid, idx, labels):
             comp = self.moved[cid]
             (px, py), facing, step = self._port_edge(comp, idx)
+            facing = self.lead_facing.get((cid, idx), facing)
             width = comp["ends"][idx].get("width") or 1
             # The first label one cell off the port on a lead (a Tunnel on the
             # port itself is what a reader of hand-drawn work never sees),
