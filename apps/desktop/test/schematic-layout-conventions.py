@@ -6,6 +6,8 @@ HUST CPUs, 2026-09-25):
     no label to read and is wired up to twice the limit.
   - A Tunnel never stands on the port itself: one grid cell off it, on a lead
     wire (6 % of 22.7k corpus tunnels sit on the port; humans draw a lead).
+    On ports 10 px apart every other lead is longer, so that no two flags
+    lie on top of each other.
   - Pipeline-register subcircuits are recognised by name (IF/ID, 气泡EX/MEM,
     ◇MEM/WB, 流水IF ...) and belong to the stage they feed.
   - Every depth keeps a layer of its own (_compact renumbers only): a part
@@ -407,6 +409,25 @@ class Balance(unittest.TestCase):
                                  {**self.DEPTH, 'p': 0, 'q': 0, 'x': 1})
         self.assertEqual(depth['p'], 0)
         self.assertEqual(depth['x'], 1)                      # two producers (a, q), one consumer
+
+
+class StaggeredLeads(unittest.TestCase):
+    """Tunnels on inputs 10 px apart: every other lead grows until its flag
+    clears the flags beside it, so no two flags lie on top of each other."""
+
+    class Router:
+        blocked, port_owners = set(), {}
+
+        @staticmethod
+        def owner(bits):
+            return tuple(b['netId'] for b in bits)
+
+    def test_every_other_flag_stands_a_label_further_out(self):
+        part = comp('m', 'Multiplexer', 100, 0, [(0, 10 * k, 'input', f'n{k}') for k in range(1, 5)], width=40, height=60)
+        layout = bare(by_id={'m': part}, layer={'m': 0}, anchors={('m', k): ['abc'] for k in range(4)})
+        steps = layout._lead_steps({'m': part}, self.Router())
+        # a flag 'abc' is 31 px long: the second one's tip stands 40 px out
+        self.assertEqual([steps[('m', k)] for k in range(4)], [1, 4, 1, 4])
 
 
 class TunnelLeads(unittest.TestCase):

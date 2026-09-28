@@ -87,6 +87,7 @@ PIPELINE_REGISTER_RE = re.compile(r"^[◇◆●★☆\s]*(?:气泡)?(?:(IF|ID|EX
                                   r"|流水\s*(IF|ID|EX|EXE|MEM|MA|WB)|(IF|ID|EX|EXE|MEM|MA|WB)\s*(?:级)?(?:流水)?寄存器)(?![A-Za-z])", re.I)
 COMPACT_GAP = 60            # air right of a part after compaction (hand-drawn: median gap to the right neighbour)
 LAYER_SPLIT = 2.5           # a layer this many times taller than the column budget becomes side-by-side columns
+LEAD_MAX = 8                # a Tunnel's lead grows up to this many grid steps to clear the flags beside it
 FAN_COLUMNS = 4             # Pins level with the ports they are wired to stand at most this many abreast
 # Hand-drawn sheets are no denser than this (bodies per million px², by body
 # count: a small circuit gets more air than a CPU); compaction stops there.
@@ -1894,6 +1895,91 @@ class SchematicLayout:
             e["location"] = {"x": e["location"]["x"] + dx, "y": e["location"]["y"] + dy}
         return m
 
+    def _lead_steps(self, moved, router):
+        """Grid steps from every anchored port to its first Tunnel. A flag is
+        20 px tall (a north or south one as wide as its label), so on ports
+        10 px apart, flags one cell off every port lie on top of each other.
+        Port by port along each edge, a lead grows until its flag clears
+        the flags placed before it: on a column of inputs every other flag
+        stands a label further out, its lead in the gap between two flags.
+        A lead never runs through a flag, a body, a foreign port or the cell
+        in front of one, and stops at LEAD_MAX (then it stays one cell)."""
+        fronts = {}
+        for c in moved.values():
+            if c["factoryName"] in ("Tunnel", "Text") or c["componentId"] not in self.layer:
+                continue
+            for idx, _end in enumerate(c["ends"]):
+                (px, py), _facing, (sx, sy) = self._port_edge(c, idx)
+                fronts[(px + sx, py + sy)] = (c["componentId"], idx)
+
+        def box(tip, facing, label):
+            w = _text_width(label)
+            x, y = tip
+            return {"east": (x - w, y - 10, x, y + 10), "west": (x, y - 10, x + w, y + 10),
+                    "north": (x - w // 2, y, x + w // 2, y + 20), "south": (x - w // 2, y - 20, x + w // 2, y)}[facing]
+
+        def inside(q, b):
+            return b[0] + 3 <= q[0] <= b[2] - 3 and b[1] + 3 <= q[1] <= b[3] - 3
+
+        def overlap(a, b):
+            return min(a[2], b[2]) - max(a[0], b[0]) >= 3 and min(a[3], b[3]) - max(a[1], b[1]) >= 3
+
+        buckets = defaultdict(list)            # 100 px cells -> flags placed there
+
+        def near(b):
+            seen = set()
+            for bx in range(int(b[0]) // 100, int(b[2]) // 100 + 1):
+                for by in range(int(b[1]) // 100, int(b[3]) // 100 + 1):
+                    for f in buckets.get((bx, by), ()):
+                        if id(f) not in seen:
+                            seen.add(id(f))
+                            yield f
+
+        def points(b):
+            """Grid points a wire may not pass inside the box."""
+            return ((x, y) for x in range(GRID * math.ceil((b[0] + 3) / GRID), int(b[2] - 3) + 1, GRID)
+                    for y in range(GRID * math.ceil((b[1] + 3) / GRID), int(b[3] - 3) + 1, GRID))
+
+        taken, steps = set(), {}
+
+        def edge_key(port):
+            cid, idx = port
+            (px, py), facing, _step = self._port_edge(moved[cid], idx)
+            return cid, facing, py, px
+
+        for port in sorted(self.anchors, key=edge_key):
+            cid, idx = port
+            labels = self.anchors[port]
+            (px, py), facing, (sx, sy) = self._port_edge(moved[cid], idx)
+            owner = router.owner(moved[cid]["ends"][idx].get("netBits") or [])
+            best = None
+            for n in range(1, LEAD_MAX + 1):
+                cells = [(px + sx * k, py + sy * k) for k in range(1, n + len(labels))]
+                q = cells[n - 2] if n > 1 else None
+                if q is not None and (q in router.blocked or q in taken or any(own != owner for own in router.port_owners.get(q, ()))
+                                      or fronts.get(q, port) != port or any(inside(q, f) for f in near((q[0], q[1], q[0], q[1])))):
+                    break                       # the lead cannot pass this cell
+                if any(q in router.blocked or q in taken or fronts.get(q, port) != port for q in cells[n - 1:]):
+                    continue
+                flags = [box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)]
+                if any(overlap(f, b) for f in flags for b in near(f)) or any(q in taken for f in flags for q in points(f)):
+                    continue
+                best = (n, cells, flags)
+                break
+            if best is None:
+                n = 1
+                cells = [(px + sx * k, py + sy * k) for k in range(1, len(labels) + 1)]
+                flags = [box(cell, facing, label) for cell, label in zip(cells, labels)]
+            else:
+                n, cells, flags = best
+            steps[port] = n
+            for f in flags:
+                for bx in range(int(f[0]) // 100, int(f[2]) // 100 + 1):
+                    for by in range(int(f[1]) // 100, int(f[3]) // 100 + 1):
+                        buckets[(bx, by)].append(f)
+            taken.update(cells)
+        return steps
+
     def _port_edge(self, moved_component, idx):
         """The body edge a port sits on (as its outward Tunnel facing and the
         outward grid step), in moved coordinates."""
@@ -2111,8 +2197,9 @@ class SchematicLayout:
             jobs.append((False, 20, ("const", sid), [(sid, 0), (cid, idx)]))
         jobs.sort(key=lambda j: (j[0], j[1]), reverse=(self.route_order == "long"))
 
-        def route_all(first):
-            """Every job on a fresh router, the nets in `first` before the rest."""
+        def route_all(first, stagger=True):
+            """Every job on a fresh router, the nets in `first` before the rest;
+            Tunnel leads staggered (see _lead_steps) unless `stagger` is off."""
             router = Router({"focus": {"components": focus_components, "wires": kept_wires, "wireBundles": kept_bundles}}, partition,
                             crossing_cost=self.crossing_cost, visit_cap=ROUTER_VISIT_CAP, bend_cost=self.bend_cost)
             # A port that gets several labels chains them outward on 10 px stubs
@@ -2124,14 +2211,17 @@ class SchematicLayout:
             # Those cells are copper of that net; no other route may run through
             # them. They are remembered so emit can tell them from real obstacles.
             reserved = set()
+            leads = self._lead_steps(moved, router) if stagger else {}
             for (cid, idx), labels in self.anchors.items():
                 (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
-                lead = (px + sx, py + sy)
-                reserved.add(lead)
-                # the lead belongs to the port's net (its own route may still
-                # leave through it: a bridge port is both routed and labelled)
-                router.port_owners.setdefault(lead, set()).add(router.owner(moved[cid]["ends"][idx].get("netBits") or []))
-                for k in range(2, len(labels) + 1):
+                n = leads.get((cid, idx), 1)
+                for k in range(1, n + 1):
+                    lead = (px + sx * k, py + sy * k)
+                    reserved.add(lead)
+                    # the lead belongs to the port's net (its own route may still
+                    # leave through it: a bridge port is both routed and labelled)
+                    router.port_owners.setdefault(lead, set()).add(router.owner(moved[cid]["ends"][idx].get("netBits") or []))
+                for k in range(n + 1, n + len(labels)):
                     reserved.add((px + sx * k, py + sy * k))
                     router.blocked.add((px + sx * k, py + sy * k))
             # Every other body port keeps the cell in front of it for its own net
@@ -2200,7 +2290,7 @@ class SchematicLayout:
                         else:
                             # constant stub: this consumer falls back to the shared Constant's label.
                             failed_consts.add(port)
-            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets
+            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets, leads
 
         # Ports the router could not reach keep the net by label: emit() puts the
         # net's Tunnel on them and on the routing source, the copper that did
@@ -2213,7 +2303,12 @@ class SchematicLayout:
             retry = route_all(attempt[6])
             if len(retry[5]) < len(attempt[5]):
                 attempt = retry
-        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets = attempt
+        if attempt[5]:
+            # a long lead narrows the way into the wired port beside it
+            plain = route_all(attempt[6], stagger=False)
+            if len(plain[5]) < len(attempt[5]):
+                attempt = plain
+        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets, self.lead_steps = attempt
         self.routed = list(zip(wires, wire_nets))
         self.report["unrouted"].extend(unrouted)
         self.failed_constant_consumers |= failed_consts
@@ -2424,8 +2519,11 @@ class SchematicLayout:
             # further labels chained outward; a taken cell ends the chain and
             # the remaining labels stack on the last free point (distinct
             # labels on one point are all read by Logisim).
+            n = self.lead_steps.get((cid, idx), 1)
+            if not all(free((px + step[0] * k, py + step[1] * k)) for k in range(1, n)):
+                n = 1
             chain = []
-            for k in range(1, len(labels) + 1):
+            for k in range(n, n + len(labels)):
                 q = (px + step[0] * k, py + step[1] * k)
                 if not free(q):
                     break
@@ -2442,7 +2540,7 @@ class SchematicLayout:
                 if (tx, ty) != previous:
                     (ax, ay), (bx, by) = previous, (tx, ty)
                     ET.SubElement(circuit, "wire", {"from": f"({min(ax, bx)},{min(ay, by)})", "to": f"({max(ax, bx)},{max(ay, by)})"})
-                    copper.add((tx, ty))
+                    copper.update(Router.grid(previous, (tx, ty)))
                 previous = (tx, ty)
             return len(labels)
 
