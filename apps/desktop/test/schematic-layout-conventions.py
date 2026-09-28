@@ -31,7 +31,8 @@ HUST CPUs, 2026-09-25):
   - A Splitter joined to a part by three or more two-port nets whose ports
     have the same spacing is drawn port to port (abutment), never onto a
     port of another net; a bit end on the corner of the part's box counts
-    as on either edge.
+    as on either edge, and a copy of a Splitter (a bus split again beside
+    each part it feeds) docks on the part it serves.
   - A Pin facing north (south) whose only wire runs to a port on the bottom
     (top) edge of a part stands right below (above) that port; several stand
     in a row in port order, moved sideways as little as their widths need.
@@ -295,6 +296,24 @@ class Abutment(unittest.TestCase):
 
     def test_never_onto_a_port_of_another_net(self):
         self.assertEqual(self.layout(clash=True)._abutments(), {})
+
+    def test_each_copy_of_a_split_bus_docks_on_the_part_it_serves(self):
+        # a bus split again beside each of two parts: every bit net joins both
+        # Splitters and both parts, and each copy serves the part by it
+        body, nets, copies = [], {}, {}
+        for n, x in ((1, 100), (2, 600)):
+            body.append(comp(f'p{n}', 'Decoder', x, 0, [(10 * k, 40, 'input', f'b{k}') for k in range(1, 5)], width=60, height=40))
+            body.append(comp(f's{n}', 'Splitter', x + 300, 300, [(0, 10, 'inout', 'bus')] + [(10 * k, 0, 'inout', f'b{k}') for k in range(1, 5)],
+                             width=50, height=10))
+        for c in body:
+            for e in c['ends']:
+                nets.setdefault(((0, e['netBits'][0]['netId']),), []).append((c['componentId'], e['index']))
+        for k in range(1, 5):
+            key = ((0, f'b{k}'),)
+            copies[key] = [(('s1', k), [('p1', k - 1)]), (('s2', k), [('p2', k - 1)])]
+        layout = bare(by_id={c['componentId']: c for c in body}, body=body, body_ids={c['componentId'] for c in body}, tunnels={}, fused={},
+                      nets=nets, classes={k: 'wire' for k in nets}, copies=copies)
+        self.assertEqual(layout._abutments(), {'s1': ('p1', (110 - 410, 40 - 300)), 's2': ('p2', (610 - 910, 40 - 300))})
 
     def test_a_bit_end_on_the_corner_is_on_the_edge_too(self):
         # two Splitters face to face (a bus split and joined again); the

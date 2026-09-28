@@ -640,13 +640,20 @@ class SchematicLayout:
         body. Returns {Splitter: (part, (dx, dy) from where it was)}."""
         links = defaultdict(list)
         for key, ports in self.nets.items():
-            real = [(cid, idx) for cid, idx in ports if cid not in self.tunnels]
-            if self.classes.get(key) != "wire" or len(real) != 2 or real[0][0] == real[1][0]:
+            if self.classes.get(key) != "wire":
                 continue
-            if not all(cid in self.body_ids and cid not in self.fused and self.by_id[cid]["factoryName"] not in ("Text",) + CONSTANT_SOURCES for cid, _i in real):
-                continue
-            (a, i), (b, j) = sorted(real)
-            links[(a, b)].append((i, j))
+            if key in self.copies:
+                # a copy of a Splitter that serves one port is a two-port link
+                pairs = [[copy, served[0]] for copy, served in self.copies[key] if len(served) == 1]
+            else:
+                pairs = [[(cid, idx) for cid, idx in ports if cid not in self.tunnels]]
+            for real in pairs:
+                if len(real) != 2 or real[0][0] == real[1][0]:
+                    continue
+                if not all(cid in self.body_ids and cid not in self.fused and self.by_id[cid]["factoryName"] not in ("Text",) + CONSTANT_SOURCES for cid, _i in real):
+                    continue
+                (a, i), (b, j) = sorted(real)
+                links[(a, b)].append((i, j))
 
         def area(cid):
             b = self.by_id[cid]["bounds"]
