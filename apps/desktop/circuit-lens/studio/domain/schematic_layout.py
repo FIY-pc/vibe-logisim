@@ -638,7 +638,11 @@ class SchematicLayout:
         the way people draw it: those nets then need no wire at all (moved
         apart, 32 of them run as a bundle across the sheet). The Splitter
         moves onto the part, never onto a port of another net nor into its
-        body. Returns {Splitter: (part, (dx, dy) from where it was)}."""
+        body. So does a smaller part whose ports meet the larger one's top
+        to bottom (a driver under the display it feeds): side by side, the
+        flow lines such ports up with straight wires anyway, and a clocked
+        part is a stage boundary that stays a column of its own. Returns
+        {moved part: (host, (dx, dy) from where it was)}."""
         links = defaultdict(list)
         for key, ports in self.nets.items():
             if self.classes.get(key) != "wire":
@@ -665,14 +669,19 @@ class SchematicLayout:
             if len(pairs) < ABUT_MIN:
                 continue
             host, part = (a, b) if (area(a), a) >= (area(b), b) else (b, a)
-            if part in out or part in hosts or host in out or self.by_id[part]["factoryName"] != "Splitter":
-                continue                          # people butt a Splitter against a part, not two parts
+            if part in out or part in hosts or host in out:
+                continue
             h, m = self.by_id[host], self.by_id[part]
             ports = [(i, j) if host == a else (j, i) for i, j in pairs]          # (host port, part port)
             offsets = {(h["ends"][hi]["location"]["x"] - m["ends"][mi]["location"]["x"],
                         h["ends"][hi]["location"]["y"] - m["ends"][mi]["location"]["y"]) for hi, mi in ports}
-            if len(offsets) != 1 or not set.intersection(*(_edges_at(h, hi) for hi, _mi in ports)):
+            host_edges = set.intersection(*(_edges_at(h, hi) for hi, _mi in ports))
+            if len(offsets) != 1 or not host_edges:
                 continue                          # not one edge of the host, or the spacings differ
+            if m["factoryName"] != "Splitter" and (self._is_storage(host) or self._is_storage(part) or
+                                                    not {_OPPOSITE[e] for e in host_edges if e in ("north", "south")}
+                                                    & set.intersection(*(_edges_at(m, mi) for _hi, mi in ports))):
+                continue                          # two parts meet top to bottom (a driver under a display), never at a stage boundary
             dx, dy = next(iter(offsets))
             hb, mb = h["bounds"], m["bounds"]
             over_x = min(hb["x"] + hb["width"], mb["x"] + dx + mb["width"]) - max(hb["x"], mb["x"] + dx)

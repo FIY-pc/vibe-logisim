@@ -34,7 +34,9 @@ HUST CPUs, 2026-09-25):
     have the same spacing is drawn port to port (abutment), never onto a
     port of another net; a bit end on the corner of the part's box counts
     as on either edge, and a copy of a Splitter (a bus split again beside
-    each part it feeds) docks on the part it serves.
+    each part it feeds) docks on the part it serves. Two other parts dock
+    only top to bottom (a driver under the display it feeds), never at a
+    clocked part.
   - A Pin facing north (south) whose only wire runs to a port on the bottom
     (top) edge of a part stands right below (above) that port; several stand
     in a row in port order, moved sideways as little as their widths need.
@@ -316,6 +318,26 @@ class Abutment(unittest.TestCase):
         layout = bare(by_id={c['componentId']: c for c in body}, body=body, body_ids={c['componentId'] for c in body}, tunnels={}, fused={},
                       nets=nets, classes={k: 'wire' for k in nets}, copies=copies)
         self.assertEqual(layout._abutments(), {'s1': ('p1', (110 - 410, 40 - 300)), 's2': ('p2', (610 - 910, 40 - 300))})
+
+    def two_parts(self, host_edge, part_edge):
+        # a display with four inputs 10 px apart on one edge, and the driver
+        # that feeds them elsewhere, its four outputs 10 px apart
+        at = {'south': lambda k: (10 * k, 60), 'west': lambda k: (0, 10 * k), 'north': lambda k: (10 * k, 0), 'east': lambda k: (40, 10 * k)}
+        disp = comp('disp', 'DotMatrix', 100, 0, [(*at[host_edge](k), 'input', f'd{k}') for k in range(1, 5)], width=80, height=60)
+        drv = comp('drv', 'Driver', 400, 300, [(*at[part_edge](k), 'output', f'd{k}') for k in range(1, 5)], width=40, height=50)
+        nets = {}
+        for c in (disp, drv):
+            for e in c['ends']:
+                nets.setdefault(((0, e['netBits'][0]['netId']),), []).append((c['componentId'], e['index']))
+        return bare(by_id={'disp': disp, 'drv': drv}, body=[disp, drv], body_ids={'disp', 'drv'}, tunnels={}, fused={},
+                    nets=nets, classes={k: 'wire' for k in nets})
+
+    def test_a_driver_docks_under_the_display_it_feeds(self):
+        self.assertEqual(self.two_parts('south', 'north')._abutments(), {'drv': ('disp', (110 - 410, 60 - 300))})
+
+    def test_two_parts_side_by_side_stay_apart(self):
+        # the flow lines up east-west connections with straight wires anyway
+        self.assertEqual(self.two_parts('west', 'east')._abutments(), {})
 
     def test_a_bit_end_on_the_corner_is_on_the_edge_too(self):
         # two Splitters face to face (a bus split and joined again); the
