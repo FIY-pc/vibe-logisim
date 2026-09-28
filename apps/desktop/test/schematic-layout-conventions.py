@@ -38,12 +38,8 @@ HUST CPUs, 2026-09-25):
     stand level with them: several abreast when a wire fits between two
     Pins, else (ports 10 px apart) in a staircase whose wires are laid
     straight before routing.
-  - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
-    is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
-    and RAM left to right on one row, centres level; the controller above
-    that row, the adders the PC feeds below it. Its sheet is compacted
-    (parts slide left into the channels' free space) and wire vs Tunnel is
-    decided again on the real distances.
+  - A CPU drawn with Tunnels only and its parts scattered is re-drawn
+    with the same nets.
 
 No model. Shapes are synthesised; the lead, chain and CPU tests observe natively.
 """
@@ -55,7 +51,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
 from studio.domain.schematic_layout import (SchematicLayout, PIPELINE_REGISTER_RE, TUNNEL_SPAN,  # noqa: E402
-                                            UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, COMPACT_GAP, _attr)
+                                            UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, _attr)
 
 
 def comp(cid, factory, x, y, ends, label=None, width=40, height=40):
@@ -155,38 +151,6 @@ class SpanDemotion(unittest.TestCase):
         self.assertEqual(self.net([3, 3], named=False, max_layer_span=2), 'tunnel')
 
 
-class SpineRoles(unittest.TestCase):
-    """_spine names the parts a reader of a single-cycle CPU looks for."""
-
-    def spine(self, parts, nets=()):
-        by_id = {cid: comp(cid, f, 0, 0, [], label=label) for cid, (f, label) in parts.items()}
-        return bare(by_id=by_id, nets={(i,): ports for i, ports in enumerate(nets)})._spine(list(by_id))
-
-    CPU = {'pc': ('Register', 'PC'), 'rom': ('ROM', None), 'ram': ('RAM', None), 'rf': ('◆Regifile', None),
-           'alu': ('◆ALU', None), 'cu': ('◆单周期硬布线控制器', None), 'mux': ('Multiplexer', None)}
-
-    def test_a_cpu_by_its_parts(self):
-        self.assertEqual(self.spine(self.CPU), {'pc': 'PC', 'rom': 'ROM', 'ram': 'RAM', 'rf': 'RegFile', 'alu': 'ALU', 'cu': 'Controller'})
-
-    def test_not_a_cpu_without_a_register_file_and_alu_and_memory(self):
-        self.assertEqual(self.spine({k: v for k, v in self.CPU.items() if k != 'rf'}), {})
-        self.assertEqual(self.spine({k: v for k, v in self.CPU.items() if k not in ('rom', 'ram')}), {})
-
-    def test_names_students_use(self):
-        for name in ('RegFile', 'reg_file', 'MIPS Regifile', '寄存器堆', 'Register File'):
-            self.assertEqual(self.spine({**self.CPU, 'rf': (name, None)})['rf'], 'RegFile', name)
-        for name in ('ALU', 'MIPS ALU', 'alu32', '运算器'):
-            self.assertEqual(self.spine({**self.CPU, 'alu': (name, None)})['alu'], 'ALU', name)
-        self.assertNotIn('x', self.spine({**self.CPU, 'x': ('Evaluate', None)}))
-        self.assertNotIn('r2', self.spine({**self.CPU, 'r2': ('Register', 'IR')}))
-
-    def test_of_several_alus_the_one_wired_to_the_datapath(self):
-        parts = {**self.CPU, 'add': ('◆ALU', None)}          # PC+4 built from a second ALU instance
-        roles = self.spine(parts, nets=[[('rf', 0), ('alu', 0)], [('alu', 1), ('ram', 0)], [('pc', 0), ('add', 0)]])
-        self.assertEqual(roles['alu'], 'ALU')
-        self.assertNotIn('add', roles)
-
-
 class TallLayersSplit(unittest.TestCase):
     def pack(self, n, ranked=False):
         by_id, layer = {'src': comp('src', 'Pin', 0, 0, [])}, {'src': 0}
@@ -194,7 +158,7 @@ class TallLayersSplit(unittest.TestCase):
             by_id[f'p{i}'] = comp(f'p{i}', 'AND Gate', 0, 100 * (n - i), [], height=60)   # authored bottom-up
             layer[f'p{i}'] = 1
         pin_rank = {f'p{i}': i for i in range(n)} if ranked else {}
-        layout = bare(by_id=by_id, row_gap=20, column_height=200, stagger=10, spine={}, pin_rank=pin_rank)
+        layout = bare(by_id=by_id, row_gap=20, column_height=200, stagger=10, pin_rank=pin_rank)
         column, _offset = layout._pack_columns(layer)
         return column
 
@@ -212,7 +176,7 @@ class TallLayersSplit(unittest.TestCase):
         for i in range(10):
             by_id[f'p{i}'] = comp(f'p{i}', 'AND Gate' if i < 4 else 'Pin', 0, 100 * i, [], height=60)
             layer[f'p{i}'] = 1
-        layout = bare(by_id=by_id, row_gap=20, column_height=200, stagger=10, spine={}, pin_rank={})
+        layout = bare(by_id=by_id, row_gap=20, column_height=200, stagger=10, pin_rank={})
         column, _offset = layout._pack_columns(layer)
         self.assertEqual(len({column[f'p{i}'] for i in range(4, 10)}), 1)
         self.assertEqual([column[f'p{i}'] for i in range(4)], [2, 2, 3, 3])
@@ -350,47 +314,6 @@ class Satellites(unittest.TestCase):
         self.assertTrue(ports['a'][0] < ports['b'][0] < ports['c'][0])
         self.assertTrue(all(y == 130 for _x, y in ports.values()))
         self.assertGreaterEqual(ports['b'][0] - ports['a'][0], 20 + 10)   # a Pin's width plus a grid step apart
-
-
-class CompactX(unittest.TestCase):
-    """_compact_x slides parts left into the channels: parts that face each
-    other keep their gap, so does a wired consumer from its driver, a part
-    never goes left of an earlier column, takes a left edge close by, and
-    nothing moves vertically."""
-
-    def run_compact(self, parts, wired=()):
-        by_id, placement, layer = {}, {}, {}
-        for cid, (col, x, y, h, *w) in parts.items():
-            w = w[0] if w else 40
-            by_id[cid] = comp(cid, 'AND Gate', x, y, [(0, 10, 'input', f'{cid}i'), (w, 10, 'output', f'{cid}o')], width=w, height=h)
-            placement[cid], layer[cid] = (0, 0), col
-        nets, classes = {}, {}
-        for i, (d, c) in enumerate(wired):
-            key = ((0, f'w{i}'),)
-            nets[key], classes[key] = [(d, 1), (c, 0)], 'wire'
-        layout = bare(by_id=by_id, nets=nets, classes=classes, bits_of={}, labels_of_net={}, compact_gap=COMPACT_GAP)
-        layout._compact_x(placement, layer)
-        return {cid: (by_id[cid]['bounds']['x'] + placement[cid][0], by_id[cid]['bounds']['y'] + placement[cid][1]) for cid in parts}
-
-    def test_facing_parts_keep_the_gap_and_the_rest_slides_under(self):
-        pos = self.run_compact({'a': (0, 100, 100, 40), 'b': (1, 300, 100, 40), 'c': (2, 500, 400, 40)})
-        self.assertEqual(pos['b'][0] - (pos['a'][0] + 40), COMPACT_GAP)       # same height: they face each other
-        self.assertLess(pos['c'][0], 500)                                       # c faces nothing: it slides left ...
-        self.assertGreater(pos['c'][0], pos['b'][0])                            # ... but not past the column before it
-        self.assertEqual({p[1] for p in pos.values()}, {100, 400})             # nothing moves vertically
-
-    def test_a_part_shares_a_left_edge_close_by(self):
-        # b faces a and lands at 100 + 40 + gap; c faces the narrower a2 and
-        # could stop 20 px short of that -- it takes b's left edge instead
-        pos = self.run_compact({'a': (0, 100, 100, 40), 'a2': (0, 100, 400, 40, 20), 'b': (1, 300, 100, 40), 'c': (1, 300, 400, 40)})
-        self.assertEqual(pos['b'][0], 100 + 40 + COMPACT_GAP)
-        self.assertEqual(pos['c'][0], pos['b'][0])
-
-    def test_a_wired_consumer_keeps_the_gap_from_its_driver(self):
-        # c is 300 px below a, so they do not face each other; the wire between
-        # them still gets the gap to turn in
-        pos = self.run_compact({'a': (0, 100, 100, 40), 'c': (1, 600, 400, 40)}, wired=[('a', 'c')])
-        self.assertEqual(pos['c'][0], pos['a'][0] + 40 + COMPACT_GAP)
 
 
 class FooterWraps(unittest.TestCase):
@@ -600,12 +523,10 @@ def cpu_subcircuit(name, ins, outs):
     return f'  <circuit name="{name}">{body}</circuit>\n'
 
 
-class SingleCycleCpu(unittest.TestCase):
+class ScatteredCpu(unittest.TestCase):
     """A single-cycle CPU drawn with Tunnels only and its parts scattered (the
-    way a first draft comes out): after the layout the PC, ROM, register file,
-    ALU and RAM stand left to right on one row with their centres level, the
-    controller above that row and the adder the PC feeds below it, and the
-    nets are unchanged (the production arrange_candidate proves it)."""
+    way a first draft comes out): after the layout the nets are unchanged
+    (the production arrange_candidate proves it)."""
 
     # part -> (xml, {port: offset from loc}) ; offsets measured with the observer
     PARTS = {
@@ -658,7 +579,7 @@ class SingleCycleCpu(unittest.TestCase):
                 + cpu_subcircuit('Controller', [('INS', 8)], [('WE', 1), ('BSEL', 1), ('JMP', 1), ('OP', 2), ('MSEL', 1), ('STR', 1)]))
         return CPU_HEADER + f'  <circuit name="cpu">{body}</circuit>\n' + subs + '</project>\n'
 
-    def test_datapath_row_controller_above_pc_adder_below(self):
+    def test_the_nets_are_unchanged(self):
         from studio.application.workspace import Workspace
         with tempfile.TemporaryDirectory(prefix='vibe-cpu-') as tmp:
             src = Path(tmp) / 'cpu.circ'
@@ -672,19 +593,8 @@ class SingleCycleCpu(unittest.TestCase):
             finally:
                 w.close()
         self.assertTrue(result['netlist']['equivalent'])
-        self.assertEqual(sorted(result['arrangement']['spine']), ['ALU', 'PC', 'RAM', 'ROM', 'RegFile'])
-        by = {}
-        for c in after['components']:
-            name = {'Register': 'PC', 'ROM': 'ROM', 'RegFile': 'RF', 'ALU': 'ALU', 'RAM': 'RAM', 'Controller': 'CU', 'Adder': 'ADD'}.get(c['factoryName'])
-            if name:
-                by[name] = c['bounds']
-        row = ['PC', 'ROM', 'RF', 'ALU', 'RAM']
-        centres = [by[p]['y'] + by[p]['height'] / 2 for p in row]
-        self.assertLessEqual(max(centres) - min(centres), 10, f'datapath centres {centres}')
-        self.assertEqual(sorted(row, key=lambda p: by[p]['x']), row, 'left to right PC, ROM, register file, ALU, RAM')
-        top, bottom = min(by[p]['y'] for p in row), max(by[p]['y'] + by[p]['height'] for p in row)
-        self.assertLess(by['CU']['y'] + by['CU']['height'], top, 'the controller stands above the row')
-        self.assertGreater(by['ADD']['y'], bottom, 'the adder the PC feeds stands below the row')
+        parts = sorted(xml.split(' name="', 1)[1].split('"', 1)[0] for xml, _ports in self.PARTS.values())
+        self.assertEqual(sorted(c['factoryName'] for c in after['components'] if c['factoryName'] != 'Tunnel'), parts)
 
 
 class PinsLevelWithTheirPorts(unittest.TestCase):
