@@ -98,6 +98,7 @@ COMPACT_GAP = 60            # air right of a part after compaction (hand-drawn: 
 COMPACT_MARGIN = 40         # parts closer than this vertically face each other (< ROW_GAP: a stack does not)
 COMPACT_ALIGN = 40          # a compacted part moves right up to this far to share a placed part's left edge
 LAYER_SPLIT = 2.5           # a layer this many times taller than the column budget becomes side-by-side columns
+FAN_COLUMNS = 4             # Pins level with the ports they are wired to stand at most this many abreast
 # Hand-drawn sheets are no denser than this (bodies per million px², by body
 # count: a small circuit gets more air than a CPU); compaction stops there.
 DENSITY_MAX = ((12, 210), (20, 165), (100, 100), (math.inf, 75))
@@ -1928,6 +1929,120 @@ class SchematicLayout:
         if anchor:
             for l in layers_sorted:
                 top_y[l] = project(l, top_y[l])
+
+        def label_reach(cid):
+            """How far the part's label reaches past its box, left and right."""
+            label = _attr(self.by_id[cid], "label")
+            if not label:
+                return 0, 0
+            w, where = _text_width(label), _attr(self.by_id[cid], "labelloc") or "west"
+            if where in ("west", "east"):
+                return (w, 0) if where == "west" else (0, w)
+            over = max(0, (w - self.by_id[cid]["bounds"]["width"]) / 2)
+            return over, over
+
+        def pinout_holds():
+            ranked = defaultdict(list)
+            for cid, (facing, rank) in self.pin_rank.items():
+                if cid in layer:
+                    loc = self.by_id[cid]["location"]
+                    y = top_y[layer[cid]][cid] + loc["y"] - self.by_id[cid]["bounds"]["y"]
+                    ranked[facing].append(((y, loc["x"]) if facing in ("east", "west") else (loc["x"], y), rank))
+            return all([r for _k, r in sorted(pins)] == sorted(r for _k, r in pins) for pins in ranked.values())
+
+        def fan_pins():
+            """Pins wired one to one to ports on the facing edge of the next
+            column stand level with those ports. A tall part's ports are 20 px
+            apart and a column of Pins needs 70, so otherwise all but a few of
+            those wires jog; Pins that would touch stand abreast instead, the
+            farther one's wire passing between the nearer ones -- how people
+            draw the control lines out of a decoder. Ports 10 px apart leave no
+            room to pass between Pins: the Pins then stand in a staircase, each
+            wire running along the edge of the Pin before it, as people draw
+            the outputs of a subcircuit (those wires are laid before routing,
+            see _route). Only where nothing else in the column is in the way and
+            the pinout keeps its order. Returns {pin: x offset inside its
+            column}; self.fan_wires holds {pin port: driver port}."""
+            fan_dx = {}
+            self.fan_wires = {}
+            for li, l in enumerate(layers_sorted):
+                for edge, ni in (("east", li + 1), ("west", li - 1)):
+                    if not 0 <= ni < len(layers_sorted):
+                        continue
+                    pins = []
+                    for cid in order[l]:
+                        if self.by_id[cid]["factoryName"] != "Pin" or len(touching[cid]) != 1 or cid in fan_dx:
+                            continue
+                        (a, ai), (b, bi) = touching[cid][0]
+                        (me, mi), (u, ui) = ((a, ai), (b, bi)) if a == cid else ((b, bi), (a, ai))
+                        if layer.get(u) == layers_sorted[ni] and side(cid, mi) == edge and side(u, ui) == _OPPOSITE[edge]:
+                            pins.append((port_y(u, ui) - port_dy(cid, mi), cid, port_y(u, ui)))
+                    if len(pins) < 2 or all(top_y[l][cid] == t for t, cid, _w in pins):
+                        continue
+                    placed, lane = [], {}
+                    for t, cid, wire in sorted(pins):
+                        top, bottom = t, t + height(cid)
+                        for j in range(FAN_COLUMNS):
+                            if any(pj == j and top < pb + GRID and pt < bottom + GRID for pj, pt, pb, _w in placed):
+                                continue            # touches the Pin before it in that column
+                            if any(pj < j and pt - GRID < wire < pb + GRID for pj, pt, pb, _w in placed):
+                                continue            # its wire would run through a nearer Pin
+                            if any(pj > j and top - GRID < pw < bottom + GRID for pj, pt, pb, pw in placed):
+                                continue            # a farther Pin's wire would run through it
+                            break
+                        else:
+                            break
+                        lane[cid] = j
+                        placed.append((j, top, bottom, wire))
+                    if len(lane) < len(pins):
+                        # the staircase: the top Pin nearest, each next one a step further out
+                        wires_y = sorted(w for _t, _c, w in pins)
+                        if any(b - a < GRID for a, b in zip(wires_y, wires_y[1:])):
+                            continue
+                        ranked = sorted(pins)
+                        lane = {cid: j for j, (_t, cid, _w) in enumerate(ranked)}
+                        placed = [(j, t, t + height(cid), w) for j, (t, cid, w) in enumerate(ranked)]
+                        staircase = True
+                    else:
+                        staircase = False
+                    lo = min(pt for _j, pt, _pb, _w in placed) - self.row_gap
+                    hi = max(pb for _j, _pt, pb, _w in placed) + self.row_gap
+                    if any(lo < top_y[l][c] + height(c) and top_y[l][c] < hi for c in order[l] if c not in lane):
+                        continue                    # another part of the column is in the way
+                    saved = dict(top_y[l])
+                    for t, cid, _w in pins:
+                        top_y[l][cid] = t
+                    if not pinout_holds():
+                        top_y[l] = saved
+                        continue
+                    def room(left, right):
+                        """x from the left Pin's box to the right one's, labels clear."""
+                        return GRID * math.ceil((self.by_id[left]["bounds"]["width"] + label_reach(left)[1] + label_reach(right)[0] + 2 * GRID) / GRID)
+
+                    if staircase:
+                        # each Pin one step further out than the one above it
+                        x, xs = 0, {}
+                        ranked = [cid for _t, cid, _w in sorted(pins)]
+                        for k, cid in enumerate(ranked):
+                            if k:
+                                x += room(ranked[k - 1], cid) if edge == "west" else -room(cid, ranked[k - 1])
+                            xs[cid] = x
+                        for cid, x in xs.items():
+                            fan_dx[cid] = x - min(xs.values())
+                    else:
+                        lanes = max(lane.values()) + 1
+                        step = max(room(a, b) for a in lane for b in lane)
+                        for cid, j in lane.items():
+                            fan_dx[cid] = (lanes - 1 - j) * step if edge == "east" else j * step
+                    for _t, cid, _w in pins:
+                        (a, ai), (b, bi) = touching[cid][0]
+                        self.fan_wires[(a, ai) if a == cid else (b, bi)] = (b, bi) if a == cid else (a, ai)
+                    order[l].sort(key=lambda c: top_y[l][c])
+            return fan_dx
+
+        self.fan_wires = {}
+        fan_dx = {} if anchor else fan_pins()
+        self.report["fannedPins"] = len(fan_dx)
         segs = [seg(e) for e in edges]
         self.report["placementCrossings"] = sum(1 for i in range(len(segs)) for j in range(i + 1, len(segs)) if crosses(segs[i], segs[j]))
         # Channel widths: a channel between two columns is as wide as the wires
@@ -1961,14 +2076,14 @@ class SchematicLayout:
                     columns.append([])
                 columns[-1].append(cid)
             for k, column in enumerate(columns):
-                width = max(x_offset[cid] + self.by_id[cid]["bounds"]["width"] for cid in column)
+                width = max(x_offset[cid] + fan_dx.get(cid, 0) + self.by_id[cid]["bounds"]["width"] for cid in column)
                 for cid in column:
                     c = self.by_id[cid]
                     b = c["bounds"]
                     y = top + top_y[l][cid] - frame
                     # the body's left edge sits on x_cursor (+ its depth stagger);
                     # the component's own loc stays on the 10-grid
-                    dx = _snap(x_cursor + x_offset[cid] - b["x"])
+                    dx = _snap(x_cursor + x_offset[cid] + fan_dx.get(cid, 0) - b["x"])
                     dy = _snap(y - b["y"])
                     placement[cid] = (dx, dy)
                     body_bottom = max(body_bottom, _snap(y + b["height"] + self.row_gap))
@@ -2280,6 +2395,26 @@ class SchematicLayout:
                     router.port_owners[lead].add(next(iter(nets)))
             wires, failed_ports, failed_consts, unrouted, failed_jobs = [], defaultdict(list), set(), [], set()
             wire_nets = []                   # the net of every segment in wires
+            # A Pin standing level with its port (see fan_pins) gets its straight
+            # wire as it is, before anything is routed: in a staircase that wire
+            # runs along the edge of the Pin before it, which the router's
+            # clearance cost would rather bend around.
+            net_of_port = {port: key for key, ports in self.nets.items() for port in ports}
+            for pin_port, driver_port in self.fan_wires.items():
+                key = net_of_port.get(pin_port)
+                if key is None or self.classes.get(key) != "wire" or key in self.copies:
+                    continue
+                pin_end, driver_end = moved[pin_port[0]]["ends"][pin_port[1]], moved[driver_port[0]]["ends"][driver_port[1]]
+                a, b = (driver_end["location"]["x"], driver_end["location"]["y"]), (pin_end["location"]["x"], pin_end["location"]["y"])
+                owner = router.owner(driver_end.get("netBits") or [])
+                if a[1] != b[1] or a == b or any(q in router.blocked or any(own != owner for own in router.port_owners.get(q, ()))
+                                                  or any(s[0] != owner for s in router.at.get(q, ())) for q in Router.grid(a, b)):
+                    continue
+                router.add(a, b, owner, tuple(bit["netId"] for bit in driver_end.get("netBits") or []))
+                router.connected.join(tuple(bit["netId"] for bit in driver_end.get("netBits") or []),
+                                      tuple(bit["netId"] for bit in pin_end.get("netBits") or []))
+                wires.append((a, b))
+                wire_nets.append(key)
             for _, _, key, ports in sorted(jobs, key=lambda j: j[2] not in first):
                 if key in self.nets:
                     source_port = self.source_of[key]

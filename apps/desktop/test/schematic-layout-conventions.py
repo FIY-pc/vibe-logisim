@@ -34,6 +34,10 @@ HUST CPUs, 2026-09-25):
   - A Pin facing north (south) whose only wire runs to a port on the bottom
     (top) edge of a part stands right below (above) that port; several stand
     in a row in port order, moved sideways as little as their widths need.
+  - Pins wired one to one to ports on the facing edge of the next column
+    stand level with them: several abreast when a wire fits between two
+    Pins, else (ports 10 px apart) in a staircase whose wires are laid
+    straight before routing.
   - A single-cycle CPU (a ROM or RAM, a register file and an ALU, by name)
     is drawn the way 111 hand-drawn ones are: PC, ROM, register file, ALU
     and RAM left to right on one row, centres level; the controller above
@@ -681,6 +685,51 @@ class SingleCycleCpu(unittest.TestCase):
         top, bottom = min(by[p]['y'] for p in row), max(by[p]['y'] + by[p]['height'] for p in row)
         self.assertLess(by['CU']['y'] + by['CU']['height'], top, 'the controller stands above the row')
         self.assertGreater(by['ADD']['y'], bottom, 'the adder the PC feeds stands below the row')
+
+
+class PinsLevelWithTheirPorts(unittest.TestCase):
+    """Output Pins wired one to one to the outputs of a subcircuit (10 px
+    apart on the instance) stand level with those ports, one step further
+    out each, so every such wire is straight; the pinout keeps its order and
+    the nets are unchanged (the production arrange_candidate proves it)."""
+
+    def test_the_outputs_of_a_subcircuit_fan_out_level(self):
+        from studio.application.workspace import Workspace
+        sub = cpu_subcircuit('Dec', [('I', 1)], [(f'O{i}', 1) for i in range(5)])
+        header = CPU_HEADER.replace('<main name="cpu"/>', '<main name="main"/>')
+        with tempfile.TemporaryDirectory(prefix='vibe-fan-') as tmp:
+            probe = Path(tmp) / 'probe.circ'
+            probe.write_text(header + '  <circuit name="main"><comp loc="(300,300)" name="Dec"/></circuit>\n' + sub + '</project>\n', encoding='utf-8')
+            w = Workspace(REPO, Path(tmp) / 'probe-state', REPO / 'apps/desktop/circuit-lens/lensctl.py', 'fan-probe')
+            try:
+                w.open_path(probe)
+                inst = next(c for c in w.observer.run_full(probe, 'main')['focus']['components'] if c['factoryName'] == 'Dec')
+            finally:
+                w.close()
+            ports = [(e['location']['x'], e['location']['y'], e['direction']) for e in inst['ends']]
+            outs = sorted((y, x) for x, y, d in ports if d == 'output')
+            (ix, iy), = [(x, y) for x, y, d in ports if d == 'input']
+            body = '<comp loc="(300,300)" name="Dec"/>' + xml_tunnel(ix, iy, 'i', 'east') + xml_pin(100, 600, 'I')
+            for k, (y, x) in enumerate(outs):
+                body += xml_tunnel(x, y, f'y{k}', 'west') + xml_pin(900, 100 + 60 * k, f'Y{k}', out=True)
+            src = Path(tmp) / 'fan.circ'
+            src.write_text(header + f'  <circuit name="main">{body}</circuit>\n' + sub + '</project>\n', encoding='utf-8')
+            w = Workspace(REPO, Path(tmp) / 'state', REPO / 'apps/desktop/circuit-lens/lensctl.py', 'fan')
+            try:
+                revision = w.open_path(src)['revision']['id']
+                result = w.workbench.call(revision, 'arrange_candidate', {'circuit': 'main'})
+                after = w.observer.run_full(w.state_root / 'candidates' / result['id'] / 'artifact.circ', 'main')['focus']
+            finally:
+                w.close()
+        self.assertTrue(result['netlist']['equivalent'])
+        inst = next(c for c in after['components'] if c['factoryName'] == 'Dec')
+        port_of_net = {tuple(b['netId'] for b in e['netBits']): e['location'] for e in inst['ends'] if e['direction'] == 'output'}
+        pins = sorted((c for c in after['components'] if c['factoryName'] == 'Pin' and _attr(c, 'label') != 'I'), key=lambda c: _attr(c, 'label'))
+        for pin in pins:
+            port = port_of_net[tuple(b['netId'] for b in pin['ends'][0]['netBits'])]
+            self.assertEqual(pin['ends'][0]['location']['y'], port['y'], f"{_attr(pin, 'label')} is not level with its port")
+        ys = [pin['location']['y'] for pin in pins]
+        self.assertEqual(ys, sorted(ys), 'the output Pins changed order')
 
 
 if __name__ == '__main__':
