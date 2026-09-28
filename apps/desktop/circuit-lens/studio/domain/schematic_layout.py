@@ -172,6 +172,15 @@ def _edge_of(component, idx):
     return min(d, key=d.get)
 
 
+def _edges_at(component, idx):
+    """Every edge of the part's bounds nearest to its port idx: two for a
+    port on a corner (a Splitter's last bit end)."""
+    b, e = component["bounds"], component["ends"][idx]["location"]
+    d = {"west": e["x"] - b["x"], "east": b["x"] + b["width"] - e["x"], "north": e["y"] - b["y"], "south": b["y"] + b["height"] - e["y"]}
+    near = min(d.values())
+    return {edge for edge, v in d.items() if v == near}
+
+
 def _attr(component, name):
     for item in component["attributes"]:
         if item.get("name") == name:
@@ -654,7 +663,7 @@ class SchematicLayout:
             ports = [(i, j) if host == a else (j, i) for i, j in pairs]          # (host port, part port)
             offsets = {(h["ends"][hi]["location"]["x"] - m["ends"][mi]["location"]["x"],
                         h["ends"][hi]["location"]["y"] - m["ends"][mi]["location"]["y"]) for hi, mi in ports}
-            if len(offsets) != 1 or len({_edge_of(h, hi) for hi, _mi in ports}) != 1:
+            if len(offsets) != 1 or not set.intersection(*(_edges_at(h, hi) for hi, _mi in ports)):
                 continue                          # not one edge of the host, or the spacings differ
             dx, dy = next(iter(offsets))
             hb, mb = h["bounds"], m["bounds"]

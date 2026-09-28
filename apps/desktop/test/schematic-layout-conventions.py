@@ -30,7 +30,8 @@ HUST CPUs, 2026-09-25):
     with its host, so the shared ports need no wire.
   - A Splitter joined to a part by three or more two-port nets whose ports
     have the same spacing is drawn port to port (abutment), never onto a
-    port of another net.
+    port of another net; a bit end on the corner of the part's box counts
+    as on either edge.
   - A Pin facing north (south) whose only wire runs to a port on the bottom
     (top) edge of a part stands right below (above) that port; several stand
     in a row in port order, moved sideways as little as their widths need.
@@ -294,6 +295,21 @@ class Abutment(unittest.TestCase):
 
     def test_never_onto_a_port_of_another_net(self):
         self.assertEqual(self.layout(clash=True)._abutments(), {})
+
+    def test_a_bit_end_on_the_corner_is_on_the_edge_too(self):
+        # two Splitters face to face (a bus split and joined again); the
+        # larger one's last bit end is the bottom-right corner of its box
+        big = comp('big', 'Splitter', 100, 0, [(0, 10, 'inout', 'B'), (30, 20, 'inout', 'o1'), (40, 20, 'inout', 'o2'),
+                                               (50, 20, 'inout', 'o3'), (60, 20, 'inout', 'o4')], width=60, height=20)
+        small = comp('small', 'Splitter', 400, 300, [(0, 10, 'inout', 'b'), (10, 0, 'inout', 'o1'), (20, 0, 'inout', 'o2'),
+                                                     (30, 0, 'inout', 'o3'), (40, 0, 'inout', 'o4')], width=50, height=10)
+        nets = {}
+        for c in (big, small):
+            for e in c['ends']:
+                nets.setdefault(((0, e['netBits'][0]['netId']),), []).append((c['componentId'], e['index']))
+        layout = bare(by_id={'big': big, 'small': small}, body=[big, small], body_ids={'big', 'small'}, tunnels={}, fused={},
+                      nets=nets, classes={k: 'wire' for k in nets})
+        self.assertEqual(layout._abutments(), {'small': ('big', (130 - 410, 20 - 300))})
 
 
 class Satellites(unittest.TestCase):
