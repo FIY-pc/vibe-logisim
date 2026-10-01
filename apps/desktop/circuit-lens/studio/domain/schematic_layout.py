@@ -64,6 +64,7 @@ CROSSINGS_MIN = 6           # ... and at least this many
 ABUT_MIN = 3                # parts joined by this many two-port nets whose ports line up are drawn port to port
 SATELLITE_GAP = 30          # a Pin facing north (south) stands this far below (above) the port it feeds
 SATELLITES = {"Pin", "Clock", "Probe", "Button", "LED", "Constant"}
+STAIR_DEPTH = 640           # ... and a staircase of them under ports 10 px apart reaches at most this far
 CONSTANT_SOURCES = ("Constant", "Ground", "Power")   # one-port drivers of a fixed value: a private copy on every consumer port
 ROW_GAP = 50                # vertical air between stacked components (registers carry 4 side pins + tunnels)
 COLUMN_GAP = 160            # horizontal air between layers (routing channel)
@@ -747,8 +748,61 @@ class SchematicLayout:
         address and enable Pins of a register file, instead of in the input
         column with a wire round the part. Several on one edge stand in a row
         in the order of their ports, moved sideways as little as their widths
-        need. Returns {part: (host, (dx, dy) from where the author drew it)}."""
+        need. Where ports 10 px apart (a Splitter's fan) would move one
+        sideways -- no room for a wire to jog between them -- every part
+        stands right below its own port instead, each a step further out than
+        its neighbour where their bodies or labels would meet -- the staircase
+        people draw under a fan -- and its wire runs straight along the edge
+        of the part before it (laid before routing, see self.satellite_wires
+        and _route). Returns {part: (host, (dx, dy) from where the author
+        drew it)}."""
+        self.satellite_wires = {}
         net_of = {port: key for key, ports in self.nets.items() for port in ports}
+
+        def reach(c):
+            """How far the part's label reaches past its box, left and right."""
+            label = _attr(c, "label")
+            if not label:
+                return 0, 0
+            side = _attr(c, "labelloc") or "west"
+            return {"west": (_text_width(label), 0), "east": (0, _text_width(label))}.get(side, (0, 0))
+
+        def staircase(edge, row):
+            """{part: y of its port} with each part right below (above) its
+            port, or None when no staircase within STAIR_DEPTH fits. Tried
+            stepping out to the right and to the left (the side the labels
+            leave free), the shallower kept."""
+            out = 1 if edge == "south" else -1
+            best = None
+            for order in (row, row[::-1]):
+                placed, ys, floor = [], {}, SATELLITE_GAP
+                for port, cid in order:
+                    c = self.by_id[cid]
+                    own, b = c["ends"][0]["location"], c["bounds"]
+                    left, right = reach(c)
+                    x0 = b["x"] + port["x"] - own["x"] - left
+                    x1 = b["x"] + b["width"] + port["x"] - own["x"] + right
+                    for depth in range(floor, STAIR_DEPTH + 1, GRID):    # never back up: one way down
+                        y = port["y"] + out * depth
+                        box = (x0, b["y"] + y - own["y"], x1, b["y"] + b["height"] + y - own["y"])
+                        wire = (port["x"], min(port["y"], y), max(port["y"], y))
+                        if any(box[0] < q[2] + GRID and q[0] < box[2] + GRID and box[1] < q[3] and q[1] < box[3] for q, _w in placed):
+                            continue                # meets a part (or its label) beside it
+                        if any(q[0] < wire[0] < q[2] and q[1] < wire[2] and wire[1] < q[3] for q, _w in placed):
+                            continue                # its wire would run through a nearer part
+                        if any(box[0] < w[0] < box[2] and box[1] < w[2] and w[1] < box[3] for _q, w in placed):
+                            continue                # a farther part's wire would run through it
+                        break
+                    else:
+                        break
+                    placed.append((box, wire))
+                    ys[cid], floor = y, depth
+                if len(ys) == len(row):
+                    deepest = max(abs(ys[cid] - port["y"]) for port, cid in row)
+                    if best is None or deepest < best[0]:
+                        best = (deepest, ys)
+            return best and best[1]
+
         rows = defaultdict(list)
         for c in self.body:
             cid = c["componentId"]
@@ -767,15 +821,24 @@ class SchematicLayout:
                 rows[(host, edge)].append((self.by_id[host]["ends"][idx]["location"], cid))
         out = {}
         for (host, edge), row in rows.items():
-            right = -math.inf
-            for port, cid in sorted(row, key=lambda r: (r[0]["x"], r[1])):
+            row = sorted(row, key=lambda r: (r[0]["x"], r[1]))
+            right, shifted, placed = -math.inf, False, {}
+            for port, cid in row:
                 c = self.by_id[cid]
                 own, b = c["ends"][0]["location"], c["bounds"]
                 left_of, right_of = own["x"] - b["x"], b["x"] + b["width"] - own["x"]
                 x = port["x"] if right == -math.inf else max(port["x"], GRID * math.ceil((right + GRID + left_of) / GRID))
+                shifted = shifted or x != port["x"]
                 right = x + right_of
-                y = port["y"] + (SATELLITE_GAP if edge == "south" else -SATELLITE_GAP)
+                placed[cid] = (x, port["y"] + (SATELLITE_GAP if edge == "south" else -SATELLITE_GAP))
+            close = any(b[0]["x"] - a[0]["x"] < 2 * GRID for a, b in zip(row, row[1:]))
+            stairs = staircase(edge, row) if shifted and close else None
+            for port, cid in row:
+                own = self.by_id[cid]["ends"][0]["location"]
+                x, y = (port["x"], stairs[cid]) if stairs else placed[cid]
                 out[cid] = (host, (x - own["x"], y - own["y"]))
+                if stairs:
+                    self.satellite_wires[(cid, 0)] = next((o, i) for o, i in self.nets[net_of[(cid, 0)]] if o == host)
         return out
 
     def _fused_view(self):
@@ -1363,6 +1426,8 @@ class SchematicLayout:
             self.fused = {part: host for part, host in self.fused.items() if part not in self.relocated}
             self.relocated = {}
             return self._place()
+        # a staircase under a fan: each wire straight down the edge of the part before it
+        self.fan_wires.update((pin, port) for pin, port in self.satellite_wires.items() if pin[0] in self.relocated)
         return placement
 
     def _place_pieces(self):
@@ -1392,14 +1457,17 @@ class SchematicLayout:
             by_layer[l].append(cid)
         # Port-level edges of the nets that will be wired: (source port, sink
         # port). A net with several drivers or no driver contributes edges from
-        # its first port to the others.
+        # its first port to the others. A wire inside one fused piece (a Pin
+        # standing under its port, a copy docked on the part it serves) is
+        # not an edge: it moves with the piece, and as one it would pull the
+        # piece after its own ports sweep after sweep.
         edges = []
         for key, cls in self.classes.items():
             if cls != "wire":
                 continue
             if key in self.copies:
                 edges.extend((copy, port) for copy, served in self.copies[key] for port in served
-                             if copy[0] in layer and port[0] in layer)
+                             if copy[0] in layer and port[0] in layer and copy[0] != port[0])
                 continue
             ports = [(cid, idx) for cid, idx in self.nets[key] if cid in layer]
             if len(ports) < 2:
@@ -1407,7 +1475,7 @@ class SchematicLayout:
             outs = [p for p in ports if self.by_id[p[0]]["ends"][p[1]].get("direction") == "output"]
             src = (outs or ports)[0]
             for p in ports:
-                if p != src:
+                if p[0] != src[0]:
                     edges.append((src, p))
         touching = defaultdict(list)
         for e in edges:
@@ -2522,10 +2590,11 @@ class SchematicLayout:
                     router.port_owners[lead].add(next(iter(nets)))
             wires, failed_ports, failed_consts, unrouted, failed_jobs = [], defaultdict(list), set(), [], set()
             wire_nets = []                   # the net of every segment in wires
-            # A Pin standing level with its port (see fan_pins) gets its straight
-            # wire as it is, before anything is routed: in a staircase that wire
-            # runs along the edge of the Pin before it, which the router's
-            # clearance cost would rather bend around.
+            # A Pin standing level with its port (see fan_pins), or right below
+            # it in a staircase (see _satellites), gets its straight wire as it
+            # is, before anything is routed: in a staircase that wire runs along
+            # the edge of the Pin before it, which the router's clearance cost
+            # would rather bend around.
             net_of_port = {port: key for key, ports in self.nets.items() for port in ports}
             for pin_port, driver_port in self.fan_wires.items():
                 key = net_of_port.get(pin_port)
@@ -2534,8 +2603,8 @@ class SchematicLayout:
                 pin_end, driver_end = moved[pin_port[0]]["ends"][pin_port[1]], moved[driver_port[0]]["ends"][driver_port[1]]
                 a, b = (driver_end["location"]["x"], driver_end["location"]["y"]), (pin_end["location"]["x"], pin_end["location"]["y"])
                 owner = router.owner(driver_end.get("netBits") or [])
-                if a[1] != b[1] or a == b or any(q in router.blocked or any(own != owner for own in router.port_owners.get(q, ()))
-                                                  or any(s[0] != owner for s in router.at.get(q, ())) for q in Router.grid(a, b)):
+                if (a[0] != b[0] and a[1] != b[1]) or a == b or any(q in router.blocked or any(own != owner for own in router.port_owners.get(q, ()))
+                                                                     or any(s[0] != owner for s in router.at.get(q, ())) for q in Router.grid(a, b)):
                     continue
                 router.add(a, b, owner, tuple(bit["netId"] for bit in driver_end.get("netBits") or []))
                 router.connected.join(tuple(bit["netId"] for bit in driver_end.get("netBits") or []),

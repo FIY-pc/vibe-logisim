@@ -45,7 +45,9 @@ HUST CPUs, 2026-09-25):
     clocked part.
   - A Pin facing north (south) whose only wire runs to a port on the bottom
     (top) edge of a part stands right below (above) that port; several stand
-    in a row in port order, moved sideways as little as their widths need.
+    in a row in port order, moved sideways as little as their widths need,
+    or under ports 10 px apart (a Splitter's fan) in a staircase, each right
+    below its own port with a straight wire.
   - Pins wired one to one to ports on the facing edge of the next column
     stand level with them: several abreast when a wire fits between two
     Pins, else (ports 10 px apart) in a staircase whose wires are laid
@@ -381,6 +383,30 @@ class Satellites(unittest.TestCase):
         self.assertTrue(ports['a'][0] < ports['b'][0] < ports['c'][0])
         self.assertTrue(all(y == 130 for _x, y in ports.values()))
         self.assertGreaterEqual(ports['b'][0] - ports['a'][0], 20 + 10)   # a Pin's width plus a grid step apart
+
+    def test_pins_under_a_fan_stand_in_a_staircase(self):
+        # a Splitter's bit ends 10 px apart leave no room for a wire to jog
+        # between the Pins: each stands right below its own end, one a step
+        # further down than the next, and its wire is laid straight
+        spl = comp('spl', 'Splitter', 100, 0, [(0, 0, 'inout', 'bus')] + [(10 + 10 * i, 10, 'inout', f'b{i}') for i in range(4)],
+                   width=50, height=10)
+        pins = [comp(f'p{i}', 'Pin', 40 * i, 500, [(10, 0, 'output', f'b{i}')], width=20, height=20) for i in range(4)]
+        for p in pins:
+            p['attributes'].append({'name': 'facing', 'standard': 'north'})
+        body = [spl] + pins
+        nets = {((0, f'b{i}'),): [('spl', i + 1), (f'p{i}', 0)] for i in range(4)}
+        nets[((0, 'bus'),)] = [('spl', 0)]
+        layout = bare(by_id={c['componentId']: c for c in body}, body=body, body_ids={c['componentId'] for c in body}, tunnels={},
+                      fused={}, nets=nets, classes={k: 'wire' for k in nets})
+        out = layout._satellites()
+        ports = [(p['ends'][0]['location']['x'] + out[p['componentId']][1][0], p['ends'][0]['location']['y'] + out[p['componentId']][1][1])
+                 for p in pins]
+        self.assertEqual([x for x, _y in ports], [110, 120, 130, 140])          # right below its own end
+        depths = [y - 10 for _x, y in ports]
+        self.assertEqual(min(depths), 30)                                       # the nearest SATELLITE_GAP down
+        self.assertTrue(depths == sorted(depths) or depths == sorted(depths, reverse=True))
+        self.assertEqual(len(set(depths)), 4)
+        self.assertEqual(layout.satellite_wires, {(f'p{i}', 0): ('spl', i + 1) for i in range(4)})
 
 
 class FooterWraps(unittest.TestCase):
