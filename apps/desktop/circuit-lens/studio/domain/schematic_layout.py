@@ -772,6 +772,7 @@ class SchematicLayout:
         body = [by_id[c["componentId"]] for c in self.body if c["componentId"] not in self.fused]
         copies = {key: [(remap.get(copy, copy), [remap.get(p, p) for p in served]) for copy, served in groups]
                   for key, groups in self.copies.items()}
+        self.piece_port = remap
         return by_id, nets, body, self.body_ids - set(self.fused), copies
 
     # ---- labels ------------------------------------------------------------------
@@ -1300,6 +1301,15 @@ class SchematicLayout:
             placement = self._place_pieces()
         finally:
             self.by_id, self.nets, self.body, self.body_ids, self.copies = own
+        # the Pins' straight wires were found on the pieces: a piece's port
+        # numbers are not its host's, so each end goes back to the port of
+        # the same net it stands for
+        at = defaultdict(dict)
+        for key, ports in self.nets.items():
+            for port in ports:
+                at[self.piece_port.get(port, port)][key] = port
+        self.fan_wires = {at[pin][key]: at[driver][key] for pin, driver in self.fan_wires.items()
+                          for key in at[pin].keys() & at[driver].keys()}
         for part, host in self.fused.items():
             dx, dy = self.relocated.get(part, (0, 0))
             placement[part] = (placement[host][0] + dx, placement[host][1] + dy)
