@@ -22,8 +22,8 @@ Methodology (this is the part an LLM should not improvise per wire):
 5. Routing is global and ordered: short nets first, then longer ones detour
    around them, using the grid A* router that already knows Logisim's rules
    (never end or bend on foreign copper, never pass through a foreign port,
-   prefer a cell of clearance); nets that found no way through are routed
-   again first.
+   prefer a cell of clearance, keep out of Tunnel labels); nets that found
+   no way through are routed again first.
 
 Connectivity contract (what makes the result provably equivalent):
 
@@ -96,6 +96,7 @@ TUNNEL_SPAN = {1: 800, 2: 600, 3: 500}   # driver->consumer distance (px) above 
 UNNAMED_SPAN_FACTOR = 2     # an unnamed net (label synthesised) is wired up to this multiple of the limit
 CROSSING_COST = 100         # router cost of crossing a foreign wire during a re-layout (manual edits keep 24)
 BEND_COST = 400             # ... and of a corner (manual edits keep 18): a reader minds a corner about four times a crossing
+FLAG_COST = 300             # ... and of a step into a Tunnel's label (a wire there crosses the name out)
 SHELF_WIDTH = 400           # a part at least this wide and 4x wider than tall goes on the shelf above the body
 SHELF_GAP = 120             # between the shelf and the body
 ROUTER_VISIT_CAP = 600000   # A* budget per route on a re-layout (sheets are wider than a manual edit)
@@ -134,6 +135,22 @@ def _attr_of(element, name):
 def _text_width(text):
     """Rough width of a label in Logisim's default font (CJK about twice as wide)."""
     return sum(12 if ord(ch) > 0x2E80 else 7 for ch in text) + 10
+
+
+def _label_box(tip, facing, label):
+    """The box a Tunnel's label covers, from the point it stands on: 20 px
+    tall beside a sideways flag, as wide as the label under or over an
+    upright one."""
+    w = _text_width(label)
+    x, y = tip
+    return {"east": (x - w, y - 10, x, y + 10), "west": (x, y - 10, x + w, y + 10),
+            "north": (x - w // 2, y, x + w // 2, y + 20), "south": (x - w // 2, y - 20, x + w // 2, y)}[facing]
+
+
+def _box_points(b):
+    """Grid points inside a box (3 px clear of its edge): a wire there runs through it."""
+    return ((x, y) for x in range(GRID * math.ceil((b[0] + 3) / GRID), int(b[2] - 3) + 1, GRID)
+            for y in range(GRID * math.ceil((b[1] + 3) / GRID), int(b[3] - 3) + 1, GRID))
 
 
 def _estimated_geometry(element, x, y):
@@ -364,6 +381,7 @@ class SchematicLayout:
         self.max_layer_span = 8
         self.crossing_cost = CROSSING_COST
         self.bend_cost = BEND_COST
+        self.flag_cost = FLAG_COST
         self.route_order = "short"           # short nets first (long ones detour around them) | "long"
         self.column_height = None            # packed-column height budget; None = from TARGET_ASPECT (see _pack_columns)
         self.stagger = STAGGER
@@ -1937,12 +1955,6 @@ class SchematicLayout:
                 (px, py), _facing, (sx, sy) = self._port_edge(c, idx)
                 fronts[(px + sx, py + sy)] = (c["componentId"], idx)
 
-        def box(tip, facing, label):
-            w = _text_width(label)
-            x, y = tip
-            return {"east": (x - w, y - 10, x, y + 10), "west": (x, y - 10, x + w, y + 10),
-                    "north": (x - w // 2, y, x + w // 2, y + 20), "south": (x - w // 2, y - 20, x + w // 2, y)}[facing]
-
         def inside(q, b):
             return b[0] + 3 <= q[0] <= b[2] - 3 and b[1] + 3 <= q[1] <= b[3] - 3
 
@@ -1959,11 +1971,6 @@ class SchematicLayout:
                         if id(f) not in seen:
                             seen.add(id(f))
                             yield f
-
-        def points(b):
-            """Grid points a wire may not pass inside the box."""
-            return ((x, y) for x in range(GRID * math.ceil((b[0] + 3) / GRID), int(b[2] - 3) + 1, GRID)
-                    for y in range(GRID * math.ceil((b[1] + 3) / GRID), int(b[3] - 3) + 1, GRID))
 
         taken, steps, turned = set(), {}, {}
 
@@ -1982,8 +1989,8 @@ class SchematicLayout:
                     return False
             if any(q in router.blocked or q in taken or fronts.get(q, port) != port for q in cells[n - 1:]):
                 return None
-            flags = [box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)]
-            if any(overlap(f, b) for f in flags for b in near(f)) or any(q in taken for f in flags for q in points(f)):
+            flags = [_label_box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)]
+            if any(overlap(f, b) for f in flags for b in near(f)) or any(q in taken for f in flags for q in _box_points(f)):
                 return None
             return cells, flags
 
@@ -2009,7 +2016,7 @@ class SchematicLayout:
                 else:
                     runs.append([m])
             for run in runs:
-                upright = [box((px, py + (GRID if facing == "north" else -GRID)), facing, self.anchors[port][0]) for px, port in run]
+                upright = [_label_box((px, py + (GRID if facing == "north" else -GRID)), facing, self.anchors[port][0]) for px, port in run]
                 if not any(overlap(a, b) for a, b in zip(upright, upright[1:])):
                     continue
                 half = (len(run) + 1) // 2
@@ -2056,9 +2063,25 @@ class SchematicLayout:
                     break
             if best is None:
                 cells = [(px + sx * k, py + sy * k) for k in range(1, len(labels) + 1)]
-                best = (1, cells, [box(cell, facing, label) for cell, label in zip(cells, labels)])
+                best = (1, cells, [_label_box(cell, facing, label) for cell, label in zip(cells, labels)])
             place(port, *best)
         return steps, turned
+
+    def _price_labels(self, router, moved, leads, turned, reserved=frozenset()):
+        """A wire through a Tunnel's label crosses the name out, and people
+        route around the flags: every step into a label costs flag_cost.
+        Leads are as long as _lead_steps made them (one cell otherwise),
+        flags turned where it turned a row; the net's own lead and chain
+        cells (reserved) are left alone."""
+        for (cid, idx), labels in self.anchors.items():
+            (px, py), facing, (sx, sy) = self._port_edge(moved[cid], idx)
+            facing = turned.get((cid, idx), facing)
+            n = leads.get((cid, idx), 1)
+            for k, label in enumerate(labels):
+                for q in _box_points(_label_box((px + sx * (n + k), py + sy * (n + k)), facing, label)):
+                    if q not in reserved:
+                        for axis in (0, 1):
+                            router.clearance_cost[(q, axis)] = max(router.clearance_cost.get((q, axis), 0), self.flag_cost)
 
     def _port_edge(self, moved_component, idx):
         """The body edge a port sits on (as its outward Tunnel facing and the
@@ -2304,6 +2327,8 @@ class SchematicLayout:
                 for k in range(n + 1, n + len(labels)):
                     reserved.add((px + sx * k, py + sy * k))
                     router.blocked.add((px + sx * k, py + sy * k))
+            if self.flag_cost:
+                self._price_labels(router, moved, leads, turned, reserved)
             # Every other body port keeps the cell in front of it for its own net
             # too. Pins of a tall pipeline register sit 30 px apart on one edge; a
             # neighbour's route that runs vertically along that edge would box in

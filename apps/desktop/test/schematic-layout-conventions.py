@@ -9,6 +9,9 @@ HUST CPUs, 2026-09-25):
     On ports 10 px apart every other lead is longer, so that no two flags
     lie on top of each other; a row on a bottom or top edge turns its flags
     sideways in a V.
+  - A wire keeps out of Tunnel labels (it would cross the name out): a step
+    into one costs more than a crossing, so of two routes alike the router
+    takes the one around the flags.
   - Pipeline-register subcircuits are recognised by name (IF/ID, 气泡EX/MEM,
     ◇MEM/WB, 流水IF ...) and belong to the stage they feed.
   - Every depth keeps a layer of its own (_compact renumbers only): a part
@@ -58,7 +61,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
 from studio.domain.schematic_layout import (SchematicLayout, PIPELINE_REGISTER_RE, TUNNEL_SPAN,  # noqa: E402
-                                            UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, _attr)
+                                            UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, CROSSING_COST, BEND_COST,
+                                            FLAG_COST, _attr)
+from studio.domain.routing import Router, Partition  # noqa: E402
 
 
 def comp(cid, factory, x, y, ends, label=None, width=40, height=40):
@@ -462,6 +467,42 @@ class StaggeredLeads(unittest.TestCase):
         steps, turned = layout._lead_steps({'s': part}, self.Router())
         self.assertEqual([steps[('s', k)] for k in range(4)], [1, 3, 3, 1])
         self.assertEqual([turned[('s', k)] for k in range(4)], ['east', 'east', 'west', 'west'])
+
+
+class LabelsAreKeptClear(unittest.TestCase):
+    """Every step of a wire into a Tunnel's label costs FLAG_COST (_price_labels)."""
+
+    def setUp(self):
+        # a 66 px label on an input on the west edge: its flag points east
+        self.part = comp('m', 'Multiplexer', 200, 0, [(0, 30, 'input', 'n1')], width=40, height=60)
+        self.layout = bare(anchors={('m', 0): ['abcdefgh']}, flag_cost=FLAG_COST)
+
+    def router(self, *extra, partition=None):
+        return Router({'focus': {'components': [self.part, *extra], 'wires': [], 'wireBundles': []}}, partition or Partition(),
+                      crossing_cost=CROSSING_COST, bend_cost=BEND_COST)
+
+    def priced(self, leads):
+        router = self.router()
+        self.layout._price_labels(router, {'m': self.part}, leads, {})
+        return {q for (q, _axis), cost in router.clearance_cost.items() if cost == FLAG_COST}
+
+    def test_the_cells_under_the_label_cost_more(self):
+        self.assertEqual(self.priced({}), {(x, 30) for x in range(130, 190, 10)})          # tip one cell out, at 190
+        self.assertEqual(self.priced({('m', 0): 4}), {(x, 30) for x in range(100, 160, 10)})
+
+    def test_of_two_routes_alike_the_one_around_the_label_is_taken(self):
+        label = self.priced({})
+        for a, b in (((100, 0), (160, 60)), ((160, 0), (100, 60))):      # either corner of the L can cross it
+            # one net, a private bus per port (as _route gives the router)
+            partition = Partition()
+            ends = [comp(cid, 'Tunnel', x, y, [(0, 0, 'output', f'n9#{cid}')], width=0, height=0) for cid, (x, y) in (('a', a), ('b', b))]
+            for cid in 'ab':
+                partition.join('n9', f'n9#{cid}')
+            router = self.router(*ends, partition=partition)
+            self.layout._price_labels(router, {'m': self.part}, {}, {})
+            path = router.route(ends[0]['ends'][0], ends[1]['ends'][0])
+            self.assertEqual(len(path), 2)
+            self.assertFalse({q for s, t in path for q in Router.grid(s, t)} & label, path)
 
 
 class TunnelLeads(unittest.TestCase):
