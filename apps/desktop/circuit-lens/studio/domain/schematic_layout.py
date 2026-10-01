@@ -18,7 +18,8 @@ Methodology (this is the part an LLM should not improvise per wire):
    (a pipeline stage), barycenter sweeps to reduce crossings, parts wired
    output to input across neighbouring columns aligned into blocks so those
    wires are straight, then tight grid-snapped coordinate assignment in
-   sub-columns of bounded height.
+   sub-columns of bounded height, every channel wide enough for the Tunnel
+   labels that face each other across it.
 5. Routing is global and ordered: short nets first, then longer ones detour
    around them, using the grid A* router that already knows Logisim's rules
    (never end or bend on foreign copper, never pass through a foreign port,
@@ -151,6 +152,15 @@ def _box_points(b):
     """Grid points inside a box (3 px clear of its edge): a wire there runs through it."""
     return ((x, y) for x in range(GRID * math.ceil((b[0] + 3) / GRID), int(b[2] - 3) + 1, GRID)
             for y in range(GRID * math.ceil((b[1] + 3) / GRID), int(b[3] - 3) + 1, GRID))
+
+
+def _channel_room(right, left):
+    """Width a channel needs between the right side of one column and the
+    left side of the next (see SchematicLayout._flag_sides): wherever a flag
+    is level with a flag or a body across it, both fit with a grid step
+    between them."""
+    return max((a[2] + b[2] + GRID for a in right for b in left
+                if (a[3] or b[3]) and min(a[1], b[1]) - max(a[0], b[0]) >= 3), default=0)
 
 
 def _estimated_geometry(element, x, y):
@@ -1871,6 +1881,19 @@ class SchematicLayout:
         body_bottom = top
         # a whole number of grid steps, so every part keeps its grid phase (on_grid)
         frame = GRID * math.floor(min((y for l in layers_sorted for y in top_y[l].values()), default=0) / GRID)
+        # Tunnels on the right edge of one column and on the left edge of the
+        # next face each other across the channel; where they are level, both
+        # labels need room in it, or they are drawn on top of each other (a
+        # label running into the part across the channel reads as badly).
+        flag_labels = {}
+        for key, cls in self.classes.items():
+            real = [port for port in self.nets[key] if port[0] not in self.tunnels]
+            if cls in ("tunnel", "global") and (len(real) >= 2 or self.labels_of_net.get(key)):
+                ports = [port for port in real if port[0] in layer and self.by_id[port[0]]["factoryName"] != "Text"]
+                if ports:
+                    labels = self._labels_for(key)
+                    flag_labels.update((port, labels) for port in ports)
+        before, planned = [], 0        # the right side of the column placed last, the gap planned after it
         for l in layers_sorted:
             ids = order[l]
             columns = [[]]
@@ -1880,6 +1903,16 @@ class SchematicLayout:
                 columns[-1].append(cid)
             for k, column in enumerate(columns):
                 width = max(x_offset[cid] + fan_dx.get(cid, 0) + self.by_id[cid]["bounds"]["width"] for cid in column)
+                left, right = [], []
+                for cid in column:
+                    inset = x_offset[cid] + fan_dx.get(cid, 0)
+                    sides = self._flag_sides(self.by_id[cid], top + top_y[l][cid] - frame, inset,
+                                             width - inset - self.by_id[cid]["bounds"]["width"], flag_labels)
+                    left += sides[0]
+                    right += sides[1]
+                if before:
+                    x_cursor += max(0, GRID * math.ceil((_channel_room(before, left) - planned) / GRID))
+                before = right
                 for cid in column:
                     c = self.by_id[cid]
                     b = c["bounds"]
@@ -1890,7 +1923,8 @@ class SchematicLayout:
                     dy = _snap(y - b["y"])
                     placement[cid] = (dx, dy)
                     body_bottom = max(body_bottom, _snap(y + b["height"] + self.row_gap))
-                x_cursor += width + (SUBCOLUMN_GAP if k + 1 < len(columns) else channel(l))
+                planned = SUBCOLUMN_GAP if k + 1 < len(columns) else channel(l)
+                x_cursor += width + planned
         shelf_x = 100
         for cid in sorted(self.shelf, key=lambda c: self.by_id[c]["bounds"]["x"]):
             b = self.by_id[cid]["bounds"]
@@ -1922,6 +1956,36 @@ class SchematicLayout:
         self.report["moved"] = sum(1 for cid, (dx, dy) in placement.items() if dx or dy)
         return placement
 
+    def _flag_sides(self, c, top, inset_left, inset_right, flag_labels):
+        """(left, right): what a part puts beside its column, as (y0, y1, px
+        past the column's edge, is a flag) -- its body, inset from the edge
+        of a wider column, and every sideways flag of its ports with the lead
+        and the label chain. On one edge a wide label beside a narrow one
+        stands out past it (_lead_steps gives the narrow labels the short
+        leads)."""
+        b = c["bounds"]
+        left, right = [(top, top + b["height"], -inset_left, False)], [(top, top + b["height"], -inset_right, False)]
+        edge = defaultdict(list)                 # facing -> (port y, labels) of the sideways flags
+        for idx, _end in enumerate(c["ends"]):
+            labels = flag_labels.get((c["componentId"], idx))
+            if labels:
+                (_px, py), facing, _step = self._port_edge(c, idx)
+                if facing in ("east", "west"):
+                    edge[facing].append((py, labels))
+        for facing, flags in edge.items():
+            for py, labels in flags:
+                w = _text_width(labels[0])
+                past = [_text_width(other[0]) for oy, other in flags if 0 < abs(oy - py) < 20 and _text_width(other[0]) <= w]
+                out = max(GRID * (k + 1) + _text_width(label) for k, label in enumerate(labels))
+                if past:
+                    out += GRID * math.ceil((max(past) + 3) / GRID)
+                y = top + py - b["y"]
+                if facing == "east":
+                    left.append((y - 10, y + 10, out - inset_left, True))
+                else:
+                    right.append((y - 10, y + 10, out - inset_right, True))
+        return left, right
+
     # ---- routing ---------------------------------------------------------------
     def _moved(self, c):
         dx, dy = self.placement.get(c["componentId"], (0, 0))
@@ -1936,9 +2000,12 @@ class SchematicLayout:
         """Grid steps from every anchored port to its first Tunnel. A flag is
         20 px tall (a north or south one as wide as its label), so on ports
         10 px apart, flags one cell off every port lie on top of each other.
-        Port by port along each edge, a lead grows until its flag clears
-        the flags placed before it: on a column of inputs every other flag
-        stands a label further out, its lead in the gap between two flags.
+        Port by port along each edge, the narrowest labels first, a lead
+        grows until its flag clears the flags placed before it: on a column
+        of inputs every other flag stands a label further out, its lead in
+        the gap between two flags, and a wide label stands out past the
+        narrow ones (the other way round the lead past a wide label would
+        run longer than LEAD_MAX).
         A lead never runs through a flag, a body, a foreign port or the cell
         in front of one, and stops at LEAD_MAX (then it stays one cell).
         A row of Tunnels on a north or south edge (a Splitter's fan) cannot
@@ -2045,7 +2112,7 @@ class SchematicLayout:
         def edge_key(port):
             cid, idx = port
             (px, py), facing, _step = self._port_edge(moved[cid], idx)
-            return cid, facing, py, px
+            return cid, facing, _text_width(self.anchors[port][0]), py, px
 
         for port in sorted(self.anchors, key=edge_key):
             if port in steps:

@@ -8,7 +8,9 @@ HUST CPUs, 2026-09-25):
     wire (6 % of 22.7k corpus tunnels sit on the port; humans draw a lead).
     On ports 10 px apart every other lead is longer, so that no two flags
     lie on top of each other; a row on a bottom or top edge turns its flags
-    sideways in a V.
+    sideways in a V. The narrow labels take the short leads and a wide one
+    stands out past them; a channel has room for the labels that face each
+    other across it.
   - A wire keeps out of Tunnel labels (it would cross the name out): a step
     into one costs more than a crossing, so of two routes alike the router
     takes the one around the flags.
@@ -62,7 +64,7 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
 from studio.domain.schematic_layout import (SchematicLayout, PIPELINE_REGISTER_RE, TUNNEL_SPAN,  # noqa: E402
                                             UNNAMED_SPAN_FACTOR, COLUMN_GAP, CHANNEL_MIN, CROSSING_COST, BEND_COST,
-                                            FLAG_COST, _attr)
+                                            FLAG_COST, _attr, _channel_room)
 from studio.domain.routing import Router, Partition  # noqa: E402
 
 
@@ -467,6 +469,34 @@ class StaggeredLeads(unittest.TestCase):
         steps, turned = layout._lead_steps({'s': part}, self.Router())
         self.assertEqual([steps[('s', k)] for k in range(4)], [1, 3, 3, 1])
         self.assertEqual([turned[('s', k)] for k in range(4)], ['east', 'east', 'west', 'west'])
+
+    def test_a_wide_label_stands_out_past_the_narrow_ones(self):
+        # the other way round D1 would have to clear a 73 px label: no lead is that long
+        part = comp('m', 'Multiplexer', 100, 0, [(0, 10 * k, 'input', f'n{k}') for k in range(1, 5)], width=40, height=60)
+        labels = ['WriteData', 'D1', 'WriteData', 'D1']
+        layout = bare(by_id={'m': part}, layer={'m': 0}, anchors={('m', k): [labels[k]] for k in range(4)})
+        steps, _turned = layout._lead_steps({'m': part}, self.Router())
+        self.assertEqual([steps[('m', k)] for k in range(4)], [4, 1, 4, 1])
+
+
+class FlagsAcrossAChannel(unittest.TestCase):
+    """Flags that face each other across a channel get room for both labels
+    (_flag_sides, _channel_room)."""
+
+    def test_level_flags_need_both_labels_and_a_grid_step(self):
+        a = comp('a', 'Register', 0, 0, [(40, 20, 'output', 'q')])          # on the east edge: its flag points west
+        b = comp('b', 'Register', 0, 0, [(0, 20, 'input', 'd')])            # on the west edge: its flag points east
+        _left, right = bare()._flag_sides(a, 0, 0, 0, {('a', 0): ['WriteData']})
+        left, _right = bare()._flag_sides(b, 0, 0, 0, {('b', 0): ['ReadData']})
+        self.assertEqual(_channel_room(right, left), (10 + 73) + (10 + 66) + 10)    # lead + label on each side
+        lower, _right = bare()._flag_sides(b, 100, 0, 0, {('b', 0): ['ReadData']})
+        self.assertEqual(_channel_room(right, lower), 0)                    # not level: the channel as it was
+
+    def test_a_wide_label_beside_a_narrow_one_reaches_past_it(self):
+        b = comp('b', 'Register', 0, 0, [(0, 10, 'input', 'd'), (0, 20, 'input', 'e')])
+        left, _right = bare()._flag_sides(b, 0, 0, 0, {('b', 0): ['WriteData'], ('b', 1): ['D1']})
+        # D1 takes the short lead: WriteData's tip stands 40 px out (see _lead_steps)
+        self.assertEqual(sorted(reach for _y0, _y1, reach, flag in left if flag), [10 + 24, 40 + 73])
 
 
 class LabelsAreKeptClear(unittest.TestCase):
