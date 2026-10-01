@@ -89,6 +89,7 @@ PIPELINE_REGISTER_RE = re.compile(r"^[◇◆●★☆\s]*(?:气泡)?(?:(IF|ID|EX
 COMPACT_GAP = 60            # air right of a part after compaction (hand-drawn: median gap to the right neighbour)
 LAYER_SPLIT = 2.5           # a layer this many times taller than the column budget becomes side-by-side columns
 LEAD_MAX = 8                # a Tunnel's lead grows up to this many grid steps to clear the flags beside it
+V_LEAD_MAX = 32             # ... and in a V of sideways flags under a long row of ports (placement leaves room for it)
 FAN_COLUMNS = 4             # Pins level with the ports they are wired to stand at most this many abreast
 # Hand-drawn sheets are no denser than this (bodies per million px², by body
 # count: a small circuit gets more air than a CPU); compaction stops there.
@@ -146,6 +147,21 @@ def _label_box(tip, facing, label):
     x, y = tip
     return {"east": (x - w, y - 10, x, y + 10), "west": (x, y - 10, x + w, y + 10),
             "north": (x - w // 2, y, x + w // 2, y + 20), "south": (x - w // 2, y - 20, x + w // 2, y)}[facing]
+
+
+def _fan_runs(row):
+    """A row of one-label Tunnels on a part's top or bottom edge, as (x, label,
+    ...) in x order, cut into the runs that turn sideways together in a V
+    (see SchematicLayout._lead_steps): the end flags of two runs point at
+    each other, so runs closer than both labels stay one."""
+    runs = [[row[0]]]
+    for p in row[1:]:
+        last = runs[-1][-1]
+        if p[0] - last[0] < _text_width(last[1]) + _text_width(p[1]) + GRID:
+            runs[-1].append(p)
+        else:
+            runs.append([p])
+    return runs
 
 
 def _box_points(b):
@@ -1413,6 +1429,49 @@ class SchematicLayout:
             below = self.by_id[cid]["location"]["y"] - self.by_id[cid]["bounds"]["y"]
             return _snap(y + below) - below
 
+        # Ports that will carry Tunnels (every body port of a net drawn by label).
+        flag_labels = {}
+        for key, cls in self.classes.items():
+            real = [port for port in self.nets[key] if port[0] not in self.tunnels]
+            if cls in ("tunnel", "global") and (len(real) >= 2 or self.labels_of_net.get(key)):
+                ports = [port for port in real if port[0] in layer and self.by_id[port[0]]["factoryName"] != "Text"]
+                if ports:
+                    labels = self._labels_for(key)
+                    flag_labels.update((port, labels) for port in ports)
+
+        def edge_room(cid):
+            """(above, below): how far the Tunnels on a part's top and bottom
+            edges reach past its body -- one cell out and a 20 px upright
+            label (more labels chained outward), or, where the labels of a
+            row would overlap, turned sideways in a V whose middle lead is
+            the longest (see _lead_steps)."""
+            c = self.by_id[cid]
+            rows = defaultdict(list)
+            for idx, _end in enumerate(c["ends"]):
+                labels = flag_labels.get((cid, idx))
+                if labels:
+                    (px, _py), facing, (_sx, sy) = self._port_edge(c, idx)
+                    if sy:
+                        rows[sy < 0].append((px, facing, labels))
+            room = {True: 0, False: 0}
+            for up, ports in rows.items():
+                # chained labels stand upright one after another
+                room[up] = max(GRID * len(labels) + 20 for _px, _facing, labels in ports)
+                single = sorted((px, labels[0], facing) for px, facing, labels in ports if len(labels) == 1)
+                for run in _fan_runs(single) if single else ():
+                    boxes = [_label_box((px, 0), facing, label) for px, label, facing in run]
+                    lead = 2 * ((len(run) + 1) // 2) - 1
+                    if lead <= V_LEAD_MAX and any(min(a[2], b[2]) - max(a[0], b[0]) >= 3 for a, b in zip(boxes, boxes[1:])):
+                        room[up] = max(room[up], GRID * lead + 10)
+            return room[True], room[False]
+
+        room = {cid: edge_room(cid) for cid in layer}
+
+        def gap(a, b):
+            """Air between part a and part b below it in a column: the Tunnels
+            under a and over b both fit, a grid step apart."""
+            return max(self.row_gap, room[a][1] + room[b][0] + GRID)
+
         # initial order: the author's y (their intent when it exists)
         order = {}
         for l, ids in by_layer.items():
@@ -1425,7 +1484,7 @@ class SchematicLayout:
         def stack(l, desired=None):
             """Body tops for column l in its current order.
 
-            Compact first (self.row_gap between neighbours), then the whole column
+            Compact first (gap() between neighbours), then the whole column
             shifts rigidly by the median offset to where its ports would like
             to be (desired), then parts with the most connections move within
             their slack towards their own desired y. The column may not grow
@@ -1435,10 +1494,10 @@ class SchematicLayout:
             if not ids:
                 return {}
             tops, cursor = {}, 0
-            for cid in ids:
+            for i, cid in enumerate(ids):
                 tops[cid] = cursor
-                cursor += height(cid) + self.row_gap
-            compact = cursor - self.row_gap
+                cursor += height(cid) + (gap(cid, ids[i + 1]) if i + 1 < len(ids) else 0)
+            compact = cursor
             wanted = {cid: y for cid, y in (desired or {}).items() if cid in tops and y is not None}
             if not wanted:
                 return {cid: on_grid(cid, y) for cid, y in tops.items()}
@@ -1451,17 +1510,17 @@ class SchematicLayout:
             index = {cid: i for i, cid in enumerate(ids)}
             for cid in sorted(wanted, key=lambda c: -len(touching[c])):
                 i = index[cid]
-                lo = lo_frame if i == 0 else tops[ids[i - 1]] + height(ids[i - 1]) + self.row_gap
-                below = sum(height(c) + self.row_gap for c in ids[i + 1:])
+                lo = lo_frame if i == 0 else tops[ids[i - 1]] + height(ids[i - 1]) + gap(ids[i - 1], cid)
+                below = sum(gap(a, b) + height(b) for a, b in zip(ids[i:], ids[i + 1:]))
                 hi = hi_frame - below - height(cid)
                 if i + 1 < len(ids):
-                    hi = min(hi, tops[ids[i + 1]] - self.row_gap - height(cid))
+                    hi = min(hi, tops[ids[i + 1]] - gap(cid, ids[i + 1]) - height(cid))
                 if hi < lo:
                     continue
                 tops[cid] = min(max(wanted[cid], lo), hi)
             for i in range(1, len(ids)):          # restore order if a clamp broke it
                 a, b = ids[i - 1], ids[i]
-                tops[b] = max(tops[b], tops[a] + height(a) + self.row_gap)
+                tops[b] = max(tops[b], tops[a] + height(a) + gap(a, b))
             return {cid: on_grid(cid, y) for cid, y in tops.items()}
 
         for l in layers_sorted:
@@ -1617,7 +1676,7 @@ class SchematicLayout:
                 ids = order[l]
                 for a, b in zip(ids, ids[1:]):
                     ra, rb = root[a], root[b]
-                    after[ra].append((rb, off[a] + height(a) + self.row_gap - off[b]))
+                    after[ra].append((rb, off[a] + height(a) + gap(a, b) - off[b]))
                     indeg[rb] += 1
             want = {}
             for r, ms in members.items():
@@ -1703,9 +1762,9 @@ class SchematicLayout:
                         cur = tops[cid]
                         lo, hi = -math.inf, math.inf
                         if i:
-                            lo = tops[ids[i - 1]] + height(ids[i - 1]) + self.row_gap
+                            lo = tops[ids[i - 1]] + height(ids[i - 1]) + gap(ids[i - 1], cid)
                         if i + 1 < len(ids):
-                            hi = tops[ids[i + 1]] - self.row_gap - height(cid)
+                            hi = tops[ids[i + 1]] - gap(cid, ids[i + 1]) - height(cid)
                         if cid in self.pin_rank and self.pin_rank[cid][0] in ("east", "west"):
                             # a Pin keeps its place in the pinout: strictly
                             # between the Pins ranked before and after it
@@ -1885,14 +1944,6 @@ class SchematicLayout:
         # next face each other across the channel; where they are level, both
         # labels need room in it, or they are drawn on top of each other (a
         # label running into the part across the channel reads as badly).
-        flag_labels = {}
-        for key, cls in self.classes.items():
-            real = [port for port in self.nets[key] if port[0] not in self.tunnels]
-            if cls in ("tunnel", "global") and (len(real) >= 2 or self.labels_of_net.get(key)):
-                ports = [port for port in real if port[0] in layer and self.by_id[port[0]]["factoryName"] != "Text"]
-                if ports:
-                    labels = self._labels_for(key)
-                    flag_labels.update((port, labels) for port in ports)
         before, planned = [], 0        # the right side of the column placed last, the gap planned after it
         for l in layers_sorted:
             ids = order[l]
@@ -1922,7 +1973,7 @@ class SchematicLayout:
                     dx = _snap(x_cursor + x_offset[cid] + fan_dx.get(cid, 0) - b["x"])
                     dy = _snap(y - b["y"])
                     placement[cid] = (dx, dy)
-                    body_bottom = max(body_bottom, _snap(y + b["height"] + self.row_gap))
+                    body_bottom = max(body_bottom, _snap(y + b["height"] + max(self.row_gap, room[cid][1] + GRID)))
                 planned = SUBCOLUMN_GAP if k + 1 < len(columns) else channel(l)
                 x_cursor += width + planned
         shelf_x = 100
@@ -2015,7 +2066,8 @@ class SchematicLayout:
         neighbours' leads however long they are. Its flags turn sideways in
         a V -- the left half pointing left with leads growing towards the
         middle, the right half pointing right -- so every lead ends above
-        the flags beside it, unless the V runs into more than the upright
+        the flags beside it (up to V_LEAD_MAX steps: _place_once leaves the
+        room under the part), unless the V runs into more than the upright
         row would.
         `late` plans only those ports (labelled after routing, where a route
         could not reach them) around the flags already standing and the
@@ -2116,13 +2168,8 @@ class SchematicLayout:
                 rows[(port[0], facing, py)].append((px, port))
         for (cid, facing, py), members in sorted(rows.items(), key=lambda kv: str(kv[0])):
             members.sort()
-            runs = [[members[0]]]
-            for m in members[1:]:
-                if m[0] - runs[-1][-1][0] <= 2 * GRID:
-                    runs[-1].append(m)
-                else:
-                    runs.append([m])
-            for run in runs:
+            for run in _fan_runs([(px, self.anchors[port][0], port) for px, port in members]):
+                run = [(px, port) for px, _label, port in run]
                 upright = [_label_box((px, py + (GRID if facing == "north" else -GRID)), facing, self.anchors[port][0]) for px, port in run]
                 stacked = sum(1 for i, a in enumerate(upright) for b in upright[i + 1:] if overlap(a, b))
                 if not stacked:
@@ -2130,7 +2177,7 @@ class SchematicLayout:
                 half = (len(run) + 1) // 2
                 plan = [(port, 1 + 2 * rank, "east") if rank < half else (port, 1 + 2 * (len(run) - 1 - rank), "west")
                         for rank, (_px, port) in enumerate(run)]
-                if max(n for _p, n, _f in plan) > LEAD_MAX:
+                if max(n for _p, n, _f in plan) > V_LEAD_MAX:
                     continue
                 done = []
                 for port, n, side in plan:
