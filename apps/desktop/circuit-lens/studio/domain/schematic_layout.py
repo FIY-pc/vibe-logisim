@@ -2062,10 +2062,12 @@ class SchematicLayout:
         right = max((self.by_id[cid]["bounds"]["x"] + dx + self.by_id[cid]["bounds"]["width"] for cid, (dx, dy) in placement.items()), default=0)
         self.footer = {"x": 100, "y": _snap(body_bottom + 60), "row": 0, "right": max(right, 800)}
         texts = sorted((c for c in self.body if c["componentId"] not in layer), key=lambda c: (c["bounds"]["x"], c["bounds"]["y"]))
+        self.captions = {}                      # caption -> its part, held together by _compact_sheet too
         for t in texts:
             nearest = min(((gap(t["bounds"], self.by_id[cid]["bounds"]), cid) for cid in layer), default=None)
             if t["factoryName"] == "Text" and nearest is not None and nearest[0] <= TEXT_ATTACH_DISTANCE:
                 placement[t["componentId"]] = placement[nearest[1]]
+                self.captions[t["componentId"]] = nearest[1]
             else:
                 x, y = self._footer_slot(t["bounds"]["width"], t["bounds"]["height"])
                 placement[t["componentId"]] = (_snap(x - t["bounds"]["x"]), _snap(y - t["bounds"]["y"]))
@@ -3031,6 +3033,11 @@ class SchematicLayout:
             if elements[i].get("name") not in CONSTANT_SOURCES:
                 columns[comps[i]["boxes"][0][0]].append(i)
         together = [members for members in columns.values() if len(members) > 1]
+        # A caption is read with its part: left free, a Text above or below a
+        # part overlaps nothing at the part's height and slides off on its own.
+        moving = set(bodies)
+        together += [[index[text], index[part]] for text, part in getattr(self, "captions", {}).items()
+                     if text in index and index.get(part) in moving and not comps[index[text]]["fixed"]]
         dx, moved = compact_x(comps, wires, part_gap=self.sheet_gap, keep_order=keep, min_width=min_width, extent_parts=bodies,
                               together=together)
         pins = {}

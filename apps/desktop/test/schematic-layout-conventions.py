@@ -60,6 +60,7 @@ No model. Shapes are synthesised; the lead, chain and CPU tests observe natively
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
@@ -416,6 +417,22 @@ class FooterWraps(unittest.TestCase):
         self.assertEqual(slots[:2], [(100, 1000), (240, 1000)])
         self.assertEqual(slots[2], (100, 1040))                  # 380 + 100 > 400: next row
         self.assertTrue(all(x + 100 <= 400 or x == 100 for x, y in slots))
+
+
+class CaptionsStayWithTheirParts(unittest.TestCase):
+    def test_squeezing_the_sheet_moves_a_caption_with_its_part(self):
+        # 'c' stops the gate 'b' at its height; nothing stops the caption
+        # above 'b', which on its own would slide on to the left edge
+        parts = [comp('a', 'NOT Gate', 100, 100, []), comp('a2', 'NOT Gate', 100, 500, []),
+                 comp('c', 'NOT Gate', 300, 300, []), comp('b', 'NOT Gate', 800, 300, []),
+                 comp('t', 'Text', 790, 270, [], width=60, height=20)]
+        circuit = ET.fromstring('<circuit name="main">' + ''.join(
+            f'<comp lib="1" name="{c["factoryName"]}" loc="({c["location"]["x"]},{c["location"]["y"]})"/>' for c in parts) + '</circuit>')
+        layout = bare(by_id={c['componentId']: c for c in parts}, element_of=dict(zip((c['componentId'] for c in parts), circuit)),
+                      panel_below_y=None, nets={}, moved={}, sheet_gap=60, placement={}, captions={'t': 'b'})
+        layout._compact_sheet(circuit)
+        self.assertLess(layout.placement['b'][0], 0)                                # the gate moved left ...
+        self.assertEqual(layout.placement.get('t'), layout.placement['b'])          # ... and its caption with it
 
 
 class Channels(unittest.TestCase):
