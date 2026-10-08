@@ -117,11 +117,14 @@ def write_zip(root, archive, name):
 def usage_text(target, version):
     common = ('Vibe Logisim ' + version + '\n\n解压整个文件夹后，双击 {launcher} 即可使用。\n'
               '无需另外安装 Python、Java 或 Codex。打开你的文件夹，选择或新建 .circ 电路。\n'
-              'AI 面板可以登录 ChatGPT，也可以在「AI 设置」里填写 OpenAI 兼容接口的地址和密钥。\n\n')
+              'AI 面板可以登录 ChatGPT，也可以在「AI 设置」里填写支持流式 Responses API 的接口地址和密钥。\n'
+              '使用 AI 需要你自己的账号或接口额度；不连接 AI 也能编辑和仿真。\n'
+              'Ctrl+点击端口、隧道或导线可追踪信号，Alt+左方向键返回。\n'
+              '使用说明：https://github.com/FIY-pc/vibe-logisim\n\n')
     if target == 'win32-x64':
         return common.format(launcher='vibe-logisim.exe') + (
             '首次运行时 Windows 可能提示“未知发布者”，选择“更多信息 → 仍要运行”。\n'
-            '内置 AI 只能修改你打开的文件夹，其他位置只读。\n'
+            '把电路、组件库和任务书放进工作文件夹，说明目标及需要保留的结构，即可让 AI 开始任务。\n'
             '课程运行文件 logisim-ita-cn-20200118.exe 是课程发布的 Logisim 运行包，由内置 Java 加载，不会单独运行。\n')
     return common.format(launcher='vibe-logisim') + (
         '当前支持 Linux x86_64 桌面（glibc、GTK3、systemd 用户服务）。\n'
@@ -164,6 +167,14 @@ def build(args):
         package = {k: metadata[k] for k in ('name', 'version', 'main', 'description')}
         (app / 'package.json').write_text(json.dumps(package, indent=2))
         (product / 'apps/desktop/package.json').write_text(json.dumps(package))
+        # The Python layout service starts Electron in Node mode; no system
+        # Node installation or network package resolution is needed.
+        elk = product / 'apps/desktop/node_modules/elkjs'
+        for item in ('lib/elk.bundled.js', 'LICENSE.md', 'package.json'):
+            source = DESKTOP / 'node_modules/elkjs' / item
+            target_path = elk / item
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target_path)
         # Browser-only PDF.js; its optional Node canvas and dev tools are not
         # needed in Electron's sandboxed preview renderer.
         pdf = app / 'node_modules/pdfjs-dist'

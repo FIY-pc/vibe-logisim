@@ -236,6 +236,7 @@ public final class ExactRuntimeObserver {
         Path observerBundle,
         String loaderStdout
     ) throws Exception {
+        measureGeometry();
         NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns);
         nets.compute();
 
@@ -663,9 +664,33 @@ public final class ExactRuntimeObserver {
         return (List<Object>) value;
     }
 
+    /** Some native components cache approximate bounds until their first paint,
+     * then overwrite them with the current (possibly zoomed) font metrics.
+     * Establish geometry in one canonical, unscaled graphics context before
+     * every observation. Display rendering must not change subsequent facts.
+     * A one-pixel surface bounds memory; drawing each component explicitly
+     * avoids viewport culling and never starts simulation.
+     */
+    private void measureGeometry() {
+        Graphics2D g = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics();
+        Project project = new Project(file);
+        project.getSimulator().shutDown();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            ComponentDrawContext context = new ComponentDrawContext(null, focus,
+                project.getCircuitState(focus), g, g, true);
+            context.setShowState(false);
+            context.setShowColor(true);
+            for (Component component : sortedComponents(focus)) component.draw(context);
+        } finally { g.dispose(); }
+    }
+
     private List<Object> observeComponents(NetIndex nets) {
         List<Component> ordered = sortedComponents(focus);
         List<Object> result = new ArrayList<Object>();
+        Graphics2D measurement = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics();
+        try {
         for (Component component : ordered) {
             coverage.components++;
             String id = focusIds.get(component);
@@ -733,6 +758,7 @@ public final class ExactRuntimeObserver {
                 "factoryProvenance", provenance,
                 "location", location(component.getLocation()),
                 "bounds", bounds(componentBounds),
+                "visualBounds", bounds(component.getBounds(measurement)),
                 "inRegion", inRegion,
                 "attributes", attributes(component.getAttributeSet()),
                 "ends", ends,
@@ -740,6 +766,9 @@ public final class ExactRuntimeObserver {
                     ? ((SubcircuitFactory) component.getFactory()).getSubcircuit().getName()
                     : null
             ));
+        }
+        } finally {
+            measurement.dispose();
         }
         return result;
     }

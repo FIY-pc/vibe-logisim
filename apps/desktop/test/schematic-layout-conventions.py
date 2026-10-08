@@ -81,6 +81,7 @@ def comp(cid, factory, x, y, ends, label=None, width=40, height=40):
 
 def bare(**attrs):
     layout = SchematicLayout.__new__(SchematicLayout)
+    layout.placement_strategy = None
     layout.column_gap, layout.channel_min, layout.max_layer_span, layout.tunnel_span_scale = COLUMN_GAP, CHANNEL_MIN, 8, 1.0
     layout.report = {'nets': {}}
     layout.copies, layout.fused, layout.relocated = {}, {}, {}

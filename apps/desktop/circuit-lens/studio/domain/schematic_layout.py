@@ -55,6 +55,8 @@ from xml.parsers import expat
 
 from studio.domain.compaction import compact_x
 from studio.domain.routing import Router, Partition
+from studio.domain.fixed_geometry import fixed_copper
+from studio.domain.wire_geometry import subtract_segments
 
 GRID = 10
 PANEL_FACTORIES = {"Pin", "Probe", "Hex Digit Display", "LED", "Button", "Text", "Clock", "Pull Resistor", "RiscV Probe", "Counter", "D Flip-Flop", "Controlled Buffer", "NAND Gate"}
@@ -147,7 +149,15 @@ def _label_box(tip, facing, label):
     w = _text_width(label)
     x, y = tip
     return {"east": (x - w, y - 10, x, y + 10), "west": (x, y - 10, x + w, y + 10),
-            "north": (x - w // 2, y, x + w // 2, y + 20), "south": (x - w // 2, y - 20, x + w // 2, y)}[facing]
+            "north": (x - w // 2, y - 1, x + w // 2, y + 23), "south": (x - w // 2, y - 23, x + w // 2, y + 1)}[facing]
+
+
+def _chain_offsets(labels, step):
+    """Successive alias flags need their text width, not a 10 px overlap."""
+    offsets = [0]
+    for label in labels[:-1]:
+        offsets.append(offsets[-1] + math.ceil(((_text_width(label) if step[0] else 20) + 10) / GRID))
+    return offsets
 
 
 def _fan_runs(row):
@@ -385,7 +395,8 @@ def splice_circuit(source, name, circuit):
 
 
 class SchematicLayout:
-    def __init__(self, xml_text, circuit_name, focus, *, pinned_ids=(), keep_tunnels=(), localise_constants=True, panel_below_y=None):
+    def __init__(self, xml_text, circuit_name, focus, *, pinned_ids=(), keep_tunnels=(), localise_constants=True, panel_below_y=None, placement_strategy=None):
+        self.placement_strategy = placement_strategy
         self.source, self.circuit_name = xml_text, circuit_name
         self.tree = ET.ElementTree(ET.fromstring(xml_text))
         root = self.tree.getroot()
@@ -849,8 +860,9 @@ class SchematicLayout:
         for host in set(self.fused.values()):
             parts = [host] + sorted(p for p, h in self.fused.items() if h == host)
 
-            def box(m):
-                b = self.by_id[m]["bounds"]
+            def box(m, visual=False):
+                c = self.by_id[m]
+                b = c.get("visualBounds", c["bounds"]) if visual else c["bounds"]
                 dx, dy = self.relocated.get(m, (0, 0))
                 return {"x": b["x"] + dx, "y": b["y"] + dy, "width": b["width"], "height": b["height"]}
 
@@ -867,7 +879,10 @@ class SchematicLayout:
                         seen[loc] = len(ends)
                         ends.append(dict(e, index=len(ends), location=at))
                     remap[(m, e["index"])] = (host, seen[loc])
-            by_id[host] = dict(self.by_id[host], bounds={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}, ends=ends)
+            visual = [box(m, True) for m in parts]
+            vx, vy = min(b["x"] for b in visual), min(b["y"] for b in visual)
+            vb = {"x": vx, "y": vy, "width": max(b["x"]+b["width"] for b in visual)-vx, "height": max(b["y"]+b["height"] for b in visual)-vy}
+            by_id[host] = dict(self.by_id[host], visualBounds=vb, bounds={"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}, ends=ends)
         nets = {}
         for key, ports in self.nets.items():
             mapped = []
@@ -1436,6 +1451,8 @@ class SchematicLayout:
         two of one facing out of order, the placement is redone with every
         facing's Pins in one column (costlier: long nets to the right edge
         become Tunnels)."""
+        if self.placement_strategy is not None:
+            return self.placement_strategy(self)
         classes = dict(self.classes)
         placement = self._place_once(one_layer=False)
         if not self._pinout_kept(placement):
@@ -1992,6 +2009,7 @@ class SchematicLayout:
 
         # coordinate assignment: sub-columns of bounded height per layer
         panel_bottom = max((c["bounds"]["y"] + c["bounds"]["height"] for c in self.components if self._is_panel(c)), default=0)
+        panel_bottom = max(panel_bottom, self.panel_below_y or 0)
         top = _snap(panel_bottom + 120)
         # Keep the author's panel/body split when the body already starts just
         # below the panel (course files: panel y<600, body from ~630); anything
@@ -2113,6 +2131,8 @@ class SchematicLayout:
         m = copy.deepcopy(c)
         m["location"] = {"x": c["location"]["x"] + dx, "y": c["location"]["y"] + dy}
         m["bounds"] = {**c["bounds"], "x": c["bounds"]["x"] + dx, "y": c["bounds"]["y"] + dy}
+        if "visualBounds" in c:
+            m["visualBounds"] = {**c["visualBounds"], "x": c["visualBounds"]["x"] + dx, "y": c["visualBounds"]["y"] + dy}
         for e in m["ends"]:
             e["location"] = {"x": e["location"]["x"] + dx, "y": e["location"]["y"] + dy}
         return m
@@ -2163,7 +2183,7 @@ class SchematicLayout:
         buckets = defaultdict(list)            # 100 px cells -> flags placed there
         parts = defaultdict(list)              # 100 px cells -> bodies there (localised Constants too)
         for c in moved.values():
-            b = c["bounds"]
+            b = c.get("visualBounds", c["bounds"])
             if c["factoryName"] not in ("Tunnel", "Text") and b["width"] > 0 and b["height"] > 0:
                 for bx in range(int(b["x"]) // 100, int(b["x"] + b["width"]) // 100 + 1):
                     for by in range(int(b["y"]) // 100, int(b["y"] + b["height"]) // 100 + 1):
@@ -2199,7 +2219,8 @@ class SchematicLayout:
             labels = self.anchors[port]
             (px, py), _facing, (sx, sy) = self._port_edge(moved[cid], idx)
             owner = router.owner(moved[cid]["ends"][idx].get("netBits") or [])
-            cells = [(px + sx * k, py + sy * k) for k in range(1, n + len(labels))]
+            offsets = _chain_offsets(labels, (sx, sy))
+            cells = [(px + sx * k, py + sy * k) for k in range(1, n + offsets[-1] + 1)]
             for q in cells[:n - 1]:
                 if (q in router.blocked or q in taken or any(own != owner for own in router.port_owners.get(q, ()))
                         or fronts.get(q, port) != port or any(inside(q, f) for f in near((q[0], q[1], q[0], q[1])))
@@ -2208,7 +2229,7 @@ class SchematicLayout:
             if any(q in router.blocked or q in taken or any(own != owner for own in router.port_owners.get(q, ())) or fronts.get(q, port) != port
                    or late is not None and walled(q) for q in cells[n - 1:]):
                 return None
-            flags = [_label_box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)]
+            flags = [_label_box((px + sx * (n + k), py + sy * (n + k)), facing, label) for k, label in zip(offsets, labels)]
             return cells, flags, crowd(flags)
 
         def place(port, n, cells, flags, _clutter=0):
@@ -2225,8 +2246,9 @@ class SchematicLayout:
                 if port not in late:
                     (px, py), facing, (sx, sy) = self._port_edge(moved[port[0]], port[1])
                     n, facing = self.lead_steps.get(port, 1), self.lead_facing.get(port, facing)
-                    cells = [(px + sx * k, py + sy * k) for k in range(1, n + len(labels))]
-                    place(port, n, cells, [_label_box(cell, facing, label) for cell, label in zip(cells[n - 1:], labels)])
+                    offsets = _chain_offsets(labels, (sx, sy))
+                    cells = [(px + sx * k, py + sy * k) for k in range(1, n + offsets[-1] + 1)]
+                    place(port, n, cells, [_label_box((px + sx * (n + k), py + sy * (n + k)), facing, label) for k, label in zip(offsets, labels)])
             steps.clear()
 
         rows = defaultdict(list)
@@ -2295,9 +2317,29 @@ class SchematicLayout:
                 flags = [_label_box((px, py), facing, labels[0])]
                 if crowd(flags) < best[3]:
                     best = (0, [], flags)
+            # Bounded local repair for organized drawings. Keep the native
+            # port and lead direction; only turn the Tunnel's flag if its
+            # ordinary orientation still collides. The router subsequently
+            # reserves/prices exactly this geometry and native checks remain.
+            if self.placement_strategy is not None and late is None and best is not None and best[3]:
+                for side in ('east', 'west', 'north', 'south'):
+                    if side == facing:
+                        continue
+                    for n in range(1, LEAD_MAX + 1):
+                        fit = fits(port, n, side)
+                        if fit is False:
+                            break
+                        if fit is not None and fit[2] < best[3]:
+                            best = (n, *fit)
+                            turned[port] = side
+                        if best[3] == 0:
+                            break
+                    if best[3] == 0:
+                        break
             if best is None:
-                cells = [(px + sx * k, py + sy * k) for k in range(1, len(labels) + 1)]
-                best = (1, cells, [_label_box(cell, facing, label) for cell, label in zip(cells, labels)])
+                offsets = _chain_offsets(labels, (sx, sy))
+                cells = [(px + sx * k, py + sy * k) for k in range(1, offsets[-1] + 2)]
+                best = (1, cells, [_label_box((px+sx*(1+k), py+sy*(1+k)), facing, label) for k,label in zip(offsets,labels)])
             place(port, *best)
         return steps, turned
 
@@ -2307,11 +2349,16 @@ class SchematicLayout:
         Leads are as long as _lead_steps made them (one cell otherwise),
         flags turned where it turned a row; the net's own lead and chain
         cells (reserved) are left alone."""
+        for c in moved.values():
+            b, v = c["bounds"], c.get("visualBounds", c["bounds"])
+            for q in _box_points((v["x"], v["y"], v["x"]+v["width"], v["y"]+v["height"])):
+                if not (b["x"] <= q[0] <= b["x"]+b["width"] and b["y"] <= q[1] <= b["y"]+b["height"]) and q not in reserved:
+                    for axis in (0, 1): router.clearance_cost[(q, axis)] = max(router.clearance_cost.get((q, axis), 0), self.flag_cost)
         for (cid, idx), labels in self.anchors.items():
             (px, py), facing, (sx, sy) = self._port_edge(moved[cid], idx)
             facing = turned.get((cid, idx), facing)
             n = leads.get((cid, idx), 1)
-            for k, label in enumerate(labels):
+            for k, label in zip(_chain_offsets(labels, (sx, sy)), labels):
                 for q in _box_points(_label_box((px + sx * (n + k), py + sy * (n + k)), facing, label)):
                     if q not in reserved:
                         for axis in (0, 1):
@@ -2361,22 +2408,25 @@ class SchematicLayout:
     def _route(self):
         moved = {c["componentId"]: self._moved(c) for c in self.components}
         body_ids = self.body_ids
-        body_port_points = {(e["location"]["x"], e["location"]["y"]) for c in self.body for e in c["ends"]}
-        panel_points = {(e["location"]["x"], e["location"]["y"]) for c in self.components if self._is_panel(c) for e in c["ends"]}
-        # Copper that survives: bundles touching the panel and no body port.
-        # Everything that touches a moved port is rebuilt (a hand-drawn wire from
-        # a panel Pin straight into the body included -- both ends get a Tunnel).
-        kept_wires, kept_bundles, kept_points = [], [], set()
+        # Protect physical islands and geometric regions. A native bundle can
+        # include distant body ports joined only by a Tunnel name.
+        fixed_ids = {c['componentId'] for c in self.components if self._is_panel(c)}
+        kept_wires, cuts = fixed_copper(self.focus, fixed_ids, self.panel_below_y)
         bundle_by_id = {b["bundleId"]: b for b in self.focus.get("wireBundles", [])}
-        for b in self.focus.get("wireBundles", []):
-            pts = {(p["x"], p["y"]) for p in b.get("points", [])}
-            if pts & panel_points and not pts & body_port_points:
-                kept_bundles.append(b)
-                kept_points |= pts
-        kept_ids = {b["bundleId"] for b in kept_bundles}
-        for w in self.focus.get("wires", []):
-            if w["bundleId"] in kept_ids:
-                kept_wires.append(w)
+        self.boundary_bridges = []
+        for cut in cuts:
+            bundle = bundle_by_id[cut['bundleId']]
+            key = _key(bundle.get('bitNets', []))
+            if key not in self.nets:
+                continue # floating decoration has no signal to bridge
+            x,y = cut['point']; labels = self._labels_for(key)
+            # Put the new endpoint outside the fixed region. The whole
+            # original in-region portion remains exactly covered.
+            kept_wires.append({'from':{'x':x,'y':y},'to':{'x':x,'y':y+30},'bundleId':cut['bundleId']})
+            self.boundary_bridges.append({'key':key,'x':x,'y':y+30,'labels':labels,'width':len(self.bits_of[key])})
+        kept_ids = {w['bundleId'] for w in kept_wires}
+        kept_bundles = [b for b in self.focus.get('wireBundles', []) if b['bundleId'] in kept_ids]
+        kept_points = {(w[end]['x'],w[end]['y']) for w in kept_wires for end in ('from','to')}
         self.kept_wires = kept_wires
         # Tunnels: panel-side ones (in the panel, or standing on kept copper) stay
         # exactly where they are. Body-side ones of every net that has a body port
@@ -2415,9 +2465,11 @@ class SchematicLayout:
         self.synthetic_factory = {}
         occupied = [c["bounds"] for cid, c in moved.items() if cid not in self.tunnels and c["factoryName"] not in ("Text", "Tunnel")]
 
-        def collides(rect, skip=None):
+        visual_occupied = [c.get("visualBounds", c["bounds"]) for cid, c in moved.items() if cid not in self.tunnels and c["factoryName"] not in ("Text", "Tunnel")]
+
+        def collides(rect, skip=None, visual=False):
             return any(o is not skip and rect["x"] < o["x"] + o["width"] and o["x"] < rect["x"] + rect["width"] and
-                       rect["y"] < o["y"] + o["height"] and o["y"] < rect["y"] + rect["height"] for o in occupied)
+                       rect["y"] < o["y"] + o["height"] and o["y"] < rect["y"] + rect["height"] for o in (visual_occupied + occupied if visual else occupied))
 
         def constant_bounds(cx, cy, facing, body):
             # Logisim draws a Constant entirely behind its output port: facing
@@ -2471,7 +2523,7 @@ class SchematicLayout:
                 for step in range(1, 16):
                     cx, cy = px + dx * step * GRID, py + dy * step * GRID
                     bounds = constant_bounds(cx, cy, facing, body_px)
-                    if not collides(bounds) and not collides(stub_bounds(px, py, cx, cy), skip=b):
+                    if not collides(bounds, visual=True) and not collides(stub_bounds(px, py, cx, cy), skip=b):
                         placed = (cx, cy, bounds)
                         break
                 if placed is None:
@@ -2498,6 +2550,7 @@ class SchematicLayout:
         #   constant nets with panel consumers: the driver's output.
         self.anchors = {}
         self.source_of = {}
+        wire_trees = getattr(self, "wire_trees", {})
         for key, cls in self.classes.items():
             real = [(cid, idx) for cid, idx in self.nets[key] if cid not in self.tunnels]
             body_ports = [(cid, idx) for cid, idx in real if cid in body_ids]
@@ -2512,6 +2565,10 @@ class SchematicLayout:
                 self.source_of[key] = (outputs or body_ports)[0]
                 if panel_ports:
                     self.anchors[self.source_of[key]] = self._labels_for(key)
+                if key in wire_trees and (len(wire_trees[key]) > 1 or panel_ports or self.labels_of_net.get(key)):
+                    labels = self._labels_for(key)
+                    for tree in wire_trees[key]:
+                        self.anchors[tree[0]] = labels
             elif cls == "constant":
                 driver = next(cid for cid, idx in self.nets[key] if cid in self.constants)
                 # a consumer boxed in without a local copy reaches the shared
@@ -2523,6 +2580,11 @@ class SchematicLayout:
                     for port in boxed:
                         self.anchors[port] = labels
         focus_components = [c for cid, c in moved.items() if cid not in drop_tunnels]
+        for g in [*self.report.get("layoutGroups", []), *self.report.get('layoutStages', [])]:
+            focus_components.append({"componentId": "heading:" + g["id"], "factoryName": "Text", "ends": [],
+                                     "location": {"x": g["x"] + 20, "y": g["y"] + 20},
+                                     "bounds": {"x": g["x"] + 15, "y": g["y"],
+                                                "width": min(g["width"] - 20, len(g.get('heading') or g["label"]) * 20), "height": 38}})
         jobs = []
         for key, cls in self.classes.items():
             if cls != "wire":
@@ -2532,6 +2594,8 @@ class SchematicLayout:
                 continue
             # one tree per Splitter copy (see _splitter_copies), each from its copy
             trees = [(("copy", key, i), [copy] + served) for i, (copy, served) in enumerate(self.copies[key])] if key in self.copies else [(key, ports)]
+            if key in wire_trees:
+                trees = [(("local", key, i), ports) for i, ports in enumerate(wire_trees[key]) if len(ports) > 1]
             for job, ports in trees:
                 xs = [moved[cid]["ends"][idx]["location"]["x"] for cid, idx in ports]
                 ys = [moved[cid]["ends"][idx]["location"]["y"] for cid, idx in ports]
@@ -2539,6 +2603,8 @@ class SchematicLayout:
         for sid, cx, cy, facing, width, value, (cid, idx) in self.synthetic_constants:
             jobs.append((False, 20, ("const", sid), [(sid, 0), (cid, idx)]))
         jobs.sort(key=lambda j: (j[0], j[1]), reverse=(self.route_order == "long"))
+
+        named_control_jobs = set()
 
         def route_all(first, stagger=True):
             """Every job on a fresh router, the nets in `first` before the rest;
@@ -2564,7 +2630,7 @@ class SchematicLayout:
                     # the lead belongs to the port's net (its own route may still
                     # leave through it: a bridge port is both routed and labelled)
                     router.port_owners.setdefault(lead, set()).add(router.owner(moved[cid]["ends"][idx].get("netBits") or []))
-                for k in range(n + 1, n + len(labels)):
+                for k in range(n + 1, n + _chain_offsets(labels, (sx, sy))[-1] + 1):
                     reserved.add((px + sx * k, py + sy * k))
                     router.blocked.add((px + sx * k, py + sy * k))
             if self.flag_cost:
@@ -2613,7 +2679,27 @@ class SchematicLayout:
                                       tuple(bit["netId"] for bit in pin_end.get("netBits") or []))
                 wires.append((a, b))
                 wire_nets.append(key)
-            for _, _, key, ports in sorted(jobs, key=lambda j: j[2] not in first):
+            control_trees = getattr(self, 'control_trees', {})
+            control_routes = []
+            control_fallbacks = set()
+            label_boxes = []
+            if control_trees:
+                for port, labels in self.anchors.items():
+                    (px, py), facing, step = self._port_edge(moved[port[0]], port[1])
+                    facing = turned.get(port, facing)
+                    n = leads.get(port, 1)
+                    owner = router.owner(moved[port[0]]['ends'][port[1]]['netBits'])
+                    for k, label in zip(_chain_offsets(labels, step), labels):
+                        label_boxes.append((owner, _label_box((px+step[0]*(n+k), py+step[1]*(n+k)), facing, label)))
+            def priority(job):
+                if job[2] not in control_trees: return (1, 0, job[2] not in first)
+                cid, idx = job[3][0]
+                # Keep established top/bottom rails ahead of side controls.
+                return (0, bool(self._port_edge(moved[cid], idx)[2][0]), job[2] not in first)
+            for _, _, key, ports in sorted(jobs, key=priority):
+                if key not in control_trees and control_fallbacks - named_control_jobs:
+                    # Re-plan labels before spending time routing data wires.
+                    break
                 if key in self.nets:
                     source_port = self.source_of[key]
                     remaining = [p for p in ports if p != source_port]
@@ -2621,7 +2707,21 @@ class SchematicLayout:
                     source_port, remaining = ports[0], ports[1:]
                 source = moved[source_port[0]]["ends"][source_port[1]]
                 remaining.sort(key=lambda p: abs(moved[p[0]]["ends"][p[1]]["location"]["x"] - source["location"]["x"]) + abs(moved[p[0]]["ends"][p[1]]["location"]["y"] - source["location"]["y"]))
-                net = key[1] if key[0] == "copy" else key
+                net = key[1] if key[0] in ("copy", "local") else key
+                if key in control_trees:
+                    from studio.domain.control_routing import shared_rail
+                    rail = None if key in named_control_jobs else shared_rail(
+                        router, moved, ports, self._port_edge, leads, control_trees[key], label_boxes)
+                    control_routes.append({'label':self.label_of_net.get(net), 'ports':len(ports),
+                                           'groupId':control_trees[key]['groupId'], 'column':control_trees[key]['column'],
+                                           'method':'shared-rail' if rail is not None else 'named-fallback'})
+                    if rail is not None:
+                        wires.extend(rail);wire_nets.extend([net]*len(rail));continue
+                    # A control rail is a readability preference, not a demand
+                    # to connect the column through an arbitrary winding tree.
+                    # Emission puts the same verified net label at every port.
+                    control_fallbacks.add(key)
+                    continue
                 for port in remaining:
                     target = moved[port[0]]["ends"][port[1]]
                     try:
@@ -2636,7 +2736,25 @@ class SchematicLayout:
                         else:
                             # constant stub: this consumer falls back to the shared Constant's label.
                             failed_consts.add(port)
-            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets, leads, turned
+            return router, reserved, wires, failed_ports, failed_consts, unrouted, failed_jobs, wire_nets, leads, turned, control_routes, control_fallbacks
+
+        def settled_routes(first, stagger=True):
+            # Failed combs become named connections before planning label
+            # leads, not after ordinary wires have occupied their text space.
+            # The fallback set only grows, so this is bounded by the number of
+            # control trees, with no geometry search or model calls.
+            for _ in range(len(getattr(self, 'control_trees', {})) + 1):
+                result = route_all(first, stagger)
+                pending = result[-1] - named_control_jobs
+                if not pending: return (*result, dict(self.anchors))
+                named_control_jobs.update(pending)
+                # Anchor insertion order affects label staggering. Hash-set
+                # traversal would make identical plans draw differently across
+                # Python processes even though connectivity still passed.
+                for key in sorted(pending, key=repr):
+                    for port in self.control_trees[key]['ports']:
+                        self.anchors[port] = self._labels_for(key[1])
+            raise AssertionError('Control label fallback did not converge')
 
         # Ports the router could not reach keep the net by label: emit() puts the
         # net's Tunnel on them and on the routing source, the copper that did
@@ -2644,17 +2762,21 @@ class SchematicLayout:
         # by nets routed before it (a jog right in front of a dense port edge
         # such as a multiplexer's inputs 10 px apart); routing the failed nets
         # first frees most of them.
-        attempt = route_all(set())
+        attempt = settled_routes(set())
         if attempt[5]:
-            retry = route_all(attempt[6])
+            retry = settled_routes(attempt[6])
             if len(retry[5]) < len(attempt[5]):
                 attempt = retry
         if attempt[5]:
             # a long lead narrows the way into the wired port beside it
-            plain = route_all(attempt[6], stagger=False)
+            plain = settled_routes(attempt[6], stagger=False)
             if len(plain[5]) < len(attempt[5]):
                 attempt = plain
-        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets, self.lead_steps, self.lead_facing = attempt
+        router, self.reserved, wires, self.failed_ports, failed_consts, unrouted, _failed, wire_nets, self.lead_steps, self.lead_facing, control_routes, _control_fallbacks, self.anchors = attempt
+        if getattr(self, 'control_trees', {}):
+            self.report['sharedControls'].update(routes=control_routes,
+                routedLabelReduction=sum(r['ports']-1 for r in control_routes if r['method']=='shared-rail'),
+                namedFallbackTrees=sum(r['method']=='named-fallback' for r in control_routes))
         self.routed = list(zip(wires, wire_nets))
         self.report["unrouted"].extend(unrouted)
         self.failed_constant_consumers |= failed_consts
@@ -2706,6 +2828,40 @@ class SchematicLayout:
         each draws some CPU with 20-30 crossings fewer than the other. Both are
         drawn and the cheaper drawing is kept (_drawing_cost); when the even
         rule moves nothing more than the chain rule, one drawing is enough."""
+        if self.placement_strategy is not None:
+            # An explicit organization must not be replaced by a cheaper flat
+            # drawing. The strategy owns placement; native routing/emit and the
+            # caller's connectivity/interface checks remain the same.
+            start = copy.deepcopy(self.__dict__)
+            self._place()
+            from studio.domain.grouped_geometry import preserve_interface_order, label_feedback
+            preserve_interface_order(self)
+            if hasattr(self.placement_strategy, "prepare_routing"):
+                self.placement_strategy.prepare_routing(self)
+            self._route()
+            label_feedback(self)
+            initial = self.report['labelGeometry']['remainingCollisions']
+            if initial:
+                padding = set()
+                piece_ports = getattr(self, 'piece_port', {})
+                for issue in self.report['labelGeometry']['examples']:
+                    padding.add(piece_ports.get((issue['componentId'],issue['port']), (issue['componentId'],issue['port'])))
+                    if issue['kind']=='label-label':
+                        port=(issue['otherComponentId'],issue['otherPort'])
+                        padding.add(piece_ports.get(port,port))
+                self.__dict__.clear()
+                self.__dict__.update(start)
+                self.label_padding_ports = padding
+                self._place()
+                preserve_interface_order(self)
+                if hasattr(self.placement_strategy, 'prepare_routing'):
+                    self.placement_strategy.prepare_routing(self)
+                self._route()
+                label_feedback(self)
+            self.report['labelGeometry']['repair'] = {'initialCollisions':initial,'paddingPasses':int(bool(initial)),
+                'remainingCollisions':self.report['labelGeometry']['remainingCollisions']}
+            self.report["tunnelledForCrossings"] = 0
+            return
         start = dict(self.__dict__)
         best = self._arrange_once(start, dict(start["classes"]))
         # A net whose copper crosses many others is drawn with Tunnels when
@@ -2827,6 +2983,12 @@ class SchematicLayout:
         for w in list(circuit.findall("wire")):
             if not on_kept_copper(_loc(w.get("from")), _loc(w.get("to"))):
                 circuit.remove(w)
+        existing = [(_loc(w.get('from')),_loc(w.get('to'))) for w in circuit.findall('wire')]
+        for w in self.kept_wires:
+            a,b = (w['from']['x'],w['from']['y']),(w['to']['x'],w['to']['y'])
+            for p,q in subtract_segments(a,b,existing):
+                ET.SubElement(circuit,'wire',{'from':f'({p[0]},{p[1]})','to':f'({q[0]},{q[1]})'})
+                existing.append((p,q))
         for cid in self.drop_tunnels:
             element = self.element_of.get(cid)
             if element is not None and element in list(circuit):
@@ -2860,7 +3022,13 @@ class SchematicLayout:
         def free(q, owner):
             # the router kept the cell for a Tunnel (a recessed port's lead
             # starts on its body's edge), or holds it for the port's own net
-            return (q not in copper
+            # The flag may sit on its own tree's copper. Treating all routed
+            # copper as foreign silently collapses planned alias chains onto
+            # the port during emission. A crossing with ANY foreign owner is
+            # still forbidden; unknown copper also remains an obstacle.
+            own_copper = (self.placement_strategy is not None and bool(self.router.at.get(q))
+                          and all(o == owner for o, _axis, _end in self.router.at[q]))
+            return ((q not in copper or own_copper)
                     and (q not in self.router.port_owners or q in self.reserved or self.router.port_owners[q] <= {owner})
                     and (q not in self.router.blocked or q in self.reserved)
                     and (q in self.reserved or not any(b["x"] <= q[0] <= b["x"] + b["width"] and b["y"] <= q[1] <= b["y"] + b["height"]
@@ -2881,11 +3049,13 @@ class SchematicLayout:
             if not all(free((px + step[0] * k, py + step[1] * k), owner) for k in range(1, n)):
                 n = 1
             chain = []
-            for k in range(n, n + len(labels)):
+            targets = {n + k for k in _chain_offsets(labels, step)}
+            for k in range(n, max(targets) + 1):
                 q = (px + step[0] * k, py + step[1] * k)
                 if not free(q, owner):
                     break
-                chain.append(q)
+                if k in targets:
+                    chain.append(q)
             if not chain:
                 chain = [(px, py)]
             chain += [chain[-1]] * (len(labels) - len(chain))
@@ -2912,13 +3082,25 @@ class SchematicLayout:
         for kw in self.kept_wires:
             joined.join((kw["from"]["x"], kw["from"]["y"]), (kw["to"]["x"], kw["to"]["y"]))
         tunnel_roots = defaultdict(set)
+        for bridge in self.boundary_bridges:
+            for label in bridge['labels']:
+                node = ET.SubElement(circuit, 'comp', {'lib':self.wiring_lib,'name':'Tunnel','loc':f"({bridge['x']},{bridge['y']})"})
+                for name,value in {'facing':'west','width':str(bridge['width']),'label':label}.items():
+                    ET.SubElement(node,'a',{'name':name,'val':value})
+                reanchored += 1
+            tunnel_roots[bridge['key']].add(joined.root((bridge['x'],bridge['y'])))
         for cid, t in self.tunnels.items():
             if cid in self.drop_tunnels:
                 continue
             key = self._net_key(t["ends"][0]) if t["ends"] else None
             if key is not None:
                 tunnel_roots[key].add(joined.root((t["location"]["x"], t["location"]["y"])))
-        for key in {self._net_key(self.by_id[cid]["ends"][idx]) for (cid, idx) in self.anchors}:
+        anchored_keys = {self._net_key(self.by_id[cid]["ends"][idx]) for (cid, idx) in self.anchors}
+        # Preserve the observed net order. Iterating the set made equivalent
+        # panel Tunnel/lead XML change order across Python processes.
+        for key in self.nets:
+            if key not in anchored_keys:
+                continue
             if key is None:
                 continue
             labels = self._labels_for(key)

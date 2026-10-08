@@ -12,12 +12,13 @@ compilation step with a structural proof:
   constants, Grounds and Powers compared per driven port) -> same instance for every circuit that
   uses this one -> nothing else in the file changed -> candidate.
 
-The model chooses parameters (what stays a tunnel, what is pinned, spacing)
-and judges the rendered result; it never chooses wire geometry.
+This optional operation realizes the caller's organization and geometric
+parameters. Direct file editing and other layout strategies remain available.
 """
 from collections import defaultdict
 from datetime import datetime, timezone
 import hashlib
+import json
 import re
 import shutil
 import uuid
@@ -25,6 +26,8 @@ import xml.etree.ElementTree as ET
 
 from studio.domain.schematic_layout import CONSTANT_SOURCES, SchematicLayout, TUNNEL_SPAN, _circuit_span, interface_signature, resolve_unknown_widths
 from studio.domain.tool_errors import CircuitToolError
+from studio.domain.fixed_geometry import region_segment
+from studio.project.organization import layout_options, normalize_organization, annotate_groups
 
 
 def _circuit_element(xml_text, circuit_name):
@@ -120,8 +123,38 @@ def readability(xml_text, circuit_name):
     }
 
 
+def copper_preserved(required, observed):
+    """Compare physical coverage, allowing native splitting/merging of wires."""
+    lines = defaultdict(list)
+    def segment(wire):
+        a, b = wire['from'], wire['to']
+        if a['y'] == b['y']:
+            return ('h', a['y']), sorted((a['x'], b['x']))
+        if a['x'] == b['x']:
+            return ('v', a['x']), sorted((a['y'], b['y']))
+        raise ValueError('非正交导线')
+    for wire in observed:
+        key, interval = segment(wire)
+        lines[key].append(interval)
+    for wire in required:
+        key, (start, end) = segment(wire)
+        for lo, hi in sorted(lines[key]):
+            if lo > start:
+                break
+            start = max(start, hi)
+            if start >= end:
+                break
+        if start < end:
+            return False
+    return True
+
+
 def arrange_candidate(workbench, args):
     w, name = workbench.workspace, args["circuit"]
+    organization = args.get('organization')
+    if organization is not None and not args.get('artifactSha256'):
+        raise CircuitToolError('STALE_REVISION', '分组引用元件 ID，需要同时提供 artifactSha256。',
+                               hint='用 inspect_circuit({circuit, layoutContext:{}}) 获取当前对象与摘要。')
     parent_id = args.get("candidateId")
     parent_dir, parent = workbench._metadata(parent_id) if parent_id else (None, None)
     if parent_dir:
@@ -148,13 +181,13 @@ def arrange_candidate(workbench, args):
         identity = _identity_map(before_xml, name)
         before_sig = netlist_signature(before_focus, identity)
 
-        options = {
-            "pinned_ids": list(args.get("pinnedComponentIds") or []),
-            "keep_tunnels": list(args.get("keepTunnels") or []),
-            "localise_constants": args.get("localiseConstants", True),
-        }
-        if args.get("panelBelowY") is not None:
-            options["panel_below_y"] = int(args["panelBelowY"])
+        options = layout_options(args)
+        if organization is not None:
+            from studio.domain.grouped_layout import GroupedPlacement
+            from studio.runtime.layout_solver import solve_groups
+            options['placement_strategy'] = GroupedPlacement(normalize_organization(organization),
+                                                              lambda graph: solve_groups(graph, directory))
+            (directory / 'organization.json').write_text(json.dumps(organization, ensure_ascii=False, indent=2), encoding='utf-8')
         layout = SchematicLayout(before_xml, name, before_focus, **options)
         if args.get("columnGap") is not None:
             layout.column_gap = int(args["columnGap"])
@@ -164,7 +197,16 @@ def arrange_candidate(workbench, args):
             # px from driver to consumer above which a named 1-consumer net is
             # tunnelled (default TUNNEL_SPAN[1]); the fan-out steps scale with it
             layout.tunnel_span_scale = int(args["tunnelSpan"]) / TUNNEL_SPAN[1]
-        after_xml = layout.emit()
+        try:
+            after_xml = layout.emit()
+        except ValueError as error:
+            if organization is None:
+                raise
+            raise CircuitToolError('INVALID_LAYOUT_ORGANIZATION', str(error),
+                                   hint='按相同保护/常量选项重新读取 layoutContext，完整分组列出的元件；不要分组固定对象、Tunnel 或拆开接触组合。') from error
+        if organization is not None:
+            after_xml = annotate_groups(after_xml, name, layout.report['layoutGroups'], layout.report.get('layoutStages',[]))
+            (directory / 'placement.json').write_text(json.dumps({'offsets': layout.placement, 'report': layout.report}, ensure_ascii=False, indent=2), encoding='utf-8')
         artifact.write_text(after_xml, encoding="utf-8")
 
         after_full = w.observer.run_full(artifact, name, directory / (hashlib.sha256(name.encode()).hexdigest() + ".png"))
@@ -228,6 +270,36 @@ def arrange_candidate(workbench, args):
             shutil.rmtree(directory, ignore_errors=True)
             raise CircuitToolError("ARRANGE_NOT_EQUIVALENT", "整理改动了目标电路之外的内容，已丢弃。",
                                    hint="这是布局引擎的缺陷，请把该电路反馈给维护者。")
+        # Explicit pins and the detected panel must keep their actual XML,
+        # not merely remain electrically equivalent after being rearranged.
+        fixed = {(c['factoryName'], f"({c['location']['x']},{c['location']['y']})")
+                 for c in before_focus['components'] if layout._is_panel(c)}
+        if layout.panel_below_y is not None:
+            fixed.update((c['factoryName'], f"({c['location']['x']},{c['location']['y']})")
+                         for c in after_focus['components'] if c['bounds']['y'] < layout.panel_below_y)
+        def protected(xml):
+            nodes = []
+            for node in _circuit_element(xml, name).findall('comp'):
+                if (node.get('name'), node.get('loc')) in fixed:
+                    for child in node.iter():
+                        child.tail = None
+                        if child.text is not None and not child.text.strip(): child.text = None
+                    nodes.append(ET.tostring(node))
+            return sorted(nodes)
+        if protected(before_xml) != protected(after_xml):
+            raise CircuitToolError('ARRANGE_PROTECTED_CHANGED', '整理改变了固定对象，候选已拒绝。')
+        # Independent baseline from source XML, not the router's selected subset.
+        original_region = []
+        for node in _circuit_element(before_xml,name).findall('wire'):
+            wire = {key:dict(zip(('x','y'),map(int,re.findall(r'-?\d+',node.get(key))))) for key in ('from','to')}
+            clipped = region_segment(wire,layout.panel_below_y)
+            if clipped:original_region.append(clipped)
+        if not copper_preserved([*original_region,*layout.kept_wires], after_focus.get('wires', [])):
+            raise CircuitToolError('ARRANGE_PROTECTED_CHANGED', '整理改变了固定区域内部的导线，候选已拒绝。')
+        after_region = [clipped for wire in after_focus.get('wires', [])
+                        if (clipped := region_segment(wire,layout.panel_below_y))]
+        if not copper_preserved(after_region, original_region):
+            raise CircuitToolError('ARRANGE_PROTECTED_CHANGED', '整理在固定区域内新增了导线，候选已拒绝。')
         metrics_before = readability(before_xml, name)
         metrics_after = readability(after_xml, name)
         inherited = [c for c in parent.get("changes", []) if c["circuit"] != name] if parent else []
@@ -244,6 +316,10 @@ def arrange_candidate(workbench, args):
             "netlistEquivalent": True,
             "netGroupsCompared": len(before_sig),
             "interfacePreserved": True,
+            "protectedComponentsPreserved": True,
+            "protectedCopperPreserved": True,
+            "protectedWireSegments": len(layout.kept_wires),
+            "originalRegionWireSegments":len(original_region),
             "interfaceChecked": interface_before[0],
             "otherDefinitionsUnchanged": True,
             "wireGeometryPreserved": False,
@@ -265,7 +341,7 @@ def arrange_candidate(workbench, args):
             "netlist": {"equivalent": True, "groupsCompared": len(before_sig), "invalidBundles": 0},
             "note": ("连通性已按网表逐端口组核对（含探针等位宽随网络而定的端口，不是仿真）；作为子电路的引脚排列不变；"
                      "文件里其他电路一个字节都没改，不需要再恢复。可用 render_circuit(candidateId) 看图，"
-                     "调整 keepTunnels / pinnedComponentIds / columnGap 后重新整理；满意后 checkout_candidate 写回。"),
+                     "可调整 organization 的功能分组与阅读行序或连线参数后重新整理；满意后 checkout_candidate 写回。"),
         }
     except Exception:
         shutil.rmtree(directory, ignore_errors=True)

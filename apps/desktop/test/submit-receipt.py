@@ -4,10 +4,12 @@ Runs check_native_loadability through the production Workspace after real disk
 writes and reloads, the way the desktop host does after submit_circuit.
 """
 from pathlib import Path
+import hashlib
 import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / 'apps/desktop/circuit-lens'))
@@ -72,6 +74,8 @@ class SubmitReceipt(unittest.TestCase):
 
         receipt = self.check(first)
         self.assertEqual(receipt['status'], 'loadable')
+        self.assertEqual(receipt['layoutReview']['status'], 'observed')
+        self.assertEqual(receipt['layoutReview']['otherChangedDefinitions'], ['Other'])
         change = receipt['fileChange']
         self.assertEqual((change['previousRevisionId'], change['revisionId'], change['changed']), (first, second, True))
         self.assertEqual(change['outsideTarget'], ['Other'])
@@ -90,6 +94,70 @@ class SubmitReceipt(unittest.TestCase):
         self.assertTrue(missing['fileChange']['changed'])
         self.assertIn('unavailable', missing['fileChange'])
         self.assertNotIn('circuits', missing['fileChange'])
+
+    def test_direct_edit_geometry_and_explicit_review_agree_without_mutating_source(self):
+        main = self.document.find("circuit[@name='main']")
+        # Native bus Pin displays overlap at a 20-unit pitch; anchors differ.
+        for y in (180, 200):
+            pin = ET.SubElement(main, 'comp', name='Pin', lib='0', loc=f'(300,{y})')
+            ET.SubElement(pin, 'a', name='width', val='32')
+        for i in range(9):
+            t = ET.SubElement(main, 'comp', name='Tunnel', lib='0', loc=f'({500+i*10},300)')
+            ET.SubElement(t, 'a', name='label', val='LONG_SIGNAL_'+str(i))
+        before = self.w.revision_id
+        self.write()
+        self.w.reload()
+        original = self.source.read_bytes()
+        revision = self.w.revision_id
+        receipt = self.check(before)['layoutReview']
+        self.assertGreater(receipt['overlapPairs'], 24)
+        self.assertGreater(receipt['byKind']['component-body'], 0)
+        self.assertEqual(receipt['artifactSha256'], hashlib.sha256(original).hexdigest())
+        review = self.w.workbench.call(revision, 'inspect_circuit', {'circuit': 'main', 'layoutReview': {}})
+        self.assertEqual(receipt['examples'], review['layoutReview']['examples'])
+        self.assertEqual(len(receipt['examples']), 24)
+        page = self.w.workbench.call(revision, 'inspect_circuit', {'circuit': 'main',
+            'layoutReview': {'issueOffset': 24, 'artifactSha256': review['artifactSha256']}})
+        self.assertTrue(page['layoutReview']['examples'])
+        self.assertNotEqual(page['layoutReview']['examples'][0], receipt['examples'][0])
+        # Produce a real native crop using the suggested region, not just schema checks.
+        rendered = self.w.workbench.call(revision, 'render_circuit',
+            {'circuit': 'main', 'viewport': receipt['examples'][0]['viewport']})
+        self.assertTrue(rendered['result']['imageIncluded'])
+        self.assertEqual(self.source.read_bytes(), original)
+        self.assertEqual(self.w.revision_id, revision)
+        # The old page cannot silently refer to newly moved objects.
+        main.find("comp[@name='Tunnel']").set('loc', '(900,900)')
+        self.write(); self.w.reload()
+        with self.assertRaisesRegex(Exception, '图面已改变'):
+            self.w.workbench.call(self.w.revision_id, 'inspect_circuit', {'circuit': 'main',
+                'layoutReview': {'issueOffset': 24, 'artifactSha256': review['artifactSha256']}})
+
+    def test_geometry_unavailable_does_not_overwrite_successful_load(self):
+        with patch.object(self.w.observer, 'run_full', side_effect=RuntimeError('fixture observation unavailable')):
+            result = self.check(None)
+        self.assertEqual(result['status'], 'loadable')
+        self.assertEqual(result['layoutReview']['status'], 'unavailable')
+        self.assertNotIn('overlapPairs', result['layoutReview'])
+
+    def test_cumulative_scope_retains_a_child_changed_before_the_latest_write(self):
+        baseline=self.w.revision_id
+        other=self.document.find("circuit[@name='Other']")
+        other.find("comp[@name='Pin']").set('loc','(80,120)')
+        self.write();self.w.reload()
+        previous=self.w.revision_id
+        ET.SubElement(self.document.find("circuit[@name='main']"),'comp',name='Constant',lib='0',loc='(300,200)')
+        self.write();self.w.reload()
+        receipt=self.w.workbench.call(self.w.revision_id,'check_native_loadability',
+            {'circuit':'main','previousRevisionId':previous,'turnBaselineRevisionId':baseline})
+        self.assertEqual([c['circuit'] for c in receipt['fileChange']['circuits']],['main'])
+        self.assertEqual({c['circuit'] for c in receipt['turnChanges']['circuits']},{'main','Other'})
+        again=self.w.workbench.call(self.w.revision_id,'check_native_loadability',
+            {'circuit':'main','previousRevisionId':self.w.revision_id,'turnBaselineRevisionId':baseline})
+        self.assertFalse(again['fileChange']['changed'])
+        self.assertEqual(again['turnChanges'],receipt['turnChanges'])
+        self.assertNotIn('completed',again['turnChanges'])
+        self.assertNotIn('reviewed',again['turnChanges'])
 
     def test_load_failures_explain_missing_or_wrong_lib(self):
         before = self.w.revision_id
