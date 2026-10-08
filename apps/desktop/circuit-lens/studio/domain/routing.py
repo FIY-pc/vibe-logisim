@@ -7,6 +7,9 @@ from collections import defaultdict
 import heapq
 
 
+STEPS = ((10, 0, 0), (-10, 0, 0), (0, 10, 1), (0, -10, 1))
+
+
 def point(value):
     return value['x'], value['y']
 
@@ -36,13 +39,15 @@ class Router:
     passages or moving fixed anchors. A route may branch anywhere on its own
     bus. Compressed polylines keep straight crossings from becoming junctions.
     """
-    def __init__(self, document, partition, *, crossing_cost=24, visit_cap=200000):
+    def __init__(self, document, partition, *, crossing_cost=24, visit_cap=200000, bend_cost=18):
         self.partition = partition
         self.visit_cap = visit_cap
         # Cost of crossing a foreign straight wire (one grid step is 10, a bend
-        # 18). Manual edits keep the default; a global re-layout may raise it
-        # so that a short detour beats a crossing.
+        # 18). Manual edits keep the defaults; a global re-layout may raise it
+        # so that a short detour beats a crossing, and the cost of a bend so
+        # that a longer straight run beats a corner.
         self.crossing_cost = crossing_cost
+        self.bend_cost = bend_cost
         self.connected = Partition()
         self.segment_buses = []
         self.segments = []
@@ -87,8 +92,9 @@ class Router:
                 # not a new obstacle: fixed junctions and narrow gaps must
                 # remain routable. A port's outward ray is free only along
                 # its axis; turning immediately at the pin still pays. 40 is
-                # slightly more than two bends (2 * 18), so a small detour can
-                # beat tracing the edge. Overlapping halos do not multiply it.
+                # slightly more than two bends at the default cost (2 * 18), so
+                # a small detour can beat tracing the edge; a re-layout's dear
+                # corners trace it instead. Overlapping halos do not multiply it.
                 for x in range((b["x"] // 10) * 10, b["x"] + b["width"] + 10, 10):
                     for y in range((b["y"] // 10) * 10, b["y"] + b["height"] + 10, 10):
                         for axis in (0, 1):
@@ -156,6 +162,36 @@ class Router:
         self.connected.join(source_bus, target_bus)
         return result
 
+    def boxed_in(self, target, starts, owner, budget=64):
+        """True when no route can arrive at target: walking backwards from it
+        over every step a route could take (every rule except the one that
+        depends on the direction a route came in, so no real route is missed)
+        closes up within budget cells without meeting a start. A port walled
+        in by foreign copper is found here in a few cells; A* would flood the
+        whole reachable sheet before giving up."""
+        def foreign(p):
+            return [s for s in self.at.get(p, ()) if s[0] != owner]
+
+        seen, todo = {target}, [target]
+        while todo:
+            q = todo.pop()
+            here = foreign(q)
+            for dx, dy, axis in ((10, 0, 0), (-10, 0, 0), (0, 10, 1), (0, -10, 1)):
+                p = q[0] - dx, q[1] - dy                # a step p -> q along axis
+                if p in seen or not (self.extent[0] <= p[0] <= self.extent[2] and self.extent[1] <= p[1] <= self.extent[3]):
+                    continue
+                if p in self.blocked or any(own != owner for own in self.port_owners.get(p, ())):
+                    continue
+                if any(s[1] == axis or s[2] for s in foreign(p)):
+                    continue
+                if here and (q == target or any(s[1] == axis or s[2] for s in here)):
+                    continue
+                if p in starts or len(seen) >= budget:
+                    return False
+                seen.add(p)
+                todo.append(p)
+        return True
+
     def path(self, starts, target, owner, *, avoid_retrace=False):
         """Propose geometry between explicit anchors; do not infer connectivity."""
         # A route may cross unrelated copper, but cannot terminate on it. This
@@ -167,17 +203,34 @@ class Router:
                   not any(own != owner for own in self.port_owners[p])}
         if target in starts:
             return []
-        def heuristic(p):
-            return abs(p[0] - target[0]) + abs(p[1] - target[1])
+        if self.boxed_in(target, starts, owner):
+            raise ValueError(f"无法在目标位置保持连线，请留出更多空间：{target}")
+        tx, ty = target
         queue, cost, previous = [], {}, {}
+        bend_cost = self.bend_cost
+
+        def estimate(q, axis):
+            """A lower bound of the cost to the target: its distance, and a
+            corner unless the target is straight ahead (or behind: a U-turn
+            has two). Exact on an empty sheet, so A* stays optimal and a
+            dear corner does not widen the search."""
+            dx, dy = tx - q[0], ty - q[1]
+            straight = (dx == 0 and axis != 0) or (dy == 0 and axis != 1)
+            return abs(dx) + abs(dy) + (0 if straight else bend_cost)
+
         for p in sorted(starts):
             state = (p, -1)
             cost[state] = 0
-            heapq.heappush(queue, (heuristic(p), 0, state))
+            heapq.heappush(queue, (estimate(p, -1), 0, state))
         end = None
         visits = 0
+        # the loop below runs millions of times on a full re-layout: names bound once
+        blocked, port_owners, at, clearance = self.blocked, self.port_owners, self.at, self.clearance_cost
+        x0, y0, x1, y1 = self.extent
+        crossing_cost, visit_cap = self.crossing_cost, self.visit_cap
+        push, pop, inf = heapq.heappush, heapq.heappop, float("inf")
         while queue:
-            _, distance, state = heapq.heappop(queue)
+            _, distance, state = pop(queue)
             if distance != cost.get(state):
                 continue
             p, incoming = state
@@ -185,34 +238,35 @@ class Router:
                 end = state
                 break
             visits += 1
-            if visits > self.visit_cap:
+            if visits > visit_cap:
                 break
-            for dx, dy, axis in ((10, 0, 0), (-10, 0, 0), (0, 10, 1), (0, -10, 1)):
+            foreign_here = None
+            for dx, dy, axis in STEPS:
                 q = p[0] + dx, p[1] + dy
-                if not (self.extent[0] <= q[0] <= self.extent[2] and self.extent[1] <= q[1] <= self.extent[3]):
+                if not (x0 <= q[0] <= x1 and y0 <= q[1] <= y1):
                     continue
-                if q in self.blocked or any(own != owner for own in self.port_owners[q]):
+                if q in blocked or any(own != owner for own in port_owners[q]):
                     continue
                 # At a crossing continue straight; never end, bend, or overlap there.
-                foreign_here = [s for s in self.at[p] if s[0] != owner]
-                foreign_next = [s for s in self.at[q] if s[0] != owner]
+                if foreign_here is None:
+                    foreign_here = [s for s in at[p] if s[0] != owner]
                 if foreign_here and (incoming != axis or any(s[1] == axis or s[2] for s in foreign_here)):
                     continue
+                foreign_next = [s for s in at[q] if s[0] != owner]
                 if foreign_next and (q == target or any(s[1] == axis or s[2] for s in foreign_next)):
                     continue
                 following = (q, axis)
-                new_cost = distance + 10 + (18 if incoming not in (-1, axis) else 0) + self.crossing_cost * bool(foreign_next)
-                new_cost += max(self.clearance_cost.get((p, axis), 0),
-                                self.clearance_cost.get((q, axis), 0))
+                new_cost = distance + 10 + (bend_cost if incoming not in (-1, axis) else 0) + (crossing_cost if foreign_next else 0)
+                new_cost += max(clearance.get((p, axis), 0), clearance.get((q, axis), 0))
                 # A manually placed segment should end at its new bend, not
                 # become a dangling stub when its connector doubles back.
-                if avoid_retrace and any(own == owner and direction == axis for own, direction, _ in self.at[q]):
+                if avoid_retrace and any(own == owner and direction == axis for own, direction, _ in at[q]):
                     new_cost += 30
-                if new_cost >= cost.get(following, float("inf")):
+                if new_cost >= cost.get(following, inf):
                     continue
                 cost[following] = new_cost
                 previous[following] = state
-                heapq.heappush(queue, (new_cost + heuristic(q), new_cost, following))
+                push(queue, (new_cost + estimate(q, axis), new_cost, following))
         if end is None:
             raise ValueError(f"无法在目标位置保持连线，请留出更多空间：{target}")
         path = []

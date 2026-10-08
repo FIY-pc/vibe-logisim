@@ -121,6 +121,7 @@ class CircuitPlugin {
           // This is an internal, bounded observer call. It does not create a
           // second model tool item or turn submit into a behavior verdict.
           const previousRevisionId = scope.pending.work?.previousRevisionId || null;
+          const turnBaselineRevisionId = scope.pending.work?.turnBaselines?.[scope.pending.projectId] || null;
           const observed = await this.invokeDomain({
             projectId: scope.pending.projectId,
             revisionId: scope.pending.revisionId,
@@ -128,7 +129,8 @@ class CircuitPlugin {
             turnId: request?.turnId || null,
             callId: request?.callId ? `${request.callId}:loadability` : null,
             tool: 'check_native_loadability',
-            arguments: {circuit, ...(previousRevisionId ? {previousRevisionId} : {})},
+            arguments: {circuit, ...(previousRevisionId ? {previousRevisionId} : {}),
+              ...(turnBaselineRevisionId ? {turnBaselineRevisionId} : {})},
           });
           if (!observed || typeof observed !== 'object' || Array.isArray(observed)) {
             return {...session, nativeLoadability: {
@@ -146,6 +148,8 @@ class CircuitPlugin {
             : error ? 'not-loadable' : 'unknown';
           const electrical = observed?.electrical && typeof observed.electrical === 'object' ? observed.electrical : null;
           const fileChange = observed?.fileChange && typeof observed.fileChange === 'object' ? observed.fileChange : null;
+          const layoutReview = observed?.layoutReview && typeof observed.layoutReview === 'object' ? observed.layoutReview : null;
+          const turnChanges = observed?.turnChanges && typeof observed.turnChanges === 'object' ? observed.turnChanges : null;
           const notes = [status === 'not-loadable'
             ? '文件刷新成功，但原生 Logisim 无法加载当前电路定义；这不是功能正确性结论。'
             : status === 'loadable'
@@ -158,6 +162,18 @@ class CircuitPlugin {
           } else if (fileChange?.outsideTarget?.length) {
             notes.push(`注意：这次写入还改动了目标电路之外的定义：${fileChange.outsideTarget.join('、')}（见 fileChange.circuits）。若这不是任务要求的，先还原这些定义，别让已通过的子电路失效。`);
           }
+          if (layoutReview?.status === 'observed') {
+            notes.push(`当前定义有 ${layoutReview.overlapPairs} 对原生图形边界疑似遮挡（见 layoutReview 的对象和局部 viewport）；这不是美观评分，需看图确认。`);
+            if (layoutReview.readingPaths?.nearbyNamedLinks?.length) {
+              notes.push('layoutReview.readingPaths.nearbyNamedLinks 给出电气共网但靠同名 Tunnel 跳转的相邻运算端口。沿实际图面追踪，判断跳转是否帮助阅读；修正不清楚的局部关系后复看。命名连接本身不是错误，诊断不能代替组织判断。');
+            }
+            if (layoutReview.otherChangedDefinitions?.length) {
+              notes.push(`本次还改动了 ${layoutReview.otherChangedDefinitions.join('、')}；这些定义尚未包含在本回执的图面检查中，可用 inspect_circuit 的 layoutReview 逐个查看。`);
+            }
+          }
+          if (turnChanges) {
+            notes.push('turnChanges 累计列出本回合首次已知基线以来的定义改动，包含更早步骤中的子图；它不代表这些定义已验收。结合 CIRCUIT-WORK.md 完成功能、保护和图面工作后再宣称交付。');
+          }
           return {...session, nativeLoadability: {
             status,
             circuit,
@@ -165,6 +181,8 @@ class CircuitPlugin {
             ...(error ? {error} : {}),
             ...(electrical ? {electrical} : {}),
             ...(fileChange ? {fileChange} : {}),
+            ...(layoutReview ? {layoutReview} : {}),
+            ...(turnChanges ? {turnChanges} : {}),
             note: notes.join(' '),
           }};
         } catch (error) {

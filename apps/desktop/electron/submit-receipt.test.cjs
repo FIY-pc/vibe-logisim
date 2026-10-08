@@ -92,3 +92,27 @@ test('without a previous revision the check is asked only for the circuit', asyn
   await plugin.call({tool: 'submit_circuit', arguments: {}}, scope);
   assert.deepEqual(calls[0].arguments, {circuit: 'main'});
 });
+
+test('geometry evidence survives the host receipt and model projection, independently of loadability', async () => {
+  for (const layoutReview of [
+    {status: 'observed', overlapPairs: 7, otherChangedDefinitions: ['Child'],
+      examples: [{objects: [{componentId: 'c300_180', label: 'DATA'}], viewport: {x: 200, y: 140, width: 200, height: 140, scale: 1.5}}]},
+    {status: 'unavailable', message: 'native geometry unavailable'},
+  ]) {
+    const {plugin, scope} = harness({status: 'loadable', circuit: 'main', layoutReview});
+    const result = await plugin.call({tool: 'submit_circuit', arguments: {}}, scope);
+    assert.equal(result.nativeLoadability.status, 'loadable');
+    assert.deepEqual(result.nativeLoadability.layoutReview, layoutReview);
+  }
+});
+
+test('submit forwards the current project turn baseline and retains cumulative changes',async()=>{
+  const turnChanges={previousRevisionId:'turn-start',revisionId:'revision-2',changed:true,
+    circuits:[{circuit:'EarlierChild',status:'added'},{circuit:'main',status:'modified'}]};
+  const {plugin,scope,calls}=harness({status:'loadable',circuit:'main',turnChanges});
+  scope.pending.work.turnBaselines={'project-1':'turn-start','other-project':'foreign-baseline'};
+  const result=await plugin.call({tool:'submit_circuit',arguments:{}},scope);
+  assert.equal(calls[0].arguments.turnBaselineRevisionId,'turn-start');
+  assert.deepEqual(result.nativeLoadability.turnChanges,turnChanges);
+  assert.equal(result.nativeLoadability.completed,undefined);
+});
