@@ -2,9 +2,11 @@
 // Runs the shipped executable outside the checkout with a fresh app-data dir:
 // open folder -> new circuit -> place AND + pins -> wire -> native truth table
 // -> restart and reopen -> bundled Codex app-server reaches auth-required.
+// Also checks the shipped layout solver and real signal navigation UI.
 // No model turn is sent and no credentials are used.
 'use strict';
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), assert = require('node:assert/strict');
+const {execFileSync} = require('node:child_process');
 const {_electron} = require('playwright'), {waitUntil} = require('./support/wait-until.cjs');
 const {readZip} = require('../electron/diagnostics-bundle.cjs');
 const executable = path.resolve(process.argv[2] || 'missing-packaged-executable');
@@ -41,6 +43,24 @@ async function launch() {
 
 (async () => { try {
   await launch(); note('launched ' + executable);
+  phase = 'layout solver with bundled Python and Electron';
+  const resources = await app.evaluate(() => process.resourcesPath);
+  const bundledPython = path.join(resources, 'runtime', 'python', ...(windows ? ['python.exe'] : ['bin', 'python3']));
+  const lens = path.join(resources, 'product', 'apps', 'desktop', 'circuit-lens');
+  const graph = {groups: [{id: 'flow', order: 0, row: 0, role: 'main', layout: 'flow', children: [
+    {id: 'source', width: 80, height: 60, ports: [{id: 'out', x: 80, y: 30, width: 0, height: 0, layoutOptions: {'elk.port.side': 'EAST'}}]},
+    {id: 'sink', width: 80, height: 60, ports: [{id: 'in', x: 0, y: 30, width: 0, height: 0, layoutOptions: {'elk.port.side': 'WEST'}}]},
+  ], edges: [{id: 'signal', sources: ['out'], targets: ['in']}]}], attachments: [], links: [], groupGap: 100, rowGap: 100};
+  // Import the shipped service, outside the checkout. Its child must use the
+  // packaged executable rather than the Node installation driving Playwright.
+  const probe = 'import json,sys; from studio.runtime.layout_solver import solve_groups; print(json.dumps(solve_groups(json.load(sys.stdin), sys.argv[1])))';
+  const solverEnv = {...env, PYTHONPATH: lens, PYTHONNOUSERSITE: '1', PYTHONUTF8: '1', VIBE_LOGISIM_LAYOUT_NODE: executable};
+  delete solverEnv.PYTHONHOME;
+  const solved = JSON.parse(execFileSync(bundledPython, ['-c', probe, out], {cwd: root, env: solverEnv, input: JSON.stringify(graph), encoding: 'utf8', timeout: 90000}));
+  const [source, sink] = ['source', 'sink'].map(id => solved.groups[0].children.find(n => n.id === id));
+  assert.ok(sink.x >= source.x + source.width, 'bundled solver arranges signal source before sink');
+  assert.equal(source.ports[0].x, 80); assert.equal(sink.ports[0].x, 0);
+  note('group layout ran through bundled Python, Electron and elkjs');
   phase = 'agent reaches auth-required (bundled Codex app-server started)';
   const state = await waitUntil(() => agent().then(s => (s.status === 'auth-required' || s.status === 'ready' || s.status === 'unavailable') && s), {timeout: 120000});
   note(`agent status=${state.status} isolation=${state.isolation} detail=${state.detail || ''}`);
@@ -79,6 +99,21 @@ async function launch() {
   const constructed = await scene(); assert.equal(constructed.circuit.components.length, 4); assert.equal(constructed.circuit.wires.length, 5);
   await page.locator('#componentSearch').fill(''); await page.locator('#fitButton').click(); await page.screenshot({path: path.join(out, '01-built-circuit.png')});
   note('AND + 2 inputs + output wired, 5 wires');
+  phase = 'signal navigation without circuit edits';
+  const beforeTrace = await session(), sourceText = fs.readFileSync(path.join(folder, '与门验证.circ'), 'utf8');
+  const cameraBefore = await page.locator('#circuitCanvas').getAttribute('viewBox');
+  await page.locator('.wire-port-hit[cx="680"][cy="300"]').click({modifiers: ['Control']});
+  await page.waitForFunction(() => document.querySelector('#evidenceTitle')?.textContent === '信号追踪');
+  await page.locator('#connectionList .connection-port').filter({has: page.getByRole('heading', {name: '上游驱动端', exact: true})}).getByRole('button').filter({hasText: 'AND'}).waitFor();
+  await page.locator('.circuit-component.is-signal-related[data-object-id="c500_300"]').waitFor();
+  assert.ok(await page.locator('.wire-group.is-signal-related').count(), 'signal wires highlighted');
+  await page.screenshot({path: path.join(out, '04-signal-trace.png')});
+  await page.keyboard.press('Alt+ArrowLeft');
+  await page.waitForFunction(() => document.querySelector('#evidenceTitle')?.textContent === '连接');
+  assert.equal(await page.locator('#circuitCanvas').getAttribute('viewBox'), cameraBefore, 'back restores camera');
+  assert.equal((await session()).revision.id, beforeTrace.revision.id, 'trace does not create a revision');
+  assert.equal(fs.readFileSync(path.join(folder, '与门验证.circ'), 'utf8'), sourceText, 'trace does not edit the circuit');
+  note('Ctrl+click located AND source; Alt+Left restored view without circuit changes');
   phase = 'native truth table';
   await page.locator('#simulationMenuButton').focus(); await page.keyboard.press('Control+t');
   const observation = () => page.evaluate(() => fetch('/api/simulation').then(r => r.json()));
@@ -115,7 +150,7 @@ async function launch() {
   const bundleText = entries.map(entry => entry.data.toString('utf8')).join('\n');
   for (const forbidden of [os.homedir(), folder, '我的电路', '与门验证']) assert.equal(bundleText.includes(forbidden), false, 'bundle contains ' + forbidden);
   assert.deepEqual(errors, []);
-  const result = {platform: process.platform, executable, success: true, modelTurns: 0, truthTable: truth, components: 4, wires: 5, reopened: true, agentStatus: state.status, isolation: state.isolation, diagnosticsEntries: entries.length, log};
+  const result = {platform: process.platform, executable, success: true, modelTurns: 0, bundledLayout: true, signalNavigation: true, truthTable: truth, components: 4, wires: 5, reopened: true, agentStatus: state.status, isolation: state.isolation, diagnosticsEntries: entries.length, log};
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   console.error('FAILED', phase, root, error);

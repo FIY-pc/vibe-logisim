@@ -10,7 +10,11 @@ const http = require('node:http');
 const {spawn} = require('node:child_process');
 const {once} = require('node:events');
 const {CodexBackend} = require('../electron/codex-backend.cjs');
-const {DEVELOPER_INSTRUCTIONS} = require('../electron/agent-instructions.cjs');
+const {CircuitPlugin} = require('../electron/circuit-plugin.cjs');
+const {AgentToolHost} = require('../electron/agent-tool-host.cjs');
+const {AgentContextHost} = require('../electron/agent-context-host.cjs');
+const {CircuitContextProvider} = require('../electron/circuit-context-host.cjs');
+const {BUNDLED_SKILL} = require('../electron/agent-instructions.cjs');
 const catalog = require('../circuit-lens/studio/domain/circuit-plugin.json');
 
 function context(revision, file) {
@@ -46,9 +50,9 @@ function contextEntry(body, key, kind) {
   return JSON.parse(item.text.slice(tag.length + 2, -(tag.length + 3)));
 }
 
-function instructionState(body) {
+function instructionState(body, currentInstructions) {
   const developer = textInputs(body).filter(m => m.role === 'developer').map(m => m.text).join('\n');
-  if (developer.includes(DEVELOPER_INSTRUCTIONS)) return 'current';
+  if (developer.includes(currentInstructions)) return 'current';
   if (developer.includes('LEGACY_INSTRUCTIONS_FIXTURE')) return 'initial-thread-instructions';
   assert.fail('neither current nor initial instructions reached the native prompt');
 }
@@ -56,6 +60,7 @@ function instructionState(body) {
 async function replay(root) {
   assert.equal(process.env.CODEX_HOME, path.join(root, 'source'), 'isolated fixture config only');
   const requests = [];
+  let skillReadRequested = false;
   const server = http.createServer(async (request, response) => {
     if (request.method !== 'POST' || request.url !== '/v1/responses') {
       response.writeHead(404); response.end(); return;
@@ -64,10 +69,23 @@ async function replay(root) {
     for await (const chunk of request) chunks.push(chunk);
     requests.push(JSON.parse(Buffer.concat(chunks).toString()));
     const id = 'fixture-' + requests.length;
+    // The fixture chooses the read explicitly. This proves discovery/transport
+    // and the production read-only mount, not autonomous skill adoption.
+    const shouldReadSkill = !skillReadRequested && textInputs(requests.at(-1))
+      .some(m => m.role === 'user' && m.text.includes('EMPTY_WORKSPACE_QUESTION'));
+    let item = {type:'message', id:'reply-' + requests.length,
+      role:'assistant', phase:'final_answer', content:[{type:'output_text', text:'Local protocol fixture.'}]};
+    if (shouldReadSkill) {
+      skillReadRequested = true;
+      const skillPath = `${backend.referencePath}/${BUNDLED_SKILL.path}`;
+      const script = `import pathlib,hashlib,json,os; p=pathlib.Path(${JSON.stringify(skillPath)}); s=p.read_bytes(); r=(p.parent/'references/arrangement.md').read_bytes(); print(json.dumps({'sha256':hashlib.sha256(s+r).hexdigest(),'mountAccess':('READ_ONLY_BUNDLE' if not os.access(p,os.W_OK) else 'WRITABLE_BUNDLE'),'content':s.decode()}))`;
+      const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+      item = {type:'custom_tool_call', call_id:'read-bundled-skill', name:'exec',
+        input:`text(await tools.exec_command(${JSON.stringify({cmd: 'python3 -c ' + quote(script), max_output_tokens: 6000})}));`};
+    }
     const events = [
       {type:'response.created', response:{id}},
-      {type:'response.output_item.done', item:{type:'message', id:'reply-' + requests.length,
-        role:'assistant', phase:'final_answer', content:[{type:'output_text', text:'Local protocol fixture.'}]}},
+      {type:'response.output_item.done', item},
       {type:'response.completed', response:{id, usage:{input_tokens:0, output_tokens:0, total_tokens:0}}},
     ];
     response.writeHead(200, {'Content-Type':'text/event-stream'});
@@ -93,9 +111,11 @@ async function replay(root) {
       'wire_api = "responses"', 'requires_openai_auth = false', 'supports_websockets = false',
     ].join('\n'));
     const createBackend = (options = {}) => {
+      const plugin = new CircuitPlugin({invoke:async () => { throw new Error('fixture must not call circuit tools'); }, workspace:null});
       const b = new CodexBackend({workDir, profileDir:path.join(root, 'profile'),
-        sessionStorePath:path.join(root, 'sessions.json'), circuitManifest:async () => catalog,
-        circuitTool:async () => { throw new Error('fixture must not call circuit tools'); }, ...options});
+        sessionStorePath:path.join(root, 'sessions.json'),
+        toolHost:new AgentToolHost({plugin, manifest:async () => catalog, mode:'circuit'}),
+        contextHost:new AgentContextHost({provider:new CircuitContextProvider()}), ...options});
       b.on('log', line => { logs.push(line); if (logs.length > 15) logs.shift(); });
       return b;
     };
@@ -154,7 +174,7 @@ async function replay(root) {
     // A changed instruction contract starts a fresh native thread with the
     // current developer instructions; the local transcript remains available
     // without pretending that the new thread has native old-turn context.
-    const resumedInstructions = instructionState(requests[1]);
+    const resumedInstructions = instructionState(requests[1], backend.developerInstructions);
     assert.equal(contextEntry(requests[1], 'vibe-logisim.binding', 'application').revisionId, 'revision-two');
 
     const latestReplyId = backend.history.findLast(m => m.type === 'assistant').id;
@@ -165,7 +185,7 @@ async function replay(root) {
     assert.ok(forkInput.includes('QUESTION_TWO') && !forkInput.includes('QUESTION_ONE'));
     assert.equal(contextEntry(requests[2], 'vibe-logisim.binding', 'application').revisionId, 'revision-two',
       'earlier chat still receives the current file binding');
-    const forkedInstructions = instructionState(requests[2]);
+    const forkedInstructions = instructionState(requests[2], backend.developerInstructions);
     assert.equal(fs.readFileSync(file, 'utf8'), 'current file survives history operations\n');
 
     const forkQuestion = backend.history.findLast(m => m.type === 'user');
@@ -183,18 +203,27 @@ async function replay(root) {
     await send('BASELINE_QUESTION', context('revision-two', 'circuit.circ'));
     assert.ok(textInputs(requests[4]).some(m => m.role === 'developer' && m.text.includes('BASELINE_INSTRUCTIONS_FIXTURE')));
     const baseline = JSON.stringify(requests[4]);
-    assert.ok(!baseline.includes(DEVELOPER_INSTRUCTIONS) && !baseline.includes('previous-moment'));
+    assert.ok(!baseline.includes(BUNDLED_SKILL.sha256) && !baseline.includes('previous-moment'));
     await backend.stop();
     backend = createBackend({ephemeral:true});
     await send('EMPTY_WORKSPACE_QUESTION', {folder:{id:'fixture-folder', activeFile:null}});
-    assert.ok(textInputs(requests[5]).some(m => m.role === 'developer' && m.text.includes(DEVELOPER_INSTRUCTIONS)),
+    assert.ok(textInputs(requests[5]).some(m => m.role === 'developer' && m.text.includes(backend.developerInstructions)),
       'new default thread receives the module even without an active circuit');
     assert.equal(contextEntry(requests[5], 'vibe-logisim.workspace', 'application').file, null);
     assert.equal(contextEntry(requests[5], 'vibe-logisim.binding', 'application').revisionId, undefined);
-    assert.equal(requests.length, 6, 'one deterministic fixture response per turn; no tools or model loop');
+    assert.ok(JSON.stringify(requests[5]).includes(`${backend.referencePath}/${BUNDLED_SKILL.path}`));
+    assert.ok(!JSON.stringify(requests[5]).includes('# Circuit organization'), 'body is not eagerly injected');
+    const output = requests[6].input.find(item => item.call_id === 'read-bundled-skill' && item.type.endsWith('tool_call_output'));
+    assert.ok(output, 'the real isolated process returns the skill file through Code Mode');
+    const readOutput = JSON.stringify(output);
+    assert.ok(readOutput.includes(BUNDLED_SKILL.sha256), 'skill and reference bytes match the bundled revision');
+    assert.ok(readOutput.includes('# Circuit organization'));
+    assert.ok(readOutput.includes('READ_ONLY_BUNDLE'), 'bundled skill is read-only in the production Linux mount');
+    assert.equal(requests.length, 7, 'six turns and one explicit local skill read; no remote model');
     console.log(JSON.stringify({newThreadInstructions:'current', resumedInstructions, forkedInstructions,
       contextTransport:true, untrustedContext:true, historicalObservations:true,
-      currentFilesPreserved:true, describeComponentDiscoverable:true, explicitOverride:true, modelCalls:0}));
+      currentFilesPreserved:true, describeComponentDiscoverable:true, explicitOverride:true,
+      skillCatalog:true, skillReadOnly:true, skillProgressiveLoading:true, modelCalls:0}));
   } catch (error) {
     error.message += '\n' + logs.join('\n').slice(-2000);
     throw error;

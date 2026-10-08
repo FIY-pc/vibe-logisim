@@ -112,7 +112,9 @@ class DirectAgentWorkspace {
       session,
     });
     return {folderId:w.folder.current.id, projectId:session?.workspace?.id || null,
-      revisionId, relative:'.', sourceName:w.folder.current.activeFile, workspaceIndex};
+      revisionId, relative:'.', sourceName:w.folder.current.activeFile, workspaceIndex,
+      turnBaselines:session?.workspace?.id && currentRevisionId
+        ? {[session.workspace.id]:currentRevisionId} : {}};
   }
   assert(binding) { this.workspace.folder.assert(binding.folderId); }
   resolveFile(binding, relative) {
@@ -143,6 +145,10 @@ class DirectAgentWorkspace {
     this.assert(binding);
     binding.projectId = session.workspace?.id || null;
     binding.revisionId = session.revision?.id || null;
+    binding.turnBaselines ||= {};
+    if (binding.projectId && binding.revisionId && !Object.hasOwn(binding.turnBaselines,binding.projectId)) {
+      binding.turnBaselines[binding.projectId] = binding.revisionId;
+    }
     binding.previousRevisionId = previous;
     binding.sourceName = this.workspace.folder.current.activeFile;
     return session;

@@ -3,7 +3,8 @@ name: bundle
 # Cross-builds the Linux and Windows bundles from pinned runtime archives,
 # then smoke-tests each bundle on its real OS (open folder, build an AND gate,
 # native truth table via bundled Java+Logisim, restart, bundled Codex starts).
-# No model turn is sent; no credentials are involved.
+# Standard smoke checks send no model turns. A separate non-PR AI job may
+# use VIBE_TEST_* secrets for two paid model turns when configured.
 
 on:
   push:
@@ -53,6 +54,10 @@ jobs:
             apps/desktop/electron/agent-tool-host.test.cjs `
             apps/desktop/electron/diagnostics-log.test.cjs `
             apps/desktop/electron/diagnostics-bundle.test.cjs `
+            apps/desktop/electron/work-notes.test.cjs `
+            apps/desktop/electron/submit-receipt.test.cjs `
+            apps/desktop/test/signal-trace.cjs `
+            apps/desktop/test/organized-layout.cjs `
             apps/desktop/electron/update-check.test.cjs
       - name: Python server control-channel probe (Windows, host Python)
         shell: pwsh
@@ -231,7 +236,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, smoke-windows, smoke-linux]
+    needs: [unit-windows, build, smoke-windows, smoke-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

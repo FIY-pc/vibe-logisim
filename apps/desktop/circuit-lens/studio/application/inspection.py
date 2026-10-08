@@ -13,6 +13,7 @@ from studio.domain.component_directory import component_directory, directory_opt
 from studio.domain.port_connections import connection_options, port_connections
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.net_groups import group_bit_nets
+from studio.domain.layout_review import layout_review, review_options
 from studio.project.changes import circuit_changes
 
 def netlist_signature(components):
@@ -63,12 +64,17 @@ class InspectionService:
         if self.workspace.raw_project is None:
             raise CircuitToolError('NO_CIRCUIT_OPEN', '当前工作区尚未打开电路文件。',
                                    hint='先读取工作区文件列表，再用 open_circuit({path: 工作区内的 .circ 相对路径}) 打开文件。')
+        layout_opts = review_options(args)
         directory_opts = directory_options(args)
         connection_opts = connection_options(args)
         net_format = args.get('netFormat', 'groups')
         if net_format not in ('groups', 'bits') or ('netFormat' in args and not args.get('includeNets')):
             raise CircuitToolError('INVALID_ARGUMENT', 'netFormat 需要 includeNets=true，可选 groups 或 bits。')
         name = args.get('circuit')
+        if 'layoutContext' in args and (not name or any(k in args for k in (
+                'componentDirectory', 'portConnections', 'componentIds', 'includeNets', 'netFormat',
+                'includeWires', 'wireOffset', 'wireLimit'))):
+            raise CircuitToolError('INVALID_ARGUMENT', 'layoutContext 需要指定 circuit，不能与其他明细筛选混用。')
         project = self.workspace.circuits()
         structure = self.workspace.raw_project['circuits']
         directory = None
@@ -88,6 +94,26 @@ class InspectionService:
                 hint='使用 context.availableCircuits 中的完整定义名重新观察；不要根据文件名猜测电路名。',
                 context={'requestedCircuit': name, 'availableCircuits': available},
             )
+        if layout_opts is not None or 'layoutContext' in args:
+            from studio.project.organization import organization_context
+            artifact = directory / 'artifact.circ' if directory else self.workspace.frozen_path
+            raw = artifact.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            if layout_opts is not None and layout_opts.get('artifactSha256', digest) != digest:
+                raise CircuitToolError('STALE_REVISION', '图面已改变，不能续接旧版布局问题；重新从 layoutReview:{} 开始。')
+            document = self.workspace.observer.run_full(artifact, name)
+            if document.get('revision', {}).get('artifactSha256') != digest:
+                raise CircuitToolError('STALE_REVISION', '布局观察与文件摘要不一致。')
+            if layout_opts is not None:
+                return {'revisionId': self.workspace.revision_id, 'artifactSha256': digest,
+                        'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime',
+                        'childDefinitions': sorted({i['target'] for c in structure if c['name'] == name
+                                                    for i in c.get('instances', [])}),
+                        'layoutReview': layout_review(document['focus'],
+                                                      issue_offset=layout_opts.get('issueOffset', 0))}
+            return {'revisionId': self.workspace.revision_id, 'artifactSha256': digest,
+                    'candidateId': args.get('candidateId'), 'circuit': name, 'authority': 'exact-runtime',
+                    'layoutContext': organization_context(raw.decode('utf-8'), name, document['focus'], args['layoutContext'])}
         if directory:
             document = self.workspace.observer.run_full(directory / 'artifact.circ', name)
             view = self.workspace._transform_exact(document, self.workspace.observer.profile())
@@ -150,12 +176,8 @@ class InspectionService:
             }
         return result
 
-    def _width_conflicts(self, artifact, circuit):
+    def _width_conflicts(self, document):
         """Invalid (width-incompatible) bundles with the ports they touch."""
-        try:
-            document = self.workspace.observer.run_full(artifact, circuit)
-        except Exception:
-            return None
         focus = document.get('focus') or {}
         bad = [b for b in focus.get('wireBundles', []) if not b.get('valid', True)]
         if not bad:
@@ -218,12 +240,11 @@ class InspectionService:
         return None
 
     def check_native_loadability(self, args):
-        """Load one definition through the native runtime without building a view.
+        """Submit receipt: loadability plus bounded electrical/geometry facts.
 
-        This is intentionally a hidden host-side primitive used by the desktop
-        submit acknowledgement. A model does not need another tool for this;
-        the point is to avoid paying for a full inspection when the host only
-        needs to report whether the edited file is loadable.
+        Reuse the native observation already needed for width checks. Only the
+        active definition is measured here; other changed definitions are named
+        for explicit review, not silently treated as checked or auto-arranged.
         """
         if self.workspace.raw_project is None:
             raise CircuitToolError('NO_CIRCUIT_OPEN', '当前工作区尚未打开电路文件。')
@@ -232,6 +253,10 @@ class InspectionService:
             raise CircuitToolError('UNKNOWN_CIRCUIT', '请求的电路定义不存在。', context={'circuit': circuit})
         change = self.file_change(args.get('previousRevisionId'), circuit)
         extra = {'fileChange': change} if change is not None else {}
+        cumulative = self.file_change(args.get('turnBaselineRevisionId'), circuit)
+        if cumulative is not None:
+            extra['turnChanges'] = {**cumulative,
+                'scope':'Current file compared with its first known baseline in this model turn. Not review coverage, behavior proof or task completion.'}
         prerequisite = self.workspace.observer.prerequisite_error()
         if prerequisite:
             return {
@@ -268,7 +293,23 @@ class InspectionService:
                 # widths) loads fine and then simulates as all-X. Report it here,
                 # in the write receipt, so the model fixes it immediately instead of
                 # discovering it three tools later.
-                conflicts = self._width_conflicts(artifact, circuit)
+                conflicts = None
+                try:
+                    document = self.workspace.observer.run_full(artifact, circuit)
+                    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+                    if document.get('revision', {}).get('artifactSha256') != digest:
+                        raise ValueError('布局观察与文件摘要不一致。')
+                    conflicts = self._width_conflicts(document)
+                    extra['layoutReview'] = {**layout_review(document['focus']),
+                                             'circuit': circuit, 'artifactSha256': digest}
+                except Exception as error:
+                    # A geometry observation failure must not turn a successful
+                    # native load into a failure, or pretend the diagram is clear.
+                    extra['layoutReview'] = {'status': 'unavailable', 'circuit': circuit,
+                                             'message': str(error) or '原生图面观察不可用'}
+                extra['layoutReview']['otherChangedDefinitions'] = [
+                    item['circuit'] for item in (change or {}).get('circuits', [])
+                    if item.get('status') in ('added', 'modified') and item['circuit'] != circuit]
                 if conflicts is not None and conflicts.get('count'):
                     return {
                         'status': 'loadable',

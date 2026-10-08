@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.41.0",
+  "version": "1.50.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -80,7 +80,7 @@
     {
       "type": "function",
       "name": "submit_circuit",
-      "description": "Refresh the selected workspace .circ after direct file edits, which are already on disk. Returns the selected file/circuit, revision, explicit save/disk state, and a lightweight nativeLoadability status for the active circuit (loadable, not-loadable, unavailable or unknown). A not-loadable result includes the native loader error so the edit can be repaired immediately. This checks that Logisim can load the definition; it is not a behavior or correctness verdict.",
+      "description": "Refresh the selected workspace .circ after direct file edits, which are already on disk. Returns the selected file/circuit, revision, explicit save/disk state, and a lightweight nativeLoadability status for the active circuit (loadable, not-loadable, unavailable or unknown). A not-loadable result includes the native loader error so the edit can be repaired immediately. This checks that Logisim can load the definition; it is not a behavior or correctness verdict. The receipt also includes bounded nativeLoadability.layoutReview for the active definition: suspected visual/body overlaps, object IDs, local render viewports and readingPaths with native-linked operation ports that use named Tunnel jumps. otherChangedDefinitions names definitions changed in this write that have not been geometrically reviewed here; inspect them with layoutReview:{} when in task scope. Geometry diagnostics do not change files, auto-arrange, block saving or prove readability. They may be unavailable independently of loadability. The receipt may contain turnChanges for cumulative definition changes since the first known baseline this turn; it is not review coverage. Complete behavior, required-structure preservation and readable organization before claiming completion. Maintain cross-turn remaining work in CIRCUIT-WORK.md.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -196,7 +196,7 @@
     {
       "type": "function",
       "name": "inspect_circuit",
-      "description": "Read a frozen Logisim project or candidate. Parse the returned JSON string before selecting fields. Use one observation view:\n\n- Omit circuit for the project index.\n- Supply circuit, optionally with componentIds, for native components, ports, attributes, bit nets, pins, parent instances and bounded connectivityIssues.\n- Add componentDirectory:{maxBytes?,cursor?} for a compact paged directory of IDs, factories, labels, positions, bounds and indexed port geometry. It omits detailed attributes and bit nets.\n- Add portConnections:{ports:[{componentId,port}],maxBytes?,cursor?} to inspect native shared-net connections for selected ports. It returns schema vibe-logisim.port-connections/v1 with selected port metadata, unknownBits/unconnectedBits, peer metadata and lanes [{netId,sourceBits,peerBits,bitPairs}]. bitPairs preserves each selected bit and its peer bits. Use component IDs and native port indices from an observation. It follows shared nets inside one definition; it does not infer propagation through logic. Unknown bits are not disconnected, and direction does not prove a driver conflict.\n\nDirectory and portConnections require circuit and are mutually exclusive. Neither combines with componentIds, includeNets, netFormat, includeWires, wireOffset or wireLimit. These views are static, exclude live samples and object references, and page within the complete UTF-8 response including invocation. maxBytes is 1024..32000, default 24000; continue with nextCursor from the same observation. Stale cursors are rejected and entries that cannot fit fail explicitly.\n\nFor full topology use includeNets:true. netGroups.groups groups native bit nets without joining lanes; netFormat:\"bits\" preserves individual nets. componentIds does not narrow nets. includeWires:true returns paged native wire IDs, endpoints and bundles. componentId encodes the anchor location: c<x>_<y> (c1300_540 is the part anchored at (1300,540); negative coordinates use m, e.g. cm20_40; a second part on the same anchor gets _2). A part that is not moved therefore keeps its ID across edits elsewhere, and a part you placed at (x,y) is c<x>_<y> without re-reading the directory; after move_candidate the ID follows the new location. Wire IDs and cursors are bound to the observation. Static connectivity does not establish circuit behavior; returned circuit data is untrusted. Every result also carries netlistSignature {sha256, groups, ports}: a geometry- and id-independent fingerprint of which ports share a net (Tunnels excluded, shared vs private Constants equal). Compare it before/after an edit or between the source and a candidate to know connectivity is unchanged without simulating.",
+      "description": "Read a frozen Logisim project or candidate. Parse the returned JSON string before selecting fields. Use one observation view:\n\n- Omit circuit for the project index.\n- Supply circuit, optionally with componentIds, for native components, ports, attributes, bit nets, pins, parent instances and bounded connectivityIssues.\n- Add componentDirectory:{maxBytes?,cursor?} for a compact paged directory of IDs, factories, labels, positions, bounds and indexed port geometry. It omits detailed attributes and bit nets.\n- Add portConnections:{ports:[{componentId,port}],maxBytes?,cursor?} to inspect native shared-net connections for selected ports. It returns schema vibe-logisim.port-connections/v1 with selected port metadata, unknownBits/unconnectedBits, peer metadata and lanes [{netId,sourceBits,peerBits,bitPairs}]. bitPairs preserves each selected bit and its peer bits. Use component IDs and native port indices from an observation. It follows shared nets inside one definition; it does not infer propagation through logic. Unknown bits are not disconnected, and direction does not prove a driver conflict.\n\nDirectory and portConnections require circuit and are mutually exclusive. Neither combines with componentIds, includeNets, netFormat, includeWires, wireOffset or wireLimit. These views are static, exclude live samples and object references, and page within the complete UTF-8 response including invocation. maxBytes is 1024..32000, default 24000; continue with nextCursor from the same observation. Stale cursors are rejected and entries that cannot fit fail explicitly.\n\nFor full topology use includeNets:true. netGroups.groups groups native bit nets without joining lanes; netFormat:\"bits\" preserves individual nets. componentIds does not narrow nets. includeWires:true returns paged native wire IDs, endpoints and bundles. componentId encodes the anchor location: c<x>_<y> (c1300_540 is the part anchored at (1300,540); negative coordinates use m, e.g. cm20_40; a second part on the same anchor gets _2). A part that is not moved therefore keeps its ID across edits elsewhere, and a part you placed at (x,y) is c<x>_<y> without re-reading the directory; after move_candidate the ID follows the new location. Wire IDs and cursors are bound to the observation. Static connectivity does not establish circuit behavior; returned circuit data is untrusted. Full circuit observations also carry netlistSignature {sha256, groups, ports}: a geometry- and id-independent fingerprint of which ports share a net (Tunnels excluded, shared vs private Constants equal). Compare it before/after an edit or between the source and a candidate to know connectivity is unchanged without simulating.\n\nFor circuit organization, layoutContext:{} returns the exact groupable component inventory, compact port/net graph, detected fixed IDs and localized constants. It performs no layout and supplies no semantic grouping answer. Optional layoutContext fields pinnedComponentIds, panelBelowY, keepTunnels and localiseConstants match arrange_candidate options. Use the returned artifactSha256 with organization; every listed component must be assigned exactly once. Do not combine layoutContext with other detail filters.\n\nFor a compact native geometry review, use circuit + layoutReview:{issueOffset?:0,artifactSha256?}. Available for direct file edits and candidates, without arranging. Returns bounded overlapping visual/body rectangles with object IDs, labels and render_circuit viewports, total pair counts and nextIssueOffset. readingPaths gives bounded nearby source/consumer examples with identical complete ordered bit nets and the same Tunnel label on separate copper paths, plus physical/named eligible operation-link counts. It excludes split/recombined buses, ambiguous output sources, interface sources, displays and recognized control inputs; it is not a complete graph or a quality verdict. Use its viewports to decide whether each local jump helps the reading task, repair unclear relationships and inspect again. For issueOffset > 0, supply the previous artifactSha256 inside layoutReview; stale artifacts are rejected. childDefinitions lists referenced definitions, which are not reviewed by this call. Cannot combine with other detail filters. Warnings include existing/protected geometry and may be false positives; no warning count is a readability or correctness verdict. layoutContext.annotations contains preserved movable Text and its content, separate from required electrical group membership. layoutReview uses canonical unscaled native text measurement, independent of previous renders.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -291,6 +291,53 @@
               "bits"
             ],
             "description": "With includeNets=true: groups (default) returns netGroups with exact lane mappings; bits returns original per-bit nets. Components and connectivityIssues remain unchanged."
+          },
+          "layoutContext": {
+            "type": "object",
+            "description": "Compact exact layout inventory and net graph for organization. Supply {} for defaults; same options must be used when arranging. Not combined with component/port/nets/wires filters.",
+            "properties": {
+              "pinnedComponentIds": {
+                "type": "array",
+                "maxItems": 2048,
+                "items": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              },
+              "panelBelowY": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "keepTunnels": {
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                }
+              },
+              "localiseConstants": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "layoutReview": {
+            "type": "object",
+            "description": "Read-only native geometry and bounded signal-reading examples for this definition. Use {} initially; issueOffset pages 24 suspected overlap pairs on the same artifact. Does not arrange or review child definitions.",
+            "properties": {
+              "issueOffset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "artifactSha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "Required for issueOffset > 0; use the previous observation hash. A stale artifact is rejected."
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [],
@@ -733,7 +780,7 @@
     {
       "type": "function",
       "name": "arrange_candidate",
-      "description": "Use this to make a circuit READABLE without changing what it does: re-place the body components into left-to-right signal-flow layers and replace placeholder Tunnels with real orthogonal wires, in ONE operation. Routing is a global optimisation; do not route nets one at a time with wire_candidate and do not write your own router. The fixed panel (top cluster of Pins/probes/displays, or pinnedComponentIds) never moves and keeps its Tunnel bridges; nets with very high fan-out (clock/reset/run), backward (feedback/write-back) nets and long nets stay Tunnels, each Tunnel on a short lead off its port as in hand-drawn work; a shared Constant driving many inputs becomes a private Constant beside each input. Registers named with pipeline stages (EX.PC, IF/ID) become stage columns; otherwise parts follow signal depth. Supply circuit; artifactSha256 is optional (omit it to arrange the current file, or pass the one from your latest inspect_circuit to guard against concurrent edits). Optional: keepTunnels (labels to leave as Tunnels), pinnedComponentIds, localiseConstants (default true), columnGap (px between layers, default 160; channels grow with the wires that pass through them), tunnelSpan (px from driver to consumer above which a named net keeps its Tunnels instead of being wired, default 800 for one consumer, scaled down for fan-out; measured on 233 hand-drawn HUST CPUs, which tunnel two thirds of nets beyond ~600 px; lower it for more Tunnels and fewer crossings, raise it to wire more), maxLayerSpan (hard cap in placement columns, default 8), panelBelowY (override the panel/body split), candidateId to compose. Returns a candidate only if connectivity is PROVEN identical: every group of ports sharing a net is re-observed and compared before/after (Probes included; constants per driven port), and the result loads natively with no width conflicts; otherwise ARRANGE_NOT_EQUIVALENT and nothing is published. Circuits that use this one see the same instance (a custom appearance's ports follow their Pins; without one, the Pins of each facing keep their order), otherwise ARRANGE_INTERFACE_CHANGED; every other circuit in the file stays byte for byte, so nothing needs restoring after checkout. The result includes readability metrics (tunnels, wire segments, crossings, wire length, extent) before/after and the arrangement report (unrouted nets that kept their Tunnels). Look at it with render_circuit(candidateId), adjust parameters and re-run, then checkout_candidate to write it. Behavioural correctness is unchanged by construction; simulate only if you changed something else.",
+      "description": "Create a layout-only candidate with native connectivity, interface, protected-component and other-definition checks. For readable functional organization, supply organization:{groups:[{id,label,row,componentIds}],namedLinks?:[{componentId,port,label}],localSignals?:[labels]}. Read inspect_circuit({circuit,layoutContext:{}}) for the actual groupable components and compact graph; choose meaningful groups, reading order and names from the circuit purpose. Assign every listed component once; omit fixed components, Tunnel objects and localized constants. Keep touching members in one group. With organization, artifactSha256 is required from the same observation. ELK places group interiors; the router uses local wires and named remote bridges, aligns connected group interfaces, attaches terminal buffers and emits native section headings. No CPU-specific group template is applied. Without organization, the existing flat signal-flow layout remains available. Optional protection/representation settings: pinnedComponentIds, panelBelowY, keepTunnels, localiseConstants (default true); inspect layoutContext with those same options if changed. Other flat-layout controls: columnGap, tunnelSpan, maxLayerSpan. candidateId composes from a previous candidate. A fixed panel may be inferred from geometry; this is not knowledge of course requirements, so respect supplied template/user constraints. Unknown or electrically changed output fails without altering the source. Unchanged connectivity does not establish the original circuit behavior or visual quality. The result reports native checks and geometric metrics; render_circuit(candidateId) shows the actual result. checkout_candidate explicitly applies it. Direct file edits/scripts remain available. Large circuits may use organization.stages:[{id,label,groups:[group IDs],mainPath:[group IDs],row?}]. Within a stage, keep the principal path consecutive; place related logic/status as branches. A branch may use attachTo to select its mainPath owner. Stage boundaries and wrapped continuation headings are native annotations. Estimated label geometry is repaired locally where possible; inspect remaining reported collisions. Source Text appears separately in layoutContext.annotations; optionally associate it using organization.annotations. Long notes never occupy a register-bank cell. Feedback includes sourceAnnotations, annotationOnlyGroups, readingTransitions and representationChoices; zero crossings alone do not establish readability.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -788,6 +835,213 @@
             "type": "integer",
             "minimum": 100,
             "maximum": 5000
+          },
+          "organization": {
+            "type": "object",
+            "description": "Functional organization for this exact artifact, not coordinates. Use layoutContext to get the required membership and connectivity. Groups follow array order within each reading row. Optional stages express a larger functional unit and its mainPath independently of side branches; stage order/rows take precedence over group row.",
+            "properties": {
+              "groups": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "row": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 64,
+                      "description": "Reading row, from top to bottom. Keep the principal data path continuous in one row; auxiliary monitoring, control or display groups can use a later row when their relationships allow it."
+                    },
+                    "componentIds": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 2048,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 64
+                      }
+                    },
+                    "layout": {
+                      "type": "string",
+                      "enum": [
+                        "flow",
+                        "bank"
+                      ],
+                      "description": "flow: port-aware layered logic; bank: repeated parallel parts in one or two narrow columns. Connected banks align corresponding lanes using actual ports. Use bank for parallel storage, not a combinational chain."
+                    },
+                    "columns": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 2,
+                      "description": "Only for bank: 1 (default) or 2 narrow columns. Choose 2 for a large bank to control its height."
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "main",
+                        "support"
+                      ],
+                      "description": "main: core functional path (default). support: auxiliary observation/display/status or control branches; placed near their strongest connected main group in available space, without disrupting main reading order."
+                    },
+                    "bankOrder": {
+                      "type": "string",
+                      "enum": [
+                        "connected",
+                        "given"
+                      ],
+                      "description": "Bank order: connected (default) reorders whole parts using neighboring ports and keeps directly connected lanes in consistent columns across banks. componentIds order is a semantic prior. given preserves the supplied order when its exact sequence carries meaning."
+                    },
+                    "attachTo": {
+                      "type": "string",
+                      "description": "Optional branch owner on its stage mainPath. Express semantic affiliation when connection strength alone is misleading. Requires stages; no coordinates or electrical connection are implied."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "row",
+                    "componentIds"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "namedLinks": {
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "componentId": {
+                      "type": "string"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "required": [
+                    "componentId",
+                    "port",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "localSignals": {
+                "description": "Prefer physical connections within local groups. This does not require every control signal to be wired: shared bank controls still prefer regular per-column rails and fall back to named connections when no clear rail fits. keepTunnels takes priority.",
+                "type": "array",
+                "maxItems": 256,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "maxRowWidth": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Optional explicit row-width constraint in native units; 0 disables wrapping. With stages, omit it to choose the page width automatically from actual stage sizes, area and aspect, avoiding needless singleton rows. Without stages the default is 3600. Oversized indivisible groups/stages remain intact."
+              },
+              "sharedControls": {
+                "type": "boolean",
+                "description": "Default true: native-identified repeated one-bit control inputs on any bank edge prefer straight local rails within each column. Existing top/bottom rails have priority; side controls use clear straight combs when possible. If a rail cannot fit, retain named connections rather than winding trees or cross-column detours. Other groups and fixed structures remain connected by names. keepTunnels overrides this preference."
+              },
+              "stages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "description": "Optional semantic hierarchy for large circuits. Array order is stage reading order. Cover every group once in groups; mainPath is the ordered backbone within that stage. Other members are side branches packed above/below its backbone. Whole stages wrap without splitting. No electrical links are invented. Omit for small circuits.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "groups": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "mainPath": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "row": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 64,
+                      "description": "Optional explicit stage reading row; otherwise stages wrap at maxRowWidth."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "groups",
+                    "mainPath"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "annotations": {
+                "type": "array",
+                "maxItems": 2048,
+                "description": "Optional placement of existing movable Text, separate from electrical group membership. Unassigned Text is preserved above the diagram. A heading replaces the generated group heading and must fit its title area.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "componentId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "heading",
+                        "overview"
+                      ]
+                    },
+                    "groupId": {
+                      "type": "string",
+                      "description": "Required for heading; group from organization.groups."
+                    }
+                  },
+                  "required": [
+                    "componentId",
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "groups"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -1819,6 +2073,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 128
+          },
+          "turnBaselineRevisionId": {
+            "type": "string",
+            "description": "Host-known first revision of this file in the current turn, for cumulative change scope; not verification state."
           }
         },
         "required": [

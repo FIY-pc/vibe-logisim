@@ -25,22 +25,30 @@ def apply_positions(circuit: ET.Element, scene: dict, positions: dict[str, tuple
 
 def _apply(circuit, scene, deltas, segments):
     targets = [c for c in scene['components'] if c['componentId'] in deltas]
-    locations = {(c['factory'], c['location']['x'], c['location']['y']): deltas[c['componentId']] for c in targets}
     pin_moves = {}
-    changed = 0
-    for node in circuit.findall('comp'):
-        point = tuple((int(value) for value in node.get('loc', '(0,0)').strip('()').split(',')))
-        if (node.get('name'), *point) not in locations:
-            continue
-        dx, dy = locations[(node.get('name'), *point)]
+    available = list(circuit.findall('comp'))
+    moves = []
+    for c in targets:
+        point = c['location']['x'], c['location']['y']
+        candidates = [n for n in available if n.get('name') == c['factory']
+                      and n.get('loc') == f'({point[0]},{point[1]})']
+        if len(candidates)>1:
+            # Named co-located aliases are independent objects. Do not move
+            # every object at that coordinate when only one was selected.
+            key = 'text' if c['factory']=='Text' else 'label'
+            label = c.get('attributes', {}).get(key)
+            candidates = [n for n in candidates if next((a.get('val') for a in n.findall('a')
+                                                       if a.get('name')==key), None)==label]
+        if len(candidates)!=1:
+            raise ValueError(f"无法唯一对应所选对象 {c['componentId']} ({c['factory']})；请保留其可区分的名称")
+        node = candidates[0]; available.remove(node)
+        moves.append((node, point, deltas[c['componentId']]))
+    for node, point, (dx,dy) in moves:
         node.set('loc', f'({point[0] + dx},{point[1] + dy})')
         if node.get('name') == 'Pin':
             # Appearance port references use x,y, unlike component loc=(x,y).
             # Move the referenced Pin without changing its external port position.
             pin_moves[f'{point[0]},{point[1]}'] = f'{point[0] + dx},{point[1] + dy}'
-        changed += 1
-    if changed != len(targets):
-        raise ValueError('对象位置不唯一，不能安全移动')
     for wire in list(circuit.findall('wire')):
         circuit.remove(wire)
     for start, end in segments:
