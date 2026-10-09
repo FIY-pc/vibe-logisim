@@ -6,7 +6,7 @@
 
 桌面开发版在 Linux 上开发和验收；Windows 通过打包版本支持（见分发说明），源码直接运行未在 Windows 上验收。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
 
-开发启动的内嵌 AI 需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包已内置这些程序和 Python、Java、Logisim，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
+开发启动的内置运行时直接使用 npm 安装的 Pi SDK 和用户配置的 API。选择 Codex 运行时才需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包已内置这些程序和 Python、Java、Logisim，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
 
 ## Logisim 运行文件
 
@@ -237,3 +237,13 @@ node apps/desktop/test/e2e-file-operations.cjs
 在真实 Electron 中用鼠标拖动文件/文件夹与右栏引用，悬停展开目录，拒绝向自身子目录移动和覆盖同名文件；经界面放置元件、移动当前电路、继续编辑和撤销移动，核对原文档身份、编辑历史及新保存位置。右键和 Backspace 删除调用真实系统回收站，核对回收站内容及历史恢复；引用经移动、对话切换和重开继续可用。系统文件拖入使用 Chromium 的原生文件拖动协议，走真实复制与引用服务。
 
 夹具保存在 `~/.cache/vibe-logisim-e2e/file-operations-*`，使用独立配置、状态和 XDG 回收站；某些 Linux 系统拒绝对 `/tmp` 的内部挂载执行回收站操作，因此不把删除验收放在 `/tmp`。不启动 Codex，不消耗模型额度。该验证覆盖文件操作与引用传递，不代表模型已阅读这些资料并完成电路任务。
+
+### 内置运行时验证（不调用远端模型）
+
+```sh
+node --test apps/desktop/electron/builtin-backend.test.cjs
+node apps/desktop/test/builtin-runtime-native.cjs
+env -u ELECTRON_RUN_AS_NODE apps/desktop/node_modules/.bin/electron apps/desktop/test/builtin-runtime-electron.cjs
+```
+
+前者使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属；后者把本地模型响应接到生产工具宿主和原生 Logisim，检查读取、仿真及图片结果。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。

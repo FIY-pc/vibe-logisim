@@ -95,7 +95,7 @@ function networkError(error, seconds, network = null) {
   }
   if (/ERR_PROXY_CONNECTION_FAILED|ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_AUTH|ERR_MANDATORY_PROXY|ERR_NO_SUPPORTED_PROXIES|ERR_PROXY_CERTIFICATE_INVALID/.test(text)) {
     const where = network?.hostPort ? ` ${network.hostPort}` : "";
-    if (/ERR_PROXY_AUTH/.test(text)) return new ProbeError("proxy", `代理${where} 要求账号密码`, {hint: "保存前的检测不能带代理账号；可以「跳过检测直接保存」，AI 引擎会使用环境变量里的完整代理地址。"});
+    if (/ERR_PROXY_AUTH/.test(text)) return new ProbeError("proxy", `代理${where} 要求账号密码`, {hint: "保存前的检测不能带代理账号；可以「跳过检测直接保存」，AI 运行时会使用环境变量里的完整代理地址。"});
     return new ProbeError("proxy", `连不上代理${where}`, {hint: "代理软件没有运行、端口不对，或节点不可用。修好后重试；不需要代理时在代理软件里关闭「系统代理」。"});
   }
   if (/ENOTFOUND|EAI_AGAIN|ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED/.test(text)) return new ProbeError("network", "找不到这个域名", {hint: `检查接口地址是否拼写正确。${network?.proxyUrl ? "" : route}`.trim()});
@@ -118,14 +118,17 @@ function authError(status, body, text) {
 // null when the endpoint has no list (404/405/HTML/empty). Throws ProbeError
 // only for authentication and network failures — a missing list is not an
 // error, students can still type the model name.
-async function discoverModels({baseUrl, apiKey, fetch: fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, network = null}) {
-  const url = joinUrl(baseUrl, "/models");
+async function discoverModels({baseUrl, apiKey, api = "openai-responses", fetch: fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, network = null}) {
+  const anthropic = api === "anthropic-messages";
+  const url = joinUrl(baseUrl, anthropic ? "/v1/models" : "/models");
   const started = Date.now();
   let response;
   try {
     response = await withTimeout(timeoutMs, signal => fetchImpl(url, {
       method: "GET",
-      headers: {Authorization: `Bearer ${apiKey}`, Accept: "application/json"},
+      headers: anthropic
+        ? {"x-api-key": apiKey, "anthropic-version": "2023-06-01", Accept: "application/json"}
+        : {Authorization: `Bearer ${apiKey}`, Accept: "application/json"},
       redirect: "follow",
       signal,
     }));

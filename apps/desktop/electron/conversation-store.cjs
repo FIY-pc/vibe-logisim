@@ -95,9 +95,17 @@ class ConversationStore {
     }
     this.write(data); return this.state(key);
   }
-  remember(key, {threadId, messages, messageId, context, toolContract}) {
+  runtimeData(key, patch, expectedId) {
+    const data=this.read(), w=this.workspace(data,key), record=w.conversations[w.activeId];
+    if (expectedId && record.id!==expectedId) throw new Error('当前对话已变化，未覆盖旧记录');
+    Object.assign(record, structuredClone(patch)); this.write(data);
+    return structuredClone(record);
+  }
+  remember(key, {threadId, messages, messageId, context, toolContract, runtimeData, expectedId}) {
     const data = this.read(), w = this.workspace(data, key), record = w.conversations[w.activeId];
     if (record.threadId && threadId && record.threadId !== threadId) throw new Error('当前对话已变化，未覆盖旧记录');
+    if(expectedId&&record.id!==expectedId)throw new Error('当前对话已变化，未覆盖旧记录');
+    if(runtimeData)Object.assign(record,structuredClone(runtimeData));
     if (threadId) record.threadId = threadId;
     if (toolContract !== undefined) record.toolContract = structuredClone(toolContract);
     if (messages) record.messages = structuredClone(messages);

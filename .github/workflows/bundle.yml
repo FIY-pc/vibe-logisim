@@ -2,9 +2,9 @@ name: bundle
 
 # Cross-builds the Linux and Windows bundles from pinned runtime archives,
 # then smoke-tests each bundle on its real OS (open folder, build an AND gate,
-# native truth table via bundled Java+Logisim, restart, bundled Codex starts).
-# Standard smoke checks send no model turns. A separate non-PR AI job may
-# use VIBE_TEST_* secrets for two paid model turns when configured.
+# native truth table via bundled Java+Logisim, built-in AI setup and restart).
+# Standard smoke checks use local fixtures. Real model checks require an
+# explicit workflow dispatch with run_ai enabled and VIBE_TEST_* secrets.
 
 on:
   push:
@@ -12,6 +12,11 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_ai:
+        description: Run two paid model turns with configured test credentials
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -34,6 +39,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install runtime dependencies
+        run: npm --prefix apps/desktop ci --ignore-scripts
       - name: Node unit tests (Windows)
         shell: pwsh
         run: |
@@ -46,6 +53,7 @@ jobs:
             apps/desktop/electron/agent-workspace.test.cjs `
             apps/desktop/electron/direct-agent-workspace-errors.test.cjs `
             apps/desktop/electron/conversations.test.cjs `
+            apps/desktop/electron/builtin-backend.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `
             apps/desktop/electron/model-tool-output.test.cjs `
             apps/desktop/electron/custom-provider.test.cjs `
@@ -80,7 +88,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install desktop dependencies (pdfjs-dist is copied into the bundle)
+      - name: Install desktop dependencies (runtime SDK and browser assets)
         run: npm --prefix apps/desktop ci
       - name: Fetch course runtime (build input kept out of git)
         env:
@@ -151,6 +159,8 @@ jobs:
           Write-Host "Executable: $exe"
           $env:VIBE_SMOKE_ROOT = "$env:RUNNER_TEMP"
           node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node apps/desktop/test/e2e-runtime-packaged.cjs "$exe" smoke-out/runtime
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -160,10 +170,10 @@ jobs:
 
   # Real model turns through the in-app "own API endpoint" form on the
   # packaged Windows app. Needs repository secrets; skipped when absent
-  # (forks, PRs). Costs API quota, so it runs only on main pushes and tags.
+  # (forks, PRs). Costs API quota; enable explicitly with workflow_dispatch.
   smoke-ai-windows:
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && inputs.run_ai
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -224,9 +234,8 @@ jobs:
           sudo apt-get install -y -qq xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1 >/dev/null
           exe=$(find unpacked -maxdepth 2 -name vibe-logisim -type f | head -1)
           echo "Executable: $exe"
-          # GitHub runners have no systemd --user session; the AI status is
-          # allowed to be 'unavailable' here, the manual path is what is checked.
-          VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE=1 VIBE_SMOKE_NO_SANDBOX=1 xvfb-run -a node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
+          VIBE_SMOKE_NO_SANDBOX=1 xvfb-run -a node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
+          VIBE_SMOKE_NO_SANDBOX=1 xvfb-run -a node apps/desktop/test/e2e-runtime-packaged.cjs "$exe" smoke-out/runtime
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -249,4 +258,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la dist
-          gh release upload "${GITHUB_REF_NAME}" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist/* --repo "$GITHUB_REPOSITORY"

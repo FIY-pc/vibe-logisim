@@ -16,7 +16,7 @@ const {
   nativeImage,
 } = require("electron");
 const { LensBackend } = require("./backend.cjs");
-const { CodexBackend } = require("./codex-backend.cjs");
+const { AgentRuntime } = require("./agent-runtime.cjs");
 const {DirectAgentWorkspace} = require("./direct-agent-workspace.cjs");
 const {CircuitPlugin} = require("./circuit-plugin.cjs");
 const {AgentToolHost} = require("./agent-tool-host.cjs");
@@ -117,10 +117,11 @@ function storedApiKey() {
 function refreshRedaction() {
   let custom = null;
   try { custom = readCustomProvider(agentProfileDir()); } catch { /* an unreadable profile has nothing to mask */ }
+  let builtin=[];try {builtin=new (require('./builtin-provider.cjs').BuiltinProvider)(agentProfileDir()).registry().services;} catch {}
   redact.update({
-    secrets: [storedApiKey(), ...redact.secrets()].filter(Boolean),
+    secrets: [...builtin.map(c=>c.apiKey), storedApiKey(), ...redact.secrets()].filter(Boolean),
     workspaceRoots: knownWorkspaceRoots(path.join(app.getPath('userData'), 'folder-workspaces')),
-    endpoints: custom?.baseUrl ? [custom.baseUrl] : [],
+    endpoints: [custom?.baseUrl,...builtin.map(c=>c.baseUrl)].filter(Boolean),
   });
 }
 
@@ -308,7 +309,7 @@ async function startApplication() {
   });
   const contextHost = new AgentContextHost({provider:new CircuitContextProvider()});
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
-  codex = new CodexBackend({
+  codex = new AgentRuntime({
     runtimeRoot,
     workDir: desktopWorkspace.folder.current?.root || path.join(agentRoot, "workspace"),
     profileDir: path.join(agentRoot, "codex-home"),
@@ -578,17 +579,31 @@ function registerIpc() {
     // the running app-server are untouched, so no transition is needed.
     if (action === 'discover' || action === 'test') return codex.probeCustomProvider(action, request?.settings || {});
     if (action === 'network') return codex.networkStatus(request?.settings?.baseUrl || null);
+    if (action === 'default-runtime') return codex.setDefaultRuntime(request?.runtime);
+    if (action === 'default-service' && codex.snapshot().runtime === 'builtin') return codex.defaultProvider(request?.settings || {});
+    if (action === 'new-runtime') {
+      if (workspaceTransitioning) throw workspaceChangedError();
+      const transition=++workspaceGeneration; workspaceTransitioning=true;
+      try { await codex.newRuntimeConversation(request?.runtime); return codex.snapshot(); }
+      finally { if (transition===workspaceGeneration) workspaceTransitioning=false; }
+    }
+    if (action === 'bind-conversation') {
+      if(workspaceTransitioning||codex.snapshot().runtime!=='builtin')throw workspaceChangedError();
+      const transition=++workspaceGeneration;workspaceTransitioning=true;
+      try{return await codex.bindProvider(request?.settings||{});}
+      finally{if(transition===workspaceGeneration)workspaceTransitioning=false;}
+    }
     if (action !== 'save' && action !== 'clear') throw new Error('无效的接口设置操作。');
     if (workspaceTransitioning) throw workspaceChangedError();
     ++workspaceGeneration;
     workspaceTransitioning = true;
     try {
-      const state = await (action === 'clear' ? codex.clearCustomProvider() : codex.configureCustomProvider(request?.settings || {})).finally(refreshRedaction);
+      const state = await (action === 'clear' ? codex.clearCustomProvider(request?.settings || {}) : codex.configureCustomProvider(request?.settings || {})).finally(refreshRedaction);
       const current = await backend.session();
       if (current.folder && codex.status === 'ready') {
         await codex.resumeWorkspace({workspaceKey:current.folder.conversationKey, revisionId:current.revision?.id});
       }
-      return state;
+      return codex.snapshot();
     } finally { workspaceTransitioning = false; }
   });
   ipcMain.handle("vibe-logisim:review-recovery", async (event, request) => {

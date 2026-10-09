@@ -52,8 +52,16 @@ const note = m => { const line = `[${new Date().toISOString().slice(11, 19)}] ${
       await page.locator('#agentSettings').click();
     }
     await page.locator('#connectionDialog[open]').waitFor();
-    assert.equal(await page.locator('#connectionTabApi').getAttribute('aria-selected'), 'true', 'API tab preselected when nothing is configured');
+    // This existing suite covers the Codex Responses path explicitly.
+    if ((await agent()).runtime === 'builtin') {
+      await page.locator('#settingsRuntime').click();
+      await page.locator('#useCodexRuntime').click();
+      await waitUntil(() => agent().then(s => s.runtime === 'codex' && !s.busy && s), {timeout:120000,label:'Codex selected'});
+      await page.locator('#settingsServices').click();
+    }
+    if (await page.locator('#settingsOverview').isVisible()) await page.locator('#connectionTabApi').click();
     assert.equal(await page.locator('#connectionPaneApi').isVisible(), true);
+    await page.locator('#providerPreset').selectOption('custom');
     await shot('01-dialog-api-tab');
 
     phase = 'discovery + bad key rejected before save';
@@ -107,12 +115,16 @@ const note = m => { const line = `[${new Date().toISOString().slice(11, 19)}] ${
 
     phase = 'reopen: saved state shown, re-save without retyping the key';
     await page.locator('#agentSettings').click(); await page.locator('#connectionDialog[open]').waitFor();
-    assert.equal(await page.locator('#connectionTabApi').getAttribute('aria-selected'), 'true');
+    await page.locator('#connectionTabApi').click();
     assert.equal(await page.locator('#providerBaseUrl').inputValue(), fake.baseUrl);
     assert.equal(await page.locator('#providerApiKey').inputValue(), '');
     assert.match(await page.locator('#providerApiKey').getAttribute('placeholder'), /已保存 sk-t••••6789/);
+    await page.locator('#settingsServices').click();
+    await page.locator('.connection-footer > summary').click();
     assert.match(await page.locator('#modelConnection').innerText(), /自定义接口/);
     assert.match(await page.locator('#modelConnectionStatus').innerText(), /已连接/);
+    await page.locator('#settingsServices').click();
+    await page.locator('#connectionTabApi').click();
     assert.equal(await page.locator('#providerClear').isVisible(), true);
     await shot('06-reopened');
     await page.locator('#providerModel').fill('probe-chat');
@@ -126,6 +138,7 @@ const note = m => { const line = `[${new Date().toISOString().slice(11, 19)}] ${
     assert.match(await page.locator('#accountTitle').innerText(), /ChatGPT 登录未启用/);
     assert.match(await page.locator('#connectionLogin').innerText(), /停用接口并登录/);
     await shot('07-chatgpt-tab-with-endpoint');
+    await page.locator('#settingsBack').click();
     await page.locator('#connectionTabApi').click();
 
     phase = 'clear endpoint';

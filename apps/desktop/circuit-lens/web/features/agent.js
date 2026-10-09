@@ -77,7 +77,7 @@ function updateComposerState() {
     } else if (!ready) {
       ui.askButton.title = agentState.status === "auth-required"
         ? "打开 AI 设置连接 AI"
-        : "正在等待 AI 引擎";
+        : "正在等待 AI 运行时";
     } else if (!hasQuestion) {
       ui.askButton.title = "输入一个关于当前电路的问题";
     } else {
@@ -248,19 +248,19 @@ function applyAgentState(snapshot = {}) {
     agentState.modelConfigurationError = snapshot.modelConfigurationError || null;
     const labels = {
       idle: "等待启动",
-      starting: "正在启动 AI 引擎…",
+      starting: "正在启动 AI 运行时…",
       ready: "已连接",
       busy: "正在处理",
       "auth-required": snapshot.accountMode === "application" ? "尚未连接 AI" : "需要登录",
-      unavailable: snapshot.detail || "AI 引擎不可用",
-      stopped: "AI 引擎已停止",
+      unavailable: snapshot.detail || "AI 运行时不可用",
+      stopped: "AI 运行时已停止",
     };
     const lightState = ["ready", "busy", "starting", "auth-required", "unavailable"].includes(agentState.status)
       ? agentState.status
       : "idle";
     ui.agentStatusLight.dataset.state = lightState;
     ui.agentTabLight.dataset.state = lightState;
-    ui.agentStatusText.textContent = labels[agentState.status] || "AI 引擎状态未知";
+    ui.agentStatusText.textContent = labels[agentState.status] || "AI 运行时状态未知";
     ports.updateAgentConnection(snapshot);
     ports.renderConversationHeader();
     updateComposerState();
@@ -352,7 +352,7 @@ function handleAgentEvent(event) {
       return;
     }
     if (event.type === "activity") {
-      conversation.activity(event.itemId, event.label, event.status, event.kind, event.detail, event.activityKey);
+      conversation.activity(event.itemId, event.label, event.status, event.kind, event.detail, event.activityKey, event.resultStatus);
       return;
     }
     if (event.type === "harness-result") {
