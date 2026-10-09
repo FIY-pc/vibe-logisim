@@ -176,6 +176,8 @@ jobs:
           node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node apps/desktop/test/e2e-runtime-packaged.cjs "$exe" smoke-out/runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node apps/desktop/test/e2e-runtime-download.cjs "$exe" smoke-out/runtime-download
       - name: Verify reinstall and uninstall preserve application data
         shell: pwsh
         run: |
