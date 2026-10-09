@@ -61,6 +61,10 @@ node apps/desktop/test/e2e-packaged.cjs /path/to/vibe-logisim-<版本>-linux-x64
 
 发布前在独立分支准备应用版本、README、`docs/releases/v<版本>.md` 和相关源码，通过 PR 的双平台构建与冒烟取得可检查的产物。PR 检查不运行付费模型回合。
 
-正式发布时先准备同名 GitHub Release，再推送 `v*` 标签；`bundle` 工作流在 Windows 单元检查及两个目标的构建、实际程序冒烟通过后上传压缩包和 `.sha256`。课程运行文件不进 git，由 CI 从 `build-inputs` 预发布下载并校验 SHA-256。工作流的 main / tag / 手动触发还可能在配置了 `VIBE_TEST_*` secrets 时运行付费 AI 冒烟，发布者应明确这项额度使用。
+正式发布时先准备同名 GitHub Release 草稿，再推送 `v*` 标签；`bundle` 工作流在 Windows 单元检查及两个目标的构建、实际程序冒烟通过后上传压缩包和 `.sha256`；核对附件后再公开草稿。同名附件不会自动覆盖。课程运行文件不进 git，由 CI 从 `build-inputs` 预发布下载并校验 SHA-256。付费 AI 冒烟仅在手动运行工作流并启用 `run_ai` 时使用 `VIBE_TEST_*` secrets；普通推送与标签不消耗模型额度。
 
 项目源码为 GPL-3.0。标准 Logisim-ITA 为 GPL-3.0，包内附对应标签源码；CPython、Temurin、Codex（Apache-2.0）、PDF.js（Apache-2.0）的许可证保留在各自目录。课程发布的 `logisim-ita-cn-20200118.exe` 按课程原样附带、不作修改，由 Java 当作 jar 加载；它的对应源码没有随课程发布，这一点在 THIRD_PARTY.md 中如实记录。
+
+内置运行时的 Pi SDK 及生产依赖由 `node_dependencies.py` 按锁文件复制到应用目录，启动时不下载。ChatGPT 登录继续走 Codex；既有会话不自动迁移。Linux 内置命令使用 systemd 隔离，Windows 内置运行时暂提供文件和电路工具，不执行任意命令。
+
+安装包的 `e2e-runtime-packaged.cjs` 使用全新应用数据和本地 HTTP 响应，检查首次连接、SDK 流式回答、重启、服务默认值及跨运行时恢复旧会话；它不调用远端模型。

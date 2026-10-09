@@ -1,7 +1,7 @@
 // Cross-platform smoke test for a packaged bundle (Linux or Windows).
 // Runs the shipped executable outside the checkout with a fresh app-data dir:
 // open folder -> new circuit -> place AND + pins -> wire -> native truth table
-// -> restart and reopen -> bundled Codex app-server reaches auth-required.
+// -> restart and reopen -> built-in runtime reaches auth-required.
 // Also checks the shipped layout solver and real signal navigation UI.
 // No model turn is sent and no credentials are used.
 'use strict';
@@ -61,12 +61,11 @@ async function launch() {
   assert.ok(sink.x >= source.x + source.width, 'bundled solver arranges signal source before sink');
   assert.equal(source.ports[0].x, 80); assert.equal(sink.ports[0].x, 0);
   note('group layout ran through bundled Python, Electron and elkjs');
-  phase = 'agent reaches auth-required (bundled Codex app-server started)';
+  phase = 'fresh install uses built-in runtime';
   const state = await waitUntil(() => agent().then(s => (s.status === 'auth-required' || s.status === 'ready' || s.status === 'unavailable') && s), {timeout: 120000});
   note(`agent status=${state.status} isolation=${state.isolation} detail=${state.detail || ''}`);
-  // Headless CI Linux runners have no systemd --user session, so the AI path
-  // cannot start there; the manual editing path is still verified.
-  if (!process.env.VIBE_SMOKE_ALLOW_AGENT_UNAVAILABLE) assert.notEqual(state.status, 'unavailable', 'bundled Codex app-server failed to start: ' + state.detail);
+  assert.equal(state.runtime, 'builtin');
+  assert.equal(state.status, 'auth-required', 'fresh install can configure AI without a CLI or account');
   phase = 'create circuit';
   await app.evaluate(({dialog}, folder) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [folder]}); }, folder);
   // Call the same IPC the button uses, but with a hard timeout so a hang in

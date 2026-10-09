@@ -16,6 +16,7 @@ import tempfile
 import zipfile
 
 from artifacts import acquire, extract, sha256
+from node_dependencies import copy_node_dependencies
 
 REPO = Path(__file__).resolve().parents[2]
 DESKTOP = REPO / 'apps/desktop'
@@ -117,7 +118,7 @@ def write_zip(root, archive, name):
 def usage_text(target, version):
     common = ('Vibe Logisim ' + version + '\n\n解压整个文件夹后，双击 {launcher} 即可使用。\n'
               '无需另外安装 Python、Java 或 Codex。打开你的文件夹，选择或新建 .circ 电路。\n'
-              'AI 面板可以登录 ChatGPT，也可以在「AI 设置」里填写支持流式 Responses API 的接口地址和密钥。\n'
+              '在 AI 面板选择「连接 AI」添加模型服务，或使用 ChatGPT 账号登录。\n'
               '使用 AI 需要你自己的账号或接口额度；不连接 AI 也能编辑和仿真。\n'
               'Ctrl+点击端口、隧道或导线可追踪信号，Alt+左方向键返回。\n'
               '使用说明：https://github.com/FIY-pc/vibe-logisim\n\n')
@@ -187,6 +188,7 @@ def build(args):
             else:
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target_path)
+        copy_node_dependencies(DESKTOP, app)
         extract(platform_artifacts['python'], runtime / 'python', strip_root=True)
         host_jdk = acquire(args.cache / 'linux-x64', {'java': lock['targets']['linux-x64']['artifacts']['java']})['java']
         jlink_runtime(host_jdk, platform_artifacts['java'], runtime / 'java', args.cache)
@@ -222,6 +224,7 @@ def build(args):
             'schema': lock['schema'], 'target': target, 'artifacts': {**lock['artifacts'], **spec['artifacts']},
             'electron': spec['electron']['version'], 'courseRuntime': lock['courseRuntime'],
             'pdfjs': json.loads((pdf / 'package.json').read_text())['version'],
+            'builtinRuntime': {name: metadata['dependencies'][name] for name in ('@earendil-works/pi-agent-core', '@earendil-works/pi-ai')},
             'productVersion': metadata['version'], 'distribution': args.distribution}, indent=2, ensure_ascii=False))
         (root / '使用说明.txt').write_text(usage_text(target, metadata['version']), encoding='utf-8')
         # Manifest excludes itself. It records shipped bytes, not a claim of

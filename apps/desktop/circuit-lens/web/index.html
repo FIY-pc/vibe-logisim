@@ -239,7 +239,7 @@
                 <span class="agent-status-light" id="agentStatusLight" data-state="idle" aria-hidden="true"></span>
                 <div>
                   <button id="conversationPicker" class="conversation-picker" aria-label="切换对话" aria-haspopup="dialog" aria-expanded="false"><strong id="conversationTitle">电路助手</strong></button>
-                  <span id="agentStatusText">正在启动 AI 引擎…</span>
+                  <span id="agentStatusText">正在启动 AI 运行时…</span>
                 </div>
               </div>
               <button id="conversationNew" class="chat-action" aria-label="新对话" aria-keyshortcuts="Control+Shift+O Meta+Shift+O" title="新对话"></button>
@@ -247,13 +247,13 @@
             </div>
             <aside class="agent-notice" id="agentNotice" hidden>
               <div role="status"><strong id="agentNoticeTitle"></strong><p id="agentNoticeText"></p></div>
-              <div class="agent-notice-actions"><button class="quiet-button" id="agentReconnect">重新连接</button><button class="quiet-button" id="agentConfigureApi" hidden>填写 API 接口</button><button class="quiet-button" id="agentReviewChanges">查看已生成改动</button><button class="quiet-button" id="agentReportIssue" hidden>反馈这个问题</button></div>
+              <div class="agent-notice-actions"><button class="quiet-button" id="agentReconnect">重新连接</button><button class="quiet-button" id="agentConfigureApi" hidden>连接 AI</button><button class="quiet-button" id="agentBindProvider" hidden>选择服务</button><button class="quiet-button" id="agentReviewChanges">查看已生成改动</button><button class="quiet-button" id="agentReportIssue" hidden>反馈这个问题</button></div>
               <details><summary>错误详情</summary><pre id="agentNoticeDetails"></pre></details>
             </aside>
             <div class="agent-timeline" id="agentTimeline" tabindex="0" role="log" aria-live="polite" aria-relevant="additions text">
               <div class="agent-empty" id="agentEmpty">
                 <span class="chat-empty-mark" aria-hidden="true"></span>
-                <strong>一起做电路</strong><p>描述你的想法，或选一件事开始。</p>
+                <strong>想做什么电路？</strong>
                 <div id="conversationStarters" class="conversation-starters" role="group" aria-label="开始一个对话"></div>
               </div>
             </div>
@@ -393,12 +393,30 @@
       <footer><button id="modelRefresh" class="quiet-button">刷新列表</button><span>选择后用于下一次回答</span></footer>
     </dialog>
     <dialog id="connectionDialog" class="connection-dialog" aria-labelledby="connectionTitle">
-      <header><div><h2 id="connectionTitle">AI 设置</h2><p>选择一种方式连接 AI；不连接也可以画图和仿真。</p></div><button id="connectionClose" class="chat-action" aria-label="关闭 AI 设置"></button></header>
-      <div class="connection-tabs" role="tablist" aria-label="连接方式">
-        <button id="connectionTabChatgpt" role="tab" aria-selected="true" aria-controls="connectionPaneChatgpt">ChatGPT 账号</button>
-        <button id="connectionTabApi" role="tab" aria-selected="false" aria-controls="connectionPaneApi">自定义接口</button>
-      </div>
-      <section class="connection-pane" id="connectionPaneChatgpt" role="tabpanel" aria-labelledby="connectionTabChatgpt">
+      <header><div><h2 id="connectionTitle">AI 设置</h2></div><button id="connectionClose" class="chat-action" aria-label="关闭 AI 设置"></button></header>
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="AI 设置分类">
+          <button id="settingsServices" class="is-active" aria-current="page">模型服务</button>
+          <button id="settingsRuntime">运行时</button>
+        </nav>
+        <div class="settings-content">
+          <section id="settingsOverview" class="settings-overview">
+            <div class="settings-heading" id="settingsServicesHeading"><h3>模型服务</h3></div><div id="savedServices"></div><label id="defaultServiceField" class="field" hidden>新对话默认服务<select id="defaultService"></select></label>
+            <div class="settings-service-row"><div><strong id="settingsApiName">API 密钥</strong><p id="settingsApiSummary">连接已有的模型服务</p></div><button id="connectionTabApi" class="quiet-button">添加服务</button></div>
+            <div class="settings-service-row"><div><strong>ChatGPT 账号</strong><p id="settingsAccountSummary">未登录</p></div><button id="connectionTabChatgpt" class="quiet-button">管理</button></div>
+          </section>
+          <section id="settingsRuntimePane" class="settings-overview" hidden>
+            <h3>运行时</h3><label class="field runtime-default">新对话默认运行时<select id="defaultRuntime"><option value="builtin">内置运行时</option><option value="codex">Codex</option></select></label>
+            <div class="settings-service-row"><div><strong>内置运行时 <span id="builtinRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 API 密钥，无需安装额外程序。</p></div><button id="useBuiltinRuntime" class="quiet-button">用内置运行时新建对话</button></div>
+            <div class="settings-service-row"><div><strong>Codex <span id="codexRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 ChatGPT 账号或 Responses API。</p></div><button id="useCodexRuntime" class="quiet-button">用 Codex 新建对话</button></div>
+
+          </section>
+          <section id="serviceConfirm" hidden aria-labelledby="serviceConfirmTitle">
+            <h3 id="serviceConfirmTitle"></h3><div id="serviceConfirmDestination"></div><p id="serviceConfirmImpact"></p>
+            <div class="pane-actions"><button id="serviceConfirmCancel" class="quiet-button">取消</button><button id="serviceConfirmApply" class="primary-button">更换服务</button></div>
+          </section>
+          <button id="settingsBack" class="quiet-button settings-back" hidden>← 模型服务</button>
+      <section class="connection-pane" id="connectionPaneChatgpt" aria-label="ChatGPT 账号" hidden>
         <div class="account-card" id="accountCard" data-state="signed-out">
           <span class="account-dot" aria-hidden="true"></span>
           <div><strong id="accountTitle">未登录</strong><span id="accountDetail">用你的 ChatGPT 账号登录，在浏览器里完成后自动回到这里。</span></div>
@@ -406,37 +424,42 @@
         <p class="connection-note" id="chatgptNote">需要能访问 chatgpt.com 的网络环境，模型由 OpenAI 提供，不需要填写任何密钥。</p>
         <div class="pane-actions"><button id="connectionLogout" class="quiet-button" hidden>退出登录</button><button id="connectionLogin" class="primary-button">登录 ChatGPT</button></div>
       </section>
-      <section class="connection-pane" id="connectionPaneApi" role="tabpanel" aria-labelledby="connectionTabApi" hidden>
+      <section class="connection-pane" id="connectionPaneApi" aria-label="API 接口" hidden>
+        <h3 id="providerFormTitle" class="settings-pane-title">添加模型服务</h3>
         <form id="providerForm" novalidate autocomplete="off">
+          <label class="field">服务<select id="providerPreset"><option value="" disabled>选择服务</option><option value="custom">自定义接口</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="openrouter">OpenRouter</option></select></label>
           <label class="field">接口地址<input id="providerBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" /></label>
+          <label class="field" id="providerProtocolField">接口协议<select id="providerProtocol"><option value="openai-completions">Chat Completions</option><option value="openai-responses">Responses</option><option value="anthropic-messages">Anthropic Messages</option></select></label>
           <label class="field">API 密钥<input id="providerApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" /></label>
           <div class="field model-field">
             <label for="providerModel">模型</label>
             <div class="model-combo">
-              <input id="providerModel" type="text" role="combobox" aria-expanded="false" aria-controls="providerModelList" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="填好地址和密钥后自动读取列表，也可以直接输入" />
+              <input id="providerModel" type="text" role="combobox" aria-expanded="false" aria-controls="providerModelList" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="选择或输入模型名称" />
               <button type="button" id="providerDiscover" class="chat-action" title="读取模型列表" aria-label="读取模型列表"></button>
               <ul id="providerModelList" role="listbox" aria-label="接口提供的模型" hidden></ul>
             </div>
             <span class="field-note" id="providerModelStatus"></span>
           </div>
           <details class="provider-advanced" id="providerAdvanced">
-            <summary>高级选项</summary>
+            <summary>高级设置</summary><label class="field">名称<input id="providerName" type="text" placeholder="可选，用于区分服务" /></label><label class="field" id="providerVisionField"><span><input id="providerVision" type="checkbox" /> 模型支持图片输入</span></label>
             <label class="field">思考深度
-              <select id="providerEffort"><option value="none">关闭（模型不支持推理参数时选这个）</option><option value="low">轻度</option><option value="medium" selected>中（默认）</option><option value="high">高</option></select>
+              <select id="providerEffort"><option value="none">关闭</option><option value="low">轻度</option><option value="medium" selected>中</option><option value="high">高</option></select>
             </label>
-            <label class="field">上下文窗口（token）<input id="providerContext" type="number" min="32000" max="2000000" step="1000" placeholder="默认 256000；越大越少中途压缩" /></label>
+            <label class="field">上下文窗口（token）<input id="providerContext" type="number" min="32000" max="2000000" step="1000" placeholder="默认 256000" /></label>
           </details>
-          <p class="connection-note">接口需要支持 <strong>Responses API</strong>（<code>POST /v1/responses</code>），OpenAI 官方、多数中转站都支持；只有 <code>chat/completions</code> 的接口用不了。密钥只保存在这台电脑上。</p>
+          <p id="providerProtocolNote" class="connection-note">密钥保存在本机。</p>
           <div class="probe-result" id="providerProbe" role="status" hidden><strong id="providerProbeTitle"></strong><span id="providerProbeHint"></span><button type="button" id="providerForce" class="quiet-button" hidden>跳过检测直接保存</button></div>
           <div class="pane-actions"><button type="button" id="providerClear" class="quiet-button" hidden>停用此接口</button><button type="submit" id="providerSave" class="primary-button">保存并连接</button></div>
         </form>
       </section>
-      <footer class="connection-footer">
+      <details class="connection-footer" hidden><summary>连接诊断</summary>
         <div class="model-connection"><span id="connectionLight" data-state="idle" aria-hidden="true"></span><div><strong id="modelConnection"></strong><span id="modelConnectionStatus"></span></div><button class="quiet-button" id="modelReconnect">重新连接</button></div>
         <div class="connection-model-row"><span>当前模型</span><span id="connectionModel"></span><button id="connectionChooseModel" class="quiet-button">更改</button></div>
-        <div class="connection-network-row" id="connectionNetwork" data-kind="unknown"><span class="network-dot" aria-hidden="true"></span><div><span id="connectionNetworkLabel">正在检测网络…</span><small id="connectionNetworkDetail" hidden></small></div><button id="connectionNetworkRefresh" class="quiet-button" title="重新检测系统代理">重新检测</button></div>
-      </footer>
+        <details class="settings-network"><summary>网络与代理</summary><div class="connection-network-row" id="connectionNetwork" data-kind="unknown"><span class="network-dot" aria-hidden="true"></span><div><span id="connectionNetworkLabel">正在检测网络…</span><small id="connectionNetworkDetail" hidden></small></div><button id="connectionNetworkRefresh" class="quiet-button" title="重新检测系统代理">重新检测</button></div></details>
+      </details>
       <p id="connectionError" class="model-error" role="alert" hidden></p>
+        </div>
+      </div>
     </dialog>
     <dialog id="finderDialog" class="finder-dialog" aria-labelledby="finderTitle">
       <header><div><strong id="finderTitle">查找元件与信号</strong><span id="finderScope"></span></div><button class="icon-button" id="finderClose" aria-label="关闭查找">×</button></header>

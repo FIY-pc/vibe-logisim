@@ -151,3 +151,69 @@
 .connection-network-row{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--muted)}.connection-network-row>div{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}.connection-network-row>div>span{color:var(--ink);overflow-wrap:anywhere}.connection-network-row small{font-size:11px;line-height:1.55;color:var(--muted)}.connection-network-row small[hidden]{display:none}.connection-network-row button{font-size:11px;padding:4px 8px;flex:none}
 .network-dot{flex:none;width:8px;height:8px;margin-top:5px;border-radius:50%;background:#c2c8d2}.connection-network-row[data-kind=proxy] .network-dot{background:#3aa676}.connection-network-row[data-kind=direct] .network-dot{background:#8a94a6}.connection-network-row[data-kind=unsupported] .network-dot,.connection-network-row[data-kind=stale] .network-dot{background:#d3a84a}.connection-network-row[data-kind=unknown] .network-dot{animation:connection-pulse 1.2s infinite}
 .connection-dialog>.model-error{margin:0 22px 18px}
+
+/* Settings follow the workspace: service connections first, runtime details on demand. */
+.connection-dialog{width:min(760px,calc(100vw - 32px));max-height:90vh;border-radius:12px}
+.connection-dialog>header{padding:22px 24px;border-bottom:1px solid var(--line);align-items:center}
+.settings-layout{display:grid;grid-template-columns:160px minmax(0,1fr);min-height:360px}
+.settings-nav{padding:18px 12px;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:5px}
+.settings-nav button{text-align:left;padding:10px 12px;border-radius:7px;color:var(--muted);font:inherit;font-size:13px}
+.settings-nav button.is-active{background:var(--selected);color:var(--accent);font-weight:600}
+.settings-nav button:focus-visible,.settings-back:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings-content{padding:26px;min-width:0}
+.settings-overview h3,.settings-pane-title{font-size:17px;margin:0 0 22px;font-weight:600}
+.settings-service-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 0;border-bottom:1px solid var(--line)}
+.settings-service-row:first-of-type{padding-top:4px}
+.settings-service-row:last-child{border-bottom:0}
+.settings-service-row strong{font-size:13px;font-weight:600}
+.settings-service-row p{font-size:12px;color:var(--muted);margin:6px 0 0;overflow-wrap:anywhere}
+.settings-service-row button{border:1px solid var(--line);flex:none;font-size:12px}
+.settings-badge{font-size:10px;font-weight:400;color:var(--muted);background:var(--surface);border-radius:4px;padding:3px 6px;margin-left:8px}
+.settings-back{padding:0;margin:0 0 20px;color:var(--muted);font-size:12px}
+.settings-content .connection-pane{padding:0}
+.settings-content .connection-footer{margin-top:18px;padding:18px 0 0;background:transparent}
+.settings-content [hidden]{display:none!important}
+.settings-content .model-error{margin:16px 0 0}
+.settings-content .pane-actions{margin-top:18px}
+.settings-content .connection-note{font-size:11px}
+.settings-content .field{margin-bottom:18px;gap:7px}
+.settings-content input:not([type=checkbox]),.settings-content select{padding:10px 12px}
+.settings-network{margin-top:10px;border-top:1px solid var(--line);padding-top:12px}
+.settings-network summary{font-size:12px;color:var(--muted);cursor:pointer}
+.settings-network[open] summary{margin-bottom:14px}
+@media(max-width:640px){.settings-layout{grid-template-columns:1fr}.settings-nav{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:8px 14px}.settings-nav button{flex:1;text-align:center}.settings-content{padding:20px}.connection-dialog>header{padding:16px 20px}}
+
+.agent-activity-output{flex-basis:100%;min-width:0;max-height:240px;overflow:auto;margin:0;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 var(--mono)}
+
+/* Settings are scoped to the conversation or future conversations, explicitly. */
+.settings-content .field{display:flex;flex-direction:column;font-size:12px;color:var(--muted)}
+.settings-content select{border:1px solid var(--line);border-radius:7px;background:white;color:var(--ink);font:inherit}
+.settings-content .runtime-default{margin-bottom:28px}
+.service-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.saved-service>div:first-child{min-width:0}
+.saved-service p{font-size:12px;line-height:1.5}
+#defaultServiceField{padding:20px 0 4px}
+#serviceConfirmDestination{overflow-wrap:anywhere;font-size:13px;color:var(--ink)}
+#serviceConfirmImpact{font-size:13px;line-height:1.7;color:var(--muted)}
+#providerForm.is-choosing>*:not(:first-child):not(.pane-actions):not(.field-error){display:none}
+.field-error{font-size:12px;line-height:1.5;color:var(--danger)}
+.connection-pane [aria-invalid=true]{border-color:var(--danger)!important}
+.agent-work>summary{flex-wrap:wrap}
+.agent-work-alert{color:#936019;font-size:12px;flex-basis:100%;padding-left:20px;line-height:1.6}
+.agent-tool-batch-meta.has-unknown{color:#936019}
+@media(max-width:640px){.saved-service{align-items:flex-start}.service-actions{flex-direction:column}.settings-service-row{gap:12px}.settings-service-row button{white-space:normal;max-width:150px}}
+
+.needs-connection .agent-empty{display:none}
+
+.connection-footer>summary{font-size:12px;color:var(--muted);cursor:pointer}
+.connection-footer[open]>summary{margin-bottom:18px}
+.service-destination{display:grid;grid-template-columns:40px 1fr;gap:4px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.service-destination>span{grid-row:span 2;color:var(--muted);font-size:12px}
+.service-destination small{font-size:12px;color:var(--muted)}
+
+.settings-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.settings-heading h3{margin:0}
+.settings-heading button{font-size:12px;border:1px solid var(--line)}
+.settings-service-row.saved-service{padding:14px 0}
+
+.settings-content .field + .field-error{display:block;margin:-10px 0 18px}

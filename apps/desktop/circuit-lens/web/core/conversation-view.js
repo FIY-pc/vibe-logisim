@@ -54,7 +54,7 @@ export class ConversationView {
   create(role,id,text='',context=null) {
     this.ui.agentEmpty.hidden=true;
     const node=makeElement('article','agent-message');node.dataset.role=role;node.dataset.itemId=id;
-    const header=makeElement('div','agent-message-header');header.append(makeElement('strong','',role==='user'?'你':'Codex'));
+    const header=makeElement('div','agent-message-header');header.append(makeElement('strong','',role==='user'?'你':'AI'));
     const body=makeElement('div','agent-message-body');const footer=makeElement('div','message-actions');
     const scope=this.turnReferenceBinding||{};
     const bindingKey=JSON.stringify([scope?.folderId,scope?.conversationId,role,id]);
@@ -161,7 +161,7 @@ export class ConversationView {
     if(!this.work) {
       const node=makeElement('details','agent-work');
       const summary=makeElement('summary');
-      summary.append(icon('ChevronRight'),makeElement('span','agent-work-title'));
+      summary.append(icon('ChevronRight'),makeElement('span','agent-work-title'),makeElement('span','agent-work-alert'));
       node.append(summary);this.ui.agentTimeline.append(node);this.work=node;
     }
     return this.work;
@@ -191,7 +191,12 @@ export class ConversationView {
   updateWork() {
     if(!this.work)return;
     const title=this.work.querySelector('.agent-work-title');
-    if(title)title.textContent=`用时 ${this.formatDuration(this.workElapsedMs || (this.workStartedAt?Date.now()-this.workStartedAt:0))}`;
+    const status=this.work.dataset.status;
+    const prefix=status==='interrupted'?'已中断 · ':status==='failed'?'未完成 · ':'';
+    const unknown=[...this.work.querySelectorAll('.agent-activity[data-result-status=unknown]')];
+    const alert=this.work.querySelector('.agent-work-alert');
+    if(alert){alert.hidden=!unknown.length;alert.textContent=unknown.length===1?`结果未知：${unknown[0].querySelector('.agent-activity-label').textContent}`:`${unknown.length} 项操作结果未知`;}
+    if(title)title.textContent=prefix+`用时 ${this.formatDuration(this.workElapsedMs || (this.workStartedAt?Date.now()-this.workStartedAt:0))}`;
   }
   activity(id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null) {
     if(!id)return;this.ui.agentEmpty.hidden=true;
@@ -219,14 +224,11 @@ export class ConversationView {
     if(item.activityKey)node.dataset.activityKey=item.activityKey;
     const text=item.label;
     node.querySelector('.agent-activity-label').textContent=item.kind==='reasoning'?'分析电路与问题':text;
-    node.querySelector('.agent-activity-status').textContent=item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?'调用失败':'完成';
+    node.querySelector('.agent-activity-status').textContent=item.resultStatus==='unknown'?'结果未知':item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?'调用失败':'完成';
     if(item.detail) {
-      node.title=item.detail;
-      if(item.status==='failed' || item.status==='warning') {
-        let error=node.querySelector('.agent-activity-detail');
-        if(!error){error=makeElement('small','agent-activity-detail');node.append(error);}
-        error.textContent=item.detail;
-      }
+      let output=node.querySelector('.agent-activity-output');
+      if(!output){output=makeElement('pre','agent-activity-output');node.append(output);}
+      output.textContent=item.detail;
     }
     this.updateToolBatch(batch);
     this.updateWork();
@@ -247,7 +249,9 @@ export class ConversationView {
     const unique=[...new Set(labels)];
     batch.label.textContent=unique.slice(0,2).join('、') || '工具调用';
     if(unique.length>2)batch.label.textContent+='…';
-    batch.meta.textContent=batch.ids.length>1?`${batch.ids.length} 项`:'';
+    const unknown=batch.ids.filter(id=>this.activities.get(id)?.dataset.resultStatus==='unknown').length;
+    batch.meta.textContent=unknown?`${unknown} 项结果未知`:batch.ids.length>1?`${batch.ids.length} 项`:'';
+    batch.meta.classList.toggle('has-unknown',unknown>0);
     batch.node.dataset.status=batch.ids.some(id=>this.activities.get(id)?.dataset.status==='running')?'running':
       batch.ids.some(id=>this.activities.get(id)?.dataset.status==='failed')?'failed':'completed';
   }
@@ -260,7 +264,7 @@ export class ConversationView {
     if(this.work){
       this.workElapsedMs=this.workStartedAt?Date.now()-this.workStartedAt:0;
       this.work.dataset.status=status;this.output.finish(status);this.updateWork();
-      this.work.open=false;
+      this.work.open=status!=='completed';
     }
     if(this.workClock)clearInterval(this.workClock);this.workClock=null;
     this.toolBatch=null;
@@ -270,15 +274,25 @@ export class ConversationView {
     this.ui.agentEmpty.hidden=true;const node=makeElement('div','agent-system-message',text);node.dataset.kind=kind;this.ui.agentTimeline.append(node);this.scroll();return node;
   }
   history(messages) {
-    this.clear();
-    this.restoring=true;
+    this.clear();this.restoring=true;
+    let turn=null;
+    const settle=()=>{
+      if(!this.work)return;
+      const status=turn?.status==='running'?'interrupted':turn?.status||'completed';
+      this.output.finish(status);this.work.dataset.status=status;this.work.open=status!=='completed';
+      this.workElapsedMs=turn?.elapsedMs||0;this.workStartedAt=0;this.updateWork();
+      if(turn?.error){const note=makeElement('small','agent-system-message',turn.error);this.work.append(note);}
+    };
     for(const m of messages) {
-      if(m.type==='user')this.user(m.id,m.text,m.context);
-      if(m.type==='assistant')this.assistant(m.id,m.text,m.phase);
+      if(m.type==='user'){
+        if(!m.context?.turnContinuation){settle();turn=null;this.toolBatch=null;this.activities.clear();this.output.beginTurn();this.workStartedAt=0;this.workElapsedMs=0;}
+        this.user(m.id,m.text,m.context);
+      }
+      if(m.type==='turn'){turn=m;this.group();}
+      if(m.type==='assistant'||m.type==='reasoning')this.assistant(m.id,m.text,m.type==='reasoning'?'commentary':m.phase);
+      if(m.type==='activity')this.activity(m.id,m.label,m.status==='running'?'warning':m.status,m.kind,m.detail,m.activityKey,m.resultStatus);
     }
-    this.restoring=false;
-    if(this.work){this.output.finish('completed');this.work.dataset.status='completed';this.work.open=false;this.updateWork();}
-    this.scroll();
+    settle();this.restoring=false;this.scroll();
   }
   setBusy(value) {
     this.busy=value;

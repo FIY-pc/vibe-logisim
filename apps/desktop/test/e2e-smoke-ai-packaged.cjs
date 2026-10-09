@@ -30,7 +30,7 @@ async function waitTurn(label) {
     const msgs = s.messages || [];
     const cur = `${s.status}|${s.busy}|${msgs.length}|${s.transmission?.phase || ''}`;
     if (cur !== last) { last = cur; const m = msgs.at(-1); note(`${label}: status=${s.status} busy=${s.busy} msgs=${msgs.length} last=${m?.type}/${m?.phase || ''} ${(m?.text || '').slice(0, 80).replace(/\n/g, ' ')}`); }
-    const final = msgs.filter(m => m.type === 'assistant' && m.phase === 'final_answer').at(-1);
+    const final = msgs.filter(m => m.type === 'assistant' && ['final', 'final_answer'].includes(m.phase)).at(-1);
     if (!s.busy && final) return {final, seconds: Math.round((Date.now() - t0) / 1000), state: s};
     if (s.status === 'unavailable') throw new Error(`${label}: agent became unavailable: ${s.detail}`);
     const err = msgs.filter(m => m.type === 'error').at(-1);
@@ -64,6 +64,8 @@ async function waitTurn(label) {
   await page.locator('#agentSettings').click({timeout: 15000}).catch(async () => { await page.locator('#agentTab').click().catch(() => {}); await page.locator('#agentSettings').click(); });
   await page.locator('#connectionDialog[open]').waitFor();
   await page.locator('#connectionTabApi').click();
+  await page.locator('#providerPreset').selectOption('custom');
+  await page.locator('#providerProtocol').selectOption(process.env.VIBE_TEST_API || 'openai-responses');
   await page.locator('#providerBaseUrl').fill(baseUrl); await page.locator('#providerApiKey').fill(apiKey); await page.locator('#providerModel').fill(model);
   await page.keyboard.press('Escape'); // close the model suggestion list if discovery opened it
   await page.locator('#providerSave').click();

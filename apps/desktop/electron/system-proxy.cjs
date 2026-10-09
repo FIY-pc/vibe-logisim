@@ -131,7 +131,7 @@ async function resolveSystemProxy({targetUrl, env = process.env, resolver = null
     if (bypasses(target.hostname, target.port, noProxy)) return result({...base, source: "env-bypass"});
     const parsed = parseProxyUrl(envProxy);
     if (!parsed) return result({...base, source: "env", unsupported: `无法识别代理地址 ${envProxy.slice(0, 80)}`});
-    if (!SUPPORTED_SCHEMES.has(parsed.scheme)) return result({...base, source: "env", hostPort: parsed.hostPort, scheme: parsed.scheme, unsupported: `环境变量里的代理 ${envProxy.replace(/\/\/[^@]*@/, "//")} 是 SOCKS 代理，AI 引擎只支持 HTTP 代理`});
+    if (!SUPPORTED_SCHEMES.has(parsed.scheme)) return result({...base, source: "env", hostPort: parsed.hostPort, scheme: parsed.scheme, unsupported: `环境变量里的代理 ${envProxy.replace(/\/\/[^@]*@/, "//")} 是 SOCKS 代理，AI 运行时只支持 HTTP 代理`});
     return result({...base, source: "env", proxyUrl: parsed.url, scheme: parsed.scheme, hostPort: parsed.hostPort, rules: parsed.rules, credentials: Boolean(parsed.credentials)});
   }
   if (typeof resolver !== "function") return result(base);
@@ -152,7 +152,7 @@ async function resolveSystemProxy({targetUrl, env = process.env, resolver = null
     return result({...base, source: "system", proxyUrl: usable.url, scheme: usable.scheme, hostPort: usable.hostPort, rules: usable.rules});
   }
   if (socks && !direct) {
-    return result({...base, source: "system", scheme: socks.scheme, hostPort: socks.hostPort, unsupported: `系统代理 ${socks.hostPort} 是 SOCKS 代理，AI 引擎只支持 HTTP 代理；请在代理软件里开启 HTTP 端口（Clash 默认 7890）或「混合端口」`});
+    return result({...base, source: "system", scheme: socks.scheme, hostPort: socks.hostPort, unsupported: `系统代理 ${socks.hostPort} 是 SOCKS 代理，AI 运行时只支持 HTTP 代理；请在代理软件里开启 HTTP 端口（Clash 默认 7890）或「混合端口」`});
   }
   return result(base);
 }
@@ -180,10 +180,10 @@ function describe(network) {
   if (network.unsupported) return {kind: "unsupported", label: `代理不支持 · ${network.hostPort || ""}`.replace(/ · $/, ""), sentence: network.unsupported + "。"};
   if (network.proxyUrl) {
     const origin = network.source === "env" ? "环境变量里的代理" : "系统代理";
-    return {kind: "proxy", label: `${origin} ${network.hostPort}`, sentence: `已检测到${origin} ${network.hostPort}，AI 引擎和保存前的检测都会通过它访问接口。`};
+    return {kind: "proxy", label: `${origin} ${network.hostPort}`, sentence: `已检测到${origin} ${network.hostPort}，AI 运行时和保存前的检测都会通过它访问接口。`};
   }
   if (network.source === "env-bypass") return {kind: "direct", label: "直连（NO_PROXY 排除）", sentence: "这个地址在 NO_PROXY 里，直接连接。"};
-  return {kind: "direct", label: "直连（未检测到系统代理）", sentence: "未检测到系统代理，AI 引擎会直接连接。访问 ChatGPT / OpenAI 需要先在代理软件里开启「系统代理」，再点「重新连接」；国内中转站一般不需要。"};
+  return {kind: "direct", label: "直连（未检测到系统代理）", sentence: "未检测到系统代理，AI 运行时会直接连接。访问 ChatGPT / OpenAI 需要先在代理软件里开启「系统代理」，再点「重新连接」；国内中转站一般不需要。"};
 }
 
 module.exports = {
