@@ -59,7 +59,10 @@ function isolatedSpawn(agent, codexArgs, environment) {
     const circuitReference = path.resolve(__dirname, '../circuit-knowledge');
     const referenceMount = '/tmp/vibe-circuit-reference';
     const readOnlyPaths = [[circuitReference, referenceMount]];
-    if (agent.runtimeRoot) readOnlyPaths.push([agent.runtimeRoot, '/tmp/vibe-runtime']);
+    if (agent.runtimeRoot) {
+      readOnlyPaths.push([agent.runtimeRoot, '/tmp/vibe-runtime']);
+      readOnlyPaths.push([agent.codexRoot||path.join(agent.runtimeRoot,'codex'), '/tmp/vibe-codex-runtime']);
+    }
     agent.runtimeWorkDir = sandboxWork;
     agent.referencePath = referenceMount;
     const unit = `vibe-logisim-agent-${process.pid}-${Date.now().toString(36)}.service`;
@@ -70,8 +73,8 @@ function isolatedSpawn(agent, codexArgs, environment) {
       [agent.workDir, sandboxWork],
     ];
     if (agent.runtimeRoot) {
-      sandboxCodex = "/tmp/vibe-runtime/codex/bin/codex";
-      sandboxCodeModeHost = "/tmp/vibe-runtime/codex/bin/codex-code-mode-host";
+      sandboxCodex = "/tmp/vibe-codex-runtime/bin/codex";
+      sandboxCodeModeHost = "/tmp/vibe-codex-runtime/bin/codex-code-mode-host";
     } else if (!(codex === "/usr" || codex.startsWith("/usr/"))) {
       sandboxCodex = "/tmp/vibe-logisim-codex";
       bindProperties.push([codex, sandboxCodex]);
@@ -136,7 +139,7 @@ function isolatedSpawn(agent, codexArgs, environment) {
       "/usr/bin/env",
       `HOME=${sandboxProfile}`,
       `CODEX_HOME=${sandboxProfile}`,
-      agent.runtimeRoot ? "PATH=/tmp/vibe-runtime/codex/bin:/tmp/vibe-runtime/python/bin:/tmp/vibe-runtime/java/bin:/usr/bin" : "PATH=/tmp:/usr/bin",
+      agent.runtimeRoot ? "PATH=/tmp/vibe-codex-runtime/bin:/tmp/vibe-runtime/python/bin:/tmp/vibe-runtime/java/bin:/usr/bin" : "PATH=/tmp:/usr/bin",
       "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt",
       `LANG=${process.env.LANG || "C.UTF-8"}`,
       `LC_ALL=${process.env.LC_ALL || "C.UTF-8"}`,
@@ -174,7 +177,7 @@ function directSpawn(agent, codexArgs, environment) {
     }
     if (!env.TEMP && !env.TMP) env.TEMP = env.TMP = require('node:os').tmpdir();
     const runtimeBins = agent.runtimeRoot
-      ? [path.join(agent.runtimeRoot, 'codex', 'bin'), path.join(agent.runtimeRoot, 'python'), path.join(agent.runtimeRoot, 'java', 'bin')]
+      ? [path.join(agent.codexRoot||path.join(agent.runtimeRoot,'codex'), 'bin'), path.join(agent.runtimeRoot, 'python'), path.join(agent.runtimeRoot, 'java', 'bin')]
       : [path.dirname(codex)];
     env.PATH = [...runtimeBins, environment.PATH || process.env.PATH || ""].filter(Boolean).join(path.delimiter);
     return {

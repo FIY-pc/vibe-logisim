@@ -145,8 +145,7 @@ class BuiltinBackend extends EventEmitter {
     this.starting=true;this.cancelStarting=false;this.preparing=new Promise(resolve=>{this.preparedDone=resolve;});this.emitStatus();
     let work;
     try {
-      const {Agent}=await import('@earendil-works/pi-agent-core');
-      const {createInitialSystemMessage,toToolDeclaration}=await import('@earendil-works/pi-ai');
+      const {Agent,createInitialSystemMessage,toToolDeclaration}=await import('./builtin-sdk.mjs');
       const api=await transport(config.api),fetch=await this.requestFetch(config);
       const prepared=this.contextHost?.prepare(context);
       work=await this.workspaceHost?.prepare(context.revisionId);

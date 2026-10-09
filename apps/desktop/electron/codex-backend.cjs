@@ -131,6 +131,8 @@ class CodexBackend extends EventEmitter {
     codex = process.env.VIBE_LOGISIM_CODEX || "codex",
     workDir,
     runtimeRoot = null,
+    codexRoot = null,
+    runtimeInstaller = null,
     profileDir,
     sessionStorePath,
     version = "0.1.0",
@@ -157,6 +159,8 @@ class CodexBackend extends EventEmitter {
     // System proxy the running child was started with (null until first start).
     this.network = null;
     this.runtimeRoot = runtimeRoot;
+    this.codexRoot = codexRoot;
+    this.runtimeInstaller = runtimeInstaller;
     this.loginId = null;
     this.workDir = path.resolve(workDir);
     this.runtimeWorkDir = process.platform === "win32" ? this.workDir : "/workspace";
@@ -198,6 +202,7 @@ class CodexBackend extends EventEmitter {
     this.nextRequestId = 1;
     this.startPromise = null;
     this.childEpoch = 0;
+    this.startEpoch = 0;
     this.stopping = false;
     this.lastStderr = "";
     this.status = "idle";
@@ -221,6 +226,7 @@ class CodexBackend extends EventEmitter {
     this.completedTurnIds = new Set();
     this.pendingSteer = null;
     this.history = [];
+    runtimeInstaller?.on('change',()=>this.#setStatus(this.status,this.statusDetail));
     this.health = new TurnHealth();
     this.reconnecting = null;
     this.modelSettings = new AgentModels({request:(method, params)=>this.#request(method, params),
@@ -239,6 +245,7 @@ class CodexBackend extends EventEmitter {
       conversationId: this.conversationId,
       revisionId: this.threadRevisionId,
       turnId: this.activeTurnId,
+      runtimeInstall:this.runtimeInstaller?.snapshot()||null,
       busy: this.finalizing || this.workspaceTransitioning || this.turnStarting || Boolean(this.activeTurnId) || Boolean(this.pendingSteer) || Boolean(this.reconnecting),
       canSteer: Boolean(this.child && !this.stopping && this.status === "busy" && this.activeTurnId && this.pendingTurn && !this.pendingSteer && !this.finalizing && !this.turnStarting && !this.workspaceTransitioning && !this.reconnecting),
       policy: this.workspaceHost?.mode || this.changeMode,
@@ -282,7 +289,8 @@ class CodexBackend extends EventEmitter {
     const attempt = this.#startOnce();
     this.startPromise = attempt;
     attempt.catch((error) => {
-      if (this.startPromise === attempt) this.startPromise = null;
+      if (this.startPromise !== attempt) return;
+      this.startPromise = null;
       if (!this.child && !this.stopping && this.status !== "unavailable") {
         this.#setStatus("unavailable", plainError(error, "Unable to start Codex App Server."));
       }
@@ -291,14 +299,18 @@ class CodexBackend extends EventEmitter {
   }
 
   async #startOnce() {
+    const startup = ++this.startEpoch;
     fs.mkdirSync(this.workDir, { recursive: true });
     this.#prepareProfile();
     this.#setStatus("starting");
     this.lastStderr = "";
     this.stopping = false;
+    if(this.runtimeInstaller) await this.runtimeInstaller.ensure();
     // Resolved per start so toggling Clash/v2rayN "system proxy" takes effect
     // on the next 重新连接. Resolved against the endpoint this child will use.
-    this.network = await this.resolveNetwork(this.customProvider?.baseUrl || "https://chatgpt.com/");
+    const network = await this.resolveNetwork(this.customProvider?.baseUrl || "https://chatgpt.com/");
+    if (startup !== this.startEpoch || this.stopping) throw new Error('Codex 启动已取消');
+    this.network = network;
 
     const args = ["app-server", "--listen", "stdio://", "--strict-config"];
     for (const feature of DISABLED_CODEX_FEATURES) args.push("--disable", feature);
@@ -1012,6 +1024,12 @@ class CodexBackend extends EventEmitter {
     if (this.threadId) return {resumed:true, threadId:this.threadId};
     if (!saved.threadId) return {resumed:false};
     const epoch = this.workspaceEpoch;
+    if(this.runtimeInstaller&&!this.runtimeInstaller.ready()){
+      void this.start().then(()=>{
+        if(epoch===this.workspaceEpoch&&this.workspaceKey===workspaceKey&&this.conversationId===saved.id)return this.resumeWorkspace({workspaceKey,revisionId});
+      }).catch(()=>{});
+      return {resumed:false,pending:true};
+    }
     await this.start();
     const generation = this.childEpoch;
     return this.#queueWorkspaceOperation(async () => {
@@ -1063,6 +1081,10 @@ class CodexBackend extends EventEmitter {
   }
 
   async stop() {
+    ++this.startEpoch;
+    ++this.workspaceEpoch;
+    this.stopping = true;
+    if(this.runtimeInstaller?.pending){const starting=this.startPromise;await this.runtimeInstaller.cancel();await starting?.catch(()=>{});}
     this.loginId = null;
     this.effectiveNativeConfig = null;
     const child = this.child;
@@ -1070,7 +1092,6 @@ class CodexBackend extends EventEmitter {
       this.startPromise = null;
       return;
     }
-    ++this.workspaceEpoch;
     this.workspaceTransitioning = false;
     this.turnStarting = false;
     this.pendingTurn = null;

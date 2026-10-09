@@ -1,4 +1,4 @@
-"""Acquire pinned build inputs; nothing is downloaded by the shipped app."""
+"""Acquire pinned build inputs; optional Codex is installed separately at runtime."""
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from pathlib import Path

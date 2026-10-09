@@ -30,9 +30,14 @@ class AgentRuntime extends EventEmitter {
   set currentCwd(value){for(const b of Object.values(this.backends))b.currentCwd=value;}
   get profileDir(){return this.options.profileDir;}
   get threadId(){return this.active.threadId;}
-  snapshot(){return {...this.active.snapshot(),runtime:this.kind,defaultRuntime:this.defaultRuntime,busy:this.switching||this.active.snapshot().busy};}
+  snapshot(){return {...this.active.snapshot(),runtimeInstall:this.options.runtimeInstaller?.snapshot()||null,runtime:this.kind,defaultRuntime:this.defaultRuntime,busy:this.switching||this.active.snapshot().busy};}
   emitStatus(){this.emit('event',{type:'status',...this.snapshot()});}
-  async start(){await this.active.start();return this.snapshot();}
+  async start(){
+    const downloading=this.kind==='codex'&&this.options.runtimeInstaller&&!this.options.runtimeInstaller.ready();
+    const pending=this.active.start();
+    if(downloading)void pending.catch(error=>this.emit('log',error.message));else await pending;
+    return this.snapshot();
+  }
   async stop(){await Promise.all(Object.values(this.backends).map(b=>b.stop()));}
   async activate(kind){if(this.kind===kind)return;await this.active.stop();this.kind=kind;}
   recordRuntime(record){return record.runtime||(record.threadId||record.messages?.length?'codex':this.defaultRuntime);}
@@ -45,7 +50,7 @@ class AgentRuntime extends EventEmitter {
     // Hydrate local history before starting the process. A missing CLI must
     // prevent sending, not hide the conversation the user just opened.
     const result=await this.active.resumeWorkspace(info);
-    await this.active.start();return result;
+    await this.start();return result;
   }
   conversationState(key){this.store.ensure(key);return {workspaceKey:key,...this.store.state(key)};}
   async changeConversation(key,action,request){
@@ -72,7 +77,7 @@ class AgentRuntime extends EventEmitter {
         await this.active.resetWorkspace('runtime-changed');
         await this.activate(kind);await this.active.resumeWorkspace({workspaceKey:this.workspaceKey,revisionId:this.revisionId});
       }else await this.activate(kind);
-      await this.active.start();
+      await this.start();
     }finally{this.switching=false;this.emitStatus();}
     return this.snapshot();
   }

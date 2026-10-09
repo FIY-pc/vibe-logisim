@@ -75,9 +75,10 @@ function modelFor(config) {
     cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:config.contextWindow,maxTokens:8192};
 }
 async function transport(api) {
-  if(api==='openai-responses')return import('@earendil-works/pi-ai/api/openai-responses');
-  if(api==='anthropic-messages')return import('@earendil-works/pi-ai/api/anthropic-messages');
-  if(api==='openai-completions')return import('@earendil-works/pi-ai/api/openai-completions');
+  const sdk=await import('./builtin-sdk.mjs');
+  if(api==='openai-responses')return {streamSimple:sdk.responses};
+  if(api==='anthropic-messages')return {streamSimple:sdk.anthropic};
+  if(api==='openai-completions')return {streamSimple:sdk.completions};
   throw new Error('不支持这个接口协议');
 }
 module.exports={BuiltinProvider,modelFor,transport,atomic,APIS};

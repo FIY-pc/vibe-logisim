@@ -1,9 +1,9 @@
 """Build a relocatable desktop bundle from explicit product inputs.
 
 Run from a developer checkout. The resulting application needs no npm, Python,
-Java or Codex installation. Bundles for every target are assembled from pinned
-archives, so a Linux machine can produce the Windows bundle as well; nothing is
-compiled at build time. Course runtime bundles remain LOCAL evaluation
+Java installation. Codex is fetched on first use from a pinned, verified archive. Bundles for every target are assembled from pinned
+archives. Cross-building unpacked directories is supported; the Windows installer
+is produced on Windows. Course runtime bundles remain LOCAL evaluation
 artifacts until the course binary's source/redistribution terms are settled.
 """
 import argparse
@@ -11,12 +11,13 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
-import zipfile
 
 from artifacts import acquire, extract, sha256
 from node_dependencies import copy_node_dependencies
+from check_size import report as size_report
 
 REPO = Path(__file__).resolve().parents[2]
 DESKTOP = REPO / 'apps/desktop'
@@ -28,6 +29,8 @@ def copy_product(destination, prefix):
     for name in sorted(set(filter(None, files))):
         source = REPO / name
         relative = source.relative_to(REPO / prefix)
+        if name.endswith(('.test.cjs', '.test.py')) or any(p in {'__pycache__', 'tests', 'test'} for p in relative.parts):
+            continue
         if source.is_symlink():
             raise ValueError(f'Product sources must not escape the checkout: {name}')
         if source.suffix not in {'.py', '.java', '.cjs', '.js', '.mjs', '.html', '.css', '.svg', '.txt', '.md', '.sh', '.json', '.circ'}:
@@ -53,7 +56,7 @@ PYTHON_PRUNE = ('tcl', 'include', 'Lib/tkinter', 'Lib/idlelib', 'Lib/turtledemo'
                 'lib/python3.12/tkinter', 'lib/python3.12/idlelib', 'lib/python3.12/turtledemo', 'lib/python3.12/turtle.py',
                 'lib/python3.12/ensurepip', 'lib/python3.12/test', 'lib/python3.12/lib2to3', 'lib/python3.12/pydoc_data',
                 'lib/python3.12/site-packages/pip', 'lib/python3.12/site-packages/pip-*', 'lib/python3.12/lib-dynload/_tkinter*',
-                'lib/python3.12/lib-dynload/_test*', 'lib/tcl8*', 'lib/tk8*', 'lib/itcl*', 'lib/thread*', 'lib/libtcl*', 'lib/libtk*', 'share')
+                'lib/python3.12/lib-dynload/_test*', 'lib/tcl8*', 'lib/tk8*', 'lib/tcl9*', 'lib/tk9*', 'lib/itcl*', 'lib/thread*', 'lib/libtcl*', 'lib/libtk*', 'share')
 
 # Chromium UI strings for menus/dialogs. The app's own UI is Chinese; keep
 # the Chinese variants and English as Chromium's fallback.
@@ -81,7 +84,7 @@ def jlink_runtime(host_jdk_archive, target_jdk_archive, destination, cache):
         target = Path(temporary) / 'target'
         extract(host_jdk_archive, host, strip_root=True)
         extract(target_jdk_archive, target, strip_root=True)
-        jlink = host / 'bin' / 'jlink'
+        jlink = host / 'bin' / ('jlink.exe' if sys.platform == 'win32' else 'jlink')
         if not jlink.exists():
             raise ValueError('host JDK has no jlink')
         def release_info(jdk):
@@ -109,21 +112,16 @@ def load_lock(target):
     return lock
 
 
-def write_zip(root, archive, name):
-    with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
-        for item in sorted(root.rglob('*')):
-            output.write(item, Path(name) / item.relative_to(root))
-
-
 def usage_text(target, version):
     common = ('Vibe Logisim ' + version + '\n\n解压整个文件夹后，双击 {launcher} 即可使用。\n'
-              '无需另外安装 Python、Java 或 Codex。打开你的文件夹，选择或新建 .circ 电路。\n'
+              'Python、Java 和内置 AI 运行时随包提供。Codex 在首次使用时自动下载。\n'
+              '打开你的文件夹，选择或新建 .circ 电路。\n'
               '在 AI 面板选择「连接 AI」添加模型服务，或使用 ChatGPT 账号登录。\n'
               '使用 AI 需要你自己的账号或接口额度；不连接 AI 也能编辑和仿真。\n'
               'Ctrl+点击端口、隧道或导线可追踪信号，Alt+左方向键返回。\n'
               '使用说明：https://github.com/FIY-pc/vibe-logisim\n\n')
     if target == 'win32-x64':
-        return common.format(launcher='vibe-logisim.exe') + (
+        return common.format(launcher='vibe-logisim.exe').replace('解压整个文件夹后，双击 vibe-logisim.exe 即可使用。', '安装后从开始菜单打开 Vibe Logisim。') + (
             '首次运行时 Windows 可能提示“未知发布者”，选择“更多信息 → 仍要运行”。\n'
             '把电路、组件库和任务书放进工作文件夹，说明目标及需要保留的结构，即可让 AI 开始任务。\n'
             '课程运行文件 logisim-ita-cn-20200118.exe 是课程发布的 Logisim 运行包，由内置 Java 加载，不会单独运行。\n')
@@ -134,6 +132,8 @@ def usage_text(target, version):
 
 def build(args):
     target = args.target
+    if target == 'win32-x64' and not args.unpacked and sys.platform != 'win32':
+        raise ValueError('Build the Windows installer on Windows. Cross-building the application directory supports --unpacked.')
     lock = load_lock(target)
     spec = lock['targets'][target]
     metadata = json.loads((DESKTOP / 'package.json').read_text())
@@ -142,10 +142,11 @@ def build(args):
     if spec['electron']['version'] != metadata['devDependencies']['electron']:
         raise ValueError('runtime-lock.json Electron does not match the locked desktop version.')
     shared = acquire(args.cache, lock['artifacts'])
-    platform_artifacts = acquire(args.cache / target, {**spec['artifacts'], 'electron.zip': spec['electron']})
+    core_artifacts = {k: v for k, v in spec['artifacts'].items() if k != 'codex'}
+    platform_artifacts = acquire(args.cache / target, {**core_artifacts, 'electron.zip': spec['electron']})
     name = f'vibe-logisim-{metadata["version"]}-{target}'
     args.output.mkdir(parents=True, exist_ok=True)
-    suffix = '.zip' if target.startswith('win32') else '.tar.gz'
+    suffix = '-setup.exe' if target.startswith('win32') else '.tar.xz'
     archive = args.output / f'{name}{suffix}'
     if archive.exists() or (args.output / name).exists():
         raise ValueError(f'Refusing to replace existing artifact: {archive}')
@@ -184,20 +185,21 @@ def build(args):
             if not source.exists():
                 raise ValueError('Run npm ci in apps/desktop before building (pdfjs-dist missing).')
             target_path = pdf / item
-            if source.is_dir(): shutil.copytree(source, target_path)
+            if source.is_dir(): shutil.copytree(source, target_path, ignore=shutil.ignore_patterns("*.map"))
             else:
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target_path)
         copy_node_dependencies(DESKTOP, app)
         extract(platform_artifacts['python'], runtime / 'python', strip_root=True)
-        host_jdk = acquire(args.cache / 'linux-x64', {'java': lock['targets']['linux-x64']['artifacts']['java']})['java']
+        host_target = 'win32-x64' if sys.platform == 'win32' else 'linux-x64'
+        host_jdk = acquire(args.cache / host_target, {'java': lock['targets'][host_target]['artifacts']['java']})['java']
         jlink_runtime(host_jdk, platform_artifacts['java'], runtime / 'java', args.cache)
         pruned = prune(runtime / 'python', PYTHON_PRUNE)
         print(f'pruned {pruned / 1e6:.1f} MB of unused CPython pieces', flush=True)
-        extract(platform_artifacts['codex'], runtime / 'codex')
-        shutil.copy2(shared['codex-LICENSE'], runtime / 'codex/LICENSE')
-        expected = ['python/python.exe', 'java/bin/java.exe', 'java/bin/javac.exe', 'codex/bin/codex.exe', 'codex/bin/codex-code-mode-host.exe'] if windows \
-            else ['python/bin/python3', 'java/bin/java', 'java/bin/javac', 'codex/bin/codex', 'codex/bin/codex-code-mode-host']
+        (resources / 'codex-runtime.json').write_text(json.dumps({**spec['artifacts']['codex'], 'target': target,
+            'programs': ['bin/codex.exe', 'bin/codex-code-mode-host.exe'] if windows else ['bin/codex', 'bin/codex-code-mode-host']}, indent=2))
+        expected = ['python/python.exe', 'java/bin/java.exe', 'java/bin/javac.exe'] if windows \
+            else ['python/bin/python3', 'java/bin/java', 'java/bin/javac']
         missing = [p for p in expected if not (runtime / p).exists()]
         if missing:
             raise ValueError('Runtime layout mismatch, electron/runtime-paths.cjs expects: ' + ', '.join(missing))
@@ -207,7 +209,8 @@ def build(args):
         course.mkdir(parents=True)
         shutil.copy2(args.course_runtime, course / lock['courseRuntime']['name'])
         notices = resources / 'third-party'
-        notices.mkdir()
+        notices.mkdir(exist_ok=True)
+        shutil.copy2(shared['codex-LICENSE'], notices / 'codex-LICENSE')
         shutil.copytree(REPO / 'scripts/distribution/licenses', notices, dirs_exist_ok=True)
         # GPL-3.0 §6(d): the corresponding source is offered from the same place
         # the binaries are distributed (the GitHub release), so the 15 MB source
@@ -222,7 +225,7 @@ def build(args):
         if (REPO / 'LICENSE').is_file():
             shutil.copy2(REPO / 'LICENSE', root / 'LICENSE.txt')
         (resources / 'runtime-manifest.json').write_text(json.dumps({
-            'schema': lock['schema'], 'target': target, 'artifacts': {**lock['artifacts'], **spec['artifacts']},
+            'schema': lock['schema'], 'target': target, 'artifacts': {**lock['artifacts'], **core_artifacts}, 'onDemand': {'codex': spec['artifacts']['codex']},
             'electron': spec['electron']['version'], 'courseRuntime': lock['courseRuntime'],
             'pdfjs': json.loads((pdf / 'package.json').read_text())['version'],
             'builtinRuntime': {name: metadata['dependencies'][name] for name in ('@earendil-works/pi-agent-core', '@earendil-works/pi-ai')},
@@ -232,17 +235,21 @@ def build(args):
         # reproducible compilation or of third-party license clearance.
         inventory = {str(p.relative_to(root)).replace('\\', '/'): sha256(p) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()}
         (resources / 'files.sha256.json').write_text(json.dumps(inventory, indent=2))
+        measurement = size_report(root, target)
         if args.unpacked:
+            (args.output / f'{name}.size.json').write_text(json.dumps(measurement, indent=2))
             shutil.move(root, args.output / name)
             print(json.dumps({'directory': str(args.output / name), 'target': target, 'distribution': args.distribution}), flush=True)
             return
         staging = Path(temporary) / ('application' + suffix)
         if windows:
-            write_zip(root, staging, name)
+            subprocess.run(['node', str(REPO / 'scripts/distribution/windows-installer.cjs'), str(root), str(staging)], check=True)
         else:
-            with tarfile.open(staging, 'w:gz', compresslevel=6) as output:
+            with tarfile.open(staging, 'w:xz', preset=6) as output:
                 output.add(root, arcname=name)
+        measurement = size_report(root, target, staging)
         staging.replace(archive)
+        (args.output / f'{name}.size.json').write_text(json.dumps(measurement, indent=2))
     (archive.with_suffix(archive.suffix + '.sha256')).write_text(f'{sha256(archive)}  {archive.name}\n')
     print(json.dumps({'archive': str(archive), 'bytes': archive.stat().st_size, 'target': target, 'distribution': args.distribution}), flush=True)
 

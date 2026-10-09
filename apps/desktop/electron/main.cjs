@@ -47,7 +47,7 @@ process.stderr.on("error", (error) => {
 // The user's own environment, before the bundled runtime sets JAVA_HOME and
 // friends: diagnostics report which of a few known variables were set.
 const startupEnvironment = {...process.env};
-const {repoRoot, runtimeRoot} = require('./runtime-paths.cjs').configureRuntime(app);
+const {repoRoot, runtimeRoot, codexRoot, codexInstallerOptions} = require('./runtime-paths.cjs').configureRuntime(app);
 const preloadPath = path.join(__dirname, "preload.cjs");
 // Everything the app logs goes to userData/logs (and stderr) through one
 // redactor, so a log file can be attached to a public issue as it is.
@@ -309,8 +309,17 @@ async function startApplication() {
   });
   const contextHost = new AgentContextHost({provider:new CircuitContextProvider()});
   desktopWorkspace.on('changed', event => mainWindow?.webContents.send('vibe-logisim:folder-event',event));
+  const runtimeInstaller=codexInstallerOptions?new (require('./runtime-installer.cjs').RuntimeInstaller)({
+    ...codexInstallerOptions,
+    fetch:async(url,init)=>{
+      const {resolveSystemProxy,sessionConfig}=require('./system-proxy.cjs');
+      const route=await resolveSystemProxy({targetUrl:url,env:process.env,resolver:u=>session.defaultSession.resolveProxy(u)});
+      const transport=session.fromPartition('vibe-runtime-download');await transport.setProxy(sessionConfig(route));
+      return transport.fetch(url,init);
+    },
+  }):null;
   codex = new AgentRuntime({
-    runtimeRoot,
+    runtimeRoot, codexRoot, runtimeInstaller,
     workDir: desktopWorkspace.folder.current?.root || path.join(agentRoot, "workspace"),
     profileDir: path.join(agentRoot, "codex-home"),
     sessionStorePath: path.join(agentRoot, "sessions.json"),
@@ -578,6 +587,12 @@ function registerIpc() {
     // Preflight probes only talk to the student's endpoint; the workspace and
     // the running app-server are untouched, so no transition is needed.
     if (action === 'discover' || action === 'test') return codex.probeCustomProvider(action, request?.settings || {});
+    if (action === 'cancel-runtime-install') { await codex.options.runtimeInstaller?.cancel(); return codex.snapshot(); }
+    if (action === 'retry-runtime-install') {
+      if (workspaceTransitioning || codex.snapshot().runtime !== 'codex') throw workspaceChangedError();
+      await codex.start();
+      return codex.snapshot();
+    }
     if (action === 'network') return codex.networkStatus(request?.settings?.baseUrl || null);
     if (action === 'default-runtime') return codex.setDefaultRuntime(request?.runtime);
     if (action === 'default-service' && codex.snapshot().runtime === 'builtin') return codex.defaultProvider(request?.settings || {});
