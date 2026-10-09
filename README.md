@@ -22,7 +22,7 @@ Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己
 
 ## 下载与启动
 
-到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载对应系统的完整压缩包，解压后运行。所需运行环境已包含在包内。
+到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载对应系统的安装包。内置运行时、Python 和 Java 随包提供，Codex 首次使用时自动下载。
 
 | 系统 | 下载文件 | 启动方式 |
 | --- | --- | --- |
