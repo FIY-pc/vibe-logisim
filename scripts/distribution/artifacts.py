@@ -25,15 +25,15 @@ def acquire(cache, entries):
         print(f'Downloading {name}', flush=True)
         with tempfile.NamedTemporaryFile(dir=cache, delete=False) as temporary:
             staging = Path(temporary.name)
-            try:
-                with urllib.request.urlopen(spec['url'], timeout=120) as response:
-                    shutil.copyfileobj(response, temporary)
-                temporary.flush()
-                if sha256(staging) != spec['sha256']:
-                    raise ValueError(f'Checksum mismatch: {name}')
-                staging.replace(target)
-            finally:
-                staging.unlink(missing_ok=True)
+        try:
+            with staging.open('wb') as output, urllib.request.urlopen(spec['url'], timeout=120) as response:
+                shutil.copyfileobj(response, output)
+            # Windows cannot rename a file while the writing handle is open.
+            if sha256(staging) != spec['sha256']:
+                raise ValueError(f'Checksum mismatch: {name}')
+            staging.replace(target)
+        finally:
+            staging.unlink(missing_ok=True)
         return name, target
 
     with ThreadPoolExecutor(max_workers=4) as pool:
