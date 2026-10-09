@@ -193,12 +193,17 @@ def build(args):
         host_target = 'win32-x64' if sys.platform == 'win32' else 'linux-x64'
         host_jdk = acquire(args.cache / host_target, {'java': lock['targets'][host_target]['artifacts']['java']})['java']
         jlink_runtime(host_jdk, platform_artifacts['java'], runtime / 'java', args.cache)
-        pruned = prune(runtime / 'python', PYTHON_PRUNE)
+        # Windows globbing ignores case: Linux's lib/thread* would also match
+        # the essential Windows Lib/threading.py. Keep platform patterns apart.
+        python_prune = [p for p in PYTHON_PRUNE if not (windows and p.startswith('lib/'))]
+        pruned = prune(runtime / 'python', python_prune)
         print(f'pruned {pruned / 1e6:.1f} MB of unused CPython pieces', flush=True)
         (resources / 'codex-runtime.json').write_text(json.dumps({**spec['artifacts']['codex'], 'target': target,
             'programs': ['bin/codex.exe', 'bin/codex-code-mode-host.exe'] if windows else ['bin/codex', 'bin/codex-code-mode-host']}, indent=2))
         expected = ['python/python.exe', 'java/bin/java.exe', 'java/bin/javac.exe'] if windows \
             else ['python/bin/python3', 'java/bin/java', 'java/bin/javac']
+        stdlib = 'python/Lib' if windows else 'python/lib/python3.12'
+        expected.extend(f'{stdlib}/{module}.py' for module in ('threading', 'subprocess', 'ssl', 'http/server'))
         missing = [p for p in expected if not (runtime / p).exists()]
         if missing:
             raise ValueError('Runtime layout mismatch, electron/runtime-paths.cjs expects: ' + ', '.join(missing))
