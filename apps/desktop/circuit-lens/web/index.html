@@ -408,7 +408,7 @@
           <section id="settingsRuntimePane" class="settings-overview" hidden>
             <h3>运行时</h3><label class="field runtime-default">新对话默认运行时<select id="defaultRuntime"><option value="builtin">内置运行时</option><option value="codex">Codex</option></select></label>
             <div class="settings-service-row"><div><strong>内置运行时 <span id="builtinRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 API 密钥，无需安装额外程序。</p></div><button id="useBuiltinRuntime" class="quiet-button">用内置运行时新建对话</button></div>
-            <div class="settings-service-row"><div><strong>Codex <span id="codexRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 ChatGPT 账号或 Responses API。</p></div><button id="useCodexRuntime" class="quiet-button">用 Codex 新建对话</button></div>
+            <div class="settings-service-row"><div><strong>Codex <span id="codexRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 ChatGPT 账号或 Responses API，首次使用时自动下载。</p></div><button id="useCodexRuntime" class="quiet-button">用 Codex 新建对话</button></div>
 
           </section>
           <section id="serviceConfirm" hidden aria-labelledby="serviceConfirmTitle">
@@ -457,6 +457,11 @@
         <div class="connection-model-row"><span>当前模型</span><span id="connectionModel"></span><button id="connectionChooseModel" class="quiet-button">更改</button></div>
         <details class="settings-network"><summary>网络与代理</summary><div class="connection-network-row" id="connectionNetwork" data-kind="unknown"><span class="network-dot" aria-hidden="true"></span><div><span id="connectionNetworkLabel">正在检测网络…</span><small id="connectionNetworkDetail" hidden></small></div><button id="connectionNetworkRefresh" class="quiet-button" title="重新检测系统代理">重新检测</button></div></details>
       </details>
+      <section id="runtimeInstall" class="runtime-install" hidden aria-labelledby="runtimeInstallTitle">
+        <div><strong id="runtimeInstallTitle" role="status"></strong><p id="runtimeInstallText"></p></div>
+        <progress id="runtimeInstallProgress" aria-label="Codex 下载进度"></progress>
+        <button id="runtimeInstallAction" class="quiet-button">取消下载</button>
+      </section>
       <p id="connectionError" class="model-error" role="alert" hidden></p>
         </div>
       </div>

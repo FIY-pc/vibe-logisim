@@ -22,12 +22,12 @@ Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己
 
 ## 下载与启动
 
-到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载对应系统的完整压缩包，解压后运行。所需运行环境已包含在包内。
+到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载对应系统的安装包。内置运行时、Python 和 Java 随包提供，Codex 首次使用时自动下载。
 
 | 系统 | 下载文件 | 启动方式 |
 | --- | --- | --- |
-| Windows 10/11 x64 | `vibe-logisim-<版本>-win32-x64.zip` | 双击 `vibe-logisim.exe`；未签名程序可能显示“未知发布者”提示 |
-| Linux x64 | `vibe-logisim-<版本>-linux-x64.tar.gz` | 运行 `./vibe-logisim`；需要 GTK3 桌面；Codex 与内置命令执行需要 systemd 用户会话 |
+| Windows 10/11 x64 | `vibe-logisim-<版本>-win32-x64-setup.exe` | 安装后从开始菜单打开 Vibe Logisim；未签名程序可能显示“未知发布者”提示 |
+| Linux x64 | `vibe-logisim-<版本>-linux-x64.tar.xz` | 运行 `./vibe-logisim`；需要 GTK3 桌面；Codex 与内置命令执行需要 systemd 用户会话 |
 
 macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功能使用你自己的 API 接口及相应额度；也可以通过 Codex 运行时登录 ChatGPT。
 

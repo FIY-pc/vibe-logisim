@@ -22,7 +22,7 @@ export function createController({ui,ports}) {
   // Clash/v2rayN "system proxy" — then reconnecting applies the new route.
   let network = {current:null, active:null, stale:false, checking:false, error:null};
 
-  const busy = () => Boolean(state.busy) || providerPending || accountPending;
+  const busy = () => Boolean(state.runtime==='codex'&&state.runtimeInstall?.busy) || Boolean(state.busy) || providerPending || accountPending;
   const canReuseSavedKey = () => Boolean(editingService) && ui.providerBaseUrl.value.trim().replace(/\/+$/, '') === editingService.baseUrl.replace(/\/+$/, '');
   const endpointSignature = () => `${state.runtime}\n${editingService?.id||''}\n${ui.providerProtocol.value}\n${discoveryRevision}\n${ui.providerBaseUrl.value.trim()}\n${ui.providerApiKey.value ? 'typed' : canReuseSavedKey() ? 'saved:' + editingService.id + editingService.baseUrl : 'none'}`;
   const knownModels = () => discovered || (canReuseSavedKey()&&ui.providerProtocol.value===editingService?.api&&editingService?.models?.length ? editingService.models : null);
@@ -34,7 +34,7 @@ export function createController({ui,ports}) {
     if(runtimeChanged){formEdited=false;fillForm(state.customProvider);}
     if (snapshot && 'network' in snapshot) { network.active = snapshot.network || null; if (!network.current) network.current = network.active; network.stale = Boolean(network.current && network.active && (network.current.proxyUrl || null) !== (network.active.proxyUrl || null)); }
     ports.updateAgentPreferences(state);
-    renderOverview(); renderPane(); renderForm(); renderFooter(); renderNotice();
+    renderOverview(); renderPane(); renderForm(); renderFooter(); renderInstall(); renderNotice();
     if (ui.connectionDialog.open) renderNetwork();
   }
 
@@ -95,7 +95,7 @@ export function createController({ui,ports}) {
     const custom = state.customProvider, builtin=state.runtime==='builtin';
     ui.builtinRuntimeBadge.hidden=!builtin;ui.codexRuntimeBadge.hidden=builtin;
     ui.useBuiltinRuntime.hidden=builtin;ui.useCodexRuntime.hidden=!builtin;
-    ui.useBuiltinRuntime.disabled=busy();ui.useCodexRuntime.disabled=busy();
+    ui.useBuiltinRuntime.disabled=Boolean(state.busy)||Boolean(providerPending);ui.useCodexRuntime.disabled=busy();
     ui.defaultRuntime.value=state.defaultRuntime||'builtin';ui.defaultRuntime.disabled=busy();
     ui.savedServices.replaceChildren();
     if(builtin)for(const service of state.services||[]){
@@ -170,7 +170,7 @@ export function createController({ui,ports}) {
     ui.chatgptNote.textContent = ''; ui.chatgptNote.hidden = true;
     if(state.runtime==='builtin'){ui.accountTitle.textContent='ChatGPT 账号';ui.accountDetail.textContent='使用 ChatGPT 账号，不需要 API 密钥。';}
     const login = ui.connectionLogin;
-    login.hidden = Boolean(account) && !state.signingIn && !custom;
+    login.hidden = Boolean(installState()) || Boolean(account) && !state.signingIn && !custom;
     login.textContent = state.signingIn ? '取消登录' : state.runtime==='builtin'?'用 Codex 新建对话':custom ? '停用接口并登录 ChatGPT' : '登录 ChatGPT';
     login.className = state.signingIn || (custom&&state.runtime!=='builtin') ? 'quiet-button' : 'primary-button';
     login.disabled = busy() || reconnecting || (state.runtime!=='builtin' && shared && !custom);
@@ -389,8 +389,37 @@ export function createController({ui,ports}) {
     else if (/^(模型配置|模型目录)：/.test(ui.connectionError.textContent)) { ui.connectionError.textContent = ''; ui.connectionError.hidden = true; }
   }
 
+  function installState() {
+    const install=state.runtime==='codex'&&state.runtimeInstall;
+    if(!install||install.phase==='ready')return null;
+    const titles={downloading:'正在下载 Codex',verifying:'正在校验 Codex',extracting:'正在安装 Codex',cancelled:'Codex 下载已取消',error:'Codex 下载失败',missing:'准备 Codex'};
+    const mb=n=>(n/1e6).toFixed(1)+' MB';
+    return {...install,title:titles[install.phase],text:install.phase==='downloading'?(install.total?mb(install.received)+' / '+mb(install.total):install.received?mb(install.received):'正在连接下载服务器…'):install.phase==='error'?install.error:'',action:install.busy?'取消':'重新下载'};
+  }
+  function renderInstall() {
+    const install=installState();ui.runtimeInstall.hidden=!install;
+    if(!install)return;
+    ui.runtimeInstallTitle.textContent=install.title;ui.runtimeInstallText.textContent=install.text;ui.runtimeInstallText.hidden=!install.text;
+    ui.runtimeInstallAction.textContent=install.action;
+    ui.runtimeInstallProgress.hidden=!install.busy;
+    if(install.phase==='downloading'&&install.total){ui.runtimeInstallProgress.max=install.total;ui.runtimeInstallProgress.value=install.received;}
+    else ui.runtimeInstallProgress.removeAttribute('value');
+  }
+  async function installAction() {
+    try {ports.applyAgentState(await window.vibeDesktop.agent.configureProvider({action:state.runtimeInstall?.busy?'cancel-runtime-install':'retry-runtime-install'}));}
+    catch(error){ui.connectionError.textContent=error.message;ui.connectionError.hidden=false;}
+  }
+
   // ---------------------------------------------------------------- notice
   function renderNotice() {
+    const install=installState();
+    if(install){
+      ui.agentPane.classList.remove('needs-connection');ui.agentNotice.hidden=false;ui.agentNotice.dataset.phase=install.busy?'retrying':'disconnected';
+      ui.agentNoticeTitle.textContent=install.title;ui.agentNoticeText.textContent=install.text;
+      ui.agentNoticeDetails.parentElement.hidden=true;ui.agentBindProvider.hidden=true;ui.agentConfigureApi.hidden=true;
+      ui.agentReviewChanges.hidden=true;ui.agentReportIssue.hidden=true;ui.agentReconnect.hidden=false;
+      ui.agentReconnect.textContent=install.action;ui.agentReconnect.disabled=false;ui.agentStatusText.textContent=install.title;return;
+    }
     const t = state.transmission, disconnected = ['unavailable','stopped','auth-required'].includes(state.status);
     const application = state.accountMode === 'application', custom = state.customProvider, unconnected = state.status === 'auth-required';
     const bindingIssue=state.runtime==='builtin'&&state.modelConfigurationError;
@@ -428,6 +457,7 @@ export function createController({ui,ports}) {
   }
 
   async function reconnectAgent() {
+    if(installState())return installAction();
     if(state.runtime==='builtin'&&!state.customProvider){openConnectionDialog('services');return;}
     if (state.accountMode === 'application' && !state.customProvider && (state.signingIn || state.status === 'auth-required')) return loginAction();
     if (reconnecting) return; reconnecting = true; ui.connectionError.hidden = true; updateAgentConnection({});
@@ -443,6 +473,7 @@ export function createController({ui,ports}) {
   function mountAgentConnection() {
     if (!window.vibeDesktop?.agent) return;
     ui.connectionClose.replaceChildren(icon('X')); ui.providerDiscover.replaceChildren(icon('RefreshCw'));
+    ui.runtimeInstallAction.addEventListener('click',installAction);
     ui.agentBindProvider.addEventListener('click',()=>openConnectionDialog('services'));
     ui.agentSettings.addEventListener('click', () => openConnectionDialog());
     ui.agentConfigureApi.addEventListener('click', () => { ui.connectionDialog.open && ui.connectionDialog.close(); openConnectionDialog('services'); });
@@ -451,8 +482,8 @@ export function createController({ui,ports}) {
     ui.settingsServices.addEventListener('click', () => selectTab('services'));
     ui.settingsRuntime.addEventListener('click', () => selectTab('runtime'));
     for(const [button,runtime] of [[ui.useBuiltinRuntime,'builtin'],[ui.useCodexRuntime,'codex']]) button.addEventListener('click',async()=>{
-      if(busy())return;providerPending='runtime';renderForm();renderOverview();
-      try {const next=await window.vibeDesktop.agent.configureProvider({action:'new-runtime',runtime});ports.applyAgentState(next);formEdited=false;fillForm(next.customProvider);await ports.refreshModelOptions(true).catch(()=>{});}
+      if(state.busy||providerPending)return;providerPending='runtime';renderForm();renderOverview();
+      try {const next=await window.vibeDesktop.agent.configureProvider({action:'new-runtime',runtime});ports.applyAgentState(next);formEdited=false;fillForm(next.customProvider);if(isReady(next))await ports.refreshModelOptions(true).catch(()=>{});}
       catch(error){ui.connectionError.textContent=error.message;ui.connectionError.hidden=false;}
       finally{providerPending=false;updateAgentConnection({});}
     });

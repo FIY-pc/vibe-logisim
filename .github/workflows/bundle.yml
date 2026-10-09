@@ -1,6 +1,6 @@
 name: bundle
 
-# Cross-builds the Linux and Windows bundles from pinned runtime archives,
+# Builds Linux and Windows bundles on their native OS from pinned archives,
 # then smoke-tests each bundle on its real OS (open folder, build an AND gate,
 # native truth table via bundled Java+Logisim, built-in AI setup and restart).
 # Standard smoke checks use local fixtures. Real model checks require an
@@ -27,7 +27,7 @@ env:
 jobs:
   # Fast feedback on the host code paths the Windows port touched (path
   # handling, folder workspace, provider config, capability report). Runs
-  # before any 1 GB bundle is built.
+  # before either distribution artifact is built.
   unit-windows:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -54,6 +54,7 @@ jobs:
             apps/desktop/electron/direct-agent-workspace-errors.test.cjs `
             apps/desktop/electron/conversations.test.cjs `
             apps/desktop/electron/builtin-backend.test.cjs `
+            apps/desktop/electron/runtime-installer.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `
             apps/desktop/electron/model-tool-output.test.cjs `
             apps/desktop/electron/custom-provider.test.cjs `
@@ -67,17 +68,26 @@ jobs:
             apps/desktop/test/signal-trace.cjs `
             apps/desktop/test/organized-layout.cjs `
             apps/desktop/electron/update-check.test.cjs
+      - name: Verify bundled SDK protocols without node_modules
+        run: node scripts/distribution/test-sdk.cjs
       - name: Python server control-channel probe (Windows, host Python)
         shell: pwsh
         run: python apps/desktop/test/server-control-probe.py
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        target: [linux-x64, win32-x64]
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+          - target: win32-x64
+            os: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -114,9 +124,11 @@ jobs:
         with:
           name: bundle-${{ matrix.target }}
           path: |
-            dist/*.zip
+            dist/*-setup.exe
+            dist/*.tar.xz
             dist/*.tar.gz
             dist/*.sha256
+            dist/*.size.json
             dist/logisim-2.16.2.2-source.tar.gz
           compression-level: 0
           retention-days: 7
@@ -134,11 +146,14 @@ jobs:
         with:
           name: bundle-win32-x64
           path: bundle
-      - name: Unpack bundle
+      - name: Install bundle without administrator privileges
         shell: pwsh
         run: |
-          $zip = Get-ChildItem bundle/*.zip | Select-Object -First 1
-          Expand-Archive -Path $zip.FullName -DestinationPath unpacked
+          $installer = (Get-ChildItem bundle/*-setup.exe | Select-Object -First 1).FullName
+          $target = Join-Path $PWD 'unpacked/app'
+          $process = Start-Process -FilePath $installer -ArgumentList '/S',"/D=$target" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          if (-not (Test-Path "$target/vibe-logisim.exe")) { throw 'Installed executable missing' }
           Get-ChildItem unpacked
       - name: Install Playwright driver (test harness only; the bundle is self-contained)
         run: npm --prefix apps/desktop ci --ignore-scripts
@@ -161,6 +176,27 @@ jobs:
           node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node apps/desktop/test/e2e-runtime-packaged.cjs "$exe" smoke-out/runtime
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node apps/desktop/test/e2e-runtime-download.cjs "$exe" smoke-out/runtime-download
+      - name: Verify reinstall and uninstall preserve application data
+        shell: pwsh
+        run: |
+          $target = Join-Path $PWD 'unpacked/app'
+          $data = Join-Path $env:APPDATA 'vibe-logisim'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          Set-Content (Join-Path $data 'installer-retention.txt') 'preserve'
+          $shortcut = Join-Path $env:APPDATA 'Microsoft/Windows/Start Menu/Programs/Vibe Logisim.lnk'
+          if (-not (Test-Path $shortcut)) { throw 'Start menu shortcut missing' }
+          $installer = (Get-ChildItem bundle/*-setup.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $installer -ArgumentList '/S',"/D=$target" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Reinstall failed' }
+          $uninstaller = (Get-ChildItem $target -Filter '*Uninstall*.exe' | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
+          $limit = (Get-Date).AddSeconds(30)
+          while ((Test-Path "$target/vibe-logisim.exe") -and (Get-Date) -lt $limit) { Start-Sleep -Seconds 1 }
+          if (Test-Path "$target/vibe-logisim.exe") { throw 'Uninstall left the executable behind' }
+          if ((Get-Content (Join-Path $data 'installer-retention.txt')) -ne 'preserve') { throw 'Uninstall removed application data' }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -189,11 +225,14 @@ jobs:
         with:
           name: bundle-win32-x64
           path: bundle
-      - name: Unpack bundle
+      - name: Install bundle without administrator privileges
         shell: pwsh
         run: |
-          $zip = Get-ChildItem bundle/*.zip | Select-Object -First 1
-          Expand-Archive -Path $zip.FullName -DestinationPath unpacked
+          $installer = (Get-ChildItem bundle/*-setup.exe | Select-Object -First 1).FullName
+          $target = Join-Path $PWD 'unpacked/app'
+          $process = Start-Process -FilePath $installer -ArgumentList '/S',"/D=$target" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          if (-not (Test-Path "$target/vibe-logisim.exe")) { throw 'Installed executable missing' }
       - name: Install Playwright driver
         run: npm --prefix apps/desktop ci --ignore-scripts
       - name: AI smoke (two real model turns)
@@ -225,7 +264,7 @@ jobs:
           path: bundle
       - name: Unpack bundle
         run: |
-          mkdir unpacked && tar xzf bundle/vibe-logisim-*-linux-x64.tar.gz -C unpacked
+          mkdir unpacked && tar xJf bundle/vibe-logisim-*-linux-x64.tar.xz -C unpacked
           ls unpacked
       - name: Install Playwright driver (test harness only)
         run: npm --prefix apps/desktop ci --ignore-scripts
