@@ -8,7 +8,7 @@ async function installer(root,archive){
   try {
     const files=await build({projectDir:desktop,prepackaged:root,targets:Platform.WINDOWS.createTarget('nsis',Arch.x64),publish:'never',config:{
       appId:'org.vibelogisim.desktop',productName:'Vibe Logisim',executableName:'vibe-logisim',electronVersion:require(path.join(desktop,'package.json')).devDependencies.electron,
-      directories:{output:out},compression:'maximum',artifactName:'Vibe-Logisim-Setup.${ext}',
+      directories:{output:out},publish:null,compression:'maximum',artifactName:'Vibe-Logisim-Setup.${ext}',
       win:{signAndEditExecutable:false},nsis:{oneClick:false,perMachine:false,allowElevation:false,allowToChangeInstallationDirectory:true,deleteAppDataOnUninstall:false,createDesktopShortcut:true,shortcutName:'Vibe Logisim',runAfterFinish:false},
     }});
     const exe=files.find(f=>f.endsWith('.exe'));if(!exe)throw new Error('NSIS did not produce an installer');

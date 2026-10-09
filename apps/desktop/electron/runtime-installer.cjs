@@ -17,6 +17,7 @@ class RuntimeInstaller extends EventEmitter {
     super();
     if (!/^[a-f0-9]{64}$/.test(spec.sha256) || !Array.isArray(spec.programs) || !spec.programs.length || spec.programs.some(p => p.includes('..') || path.isAbsolute(p))) throw new Error('运行时清单无效');
     Object.assign(this, {spec, directory, python, fetch, timeoutMs});
+    this.stagingPrefix = '.install-' + spec.sha256.slice(0, 16) + '-';
     this.extract = extract || ((archive, target, signal) => runFile(python, [path.join(__dirname, 'extract-runtime.py'), archive, target], {
       signal, timeout:180000, windowsHide:true, maxBuffer:16384,
       env:{...process.env, PYTHONNOUSERSITE:'1', PYTHONDONTWRITEBYTECODE:'1', PYTHONUTF8:'1', PYTHONHOME:'', PYTHONPATH:''},
@@ -35,9 +36,16 @@ class RuntimeInstaller extends EventEmitter {
   }
   snapshot() { return {...this.state, version:this.spec.version, busy:ACTIVE.has(this.state.phase)}; }
   update(patch) { Object.assign(this.state, patch); this.emit('change', this.snapshot()); }
+  async cleanAbandoned() {
+    // The desktop holds a single-instance lock. Remove only staging owned by
+    // this exact pinned runtime after a crash; never touch profiles or siblings.
+    const parent=path.dirname(this.directory);
+    const entries=await fsp.readdir(parent).catch(error=>{if(error.code==='ENOENT')return [];throw error;});
+    for(const name of entries)if(name.startsWith(this.stagingPrefix))await fsp.rm(path.join(parent,name),{recursive:true,force:true});
+  }
   ensure() {
     if (this.pending) return this.pending;
-    if (this.ready()) { this.update({phase:'ready',error:null}); return Promise.resolve(this.directory); }
+    if (this.ready()) { this.update({phase:'ready',error:null}); return this.cleanAbandoned().then(()=>this.directory); }
     this.controller = new AbortController();
     this.update({phase:'downloading',received:0,total:null,error:null});
     this.pending = this.install(this.controller.signal).finally(() => { this.pending=null;this.controller=null; });
@@ -49,7 +57,8 @@ class RuntimeInstaller extends EventEmitter {
     const timer = setTimeout(() => this.controller?.abort(new Error('下载超时，请重试')), this.timeoutMs);
     try {
       await fsp.mkdir(path.dirname(this.directory), {recursive:true,mode:0o700});
-      staging=await fsp.mkdtemp(path.join(path.dirname(this.directory), '.install-'));
+      await this.cleanAbandoned();
+      staging=await fsp.mkdtemp(path.join(path.dirname(this.directory), this.stagingPrefix));
       const response = await this.fetch(this.spec.url, {signal,redirect:'follow'});
       if (!response.ok || !response.body) throw new Error(`下载失败（HTTP ${response.status}）`);
       const total=Number(response.headers.get('content-length')) || null;

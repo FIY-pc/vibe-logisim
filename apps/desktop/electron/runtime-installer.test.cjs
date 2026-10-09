@@ -80,3 +80,10 @@ test('old Codex history is visible during a download and switching to built-in c
  await runtime.newRuntimeConversation('builtin');assert.equal(runtime.snapshot().runtime,'builtin');assert.equal(f.installer.snapshot().phase,'cancelled');
  assert.ok(runtime.store.state('workspace').conversations.some(c=>c.id===saved.id));
 });
+test('restart removes only abandoned staging for the pinned runtime',async t=>{
+ const f=await fixture(t),parent=path.dirname(f.opts.directory),abandoned=path.join(parent,f.installer.stagingPrefix+'interrupted');
+ fs.mkdirSync(abandoned,{recursive:true});fs.writeFileSync(path.join(abandoned,'partial'),'partial bytes');
+ const other=path.join(parent,'unrelated');fs.mkdirSync(other);fs.writeFileSync(path.join(other,'keep'),'keep');
+ await f.installer.ensure();assert.equal(fs.existsSync(abandoned),false);assert.equal(fs.readFileSync(path.join(other,'keep'),'utf8'),'keep');
+ fs.mkdirSync(abandoned);await new RuntimeInstaller({...f.opts,fetch:()=>{throw new Error('unexpected download');}}).ensure();assert.equal(fs.existsSync(abandoned),false);
+});
