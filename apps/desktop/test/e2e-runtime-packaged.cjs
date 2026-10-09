@@ -27,6 +27,7 @@ async function settings() { await page.locator('#agentSettings').click(); await 
 async function addService(fake, name) {
   await page.locator('#connectionTabApi').click();
   await page.locator('#providerPreset').selectOption('custom');
+  if (!await page.locator('#providerName').isVisible()) await page.locator('#providerAdvanced > summary').click();
   await page.locator('#providerName').fill(name);
   await page.locator('#providerProtocol').selectOption('openai-responses');
   await page.locator('#providerBaseUrl').fill(fake.baseUrl);
@@ -43,7 +44,8 @@ async function addService(fake, name) {
   assert.equal((await state()).runtime,'builtin'); assert.equal((await state()).status,'auth-required');
   phase='create a workspace';
   await app.evaluate(({dialog}, folder)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[folder]});},folder);
-  await page.evaluate(()=>window.vibeDesktop.folder.open());
+  await page.locator('#openButton').click();
+  await page.locator('#fileActions').waitFor({state:'visible'});
   await page.locator('#newFileMenu').click(); await page.getByRole('menuitem',{name:'新建电路',exact:true}).click();
   const name=page.getByRole('textbox',{name:'文件名称',exact:true});await name.fill('example.circ');await name.press('Enter');
   await page.waitForFunction(()=>document.querySelector('#appShell').getAttribute('aria-busy')!=='true'&&!document.querySelector('#fileActions').hidden);
