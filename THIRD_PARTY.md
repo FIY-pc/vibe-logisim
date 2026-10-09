@@ -4,7 +4,7 @@
 
 前端使用锁文件固定版本的 Marked、DOMPurify 和 Lucide。生成的本地资源及各自许可证一起保存在 `apps/desktop/circuit-lens/web/vendor/`；`scripts/ui/vendor.cjs` 从安装的 npm 包重新生成这些资源。
 
-内置 AI 运行时使用 Pi 的 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai` 1.1.0（MIT）。独立应用包包含 npm 锁文件固定的生产依赖及其许可证。
+内置 AI 运行时使用 Pi 的 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai` 1.1.0（MIT）。独立应用包包含 npm 锁文件固定的生产依赖；Pi npm 包未附许可证文件，其 [v1.1.0 MIT 许可证](https://github.com/earendil-works/pi/blob/v1.1.0/LICENSE) 单独保存在包内 `resources/third-party/pi-LICENSE`。
 
 Electron 和 Playwright 通过 npm 安装，依赖包中保留各自许可证。
 

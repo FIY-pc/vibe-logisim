@@ -208,6 +208,7 @@ def build(args):
         shutil.copy2(args.course_runtime, course / lock['courseRuntime']['name'])
         notices = resources / 'third-party'
         notices.mkdir()
+        shutil.copy2(REPO / 'scripts/distribution/licenses/pi-LICENSE', notices / 'pi-LICENSE')
         # GPL-3.0 §6(d): the corresponding source is offered from the same place
         # the binaries are distributed (the GitHub release), so the 15 MB source
         # archive does not have to ride inside every bundle.
