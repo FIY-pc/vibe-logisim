@@ -23,6 +23,8 @@ async function launch() {
   await page.setViewportSize({width:1440,height:960});
   assert.equal(await app.evaluate(({app}) => app.isPackaged), true);
   await settled();
+  // Main-process readiness can precede renderer event binding on a fresh install.
+  await page.waitForFunction(()=>document.querySelector('#connectionClose svg')&&document.querySelector('#appShell').getAttribute('aria-busy')!=='true');
 }
 async function settings() { await page.locator('#agentSettings').click(); await page.locator('#connectionDialog[open]').waitFor(); }
 async function addService(fake, name) {

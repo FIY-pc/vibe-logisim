@@ -1,6 +1,6 @@
 name: bundle
 
-# Cross-builds the Linux and Windows bundles from pinned runtime archives,
+# Builds Linux and Windows bundles on their native OS from pinned archives,
 # then smoke-tests each bundle on its real OS (open folder, build an AND gate,
 # native truth table via bundled Java+Logisim, built-in AI setup and restart).
 # Standard smoke checks use local fixtures. Real model checks require an
@@ -27,7 +27,7 @@ env:
 jobs:
   # Fast feedback on the host code paths the Windows port touched (path
   # handling, folder workspace, provider config, capability report). Runs
-  # before any 1 GB bundle is built.
+  # before either distribution artifact is built.
   unit-windows:
     runs-on: windows-latest
     timeout-minutes: 15

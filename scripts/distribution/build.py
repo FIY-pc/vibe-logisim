@@ -1,10 +1,9 @@
 """Build a relocatable desktop bundle from explicit product inputs.
 
 Run from a developer checkout. The resulting application needs no npm, Python,
-Java installation. Codex is fetched on first use from a pinned, verified archive. Bundles for every target are assembled from pinned
-archives. Cross-building unpacked directories is supported; the Windows installer
-is produced on Windows. Course runtime bundles remain LOCAL evaluation
-artifacts until the course binary's source/redistribution terms are settled.
+or Java installation. Codex is fetched on first use from a pinned, verified
+archive. Cross-building unpacked directories is supported; the Windows installer
+is produced on Windows. Runtime source and license notices accompany the bundle.
 """
 import argparse
 import json
