@@ -2,7 +2,7 @@ import { firstDefined } from '../core/values.js';
 
 export const modelDependencies = ["project", "canvas", "agent", "shell"];
 
-export const dependencies = ["renderWirePreview","cancelPlacement","renderProjectInfo","setWorkspacePanel","closeWorkspaceDrawers","renderConnections","hasSelection","queryIntent","updateComposerState"];
+export const dependencies = ["cancelWiring","renderSimulationControls","renderWirePreview","cancelPlacement","renderProjectInfo","setWorkspacePanel","closeWorkspaceDrawers","renderConnections","hasSelection","queryIntent","updateComposerState"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState, agent: agentState, shell: shellState} = models;
@@ -60,17 +60,17 @@ function setCanvasStatus(message, kind = "warning") {
 
 function setMode(mode) {
     if(mode!=="place")ports.cancelPlacement();
-    if (mode !== 'select' && canvasState.wireStart) {
-      canvasState.wireStart = null; canvasState.wirePoints = [];
-      ports.renderWirePreview(); setCanvasStatus('');
+    if (mode !== canvasState.mode && canvasState.wireStart) {
+      ports.cancelWiring(); setCanvasStatus('');
     }
     canvasState.mode = mode;
     ui.circuitCanvas.dataset.mode = mode;
-    [ui.selectTool, ui.pokeTool, ui.panTool].forEach((button) => {
+    [ui.selectTool, ui.wireTool, ui.pokeTool, ui.panTool].forEach((button) => {
       const active = button.dataset.mode === mode;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", String(active));
     });
+    ports.renderSimulationControls();
   }
 
 function switchReviewTab(tab) {

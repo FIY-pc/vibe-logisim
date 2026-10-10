@@ -27,6 +27,7 @@ import xml.etree.ElementTree as ET
 from studio.domain.schematic_layout import CONSTANT_SOURCES, SchematicLayout, TUNNEL_SPAN, _circuit_span, interface_signature, resolve_unknown_widths
 from studio.domain.tool_errors import CircuitToolError
 from studio.domain.fixed_geometry import region_segment
+from studio.domain.loose_wires import loose_wire_geometry, assert_floating_isolation
 from studio.project.organization import layout_options, normalize_organization, annotate_groups
 
 
@@ -212,6 +213,13 @@ def arrange_candidate(workbench, args):
         after_full = w.observer.run_full(artifact, name, directory / (hashlib.sha256(name.encode()).hexdigest() + ".png"))
         after_focus = after_full["focus"]
         resolve_unknown_widths(after_focus)
+        loose_wires, _ = loose_wire_geometry(before_focus)
+        if not copper_preserved(loose_wires, after_focus.get('wires', [])):
+            raise CircuitToolError('ARRANGE_PROTECTED_CHANGED', '整理改变了未完成导线或独立画线，候选已拒绝。')
+        try:
+            assert_floating_isolation(before_focus, after_focus)
+        except ValueError as error:
+            raise CircuitToolError('ARRANGE_PROTECTED_CHANGED', str(error)) from error
         orig_of = {}
         for comp in before_focus["components"]:
             dx, dy = layout.placement.get(comp["componentId"], (0, 0))

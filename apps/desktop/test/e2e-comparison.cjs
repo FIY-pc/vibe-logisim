@@ -131,7 +131,7 @@ async function main(){
     await page.locator('#agentTab').click();
     assert.equal(await page.locator('#questionInput').inputValue(),'我在检查 ID.PC 的布线，稍后继续讨论。');
     await page.locator('#fitButton').click();await page.screenshot({path:output+'/06-continue-editing.png'});
-    await page.locator('#saveButton').click();await page.locator('#confirmSave').click();await page.locator('#saveDialog').waitFor({state:'hidden'});
+    await page.locator('#circuitCanvas').press('ControlOrMeta+s');await waitUntil(()=>session().then(s=>!s.workspace.dirty));
     const saved=await session();
     await app.close();app=await launch();page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));
     await page.setViewportSize({width:1500,height:960});

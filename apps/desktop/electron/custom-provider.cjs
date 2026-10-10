@@ -14,7 +14,7 @@ const path = require("node:path");
 const PROVIDER_ID = "custom";
 const CATALOG_FILE = "custom-catalog.json";
 const PROVIDER_FILE = "provider.toml";
-const EFFORTS = ["none", "low", "medium", "high"];
+const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"];
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/;
 const MAX_CATALOG_MODELS = 400;
 
@@ -57,7 +57,8 @@ function validate(settings, options = {}) {
   const model = String(settings.model || "").trim();
   if (!model) throw new Error("请填写或选择模型名称，例如 deepseek-chat");
   if (!MODEL_ID.test(model)) throw new Error("模型名称只能包含字母、数字和 . _ : / -");
-  const effort = EFFORTS.includes(settings.effort) ? settings.effort : "medium";
+  const effort = settings.effort || "medium";
+  if (!EFFORTS.includes(effort)) throw new Error("不支持这个思考深度，请重新选择");
   const name = String(settings.name || "").trim().slice(0, 40) || "自定义接口";
   // Context window drives Codex's auto-compaction. Too small and a long
   // construction turn compacts every few minutes and loses its working state
@@ -89,6 +90,8 @@ function catalogEntry(model, effort, contextWindow = 256000, priority = 1) {
       {effort: "low", description: "更快"},
       {effort: "medium", description: "均衡"},
       {effort: "high", description: "更深入的推理"},
+      {effort: "xhigh", description: "极高思考深度"},
+      {effort: "max", description: "最高思考深度"},
     ],
     shell_type: "unified_exec",
     visibility: "list",

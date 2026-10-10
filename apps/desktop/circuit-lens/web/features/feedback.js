@@ -7,7 +7,7 @@ import {createFileMenu} from './file-menu.js';
 // built and redacted in the main process; this module previews them and
 // passes on what the user chose. A new release shows as one neutral banner.
 export const modelDependencies = [];
-export const dependencies = ['showToast'];
+export const dependencies = ['showToast','openShortcutSettings','requestSave','saveState','shortcutLabel'];
 
 const RELEASES_PAGE = 'https://github.com/FIY-pc/vibe-logisim/releases';
 const message = error => String(error?.message || error).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '');
@@ -19,9 +19,16 @@ export function createController({ui, ports}) {
 
   // ---------------------------------------------------------------- menu
   async function openAppMenu() {
+    const shortcuts={label:'快捷键…',icon:'Keyboard',shortcut:/Mac/.test(navigator.platform)?'⌘+,':'Ctrl+,',run:ports.openShortcutSettings};
+    const save={id:'saveMenuAction',label:'保存',icon:'Save',shortcut:ports.shortcutLabel('save')==='未设置'?'':ports.shortcutLabel('save'),disabled:!ports.saveState().canSave,run:ports.requestSave};
+    if(!desktop?.diagnostics||!desktop?.updates){menu.open([save,null,shortcuts],ui.appMenuButton);return;}
     update = await desktop.updates.status().catch(() => update);
     const forced = Boolean(update?.forcedOff), automatic = Boolean(update?.enabled) && !forced;
     menu.open([
+      save,
+      null,
+      shortcuts,
+      null,
       {label: '反馈问题…', icon: 'MessageSquare', run: openFeedback},
       {label: '打开日志文件夹', icon: 'FolderOpen', run: () => desktop.diagnostics.openLogs()},
       null,
@@ -118,10 +125,10 @@ export function createController({ui, ports}) {
 
   // ---------------------------------------------------------------- mount
   function mountFeedback() {
-    if (!desktop?.diagnostics || !desktop?.updates) { ui.appMenuButton.hidden = true; return; }
     menu = createFileMenu(ui.appMenu, error => ports.showToast(message(error)));
     ui.appMenuButton.replaceChildren(icon('Ellipsis'));
     ui.appMenuButton.addEventListener('click', () => { void openAppMenu(); });
+    if (!desktop?.diagnostics || !desktop?.updates) return;
     ui.feedbackClose.replaceChildren(icon('X'));
     ui.feedbackClose.addEventListener('click', () => ui.feedbackDialog.close());
     ui.feedbackDialog.addEventListener('close', () => { previewToken++; preview = null; });

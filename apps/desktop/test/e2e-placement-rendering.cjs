@@ -54,7 +54,7 @@ async function holdNextDetail() {
     const count = await page.locator('.circuit-component').count();
     for (let i = 0; i < 8; i++) await page.locator('#zoomInButton').click();
     await page.locator('#detailLayer image').first().waitFor();
-    await page.locator('#addComponentTool').click(); await page.locator('#componentSearch').fill('与门');
+    await page.locator('#circuitCanvas').press('a'); await page.locator('#componentSearch').fill('与门');
     await page.getByRole('button', {name:'与门', exact:true}).click();
     await page.waitForFunction(() => document.querySelector('#objectInspector [data-attribute]') && !document.querySelector('#placementToolbar .placement-loading'));
     await page.evaluate(() => {
@@ -102,7 +102,7 @@ async function holdNextDetail() {
 
     phase = 'ordinary scale and saving';
     await page.keyboard.press('Escape'); await page.locator('#fitButton').click();
-    await page.locator('#addComponentTool').click(); await page.locator('#componentSearch').fill('与门');
+    await page.locator('#circuitCanvas').press('a'); await page.locator('#componentSearch').fill('与门');
     await page.getByRole('button', {name:'与门', exact:true}).click();
     await page.waitForFunction(() => !document.querySelector('#placementToolbar .placement-loading'));
     await place(.8, .75); await idle();

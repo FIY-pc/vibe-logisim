@@ -1,7 +1,7 @@
 import {makeElement} from './dom.js';
 import {icon,action,copyText} from './chat-dom.js';
 import {renderMarkdown} from './chat-markdown.js';
-import {AgentOutputProjection} from './agent-output-projection.js';
+import {AgentOutputProjection,summarizeActivities} from './agent-output-projection.js';
 
 // Owns message DOM, reading position and transient progress only. Transport,
 // projects, draft submission and structural changes belong to other owners.
@@ -11,7 +11,7 @@ export class ConversationView {
     // Keep live path versions across timeline rebuilds; history without a
     // recorded version must never adopt the current version of a reused path.
     this.referenceBindings=new Map();this.turnReferenceBinding=null;this.restoring=false;
-    this.messages=new Map();this.activities=new Map();this.follow=true;
+    this.messages=new Map();this.activities=new Map();this.activityBatches=new Map();this.follow=true;
     this.output=new AgentOutputProjection();
     this.frame=null;this.scrollTop=null;this.work=null;this.toolBatch=null;this.lastContentKind='message';this.workStartedAt=0;this.workElapsedMs=0;this.workClock=null;this.pending=new Set();this.editing=null;this.editingFollow=null;
   }
@@ -28,7 +28,7 @@ export class ConversationView {
     latest.addEventListener('click',()=>{this.follow=true;this.scroll();});
   }
   clear() {
-    this.turnReferenceBinding=null;
+    this.turnReferenceBinding=null;this.activityBatches.clear();
     if(this.workClock)clearInterval(this.workClock);this.workClock=null;
     this.editing=null;this.editingFollow=null;this.messages.clear();this.activities.clear();this.pending.clear();this.output.clear();this.work=null;this.toolBatch=null;this.lastContentKind='message';this.workStartedAt=0;this.workElapsedMs=0;this.follow=true;this.scrollTop=null;
     this.ui.conversationLatest.hidden=true;this.ui.agentTimeline.replaceChildren(this.ui.agentEmpty);this.ui.agentEmpty.hidden=false;
@@ -51,10 +51,16 @@ export class ConversationView {
     }
     this.scroll();return message;
   }
+  delivery(id,state){
+    const message=this.messages.get(String(id));if(!message)return;
+    let receipt=message.node.querySelector('.message-delivery');
+    if(!receipt){receipt=makeElement('small','message-delivery');receipt.setAttribute('role','status');message.node.insertBefore(receipt,message.footer);}
+    receipt.textContent=({queued:'等待加入本轮',included:'已加入上下文',deferred:'待下次继续'}[state]||'');receipt.hidden=!receipt.textContent;
+  }
   create(role,id,text='',context=null) {
     this.ui.agentEmpty.hidden=true;
     const node=makeElement('article','agent-message');node.dataset.role=role;node.dataset.itemId=id;
-    const header=makeElement('div','agent-message-header');header.append(makeElement('strong','',role==='user'?'你':'AI'));
+    node.setAttribute('aria-label',role==='user'?'你的消息':'助手回复');
     const body=makeElement('div','agent-message-body');const footer=makeElement('div','message-actions');
     const scope=this.turnReferenceBinding||{};
     const bindingKey=JSON.stringify([scope?.folderId,scope?.conversationId,role,id]);
@@ -79,7 +85,7 @@ export class ConversationView {
       });
       branch.classList.add('message-branch');branch.disabled=Boolean(this.busy);footer.append(branch,status);
     }
-    node.append(header,body,footer);this.ui.agentTimeline.append(node);
+    node.append(body,footer);this.ui.agentTimeline.append(node);
     this.messages.set(String(id),message);this.render(message);return message;
   }
   render(message) {
@@ -172,6 +178,7 @@ export class ConversationView {
     this.toolBatch=null;
     this.lastContentKind='message';
     this.activities.clear();
+    this.activityBatches.clear();
     this.output.beginTurn();
     this.workStartedAt=Date.now();
     this.workElapsedMs=0;
@@ -193,26 +200,28 @@ export class ConversationView {
     const title=this.work.querySelector('.agent-work-title');
     const status=this.work.dataset.status;
     const prefix=status==='interrupted'?'已中断 · ':status==='failed'?'未完成 · ':'';
-    const unknown=[...this.work.querySelectorAll('.agent-activity[data-result-status=unknown]')];
+    const summary=summarizeActivities([...this.output.items.values()]);
     const alert=this.work.querySelector('.agent-work-alert');
-    if(alert){alert.hidden=!unknown.length;alert.textContent=unknown.length===1?`结果未知：${unknown[0].querySelector('.agent-activity-label').textContent}`:`${unknown.length} 项操作结果未知`;}
-    if(title)title.textContent=prefix+`用时 ${this.formatDuration(this.workElapsedMs || (this.workStartedAt?Date.now()-this.workStartedAt:0))}`;
+    if(alert){alert.hidden=!summary.alert;alert.textContent=summary.alert;}
+    const active=status==='running'&&[...this.output.items.values()].some(i=>i.status==='running');
+    if(title)title.textContent=prefix+(active?summary.label+' · ':'用时 ')+this.formatDuration(this.workElapsedMs || (this.workStartedAt?Date.now()-this.workStartedAt:0));
   }
-  activity(id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null) {
+  activity(id,label,status='running',kind='tool',detail=null,activityKey=null,resultStatus=null,toolOutput=null) {
     if(!id)return;this.ui.agentEmpty.hidden=true;
-    if(status==='running'&&this.output.status!=='running') this.output.start();
-    const projected=this.output.activity({id,label,status,kind,detail,activityKey,resultStatus});
+    const projected=this.output.activity({id,label,status,kind,detail,activityKey,resultStatus,toolOutput});
     if(!projected)return;
+    if(status==='running'&&this.output.status!=='running') this.output.start();
     const work=this.group();
     if(status==='running') {
       work.dataset.status='running';
-      work.open=true;
       if(!this.workStartedAt)this.workStartedAt=Date.now();
     }
     if(kind==='reasoning')return;
-    if(this.toolBatch===null || this.lastContentKind!=='tool')this.toolBatch=this.createToolBatch(work);
-    this.lastContentKind='tool';
-    const batch=this.toolBatch;
+    let batch=this.activityBatches.get(String(id));
+    if(!batch){
+      if(this.toolBatch===null || this.lastContentKind!=='tool')this.toolBatch=this.createToolBatch(work);
+      this.lastContentKind='tool';batch=this.toolBatch;this.activityBatches.set(String(id),batch);
+    }
     let node=this.activities.get(String(id));
     if(!node) {
       node=makeElement('div','agent-activity');node.append(makeElement('span','agent-activity-label'),makeElement('span','agent-activity-status'));
@@ -225,7 +234,19 @@ export class ConversationView {
     const text=item.label;
     node.querySelector('.agent-activity-label').textContent=item.kind==='reasoning'?'分析电路与问题':text;
     node.querySelector('.agent-activity-status').textContent=item.resultStatus==='unknown'?'结果未知':item.resultStatus==='failed'?'不匹配':item.status==='running'?'进行中':item.status==='warning'?'待确认':item.status==='failed'?'调用失败':'完成';
-    if(item.detail) {
+    if(item.toolOutput){
+      let content=node.querySelector('.agent-tool-output');
+      if(!content){content=makeElement('div','agent-tool-output');node.append(content);}
+      const output=item.toolOutput;content.dataset.kind=output.type;content.replaceChildren();
+      if(output.target)content.append(makeElement('code','agent-tool-target',output.target));
+      if(output.input&&output.type!=='command'){
+        const input={...output.input};if(output.type==='file')delete input.path;
+        if(Object.keys(input).length)content.append(makeElement('pre','agent-tool-input',JSON.stringify(input,null,2)));
+      }
+      if(output.text)content.append(makeElement('pre','agent-activity-output',output.text));
+      if(output.exitCode!=null&&output.exitCode!==0)content.append(makeElement('small','agent-tool-exit',`退出码 ${output.exitCode}`));
+      if(output.truncated)content.append(makeElement('small','agent-tool-truncated','输出已截断'));
+    }else if(item.detail) {
       let output=node.querySelector('.agent-activity-output');
       if(!output){output=makeElement('pre','agent-activity-output');node.append(output);}
       output.textContent=item.detail;
@@ -245,15 +266,10 @@ export class ConversationView {
   }
   updateToolBatch(batch) {
     if(!batch)return;
-    const labels=batch.ids.map(id=>this.activities.get(id)?.querySelector('.agent-activity-label')?.textContent).filter(Boolean);
-    const unique=[...new Set(labels)];
-    batch.label.textContent=unique.slice(0,2).join('、') || '工具调用';
-    if(unique.length>2)batch.label.textContent+='…';
-    const unknown=batch.ids.filter(id=>this.activities.get(id)?.dataset.resultStatus==='unknown').length;
-    batch.meta.textContent=unknown?`${unknown} 项结果未知`:batch.ids.length>1?`${batch.ids.length} 项`:'';
-    batch.meta.classList.toggle('has-unknown',unknown>0);
-    batch.node.dataset.status=batch.ids.some(id=>this.activities.get(id)?.dataset.status==='running')?'running':
-      batch.ids.some(id=>this.activities.get(id)?.dataset.status==='failed')?'failed':'completed';
+    const summary=summarizeActivities(batch.ids.map(id=>this.output.items.get(id)).filter(Boolean));
+    batch.label.textContent=summary.label;batch.meta.textContent=summary.meta;
+    batch.meta.classList.toggle('has-unknown',Boolean(summary.alert));
+    batch.node.dataset.status=summary.status;
   }
   breakToolBatch() {
     this.toolBatch=null;this.lastContentKind='message';
@@ -285,12 +301,13 @@ export class ConversationView {
     };
     for(const m of messages) {
       if(m.type==='user'){
-        if(!m.context?.turnContinuation){settle();turn=null;this.toolBatch=null;this.activities.clear();this.output.beginTurn();this.workStartedAt=0;this.workElapsedMs=0;}
+        if(!m.context?.turnContinuation){settle();turn=null;this.toolBatch=null;this.activities.clear();this.activityBatches.clear();this.output.beginTurn();this.workStartedAt=0;this.workElapsedMs=0;}
         this.user(m.id,m.text,m.context);
+        if(m.delivery)this.delivery(m.id,m.delivery);
       }
       if(m.type==='turn'){turn=m;this.group();}
       if(m.type==='assistant'||m.type==='reasoning')this.assistant(m.id,m.text,m.type==='reasoning'?'commentary':m.phase);
-      if(m.type==='activity')this.activity(m.id,m.label,m.status==='running'?'warning':m.status,m.kind,m.detail,m.activityKey,m.resultStatus);
+      if(m.type==='activity')this.activity(m.itemId||m.id,m.label,m.status==='running'?'warning':m.status,m.kind,m.detail,m.activityKey,m.resultStatus,m.toolOutput);
     }
     settle();this.restoring=false;this.scroll();
   }

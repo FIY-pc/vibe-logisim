@@ -1,5 +1,5 @@
-/* The three work surfaces remain visible together: structure/properties,
-   schematic, and conversation. Sizing belongs to the layout controller. */
+/* Workspace surfaces follow the available project context. User sizing and
+   collapse preferences belong to the layout controller. */
 .panel-resizer{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:12;touch-action:none}
 .rail-resizer{right:-4px}.review-resizer{left:-4px}
 .panel-resizer::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;transition:background .12s}
@@ -129,8 +129,21 @@
 .panel-toggle[aria-expanded=false]{color:#8490a1}
 .panel-toggle .chat-icon{width:18px;height:18px}
 .panel-toggle:active{background:#e8edf5}
-@media(max-width:640px){.instrument-bar{padding-inline:8px;gap:6px}.wordmark>span{display:none}.bar-actions{gap:4px}.bar-actions .bar-button{padding-inline:6px}.save-status{display:none}}
+@media(max-width:640px){.instrument-bar{padding-inline:8px;gap:6px}.wordmark>span{display:none}.bar-actions{gap:4px}.bar-actions .bar-button{padding-inline:6px}}
 
 .signal-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.signal-action{padding:7px 10px;border:1px solid var(--line);border-radius:6px;color:var(--accent);background:var(--surface);cursor:pointer;font:inherit;font-size:12px}.signal-action:hover{filter:brightness(.96)}
 .wire-group.is-signal-related .circuit-wire{stroke:#c26a08!important;stroke-width:4!important;vector-effect:non-scaling-stroke}.circuit-component.is-signal-related .component-hit{fill:#f3b44120;stroke:#c26a08;stroke-width:2;stroke-dasharray:4 3}
 @media(min-width:821px){.workbench>.circuit-rail{grid-column:1;grid-row:1}.workbench>.canvas-stage{grid-column:2;grid-row:1}.workbench>.review-panel{grid-column:3;grid-row:1}}
+
+/* Before a circuit is opened, keep file and conversation tasks in reach. */
+.app-shell[data-workspace=empty] :is(#circuitRail,#toggleCircuits,#openButton),
+.app-shell:not([data-workspace=circuit]) :is(#circuitNavigator,#inspectorSection,#filesResize,#inspectorResize,#resourceTabs,.document-bar,.canvas-toolbar,#circuitCanvas,#simulationMenuButton,#projectInfo,#undoButton,#saveStatus){display:none}
+.app-shell:not([data-workspace=circuit]) .empty-state{inset:0}
+.app-shell:not([data-workspace=circuit]) .canvas-status{top:15px;z-index:6}
+.app-shell:not([data-workspace=circuit]) .review-tabs:has(#agentTab:not([hidden])){display:none}
+.app-shell:not([data-workspace=circuit]) #collapseFiles{pointer-events:none;opacity:1}
+.app-shell:not([data-workspace=circuit]) #collapseFiles::before{display:none}
+@media(min-width:821px){
+  .app-shell[data-workspace=empty] .workbench{grid-template-columns:0 minmax(0,1fr) var(--review-width,400px)}
+  .app-shell[data-workspace=empty].review-hidden .workbench{grid-template-columns:0 minmax(0,1fr) 0}
+}

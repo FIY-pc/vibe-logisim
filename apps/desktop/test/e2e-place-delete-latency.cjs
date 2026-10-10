@@ -34,7 +34,7 @@ async function main() {
     await appReady();
     const originalCount = await componentCount();
 
-    await page.locator('#addComponentTool').click();
+    await page.locator('#circuitCanvas').press('a');
     await page.locator('#componentSearch').fill('与门');
     await page.getByRole('button',{name:'与门',exact:true}).click();
     await page.waitForFunction(()=>!document.querySelector('#placementToolbar .placement-loading'));

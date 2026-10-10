@@ -3,7 +3,7 @@ import {icon} from '../core/chat-dom.js';
 import {componentLabels,groupLabels} from '../core/component-labels.js';
 
 export const modelDependencies=['project'];
-export const dependencies=['startPlacement','cancelPlacement','setWorkspacePanel'];
+export const dependencies=['matchesShortcut','startPlacement','cancelPlacement','setWorkspacePanel'];
 
 export function createController({models,client,ports}) {
   const node=id=>document.getElementById(id),project=models.project;
@@ -14,7 +14,6 @@ export function createController({models,client,ports}) {
     for(const name of ['files','components']) {
       const active=tab===name;node(name+'Tab').setAttribute('aria-selected',String(active));node(name+'Tab').tabIndex=active?0:-1;node(name+'Pane').hidden=!active;
     }
-    node('addComponentTool').setAttribute('aria-expanded',String(tab==='components'));
     if(value==='components') {
       if(node('collapseFiles').getAttribute('aria-expanded')==='false')node('collapseFiles').click();
       load();if(focus)node('componentSearch').focus();
@@ -22,8 +21,8 @@ export function createController({models,client,ports}) {
   }
   function openComponents(){ports.setWorkspacePanel('rail',true);chooseTab('components',{focus:true});}
   function componentsContextChanged() {
+    if (!project.circuit && tab === 'components') chooseTab('files');
     const current=[project.session?.workspace?.id,project.session?.componentCatalogId||project.revision,project.circuitName].join(':');
-    node('addComponentTool').disabled=!project.circuit||project.sourceChanged||project.projectBusy;
     if(binding!==current){binding=current;epoch++;catalog=null;loading=false;}
     if(tab==='components'&&!catalog&&!loading)load();
   }
@@ -73,19 +72,15 @@ export function createController({models,client,ports}) {
   }
   function mountComponents() {
     node('filesTab').addEventListener('click',()=>chooseTab('files'));node('componentsTab').addEventListener('click',openComponents);
-    node('addComponentTool').addEventListener('click',openComponents);
     node('componentSearch').addEventListener('input',render);
     node('componentSearch').addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();node('componentLibrary').querySelector('.component-tool:not(:disabled)')?.focus();}else if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(event.target.value){event.target.value='';render();}else node('circuitCanvas').focus();}});
     node('resourceTabs').addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();chooseTab(event.key==='Home'?'files':event.key==='End'?'components':tab==='files'?'components':'files');node(tab+'Tab').focus();}});
     node('componentLibrary').addEventListener('keydown',event=>{
+      if(['select','wire','poke','pan','components'].some(id=>ports.matchesShortcut(event,id)))return;
       const buttons=[...event.currentTarget.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement);
       if(['ArrowUp','ArrowDown','Home','End'].includes(event.key)){event.preventDefault();buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:Math.max(0,Math.min(buttons.length-1,index+(event.key==='ArrowDown'?1:-1)))]?.focus();}
       else if(event.key==='Escape'){ports.cancelPlacement();node('circuitCanvas').focus();}
       if(!event.ctrlKey&&!event.metaKey||['z','delete'].includes(event.key.toLowerCase()))event.stopPropagation();
-    });
-    document.addEventListener('keydown',event=>{
-      if(event.defaultPrevented||event.isComposing||event.ctrlKey||event.metaKey||event.altKey||event.target.closest('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open],:popover-open'))return;
-      if(event.key.toLowerCase()==='a'&&!node('addComponentTool').disabled){event.preventDefault();openComponents();}
     });
   }
   return {mountComponents,openComponents,componentsContextChanged,selectPaletteTool};

@@ -115,30 +115,34 @@ function authError(status, body, text) {
 }
 
 // Model ids from GET /models. Returns {models: string[], filtered: number} or
-// null when the endpoint has no list (404/405/HTML/empty). Throws ProbeError
-// only for authentication and network failures — a missing list is not an
-// error, students can still type the model name.
+// null when the endpoint has no list (404/405/501/HTML/empty). Temporary HTTP,
+// authentication and network failures stay visible; a missing list still
+// allows a model name to be entered manually.
 async function discoverModels({baseUrl, apiKey, api = "openai-responses", fetch: fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, network = null}) {
   const anthropic = api === "anthropic-messages";
   const url = joinUrl(baseUrl, anthropic ? "/v1/models" : "/models");
   const started = Date.now();
-  let response;
+  let response, text;
   try {
-    response = await withTimeout(timeoutMs, signal => fetchImpl(url, {
-      method: "GET",
-      headers: anthropic
-        ? {"x-api-key": apiKey, "anthropic-version": "2023-06-01", Accept: "application/json"}
-        : {Authorization: `Bearer ${apiKey}`, Accept: "application/json"},
-      redirect: "follow",
-      signal,
+    ({response, text} = await withTimeout(timeoutMs, async signal => {
+      const response = await fetchImpl(url, {
+        method: "GET",
+        headers: anthropic
+          ? {"x-api-key": apiKey, "anthropic-version": "2023-06-01", Accept: "application/json"}
+          : {Authorization: `Bearer ${apiKey}`, Accept: "application/json"},
+        redirect: "follow",
+        signal,
+      });
+      return {response, text: await readBodyText(response)};
     }));
   } catch (error) {
     throw networkError(error, Math.round(timeoutMs / 1000), network);
   }
-  const text = await readBodyText(response);
   const body = parseJson(text);
   if (response.status === 401 || response.status === 403) throw authError(response.status, body, text);
-  if (!response.ok || !body) return null;
+  if ([404, 405, 501].includes(response.status)) return null;
+  if (!response.ok) throw new ProbeError(response.status === 429 ? "rate-limit" : "server", `读取模型列表失败（HTTP ${response.status}）`, {status: response.status});
+  if (!body) return null;
   const raw = Array.isArray(body.data) ? body.data : Array.isArray(body.models) ? body.models : Array.isArray(body) ? body : null;
   if (!raw) return null;
   const ids = new Set();

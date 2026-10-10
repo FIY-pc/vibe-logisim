@@ -44,11 +44,13 @@ export function createController({models, ui, ports}) {
       const node = makeElement('div','finder-result');
       node.id = `finder-result-${index}`;
       node.setAttribute('role','option');
-      node.setAttribute('aria-label',`${item.label}，${names[item.factory] || item.factory}，${item.point.x},${item.point.y}`);
+      const kind=names[item.factory] || item.factory;
+      node.setAttribute('aria-label',`${item.label}${kind===item.label?'':'，'+kind}，${item.point.x},${item.point.y}`);
       const text = makeElement('div','finder-result-text');
       text.append(makeElement('strong','',item.label));
-      node.append(text,makeElement('span','finder-kind',names[item.factory] || item.factory),
-        makeElement('small','finder-location',`${item.point.x}, ${item.point.y}`));
+      node.append(text);
+      if(kind!==item.label)node.append(makeElement('span','finder-kind',kind));
+      node.append(makeElement('small','finder-location',`${item.point.x}, ${item.point.y}`));
       node.addEventListener('click',()=>choose(index));
       ui.finderResults.append(node);
     }

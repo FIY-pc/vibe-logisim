@@ -39,6 +39,7 @@ import * as agentConnection from './features/agent-connection.js';
 import * as feedback from './features/feedback.js';
 import * as review from './features/review.js';
 import * as events from './features/events.js';
+import * as shortcuts from './features/shortcuts.js';
 
-const workspace = compose({files, components, placement, project, projectInfo, connections, shell, layout, finder, navigation, rendering, canvas, grid,manipulation, focus, inspector, run, simulationControls, conversations, draft, materials, moments, references, memory, history, comparison, candidateEvidence, interfaces, changes, candidates, agent, conversationStarters, agentConnection, agentPreferences, feedback, review, events}, {models: createModels(), ui, client: createStudioClient()});
+const workspace = compose({files, components, placement, project, projectInfo, connections, shell, layout, finder, navigation, rendering, canvas, grid,manipulation, focus, inspector, run, simulationControls, conversations, draft, materials, moments, references, memory, history, comparison, candidateEvidence, interfaces, changes, candidates, agent, conversationStarters, agentConnection, agentPreferences, feedback, review, shortcuts, events}, {models: createModels(), ui, client: createStudioClient()});
 workspace.events.mount();

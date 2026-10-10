@@ -1,5 +1,6 @@
 export const ui = Object.fromEntries(
     [
+      "shortcutDialog","shortcutSearch","shortcutList","shortcutClose","shortcutResetAll","shortcutError","shortcutStatus",
       "projectInfo","projectDialog","projectInfoTitle","projectInfoClose","projectSource","projectContents","projectFileName","projectCopyPath","projectRuntime","projectLibraries","projectIssue","projectExportNote","projectInfoError","circuitNavigator","collapseNavigator","collapseInspector","inspectorResize","connectionsSummary","connectionList","simulationOptions","connectionChooseModel",
       "agentMaterials","materialAttachments","materialsDialog","materialsTitle","materialsAdd","materialsClose","materialsError","materialsUndoBar","materialsUndoText","materialsUndo","materialsSearch","materialsActive","materialsRemoved","materialsList","materialsDetailHead","materialsName","materialsMeta","materialsRemove","materialsPreview","materialsFooter","materialPrev","materialNext","materialPage","materialImageMode","materialTextMode","materialQuote","materialsHint",
       "editInterface","interfaceDialog","interfaceTitle","interfaceScope","interfaceClose","interfaceError","interfaceAddRect","interfaceAddText","interfaceUndo","interfaceFit","interfaceCanvas","interfaceArtwork","interfaceProperties","interfaceAddPort","interfacePortList","interfaceImpact","interfaceDraftStatus","interfacePreview","interfaceApply",
@@ -9,8 +10,8 @@ export const ui = Object.fromEntries(
       "appShell", "workbench", "inspectorSection", "railResize", "reviewResize", "clearObjectSelection", "clearComposerContext", "conversationLatest", "draftError", "draftErrorText", "draftRetry", "draftCopy", "composerOptions",
       "findObject", "finderDialog", "finderInput", "finderClose", "finderScope", "finderStatus", "finderResults",
       "openButton",
-      "saveButton", "undoButton", "saveStatus", "saveDialog", "saveFileName", "cancelSave", "confirmSave",
-      "saveActionError",  
+      "undoButton", "saveStatus", "documentName", "documentIcon", "documentIndicator",
+      "saveErrorBanner", "saveErrorText", "saveRetry", "saveErrorClose",
       "pendingChanges", "pendingChangesButton", "projectHistoryButton", "projectHistory", "exportProject",
             
            
@@ -25,7 +26,7 @@ export const ui = Object.fromEntries(
       "canvasStage",
       "canvasStatus",
       "momentCapture","momentOpen","momentAttachments","momentDialog","momentClose","momentList","momentViewer","momentAttach",
-      "simulationDock", "simulationStatus", "simulationMenuButton", "simulationMenu", "simulationOwner", "simulationSettingsClose", "simulationSettingsForm", "simulationSettingsCancel", "simulationSettingsApply", "simulationSettingsError", "simulationStart", "simulationPlay", "simulationTick",
+      "simulationQuickRestart", "simulationTransport", "simulationActivity", "simulationQuickPlay", "simulationQuickTick", "simulationQuickReset", "simulationDock", "simulationStatus", "simulationMenuButton", "simulationMenu", "simulationOwner", "simulationSettingsClose", "simulationSettingsForm", "simulationSettingsCancel", "simulationSettingsApply", "simulationSettingsError", "simulationStart", "simulationPlay", "simulationTick",
       "simulationReset", "simulationStop", "simulationReturn", "simulationWatches", "simulationError",
       "simulationStep", "simulationFrequency", "simulationSettings", "simulationAutomatic", "simulationRate",
       "pokeTool", "memoryPanel", "memoryOwner", "memoryKind", "memoryClose", "memoryJump", "memoryAddress",
@@ -54,6 +55,7 @@ export const ui = Object.fromEntries(
       "askButton",
       "interruptButton",
       "selectTool",
+      "wireTool",
       "panTool",
       "zoomOutButton",
       "zoomInButton",

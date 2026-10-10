@@ -11,11 +11,42 @@ export function createController({models, ui, client, ports}) {
   const request = client.request;
   let pollingToken = 0;
   let startingSimulation = null;
+  const inputFeedback = new Set();
+  const inputScope = () => ({project: projectState.session?.workspace?.id, revision: projectState.revision,
+    circuit: projectState.circuitName, navigation: projectState.circuitRequestEpoch});
+  const currentInput = input => Object.entries(input.scope).every(([key, value]) => inputScope()[key] === value);
+  function beginInput(component) {
+    const input = {id: component.componentId, scope: inputScope()};
+    inputFeedback.add(input); renderInputFeedback();
+    return input;
+  }
+  function finishInput(input) {
+    if (input.sequence == null) inputFeedback.delete(input);
+    renderInputFeedback();
+  }
+  function renderInputFeedback() {
+    const sample = activeObservation();
+    for (const input of inputFeedback) {
+      if (!currentInput(input) || (input.sequence != null && input.session === runState.simulation?.session?.id &&
+          (sample?.commandSequence ?? -1) >= input.sequence)) inputFeedback.delete(input);
+    }
+    const pending = new Set([...inputFeedback].map(input => input.id));
+    ui.componentLayer.querySelectorAll('[data-operable="true"]').forEach(node => {
+      const pressed = runState.heldButton?.id === node.dataset.objectId && currentInput(runState.heldButton.feedback);
+      node.classList.toggle('is-input-pressed', Boolean(pressed));
+      node.classList.toggle('is-input-pending', pending.has(node.dataset.objectId));
+      node.setAttribute('aria-busy', String(pending.has(node.dataset.objectId)));
+      if (node.dataset.inputControl === 'pulse') node.setAttribute('aria-pressed', String(Boolean(pressed)));
+    });
+  }
 function simulationStatus() {
     const s = runState.simulation;
-    return Object.freeze({ exists: Boolean(s?.session), running: Boolean(s?.running), automatic: s?.automatic !== false,
+    const current = Boolean(s?.session && s.session.projectId === projectState.session?.workspace?.id &&
+      s.session.revisionId === projectState.revision && (displayedSimulationView() || s.session.circuit === projectState.circuitName));
+    return Object.freeze({ exists: Boolean(s?.session), running: Boolean(s?.running), automatic: s?.automatic !== false, stale: s?.reasonCode === 'revision-changed',
+      current,
       frequency: s?.session ? s.frequency : undefined, actualFrequency: s?.actualFrequency, circuit: s?.session?.circuit,
-      ticks: s?.observation?.ticks, visible: Boolean(activeObservation()), busy: runState.simulationBusy, busyAction: runState.simulationBusyAction, viewBusy: runState.simulationViewBusy });
+      ticks: s?.observation?.ticks, visible: Boolean(activeObservation()), busy: runState.simulationBusy && runState.simulationBusyCircuit === projectState.circuitName, busyAction: runState.simulationBusyAction, viewBusy: runState.simulationViewBusy });
   }
 
 function invalidateSimulationFrame() { runState.simulationFrame = null; }
@@ -27,9 +58,11 @@ function invalidateSimulation() {
     runState.simulation = null;
     runState.simulationBusy = false;
     runState.simulationBusyAction = null;
+    runState.simulationBusyCircuit = null;
     runState.simulationPolling = false;
     runState.simulationPendingSequence = 0;
     runState.heldButton = null;
+    inputFeedback.clear(); renderInputFeedback();
     runState.displayedView = null;
     runState.simulationViewBusy=false;
     runState.watchSets=new Map();
@@ -50,14 +83,15 @@ function toggleWatch(key) {
 
 function pressButton(component) {
     releaseButton();
-    const held = {id: component.componentId, session: null, viewId: null};
+    const held = {id: component.componentId, session: null, viewId: null, feedback: beginInput(component)};
     runState.heldButton = held;
+    renderInputFeedback();
     held.pressed = prepareSimulationInput(component).then(control => {
       if (control?.control !== 'pulse') return false;
       held.session = runState.simulation.session.id;
       held.viewId = runState.displayedView?.id;
-      return simulationAction('button', {componentId: held.id, value: '1'});
-    });
+      return simulationAction('button', {componentId: held.id, value: '1'}, held.feedback);
+    }).finally(() => finishInput(held.feedback));
   }
 
 function activeObservation() {
@@ -77,14 +111,27 @@ function prepareCircuitNavigation(name,navigation) {
     if(projectState.circuit)renderSimulation(true);
   }
 
-async function activateSimulationView(instancePath) {
+async function activateSimulationView(instancePath, {releaseHeld = true} = {}) {
     if(runState.simulationViewBusy)return null;
     runState.simulationViewBusy=true;renderSimulation();
     try{
-      await releaseButton();
+      if (releaseHeld) await releaseButton();
       const result=await simulationAction('view',{instancePath});
       return result?structuredClone(result.view):null;
     }finally{runState.simulationViewBusy=false;renderSimulation();}
+  }
+
+async function restoreCurrentSimulationView() {
+    if (displayedSimulationView()) return true;
+    if (!simulationStatus().current) return false;
+    const origin = {scope: inputScope()};
+    // A cold input may be waiting on this command. Do not await its release
+    // while restoring the root view it needs in order to press the button.
+    const view = await activateSimulationView([], {releaseHeld: false});
+    if (!view || !currentInput(origin)) return false;
+    runState.displayedView = view;
+    ports.runtimeNavigationStarted(); renderSimulation(); ports.renderInspector();
+    return true;
   }
 
 function updateLiveValues() {
@@ -110,62 +157,74 @@ function updateLiveValues() {
 
 async function prepareSimulationInput(component) {
     if (!inputControl(component)) return null;
-    if (projectState.projectBusy || projectState.sourceChanged || projectState.capabilityState !== 'exact') {
+    if (projectState.projectBusy || projectState.circuitLoading || projectState.sourceChanged || projectState.capabilityState !== 'exact') {
       ports.showToast('当前电路尚未就绪，请等待载入或处理文件变化后重试'); return null;
     }
     const origin = {projectId: projectState.session?.workspace?.id, revision: projectState.revision,
       circuit: projectState.circuitName, navigation: projectState.circuitRequestEpoch};
-    if (!runState.simulation?.session && !await ports.startSimulation()) return null;
+    if (!activeObservation() && !await ports.startSimulation()) return null;
     if (origin.projectId !== projectState.session?.workspace?.id || origin.revision !== projectState.revision ||
         origin.circuit !== projectState.circuitName || origin.navigation !== projectState.circuitRequestEpoch) return null;
     const sample = activeObservation();
-    if (!sample) { ports.showToast('当前画面不是运行中的实例，请从仿真菜单返回运行画面'); return null; }
+    if (!sample) { ports.showToast('运行画面尚未就绪，请重试'); return null; }
     const control = sample.components.find(c => c.componentId === component.componentId);
     if (control?.control === 'parent-input') { ports.showToast('此输入由父电路驱动，请返回父图调整'); return null; }
     return control;
   }
 
 async function setInputValue(component, value) {
-    const control = await prepareSimulationInput(component);
-    return control?.control === 'input' ? simulationAction('input', {componentId: component.componentId, value}) : false;
+    const feedback = beginInput(component);
+    try {
+      const control = await prepareSimulationInput(component);
+      return control?.control === 'input' ? await simulationAction('input', {componentId: component.componentId, value}, feedback) : false;
+    } finally { finishInput(feedback); }
   }
 
 async function pokeComponent(component, point = null) {
     if (["RAM", "ROM"].includes(component.factory)) { ports.openMemory(component); return; }
-    const c = await prepareSimulationInput(component);
-    if (!c?.control) return;
-    if (c.control === "pulse") simulationAction("pulse", {componentId: c.componentId});
-    else if (point || c.control === "clock" || c.ports[0]?.width === 1) {
-      const b = component.bounds;
-      // One-bit inputs act as a whole switch, including a click at their edge.
-      // Multi-bit inputs retain native per-digit hit testing.
-      const at = c.control === 'input' && c.ports[0]?.width === 1 ? {x: b.x + b.width / 2, y: b.y + b.height / 2}
-        : point || {x: b.x + b.width / 2, y: b.y + b.height / 2};
-      simulationAction("poke", {componentId: c.componentId, x: at.x, y: at.y});
-    }
-    else ui.objectInspector.querySelector('[aria-label="输入值"]')?.focus();
+    if (!inputControl(component)) return;
+    const feedback = beginInput(component);
+    try {
+      const c = await prepareSimulationInput(component);
+      if (!c?.control) return;
+      if (c.control === "pulse") await simulationAction("pulse", {componentId: c.componentId}, feedback);
+      else if (point || c.control === "clock" || c.ports[0]?.width === 1) {
+        const b = component.bounds;
+        // One-bit inputs act as a whole switch, including a click at their edge.
+        // Multi-bit inputs retain native per-digit hit testing.
+        const at = c.control === 'input' && c.ports[0]?.width === 1 ? {x: b.x + b.width / 2, y: b.y + b.height / 2}
+          : point || {x: b.x + b.width / 2, y: b.y + b.height / 2};
+        await simulationAction("poke", {componentId: c.componentId, x: at.x, y: at.y}, feedback);
+      }
+      else ui.objectInspector.querySelector('[aria-label="输入值"]')?.focus();
+    } finally { finishInput(feedback); }
   }
 
 function releaseButton() {
     const held = runState.heldButton; runState.heldButton = null;
+    renderInputFeedback();
     if (held) return held.pressed.then(ok => {
       const release = () => {
         if (!ok || runState.simulation?.session?.id !== held.session) return;
-        return simulationAction("button", {componentId: held.id, value: "0",viewId:held.viewId});
+        const feedback = beginInput({componentId: held.id});
+        return simulationAction("button", {componentId: held.id, value: "0",viewId:held.viewId}, feedback)
+          .finally(() => finishInput(feedback));
       };
       return release();
     });
   }
 
-function simulationAction(action, extra = {}) {
+function simulationAction(action, extra = {}, feedback = null) {
     if (action === 'start' && startingSimulation) return startingSimulation;
     if (!projectState.session?.workspace) return Promise.resolve(false);
     const lifecycle = action === "start" || action === "stop";
     if (lifecycle && runState.simulationBusy) return Promise.resolve(false);
     const context = {projectId: projectState.session.workspace.id, revisionId: projectState.revision,
       sessionId: runState.simulation?.session?.id, circuit: projectState.circuitName, viewId:runState.simulation?.view?.id};
+    const navigation = projectState.circuitRequestEpoch;
     if (lifecycle) {
       runState.simulationBusy = true; runState.simulationBusyAction = action; runState.simulationEpoch++;
+      runState.simulationBusyCircuit = context.circuit;
       // A poll for the previous run may still be decoding its frame. It must
       // neither block this run's polls nor clear a newer poll's in-flight flag.
       pollingToken++; runState.simulationPolling = false;
@@ -184,16 +243,17 @@ function simulationAction(action, extra = {}) {
         const result = await request("/api/simulation", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({...context, action, ...extra}) });
         if (!isCurrent()) return false;
+        if (feedback) { feedback.sequence = result.commandSequence; feedback.session = result.session?.id; }
         await acceptSimulation(result, epoch);
         if(action==='start'&&isCurrent()){
-          if(context.circuit===projectState.circuitName){runState.displayedView=structuredClone(result.view);ports.runtimeNavigationStarted();}
+          if(context.circuit===projectState.circuitName && navigation===projectState.circuitRequestEpoch){runState.displayedView=structuredClone(result.view);ports.runtimeNavigationStarted();}
           renderSimulation();ports.renderInspector();
         }
         if (!isCurrent()) return false;
         runState.simulationPendingSequence = Math.max(runState.simulationPendingSequence, result.commandSequence || 0);
         ui.simulationError.hidden = true;
         return result;
-      } catch (error) { if (action !== "viewport" && isCurrent()) { ui.simulationError.textContent = error.message; ui.simulationError.hidden = false; } return false; }
+      } catch (error) { if (feedback) inputFeedback.delete(feedback); if (action !== "viewport" && isCurrent()) { ui.simulationError.textContent = error.message; ui.simulationError.hidden = false; } return false; }
       finally { if (isCurrent()) { if (lifecycle) runState.simulationBusy = false; renderSimulation(); void pollSimulation(true); } }
     };
     // Ordered commands, not a busy flag that discards the next click.
@@ -235,7 +295,7 @@ async function acceptSimulation(result, epoch) {
     const controls = !same || (result.commandSequence || 0) >= (current.commandSequence || 0) ? result : current;
     const observation = sample && (!same || sample.sequence > (current.observation?.sequence || 0)) ? sample : same ? current.observation : null;
     runState.simulation = {...controls, session, observation: session ? observation : null};
-    if(!session)runState.displayedView=null;
+    if(!session) { runState.displayedView=null; inputFeedback.clear(); runState.heldButton=null; }
     if (!same) runState.simulationPendingSequence = 0;
     renderSimulation();
     if (previous !== Boolean(activeObservation())) ports.renderInspector();
@@ -274,7 +334,7 @@ function renderSimulation(force = false) {
     ports.setRenderingLive(live);
     ports.renderNavigation();
     ports.updateMomentCapture();
-    if (sim?.reason) { ui.simulationError.textContent = sim.reason; ui.simulationError.hidden = false; }
+    if (sim?.reason && sim.reasonCode !== 'revision-changed') { ui.simulationError.textContent = sim.reason; ui.simulationError.hidden = false; }
     const frame = sample?.id || `${projectState.revision}:${projectState.circuitName}:static`;
     if (frame !== runState.simulationFrame || force) {
       runState.simulationFrame = frame;
@@ -313,6 +373,7 @@ function renderSimulation(force = false) {
       ports.updateMemoryFromSimulation();
     }
     ui.simulationDock.hidden = ui.simulationWatches.hidden && ui.simulationError.hidden;
+    renderInputFeedback();
   }
 async function returnToSimulation() {
   const view=await activateSimulationView(runState.simulation?.view?.instancePath||[]);
@@ -331,5 +392,5 @@ function configureSimulationViewport({sessionId,viewId,viewport}) {
   return simulationAction('viewport',{viewport});
 }
 
-  return Object.freeze({setInputValue,configureSimulationViewport,runningInstance:()=>({session:structuredClone(runState.simulation?.session||null),view:displayedSimulationView()}),watchedSignals:()=>[...runState.watchKeys],displayedSimulationView,prepareCircuitNavigation,activateSimulationView,simulationStatus, invalidateSimulation, invalidateSimulationFrame, isWatched, toggleWatch, pressButton, mountSimulationRuntime, returnToSimulation, activeObservation, updateLiveValues, pokeComponent, releaseButton, simulationAction, acceptSimulation, pollSimulation, renderSimulation});
+  return Object.freeze({setInputValue,configureSimulationViewport,runningInstance:()=>({session:structuredClone(runState.simulation?.session||null),view:displayedSimulationView()}),watchedSignals:()=>[...runState.watchKeys],displayedSimulationView,prepareCircuitNavigation,activateSimulationView,restoreCurrentSimulationView,simulationStatus, invalidateSimulation, invalidateSimulationFrame, isWatched, toggleWatch, pressButton, mountSimulationRuntime, returnToSimulation, activeObservation, updateLiveValues, pokeComponent, releaseButton, simulationAction, acceptSimulation, pollSimulation, renderSimulation});
 }

@@ -15,7 +15,7 @@ const windows = process.platform === 'win32';
 const root = fs.mkdtempSync(path.join(process.env.VIBE_SMOKE_ROOT || os.tmpdir(), 'vibe-ai-smoke-'));
 const folder = path.join(root, '我的电路'); fs.mkdirSync(folder);
 const out = process.argv[3] ? path.resolve(process.argv[3]) : root; fs.mkdirSync(out, {recursive: true});
-const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
+const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_USER_DATA_DIR: path.join(root, 'profile'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
 for (const k of ['ELECTRON_RUN_AS_NODE', 'VIBE_LOGISIM_STATE_DIR', 'VIBE_LOGISIM_CODEX', 'VIBE_LOGISIM_PYTHON', 'VIBE_TEST_API_KEY']) delete env[k];
 const budgetMs = Number(process.env.VIBE_AI_BUDGET_MINUTES || 10) * 60_000;
 let app, page, phase = 'launch'; const log = [];
@@ -41,6 +41,7 @@ async function waitTurn(label) {
 (async () => { try {
   const noSandbox = windows || Boolean(process.env.VIBE_SMOKE_NO_SANDBOX);
   app = await _electron.launch({executablePath: executable, args: noSandbox ? ['--no-sandbox'] : [], chromiumSandbox: !noSandbox, cwd: root, env, timeout: 120000});
+  assert.equal(await app.evaluate(({app}) => app.getPath('userData')), env.VIBE_LOGISIM_USER_DATA_DIR);
   page = await app.firstWindow(); page.setDefaultTimeout(60000); await page.setViewportSize({width: 1500, height: 960});
   app.process().stderr.on('data', data => fs.appendFileSync(path.join(root, 'app.log'), data));
   let s = await waitUntil(() => agent().then(s => ['auth-required', 'ready', 'unavailable'].includes(s.status) && s), {timeout: 120000});

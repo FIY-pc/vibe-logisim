@@ -101,6 +101,8 @@ export function createController({models,ui,ports}) {
     if(!internal&&selectionKey!==signature())trace=null;
     selectionKey=signature();
     ui.connectionList.replaceChildren();ui.evidenceTitle.textContent=trace?'信号追踪':'连接';paint([]);
+    ui.evidenceTitle.hidden=!trace;
+    ui.evidenceTitle.parentElement.hidden=false;
     if(history.length)ui.connectionList.append(button('← 返回上个位置 · Alt+←',signalBack));
     if(!circuit){ui.connectionsSummary.textContent='打开工程后，可在这里查看连接。';return;}
     if(!valid){trace=null;history.length=0;ui.connectionsSummary.textContent=project.sourceChanged?'工程版本已改变，重新载入后可查看连接。':'暂时无法读取连接，请在工程信息中检查运行环境。';return;}
@@ -108,7 +110,8 @@ export function createController({models,ui,ports}) {
     const selection=ports.selectionSnapshot();
     const components=selection.componentIds.map(id=>index.components.get(id)).filter(Boolean);
     if(!components.length&&!selection.wireIds.length&&!selection.netIds.length){ui.connectionsSummary.textContent='选中元件或导线查看连接；Ctrl+点击信号可定位来源。';return;}
-    ui.connectionsSummary.textContent=project.circuitName;
+    ui.connectionsSummary.textContent='';
+    ui.evidenceTitle.parentElement.hidden=true;
     for(const c of components) {
       const card=makeElement('section','connection-component');card.append(makeElement('h2','',c.label||c.factory));
       if(!c.ends?.length)card.append(makeElement('p','connection-empty','此对象没有电气端口'));
@@ -117,7 +120,15 @@ export function createController({models,ui,ports}) {
       if(c.factory==='Tunnel'&&components.length===1){const bits=c.ends?.[0]?.netBits;paint(bits,connectedPorts(index,bits));}
     }
     const bundles=new Set(circuit.wires.filter(w=>selection.wireIds.includes(w.wireId)).map(w=>w.bundleId));
-    for(const id of bundles){const b=index.bundles.get(id),bits=b?.valid===false?[]:b?.bitNets;ui.connectionList.append(group(`选中导线 · ${b?.width||'?'} 位`,bits));if(!components.length&&bundles.size===1)paint(bits,connectedPorts(index,bits));}
+    for(const id of bundles){
+      const b=index.bundles.get(id),bits=b?.valid===false?[]:b?.bitNets;
+      if(b&&(b.valid===false||!(b.width>0))){
+        const section=makeElement('section','connection-port');
+        section.append(makeElement('h3','',b.valid===false?'导线 · 位宽冲突':'导线 · 位宽未定'));
+        ui.connectionList.append(section);
+      }else ui.connectionList.append(group(`导线 · ${b?.width||'?'} 位`,bits));
+      if(!components.length&&bundles.size===1)paint(bits,connectedPorts(index,bits));
+    }
     if(!components.length&&!bundles.size&&selection.netIds.length)ui.connectionList.append(group('选中信号',selection.netIds.map((netId,bit)=>({bit,netId}))));
   }
   function mountConnections() {

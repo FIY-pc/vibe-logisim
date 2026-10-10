@@ -222,6 +222,7 @@ function updateSelectionDock() {
     ports.renderConnections();
     ui.clearComposerContext.hidden = !hasSelection();
     ui.clearObjectSelection.hidden = !hasSelection();
+    ui.selectionSummary.closest('.selection-reference').hidden = !hasSelection();
     ui.selectionDock.hidden = agentState.enabled ? !projectState.session : !hasSelection();
     if (!hasSelection()) {
       ui.selectionSummary.textContent = projectState.circuitName ? `整个 ${projectState.circuitName}` : projectState.folder ? "工作区文件" : "尚未打开工作区";

@@ -6,7 +6,7 @@
 
 桌面开发版在 Linux 上开发和验收；Windows 通过打包版本支持（见分发说明），源码直接运行未在 Windows 上验收。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
 
-开发启动的内置运行时直接使用 npm 安装的 Pi SDK 和用户配置的 API。选择 Codex 运行时才需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包已内置这些程序和 Python、Java、Logisim，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
+开发启动的内置运行时直接使用 npm 安装的 Pi SDK 和用户配置的 API。选择 Codex 运行时才需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包内置 Pi、Python、Java、Logisim，Codex 在首次使用时下载，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
 
 ## Logisim 运行文件
 
@@ -172,7 +172,7 @@ node apps/desktop/test/e2e-without-agent.cjs
 
 此脚本在独立临时目录启动真实 Electron，故意指定不存在的 Codex 路径，经界面新建电路、放置元件、保存并重开，也检查无效目录不会覆盖当前文件。只替换系统文件选择器的返回路径，不模拟文件服务或电路引擎；不需要个人课设文件，不发送模型请求。它验证的是文件与人工编辑路径，不包含 AI 协作或仿真正确性的验收。
 
-已提供 Linux 独立应用包构建及打包程序的鼠标/键盘验收入口，见 [分发与验收](distribution.md)。当前产物限本地验收，尚无公开安装器、跨平台验收或自动发布流程。
+Linux 独立包、Windows 安装器及打包程序的鼠标/键盘验收入口，见 [分发与验收](distribution.md)。CI 分别构建和检查两种平台，发布由版本标签触发。
 
 输入操作不再要求手工先启动仿真。针对本地全加器（含 `FullAdder`、`A/B/Cin/Sum/Cout`）的实际界面验收：
 
@@ -181,6 +181,14 @@ node apps/desktop/test/e2e-simulation-inputs.cjs /path/to/full_adder.circ
 ```
 
 原文件会复制到临时工作区。脚本直接点输入，核对八种组合，检查启动中快速点击、未运行时填值、总线、按钮松开、启动失败重试及切换文件后的旧点击隔离。可追加独立包可执行文件路径，改为验收打包版本。
+
+仿真输入反馈与布线手势可用 `node --test apps/desktop/test/simulation-input-feedback.mjs` 检查：冷启动期间按下/松开、已接收但尚未显示的操作、失败与切图隔离，以及正交路径的换向。`python3 apps/desktop/test/simulation-edit-recovery.py -v` 使用独立示例和真实原生运行时，检查编辑后结束旧状态、重新仿真、异常退出分类及撤销/源文件边界，以及含子电路的接线身份一致性。
+
+界面验收应另外操作输入按钮（包含按住、松开、键盘、窗口失焦和慢启动）、连续时钟单步/暂停/复位、运行中编辑后重新仿真，以及端口拖接、逐点拐弯、Shift 换向、Esc 取消、导线分支和撤销。等待反馈只代表输入请求尚未出现在原生观察中，不预测电平。结构修改后的 `revision-changed` 是可恢复状态；其他运行错误仍需显示。小窗口中还应确认“适合窗口”避开浮动工具栏。
+
+布线支持分段完成：拖动端口或线端后松手，即可在空白处落线；`2` 进入布线模式，可从空白起笔，选择模式也可按住 `Alt` 从空白或导线中间起笔。点击可逐段固定拐点，`Enter` 在当前位置完成，`Esc` 仅取消当前未提交路径。已落下的半截线、独立折线和闭环均使用标准 `.circ` 导线，按普通编辑保存和撤销；它们仍有电气含义，不能当成不导电的标注框。
+
+`python3 apps/desktop/test/free-wiring.py -v` 使用独立夹具和原生运行时检查分段续接、保存重开、撤销、未知位宽接入、探针引线、位宽冲突和整理保护。整理保留独立导线、未完成与闭环导线的原位几何，并固定相连元件；其他部分仍可整理，但跳过会移动这些导线的全图压缩。候选须通过原生连接与保留几何检查，避免丢线或把独立画线接到元件上。此规则不推断线框中的元件属于同一分组。
 
 放置时的图面连续性可用同一份全加器验证：
 
@@ -220,6 +228,14 @@ node apps/desktop/test/e2e-conversation-fork.cjs --legacy
 
 脚本只向隔离的测试配置写入合成历史，不复制个人会话或认证；在真实窗口点击早期回复的分支按钮，核对新线程的上下文只到所选位置、保留此前工具结果、原聊天和草稿不变、重开续接新线程。默认覆盖原生分页会话格式，`--legacy` 覆盖旧格式；不发送模型回合。单元回放另检查下一次发送使用子线程，以及失败、错误终点和过期响应不会替换原对话。
 
+文件保存状态与顶栏文件名放在一起：未保存圆点、保存中指示和异常图标；成功后回到普通文件名，不常驻成功文案。点击文件名查看文件信息与导出；“更多 → 保存”或保存快捷键直接保存当前绑定文件，不再重复确认。错误保留改动并提供重试，外部文件变更继续阻止覆盖；正常保存不会刷新电路或中断仿真。文件夹工作区原有自动写入边界不变。
+
+`node --test apps/desktop/test/document-save.mjs` 检查保存等待、失败重试、重复按键和过期响应隔离。界面另需检查真实保存、等待反馈、失败后重试、外部修改保护以及窗口收窄。
+
+快捷键使用统一命令表，工具默认 `1–4`，`A` 打开元件库。“更多 → 快捷键”（`Ctrl+,`；macOS 为 `⌘+,`）提供按键录入、冲突检查、清除与恢复默认；按钮提示和仿真菜单同步使用当前键位。桌面偏好单独保存在应用用户目录，不依赖运行服务端口，不写入工程。浏览器预览使用当前站点的本地存储。确认、取消、删除、临时平移和文字编辑等基础操作保留固定键位。
+
+`node --test apps/desktop/test/shortcuts.mjs apps/desktop/electron/shortcut-preferences.test.cjs` 检查冲突、清除、跨平台组合键、IME 隔离和偏好持久化。界面另需验证数字键与 A、输入框防误触、修改后提示与响应一致、重新打开、清除 / 恢复以及仿真操作。
+
 画布网格的鼠标、快捷键、缩放与重开验证：
 
 ```sh
@@ -241,9 +257,15 @@ node apps/desktop/test/e2e-file-operations.cjs
 ### 内置运行时验证（不调用远端模型）
 
 ```sh
-node --test apps/desktop/electron/builtin-backend.test.cjs
+node --test apps/desktop/electron/builtin-backend.test.cjs apps/desktop/electron/model-catalog.test.cjs apps/desktop/test/agent-output-projection.mjs
 node apps/desktop/test/builtin-runtime-native.cjs
 env -u ELECTRON_RUN_AS_NODE apps/desktop/node_modules/.bin/electron apps/desktop/test/builtin-runtime-electron.cjs
 ```
 
-前者使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属；后者把本地模型响应接到生产工具宿主和原生 Logisim，检查读取、仿真及图片结果。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。
+第一条使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属，并检查完整工具目录在 Responses 出站请求中保留原始可选字段、显式发送 `strict:false`。原生脚本分别走 Chat Completions 和 Responses，只传必要参数读取项目、组件目录、元件详情及端口连接，再检查仿真与图片结果。Electron 脚本检查真实 `session.fetch` 传输。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。
+
+### 模型目录维护
+
+`node scripts/ui/update-model-catalog.cjs` 显式下载并精简 Models.dev 资料；也可传入已下载的 JSON 文件路径。更新后检查 `model-catalog.snapshot.json` 的差异并运行上述目录测试。快照及 MIT 许可证随独立包分发，构建不下载模型资料。
+
+目录测试检查资料与服务列表的边界、离线缓存、凭据隔离、请求超时及思考档位；打包测试 `e2e-runtime-packaged.cjs` 使用本地服务检查实际选择器、列表刷新失败后的可用性，以及选择保存和重开。CI 对 Linux 和 Windows 均执行打包测试，不调用远端模型。

@@ -44,6 +44,7 @@ function startLoggingProxy() {
 
 function startFakeResponsesServer({apiKey = 'sk-test-key-0123456789', models = ['probe-chat', 'probe-mini', 'text-embedding-3-small'], reply = 'OK', viaProxy = false} = {}) {
   const requests = [];
+  let modelListStatus = 200;
   const server = http.createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const raw = Buffer.concat(chunks).toString('utf8');
@@ -51,7 +52,9 @@ function startFakeResponsesServer({apiKey = 'sk-test-key-0123456789', models = [
     requests.push({method: req.method, url: req.url, authorization: req.headers.authorization || '', userAgent: req.headers['user-agent'] || '', body});
     const json = (status, payload) => { res.writeHead(status, {'Content-Type': 'application/json'}); res.end(JSON.stringify(payload)); };
     if (req.headers.authorization !== `Bearer ${apiKey}`) return json(401, {error: {message: 'Incorrect API key provided', type: 'invalid_request_error', code: 'invalid_api_key'}});
-    if (req.method === 'GET' && req.url === '/v1/models') return json(200, {object: 'list', data: models.map(id => ({id, object: 'model', owned_by: 'fake'}))});
+    if (req.method === 'GET' && req.url === '/v1/models') return modelListStatus === 200
+      ? json(200, {object: 'list', data: models.map(id => ({id, object: 'model', owned_by: 'fake'}))})
+      : json(modelListStatus, {error: {message: 'Model list temporarily unavailable'}});
     if (req.method === 'POST' && req.url === '/v1/responses') {
       if (!models.includes(body?.model)) return json(400, {error: {message: `The model \`${body?.model}\` does not exist or you do not have access to it.`, type: 'invalid_request_error', code: 'model_not_found'}});
       const id = 'resp_' + Date.now(), item = 'msg_' + Date.now();
@@ -75,6 +78,7 @@ function startFakeResponsesServer({apiKey = 'sk-test-key-0123456789', models = [
     resolve({
       baseUrl: proxy ? `http://fake-responses.invalid:${port}/v1` : `http://127.0.0.1:${port}/v1`,
       directBaseUrl: `http://127.0.0.1:${port}/v1`, apiKey, models, requests, proxy,
+      setModelListStatus: status => { modelListStatus = status; },
       close: async () => { await new Promise(done => server.close(done)); if (proxy) await proxy.close(); },
     });
   }));

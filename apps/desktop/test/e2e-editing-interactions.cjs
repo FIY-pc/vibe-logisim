@@ -18,7 +18,7 @@ async function world(x,y){return page.locator('#circuitCanvas').evaluate((svg,p)
  const initial=await scene(),count=initial.circuit.components.length,b=initial.circuit.bounds;
  const anchor={x:Math.ceil((b.x+b.width+300)/10)*10,y:Math.ceil((b.y+b.height/2)/10)*10};
  const screen=await world(anchor.x,anchor.y);await page.mouse.move(screen.x,screen.y);for(let i=0;i<30;i++)await page.mouse.wheel(0,-120);
- await page.locator('#addComponentTool').click();await page.locator('#componentSearch').fill('AND Gate');await page.getByRole('button',{name:'与门',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#objectInspector [data-attribute="inputs"]')&&!document.querySelector('#placementToolbar .placement-loading'));
+ await page.locator('#circuitCanvas').press('a');await page.locator('#componentSearch').fill('AND Gate');await page.getByRole('button',{name:'与门',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#objectInspector [data-attribute="inputs"]')&&!document.querySelector('#placementToolbar .placement-loading'));
  const inputs=page.locator('#objectInspector [data-attribute="inputs"]');await inputs.selectOption('2').catch(async()=>{await inputs.fill('2');await inputs.press('Enter');});await idle();
  const camera=await page.locator('#circuitCanvas').getAttribute('viewBox');
  const cdp=await page.context().newCDPSession(page);await cdp.send('Profiler.enable');await cdp.send('Profiler.start');

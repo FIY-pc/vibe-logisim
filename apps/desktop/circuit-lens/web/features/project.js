@@ -4,7 +4,7 @@ import { API } from '../core/endpoints.js';
 
 export const modelDependencies = ["project", "review"];
 
-export const dependencies = ["prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
+export const dependencies = ["refreshWorkspaceLayout","prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","restoreCurrentSimulationView","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
@@ -124,8 +124,11 @@ async function bootstrap({ preserveStale = false, circuit = null, target = null 
 
 function showNoServer(error) {
     ui.emptyState.hidden = false;
-    ui.emptyState.querySelector("h2").textContent = "本地观察器没有响应";
-    ui.emptyState.querySelector("p").textContent = "先启动 Circuit Lens 本地服务，再打开电路。离线页面不会把文件发送到网络。";
+    ui.emptyState.querySelector("h2").textContent = "暂时无法读取工作区";
+    ui.emptyState.querySelector("p").textContent = "";
+    ui.emptyOpenButton.textContent = "重新连接";
+    ui.emptyOpenButton.dataset.action = "retry";
+    ui.emptyOpenButton.hidden = false;
     ui.emptyHint.textContent = statusErrorMessage(error, "无法连接本地服务");
     ports.setCanvasStatus("", "idle");
   }
@@ -138,7 +141,9 @@ function showEmptyWorkspace(detail) {
     projectState.session = projectState.folder ? {folder:projectState.folder,workspace:null} : null;
     projectState.circuit = null;
     projectState.circuitName = null;
+    projectState.circuitLoading = false;
     projectState.revision = null;
+    ports.refreshWorkspaceLayout();
     reportView('shown');
     const draftLoading = ports.openDraftProject();
     ports.momentsProjectChanged();
@@ -151,9 +156,10 @@ function showEmptyWorkspace(detail) {
     ports.clearSelection({ notifyServer: false });
     renderCircuitList();
     ui.emptyState.hidden = false;
-    ui.emptyState.querySelector("h2").textContent = projectState.folder ? "选择一份电路，或一起创建" : "打开文件夹，开始构建";
-    ui.emptyState.querySelector("p").textContent = projectState.folder ? "从左侧打开或新建 .circ 文件，也可以和右侧 AI 讨论构思。" : "把电路、任务书和参考文件放在同一个文件夹，与 AI 一起工作。";
+    ui.emptyState.querySelector("h2").textContent = projectState.folder ? "选择或新建电路" : "尚未打开项目";
+    ui.emptyState.querySelector("p").textContent = projectState.folder ? "打开一份 .circ 文件，或在对话中描述要做的电路。" : "";
     ui.emptyOpenButton.textContent = "打开文件夹";
+    ui.emptyOpenButton.dataset.action = "open";
     ui.emptyOpenButton.hidden = Boolean(projectState.folder);
     ui.emptyHint.textContent = detail || "";
     ui.workspaceName.textContent = "尚未选择 .circ";
@@ -166,6 +172,7 @@ function showEmptyWorkspace(detail) {
   }
 
 function updateSessionChrome() {
+    ports.refreshWorkspaceLayout();
     ports.placementContextChanged();
     ports.componentsContextChanged();
     const workspace = projectState.session?.workspace;
@@ -177,11 +184,7 @@ function updateSessionChrome() {
       "电路项目",
     );
     ui.connectionWarning.hidden = projectState.session?.connectionIndex?.available !== false;
-    ui.saveStatus.textContent = workspace?.dirty ? "未保存" : workspace ? "已保存" : "";
-    ui.saveStatus.dataset.dirty = String(Boolean(workspace?.dirty));
     ui.appShell.setAttribute("aria-busy", String(projectState.projectBusy));
-    ui.saveButton.disabled = !workspace?.dirty || !workspace?.canSave || projectState.projectBusy || projectState.sourceChanged;
-    ui.saveButton.title = workspace?.canSave ? "保存到当前 .circ 文件（Ctrl+S）" : "上传的工程请先导出工程包";
     ui.undoButton.disabled = !workspace?.canUndo || projectState.projectBusy || projectState.sourceChanged;
     ui.deleteSelectionButton.disabled = !(ports.selectionSnapshot().componentIds.length || ports.selectionSnapshot().wireIds.length) || projectState.projectBusy || projectState.sourceChanged;
     ports.renderProjectHistory();
@@ -233,6 +236,8 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
     if(name!==projectState.circuitName)ports.cancelPlacement();
     ports.prepareCircuitNavigation(name,navigation);
     const epoch = ++projectState.circuitRequestEpoch;
+    projectState.circuitLoading = true;
+    ports.renderSimulation();
     const projectId = projectState.session?.workspace?.id;
     reportView('loading');
     if(!editing)ports.setCanvasStatus(`正在打开 ${name}…`, "loading");
@@ -273,7 +278,6 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       // composer; an old server selection must not replace the draft's focus.
       if(draftFocus)ports.restoreDraftFocus(draftFocus);
       ui.emptyState.hidden = true;
-      if (projectState.capabilityState === "exact" && !projectState.circuit.observerError) ports.setCanvasStatus("", "idle");
       if (projectState.circuit.observerError) {
         ports.setCanvasStatus(`精确观察不可用：${statusErrorMessage(projectState.circuit.observerError, "目标运行时或外部库不可用")}`, "warning");
       }
@@ -281,8 +285,14 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       ports.renderInspector();
       ports.renderSimulation();
       ports.renderConnections();
+      if(!editing){await ports.pollSimulation(true);ports.loadCandidates();}
+      if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
+      await ports.restoreCurrentSimulationView();
+      if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
+      projectState.circuitLoading = false;
+      if (projectState.capabilityState === "exact" && !projectState.circuit.observerError) ports.setCanvasStatus("", "idle");
+      ports.renderSimulation();
       reportView('shown',name);
-      if(!editing){await ports.pollSimulation();ports.loadCandidates();}
       if(!draftFocus&&!editing)await ports.loadSelection();
       if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
       ports.restoreEntrySelection(returnEntry);
@@ -296,6 +306,11 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       reportView('failed');
       if(editing)throw error;
       return {...viewState('failed'),error:statusErrorMessage(error,'无法打开电路')};
+    } finally {
+      if (epoch === projectState.circuitRequestEpoch) {
+        projectState.circuitLoading = false;
+        ports.renderSimulation();
+      }
     }
   }
 
@@ -305,8 +320,7 @@ function renderCircuitList() {
     ui.circuitList.replaceChildren();
     ui.circuitCount.textContent = String(projectState.circuits.length);
     if (!circuits.length) {
-      const empty = makeElement("p", "list-empty", projectState.circuits.length ? "没有匹配的电路" : "打开项目后，子电路会列在这里");
-      ui.circuitList.append(empty);
+      if(projectState.circuits.length)ui.circuitList.append(makeElement("p", "list-empty", "没有匹配的电路"));
       return;
     }
     circuits.forEach((item) => {
@@ -359,6 +373,7 @@ function markStale(message, kind = "source") {
     ui.staleBanner.querySelector("span").textContent = message || "重新载入后继续编辑，现有改动可从历史恢复。";
     ports.updateSelectionDock();
     ports.updateCapabilityState();
+    updateSessionChrome();
   }
 
 async function reloadRevision() {

@@ -1,8 +1,8 @@
-
+import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["mountConnections","mountCanvasViewport","mountGrid","mountConversations","mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFeedback","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
+export const dependencies = ["mountShortcuts","finishWiring","cancelWiring","mountConnections","mountCanvasViewport","mountGrid","mountConversations","mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFeedback","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
@@ -28,30 +28,30 @@ function bindEvents() {
     ports.mountAgentConnection();
     ports.mountAgentPreferences();
     ports.mountFeedback();
+    ports.mountShortcuts();
     ui.clearObjectSelection.addEventListener("click", () => ports.clearSelection());
     ui.clearComposerContext.addEventListener("click", () => ports.clearSelection());
+    ui.undoButton.replaceChildren(icon('Undo2'));
+    ui.deleteSelectionButton.replaceChildren(icon('Trash2'));
     ui.undoButton.addEventListener("click", () => ports.performProjectAction("undo"));
     ui.deleteSelectionButton.addEventListener("click", () => ports.performProjectAction("delete", {
       circuit: projectState.circuitName,
       wireIds:ports.selectionSnapshot().wireIds,componentIds:ports.selectionSnapshot().componentIds,
     }));
-    ui.saveButton.addEventListener("click", ports.requestSave);
-    ui.cancelSave.addEventListener("click", () => ui.saveDialog.close());
-    ui.confirmSave.addEventListener("click", async () => {
-      ui.confirmSave.disabled = ui.cancelSave.disabled = true;
-      try { if (await ports.performProjectAction("save", projectState.saveBinding)) ui.saveDialog.close(); }
-      finally { ui.confirmSave.disabled = ui.cancelSave.disabled = false; }
-    });
-    ui.saveDialog.addEventListener("cancel", event => { if (projectState.projectBusy) event.preventDefault(); });
     document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => ports.draftPrompt(button.dataset.prompt)));
     ui.openButton.addEventListener("click", ports.chooseCircuitFile);
-    ui.emptyOpenButton.addEventListener("click", ports.chooseCircuitFile);
+    ui.emptyOpenButton.addEventListener("click", async () => {
+      if (ui.emptyOpenButton.dataset.action !== 'retry') return ports.chooseCircuitFile();
+      ui.emptyOpenButton.disabled = true;
+      try { await ports.bootstrap(); }
+      finally { ui.emptyOpenButton.disabled = false; }
+    });
     ui.fileInput.addEventListener("change", () => ports.openFile(ui.fileInput.files[0]));
     ui.reloadRevisionButton.addEventListener("click", ports.handleStaleAction);
     ui.circuitSearch.addEventListener("input", ports.renderCircuitList);
-    ui.selectTool.addEventListener("click", () => ports.setMode("select"));
-    ui.pokeTool.addEventListener("click", () => ports.setMode("poke"));
-    ui.panTool.addEventListener("click", () => ports.setMode("pan"));
+    for(const button of [ui.selectTool,ui.wireTool,ui.pokeTool,ui.panTool])button.addEventListener('click',()=>{
+      ports.setMode(button.dataset.mode);ui.circuitCanvas.focus({preventScroll:true});
+    });
     ui.fitButton.addEventListener("click", () => ports.fitCircuit());
     ui.zoomInButton.addEventListener("click", () => {
       const rect = ui.circuitCanvas.getBoundingClientRect();
@@ -95,32 +95,21 @@ function bindEvents() {
     }, { passive: false });
 
     document.addEventListener("keydown", (event) => {
-      if (event.isComposing || event.keyCode === 229) return;
-      const inField = event.target.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       // Canvas objects are keyboard-operable role=button elements too, so keep
       // them eligible for Delete and canvas shortcuts. Other controls belong
       // to the surrounding UI and must never mutate the circuit accidentally.
       const isUiControl = event.target.closest?.("button, summary, a, input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='tab'], [role='menuitem'], [role='option']");
       const canControlCanvas = !isUiControl;
       const dialogOpen = document.querySelector("dialog[open]");
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); ports.requestSave(); return; }
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
-        if (inField || isUiControl || dialogOpen) return;
-        event.preventDefault();
-        ports.performProjectAction("undo");
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f" && (!dialogOpen || dialogOpen === ui.finderDialog)) {
-        event.preventDefault(); ports.openFinder(); return;
-      }
       if (dialogOpen || document.querySelector(":popover-open")) return;
+      if (canControlCanvas && event.key === "Enter" && canvasState.wireStart) {
+        event.preventDefault(); void ports.finishWiring(); return;
+      }
       if (canControlCanvas && event.key === "Escape" && canvasState.wireStart) {
         event.preventDefault();
-        canvasState.wireStart = null;
-        canvasState.wirePoints = [];
-        ports.renderWirePreview();
-        ui.circuitCanvas.querySelectorAll(".wire-port-hit.is-wire-start").forEach(node => node.classList.remove("is-wire-start"));
-        ports.setCanvasStatus("已取消端口连接", "idle");
+        ports.cancelWiring();
+        ports.setCanvasStatus("");
         return;
       }
       if (canControlCanvas && ["Delete", "Backspace"].includes(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !ui.deleteSelectionButton.disabled) {
@@ -129,15 +118,8 @@ function bindEvents() {
         return;
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (canControlCanvas && event.key === "/") {
-        event.preventDefault();
-        ui.circuitSearch.focus();
-      }
-      if (canControlCanvas && event.key.toLowerCase() === "v") ports.setMode("select");
-      if (canControlCanvas && event.key.toLowerCase() === "p") ports.setMode("poke");
-      if (canControlCanvas && event.key.toLowerCase() === "h") ports.setMode("pan");
-      if (canControlCanvas && event.key.toLowerCase() === "f") ports.fitCircuit();
       if (canControlCanvas && event.key === "Escape") {
+        if (canvasState.mode === "wire") ports.setMode("select");
         ports.clearSelection({ notifyServer: false });
         ports.closeMobilePanels();
         ports.updateCapabilityState();

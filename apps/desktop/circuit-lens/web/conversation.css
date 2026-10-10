@@ -29,8 +29,6 @@
 .conversation-starter:disabled{opacity:.5;cursor:default}
 .agent-message{position:relative;margin:0 0 24px;overflow-wrap:anywhere;min-width:0}
 .agent-message[data-role=user]{margin-left:18px;border:1px solid #e8ebf1;background:#f5f6f9;border-radius:13px;padding:13px 15px}
-.agent-message-header{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:9px}
-.agent-message-header strong{font-weight:550}.agent-message[data-role=assistant]>.agent-message-header{color:var(--ink);font-size:12px}
 .agent-message-body{font-size:14px;line-height:1.8;white-space:normal}
 .agent-message[data-role=user] .agent-message-body{white-space:pre-wrap;font-size:13px;line-height:1.8}
 .agent-message-body>:first-child{margin-top:0}.agent-message-body>:last-child{margin-bottom:0}
@@ -53,7 +51,7 @@
 .agent-message[data-role=user] .message-actions{position:absolute;right:8px;bottom:-15px;opacity:0;background:white;border:1px solid var(--line);border-radius:7px;padding:1px;box-shadow:0 2px 5px #17244008}
 .agent-message[data-role=user]:hover .message-actions,.agent-message[data-role=user]:focus-within .message-actions{opacity:1}
 .agent-message[data-role=user].is-editing{margin-left:0;padding:12px;border-color:transparent;border-radius:18px}
-.agent-message.is-editing>.agent-message-header{display:none}
+.agent-message.is-editing>.message-delivery{display:none}
 .message-edit-form{display:flex;flex-direction:column;gap:12px;min-width:0;margin:0;white-space:normal}
 .message-edit-input{display:block;box-sizing:border-box;width:100%;min-height:46px;max-height:240px;resize:none;border:0;outline:none;background:transparent;color:var(--ink);font-family:inherit;font-size:13px;line-height:1.8;padding:0;overflow:auto;scrollbar-width:thin}
 .message-edit-input::placeholder{color:#8a93a3}
@@ -67,7 +65,7 @@
 .agent-work{font-size:12px;color:var(--muted);margin:0 0 16px}
 .agent-work>summary{display:flex;align-items:center;gap:7px;cursor:pointer;padding:7px 0;list-style:none;line-height:1.6;user-select:none}.agent-work>summary::-webkit-details-marker{display:none}.agent-work>summary:focus-visible{outline:none;color:var(--ink);text-decoration:underline;text-decoration-color:#b8c5e5;text-underline-offset:4px}.agent-work>summary .chat-icon{width:13px;height:13px}.agent-work[open]>summary .chat-icon{transform:rotate(90deg)}
 .agent-work-title{font-size:12px;color:var(--muted);font-weight:400}
-.agent-work>.agent-message[data-phase=commentary]{padding:0;margin:3px 0 20px;color:var(--ink)}.agent-work .agent-message-header{display:none}.agent-work .agent-message-body{font-size:14px;line-height:1.8;color:var(--ink)}.agent-work .message-actions{display:none}
+.agent-work>.agent-message[data-phase=commentary]{padding:0;margin:3px 0 20px;color:var(--ink)}.agent-work .agent-message-body{font-size:14px;line-height:1.8;color:var(--ink)}.agent-work .message-actions{display:none}
 .agent-tool-batch{margin:2px 0 12px;color:var(--muted)}
 .agent-tool-batch>summary{display:flex;align-items:center;gap:7px;min-height:27px;cursor:pointer;list-style:none;line-height:1.5;user-select:none}.agent-tool-batch>summary::-webkit-details-marker{display:none}.agent-tool-batch>summary:focus-visible{outline:none;color:var(--ink);text-decoration:underline;text-decoration-color:#b8c5e5;text-underline-offset:4px}.agent-tool-batch>summary .chat-icon{width:14px;height:14px}.agent-tool-batch[open]>summary .chat-icon{transform:rotate(90deg)}
 .agent-tool-batch-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.agent-tool-batch-meta{margin-left:auto;flex:none;color:#9aa5b5;font-size:10px}.agent-tool-batch-body{padding-left:20px}
@@ -131,7 +129,7 @@
 .connection-tabs{display:flex;gap:4px;margin:0 22px;padding:3px;background:var(--surface);border-radius:9px}.connection-tabs button{flex:1;padding:8px 10px;border-radius:7px;font-size:12px;font-weight:500;color:var(--muted)}.connection-tabs button[aria-selected=true]{background:white;color:var(--ink);box-shadow:0 1px 3px #1f2a4418}.connection-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .connection-pane{padding:14px 22px 12px;font-size:12px}.connection-pane[hidden]{display:none}
 .account-card{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border:1px solid var(--line);border-radius:10px;background:#fafbfc}.account-card>div{display:flex;flex-direction:column;gap:5px;min-width:0}.account-card strong{font-size:13px;font-weight:600}.account-card span:not(.account-dot){color:var(--muted);line-height:1.65;overflow-wrap:anywhere}
-.account-dot{flex:none;width:9px;height:9px;margin-top:5px;border-radius:50%;background:#c2c8d2}.account-card[data-state=signed-in]{border-color:#c9e4d6;background:#f3faf6}.account-card[data-state=signed-in] .account-dot{background:#3aa676}.account-card[data-state=signing-in] .account-dot{background:var(--accent);animation:connection-pulse 1.2s infinite}.account-card[data-state=inactive]{opacity:.85}
+.account-dot{flex:none;width:9px;height:9px;margin-top:5px;border-radius:50%;background:#c2c8d2}.account-card[data-state=signed-in]{border-color:transparent;background:transparent;padding-left:0;padding-right:0}.account-card[data-state=signed-in] .account-dot{display:none}.account-card[data-state=signing-in] .account-dot{background:var(--accent);animation:connection-pulse 1.2s infinite}.account-card[data-state=inactive]{opacity:.85}
 @keyframes connection-pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .connection-note{margin:10px 0 0;color:var(--muted);line-height:1.7}.connection-note code{font-size:11px;background:var(--surface);padding:1px 4px;border-radius:4px}.connection-note strong{font-weight:600;color:var(--ink)}
 .pane-actions{position:sticky;bottom:0;display:flex;justify-content:flex-end;gap:8px;margin-top:6px;padding:10px 0 6px;background:linear-gradient(#ffffff00,#fff 40%)}.pane-actions button{font-size:12px}.pane-actions .quiet-button{border:1px solid var(--line)}
@@ -153,14 +151,15 @@
 .connection-dialog>.model-error{margin:0 22px 18px}
 
 /* Settings follow the workspace: service connections first, runtime details on demand. */
-.connection-dialog{width:min(760px,calc(100vw - 32px));max-height:90vh;border-radius:12px}
-.connection-dialog>header{padding:22px 24px;border-bottom:1px solid var(--line);align-items:center}
-.settings-layout{display:grid;grid-template-columns:160px minmax(0,1fr);min-height:360px}
+.connection-dialog{width:min(760px,calc(100vw - 32px));max-height:calc(100dvh - 48px);border-radius:12px;overflow:hidden}
+.connection-dialog[open]{display:flex;flex-direction:column}
+.connection-dialog>header{padding:18px 24px;border-bottom:1px solid var(--line);align-items:center;flex-shrink:0}
+.settings-layout{display:grid;grid-template-columns:160px minmax(0,1fr);min-height:0;overflow:hidden}
 .settings-nav{padding:18px 12px;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:5px}
 .settings-nav button{text-align:left;padding:10px 12px;border-radius:7px;color:var(--muted);font:inherit;font-size:13px}
 .settings-nav button.is-active{background:var(--selected);color:var(--accent);font-weight:600}
 .settings-nav button:focus-visible,.settings-back:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.settings-content{padding:26px;min-width:0}
+.settings-content{padding:20px 24px;min-width:0;min-height:320px;overflow:auto;scrollbar-width:thin;scroll-padding:20px 0 72px}
 .settings-overview h3,.settings-pane-title{font-size:17px;margin:0 0 22px;font-weight:600}
 .settings-service-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:20px 0;border-bottom:1px solid var(--line)}
 .settings-service-row:first-of-type{padding-top:4px}
@@ -169,19 +168,26 @@
 .settings-service-row p{font-size:12px;color:var(--muted);margin:6px 0 0;overflow-wrap:anywhere}
 .settings-service-row button{border:1px solid var(--line);flex:none;font-size:12px}
 .settings-badge{font-size:10px;font-weight:400;color:var(--muted);background:var(--surface);border-radius:4px;padding:3px 6px;margin-left:8px}
-.settings-back{padding:0;margin:0 0 20px;color:var(--muted);font-size:12px}
+.settings-detail-heading{display:flex;align-items:center;gap:8px;margin:0 0 18px}
+.settings-detail-heading .settings-pane-title{margin:0}
+.settings-back{width:30px;height:30px;padding:0;flex:none;color:var(--muted);font-size:18px}
+.provider-service-fields{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.provider-service-fields:not(:has(#providerProtocolField:not([hidden]))){grid-template-columns:1fr}
+.provider-service-fields .field{min-width:0}
 .settings-content .connection-pane{padding:0}
 .settings-content .connection-footer{margin-top:18px;padding:18px 0 0;background:transparent}
 .settings-content [hidden]{display:none!important}
 .settings-content .model-error{margin:16px 0 0}
-.settings-content .pane-actions{margin-top:18px}
+.settings-content .pane-actions{margin-top:12px;z-index:2;background:white;box-shadow:0 -8px 12px white}
 .settings-content .connection-note{font-size:11px}
-.settings-content .field{margin-bottom:18px;gap:7px}
+.settings-content .field{margin-bottom:14px;gap:6px}
 .settings-content input:not([type=checkbox]),.settings-content select{padding:10px 12px}
 .settings-network{margin-top:10px;border-top:1px solid var(--line);padding-top:12px}
 .settings-network summary{font-size:12px;color:var(--muted);cursor:pointer}
 .settings-network[open] summary{margin-bottom:14px}
 @media(max-width:640px){.settings-layout{grid-template-columns:1fr}.settings-nav{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);padding:8px 14px}.settings-nav button{flex:1;text-align:center}.settings-content{padding:20px}.connection-dialog>header{padding:16px 20px}}
+@media(max-width:480px){.provider-service-fields{grid-template-columns:1fr}}
+@media(max-height:520px){.settings-content{min-height:0}.connection-dialog{max-height:calc(100dvh - 24px)}}
 
 .agent-activity-output{flex-basis:100%;min-width:0;max-height:240px;overflow:auto;margin:0;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.5 var(--mono)}
 
@@ -201,9 +207,19 @@
 .agent-work>summary{flex-wrap:wrap}
 .agent-work-alert{color:#936019;font-size:12px;flex-basis:100%;padding-left:20px;line-height:1.6}
 .agent-tool-batch-meta.has-unknown{color:#936019}
+.agent-tool-batch[data-status=failed]>summary{color:var(--danger)}
+.agent-tool-batch[data-status=warning]>summary{color:#936019}
+.agent-tool-batch[data-status=running] .agent-tool-batch-meta{color:var(--accent)}
+.agent-tool-output{flex-basis:100%;min-width:0;border-left:2px solid var(--line,#e5e8ed);padding-left:10px;display:grid;gap:6px}
+.agent-tool-target{font:11px/1.5 var(--mono);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.agent-tool-input{font:11px/1.5 var(--mono);margin:0;color:var(--muted);max-height:140px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.agent-tool-exit{color:var(--danger)}
+.agent-tool-truncated{color:var(--muted)}
+.model-capabilities{font-variant-numeric:tabular-nums}
+.message-delivery{font-size:10px;font-weight:400;color:var(--muted);margin-top:8px}.message-delivery:not([hidden]){display:block}
 @media(max-width:640px){.saved-service{align-items:flex-start}.service-actions{flex-direction:column}.settings-service-row{gap:12px}.settings-service-row button{white-space:normal;max-width:150px}}
 
-.needs-connection .agent-empty{display:none}
+#agentPane:has(#agentNotice:not([hidden])) .agent-empty{display:none}
 
 .connection-footer>summary{font-size:12px;color:var(--muted);cursor:pointer}
 .connection-footer[open]>summary{margin-bottom:18px}
@@ -211,7 +227,7 @@
 .service-destination>span{grid-row:span 2;color:var(--muted);font-size:12px}
 .service-destination small{font-size:12px;color:var(--muted)}
 
-.settings-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.settings-heading{display:flex;align-items:center;justify-content:flex-end;gap:16px;margin-bottom:20px}
 .settings-heading h3{margin:0}
 .settings-heading button{font-size:12px;border:1px solid var(--line)}
 .settings-service-row.saved-service{padding:14px 0}
@@ -223,3 +239,7 @@
 .runtime-install p { margin:6px 0 0; font-size:12px; overflow-wrap:anywhere; color:var(--muted); }
 .runtime-install progress { grid-column:1; width:100%; height:6px; accent-color:var(--accent); }
 .runtime-install button { grid-column:2; grid-row:1 / 3; align-self:center; }
+
+.settings-heading:not(:has(button)){margin-bottom:0}
+#agentPane:has(#agentNotice:not([hidden])) #agentStatusText{display:none}
+#agentNotice:has(details[open]){max-height:60%}

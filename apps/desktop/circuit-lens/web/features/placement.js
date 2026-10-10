@@ -3,7 +3,7 @@ import {action} from '../core/chat-dom.js';
 import {propertyLabels,optionLabels} from '../core/component-labels.js';
 
 export const modelDependencies=['project','canvas'];
-export const dependencies=['flushProjectEdits','setMode','revealInspector','renderInspector','clearSelection','performProjectAction','clientToWorld','setCanvasStatus','selectComponent','selectPaletteTool','appendOptimisticComponent','removeOptimisticComponent'];
+export const dependencies=['shortcutHint','matchesShortcut','flushProjectEdits','setMode','revealInspector','renderInspector','clearSelection','performProjectAction','clientToWorld','setCanvasStatus','selectComponent','selectPaletteTool','appendOptimisticComponent','removeOptimisticComponent'];
 
 export function createController({models,ui,client,ports}) {
   const {project,canvas}=models,node=id=>document.getElementById(id);
@@ -159,7 +159,7 @@ export function createController({models,ui,client,ports}) {
     const bar=node('placementToolbar');bar.hidden=!active;if(!active){bar.replaceChildren();return;}
     bar.replaceChildren(makeElement('strong','',active.tool.label));
     if(active.loading||placing)bar.append(makeElement('span','placement-loading',placing?(queue.length>1?'待放置 '+queue.length+' 个':'放置中…'):'读取中…'));
-    const rotation=action('旋转 90°（R）',null,rotate,'placement-rotate');rotation.textContent='↻';rotation.disabled=!ready()||!active.template?.facingAttribute;bar.append(rotation);
+    const rotation=action(`旋转 90°${ports.shortcutHint('rotate')}`,null,rotate,'placement-rotate');rotation.textContent='↻';rotation.disabled=!ready()||!active.template?.facingAttribute;bar.append(rotation);
     const label=makeElement('label','placement-repeat'),check=makeElement('input');check.type='checkbox';check.checked=repeat;check.addEventListener('change',()=>repeat=check.checked);label.append(check,document.createTextNode('连续放置'));bar.append(label);
     const done=makeElement('button','placement-done','完成');done.title='结束放置（Esc / 右键）';done.append(makeElement('kbd','','Esc'));done.addEventListener('click',()=>{cancelPlacement();ui.circuitCanvas.focus();});bar.append(done);
   }
@@ -206,11 +206,12 @@ export function createController({models,ui,client,ports}) {
     },true);
     ui.circuitCanvas.addEventListener('click',event=>{if(active&&!canvas.heldSpace){event.preventDefault();event.stopImmediatePropagation();}},true);
     ui.circuitCanvas.addEventListener('contextmenu',event=>{if(active){event.preventDefault();event.stopPropagation();cancelPlacement();}});
+    document.addEventListener('vibe-shortcuts-changed',()=>{if(active)renderToolbar();});
     document.addEventListener('keydown',event=>{
       if(!active||event.isComposing||event.target.closest('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open],:popover-open'))return;
       if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();cancelPlacement();}
-      else if(!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.toLowerCase()==='r'){event.preventDefault();event.stopImmediatePropagation();void rotate();}
-      else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){
+      else if(ports.matchesShortcut(event,'rotate')){event.preventDefault();event.stopImmediatePropagation();void rotate();}
+      else if(ports.matchesShortcut(event,'undo')){
         if(placing){event.preventDefault();event.stopImmediatePropagation();ports.setCanvasStatus('正在放置，完成后可以撤销','loading');ownsError=true;}else cancelPlacement();
       }
     },true);

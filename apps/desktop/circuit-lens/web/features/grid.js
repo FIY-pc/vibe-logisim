@@ -1,11 +1,11 @@
 import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies=[];
-export const dependencies=[];
+export const dependencies=['shortcutHint'];
 
 // View-only guides. The origin and minimum spacing match Logisim's placement
 // coordinates; zoom changes visible density, never the circuit's snap interval.
-export function createController({ui}) {
+export function createController({ui,ports}) {
   const button=document.getElementById('gridToggle');
   const minor=document.getElementById('minorGrid'),major=document.getElementById('majorGrid');
   const api=window.vibeDesktop?.canvasPreferences;
@@ -38,7 +38,7 @@ export function createController({ui}) {
   function render() {
     ui.circuitCanvas.classList.toggle('has-grid',visible);
     button.setAttribute('aria-pressed',String(visible));
-    button.title=(visible?'隐藏网格':'显示网格')+'（G）';
+    button.title=(visible?'隐藏网格':'显示网格')+`${ports.shortcutHint('grid')}`;
     gridViewportChanged();
   }
   function toggle() {
@@ -50,11 +50,7 @@ export function createController({ui}) {
   function mountGrid() {
     button.replaceChildren(icon('Grid3X3'));
     button.addEventListener('click',toggle);
-    document.addEventListener('keydown',event=>{
-      if(event.defaultPrevented||event.isComposing||event.repeat||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.key.toLowerCase()!=='g')return;
-      if(event.target.closest?.('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open],:popover-open'))return;
-      event.preventDefault();toggle();
-    });
+    document.addEventListener('vibe-shortcuts-changed',render);
     new ResizeObserver(gridViewportChanged).observe(ui.circuitCanvas);
     render();
     Promise.resolve().then(()=>api?api.read():JSON.parse(localStorage.getItem('vibe.canvas.preferences')||'null')).then(value=>{

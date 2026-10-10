@@ -391,6 +391,7 @@ async function selectFolderCircuit(relative,folderId=desktopWorkspace.folder.cur
 }
 function registerIpc() {
   require('./canvas-preferences.cjs').registerCanvasPreferences({ipcMain,userData:app.getPath('userData'),trusted:isTrustedRenderer});
+  require('./shortcut-preferences.cjs').registerShortcutPreferences({ipcMain,userData:app.getPath('userData'),trusted:isTrustedRenderer});
   registerCanvasIpc({ipcMain,trusted:isTrustedRenderer,canvas:desktopWorkspace.canvas});
   registerFolderIpc({ipcMain,dialog,shell,nativeImage,workspace:desktopWorkspace,trusted:isTrustedRenderer,window:()=>mainWindow,open:openFolder,select:selectFolderCircuit,mutate:operation=>{
     if(workspaceTransitioning)throw workspaceChangedError();

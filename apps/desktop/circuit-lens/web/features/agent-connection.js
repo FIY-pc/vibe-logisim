@@ -7,7 +7,7 @@ import {icon} from '../core/chat-dom.js';
 export const modelDependencies = [];
 export const dependencies = ['applyAgentState','updateAgentPreferences','openModelPicker','refreshModelOptions','loadCandidates','showToast','switchReviewTab'];
 
-const effortLabels = {none:'关闭', low:'轻度', medium:'中', high:'高'};
+const effortLabels = {none:'关闭', low:'轻度', medium:'中', high:'高', xhigh:'极高', max:'最高'};
 const isReady = state => ['ready','busy'].includes(state.status);
 
 export function createController({ui,ports}) {
@@ -71,14 +71,15 @@ export function createController({ui,ports}) {
     ui.settingsRuntimePane.hidden = name !== 'runtime';
     ui.connectionPaneApi.hidden = name !== 'api';
     ui.connectionPaneChatgpt.hidden = name !== 'chatgpt';
-    ui.settingsBack.hidden = !['api','chatgpt'].includes(name);
+    ui.settingsBack.closest('.settings-detail-heading').hidden = !['api','chatgpt'].includes(name);
+    ui.providerFormTitle.hidden = name !== 'api';
     ui.connectionDialog.querySelector('.connection-footer').hidden = name !== 'services' || !isReady(state);
     for (const [button, active] of [[ui.settingsServices, name !== 'runtime'], [ui.settingsRuntime, name === 'runtime']]) {
       button.classList.toggle('is-active', active);
       if (active) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
     }
     if (name === 'api') scheduleDiscovery(0);
-    if(ui.connectionDialog.open){const panel={services:ui.settingsOverview,runtime:ui.settingsRuntimePane,api:ui.connectionPaneApi,chatgpt:ui.accountCard,confirm:ui.serviceConfirm}[name];const title=panel?.querySelector('h3,strong');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
+    if(ui.connectionDialog.open){const panel={services:ui.settingsOverview,runtime:ui.settingsRuntimePane,api:ui.connectionPaneApi,chatgpt:ui.accountCard,confirm:ui.serviceConfirm}[name];const title=name==='api'?ui.providerFormTitle:panel?.querySelector('h3,strong');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
   }
 
   function openConnectionDialog(which) {
@@ -165,10 +166,11 @@ export function createController({ui,ports}) {
     const setCard = (kind, title, detail) => { card.dataset.state = kind; ui.accountTitle.textContent = title; ui.accountDetail.textContent = detail; };
     if (state.signingIn) setCard('signing-in', '正在浏览器中登录…', '完成后会自动回到这里并连接。');
     else if (custom) setCard('inactive', 'ChatGPT 登录未启用', '切换到 ChatGPT 会停用当前 API 接口。');
-    else if (account) setCard('signed-in', account.type === 'chatgpt' ? `已登录 ChatGPT${account.planType ? ` · ${account.planType}` : ''}` : '已通过 API 密钥连接 OpenAI', shared ? '沿用这台电脑上 Codex 的登录。' : '使用你的 ChatGPT 账号。');
+    else if (account) setCard('signed-in', account.type === 'chatgpt' ? `已登录 ChatGPT${account.planType ? ` · ${account.planType}` : ''}` : '已通过 API 密钥连接 OpenAI', shared ? '沿用这台电脑上 Codex 的登录。' : '');
     else setCard('signed-out', '未登录', shared ? '开发环境沿用本机 Codex 的登录，请在终端运行 codex login。' : '用你的 ChatGPT 账号登录，在浏览器里完成后自动回到这里。');
     ui.chatgptNote.textContent = ''; ui.chatgptNote.hidden = true;
     if(state.runtime==='builtin'){ui.accountTitle.textContent='ChatGPT 账号';ui.accountDetail.textContent='使用 ChatGPT 账号，不需要 API 密钥。';}
+    ui.accountDetail.hidden=!ui.accountDetail.textContent;
     const login = ui.connectionLogin;
     login.hidden = Boolean(installState()) || Boolean(account) && !state.signingIn && !custom;
     login.textContent = state.signingIn ? '取消登录' : state.runtime==='builtin'?'用 Codex 新建对话':custom ? '停用接口并登录 ChatGPT' : '登录 ChatGPT';
@@ -191,6 +193,7 @@ export function createController({ui,ports}) {
     ui.providerApiKey.value = '';
     ui.providerModel.value = custom?.model || '';
     ui.providerEffort.value = effortLabels[custom?.effort] ? custom.effort : state.runtime==='builtin'?'none':'medium';
+    ui.providerEffort.querySelector('option[value="none"]').textContent = state.runtime === 'builtin' ? '默认' : '关闭';
     ui.providerContext.value = custom?.contextWindow && custom.contextWindow !== 256000 ? custom.contextWindow : '';
     formEdited = false; discovered = null; discoveredFor = null; probe = null; listOpen = false;
   }
@@ -231,9 +234,9 @@ export function createController({ui,ports}) {
     status.dataset.kind = '';
     if (discovering) status.textContent = '正在读取接口的模型列表…';
     else if (discoveredFor?.error) { status.textContent = discoveredFor.error; status.dataset.kind = 'error'; }
-    else if (discovered) status.textContent = `${discovered.length} 个模型${query && matches.length !== discovered.length ? `，匹配 ${matches.length} 个` : ''}`;
+    else if (discovered) status.textContent = listOpen ? `${discovered.length} 个模型${query && matches.length !== discovered.length ? `，匹配 ${matches.length} 个` : ''}` : '';
     else if (discoveredFor && !discoveredFor.error) status.textContent = '未提供模型列表，可手动输入';
-    else if (models) status.textContent = `${models.length} 个模型`;
+    else if (models) status.textContent = listOpen ? `${models.length} 个模型` : '';
     else status.textContent = '';
     status.hidden = !status.textContent;
   }
@@ -413,6 +416,7 @@ export function createController({ui,ports}) {
   // ---------------------------------------------------------------- notice
   function renderNotice() {
     const install=installState();
+    ui.agentNoticeTitle.hidden=false;
     if(install){
       ui.agentPane.classList.remove('needs-connection');ui.agentNotice.hidden=false;ui.agentNotice.dataset.phase=install.busy?'retrying':'disconnected';
       ui.agentNoticeTitle.textContent=install.title;ui.agentNoticeText.textContent=install.text;
@@ -446,6 +450,7 @@ export function createController({ui,ports}) {
     // Only real failures invite a report; the first-run "not connected yet" state is not one.
     ui.agentReportIssue.hidden = Boolean(state.signingIn) || reconnecting || unconnected || !(t?.phase === 'failed' || ['unavailable','stopped'].includes(state.status));
     ui.agentStatusText.textContent = unconnected ? (state.signingIn ? '等待登录完成' : application ? '尚未连接 AI' : '未登录') : reconnecting ? '正在连接' : t?.phase === 'retrying' ? '等待连接恢复' : disconnected ? '连接需要处理' : state.busy ? '正在结束回答' : '可以继续提问';
+    ui.agentNoticeTitle.hidden=state.runtime==='builtin'&&unconnected&&!bindingIssue&&!state.signingIn&&!t&&!reconnecting;
     if(bindingIssue){
       ui.agentNoticeTitle.textContent='选择这条会话的模型服务';
       ui.agentNoticeText.textContent=bindingIssue.message;

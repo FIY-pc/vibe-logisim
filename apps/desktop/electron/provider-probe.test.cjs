@@ -30,11 +30,12 @@ const server = http.createServer(async (req, res) => {
   if (scenario === 'ratelimit') return json(429, {error: {message: 'Rate limit reached'}});
   if (scenario === 'down') return json(502, {error: {message: 'Bad gateway'}});
   if (scenario === 'slow') return setTimeout(() => json(200, {data: []}), 1500);
+  if (scenario === 'stalledbody') { res.writeHead(200, {'Content-Type': 'application/json'}); res.write('{"data":['); return; }
   json(500, {error: {message: 'unexpected route ' + req.url}});
 });
 const ready = new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = async scenario => { await ready; return `http://127.0.0.1:${server.address().port}/${scenario}/v1`; };
-after(() => server.close());
+after(() => { server.closeAllConnections(); server.close(); });
 
 test('discoverModels lists chat models, drops embeddings/audio/image ids and malformed ids', async () => {
   const result = await discoverModels({baseUrl: await base('ok'), apiKey: 'sk-test'});
@@ -47,6 +48,16 @@ test('discoverModels lists chat models, drops embeddings/audio/image ids and mal
 test('discoverModels returns null when the endpoint has no model list, throws on a bad key', async () => {
   assert.equal(await discoverModels({baseUrl: await base('nolist'), apiKey: 'k'}), null);
   await assert.rejects(discoverModels({baseUrl: await base('badkey'), apiKey: 'k'}), error => error instanceof ProbeError && error.code === 'auth' && /密钥/.test(error.message) && /Incorrect API key/.test(error.hint));
+});
+
+test('model-list outages and rate limits are failures, not unsupported discovery', async () => {
+  for (const [scenario, status, code] of [['down', 502, 'server'], ['ratelimit', 429, 'rate-limit']]) {
+    await assert.rejects(discoverModels({baseUrl: await base(scenario), apiKey: 'k'}), error => error instanceof ProbeError && error.status === status && error.code === code);
+  }
+});
+
+test('model discovery includes response body reads in its timeout', async () => {
+  await assert.rejects(discoverModels({baseUrl: await base('stalledbody'), apiKey: 'k', timeoutMs: 100}), error => error instanceof ProbeError && error.code === 'timeout');
 });
 
 test('testResponses sends a Codex-shaped streamed request and accepts an SSE completion', async () => {

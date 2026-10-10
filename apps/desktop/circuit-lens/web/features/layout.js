@@ -1,14 +1,14 @@
 import {icon} from '../core/chat-dom.js';
 // Owns workspace geometry only. Circuit coordinates and conversation state do
 // not change when a panel is resized, collapsed, or revealed.
-export const modelDependencies = [];
-export const dependencies = [];
+export const modelDependencies = ['project'];
+export const dependencies = ['switchReviewTab','shortcutHint'];
 
 const defaults = { rail: 260, review: 400, navigatorShare: .30, fileShare:.32, filesCollapsed:false, navigatorCollapsed: false, inspectorCollapsed: false };
 const limits = { rail: [224, 420], review: [320, 820] };
 const clamp = (n, min, max) => Math.max(min, Math.min(n, max));
 
-export function createController({ui}) {
+export function createController({ui, models, ports}) {
   let desired = {...defaults};
   let widths = {...defaults};
   let mounted = false;
@@ -16,11 +16,23 @@ export function createController({ui}) {
   let edited = false;
   const scrollPositions={navigatorCollapsed:0,inspectorCollapsed:0};
   const handles = {rail: ui.railResize, review: ui.reviewResize};
+  const hasRail = () => ui.appShell.dataset.workspace !== 'empty';
+
+  function refreshWorkspaceLayout() {
+    const project = models.project;
+    // A loaded project keeps navigation available even if a circuit fails to render.
+    const phase = project.session?.workspace || project.circuit ? 'circuit' : project.folder ? 'folder' : 'empty';
+    ui.appShell.dataset.workspace = phase;
+    const onlyConversation = phase !== 'circuit' && !ui.agentTab.hidden;
+    ui.evidenceTab.hidden = ui.proposalTab.hidden = onlyConversation;
+    if (onlyConversation && ui.reviewPanel.dataset.activeTab !== 'agent') ports.switchReviewTab('agent');
+    applyLayout();
+  }
 
   function applyLayout() {
     const desktop = window.innerWidth > 820;
     const available = ui.workbench.clientWidth;
-    const railVisible = !ui.appShell.classList.contains('rail-hidden');
+    const railVisible = hasRail() && !ui.appShell.classList.contains('rail-hidden');
     const reviewVisible = !ui.appShell.classList.contains('review-hidden');
     widths = {...desired};
     if (desktop) {
@@ -46,6 +58,14 @@ export function createController({ui}) {
   const sections=[fileSection,ui.circuitNavigator,ui.inspectorSection];
   const collapsed=['filesCollapsed','navigatorCollapsed','inspectorCollapsed'];
   function applySplit() {
+    fileToggle.disabled = ui.appShell.dataset.workspace !== 'circuit';
+    if (ui.appShell.dataset.workspace !== 'circuit') {
+      // Contextual visibility must never overwrite the user's saved split/collapse choices.
+      fileSection.style.flex = '1 1 auto';
+      fileSection.classList.remove('is-collapsed');
+      fileToggle.setAttribute('aria-expanded', 'true');
+      return;
+    }
     const total=ui.circuitRail.clientHeight-16;
     if(total<126)return;
     const weights=[desired.fileShare,desired.navigatorShare,Math.max(.1,1-desired.fileShare-desired.navigatorShare)];
@@ -68,6 +88,7 @@ export function createController({ui}) {
   }
   function mountSplit() {
     [fileToggle,ui.collapseNavigator,ui.collapseInspector].forEach((toggle,i)=>toggle.addEventListener('click',()=>{
+      if (ui.appShell.dataset.workspace !== 'circuit') return;
       desired[collapsed[i]]=!desired[collapsed[i]];
       if(collapsed.every(key=>desired[key]))desired[collapsed[(i+1)%3]]=false;
       edited=true;applySplit();void saveLayout();
@@ -100,7 +121,7 @@ export function createController({ui}) {
 
   function changeWidth(side, value) {
     const other = side === 'rail' ? 'review' : 'rail';
-    const otherVisible = !ui.appShell.classList.contains(`${other}-hidden`);
+    const otherVisible = (other !== 'rail' || hasRail()) && !ui.appShell.classList.contains(`${other}-hidden`);
     const max = Math.min(limits[side][1], ui.workbench.clientWidth - 440 - (otherVisible ? widths[other] : 0));
     desired[side] = clamp(Math.round(value), limits[side][0], max);
     edited = true;
@@ -109,13 +130,13 @@ export function createController({ui}) {
 
   function renderPanelToggles() {
     for(const [side, button, panel, name, shortcut] of [
-      ['rail', ui.toggleCircuits, ui.circuitRail, '项目栏', 'Ctrl+B'],
-      ['review', ui.toggleReview, ui.reviewPanel, '工作栏', 'Ctrl+Alt+B'],
+      ['rail', ui.toggleCircuits, ui.circuitRail, '项目栏', ports.shortcutHint('rail')],
+      ['review', ui.toggleReview, ui.reviewPanel, '工作栏', ports.shortcutHint('review')],
     ]) {
-      const open=innerWidth>820 ? !ui.appShell.classList.contains(`${side}-hidden`) : panel.classList.contains('is-open');
+      const open=(side !== 'rail' || hasRail()) && (innerWidth>820 ? !ui.appShell.classList.contains(`${side}-hidden`) : panel.classList.contains('is-open'));
       button.setAttribute('aria-expanded',String(open));
       button.setAttribute('aria-label',`${open?'收起':'展开'}${name}`);
-      button.title=`${open?'收起':'展开'}${name}（${shortcut}）`;
+      button.title=`${open?'收起':'展开'}${name}${shortcut}`;
       const nameOfIcon=(side==='rail'?'PanelLeft':'PanelRight')+(open?'Close':'Open');
       if(button.dataset.icon!==nameOfIcon){button.replaceChildren(icon(nameOfIcon));button.dataset.icon=nameOfIcon;}
     }
@@ -126,6 +147,7 @@ export function createController({ui}) {
   }
 
   function setWorkspacePanel(side, open) {
+    if (side === 'rail' && !hasRail()) return;
     const panel=side==='rail'?ui.circuitRail:ui.reviewPanel;
     if(innerWidth>820)ui.appShell.classList.toggle(`${side}-hidden`,!open);
     else {closeWorkspaceDrawers();ui.appShell.classList.remove(`${side}-hidden`);panel.classList.toggle('is-open',open);}
@@ -148,13 +170,7 @@ export function createController({ui}) {
     mountSplit();
     ui.toggleCircuits.addEventListener('click',()=>togglePanel('rail'));
     ui.toggleReview.addEventListener('click',()=>togglePanel('review'));
-    ui.toggleCircuits.setAttribute('aria-keyshortcuts','Control+B Meta+B');
-    ui.toggleReview.setAttribute('aria-keyshortcuts','Control+Alt+B Meta+Alt+B');
-    document.addEventListener('keydown',event=>{
-      if(event.defaultPrevented||event.isComposing||event.repeat||event.shiftKey||!(event.ctrlKey||event.metaKey)||event.key.toLowerCase()!=='b')return;
-      if(event.target.closest?.('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open],:popover-open'))return;
-      event.preventDefault();togglePanel(event.altKey?'review':'rail');
-    });
+    document.addEventListener('vibe-shortcuts-changed',applyLayout);
     window.addEventListener('resize',applyLayout);
     for (const [side, handle] of Object.entries(handles)) {
       handle.addEventListener('pointerdown', event => {
@@ -205,5 +221,5 @@ export function createController({ui}) {
     }).catch(() => {});
     applyLayout();
   }
-  return Object.freeze({mountLayout, revealInspector, setWorkspacePanel, closeWorkspaceDrawers});
+  return Object.freeze({mountLayout, refreshWorkspaceLayout, revealInspector, setWorkspacePanel, closeWorkspaceDrawers});
 }

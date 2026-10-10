@@ -6,11 +6,11 @@ const {_electron}=require('playwright');
 const {waitUntil}=require('./support/wait-until.cjs');
 const exe=path.resolve(process.argv[2]),root=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-real-download-'));
 const out=path.resolve(process.argv[3]||root);fs.mkdirSync(out,{recursive:true});
-const env={...process.env,XDG_CONFIG_HOME:path.join(root,'config'),APPDATA:path.join(root,'config'),CODEX_HOME:path.join(root,'empty-codex'),VIBE_LOGISIM_NO_UPDATE_CHECK:'1'};
+const env={...process.env,XDG_CONFIG_HOME:path.join(root,'config'),APPDATA:path.join(root,'config'),VIBE_LOGISIM_USER_DATA_DIR:path.join(root,'profile'),CODEX_HOME:path.join(root,'empty-codex'),VIBE_LOGISIM_NO_UPDATE_CHECK:'1'};
 for(const k of ['ELECTRON_RUN_AS_NODE','VIBE_LOGISIM_STATE_DIR','VIBE_LOGISIM_CODEX','VIBE_LOGISIM_PYTHON','VIBE_LOGISIM_MODEL','VIBE_LOGISIM_EFFORT'])delete env[k];
 let app,page;
 const state=()=>page.evaluate(()=>window.vibeDesktop.agent.getState());
-async function launch(){app=await _electron.launch({executablePath:exe,args:['--no-sandbox'],env,cwd:root});page=await app.firstWindow();page.setDefaultTimeout(45000);app.process().stderr.on('data',d=>fs.appendFileSync(path.join(out,'app.log'),d));await waitUntil(()=>state().catch(()=>null));await page.waitForFunction(()=>document.querySelector('#connectionClose svg')&&document.querySelector('#appShell').getAttribute('aria-busy')!=='true');}
+async function launch(){app=await _electron.launch({executablePath:exe,args:['--no-sandbox'],env,cwd:root});page=await app.firstWindow();assert.equal(await app.evaluate(({app})=>app.getPath('userData')),env.VIBE_LOGISIM_USER_DATA_DIR);page.setDefaultTimeout(45000);app.process().stderr.on('data',d=>fs.appendFileSync(path.join(out,'app.log'),d));await waitUntil(()=>state().catch(()=>null));await page.waitForFunction(()=>document.querySelector('#connectionClose svg')&&document.querySelector('#appShell').getAttribute('aria-busy')!=='true');}
 (async()=>{try{
  await launch();await page.locator('#agentSettings').click();await page.locator('#settingsRuntime').click();await page.locator('#useCodexRuntime').click();
  let last=-1;

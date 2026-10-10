@@ -29,7 +29,13 @@ function configureRuntime(app) {
   // Development and the distributed app must not delete/rewrite each other's
   // login profile or thread mappings when used on the same computer.
   app.setName('Vibe Logisim');
-  app.setPath('userData', path.join(app.getPath('appData'), 'vibe-logisim'));
+  // Windows resolves appData through the OS, so changing APPDATA alone does
+  // not isolate a packaged acceptance run. Keep an explicit opt-in separate
+  // from the normal profile and never silently accept a relative directory.
+  const userData = process.env.VIBE_LOGISIM_USER_DATA_DIR || path.join(app.getPath('appData'), 'vibe-logisim');
+  if (!path.isAbsolute(userData)) throw new Error('VIBE_LOGISIM_USER_DATA_DIR 必须是绝对路径。');
+  fs.mkdirSync(userData, {recursive:true});
+  app.setPath('userData', userData);
   const runtimeRoot = path.join(process.resourcesPath, 'runtime');
   const repoRoot = path.join(process.resourcesPath, 'product');
   const manifestFile = path.join(process.resourcesPath, 'codex-runtime.json');
