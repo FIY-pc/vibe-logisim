@@ -26,7 +26,7 @@ export const ui = Object.fromEntries(
       "canvasStage",
       "canvasStatus",
       "momentCapture","momentOpen","momentAttachments","momentDialog","momentClose","momentList","momentViewer","momentAttach",
-      "simulationQuickRestart", "simulationQuickReturn", "simulationTransport", "simulationActivity", "simulationQuickPlay", "simulationQuickTick", "simulationQuickReset", "simulationDock", "simulationStatus", "simulationMenuButton", "simulationMenu", "simulationOwner", "simulationSettingsClose", "simulationSettingsForm", "simulationSettingsCancel", "simulationSettingsApply", "simulationSettingsError", "simulationStart", "simulationPlay", "simulationTick",
+      "simulationQuickRestart", "simulationTransport", "simulationActivity", "simulationQuickPlay", "simulationQuickTick", "simulationQuickReset", "simulationDock", "simulationStatus", "simulationMenuButton", "simulationMenu", "simulationOwner", "simulationSettingsClose", "simulationSettingsForm", "simulationSettingsCancel", "simulationSettingsApply", "simulationSettingsError", "simulationStart", "simulationPlay", "simulationTick",
       "simulationReset", "simulationStop", "simulationReturn", "simulationWatches", "simulationError",
       "simulationStep", "simulationFrequency", "simulationSettings", "simulationAutomatic", "simulationRate",
       "pokeTool", "memoryPanel", "memoryOwner", "memoryKind", "memoryClose", "memoryJump", "memoryAddress",

@@ -4,7 +4,7 @@ import { API } from '../core/endpoints.js';
 
 export const modelDependencies = ["project", "review"];
 
-export const dependencies = ["refreshWorkspaceLayout","prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
+export const dependencies = ["refreshWorkspaceLayout","prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","restoreCurrentSimulationView","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
@@ -141,6 +141,7 @@ function showEmptyWorkspace(detail) {
     projectState.session = projectState.folder ? {folder:projectState.folder,workspace:null} : null;
     projectState.circuit = null;
     projectState.circuitName = null;
+    projectState.circuitLoading = false;
     projectState.revision = null;
     ports.refreshWorkspaceLayout();
     reportView('shown');
@@ -235,6 +236,8 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
     if(name!==projectState.circuitName)ports.cancelPlacement();
     ports.prepareCircuitNavigation(name,navigation);
     const epoch = ++projectState.circuitRequestEpoch;
+    projectState.circuitLoading = true;
+    ports.renderSimulation();
     const projectId = projectState.session?.workspace?.id;
     reportView('loading');
     if(!editing)ports.setCanvasStatus(`正在打开 ${name}…`, "loading");
@@ -275,7 +278,6 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       // composer; an old server selection must not replace the draft's focus.
       if(draftFocus)ports.restoreDraftFocus(draftFocus);
       ui.emptyState.hidden = true;
-      if (projectState.capabilityState === "exact" && !projectState.circuit.observerError) ports.setCanvasStatus("", "idle");
       if (projectState.circuit.observerError) {
         ports.setCanvasStatus(`精确观察不可用：${statusErrorMessage(projectState.circuit.observerError, "目标运行时或外部库不可用")}`, "warning");
       }
@@ -283,8 +285,14 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       ports.renderInspector();
       ports.renderSimulation();
       ports.renderConnections();
+      if(!editing){await ports.pollSimulation(true);ports.loadCandidates();}
+      if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
+      await ports.restoreCurrentSimulationView();
+      if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
+      projectState.circuitLoading = false;
+      if (projectState.capabilityState === "exact" && !projectState.circuit.observerError) ports.setCanvasStatus("", "idle");
+      ports.renderSimulation();
       reportView('shown',name);
-      if(!editing){await ports.pollSimulation();ports.loadCandidates();}
       if(!draftFocus&&!editing)await ports.loadSelection();
       if (epoch !== projectState.circuitRequestEpoch || projectId !== projectState.session?.workspace?.id) return;
       ports.restoreEntrySelection(returnEntry);
@@ -298,6 +306,11 @@ async function loadCircuit(name, { clearSelection: shouldClear = true, navigatio
       reportView('failed');
       if(editing)throw error;
       return {...viewState('failed'),error:statusErrorMessage(error,'无法打开电路')};
+    } finally {
+      if (epoch === projectState.circuitRequestEpoch) {
+        projectState.circuitLoading = false;
+        ports.renderSimulation();
+      }
     }
   }
 

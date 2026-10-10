@@ -1,7 +1,7 @@
 // Menu, shortcuts and settings share commands; native session ownership stays in run.js.
 import {icon} from '../core/chat-dom.js';
 export const modelDependencies = ['project', 'canvas'];
-export const dependencies = ['shortcutHint','shortcutLabel','simulationStatus', 'simulationAction', 'mountSimulationRuntime', 'returnToSimulation', 'captureMoment'];
+export const dependencies = ['shortcutHint','shortcutLabel','simulationStatus', 'simulationAction', 'restoreCurrentSimulationView', 'mountSimulationRuntime', 'returnToSimulation', 'captureMoment'];
 
 const commands = [
   {id: 'simulationStart', action: 'start'},
@@ -20,10 +20,13 @@ export function createController({models: {project, canvas}, ui, ports}) {
   const scope = () => ({projectId: project.session?.workspace?.id, revision: project.revision,
     circuit: project.circuitName, navigation: project.circuitRequestEpoch});
   const sameDocument = s => s.projectId === project.session?.workspace?.id && s.revision === project.revision;
-  const canRun = () => Boolean(project.circuit && project.capabilityState === 'exact' && !project.projectBusy && !project.sourceChanged);
+  const sameTarget = s => sameDocument(s) && s.circuit === project.circuitName && s.navigation === project.circuitRequestEpoch;
+  const canRun = () => Boolean(project.circuit && project.capabilityState === 'exact' && !project.projectBusy && !project.circuitLoading && !project.sourceChanged);
   const allowed = action => {
     const s = ports.simulationStatus();
-    return canRun() || (s.exists && (action === 'stop' || (action === 'toggle-clock' && s.running)));
+    if (project.circuitLoading || s.viewBusy) return false;
+    if (action === 'stop') return s.current;
+    return canRun() || (s.current && action === 'toggle-clock' && s.running);
   };
   const closeMenu = () => { if (menuOpen()) ui.simulationMenu.hidePopover(); };
 
@@ -31,25 +34,27 @@ export function createController({models: {project, canvas}, ui, ports}) {
     // A snapshot binds the displayed sample synchronously at the key/click,
     // independently of queued clock commands and their future observations.
     if (action === 'capture') return ports.captureMoment();
+    if (!allowed(action)) return Promise.resolve(false);
     const origin = scope();
     // Resolve toggles after the preceding acknowledgement, including a cold start.
     // Separate K presses are preserved; holding the key does not oscillate the clock.
     const execute = async () => {
-      if (!sameDocument(origin) || !allowed(action)) return false;
+      if (!sameTarget(origin) || !allowed(action)) return false;
       if (action === 'frequency') {
-        if (ports.simulationStatus().exists && !await ports.simulationAction('configure', extra)) return false;
-        if (!sameDocument(origin)) return false;
+        if (ports.simulationStatus().current && !await ports.simulationAction('configure', extra)) return false;
+        if (!sameTarget(origin)) return false;
         frequency = extra.frequency; renderSimulationControls(); return true;
       }
-      const wasActive = ports.simulationStatus().exists;
+      const wasActive = ports.simulationStatus().current;
       if (!wasActive) {
         if (action === 'stop') return true;
-        if (origin.circuit !== project.circuitName || origin.navigation !== project.circuitRequestEpoch) return false;
         if (!await ports.simulationAction('start')) return false;
-        if (!sameDocument(origin)) return false;
+        if (!sameTarget(origin)) return false;
         if (frequency !== 2 && !await ports.simulationAction('configure', {frequency})) return false;
+      } else if (action !== 'stop' && !await ports.restoreCurrentSimulationView()) {
+        return false;
       }
-      if (!sameDocument(origin)) return false;
+      if (!sameTarget(origin)) return false;
       const state = ports.simulationStatus();
       if (action === 'start') return true;
       if (action === 'toggle-clock') return ports.simulationAction(state.running ? 'pause' : 'play');
@@ -68,46 +73,43 @@ export function createController({models: {project, canvas}, ui, ports}) {
     ui.circuitCanvas.dataset.simulationBusy = String(s.busy);
     ui.pokeTool.setAttribute('aria-busy', String(s.busy));
     ui.pokeTool.title = s.busy ? '正在准备仿真，点击的输入会随后生效' : `操作输入${ports.shortcutHint('poke')}；首次点击自动启动仿真`;
-    const status = s.busy ? (s.busyAction === 'stop' ? '正在结束仿真…' : '正在准备仿真…') : !s.exists ? '尚未开始' :
+    const status = s.busy ? (s.busyAction === 'stop' ? '正在结束仿真…' : '正在准备仿真…') : !s.current ? '尚未开始' :
       `${s.running ? '时钟运行' : '时钟暂停'}${s.automatic ? '' : ' · 自动传播已暂停'}`;
-    ui.simulationOwner.textContent = s.circuit || project.circuitName || '尚未打开电路';
-    ui.simulationStatus.textContent = status + (s.exists ? ` · ${s.ticks ?? 0} tick` : '');
-    ui.simulationStart.hidden = s.exists;
-    ui.simulationPlay.querySelector('span').textContent = s.running ? '暂停时钟' : '运行时钟';
-    ui.simulationAutomatic.setAttribute('aria-checked', String(s.exists && s.automatic));
+    ui.simulationOwner.textContent = (s.current ? s.circuit : project.circuitName) || '尚未打开电路';
+    ui.simulationStatus.textContent = status + (s.current ? ` · ${s.ticks ?? 0} tick` : '');
+    ui.simulationStart.hidden = s.current;
+    ui.simulationPlay.querySelector('span').textContent = s.current && s.running ? '暂停时钟' : '运行时钟';
+    ui.simulationAutomatic.setAttribute('aria-checked', String(s.current && s.automatic));
     for (const command of commands) if (command.action !== 'capture') ui[command.id].disabled = !allowed(command.action) || (command.action === 'stop' && !s.exists);
     ui.simulationReturn.hidden = !s.exists || s.visible;
-    ui.simulationReturn.disabled = s.viewBusy;
+    ui.simulationReturn.disabled = s.viewBusy || s.busy;
     ui.simulationSettings.disabled = !project.circuit;
-    ui.simulationReset.title = `复位 ${s.circuit || project.circuitName} 及其所有内部模块的运行状态`;
-    ui.simulationRate.hidden = !s.running;
+    ui.simulationReset.title = `复位 ${s.current ? s.circuit : project.circuitName} 及其所有内部模块的运行状态`;
+    ui.simulationRate.hidden = !s.current || !s.running;
     ui.simulationRate.textContent = `当前实测 ${(s.actualFrequency || 0).toFixed(1)} tick/s`;
-    ui.simulationTransport.hidden = !project.circuit || (!s.exists && !s.busy && !s.stale && canvas.mode !== 'poke');
+    ui.simulationTransport.hidden = !project.circuit || (!s.current && !s.busy && !s.stale && canvas.mode !== 'poke');
     ui.simulationActivity.textContent = s.busy ? (s.busyAction === 'stop' ? '结束中…' : '启动中…')
-      : s.stale ? '电路已改动' : !s.exists ? '未仿真' : !s.visible ? `正在仿真 ${s.circuit}` : !s.automatic ? '传播已暂停' : s.running ? '时钟运行' : '交互中';
-    const elsewhere = s.exists && !s.visible;
+      : s.stale ? '电路已改动' : !s.current ? '未仿真' : !s.automatic ? '传播已暂停' : s.running ? '时钟运行' : '交互中';
     ui.simulationQuickRestart.hidden = !s.stale;
     ui.simulationQuickRestart.disabled = s.busy || !allowed('start');
-    ui.simulationQuickReturn.hidden = !elsewhere;
-    ui.simulationQuickReturn.disabled = s.viewBusy || s.busy;
-    for (const button of [ui.simulationQuickPlay, ui.simulationQuickTick, ui.simulationQuickReset]) button.hidden = s.stale || elsewhere;
-    ui.simulationTransport.dataset.running = String(s.running);
+    for (const button of [ui.simulationQuickPlay, ui.simulationQuickTick, ui.simulationQuickReset]) button.hidden = s.stale;
+    ui.simulationTransport.dataset.running = String(s.current && s.running);
     ui.simulationTransport.setAttribute('aria-busy', String(s.busy));
-    const playLabel = s.running ? '暂停时钟' : '运行时钟';
+    const playLabel = s.current && s.running ? '暂停时钟' : '运行时钟';
     if (ui.simulationQuickPlay.getAttribute('aria-label') !== playLabel || !ui.simulationQuickPlay.childElementCount) {
-      ui.simulationQuickPlay.replaceChildren(icon(s.running ? 'Pause' : 'Play'));
+      ui.simulationQuickPlay.replaceChildren(icon(s.current && s.running ? 'Pause' : 'Play'));
       ui.simulationQuickPlay.setAttribute('aria-label', playLabel);
     }
     ui.simulationQuickPlay.title = `${playLabel}${ports.shortcutHint('clock')}`;
     ui.simulationQuickPlay.disabled = !allowed('toggle-clock');
-    ui.simulationQuickTick.disabled = !allowed('tick') || s.running;
-    ui.simulationQuickReset.disabled = !allowed('reset') || !s.exists;
-    ui.simulationQuickTick.title = s.running ? '先暂停时钟，再逐步推进' : `时钟一步${ports.shortcutHint('tick')}`;
+    ui.simulationQuickTick.disabled = !allowed('tick') || (s.current && s.running);
+    ui.simulationQuickReset.disabled = !allowed('reset') || !s.current;
+    ui.simulationQuickTick.title = s.current && s.running ? '先暂停时钟，再逐步推进' : `时钟一步${ports.shortcutHint('tick')}`;
     ui.simulationQuickReset.title = ui.simulationReset.title;
-    ui.documentKind.textContent = !project.circuit || !ui.simulationTransport.hidden ? '' : s.visible ? '' : s.exists ? '图面预览' : '未仿真';
+    ui.documentKind.textContent = !project.circuit || !ui.simulationTransport.hidden ? '' : s.visible ? '' : '未仿真';
     ui.documentKind.title = '';
-    ui.simulationMenuButton.dataset.running = String(s.running);
-    if (settingsScope && !sameDocument(settingsScope)) ui.simulationOptions.close();
+    ui.simulationMenuButton.dataset.running = String(s.current && s.running);
+    if (settingsScope && !sameTarget(settingsScope)) ui.simulationOptions.close();
   }
 
   function positionMenu() {
@@ -119,14 +121,14 @@ export function createController({models: {project, canvas}, ui, ports}) {
   function menuItems() { return [...ui.simulationMenu.querySelectorAll('button')].filter(b => !b.hidden && !b.disabled); }
   function showSettings() {
     settingsScope = scope();
-    ui.simulationFrequency.value = ports.simulationStatus().frequency ?? frequency;
+    const s = ports.simulationStatus();
+    ui.simulationFrequency.value = (s.current ? s.frequency : null) ?? frequency;
     ui.simulationSettingsError.hidden = true;
     closeMenu(); ui.simulationOptions.showModal(); ui.simulationFrequency.focus();
   }
 
   function mountSimulationControls() {
     ui.simulationQuickRestart.addEventListener('click', () => void dispatch('start'));
-    ui.simulationQuickReturn.addEventListener('click', () => void ports.returnToSimulation());
     ui.simulationQuickTick.replaceChildren(icon('StepForward'));
     ui.simulationQuickReset.replaceChildren(icon('RotateCcw'));
     for (const [button, action] of [[ui.simulationQuickPlay, 'toggle-clock'], [ui.simulationQuickTick, 'tick'], [ui.simulationQuickReset, 'reset']]) {
@@ -170,7 +172,7 @@ export function createController({models: {project, canvas}, ui, ports}) {
     ui.simulationOptions.addEventListener('close', () => { settingsScope = null; ui.simulationMenuButton.focus(); });
     ui.simulationSettingsForm.addEventListener('submit', async event => {
       event.preventDefault();
-      if (!settingsScope || !sameDocument(settingsScope) || !ui.simulationSettingsForm.reportValidity()) return;
+      if (!settingsScope || !sameTarget(settingsScope) || !ui.simulationSettingsForm.reportValidity()) return;
       const opened = settingsScope;
       ui.simulationSettingsApply.disabled = true;
       const ok = await dispatch('frequency', {frequency: Number(ui.simulationFrequency.value)});

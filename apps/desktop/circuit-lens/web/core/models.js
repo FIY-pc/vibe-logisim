@@ -7,6 +7,7 @@ export function createModels() {
       circuit: null,
       circuitName: null,
       circuitRequestEpoch: 0,
+      circuitLoading: false,
       projectBusy: false,
       circuits: [],
       revision: null,

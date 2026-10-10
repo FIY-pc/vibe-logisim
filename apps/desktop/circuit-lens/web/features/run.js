@@ -41,9 +41,12 @@ export function createController({models, ui, client, ports}) {
   }
 function simulationStatus() {
     const s = runState.simulation;
+    const current = Boolean(s?.session && s.session.projectId === projectState.session?.workspace?.id &&
+      s.session.revisionId === projectState.revision && (displayedSimulationView() || s.session.circuit === projectState.circuitName));
     return Object.freeze({ exists: Boolean(s?.session), running: Boolean(s?.running), automatic: s?.automatic !== false, stale: s?.reasonCode === 'revision-changed',
+      current,
       frequency: s?.session ? s.frequency : undefined, actualFrequency: s?.actualFrequency, circuit: s?.session?.circuit,
-      ticks: s?.observation?.ticks, visible: Boolean(activeObservation()), busy: runState.simulationBusy, busyAction: runState.simulationBusyAction, viewBusy: runState.simulationViewBusy });
+      ticks: s?.observation?.ticks, visible: Boolean(activeObservation()), busy: runState.simulationBusy && runState.simulationBusyCircuit === projectState.circuitName, busyAction: runState.simulationBusyAction, viewBusy: runState.simulationViewBusy });
   }
 
 function invalidateSimulationFrame() { runState.simulationFrame = null; }
@@ -55,6 +58,7 @@ function invalidateSimulation() {
     runState.simulation = null;
     runState.simulationBusy = false;
     runState.simulationBusyAction = null;
+    runState.simulationBusyCircuit = null;
     runState.simulationPolling = false;
     runState.simulationPendingSequence = 0;
     runState.heldButton = null;
@@ -107,14 +111,27 @@ function prepareCircuitNavigation(name,navigation) {
     if(projectState.circuit)renderSimulation(true);
   }
 
-async function activateSimulationView(instancePath) {
+async function activateSimulationView(instancePath, {releaseHeld = true} = {}) {
     if(runState.simulationViewBusy)return null;
     runState.simulationViewBusy=true;renderSimulation();
     try{
-      await releaseButton();
+      if (releaseHeld) await releaseButton();
       const result=await simulationAction('view',{instancePath});
       return result?structuredClone(result.view):null;
     }finally{runState.simulationViewBusy=false;renderSimulation();}
+  }
+
+async function restoreCurrentSimulationView() {
+    if (displayedSimulationView()) return true;
+    if (!simulationStatus().current) return false;
+    const origin = {scope: inputScope()};
+    // A cold input may be waiting on this command. Do not await its release
+    // while restoring the root view it needs in order to press the button.
+    const view = await activateSimulationView([], {releaseHeld: false});
+    if (!view || !currentInput(origin)) return false;
+    runState.displayedView = view;
+    ports.runtimeNavigationStarted(); renderSimulation(); ports.renderInspector();
+    return true;
   }
 
 function updateLiveValues() {
@@ -140,16 +157,16 @@ function updateLiveValues() {
 
 async function prepareSimulationInput(component) {
     if (!inputControl(component)) return null;
-    if (projectState.projectBusy || projectState.sourceChanged || projectState.capabilityState !== 'exact') {
+    if (projectState.projectBusy || projectState.circuitLoading || projectState.sourceChanged || projectState.capabilityState !== 'exact') {
       ports.showToast('当前电路尚未就绪，请等待载入或处理文件变化后重试'); return null;
     }
     const origin = {projectId: projectState.session?.workspace?.id, revision: projectState.revision,
       circuit: projectState.circuitName, navigation: projectState.circuitRequestEpoch};
-    if (!runState.simulation?.session && !await ports.startSimulation()) return null;
+    if (!activeObservation() && !await ports.startSimulation()) return null;
     if (origin.projectId !== projectState.session?.workspace?.id || origin.revision !== projectState.revision ||
         origin.circuit !== projectState.circuitName || origin.navigation !== projectState.circuitRequestEpoch) return null;
     const sample = activeObservation();
-    if (!sample) { ports.showToast('当前画面不是运行中的实例，请从仿真菜单返回运行画面'); return null; }
+    if (!sample) { ports.showToast('运行画面尚未就绪，请重试'); return null; }
     const control = sample.components.find(c => c.componentId === component.componentId);
     if (control?.control === 'parent-input') { ports.showToast('此输入由父电路驱动，请返回父图调整'); return null; }
     return control;
@@ -204,8 +221,10 @@ function simulationAction(action, extra = {}, feedback = null) {
     if (lifecycle && runState.simulationBusy) return Promise.resolve(false);
     const context = {projectId: projectState.session.workspace.id, revisionId: projectState.revision,
       sessionId: runState.simulation?.session?.id, circuit: projectState.circuitName, viewId:runState.simulation?.view?.id};
+    const navigation = projectState.circuitRequestEpoch;
     if (lifecycle) {
       runState.simulationBusy = true; runState.simulationBusyAction = action; runState.simulationEpoch++;
+      runState.simulationBusyCircuit = context.circuit;
       // A poll for the previous run may still be decoding its frame. It must
       // neither block this run's polls nor clear a newer poll's in-flight flag.
       pollingToken++; runState.simulationPolling = false;
@@ -227,7 +246,7 @@ function simulationAction(action, extra = {}, feedback = null) {
         if (feedback) { feedback.sequence = result.commandSequence; feedback.session = result.session?.id; }
         await acceptSimulation(result, epoch);
         if(action==='start'&&isCurrent()){
-          if(context.circuit===projectState.circuitName){runState.displayedView=structuredClone(result.view);ports.runtimeNavigationStarted();}
+          if(context.circuit===projectState.circuitName && navigation===projectState.circuitRequestEpoch){runState.displayedView=structuredClone(result.view);ports.runtimeNavigationStarted();}
           renderSimulation();ports.renderInspector();
         }
         if (!isCurrent()) return false;
@@ -373,5 +392,5 @@ function configureSimulationViewport({sessionId,viewId,viewport}) {
   return simulationAction('viewport',{viewport});
 }
 
-  return Object.freeze({setInputValue,configureSimulationViewport,runningInstance:()=>({session:structuredClone(runState.simulation?.session||null),view:displayedSimulationView()}),watchedSignals:()=>[...runState.watchKeys],displayedSimulationView,prepareCircuitNavigation,activateSimulationView,simulationStatus, invalidateSimulation, invalidateSimulationFrame, isWatched, toggleWatch, pressButton, mountSimulationRuntime, returnToSimulation, activeObservation, updateLiveValues, pokeComponent, releaseButton, simulationAction, acceptSimulation, pollSimulation, renderSimulation});
+  return Object.freeze({setInputValue,configureSimulationViewport,runningInstance:()=>({session:structuredClone(runState.simulation?.session||null),view:displayedSimulationView()}),watchedSignals:()=>[...runState.watchKeys],displayedSimulationView,prepareCircuitNavigation,activateSimulationView,restoreCurrentSimulationView,simulationStatus, invalidateSimulation, invalidateSimulationFrame, isWatched, toggleWatch, pressButton, mountSimulationRuntime, returnToSimulation, activeObservation, updateLiveValues, pokeComponent, releaseButton, simulationAction, acceptSimulation, pollSimulation, renderSimulation});
 }

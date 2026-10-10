@@ -2,7 +2,7 @@ import { makeElement } from '../core/dom.js';
 
 export const modelDependencies = ["project", "memory"];
 
-export const dependencies = ["captureViewport","restoreViewport","selectComponent","focusReferences","simulationStatus","activeObservation","closeMobilePanels","editObject","fitCircuit","simulationAction"];
+export const dependencies = ["captureViewport","restoreViewport","selectComponent","focusReferences","simulationStatus","activeObservation","closeMobilePanels","editObject","fitCircuit","simulationAction","startSimulation"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, memory: memoryState} = models;
@@ -38,7 +38,7 @@ async function openMemory(component, {viewport, offset = 0} = {}) {
       const start = makeElement("button", "bar-button", "启动此电路的仿真");
       start.addEventListener("click", async () => {
         start.disabled = true;
-        if (await ports.simulationAction("start")) await readMemory(0);
+        if (await ports.startSimulation() && memoryState.memory === m) await readMemory(0);
         start.disabled = false;
       });
       empty.append(start); ui.memoryContent.append(empty);

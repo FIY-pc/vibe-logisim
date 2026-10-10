@@ -69,6 +69,45 @@ test('pending feedback survives an older frame but clears when the session is in
   assert.equal(h.button.getAttribute('aria-busy'),'false');assert.equal(h.button.getAttribute('aria-pressed'),'false');
 });
 
+test('an input in a different circuit starts its own run even if another session exists',async()=>{
+  const h=harness();
+  h.models.run.simulation={session:{id:'other',projectId:'project',revisionId:'revision',circuit:'other'}};
+  h.controller.pressButton(h.component);await flush();
+  assert.equal(h.requests.length,0);assert.equal(h.button.getAttribute('aria-busy'),'true');
+  h.start.resolve(true);await flush();
+  assert.equal(h.requests[0].body.sessionId,'session');assert.equal(h.requests[0].body.circuit,'main');
+  await h.acknowledge(0);const release=h.controller.releaseButton();await flush();await h.acknowledge(1);await release;
+});
+
+test('current runtime means a matching root or displayed instance, never just an existing session',()=>{
+  const h=harness();h.models.run.simulation=h.state();
+  assert.equal(h.controller.simulationStatus().current,true);
+  h.models.project.circuitName='Child';assert.equal(h.controller.simulationStatus().current,false);
+  h.models.run.simulation.view={id:'child',circuit:'Child'};h.models.run.displayedView=h.models.run.simulation.view;
+  assert.equal(h.controller.simulationStatus().current,true);
+  h.models.run.displayedView=null;assert.equal(h.controller.simulationStatus().current,false);
+  h.models.project.circuitName='main';h.models.project.revision='edited';assert.equal(h.controller.simulationStatus().current,false);
+});
+
+test('restoring a root view does not deadlock behind the input waiting for that view',async()=>{
+  const h=harness();h.models.run.simulation=h.state();
+  const held={id:'button',session:null,pressed:deferred().promise,
+    feedback:{scope:{project:'project',revision:'revision',circuit:'main',navigation:0}}};
+  h.models.run.heldButton=held;
+  const restored=h.controller.restoreCurrentSimulationView();await flush();
+  assert.equal(h.requests[0].body.action,'view');assert.deepEqual(h.requests[0].body.instancePath,[]);
+  await h.acknowledge(0,{observe:true});assert.equal(await restored,true);
+  assert.equal(h.models.run.heldButton,held);assert.ok(h.controller.activeObservation());
+});
+
+test('a late start response cannot attach itself after leaving and returning to the same name',async()=>{
+  const h=harness();const started=h.controller.simulationAction('start');await flush();
+  h.models.project.circuitRequestEpoch+=2;
+  await h.acknowledge(0,{observe:true});await started;
+  assert.equal(h.controller.simulationStatus().current,true);
+  assert.equal(h.controller.activeObservation(),null);
+});
+
 test('wire bend direction changes only the unfinished leg and all segments stay orthogonal',()=>{
   const start={x:100,y:100},first={x:200,y:150},end={x:300,y:250};
   const fixed=wirePath([start,first]);
