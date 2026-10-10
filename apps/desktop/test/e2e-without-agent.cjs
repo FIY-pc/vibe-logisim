@@ -59,7 +59,7 @@ async function pickFolder(file) {
     assert.match(fs.readFileSync(source, 'utf8'), /<circuit name="main"/);
 
     phase = 'place and persist';
-    await page.locator('#addComponentTool').click();
+    await page.locator('#circuitCanvas').press('a');
     await page.locator('#componentSearch').fill('与门');
     await page.getByRole('button', {name: '与门', exact: true}).click();
     await page.waitForFunction(() => document.querySelector('#objectInspector [data-attribute]') && !document.querySelector('#placementToolbar .placement-loading'));

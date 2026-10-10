@@ -2,7 +2,7 @@ import {icon} from '../core/chat-dom.js';
 // Owns workspace geometry only. Circuit coordinates and conversation state do
 // not change when a panel is resized, collapsed, or revealed.
 export const modelDependencies = ['project'];
-export const dependencies = ['switchReviewTab'];
+export const dependencies = ['switchReviewTab','shortcutHint'];
 
 const defaults = { rail: 260, review: 400, navigatorShare: .30, fileShare:.32, filesCollapsed:false, navigatorCollapsed: false, inspectorCollapsed: false };
 const limits = { rail: [224, 420], review: [320, 820] };
@@ -130,13 +130,13 @@ export function createController({ui, models, ports}) {
 
   function renderPanelToggles() {
     for(const [side, button, panel, name, shortcut] of [
-      ['rail', ui.toggleCircuits, ui.circuitRail, '项目栏', 'Ctrl+B'],
-      ['review', ui.toggleReview, ui.reviewPanel, '工作栏', 'Ctrl+Alt+B'],
+      ['rail', ui.toggleCircuits, ui.circuitRail, '项目栏', ports.shortcutHint('rail')],
+      ['review', ui.toggleReview, ui.reviewPanel, '工作栏', ports.shortcutHint('review')],
     ]) {
       const open=(side !== 'rail' || hasRail()) && (innerWidth>820 ? !ui.appShell.classList.contains(`${side}-hidden`) : panel.classList.contains('is-open'));
       button.setAttribute('aria-expanded',String(open));
       button.setAttribute('aria-label',`${open?'收起':'展开'}${name}`);
-      button.title=`${open?'收起':'展开'}${name}（${shortcut}）`;
+      button.title=`${open?'收起':'展开'}${name}${shortcut}`;
       const nameOfIcon=(side==='rail'?'PanelLeft':'PanelRight')+(open?'Close':'Open');
       if(button.dataset.icon!==nameOfIcon){button.replaceChildren(icon(nameOfIcon));button.dataset.icon=nameOfIcon;}
     }
@@ -170,13 +170,7 @@ export function createController({ui, models, ports}) {
     mountSplit();
     ui.toggleCircuits.addEventListener('click',()=>togglePanel('rail'));
     ui.toggleReview.addEventListener('click',()=>togglePanel('review'));
-    ui.toggleCircuits.setAttribute('aria-keyshortcuts','Control+B Meta+B');
-    ui.toggleReview.setAttribute('aria-keyshortcuts','Control+Alt+B Meta+Alt+B');
-    document.addEventListener('keydown',event=>{
-      if(event.defaultPrevented||event.isComposing||event.repeat||event.shiftKey||!(event.ctrlKey||event.metaKey)||event.key.toLowerCase()!=='b')return;
-      if(event.target.closest?.('input,textarea,select,[contenteditable]')||document.querySelector('dialog[open],:popover-open'))return;
-      event.preventDefault();togglePanel(event.altKey?'review':'rail');
-    });
+    document.addEventListener('vibe-shortcuts-changed',applyLayout);
     window.addEventListener('resize',applyLayout);
     for (const [side, handle] of Object.entries(handles)) {
       handle.addEventListener('pointerdown', event => {

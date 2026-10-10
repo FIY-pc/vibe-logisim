@@ -37,7 +37,7 @@ delete env.ELECTRON_RUN_AS_NODE;
       };
     }, repo);
 
-    await page.locator('#addComponentTool').click();
+    await page.locator('#circuitCanvas').press('a');
     await page.locator('#componentSearch').fill('AND Gate');
     await page.getByRole('button', {name:'与门', exact:true}).click();
     await page.waitForFunction(() => !document.querySelector('#placementToolbar .placement-loading'));

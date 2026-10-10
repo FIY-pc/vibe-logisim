@@ -44,14 +44,14 @@ async function changes(){await page.locator('#fileOptions').click();await page.g
  phase='hover expand and move directory';await drag(file('子目录'),file('归档'),{hover:850});await waitUntil(()=>fs.existsSync(folder+'/归档/子目录/说明.md'));assert.equal(fs.existsSync(folder+'/子目录'),false);await file('归档/子目录/说明.md').waitFor();await preview('请说明进位');
  phase='reject descendant move';await drag(file('归档'),file('归档/子目录'));assert.ok(fs.existsSync(folder+'/归档/子目录/说明.md'));
  phase='edit before moving circuit';
- await page.locator('#addComponentTool').click();await page.locator('#componentSearch').fill('与门');await page.getByRole('button',{name:'与门',exact:true}).click();
+ await page.locator('#circuitCanvas').press('a');await page.locator('#componentSearch').fill('与门');await page.getByRole('button',{name:'与门',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('#objectInspector [data-attribute]')&&!document.querySelector('#placementToolbar .placement-loading'));
  const canvas=await page.locator('#circuitCanvas').boundingBox();await page.mouse.click(canvas.x+canvas.width*.5,canvas.y+canvas.height*.4);await page.keyboard.press('Escape');
  await waitUntil(async()=>(await session()).revision.id!==before.revision.id);await page.waitForFunction(()=>document.querySelector('#appShell').getAttribute('aria-busy')!=='true'&&!document.querySelector('[data-optimistic=true]'));
  await waitUntil(async()=>!(await session()).workspace.dirty);const edited=await session(),editedBytes=fs.readFileSync(folder+'/main.circ');await page.locator('#filesTab').click();
  phase='move active circuit';await drag(file('main.circ'),file('归档'));await waitUntil(async()=>(await session()).folder.activeFile==='归档/main.circ');
  const after=await session();assert.equal(after.workspace.id,before.workspace.id);assert.equal(after.revision.id,edited.revision.id);assert.equal(after.workspace.dirty,edited.workspace.dirty);assert.deepEqual(after.workspace.history,edited.workspace.history);assert.equal(after.folder.id,before.folder.id);assert.equal(await page.locator('#questionInput').getAttribute('data-conversation-id'),conversation);assert.deepEqual(fs.readFileSync(folder+'/归档/main.circ'),editedBytes);
- phase='edit saves at moved location';await page.locator('#addComponentTool').click();await page.locator('#componentSearch').fill('或门');await page.getByRole('button',{name:'或门',exact:true}).click();
+ phase='edit saves at moved location';await page.locator('#circuitCanvas').press('a');await page.locator('#componentSearch').fill('或门');await page.getByRole('button',{name:'或门',exact:true}).click();
  await page.waitForFunction(()=>!document.querySelector('#placementToolbar .placement-loading'));
  await page.mouse.click(canvas.x+canvas.width*.7,canvas.y+canvas.height*.6);await page.keyboard.press('Escape');
  await waitUntil(async()=>{const s=await session();return s.revision.id!==edited.revision.id&&!s.workspace.dirty;});await page.waitForFunction(()=>document.querySelector('#appShell').getAttribute('aria-busy')!=='true');await page.locator('#filesTab').click();const saved=fs.readFileSync(folder+'/归档/main.circ');assert.match(saved.toString(),/AND Gate/);assert.match(saved.toString(),/OR Gate/);assert.equal(fs.existsSync(folder+'/main.circ'),false);

@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld(
       read:()=>ipcRenderer.invoke('vibe-logisim:canvas-preferences-read'),
       write:value=>ipcRenderer.invoke('vibe-logisim:canvas-preferences-write',value),
     }),
+    shortcutPreferences:Object.freeze({
+      read:()=>ipcRenderer.invoke('vibe-logisim:shortcuts-read'),
+      write:value=>ipcRenderer.invoke('vibe-logisim:shortcuts-write',value),
+    }),
     getLayout: () => ipcRenderer.invoke("vibe-logisim:layout-read"),
     setLayout: value => ipcRenderer.invoke("vibe-logisim:layout-write", value),
     getAppInfo: () => ipcRenderer.invoke("vibe-logisim:app-info"),

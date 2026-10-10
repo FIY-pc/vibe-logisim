@@ -1,22 +1,21 @@
 // Menu, shortcuts and settings share commands; native session ownership stays in run.js.
 import {icon} from '../core/chat-dom.js';
 export const modelDependencies = ['project', 'canvas'];
-export const dependencies = ['simulationStatus', 'simulationAction', 'mountSimulationRuntime', 'returnToSimulation', 'captureMoment'];
+export const dependencies = ['shortcutHint','shortcutLabel','simulationStatus', 'simulationAction', 'mountSimulationRuntime', 'returnToSimulation', 'captureMoment'];
 
 const commands = [
   {id: 'simulationStart', action: 'start'},
-  {id: 'simulationPlay', action: 'toggle-clock', key: 'k'},
-  {id: 'simulationTick', action: 'tick', key: 't'},
-  {id: 'simulationAutomatic', action: 'toggle-propagation', key: 'e'},
-  {id: 'simulationStep', action: 'step', key: 'i'},
-  {id: 'simulationReset', action: 'reset', key: 'r'},
+  {id: 'simulationPlay', action: 'toggle-clock', shortcut: 'clock'},
+  {id: 'simulationTick', action: 'tick', shortcut: 'tick'},
+  {id: 'simulationAutomatic', action: 'toggle-propagation', shortcut: 'propagation'},
+  {id: 'simulationStep', action: 'step', shortcut: 'step'},
+  {id: 'simulationReset', action: 'reset', shortcut: 'reset'},
   {id: 'simulationStop', action: 'stop'},
-  {id: 'momentCapture', action: 'capture', key: 'F6', unmodified: true},
+  {id: 'momentCapture', action: 'capture', shortcut: 'capture'},
 ];
 
 export function createController({models: {project, canvas}, ui, ports}) {
   let queue = Promise.resolve(), frequency = 2, settingsScope = null, focusLast = false;
-  const modifier = /Mac/.test(navigator.platform) ? 'Meta' : 'Control';
   const menuOpen = () => ui.simulationMenu.matches(':popover-open');
   const scope = () => ({projectId: project.session?.workspace?.id, revision: project.revision,
     circuit: project.circuitName, navigation: project.circuitRequestEpoch});
@@ -68,7 +67,7 @@ export function createController({models: {project, canvas}, ui, ports}) {
     const s = ports.simulationStatus();
     ui.circuitCanvas.dataset.simulationBusy = String(s.busy);
     ui.pokeTool.setAttribute('aria-busy', String(s.busy));
-    ui.pokeTool.title = s.busy ? '正在准备仿真，点击的输入会随后生效' : '操作输入、按钮和时钟（P）；首次点击自动启动仿真';
+    ui.pokeTool.title = s.busy ? '正在准备仿真，点击的输入会随后生效' : `操作输入${ports.shortcutHint('poke')}；首次点击自动启动仿真`;
     const status = s.busy ? (s.busyAction === 'stop' ? '正在结束仿真…' : '正在准备仿真…') : !s.exists ? '尚未开始' :
       `${s.running ? '时钟运行' : '时钟暂停'}${s.automatic ? '' : ' · 自动传播已暂停'}`;
     ui.simulationOwner.textContent = s.circuit || project.circuitName || '尚未打开电路';
@@ -99,11 +98,11 @@ export function createController({models: {project, canvas}, ui, ports}) {
       ui.simulationQuickPlay.replaceChildren(icon(s.running ? 'Pause' : 'Play'));
       ui.simulationQuickPlay.setAttribute('aria-label', playLabel);
     }
-    ui.simulationQuickPlay.title = `${playLabel}（${modifier === 'Meta' ? '⌘' : 'Ctrl'}+K）`;
+    ui.simulationQuickPlay.title = `${playLabel}${ports.shortcutHint('clock')}`;
     ui.simulationQuickPlay.disabled = !allowed('toggle-clock');
     ui.simulationQuickTick.disabled = !allowed('tick') || s.running;
     ui.simulationQuickReset.disabled = !allowed('reset') || !s.exists;
-    ui.simulationQuickTick.title = s.running ? '先暂停时钟，再逐步推进' : `时钟一步（${modifier === 'Meta' ? '⌘' : 'Ctrl'}+T）`;
+    ui.simulationQuickTick.title = s.running ? '先暂停时钟，再逐步推进' : `时钟一步${ports.shortcutHint('tick')}`;
     ui.simulationQuickReset.title = ui.simulationReset.title;
     ui.documentKind.textContent = !project.circuit || !ui.simulationTransport.hidden ? '' : s.visible ? '' : s.exists ? '图面预览' : '未仿真';
     ui.documentKind.title = '';
@@ -136,10 +135,8 @@ export function createController({models: {project, canvas}, ui, ports}) {
     ui.simulationMenu.querySelectorAll('button').forEach(button => { button.tabIndex = -1; });
     for (const command of commands) {
       const button = ui[command.id];
-      if (command.key) {
-        const label = command.unmodified ? command.key : `${modifier === 'Meta' ? '⌘' : 'Ctrl'} ${command.key.toUpperCase()}`;
-        const kbd = document.createElement('kbd'); kbd.textContent = label; button.append(kbd);
-        button.setAttribute('aria-keyshortcuts', command.unmodified ? command.key : `${modifier}+${command.key.toUpperCase()}`);
+      if (command.shortcut) {
+        const kbd = document.createElement('kbd'); kbd.textContent = ports.shortcutLabel(command.shortcut); button.append(kbd);
       }
       button.addEventListener('click', () => { closeMenu(); void dispatch(command.action); });
     }
@@ -183,17 +180,9 @@ export function createController({models: {project, canvas}, ui, ports}) {
       else { ui.simulationSettingsError.textContent = '未能应用频率，请重试。'; ui.simulationSettingsError.hidden = false; }
     });
     window.addEventListener('resize', positionMenu);
-    document.addEventListener('keydown', event => {
-      if (event.defaultPrevented || event.isComposing || event.altKey || event.shiftKey) return;
-      const command = commands.find(c => c.key?.toLowerCase() === event.key.toLowerCase() &&
-        (c.unmodified ? !event.ctrlKey && !event.metaKey : modifier === 'Meta' ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey));
-      if (!command || (command.action !== 'capture' && event.target.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) ||
-          document.querySelector('dialog[open]') || document.querySelector(':popover-open:not(#simulationMenu)')) return;
-      event.preventDefault(); event.stopPropagation();
-      if (!event.repeat) { closeMenu(); void dispatch(command.action); }
-    }, true);
+    document.addEventListener('vibe-shortcuts-changed',renderSimulationControls);
     ports.mountSimulationRuntime();
     renderSimulationControls();
   }
-  return {mountSimulationControls, renderSimulationControls, startSimulation: () => dispatch('start')};
+  return {mountSimulationControls, renderSimulationControls, runSimulationCommand: action => {closeMenu();return dispatch(action);}, startSimulation: () => dispatch('start')};
 }

@@ -4,7 +4,7 @@ import { API } from '../core/endpoints.js';
 
 export const modelDependencies = ["project", "review"];
 
-export const dependencies = ["refreshWorkspaceLayout","prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
+export const dependencies = ["shortcutHint","refreshWorkspaceLayout","prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
@@ -187,7 +187,7 @@ function updateSessionChrome() {
     ui.saveStatus.dataset.dirty = String(Boolean(workspace?.dirty));
     ui.appShell.setAttribute("aria-busy", String(projectState.projectBusy));
     ui.saveButton.disabled = !workspace?.dirty || !workspace?.canSave || projectState.projectBusy || projectState.sourceChanged;
-    ui.saveButton.title = workspace?.canSave ? "保存到当前 .circ 文件（Ctrl+S）" : "上传的工程请先导出工程包";
+    ui.saveButton.title = workspace?.canSave ? `保存到当前 .circ 文件${ports.shortcutHint("save")}` : "上传的工程请先导出工程包";
     ui.undoButton.disabled = !workspace?.canUndo || projectState.projectBusy || projectState.sourceChanged;
     ui.deleteSelectionButton.disabled = !(ports.selectionSnapshot().componentIds.length || ports.selectionSnapshot().wireIds.length) || projectState.projectBusy || projectState.sourceChanged;
     ports.renderProjectHistory();
