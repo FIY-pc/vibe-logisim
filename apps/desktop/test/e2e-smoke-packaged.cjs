@@ -29,11 +29,11 @@ async function world(x, y) { return page.locator('#circuitCanvas').evaluate((e, 
 async function choose(search, label) { await page.locator('#circuitCanvas').press('a'); await page.locator('#componentSearch').fill(search); await page.locator('#componentLibrary').getByRole('button', {name: label, exact: true}).click(); await page.waitForFunction(() => document.querySelector('#objectInspector [data-attribute]') && !document.querySelector('#placementToolbar .placement-loading')); }
 async function attribute(name, value) { const field = page.locator('#objectInspector [data-attribute="' + name + '"]'); if (await field.evaluate(e => e.tagName) === 'SELECT') await field.selectOption(value); else { await field.fill(value); await field.press('Enter'); } await page.waitForFunction(() => !document.querySelector('#placementToolbar .placement-loading')); await page.locator('#circuitCanvas').focus(); }
 async function place(x, y) { const old = (await session()).revision.id, p = await world(x, y); await page.mouse.move(p.x, p.y); await page.locator('.placement-ghost').waitFor(); await page.mouse.click(p.x, p.y); await waitUntil(() => session().then(s => s.revision.id !== old && s), {timeout: 60000}); await idle(); }
-async function launch() {
+async function launch(file) {
   // Chromium's SUID sandbox needs a root-owned 4755 chrome-sandbox helper or user
   // namespaces; zip-extracted bundles on CI runners have neither, so allow opting out.
   const noSandbox = windows || Boolean(process.env.VIBE_SMOKE_NO_SANDBOX);
-  app = await _electron.launch({executablePath: executable, args: noSandbox ? ['--no-sandbox'] : [], chromiumSandbox: !noSandbox, cwd: root, env, timeout: 120000});
+  app = await _electron.launch({executablePath: executable, args: [...(file ? [file] : []), ...(noSandbox ? ['--no-sandbox'] : [])], chromiumSandbox: !noSandbox, cwd: root, env, timeout: 120000});
   page = await app.firstWindow(); page.setDefaultTimeout(60000); page.on('pageerror', e => errors.push(e.stack));
   await page.setViewportSize({width: 1500, height: 960});
   app.process().stderr.on('data', data => fs.appendFileSync(path.join(root, 'app.log'), data));
@@ -140,8 +140,40 @@ async function launch() {
   assert.equal(report.workspace.root.nonAscii, true);
   const bundleText = entries.map(entry => entry.data.toString('utf8')).join('\n');
   for (const forbidden of [os.homedir(), folder, '我的电路', '与门验证']) assert.equal(bundleText.includes(forbidden), false, 'bundle contains ' + forbidden);
+  phase = 'simulation follows the displayed circuit';
+  await app.close(); app = null;
+  const scopeFile = path.join(folder, 'simulation-scope.circ');
+  const clockCircuit = name => `<circuit name="${name}"><comp lib="0" name="Clock" loc="(100,100)"><a name="label" val="CLK"/></comp><comp lib="0" name="Pin" loc="(300,100)"><a name="facing" val="west"/><a name="output" val="true"/><a name="label" val="Q"/></comp><wire from="(100,100)" to="(300,100)"/></circuit>`;
+  const scopeSource = `<project source="2.7.1" version="1.0"><lib name="0" desc="#Wiring"/><main name="A"/>${clockCircuit('A')}${clockCircuit('B')}</project>`;
+  fs.writeFileSync(scopeFile, scopeSource);
+  await launch(scopeFile);
+  async function openCircuit(name) {
+    await page.locator('#circuitList button').filter({has: page.locator('strong', {hasText: new RegExp('^' + name + '$')})}).click();
+    await page.waitForFunction(name => document.querySelector('#currentCircuitName').textContent === name && document.querySelector('#canvasStatus').hidden, name);
+  }
+  async function simulationKey(key) { await page.locator('#simulationMenuButton').focus(); await page.keyboard.press('Control+' + key); }
+  await openCircuit('A'); const scopeRevision = (await session()).revision.id;
+  await simulationKey('t');
+  const firstRun = await waitUntil(() => observation().then(s => s.session?.circuit === 'A' && s.observation?.ticks === 1 && s), {timeout: 90000});
+  await openCircuit('B'); assert.equal((await observation()).session.id, firstRun.session.id, 'browsing retains A');
+  await simulationKey('k');
+  const secondRun = await waitUntil(() => observation().then(s => s.session?.circuit === 'B' && s.running && s.observation?.ticks > 0 && s), {timeout: 90000});
+  assert.notEqual(secondRun.session.id, firstRun.session.id, 'K starts B without returning to A');
+  await simulationKey('k'); await waitUntil(() => observation().then(s => !s.running));
+  const paused = await waitUntil(() => observation().then(s => s.observation?.commandSequence >= s.commandSequence && s));
+  const output = s => s.observation.components.find(c => c.label === 'Q').ports[0].bits;
+  await openCircuit('A'); await openCircuit('B');
+  await page.waitForFunction(() => document.querySelector('#runtimeLayer').dataset.observationId);
+  assert.equal((await observation()).session.id, paused.session.id, 'return restores B without restarting');
+  await simulationKey('t');
+  const stepped = await waitUntil(() => observation().then(s => s.observation?.ticks === paused.observation.ticks + 1 && s));
+  assert.notEqual(output(stepped), output(paused), 'one tick changes the actual native Clock output');
+  assert.equal((await session()).revision.id, scopeRevision, 'simulation does not create an edit');
+  assert.equal(fs.readFileSync(scopeFile, 'utf8'), scopeSource, 'simulation does not change the source');
+  await page.screenshot({path: path.join(out, '05-simulation-context.png')});
+  note('browsing preserves A; K starts and pauses B; return and T preserve B identity and advance its native Clock');
   assert.deepEqual(errors, []);
-  const result = {platform: process.platform, executable, success: true, modelTurns: 0, bundledLayout: true, signalNavigation: true, truthTable: truth, components: 4, wires: 5, reopened: true, agentStatus: state.status, isolation: state.isolation, diagnosticsEntries: entries.length, log};
+  const result = {platform: process.platform, executable, success: true, modelTurns: 0, bundledLayout: true, signalNavigation: true, simulationContext: true, truthTable: truth, components: 4, wires: 5, reopened: true, agentStatus: state.status, isolation: state.isolation, diagnosticsEntries: entries.length, log};
   fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify(result, null, 2)); console.log(JSON.stringify(result));
 } catch (error) {
   console.error('FAILED', phase, root, error);
