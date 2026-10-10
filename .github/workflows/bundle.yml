@@ -277,7 +277,7 @@ jobs:
         run: npm --prefix apps/desktop ci --ignore-scripts
       - name: Smoke test the packaged app under Xvfb
         run: |
-          sudo apt-get install -y -qq xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1 >/dev/null
+          sudo apt-get install -y -qq xvfb fonts-noto-cjk libgtk-3-0 libnss3 libasound2t64 libgbm1 >/dev/null
           exe=$(find unpacked -maxdepth 2 -name vibe-logisim -type f | head -1)
           echo "Executable: $exe"
           VIBE_SMOKE_NO_SANDBOX=1 xvfb-run -a node apps/desktop/test/e2e-smoke-packaged.cjs "$exe" smoke-out

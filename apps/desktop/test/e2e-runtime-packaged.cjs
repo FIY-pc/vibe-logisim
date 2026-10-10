@@ -23,6 +23,7 @@ async function launch() {
   app = await _electron.launch({executablePath:executable, args:noSandbox?['--no-sandbox']:[], chromiumSandbox:!noSandbox, cwd:root, env, timeout:120000});
   page = await app.firstWindow(); page.setDefaultTimeout(45000); page.on('pageerror', e => errors.push(e.message));
   app.process().stderr.on('data', data => fs.appendFileSync(path.join(out, 'app.log'), data));
+  await waitUntil(() => app.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows().some(window => window.isVisible())));
   await page.setViewportSize({width:1440,height:960});
   assert.equal(await app.evaluate(({app}) => app.isPackaged), true);
   await settled();
@@ -57,7 +58,13 @@ async function addService(fake, name) {
   await app.evaluate(({dialog}, folder)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[folder]});},folder);
   await page.locator('#emptyOpenButton').click();
   await page.locator('#fileActions').waitFor({state:'visible'});
-  await page.locator('#newFileMenu').click(); await page.getByRole('menuitem',{name:'新建电路',exact:true}).click();
+  await page.locator('#newFileMenu').click();
+  await page.getByRole('menuitem',{name:'新建电路',exact:true}).waitFor({state:'visible'});
+  // Native window sizing can finish after renderer startup on Windows. A
+  // resize must reposition the open menu, not discard the user's action.
+  await page.setViewportSize({width:1420,height:940});
+  await page.getByRole('menuitem',{name:'新建电路',exact:true}).click();
+  await page.setViewportSize({width:1440,height:960});
   const name=page.getByRole('textbox',{name:'文件名称',exact:true});await name.fill('example.circ');await name.press('Enter');
   await page.waitForFunction(()=>document.querySelector('#appShell').getAttribute('aria-busy')!=='true'&&!document.querySelector('#fileActions').hidden);
   phase='first-use connection';
