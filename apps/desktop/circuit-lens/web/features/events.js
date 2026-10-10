@@ -1,4 +1,4 @@
-
+import {icon} from '../core/chat-dom.js';
 
 export const modelDependencies = ["project", "canvas"];
 
@@ -31,6 +31,8 @@ function bindEvents() {
     ports.mountShortcuts();
     ui.clearObjectSelection.addEventListener("click", () => ports.clearSelection());
     ui.clearComposerContext.addEventListener("click", () => ports.clearSelection());
+    ui.undoButton.replaceChildren(icon('Undo2'));
+    ui.deleteSelectionButton.replaceChildren(icon('Trash2'));
     ui.undoButton.addEventListener("click", () => ports.performProjectAction("undo"));
     ui.deleteSelectionButton.addEventListener("click", () => ports.performProjectAction("delete", {
       circuit: projectState.circuitName,

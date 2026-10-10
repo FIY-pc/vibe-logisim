@@ -44,7 +44,6 @@
         <span id="saveStatus" class="sr-only" role="status" aria-live="polite"></span>
         <div class="bar-actions">
           <button id="simulationMenuButton" class="bar-button" popovertarget="simulationMenu" aria-haspopup="menu" aria-expanded="false">仿真 <span aria-hidden="true">⌄</span></button>
-          <button class="icon-button" id="undoButton" aria-label="撤销" title="撤销上一步改动（Ctrl+Z）" disabled>↶</button>
           <button class="bar-button" id="openButton">
             <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 6h5l2-2h7v12H3z" /></svg>
             打开文件夹
@@ -146,16 +145,20 @@
                 平移 <kbd aria-hidden="true">4</kbd>
               </button>
             </div>
-            <span class="tool-divider"></span>
-            <button class="tool-button" id="zoomOutButton" aria-label="缩小">−</button>
-            <output class="zoom-readout" id="zoomReadout" aria-label="缩放比例">100%</output>
-            <button class="tool-button" id="zoomInButton" aria-label="放大">＋</button>
-            <button class="tool-button fit-button" id="fitButton" title="适合窗口（F）">
-              <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 8V3h5M12 3h5v5M17 12v5h-5M8 17H3v-5" /></svg>
-              适合
-            </button>
-            <button class="tool-button" id="gridToggle" type="button" aria-label="网格" aria-pressed="false" aria-keyshortcuts="G" title="显示网格（G）"></button>
-            <button class="tool-button" id="deleteSelectionButton" aria-label="删除选中对象" title="删除选中对象（Backspace / Delete）" aria-keyshortcuts="Backspace Delete" disabled>⌫</button>
+            <div class="canvas-tool-group" role="group" aria-label="电路编辑">
+              <button class="tool-button" id="undoButton" aria-label="撤销" title="撤销上一步改动（Ctrl+Z）" disabled></button>
+              <button class="tool-button" id="deleteSelectionButton" aria-label="删除选中对象" title="删除选中对象（Backspace / Delete）" aria-keyshortcuts="Backspace Delete" disabled></button>
+            </div>
+            <div class="canvas-tool-group" role="group" aria-label="画布视图">
+              <button class="tool-button" id="zoomOutButton" aria-label="缩小">−</button>
+              <output class="zoom-readout" id="zoomReadout" aria-label="缩放比例">100%</output>
+              <button class="tool-button" id="zoomInButton" aria-label="放大">＋</button>
+              <button class="tool-button fit-button" id="fitButton" title="适合窗口（F）">
+                <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 8V3h5M12 3h5v5M17 12v5h-5M8 17H3v-5" /></svg>
+                适合
+              </button>
+              <button class="tool-button" id="gridToggle" type="button" aria-label="网格" aria-pressed="false" aria-keyshortcuts="G" title="显示网格（G）"></button>
+            </div>
           </div>
 
           <div class="simulation-transport" id="simulationTransport" role="toolbar" aria-label="仿真控制" hidden>

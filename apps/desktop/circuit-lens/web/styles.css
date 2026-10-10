@@ -93,13 +93,13 @@ kbd{font:11px var(--sans);color:#9ba1ad}
 .optimistic-delete-fill{fill:var(--paper,#fff)}.optimistic-delete-wire{fill:none;stroke:var(--paper,#fff);stroke-width:11;stroke-linecap:square;stroke-linejoin:miter}
 .minor-grid-line{fill:none;stroke:#e8edf4}.major-grid-line{fill:none;stroke:#d6deea}
 #gridToggle svg{width:15px;height:15px}#gridToggle[aria-pressed=true]{background:var(--selected);color:var(--accent)}
-.canvas-toolbar{display:flex;align-items:center;gap:3px;position:absolute;bottom:18px;left:50%;transform:translateX(-50%);height:39px;border:1px solid var(--line);border-radius:9px;background:var(--paper);box-shadow:0 2px 8px #20242b0d;padding:4px;z-index:4;white-space:nowrap}
+.canvas-toolbar{display:flex;align-items:center;gap:3px 12px;position:absolute;bottom:18px;left:50%;transform:translateX(-50%);height:39px;border:1px solid var(--line);border-radius:9px;background:var(--paper);box-shadow:0 2px 8px #20242b0d;padding:4px;z-index:4;white-space:nowrap}
+.canvas-tool-group{display:flex;align-items:center;gap:3px;flex-shrink:0}
 .segmented-control{display:flex;gap:2px;align-items:center}
 .segmented-control button,.tool-button{display:flex;align-items:center;gap:5px;border-radius:5px;height:29px;padding:0 9px;font-size:11px}
 .segmented-control button.is-active{background:var(--selected);color:var(--accent)}
-.segmented-control svg,.fit-button svg{width:15px;height:15px}
+.segmented-control svg,.tool-button svg{width:15px;height:15px}
 .tool-button{min-width:26px;justify-content:center}
-.tool-divider{height:17px;width:1px;background:var(--line);margin:0 5px}
 .zoom-readout{font-size:10px;min-width:34px;text-align:center;color:var(--muted);font-variant-numeric:tabular-nums}
 .canvas-status{position:absolute;top:57px;left:15px;right:15px;z-index:4;border-left:2px solid var(--warning);background:#fff7e9;padding:8px 12px;font-size:12px}
 .canvas-status[data-kind="loading"]{background:var(--selected);border-color:var(--accent)}
