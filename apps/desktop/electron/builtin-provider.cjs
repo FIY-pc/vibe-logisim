@@ -74,9 +74,15 @@ function modelFor(config,metadata=null) {
   // service unchanged; an unsupported value should fail visibly there.
   const extended=config.effort==='xhigh'||config.effort==='max';
   const adaptive=config.api==='anthropic-messages'&&(extended||(metadata?.efforts?.length&&!metadata.budgetThinking));
+  // Pi omits the strict flag for Responses unless this compatibility switch is
+  // set. With it, ordinary tool declarations are sent as strict:false. Omitting
+  // strict lets Responses normalize optional fields into required fields,
+  // breaking omission-based views such as inspect_circuit. Keep the executable
+  // schema intact; validation still belongs to the tool host and domain.
+  const compat=config.api==='openai-responses'?{supportsStrictMode:true}:adaptive?{forceAdaptiveThinking:true}:null;
   return {id:config.model,name:config.model,api:config.api,provider:'vibe-'+createHash('sha256').update((config.id||'')+'\n'+config.baseUrl.replace(/\/+$/,'')+'\n'+config.api).digest('hex').slice(0,24),baseUrl:config.baseUrl,
     reasoning:config.effort!=='none', input:config.vision?['text','image']:['text'],
-    thinkingLevelMap:{xhigh:'xhigh',max:'max'},...(adaptive?{compat:{forceAdaptiveThinking:true}}:{}),
+    thinkingLevelMap:{xhigh:'xhigh',max:'max'},...(compat?{compat}:{}),
     cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:config.contextWindow,maxTokens:8192};
 }
 async function transport(api) {

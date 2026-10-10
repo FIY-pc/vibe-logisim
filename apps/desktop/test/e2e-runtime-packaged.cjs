@@ -88,6 +88,9 @@ async function addService(fake, name) {
   await page.locator('#questionInput').fill('Remember this conversation.');await page.locator('#askButton').click();
   await waitUntil(()=>state().then(s=>!s.busy&&s.messages.some(m=>m.type==='assistant'&&m.text==='First service reply')&&s),{timeout:60000});
   assert.ok(first.requests.some(r=>r.body?.model==='probe-mini'&&r.body?.reasoning?.effort==='max'));
+  const toolRequests=first.requests.filter(r=>r.body?.tools?.length);
+  assert.ok(toolRequests.length,'packaged runtime sends its tools');
+  for(const request of toolRequests)for(const tool of request.body.tools)assert.equal(tool.strict,false,tool.name);
   await page.screenshot({path:path.join(out,'01-connected.png')});
   phase='new service preserves conversation binding';
   await settings();await addService(second,'Second service');

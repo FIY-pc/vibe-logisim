@@ -17,13 +17,21 @@ def review_options(args):
     options = args['layoutReview']
     if (not isinstance(options, dict) or set(options) - {'issueOffset', 'artifactSha256'}
             or type(options.get('issueOffset', 0)) is not int
-            or options.get('issueOffset', 0) < 0
-            or not args.get('circuit')
-            or any(k in args for k in ('layoutContext', 'componentDirectory', 'portConnections',
-                                      'componentIds', 'includeNets', 'netFormat', 'includeWires',
-                                      'wireOffset', 'wireLimit'))):
+            or options.get('issueOffset', 0) < 0):
         raise CircuitToolError('INVALID_ARGUMENT',
-                               'layoutReview 需要 circuit；可选 issueOffset 为非负整数，不能与其他明细筛选混用。')
+                               'layoutReview 必须是对象；可选 issueOffset 为非负整数。',
+                               hint='首次查看使用 layoutReview:{}；不要填写占位摘要。')
+    if not args.get('circuit'):
+        raise CircuitToolError('INVALID_ARGUMENT', 'layoutReview 需要指定 circuit。')
+    conflicts = [k for k in ('layoutContext', 'componentDirectory', 'portConnections',
+                            'componentIds', 'includeNets', 'netFormat', 'includeWires',
+                            'wireOffset', 'wireLimit') if k in args]
+    if conflicts:
+        raise CircuitToolError('INVALID_ARGUMENT',
+                               'layoutReview 与以下参数冲突：' + ', '.join(conflicts) + '。',
+                               hint='每次只选一种观察方式。查看布局时只保留 circuit、layoutReview 和可选 candidateId；'
+                                    '查看元件或连接时删除 layoutReview。不需要的字段直接省略，不要填空对象、空数组或 false。',
+                               context={'conflictingParameters': conflicts})
     digest = options.get('artifactSha256')
     if ((digest is not None and (not isinstance(digest, str) or not re.fullmatch('[0-9a-f]{64}', digest)))
             or (options.get('issueOffset', 0) > 0 and digest is None)):

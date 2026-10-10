@@ -10,6 +10,8 @@ const {bundle}=require('./bundle-sdk.cjs');
   await fs.cp(path.join(desktop,'electron'),path.join(app,'electron'),{recursive:true});
   await fs.cp(path.join(desktop,'circuit-knowledge'),path.join(app,'circuit-knowledge'),{recursive:true});
   await fs.cp(path.join(desktop,'test/support'),path.join(app,'test/support'),{recursive:true});
+  await fs.mkdir(path.join(app,'circuit-lens/studio/domain'),{recursive:true});
+  await fs.copyFile(path.join(desktop,'circuit-lens/studio/domain/circuit-plugin.json'),path.join(app,'circuit-lens/studio/domain/circuit-plugin.json'));
   await bundle(app);
   const result=spawnSync(process.execPath,['--test',path.join(app,'electron/builtin-backend.test.cjs')],{stdio:'inherit'});
   if(result.error)throw result.error;process.exitCode=result.status||0;

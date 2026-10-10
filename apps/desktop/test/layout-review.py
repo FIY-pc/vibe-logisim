@@ -98,6 +98,17 @@ class LayoutReview(unittest.TestCase):
             with self.assertRaises(CircuitToolError):
                 review_options(args)
 
+    def test_view_conflict_identifies_fields_to_omit_instead_of_claiming_circuit_is_missing(self):
+        with self.assertRaises(CircuitToolError) as caught:
+            review_options({'circuit': 'main', 'layoutReview': {},
+                            'componentIds': [], 'includeWires': False, 'componentDirectory': {}})
+        error = caught.exception.as_dict()
+        self.assertEqual(error['context']['conflictingParameters'],
+                         ['componentDirectory', 'componentIds', 'includeWires'])
+        self.assertIn('省略', error['hint'])
+        self.assertNotIn('需要 circuit', error['message'])
+        self.assertEqual(review_options({'circuit': 'main', 'layoutReview': {}}), {})
+
     def test_review_candidate_uses_candidate_artifact_without_checkout(self):
         text = fidelity.project(fidelity.circuit('main', fidelity.pin(100, 100, 'A')
             + fidelity.pin(300, 100, 'Y', out=True) + fidelity.wire((100, 100), (300, 100))))

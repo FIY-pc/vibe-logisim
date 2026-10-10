@@ -246,7 +246,7 @@ node apps/desktop/test/builtin-runtime-native.cjs
 env -u ELECTRON_RUN_AS_NODE apps/desktop/node_modules/.bin/electron apps/desktop/test/builtin-runtime-electron.cjs
 ```
 
-前者使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属；后者把本地模型响应接到生产工具宿主和原生 Logisim，检查读取、仿真及图片结果。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。
+第一条使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属，并检查完整工具目录在 Responses 出站请求中保留原始可选字段、显式发送 `strict:false`。原生脚本分别走 Chat Completions 和 Responses，只传必要参数读取项目、组件目录、元件详情及端口连接，再检查仿真与图片结果。Electron 脚本检查真实 `session.fetch` 传输。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。
 
 ### 模型目录维护
 

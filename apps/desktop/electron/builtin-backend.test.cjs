@@ -74,6 +74,32 @@ test('Responses adapter uses the configured endpoint and streams a real response
   assert.equal(fake.requests.at(-1).body.reasoning.effort,effort);
  }
 });
+test('Responses sends explicit non-strict tools and preserves the complete catalog optionality across resume',async t=>{
+ const {startFakeResponsesServer}=require('../test/support/fake-responses-server.cjs');
+ const {CircuitPlugin}=require('./circuit-plugin.cjs'),{AgentToolHost}=require('./agent-tool-host.cjs');
+ const manifest=require('../circuit-lens/studio/domain/circuit-plugin.json');
+ const fake=await startFakeResponsesServer();t.after(()=>fake.close());
+ const {b,options}=await fixture(t,(_req,res)=>reply(res,'unused'));
+ const toolHost=new AgentToolHost({plugin:new CircuitPlugin({}),manifest:async()=>manifest});b.toolHost=toolHost;
+ b.provider.setDefault(b.provider.save({baseUrl:fake.baseUrl,apiKey:fake.apiKey,model:'probe-chat',api:'openai-responses',effort:'none'}).id);
+ const check=()=>{
+  const tools=fake.requests.at(-1).body.tools;
+  assert.ok(tools.length>manifest.tools.filter(t=>t.exposure==='direct').length,'workspace tools are included');
+  for(const tool of tools)assert.equal(tool.strict,false,`${tool.name} must not inherit Responses strict normalization`);
+  for(const expected of manifest.tools.filter(t=>t.exposure==='direct')){
+   assert.deepEqual(tools.find(t=>t.name===expected.name).parameters,expected.inputSchema,expected.name);
+  }
+  const inspect=tools.find(t=>t.name==='inspect_circuit').parameters;
+  assert.deepEqual(inspect.required,[]);
+  assert.equal(inspect.properties.componentDirectory.required,undefined);
+  assert.deepEqual(inspect.properties.portConnections.required,['ports']);
+ };
+ await b.ask(request());await b.run;assert.equal(b.snapshot().transmission,null);check();
+ await b.stop();
+ const restored=new BuiltinBackend({...options,toolHost});t.after(()=>restored.stop());
+ await restored.start();await restored.resumeWorkspace({workspaceKey:'workspace',revisionId:'r'});
+ await restored.ask(request('continue'));await restored.run;assert.equal(restored.snapshot().transmission,null);check();
+});
 test('an unknown model keeps thinking controls, persists the choice and sends it through the real adapter',async t=>{
  const {b,options,requests}=await fixture(t,(_req,res)=>reply(res,'OK'));
  let result=await b.listModels();assert.equal(result.state.effort,null);
