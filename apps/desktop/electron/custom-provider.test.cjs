@@ -14,7 +14,7 @@ test('a student endpoint becomes provider.toml plus a strict-config-safe catalog
   assert.deepEqual(visible.models, ['deepseek-chat']);
   const catalog = JSON.parse(fs.readFileSync(path.join(profile, CATALOG_FILE), 'utf8'));
   assert.equal(catalog.models[0].slug, 'deepseek-chat');
-  assert.deepEqual(catalog.models[0].supported_reasoning_levels.map(l => l.effort), ['none', 'low', 'medium', 'high']);
+  assert.deepEqual(catalog.models[0].supported_reasoning_levels.map(l => l.effort), ['none', 'low', 'medium', 'high', 'xhigh', 'max']);
   assert.ok(catalog.models[0].model_messages.instructions_template.length > 100);
   // provider-config mirrors it the same way it mirrors ~/.codex/config.toml
   const mirrored = readProvider(path.join(profile, PROVIDER_FILE), {}, {profileDir: profile});
@@ -60,6 +60,17 @@ test('invalid input is rejected before anything is written', () => {
   assert.throws(() => validate({baseUrl: 'https://u:p@x.example/v1', apiKey: 'k', model: 'm'}), /账号/);
   assert.equal(validate({baseUrl: 'https://x.example/v1/chat/completions', apiKey: 'k', model: 'm'}).baseUrl, 'https://x.example/v1');
   assert.equal(validate({baseUrl: 'https://x.example/v1/models', apiKey: 'k', model: 'm'}).baseUrl, 'https://x.example/v1');
-  assert.equal(validate({baseUrl: 'https://x.example/v1', apiKey: 'k', model: 'm', effort: 'ultra'}).effort, 'medium');
+  assert.throws(()=>validate({baseUrl: 'https://x.example/v1', apiKey: 'k', model: 'm', effort: 'ultra'}),/思考深度/);
   assert.deepEqual(validateEndpoint({baseUrl: 'x.example/v1', apiKey: ''}, {storedApiKey: 'saved'}), {baseUrl: 'https://x.example/v1', apiKey: 'saved'});
+});
+test('extended efforts survive custom-provider configuration and generated Codex catalogs',t=>{
+  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'vibe-effort-config-'));t.after(()=>fs.rmSync(profile,{recursive:true,force:true}));
+  for(const effort of ['xhigh','max']){
+    saveCustomProvider(profile,{baseUrl:'https://relay.example/v1',apiKey:'fixture-key',model:'model',effort});
+    assert.equal(readCustomProvider(profile).effort,effort);
+    const catalog=JSON.parse(fs.readFileSync(path.join(profile,CATALOG_FILE),'utf8'));
+    assert.equal(catalog.models[0].default_reasoning_level,effort);
+    assert.ok(catalog.models[0].supported_reasoning_levels.some(level=>level.effort===effort));
+    assert.equal(readProvider(path.join(profile,PROVIDER_FILE),{},{profileDir:profile}).effort,effort);
+  }
 });

@@ -73,7 +73,7 @@ export function createController({models,ports}) {
   }
   function emptyState(open) {
     const box=makeElement('div','file-empty');box.append(icon(open?'FolderOpen':'Folder'));
-    box.append(makeElement('p','',open?'还没有文件':'打开项目所在的文件夹'));
+    if(open)box.append(makeElement('p','','还没有文件'));
     const button=makeElement('button','quiet-button',open?'新建电路':'打开文件夹');button.type='button';
     button.addEventListener('click',guarded(()=>open?startCreate('circuit',''):node('openButton').click()));box.append(button);return box;
   }

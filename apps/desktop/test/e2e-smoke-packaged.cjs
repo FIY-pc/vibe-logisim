@@ -67,19 +67,11 @@ async function launch() {
   assert.equal(state.runtime, 'builtin');
   assert.equal(state.status, 'auth-required', 'fresh install can configure AI without a CLI or account');
   phase = 'create circuit';
+  await page.waitForFunction(() => document.querySelector('#connectionClose svg') && document.querySelector('#appShell').getAttribute('aria-busy') !== 'true');
   await app.evaluate(({dialog}, folder) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [folder]}); }, folder);
-  // Call the same IPC the button uses, but with a hard timeout so a hang in
-  // the main process surfaces as a diagnosable error instead of a UI wait.
-  const opened = await Promise.race([
-    page.evaluate(() => window.vibeDesktop.folder.open().then(r => ({ok: true, r})).catch(e => ({ok: false, error: String(e && e.message || e)}))),
-    new Promise(resolve => setTimeout(() => resolve({ok: false, error: 'folder.open() did not return within 60s'}), 60000)),
-  ]);
-  note('folder.open -> ' + JSON.stringify(opened).slice(0, 300));
-  assert.ok(opened.ok, 'folder open failed: ' + opened.error);
-  // The file toolbar appears when the renderer receives the folder event.
-  // Nudge it with a state read if that event raced ahead of the listener.
-  const toolbar = await page.waitForFunction(() => !document.querySelector('#fileActions')?.hidden, null, {timeout: 15000}).then(() => true).catch(() => false);
-  if (!toolbar) { note('file toolbar hidden after open; state=' + JSON.stringify(await page.evaluate(() => window.vibeDesktop.folder.state())).slice(0, 200)); await page.locator('#openButton').click().catch(() => {}); await page.waitForFunction(() => !document.querySelector('#fileActions')?.hidden, null, {timeout: 30000}); }
+  // Use the visible first-open action so the renderer also adopts the folder.
+  await page.locator('#emptyOpenButton').click();
+  await page.locator('#fileActions').waitFor({state: 'visible'});
   await page.locator('#newFileMenu').click(); await page.getByRole('menuitem', {name: '新建电路', exact: true}).click();
   const nameBox = page.getByRole('textbox', {name: '文件名称', exact: true}); await nameBox.fill('与门验证.circ'); await nameBox.press('Enter');
   await waitUntil(() => session().then(s => s.folder?.activeFile === '与门验证.circ' && s), {timeout: 60000}); await idle();

@@ -68,15 +68,60 @@ test('Responses adapter uses the configured endpoint and streams a real response
  b.provider.setDefault(b.provider.save({baseUrl:fake.baseUrl,apiKey:fake.apiKey,model:'probe-chat',api:'openai-responses',effort:'none'}).id);
  await b.ask(request());await b.run;assert.equal(b.history.at(-1).text,'OK');
  assert.equal(fake.requests[0].url,'/v1/responses');
+ for(const effort of ['high','xhigh','max']){
+  await b.selectModel({model:'probe-chat',effort});
+  await b.ask(request('continue'));await b.run;
+  assert.equal(fake.requests.at(-1).body.reasoning.effort,effort);
+ }
+});
+test('an unknown model keeps thinking controls, persists the choice and sends it through the real adapter',async t=>{
+ const {b,options,requests}=await fixture(t,(_req,res)=>reply(res,'OK'));
+ let result=await b.listModels();assert.equal(result.state.effort,null);
+ assert.equal(result.models[0].metadata,null);assert.deepEqual(result.models[0].efforts.map(x=>x.value),['none','low','medium','high','xhigh','max']);
+ await b.resumeWorkspace({workspaceKey:'workspace',revisionId:'r'});
+ await b.selectModel({model:'test',effort:'max'});result=await b.listModels();
+ assert.equal(result.state.effort,'max');assert.equal(result.models[0].defaultEffort,'max');
+ const restored=new BuiltinBackend(options);t.after(()=>restored.stop());await restored.start();
+ await restored.resumeWorkspace({workspaceKey:'workspace',revisionId:'r'});assert.equal(restored.snapshot().effort,'max');
+ for(const effort of ['max','xhigh','high']){
+  await restored.selectModel({model:'test',effort});await restored.ask(request());await restored.run;
+  assert.equal(requests.at(-1).reasoning_effort,effort);
+ }
+ await restored.selectModel({model:'test',effort:'none'});assert.equal(restored.snapshot().effort,null);
+ await restored.ask(request('continue'));await restored.run;assert.ok(!Object.hasOwn(requests.at(-1),'reasoning_effort'));
+ assert.deepEqual((await restored.listModels()).models[0].efforts.map(x=>x.value),['none','low','medium','high','xhigh','max']);
 });
 test('Anthropic adapter uses Messages with API key authentication',async t=>{
  let auth,url;
- const {b}=await fixture(t,(req,res)=>{auth=req.headers['x-api-key'];url=req.url;res.writeHead(200,{'content-type':'text/event-stream'});
+ const {b,requests}=await fixture(t,(req,res)=>{auth=req.headers['x-api-key'];url=req.url;res.writeHead(200,{'content-type':'text/event-stream'});
  const send=e=>res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
  send({type:'message_start',message:{id:'msg_1',type:'message',role:'assistant',content:[],model:'test',usage:{input_tokens:1,output_tokens:0}}});
  send({type:'content_block_start',index:0,content_block:{type:'text',text:''}});send({type:'content_block_delta',index:0,delta:{type:'text_delta',text:'你好'}});send({type:'content_block_stop',index:0});send({type:'message_delta',delta:{stop_reason:'end_turn',stop_sequence:null},usage:{output_tokens:1}});send({type:'message_stop'});res.end();});
  const c=b.provider.read();b.provider.setDefault(b.provider.save({...c,baseUrl:c.baseUrl.replace('/v1',''),api:'anthropic-messages'}).id);
  await b.ask(request());await b.run;assert.equal(b.history.at(-1).text,'你好');assert.equal(new URL(url,'http://test').pathname,'/v1/messages');assert.equal(auth,'test-secret-key');
+ for(const effort of ['xhigh','max']){
+  await b.selectModel({model:'test',effort});await b.ask(request('continue'));await b.run;
+  assert.equal(requests.at(-1).output_config.effort,effort);
+  assert.equal(requests.at(-1).thinking.type,'adaptive');assert.ok(!Object.hasOwn(requests.at(-1).thinking,'budget_tokens'));
+ }
+ b.catalog.metadataFor=()=>({efforts:['low','medium','high','xhigh','max'],budgetThinking:false});
+ await b.selectModel({model:'test',effort:'medium'});await b.ask(request('continue'));await b.run;
+ assert.equal(requests.at(-1).thinking.type,'adaptive');assert.equal(requests.at(-1).output_config.effort,'medium');
+ b.catalog.metadataFor=()=>({efforts:[],budgetThinking:true});
+ await b.selectModel({model:'test',effort:'high'});await b.ask(request('continue'));await b.run;
+ assert.equal(requests.at(-1).thinking.type,'enabled');assert.ok(requests.at(-1).thinking.budget_tokens>0);
+});
+test('a rejected extended effort is reported instead of retried at a lower level',async t=>{
+ const {b,requests}=await fixture(t,(_req,res)=>{res.writeHead(400,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'Unsupported reasoning_effort: max'}}));});
+ await b.selectModel({model:'test',effort:'max'});await b.ask(request());await b.run;
+ assert.equal(requests.length,1);assert.equal(requests[0].reasoning_effort,'max');
+ assert.equal(b.snapshot().effort,'max');assert.equal(b.snapshot().transmission.phase,'failed');
+ assert.match(JSON.stringify(b.snapshot().transmission),/Unsupported reasoning_effort/);
+});
+test('connection testing sends the chosen extended effort too',async t=>{
+ const {b,requests}=await fixture(t,(_req,res)=>reply(res,'OK'));
+ const result=await b.probeCustomProvider('test',{...b.provider.visible(),effort:'max',apiKey:''});
+ assert.equal(result.ok,true);assert.equal(requests.at(-1).reasoning_effort,'max');
 });
 test('circuit tool binding and image blocks reach the next model request',async t=>{
  const {b,requests}=await fixture(t,(_req,res,_body,n)=>{if(n===1){res.writeHead(200,{'content-type':'text/event-stream'});chunk(res,{role:'assistant',tool_calls:[{index:0,id:'circuit-call',type:'function',function:{name:'inspect_test',arguments:'{}'}}]});chunk(res,{},'tool_calls');res.end('data: [DONE]\n\n');}else reply(res,'已读取');});
@@ -116,10 +161,34 @@ test('editing and branching use native transcript checkpoints without changing t
 test('steering queued before stop survives persistence and is not silently dropped',async t=>{
  let arrived;const entered=new Promise(r=>arrived=r);
  const {b,options}=await fixture(t,(_req,res)=>{res.writeHead(200,{'content-type':'text/event-stream'});chunk(res,{role:'assistant',content:'work'});arrived();});
- await b.ask(request());await entered;await b.ask({...request('保留这条补充'),expectedTurnId:b.activeTurnId});await b.interrupt();
+ await b.ask(request());await entered;await b.ask({...request('保留这条补充'),expectedTurnId:b.activeTurnId});
+ assert.equal(b.history.find(m=>m.text==='保留这条补充').delivery,'queued');await b.interrupt();
+ assert.equal(b.history.find(m=>m.text==='保留这条补充').delivery,'deferred');
  assert.ok(b.history.some(m=>m.type==='user'&&m.text==='保留这条补充'));
  const reopened=new BuiltinBackend(options);await reopened.start();await reopened.resumeWorkspace({workspaceKey:'workspace'});
  assert.ok(reopened.raw.some(m=>m.role==='user'&&String(m.content).includes('保留这条补充')));await reopened.stop();
+});
+
+test('steer receipt follows the actual Pi message consumption after the active tool',async t=>{
+ let started,release;const entered=new Promise(r=>started=r),gate=new Promise(r=>release=r);
+ const {b,requests}=await fixture(t,(_req,res,_body,n)=>{if(n===1){res.writeHead(200,{'content-type':'text/event-stream'});chunk(res,{role:'assistant',tool_calls:[{index:0,id:'hold-call',type:'function',function:{name:'hold',arguments:'{}'}}]});chunk(res,{},'tool_calls');res.end('data: [DONE]\n\n');}else reply(res,'done');});
+ b.toolHost={prepare:async()=>{},tools:[{name:'hold',description:'hold',inputSchema:{type:'object',properties:{}}}],label:n=>n,errorPayload:e=>({message:e.message}),call:async()=>{started();await gate;return {};}};
+ const events=[];b.on('event',e=>events.push(e));
+ await b.ask(request());await entered;await b.ask({...request('continue with this constraint'),expectedTurnId:b.activeTurnId});
+ const id=b.history.find(m=>m.text==='continue with this constraint').id;assert.equal(b.history.find(m=>m.id===id).delivery,'queued');
+ release();await b.run;assert.equal(b.history.find(m=>m.id===id).delivery,'included');
+ assert.ok(events.some(e=>e.type==='user-message-delivery'&&e.id===id&&e.delivery==='included'));
+ assert.ok(JSON.stringify(requests[1].messages).includes('continue with this constraint'));
+});
+
+test('a late catalog refresh cannot return another service inventory after a conversation switch',async t=>{
+ const {b}=await fixture(t,(_req,res)=>reply(res,'unused'));
+ await b.resumeWorkspace({workspaceKey:'workspace',revisionId:'r'});
+ let release;const gate=new Promise(r=>release=r);b.catalog.refresh=()=>gate;
+ const pending=b.listModels(true);const previous=b.provider.read();
+ const other=b.provider.save({...previous,id:undefined,baseUrl:'https://other.invalid/v1',apiKey:'other-local-key',model:'other-model',models:['other-model']});
+ b.selection={...other,serviceId:other.id};release();await assert.rejects(pending,/服务已变化/);
+ assert.deepEqual((await b.listModels()).models.map(m=>m.model),['other-model']);
 });
 
 test('Anthropic model discovery uses the same API root and authentication as Messages',async t=>{

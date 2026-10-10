@@ -45,7 +45,12 @@ function bindEvents() {
     ui.saveDialog.addEventListener("cancel", event => { if (projectState.projectBusy) event.preventDefault(); });
     document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => ports.draftPrompt(button.dataset.prompt)));
     ui.openButton.addEventListener("click", ports.chooseCircuitFile);
-    ui.emptyOpenButton.addEventListener("click", ports.chooseCircuitFile);
+    ui.emptyOpenButton.addEventListener("click", async () => {
+      if (ui.emptyOpenButton.dataset.action !== 'retry') return ports.chooseCircuitFile();
+      ui.emptyOpenButton.disabled = true;
+      try { await ports.bootstrap(); }
+      finally { ui.emptyOpenButton.disabled = false; }
+    });
     ui.fileInput.addEventListener("change", () => ports.openFile(ui.fileInput.files[0]));
     ui.reloadRevisionButton.addEventListener("click", ports.handleStaleAction);
     ui.circuitSearch.addEventListener("input", ports.renderCircuitList);

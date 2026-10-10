@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {AgentOutputProjection} from '../circuit-lens/web/core/agent-output-projection.js';
+import {AgentOutputProjection,summarizeActivities} from '../circuit-lens/web/core/agent-output-projection.js';
 
 // The projection preserves transport identity and result state. Presentation
 // (the two disclosure levels and their automatic closing) belongs to the view.
@@ -18,4 +18,9 @@ projection.beginTurn();
 projection.activity({id:'floating',label:'工作区检查',status:'warning',activityKey:'harness:verification',resultStatus:'unknown'});
 assert.equal(projection.activity({id:'floating',label:'工作区检查',status:'completed',activityKey:'harness:verification'}),null);
 assert.equal(projection.items.get('floating').resultStatus,'unknown');
+const steps=[{label:'读取电路',status:'completed'},{label:'检查连线',status:'completed'},{label:'运行仿真',status:'running'}];
+assert.equal(summarizeActivities(steps).label,'运行仿真');
+steps[2].status='failed';assert.match(summarizeActivities(steps).alert,/运行仿真/);assert.equal(summarizeActivities(steps).status,'failed');
+projection.beginTurn();projection.activity({id:'call',label:'读取',status:'completed'});
+assert.equal(projection.activity({id:'call',label:'读取',status:'running'}),null,'late partial events cannot reopen a completed call');
 console.log('agent output projection checks passed');

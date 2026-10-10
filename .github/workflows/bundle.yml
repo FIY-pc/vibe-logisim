@@ -54,6 +54,8 @@ jobs:
             apps/desktop/electron/direct-agent-workspace-errors.test.cjs `
             apps/desktop/electron/conversations.test.cjs `
             apps/desktop/electron/builtin-backend.test.cjs `
+            apps/desktop/electron/model-catalog.test.cjs `
+            apps/desktop/test/agent-output-projection.mjs `
             apps/desktop/electron/runtime-installer.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `
             apps/desktop/electron/model-tool-output.test.cjs `

@@ -6,10 +6,12 @@
 
 内置 AI 运行时使用 Pi 的 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai` 1.1.0（MIT）。独立应用包包含 npm 锁文件固定的生产依赖；Pi npm 包未附许可证文件，其 [v1.1.0 MIT 许可证](https://github.com/earendil-works/pi/blob/v1.1.0/LICENSE) 单独保存在包内 `resources/third-party/pi-LICENSE`。
 
+模型名称与能力资料使用 [Models.dev](https://models.dev) 的 MIT 授权数据。随包精简快照与许可证分别位于 `resources/app/electron/model-catalog.snapshot.json` 和 `resources/app/electron/model-catalog.LICENSE.txt`；源码中的同名文件位于 `apps/desktop/electron/`。资料仅用于补充模型选择器，不决定用户服务可用的模型列表。
+
 Electron 和 Playwright 通过 npm 安装，依赖包中保留各自许可证。
 
 分组布局使用 [elkjs](https://github.com/kieler/elkjs) 0.12.0（EPL-2.0），版本固定在 npm 锁文件中。独立应用包附带 `elk.bundled.js`、包信息与 `LICENSE.md`，由应用自带的 Electron 以 Node 模式运行。
 
-独立应用包另包含 [CPython 独立构建](https://github.com/astral-sh/python-build-standalone)、[Eclipse Temurin](https://github.com/adoptium/temurin21-binaries)、[官方 Codex 运行包](https://github.com/openai/codex/releases/tag/rust-v0.154.0) 和 [PDF.js](https://github.com/mozilla/pdf.js)。版本与下载摘要由 `scripts/distribution/runtime-lock.json` 和 npm 锁文件固定；程序许可证保留在各自运行目录，Codex 的 Apache-2.0 许可证另行随包附带。PDF.js 为 Apache-2.0；其浏览器资源无需可选 Node canvas 组件。
+独立应用包另包含 [CPython 独立构建](https://github.com/astral-sh/python-build-standalone)、[Eclipse Temurin](https://github.com/adoptium/temurin21-binaries) 和 [PDF.js](https://github.com/mozilla/pdf.js)。[官方 Codex 运行包](https://github.com/openai/codex/releases/tag/rust-v0.154.0) 在首次使用时下载。版本与下载摘要由 `scripts/distribution/runtime-lock.json` 和 npm 锁文件固定；程序许可证保留在各自运行目录，Codex 的 Apache-2.0 许可证另行随包附带。PDF.js 为 Apache-2.0；其浏览器资源无需可选 Node canvas 组件。
 
 [Logisim-ITA v2.16.2.2](https://github.com/Logisim-Ita/Logisim/releases/tag/v2.16.2.2) 的上游标注 GPL-3.0；本地验收包同时保存该标签的源码归档，内含许可证。课程发布的 HUST 修改版运行文件 `logisim-ita-cn-20200118.exe` 按课程原样附带、不作修改，由 Java 作为 jar 加载；课程没有随它发布对应源码。它是课程给全体学生的公开教学材料，本项目只是把它和编辑器放在一起分发，如课程组提出要求会随时移除并改为让用户自行放置该文件。详见 [分发说明](docs/distribution.md)。

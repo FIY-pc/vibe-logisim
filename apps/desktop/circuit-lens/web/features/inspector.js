@@ -19,12 +19,18 @@ function renderInspector() {
     const selected = projectState.circuit.components.filter((c, i) => selection.componentIds.includes(componentId(c, i)));
     const wires = projectState.circuit.wires.filter(w => selection.wireIds.includes(w.wireId));
     const hasSelection = selected.length || wires.length;
+    if (!hasSelection) {
+      ui.objectInspector.append(makeElement("p", "", "选择元件或导线以查看属性"));
+      ports.updateLiveValues();
+      return;
+    }
     const component = selected.length === 1 && !wires.length ? selected[0] : null;
-    const title = component ? component.label || component.factory : hasSelection ? [selected.length && `${selected.length} 个元件`, wires.length && `${wires.length} 段导线`].filter(Boolean).join(" · ") : "选择元件或导线";
+    const title = component ? component.label || component.factory : [selected.length && `${selected.length} 个元件`, wires.length && `${wires.length} 段导线`].filter(Boolean).join(" · ");
     ui.objectInspector.append(makeElement("h2", "", title));
-    const subtitle = component ? `${projectState.circuitName} › ${component.factory} · (${component.location.x}, ${component.location.y})` : hasSelection ? `${projectState.circuitName} · 拖动整理，Shift 点击增减选择` : "在画布上选择对象，查看或编辑属性。";
+    const subtitle = component ? `${projectState.circuitName} › ${component.factory} · (${component.location.x}, ${component.location.y})` : "拖动整理，Shift 点击增减选择";
     const description=makeElement("p", "", component ? ({Pin:"引脚",Register:"寄存器",ROM:"只读存储器",RAM:"存储器",Tunnel:"隧道",Multiplexer:"多路选择器",Text:"文字"}[component.factory]||component.factory) : subtitle);
-    description.title=subtitle;ui.objectInspector.append(description);
+    ui.objectInspector.querySelector('h2').title=subtitle;
+    if(description.textContent!==title)ui.objectInspector.append(description);
     if (component) renderPropertyEditor(component);
     if (wires.length) {
       const list = makeElement("div", "selected-wire-details");
@@ -43,7 +49,7 @@ function renderInspector() {
       const symbol=makeElement("button", "", "编辑封装与接口");symbol.addEventListener("click",()=>ports.openInterfaces(child));actions.append(symbol);
     }
     if (agentState.enabled && hasSelection) {
-      const explain = makeElement("button", "", "让 Codex 解释");
+      const explain = makeElement("button", "", "解释选中对象");
       explain.addEventListener("click", () => draftPrompt(`解释${hasSelection ? "选中的对象及其连接" : "当前电路"}，并查看它与上层电路的关系。`)); actions.append(explain);
     }
     if (component && component.ends?.length) {

@@ -333,6 +333,11 @@ function handleAgentEvent(event) {
     }
     if (event.type === "user-message") {
       conversation.user(event.id,event.text,event.context);
+      if(event.delivery)conversation.delivery(event.id,event.delivery);
+      return;
+    }
+    if (event.type === "user-message-delivery") {
+      conversation.delivery(event.id,event.delivery);
       return;
     }
     if (event.type === "assistant-started") {
@@ -352,7 +357,7 @@ function handleAgentEvent(event) {
       return;
     }
     if (event.type === "activity") {
-      conversation.activity(event.itemId, event.label, event.status, event.kind, event.detail, event.activityKey, event.resultStatus);
+      conversation.activity(event.itemId, event.label, event.status, event.kind, event.detail, event.activityKey, event.resultStatus, event.toolOutput);
       return;
     }
     if (event.type === "harness-result") {

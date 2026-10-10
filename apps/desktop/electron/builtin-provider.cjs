@@ -69,9 +69,14 @@ class BuiltinProvider {
     atomic(this.file,r);
   }
 }
-function modelFor(config) {
+function modelFor(config,metadata=null) {
+  // Pi otherwise clamps xhigh/max to high. Manual choices must reach the
+  // service unchanged; an unsupported value should fail visibly there.
+  const extended=config.effort==='xhigh'||config.effort==='max';
+  const adaptive=config.api==='anthropic-messages'&&(extended||(metadata?.efforts?.length&&!metadata.budgetThinking));
   return {id:config.model,name:config.model,api:config.api,provider:'vibe-'+createHash('sha256').update((config.id||'')+'\n'+config.baseUrl.replace(/\/+$/,'')+'\n'+config.api).digest('hex').slice(0,24),baseUrl:config.baseUrl,
     reasoning:config.effort!=='none', input:config.vision?['text','image']:['text'],
+    thinkingLevelMap:{xhigh:'xhigh',max:'max'},...(adaptive?{compat:{forceAdaptiveThinking:true}}:{}),
     cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:config.contextWindow,maxTokens:8192};
 }
 async function transport(api) {

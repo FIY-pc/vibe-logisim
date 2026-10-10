@@ -6,7 +6,7 @@
 
 桌面开发版在 Linux 上开发和验收；Windows 通过打包版本支持（见分发说明），源码直接运行未在 Windows 上验收。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
 
-开发启动的内置运行时直接使用 npm 安装的 Pi SDK 和用户配置的 API。选择 Codex 运行时才需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包已内置这些程序和 Python、Java、Logisim，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
+开发启动的内置运行时直接使用 npm 安装的 Pi SDK 和用户配置的 API。选择 Codex 运行时才需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包内置 Pi、Python、Java、Logisim，Codex 在首次使用时下载，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
 
 ## Logisim 运行文件
 
@@ -172,7 +172,7 @@ node apps/desktop/test/e2e-without-agent.cjs
 
 此脚本在独立临时目录启动真实 Electron，故意指定不存在的 Codex 路径，经界面新建电路、放置元件、保存并重开，也检查无效目录不会覆盖当前文件。只替换系统文件选择器的返回路径，不模拟文件服务或电路引擎；不需要个人课设文件，不发送模型请求。它验证的是文件与人工编辑路径，不包含 AI 协作或仿真正确性的验收。
 
-已提供 Linux 独立应用包构建及打包程序的鼠标/键盘验收入口，见 [分发与验收](distribution.md)。当前产物限本地验收，尚无公开安装器、跨平台验收或自动发布流程。
+Linux 独立包、Windows 安装器及打包程序的鼠标/键盘验收入口，见 [分发与验收](distribution.md)。CI 分别构建和检查两种平台，发布由版本标签触发。
 
 输入操作不再要求手工先启动仿真。针对本地全加器（含 `FullAdder`、`A/B/Cin/Sum/Cout`）的实际界面验收：
 
@@ -241,9 +241,15 @@ node apps/desktop/test/e2e-file-operations.cjs
 ### 内置运行时验证（不调用远端模型）
 
 ```sh
-node --test apps/desktop/electron/builtin-backend.test.cjs
+node --test apps/desktop/electron/builtin-backend.test.cjs apps/desktop/electron/model-catalog.test.cjs apps/desktop/test/agent-output-projection.mjs
 node apps/desktop/test/builtin-runtime-native.cjs
 env -u ELECTRON_RUN_AS_NODE apps/desktop/node_modules/.bin/electron apps/desktop/test/builtin-runtime-electron.cjs
 ```
 
 前者使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属；后者把本地模型响应接到生产工具宿主和原生 Logisim，检查读取、仿真及图片结果。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。
+
+### 模型目录维护
+
+`node scripts/ui/update-model-catalog.cjs` 显式下载并精简 Models.dev 资料；也可传入已下载的 JSON 文件路径。更新后检查 `model-catalog.snapshot.json` 的差异并运行上述目录测试。快照及 MIT 许可证随独立包分发，构建不下载模型资料。
+
+目录测试检查资料与服务列表的边界、离线缓存、凭据隔离、请求超时及思考档位；打包测试 `e2e-runtime-packaged.cjs` 使用本地服务检查实际选择器、列表刷新失败后的可用性，以及选择保存和重开。CI 对 Linux 和 Windows 均执行打包测试，不调用远端模型。

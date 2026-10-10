@@ -41,7 +41,8 @@ export function createController({models, ui}) {
     ui.projectIssue.textContent = problem ? `当前电路的运行环境未能载入：${problem}` : '组件库未完整载入，请检查电路文件所引用的库。';
     ui.projectExportNote.textContent = project.sourceChanged
       ? '工程已有外部改动，导出的是当前打开的版本。'
-      : workspace.dirty ? '包含当前未保存的改动，不会覆盖原文件。' : '包含当前电路与依赖文件。';
+      : workspace.dirty ? '包含当前未保存的改动，不会覆盖原文件。' : '';
+    ui.projectExportNote.hidden = !ui.projectExportNote.textContent;
     ui.exportProject.disabled = !complete || Boolean(download) || project.projectBusy;
     ui.exportProject.title = complete ? '导出为 ZIP，解压后用 Logisim 打开其中的 .circ' : '补齐组件库后才能导出电路包';
   }

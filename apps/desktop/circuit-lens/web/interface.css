@@ -1,7 +1,7 @@
 .interface-dialog{width:min(1140px,calc(100vw - 48px));max-width:none;padding:0;border:1px solid #dce1eb;border-radius:16px;color:#202733;box-shadow:0 24px 90px #1d284433;overflow:hidden}
 .interface-dialog::backdrop{background:#17223545}
 .interface-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 26px 18px;border-bottom:1px solid #e8ebf1}
-.interface-eyebrow{font-size:11px;letter-spacing:.1em;color:#748198}.interface-dialog h2{font-size:20px;margin:6px 0}.interface-dialog h3{font-size:13px;margin:0 0 10px}.interface-dialog p{font-size:12px;color:#748198;line-height:1.6;margin:4px 0}
+.interface-dialog h2{font-size:20px;margin:6px 0}.interface-dialog h3{font-size:13px;margin:0 0 10px}.interface-dialog p{font-size:12px;color:#748198;line-height:1.6;margin:4px 0}
 .interface-workspace{display:grid;grid-template-columns:minmax(0,1fr) 365px;max-height:calc(100vh - 240px);min-height:520px;overflow:auto}
 .interface-drawing{min-width:0;background:#f8faff;display:flex;flex-direction:column}.interface-toolbar{display:flex;gap:6px;padding:12px 16px}.interface-toolbar button:nth-last-child(2){margin-left:auto}
 .interface-dialog button{border:1px solid #dfe4ee;background:white;border-radius:7px;padding:7px 11px;color:inherit;font:inherit;font-size:12px;cursor:pointer}.interface-dialog button:hover{background:#f1f4ff}.interface-dialog button:active{background:#e8edff}.interface-dialog button:disabled{opacity:.45;cursor:default}.interface-dialog .primary-button{background:#4664e9;color:white;border-color:#4664e9}

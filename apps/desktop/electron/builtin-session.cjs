@@ -13,7 +13,7 @@ function configurationIssue(selection,config,hasHistory) {
   return null;
 }
 function recoverHistory(history) {
-  return history.map(m=>m.type==='turn'&&m.status==='running'?{...m,status:'interrupted',error:'应用在回答结束前退出，已有内容已保留。',elapsedMs:m.elapsedMs||0}:
+  return history.map(m=>m.type==='user'&&m.delivery==='queued'?{...m,delivery:'deferred'}:m.type==='turn'&&m.status==='running'?{...m,status:'interrupted',error:'应用在回答结束前退出，已有内容已保留。',elapsedMs:m.elapsedMs||0}:
     m.type==='activity'&&m.status==='running'?{...m,status:'warning',resultStatus:'unknown',detail:[m.detail,'应用在调用结束前退出，结果未知，请先检查工作区。'].filter(Boolean).join('\n')}:m);
 }
 module.exports={selectionFor,sameService,configurationIssue,recoverHistory};

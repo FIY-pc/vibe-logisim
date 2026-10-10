@@ -330,3 +330,5 @@ svg.candidate-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-e
 @media(max-width:820px){#candidateCheckSummary{display:inline-flex;margin-left:0}.candidate-dialog>header{gap:8px;flex-wrap:wrap}.candidate-dialog>header>div{flex-basis:calc(100% - 40px)}#closeCandidate{position:absolute;top:15px;right:10px}.candidate-dialog h2{font-size:14px}}
 @media(max-width:820px){#closeHistory{position:absolute;top:15px;right:10px}.wordmark>strong{display:none}.history-dialog>header>div{padding-right:28px}.history-image-stage{padding:12px}}
 @media(max-width:700px){.candidate-body{flex-direction:column-reverse}.candidate-connections{flex:0 0 220px;border-right:0;border-top:1px solid var(--line)}.connections-heading{padding:8px 12px 0;flex-direction:row;align-items:center;gap:10px}#candidateConnectionSearch{padding:5px 8px;margin-bottom:4px}.connection-row{padding:7px 10px}.connection-endpoint{display:none}.connection-name{margin:0}.candidate-image-stage{padding:12px}}
+
+.empty-state>p:empty{display:none}

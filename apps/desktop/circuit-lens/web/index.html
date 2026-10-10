@@ -24,7 +24,7 @@
   <link rel="stylesheet" href="/feedback.css" />
 </head>
   <body>
-    <div class="app-shell" id="appShell">
+    <div class="app-shell" id="appShell" data-workspace="empty">
       <header class="instrument-bar">
         <button class="icon-button panel-toggle" id="toggleCircuits" aria-label="收起项目栏" aria-controls="circuitRail" aria-expanded="true"></button>
         <div class="wordmark" aria-label="Vibe Logisim Circuit Lens">
@@ -36,7 +36,6 @@
             <circle cx="34" cy="28" r="2.3" />
           </svg>
           <span>Vibe Logisim</span>
-          <strong>电路工作区</strong>
         </div>
 
 
@@ -209,12 +208,12 @@
                 <path class="selection-corner" d="M28 16H12v16M152 104h16V88" />
               </svg>
             </div>
-            <h2>把电路放到工作台上</h2>
-            <p>打开一份 Logisim <code>.circ</code>，开始查看、编辑或与 AI 讨论。</p>
+            <h2>尚未打开项目</h2>
+            <p></p>
             <div class="empty-actions">
-              <button class="primary-button" id="emptyOpenButton">选择 .circ 文件</button>
+              <button class="primary-button" id="emptyOpenButton">打开文件夹</button>
             </div>
-            <p class="empty-hint" id="emptyHint">兼容课程 Logisim 电路与组件库</p>
+            <p class="empty-hint" id="emptyHint"></p>
           </div>
 
         </section>
@@ -354,7 +353,7 @@
     <dialog id="feedbackDialog" class="feedback-dialog" aria-labelledby="feedbackTitle">
       <header>
         <div><h2 id="feedbackTitle">反馈问题</h2>
-          <p>诊断包可以直接附到 GitHub 上的公开 issue：不含 API 密钥、对话内容和电路，路径里的用户名和工作区位置已替换。文件名里仍可能有你的姓名或学号，发之前看一眼下面的预览。</p></div>
+          <p>默认不含密钥、对话和电路，个人路径已脱敏。提交到公开 GitHub issue 前，请检查文件名与下方预览。</p></div>
         <button id="feedbackClose" class="icon-button" aria-label="关闭反馈"></button>
       </header>
       <label class="feedback-option"><input type="checkbox" id="feedbackIncludeCircuit" /> 附上当前电路文件（公开后任何人都能下载）</label>
@@ -369,7 +368,6 @@
         <button id="feedbackSave" class="primary-button">保存诊断包…</button>
         <button id="feedbackCopy" class="quiet-button">复制摘要</button>
         <button id="feedbackOpenIssue" class="quiet-button">打开 GitHub 反馈页</button>
-        <span>在反馈页粘贴摘要，把诊断包拖进附件栏</span>
       </footer>
     </dialog>
     <dialog id="fileChanges" class="file-changes-dialog"><header><h2>文件改动</h2><button id="fileChangesClose" class="icon-button" aria-label="关闭文件改动">×</button></header><div class="file-changes-body"><div id="fileChangeList"></div><div id="fileDiff"></div></div></dialog>
@@ -385,12 +383,12 @@
     <dialog id="modelDialog" class="model-dialog" aria-labelledby="modelTitle">
       <header><h2 id="modelTitle">选择模型</h2><button id="modelClose" class="chat-action" aria-label="关闭模型设置"></button></header>
       <div class="model-search"><input id="modelSearch" type="search" placeholder="搜索模型" aria-label="搜索模型" autocomplete="off" /></div>
-      <p id="modelLoading" role="status" hidden>正在读取可用模型…</p>
-      <div id="modelChoice" class="model-list" role="listbox" aria-label="可用模型"></div>
+      <p id="modelLoading" role="status" hidden>正在更新…</p>
+      <div id="modelChoice" class="model-list" role="listbox" aria-label="当前服务的模型"></div>
       <p id="modelDescription" class="model-description"></p>
       <p id="modelBusy" class="model-description" hidden>回答进行中，完成或停止后可以切换模型。</p>
       <p id="modelError" class="model-error" role="alert" hidden></p>
-      <footer><button id="modelRefresh" class="quiet-button">刷新列表</button><span>选择后用于下一次回答</span></footer>
+      <footer><button id="modelRefresh" class="quiet-button">刷新列表</button></footer>
     </dialog>
     <dialog id="connectionDialog" class="connection-dialog" aria-labelledby="connectionTitle">
       <header><div><h2 id="connectionTitle">AI 设置</h2></div><button id="connectionClose" class="chat-action" aria-label="关闭 AI 设置"></button></header>
@@ -401,12 +399,12 @@
         </nav>
         <div class="settings-content">
           <section id="settingsOverview" class="settings-overview">
-            <div class="settings-heading" id="settingsServicesHeading"><h3>模型服务</h3></div><div id="savedServices"></div><label id="defaultServiceField" class="field" hidden>新对话默认服务<select id="defaultService"></select></label>
+            <div class="settings-heading" id="settingsServicesHeading"><h3 class="sr-only">模型服务</h3></div><div id="savedServices"></div><label id="defaultServiceField" class="field" hidden>新对话默认服务<select id="defaultService"></select></label>
             <div class="settings-service-row"><div><strong id="settingsApiName">API 密钥</strong><p id="settingsApiSummary">连接已有的模型服务</p></div><button id="connectionTabApi" class="quiet-button">添加服务</button></div>
             <div class="settings-service-row"><div><strong>ChatGPT 账号</strong><p id="settingsAccountSummary">未登录</p></div><button id="connectionTabChatgpt" class="quiet-button">管理</button></div>
           </section>
           <section id="settingsRuntimePane" class="settings-overview" hidden>
-            <h3>运行时</h3><label class="field runtime-default">新对话默认运行时<select id="defaultRuntime"><option value="builtin">内置运行时</option><option value="codex">Codex</option></select></label>
+            <h3 class="sr-only">运行时</h3><label class="field runtime-default">新对话默认运行时<select id="defaultRuntime"><option value="builtin">内置运行时</option><option value="codex">Codex</option></select></label>
             <div class="settings-service-row"><div><strong>内置运行时 <span id="builtinRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 API 密钥，无需安装额外程序。</p></div><button id="useBuiltinRuntime" class="quiet-button">用内置运行时新建对话</button></div>
             <div class="settings-service-row"><div><strong>Codex <span id="codexRuntimeBadge" class="settings-badge" hidden>此对话</span></strong><p>使用 ChatGPT 账号或 Responses API，首次使用时自动下载。</p></div><button id="useCodexRuntime" class="quiet-button">用 Codex 新建对话</button></div>
 
@@ -415,7 +413,7 @@
             <h3 id="serviceConfirmTitle"></h3><div id="serviceConfirmDestination"></div><p id="serviceConfirmImpact"></p>
             <div class="pane-actions"><button id="serviceConfirmCancel" class="quiet-button">取消</button><button id="serviceConfirmApply" class="primary-button">更换服务</button></div>
           </section>
-          <button id="settingsBack" class="quiet-button settings-back" hidden>← 模型服务</button>
+          <div class="settings-detail-heading" hidden><button id="settingsBack" class="quiet-button settings-back" aria-label="返回模型服务" title="返回模型服务">←</button><h3 id="providerFormTitle" class="settings-pane-title">添加模型服务</h3></div>
       <section class="connection-pane" id="connectionPaneChatgpt" aria-label="ChatGPT 账号" hidden>
         <div class="account-card" id="accountCard" data-state="signed-out">
           <span class="account-dot" aria-hidden="true"></span>
@@ -424,12 +422,13 @@
         <p class="connection-note" id="chatgptNote">需要能访问 chatgpt.com 的网络环境，模型由 OpenAI 提供，不需要填写任何密钥。</p>
         <div class="pane-actions"><button id="connectionLogout" class="quiet-button" hidden>退出登录</button><button id="connectionLogin" class="primary-button">登录 ChatGPT</button></div>
       </section>
-      <section class="connection-pane" id="connectionPaneApi" aria-label="API 接口" hidden>
-        <h3 id="providerFormTitle" class="settings-pane-title">添加模型服务</h3>
+      <section class="connection-pane" id="connectionPaneApi" aria-labelledby="providerFormTitle" hidden>
         <form id="providerForm" novalidate autocomplete="off">
+          <div class="provider-service-fields">
           <label class="field">服务<select id="providerPreset"><option value="" disabled>选择服务</option><option value="custom">自定义接口</option><option value="openai">OpenAI</option><option value="deepseek">DeepSeek</option><option value="anthropic">Anthropic</option><option value="openrouter">OpenRouter</option></select></label>
-          <label class="field">接口地址<input id="providerBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" /></label>
           <label class="field" id="providerProtocolField">接口协议<select id="providerProtocol"><option value="openai-completions">Chat Completions</option><option value="openai-responses">Responses</option><option value="anthropic-messages">Anthropic Messages</option></select></label>
+          </div>
+          <label class="field">接口地址<input id="providerBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://api.example.com/v1" /></label>
           <label class="field">API 密钥<input id="providerApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" /></label>
           <div class="field model-field">
             <label for="providerModel">模型</label>
@@ -443,7 +442,7 @@
           <details class="provider-advanced" id="providerAdvanced">
             <summary>高级设置</summary><label class="field">名称<input id="providerName" type="text" placeholder="可选，用于区分服务" /></label><label class="field" id="providerVisionField"><span><input id="providerVision" type="checkbox" /> 模型支持图片输入</span></label>
             <label class="field">思考深度
-              <select id="providerEffort"><option value="none">关闭</option><option value="low">轻度</option><option value="medium" selected>中</option><option value="high">高</option></select>
+              <select id="providerEffort"><option value="none">关闭</option><option value="low">轻度</option><option value="medium" selected>中</option><option value="high">高</option><option value="xhigh">极高</option><option value="max">最高</option></select>
             </label>
             <label class="field">上下文窗口（token）<input id="providerContext" type="number" min="32000" max="2000000" step="1000" placeholder="默认 256000" /></label>
           </details>
@@ -478,15 +477,15 @@
       <div class="comparison-toolbar"><select id="comparisonModule" aria-label="对照电路"></select><select id="comparisonMode" aria-label="历史对照方式" hidden><option value="change">这次修改</option><option value="current">与当前工程比较</option></select><div class="segmented-control" role="group" aria-label="对照版本"><button id="comparisonBefore" aria-pressed="false">修改前</button><button id="comparisonAfter" aria-pressed="true">修改后</button></div><span id="comparisonSummary"></span><button id="comparisonReload" class="quiet-button">重载画面</button></div>
       <div id="comparisonScope" class="comparison-scope"></div>
       <div class="comparison-body"><aside class="comparison-sidebar"><div id="comparisonFilters" class="comparison-filters" role="group" aria-label="改动类别"></div><input id="comparisonSearch" type="search" aria-label="查找改动" placeholder="查找元件、接口或信号"/><div id="comparisonRows" class="comparison-rows"></div></aside>
-        <section class="comparison-preview" aria-label="原生电路对照"><div class="comparison-viewbar"><span>选择清单或图中标记查看改动</span><button id="comparisonZoomOut" aria-label="缩小对照">−</button><output id="comparisonZoom">100%</output><button id="comparisonZoomIn" aria-label="放大对照">＋</button><button id="comparisonFit">全图</button></div><p id="comparisonImageStatus" role="status"></p><div id="comparisonStage" class="comparison-stage"><div id="comparisonSheet" class="comparison-sheet"><img id="comparisonImage" alt="所选版本的原生电路图"/><svg id="comparisonOverlay" aria-label="所选版本的改动标记"><image id="comparisonDetailImage" pointer-events="none"/><g id="comparisonMarks"></g></svg></div></div><div id="comparisonDetails" class="comparison-details"></div></section>
-      </div><footer><span>对照显示结构与连接变化；运行记录可按需查看。</span><button id="comparisonLocate" class="primary-button" disabled>在当前工程中定位</button></footer>
+        <section class="comparison-preview" aria-label="原生电路对照"><div class="comparison-viewbar"><button id="comparisonZoomOut" aria-label="缩小对照">−</button><output id="comparisonZoom">100%</output><button id="comparisonZoomIn" aria-label="放大对照">＋</button><button id="comparisonFit">全图</button></div><p id="comparisonImageStatus" role="status"></p><div id="comparisonStage" class="comparison-stage"><div id="comparisonSheet" class="comparison-sheet"><img id="comparisonImage" alt="所选版本的原生电路图"/><svg id="comparisonOverlay" aria-label="所选版本的改动标记"><image id="comparisonDetailImage" pointer-events="none"/><g id="comparisonMarks"></g></svg></div></div><div id="comparisonDetails" class="comparison-details"></div></section>
+      </div><footer><button id="comparisonLocate" class="primary-button" disabled>在当前工程中定位</button></footer>
     </dialog>
     <dialog id="candidateEvidenceDialog" class="candidate-dialog" aria-labelledby="candidateEvidenceTitle">
       <header><h2 id="candidateEvidenceTitle">候选运行记录</h2><button id="evidenceBack" class="quiet-button">返回改动</button><button id="closeCandidateEvidence" class="icon-button" aria-label="关闭运行记录">×</button></header>
       <div class="candidate-controls"><select id="evidenceModule" aria-label="运行记录电路"></select><button id="evidenceVectors">输入输出检查</button><button id="evidenceTrace">时钟记录</button></div><div id="evidenceResults" class="candidate-checks"></div>
     </dialog>
     <dialog id="interfaceDialog" class="interface-dialog" aria-labelledby="interfaceTitle">
-      <header><div><span class="interface-eyebrow">子电路设计</span><h2 id="interfaceTitle">封装与接口</h2><p id="interfaceScope"></p></div><button id="interfaceClose" class="quiet-button">取消</button></header>
+      <header><div><h2 id="interfaceTitle">封装与接口</h2><p id="interfaceScope"></p></div><button id="interfaceClose" class="quiet-button">取消</button></header>
       <div id="interfaceError" role="status" hidden></div>
       <div class="interface-workspace">
         <section class="interface-drawing" aria-label="封装外观">

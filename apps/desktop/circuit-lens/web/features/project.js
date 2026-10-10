@@ -4,7 +4,7 @@ import { API } from '../core/endpoints.js';
 
 export const modelDependencies = ["project", "review"];
 
-export const dependencies = ["prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
+export const dependencies = ["refreshWorkspaceLayout","prepareCircuitRendering","discardCircuitRendering","cancelPlacement","componentsContextChanged","placementContextChanged","workspaceFolderChanged","renderConnections","openDraftProject","restoreDraftFocus","materialsProjectChanged","momentsProjectChanged","renderSimulation","prepareCircuitNavigation","resetComparison","closeCandidateEvidence","invalidateComparison","resetRendering","resetNavigation","didNavigateCircuit","restoreEntrySelection","selectionSnapshot","invalidateSimulation","clearSelection","closeMemory","closeMobilePanels","loadCandidates","loadReview","loadSelection","pollSimulation","renderCircuit","renderInspector","renderProjectHistory","setCanvasStatus","renderProjectInfo","showToast","startReviewPolling","updateCapabilityState","updateSelectionDock"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
@@ -124,8 +124,11 @@ async function bootstrap({ preserveStale = false, circuit = null, target = null 
 
 function showNoServer(error) {
     ui.emptyState.hidden = false;
-    ui.emptyState.querySelector("h2").textContent = "本地观察器没有响应";
-    ui.emptyState.querySelector("p").textContent = "先启动 Circuit Lens 本地服务，再打开电路。离线页面不会把文件发送到网络。";
+    ui.emptyState.querySelector("h2").textContent = "暂时无法读取工作区";
+    ui.emptyState.querySelector("p").textContent = "";
+    ui.emptyOpenButton.textContent = "重新连接";
+    ui.emptyOpenButton.dataset.action = "retry";
+    ui.emptyOpenButton.hidden = false;
     ui.emptyHint.textContent = statusErrorMessage(error, "无法连接本地服务");
     ports.setCanvasStatus("", "idle");
   }
@@ -139,6 +142,7 @@ function showEmptyWorkspace(detail) {
     projectState.circuit = null;
     projectState.circuitName = null;
     projectState.revision = null;
+    ports.refreshWorkspaceLayout();
     reportView('shown');
     const draftLoading = ports.openDraftProject();
     ports.momentsProjectChanged();
@@ -151,9 +155,10 @@ function showEmptyWorkspace(detail) {
     ports.clearSelection({ notifyServer: false });
     renderCircuitList();
     ui.emptyState.hidden = false;
-    ui.emptyState.querySelector("h2").textContent = projectState.folder ? "选择一份电路，或一起创建" : "打开文件夹，开始构建";
-    ui.emptyState.querySelector("p").textContent = projectState.folder ? "从左侧打开或新建 .circ 文件，也可以和右侧 AI 讨论构思。" : "把电路、任务书和参考文件放在同一个文件夹，与 AI 一起工作。";
+    ui.emptyState.querySelector("h2").textContent = projectState.folder ? "选择或新建电路" : "尚未打开项目";
+    ui.emptyState.querySelector("p").textContent = projectState.folder ? "打开一份 .circ 文件，或在对话中描述要做的电路。" : "";
     ui.emptyOpenButton.textContent = "打开文件夹";
+    ui.emptyOpenButton.dataset.action = "open";
     ui.emptyOpenButton.hidden = Boolean(projectState.folder);
     ui.emptyHint.textContent = detail || "";
     ui.workspaceName.textContent = "尚未选择 .circ";
@@ -166,6 +171,7 @@ function showEmptyWorkspace(detail) {
   }
 
 function updateSessionChrome() {
+    ports.refreshWorkspaceLayout();
     ports.placementContextChanged();
     ports.componentsContextChanged();
     const workspace = projectState.session?.workspace;
@@ -305,8 +311,7 @@ function renderCircuitList() {
     ui.circuitList.replaceChildren();
     ui.circuitCount.textContent = String(projectState.circuits.length);
     if (!circuits.length) {
-      const empty = makeElement("p", "list-empty", projectState.circuits.length ? "没有匹配的电路" : "打开项目后，子电路会列在这里");
-      ui.circuitList.append(empty);
+      if(projectState.circuits.length)ui.circuitList.append(makeElement("p", "list-empty", "没有匹配的电路"));
       return;
     }
     circuits.forEach((item) => {

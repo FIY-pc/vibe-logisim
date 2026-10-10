@@ -22,6 +22,7 @@ export function createController({models,client,ports}) {
   }
   function openComponents(){ports.setWorkspacePanel('rail',true);chooseTab('components',{focus:true});}
   function componentsContextChanged() {
+    if (!project.circuit && tab === 'components') chooseTab('files');
     const current=[project.session?.workspace?.id,project.session?.componentCatalogId||project.revision,project.circuitName].join(':');
     node('addComponentTool').disabled=!project.circuit||project.sourceChanged||project.projectBusy;
     if(binding!==current){binding=current;epoch++;catalog=null;loading=false;}
