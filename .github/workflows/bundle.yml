@@ -62,6 +62,7 @@ jobs:
             apps/desktop/test/document-save.mjs `
             apps/desktop/electron/shortcut-preferences.test.cjs `
             apps/desktop/electron/runtime-installer.test.cjs `
+            apps/desktop/electron/runtime-paths.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `
             apps/desktop/electron/model-tool-output.test.cjs `
             apps/desktop/electron/custom-provider.test.cjs `

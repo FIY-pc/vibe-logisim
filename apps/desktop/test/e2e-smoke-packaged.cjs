@@ -15,9 +15,9 @@ const windows = process.platform === 'win32';
 const root = fs.mkdtempSync(path.join(process.env.VIBE_SMOKE_ROOT || os.tmpdir(), 'vibe-smoke-'));
 const folder = path.join(root, '我的电路 workspace'); fs.mkdirSync(folder);
 const out = process.argv[3] ? path.resolve(process.argv[3]) : root; fs.mkdirSync(out, {recursive: true});
-// Electron reads XDG_CONFIG_HOME on Linux and APPDATA on Windows for app.getPath('appData').
+// Use the explicit packaged profile override: APPDATA is not enough on Windows.
 // No release check against GitHub from CI.
-const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
+const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_USER_DATA_DIR: path.join(root, 'profile'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
 delete env.ELECTRON_RUN_AS_NODE; delete env.VIBE_LOGISIM_STATE_DIR; delete env.VIBE_LOGISIM_CODEX; delete env.VIBE_LOGISIM_PYTHON;
 let app, page, phase = 'launch'; const errors = [], log = [];
 const note = m => { const line = `[${new Date().toISOString().slice(11, 19)}] ${m}`; log.push(line); console.log(line); };
@@ -38,6 +38,7 @@ async function launch(file) {
   await page.setViewportSize({width: 1500, height: 960});
   app.process().stderr.on('data', data => fs.appendFileSync(path.join(root, 'app.log'), data));
   assert.equal(await app.evaluate(({app}) => app.isPackaged), true);
+  assert.equal(await app.evaluate(({app}) => app.getPath('userData')), env.VIBE_LOGISIM_USER_DATA_DIR);
   note('userData = ' + await app.evaluate(({app}) => app.getPath('userData')));
 }
 

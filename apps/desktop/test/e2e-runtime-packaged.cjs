@@ -13,7 +13,7 @@ assert.match(fs.readFileSync(path.join(runtimeFiles, 'model-catalog.LICENSE.txt'
 const root = fs.mkdtempSync(path.join(process.env.VIBE_SMOKE_ROOT || os.tmpdir(), 'vibe-runtime-smoke-'));
 const folder = path.join(root, 'workspace'), out = path.resolve(process.argv[3] || root);
 fs.mkdirSync(folder); fs.mkdirSync(out, {recursive: true});
-const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), CODEX_HOME: path.join(root, 'empty-codex'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
+const env = {...process.env, XDG_CONFIG_HOME: path.join(root, 'config'), APPDATA: path.join(root, 'config'), VIBE_LOGISIM_USER_DATA_DIR: path.join(root, 'profile'), CODEX_HOME: path.join(root, 'empty-codex'), VIBE_LOGISIM_NO_UPDATE_CHECK: '1'};
 for (const name of ['ELECTRON_RUN_AS_NODE', 'VIBE_LOGISIM_STATE_DIR', 'VIBE_LOGISIM_CODEX', 'VIBE_LOGISIM_PYTHON', 'VIBE_LOGISIM_MODEL', 'VIBE_LOGISIM_EFFORT']) delete env[name];
 let app, page, phase = 'launch'; const errors = [];
 const state = () => page.evaluate(() => window.vibeDesktop.agent.getState());
@@ -26,6 +26,7 @@ async function launch() {
   await waitUntil(() => app.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows().some(window => window.isVisible())));
   await page.setViewportSize({width:1440,height:960});
   assert.equal(await app.evaluate(({app}) => app.isPackaged), true);
+  assert.equal(await app.evaluate(({app}) => app.getPath('userData')), env.VIBE_LOGISIM_USER_DATA_DIR);
   await settled();
   // Main-process readiness can precede renderer event binding on a fresh install.
   await page.waitForFunction(()=>document.querySelector('#connectionClose svg')&&document.querySelector('#appShell').getAttribute('aria-busy')!=='true');
