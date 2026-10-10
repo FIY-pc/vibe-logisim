@@ -10,8 +10,8 @@ export const ui = Object.fromEntries(
       "appShell", "workbench", "inspectorSection", "railResize", "reviewResize", "clearObjectSelection", "clearComposerContext", "conversationLatest", "draftError", "draftErrorText", "draftRetry", "draftCopy", "composerOptions",
       "findObject", "finderDialog", "finderInput", "finderClose", "finderScope", "finderStatus", "finderResults",
       "openButton",
-      "saveButton", "undoButton", "saveStatus", "saveDialog", "saveFileName", "cancelSave", "confirmSave",
-      "saveActionError",  
+      "undoButton", "saveStatus", "documentName", "documentIcon", "documentIndicator",
+      "saveErrorBanner", "saveErrorText", "saveRetry", "saveErrorClose",
       "pendingChanges", "pendingChangesButton", "projectHistoryButton", "projectHistory", "exportProject",
             
            

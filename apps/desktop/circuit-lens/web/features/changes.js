@@ -8,18 +8,48 @@ export function createController({models, ui, client, ports}) {
   const {project: projectState, review: reviewState} = models;
   const request = client.request;
   let deferredDisplay=null;
+  let saveOperation=null;
   const idleWaiters=[];
   function releaseIdle() { while (idleWaiters.length) idleWaiters.shift()(); }
   async function waitForIdle(allowDeferred = false) {
     if (!projectState.projectBusy && (allowDeferred || !deferredDisplay)) return;
     await new Promise(resolve=>idleWaiters.push(resolve));
   }
-function requestSave() {
-    if (ui.saveButton.disabled || document.querySelector("dialog[open]")) return;
-    projectState.saveBinding = { projectId: projectState.session.workspace.id, revisionId: projectState.revision };
-    ui.saveFileName.textContent = projectState.session.source?.path || projectState.session.source?.name;
-    ui.saveActionError.hidden = true;
-    ui.saveDialog.showModal();
+  function saveState() {
+    const workspace=projectState.session?.workspace;
+    const operation=saveOperation?.projectId===workspace?.id&&saveOperation?.revisionId===projectState.revision?saveOperation:null;
+    return {pending:Boolean(operation?.pending),error:workspace?.dirty?operation?.error||'':'',
+      canSave:Boolean(workspace?.dirty&&workspace?.canSave&&!projectState.projectBusy&&!projectState.sourceChanged&&!operation?.pending)};
+  }
+  function dismissSaveError(){saveOperation=null;ports.updateSessionChrome();}
+  async function requestSave() {
+    if(!saveState().canSave||document.querySelector('dialog[open]'))return false;
+    const binding={projectId:projectState.session.workspace.id,revisionId:projectState.revision};
+    const current=()=>projectState.session?.workspace?.id===binding.projectId&&projectState.revision===binding.revisionId;
+    const operation={...binding,pending:true,error:''};saveOperation=operation;ports.updateSessionChrome();
+    let ownsBusy=false;
+    try {
+      await flushProjectEdits();
+      if(!current())return false;
+      projectState.projectBusy=true;ownsBusy=true;ports.updateSessionChrome();
+      const session=window.vibeDesktop?.projectAction
+        ?await window.vibeDesktop.projectAction('save',binding)
+        :await request('/api/project/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(binding)});
+      if(!current())return false;
+      projectState.session=session;
+      return true;
+    } catch(error) {
+      if(current()){
+        operation.error=error.message;
+        projectState.projectBusy=false;ownsBusy=false;
+        await ports.pollSessionState();
+      }
+      return false;
+    } finally {
+      operation.pending=false;
+      if(ownsBusy&&projectState.session?.workspace?.id===binding.projectId)projectState.projectBusy=false;
+      ports.updateSessionChrome();releaseIdle();
+    }
   }
 
 // A burst may commit several independent native edits before requesting its
@@ -43,7 +73,6 @@ async function performProjectAction(action, extra = {}, circuit = projectState.c
     const destinations = moved.map(c=>({factory:c.factory,x:c.location.x+delta.x,y:c.location.y+delta.y}));
     const movedWires = action === 'move' ? projectState.circuit.wires.filter(w=>extra.wireIds?.includes(w.wireId)).map(w=>Object.fromEntries(['from','to'].map(k=>[k,{x:w[k].x+delta.x,y:w[k].y+delta.y}]))) : [];
     projectState.projectBusy = true;
-    ui.saveActionError.hidden = true;
     ports.clearComparisonError();
     ports.updateSessionChrome();
     const optimisticDelete = action === "delete" && ports.beginOptimisticDeletion(extra);
@@ -83,9 +112,7 @@ async function performProjectAction(action, extra = {}, circuit = projectState.c
     } catch (error) {
       if (optimisticDelete) ports.rollbackOptimisticDeletion();
       const message = `${applied ? "操作已完成，但界面刷新失败" : "操作未完成"}：${error.message}`;
-      const errorNode = ui.saveDialog.open ? ui.saveActionError : null;
-      if (errorNode) { errorNode.textContent = message; errorNode.hidden = false; }
-      else if (!ports.comparisonActionError(message)) { ports.showToast(message); ports.setCanvasStatus(message, 'error'); }
+      if (!ports.comparisonActionError(message)) { ports.showToast(message); ports.setCanvasStatus(message, 'error'); }
       projectState.projectBusy = false;
       await ports.pollSessionState();
       return false;
@@ -95,5 +122,5 @@ async function performProjectAction(action, extra = {}, circuit = projectState.c
       if (!deferredDisplay) releaseIdle();
     }
   }
-  return Object.freeze({requestSave, performProjectAction, flushProjectEdits});
+  return Object.freeze({requestSave,saveState,dismissSaveError,performProjectAction,flushProjectEdits});
 }

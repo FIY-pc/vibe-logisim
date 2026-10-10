@@ -2,10 +2,10 @@ import {icon, copyText} from '../core/chat-dom.js';
 import {createRequestScope} from '../core/request-scope.js';
 
 export const modelDependencies = ['project'];
-export const dependencies = [];
+export const dependencies = ['saveState','requestSave','dismissSaveError'];
 
 // File information and export only. Opening this surface never runs a check.
-export function createController({models, ui}) {
+export function createController({models, ui, ports}) {
   const project = models.project;
   const scope = createRequestScope(project);
   let openedProject = null, download = null;
@@ -17,11 +17,30 @@ export function createController({models, ui}) {
   }
 
   function renderProjectInfo() {
+    const {pending,error}=ports.saveState(),workspace=project.session?.workspace;
+    const filename=project.session?.source?.name||workspace?.name||'';
+    const state=pending?'saving':project.sourceChanged?'stale':error?'error':workspace?.dirty?'dirty':'clean';
+    const status=pending?'正在保存':project.sourceChanged?'源文件已改变':error?'保存失败':workspace?.dirty?'未保存':'';
+    ui.documentName.textContent=filename;
+    ui.projectInfo.dataset.state=state;
+    ui.documentIndicator.hidden=state==='clean';
+    const indicator=pending?'LoaderCircle':state==='dirty'?'Circle':'CircleAlert';
+    if(ui.documentIndicator.dataset.icon!==indicator){ui.documentIndicator.replaceChildren(icon(indicator));ui.documentIndicator.dataset.icon=indicator;}
+    ui.projectInfo.setAttribute('aria-label',`${filename}${status?`，${status}`:''}，文件信息`);
+    ui.projectInfo.setAttribute('aria-busy',String(pending));
+    const announcement=filename?`${filename}，${status||'已保存'}`:'';
+    if(ui.saveStatus.textContent!==announcement)ui.saveStatus.textContent=announcement;
+    const title=filename?`${workspace?.dirty?'● ':''}${filename} — Vibe Logisim`:'Vibe Logisim';
+    if(document.title!==title)document.title=title;
+    ui.saveErrorBanner.hidden=!error||project.sourceChanged;
+    const failure=error?`未能保存 ${filename}：${error}`:'';
+    if(ui.saveErrorText.textContent!==failure)ui.saveErrorText.textContent=failure;
+    ui.saveRetry.disabled=!ports.saveState().canSave;
     ui.projectInfo.disabled = !available();
-    ui.projectInfo.title = available() ? '文件位置、组件库与导出' : '打开工程后查看文件信息';
+    ui.projectInfo.title = available() ? `${project.session.source?.path||filename}${status?`\n${status}`:''}\n文件信息与导出` : '打开工程后查看文件信息';
     if (!ui.projectDialog.open) return;
     if (!available() || openedProject !== project.session.workspace.id) { ui.projectDialog.close(); return; }
-    const {source, workspace} = project.session;
+    const {source} = project.session;
     const capabilities = project.capabilities;
     const libraries = capabilities?.revisionScope?.externalLibraryDescriptors || [];
     const complete = capabilities?.relativeExternalLibraries?.supported !== false;
@@ -85,6 +104,10 @@ export function createController({models, ui}) {
   }
 
   function mountProjectInfo() {
+    ui.documentIcon.replaceChildren(icon('FileCode2'));
+    ui.saveErrorClose.replaceChildren(icon('X'));
+    ui.saveRetry.addEventListener('click',()=>void ports.requestSave());
+    ui.saveErrorClose.addEventListener('click',ports.dismissSaveError);
     ui.projectInfoClose.replaceChildren(icon('X'));
     ui.projectCopyPath.replaceChildren(icon('Copy'));
     ui.projectInfo.addEventListener('click', () => {

@@ -115,7 +115,7 @@ async function main() {
     assert.equal(await page.locator('#questionInput').inputValue(),'我正在调整控制线和寄存器位置，稍后继续讨论。');
     await page.locator('#fitButton').click();
     await page.screenshot({path:output+'/03-reconnected.png'});
-    await page.locator('#saveButton').click();await page.locator('#confirmSave').click();await page.locator('#saveDialog').waitFor({state:'hidden'});
+    await page.locator('#circuitCanvas').press('ControlOrMeta+s');await waitUntil(()=>session().then(s=>!s.workspace.dirty));
     const saved = await session();assert.notDeepEqual(fs.readFileSync(source),original);
     await app.close();app = await launch();page = await app.firstWindow();await open();
     assert.equal((await session()).workspace.id,initial.workspace.id);

@@ -22,3 +22,19 @@
 .project-issue,.project-info-error{font-size:12px;line-height:1.7;overflow-wrap:anywhere;border-radius:6px;padding:10px 12px;margin:18px 0 0;background:#fff8ee;color:#92500f}
 .project-info-error{color:var(--danger);background:#fdf3f2}
 @media(max-width:560px){.project-dialog{padding:20px}.project-facts>div{gap:12px}.project-export{align-items:flex-start;flex-direction:column}.project-export .bar-button{align-self:flex-end}}
+.document-file{display:flex;align-items:center;gap:8px;min-width:0;max-width:340px;padding:6px 9px;border-radius:5px;color:var(--ink);font-size:12px}
+.document-file:hover{background:var(--surface)}
+#documentName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#documentIcon,#documentIndicator{display:flex;align-items:center;flex-shrink:0}
+#documentIcon svg{width:15px;height:15px;color:var(--muted)}
+#documentIndicator{width:14px;height:16px;justify-content:center}
+#documentIndicator svg{width:14px;height:14px}
+.document-file[data-state=dirty] #documentIndicator svg{width:8px;height:8px;fill:currentColor;stroke:none}
+.document-file:is([data-state=error],[data-state=stale]) #documentIndicator{color:var(--danger)}
+.document-file[data-state=saving] #documentIndicator svg{animation:document-saving 1s linear infinite}
+.save-error-banner{display:flex;align-items:center;gap:12px;padding:9px 20px;border-bottom:1px solid #e8bdba;background:#fdf3f2;color:var(--danger);font-size:12px}
+.save-error-banner>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.save-error-banner>button{flex-shrink:0}.save-error-banner>.icon-button svg{width:15px;height:15px}
+@keyframes document-saving{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.document-file[data-state=saving] #documentIndicator svg{animation:none}}
+@media(max-width:820px){.app-shell[data-workspace=circuit] .instrument-bar .wordmark{display:none}.document-file{flex:1;max-width:unset;padding-inline:0}}

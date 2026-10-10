@@ -7,7 +7,7 @@ export const shortcutCommands = [
   {id:'pan',label:'平移',group:'工具',key:'4',targets:['panTool'],hint:'按住空格可临时平移'},
   {id:'components',label:'添加元件',group:'工具',key:'A',targets:['componentsTab']},
   {id:'rotate',label:'旋转待放置元件',group:'工具',key:'R'},
-  {id:'save',label:'保存',group:'编辑与视图',key:'Mod+S',targets:['saveButton']},
+  {id:'save',label:'保存',group:'编辑与视图',key:'Mod+S',targets:['saveMenuAction']},
   {id:'undo',label:'撤销',group:'编辑与视图',key:'Mod+Z',targets:['undoButton']},
   {id:'find',label:'查找元件',group:'编辑与视图',key:'Mod+F',targets:['findObject']},
   {id:'circuitSearch',label:'查找电路',group:'编辑与视图',key:'/',targets:['circuitSearch']},

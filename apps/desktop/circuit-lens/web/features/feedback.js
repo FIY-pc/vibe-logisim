@@ -7,7 +7,7 @@ import {createFileMenu} from './file-menu.js';
 // built and redacted in the main process; this module previews them and
 // passes on what the user chose. A new release shows as one neutral banner.
 export const modelDependencies = [];
-export const dependencies = ['showToast','openShortcutSettings'];
+export const dependencies = ['showToast','openShortcutSettings','requestSave','saveState','shortcutLabel'];
 
 const RELEASES_PAGE = 'https://github.com/FIY-pc/vibe-logisim/releases';
 const message = error => String(error?.message || error).replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '');
@@ -20,10 +20,13 @@ export function createController({ui, ports}) {
   // ---------------------------------------------------------------- menu
   async function openAppMenu() {
     const shortcuts={label:'快捷键…',icon:'Keyboard',shortcut:/Mac/.test(navigator.platform)?'⌘+,':'Ctrl+,',run:ports.openShortcutSettings};
-    if(!desktop?.diagnostics||!desktop?.updates){menu.open([shortcuts],ui.appMenuButton);return;}
+    const save={id:'saveMenuAction',label:'保存',icon:'Save',shortcut:ports.shortcutLabel('save')==='未设置'?'':ports.shortcutLabel('save'),disabled:!ports.saveState().canSave,run:ports.requestSave};
+    if(!desktop?.diagnostics||!desktop?.updates){menu.open([save,null,shortcuts],ui.appMenuButton);return;}
     update = await desktop.updates.status().catch(() => update);
     const forced = Boolean(update?.forcedOff), automatic = Boolean(update?.enabled) && !forced;
     menu.open([
+      save,
+      null,
       shortcuts,
       null,
       {label: '反馈问题…', icon: 'MessageSquare', run: openFeedback},

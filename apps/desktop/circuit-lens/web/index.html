@@ -40,12 +40,11 @@
         </div>
 
 
+        <button id="projectInfo" class="document-file" aria-haspopup="dialog" disabled><span id="documentIcon" aria-hidden="true"></span><span id="documentName"></span><span id="documentIndicator" aria-hidden="true" hidden></span></button>
+        <span id="saveStatus" class="sr-only" role="status" aria-live="polite"></span>
         <div class="bar-actions">
           <button id="simulationMenuButton" class="bar-button" popovertarget="simulationMenu" aria-haspopup="menu" aria-expanded="false">仿真 <span aria-hidden="true">⌄</span></button>
-          <button id="projectInfo" class="bar-button" aria-haspopup="dialog" disabled>工程信息</button>
-          <span id="saveStatus" class="save-status" aria-live="polite"></span>
           <button class="icon-button" id="undoButton" aria-label="撤销" title="撤销上一步改动（Ctrl+Z）" disabled>↶</button>
-          <button class="bar-button" id="saveButton" disabled title="保存到当前 .circ 文件（Ctrl+S）">保存</button>
           <button class="bar-button" id="openButton">
             <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M3 6h5l2-2h7v12H3z" /></svg>
             打开文件夹
@@ -55,6 +54,7 @@
         </div>
       </header>
 
+      <div class="save-error-banner" id="saveErrorBanner" role="alert" hidden><span id="saveErrorText"></span><button id="saveRetry">重试保存</button><button id="saveErrorClose" class="icon-button" aria-label="关闭保存错误提示"></button></div>
       <div class="stale-banner" id="staleBanner" hidden role="alert">
         <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M10 2 18 17H2zM10 7v5M10 15v.2" /></svg>
         <div>
@@ -527,12 +527,6 @@
         <section class="interface-ports" aria-label="模块接口"><header><h3>接口</h3><button id="interfaceAddPort">＋ 添加端口</button></header><div class="interface-port-columns" aria-hidden="true"><span></span><span>名称</span><span>方向</span><span>位宽</span><span></span></div><div id="interfacePortList"></div><div id="interfaceImpact" aria-live="polite"></div></section>
       </div>
       <footer><span id="interfaceDraftStatus">正在读取封装…</span><button id="interfacePreview">预览影响</button><button id="interfaceApply" class="primary-button">应用修改</button></footer>
-    </dialog>
-    <dialog id="saveDialog" class="save-dialog" aria-labelledby="saveTitle">
-      <h2 id="saveTitle">保存到当前文件</h2><p id="saveFileName" class="save-file-name"></p>
-      <p>如果这个文件正在 Logisim 中打开，请先保存并关闭它，再继续。</p>
-      <p id="saveActionError" class="project-action-error" role="alert" hidden></p>
-      <div class="save-actions"><button id="cancelSave" class="quiet-button">取消</button><button id="confirmSave" class="primary-button">保存文件</button></div>
     </dialog>
     <input id="fileInput" type="file" accept=".circ,application/xml,text/xml" hidden />
     <section id="conversationMenu" class="conversation-menu" popover role="dialog" aria-label="对话历史">

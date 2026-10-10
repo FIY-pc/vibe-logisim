@@ -58,6 +58,7 @@ jobs:
             apps/desktop/test/agent-output-projection.mjs `
             apps/desktop/test/simulation-input-feedback.mjs `
             apps/desktop/test/shortcuts.mjs `
+            apps/desktop/test/document-save.mjs `
             apps/desktop/electron/shortcut-preferences.test.cjs `
             apps/desktop/electron/runtime-installer.test.cjs `
             apps/desktop/electron/startup-target.test.cjs `

@@ -64,7 +64,7 @@ async function main(){
     await page.locator('#interfaceArtwork').getByRole('button',{name:'文字 IF_ID',exact:true}).click();await field('文字内容','IF / ID');
     await page.locator('#interfaceArtwork').getByRole('button',{name:'封装图形',exact:true}).click({position:{x:30,y:20}});await field('宽度',340);
     await page.locator('#interfaceApply').click();await page.locator('#interfaceDialog').waitFor({state:'hidden',timeout:60000});await changed(initial.revision.id);
-    await page.locator('#saveButton').click();await page.locator('#confirmSave').click();await page.locator('#saveDialog').waitFor({state:'hidden'});const saved=await session();
+    await page.locator('#circuitCanvas').press('ControlOrMeta+s');await waitUntil(()=>session().then(s=>!s.workspace.dirty));const saved=await session();
     await app.close();app=await launch();page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));await page.setViewportSize({width:1500,height:960});await circuit('IF_ID');
     page.on('request',r=>{if(r.method()==='POST'&&r.url().endsWith('/api/simulation'))commands.push(r.postDataJSON());});
     assert.equal((await session()).workspace.id,initial.workspace.id);assert.equal((await session()).revision.id,saved.revision.id);

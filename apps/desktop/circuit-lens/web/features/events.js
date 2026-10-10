@@ -36,14 +36,6 @@ function bindEvents() {
       circuit: projectState.circuitName,
       wireIds:ports.selectionSnapshot().wireIds,componentIds:ports.selectionSnapshot().componentIds,
     }));
-    ui.saveButton.addEventListener("click", ports.requestSave);
-    ui.cancelSave.addEventListener("click", () => ui.saveDialog.close());
-    ui.confirmSave.addEventListener("click", async () => {
-      ui.confirmSave.disabled = ui.cancelSave.disabled = true;
-      try { if (await ports.performProjectAction("save", projectState.saveBinding)) ui.saveDialog.close(); }
-      finally { ui.confirmSave.disabled = ui.cancelSave.disabled = false; }
-    });
-    ui.saveDialog.addEventListener("cancel", event => { if (projectState.projectBusy) event.preventDefault(); });
     document.querySelectorAll("[data-prompt]").forEach(button => button.addEventListener("click", () => ports.draftPrompt(button.dataset.prompt)));
     ui.openButton.addEventListener("click", ports.chooseCircuitFile);
     ui.emptyOpenButton.addEventListener("click", async () => {
