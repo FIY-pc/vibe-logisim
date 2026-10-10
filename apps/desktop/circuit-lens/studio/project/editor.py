@@ -116,8 +116,8 @@ class CircuitEditor:
             b = (int(end['x']), int(end['y']))
         except (KeyError, TypeError, ValueError) as error:
             raise ValueError('导线端点必须是整数坐标') from error
-        if a == b or any((value % 10 for value in (*a, *b))):
-            raise ValueError('导线端点必须落在不同的十像素网格点')
+        if any((value % 10 for value in (*a, *b))):
+            raise ValueError('导线端点必须落在十像素网格点')
         points = [start, end] if raw_points is None else raw_points
         parsed_points = []
         for point in points:
@@ -134,7 +134,7 @@ class CircuitEditor:
             raise ValueError('原生端口信息不可用，不能安全布线')
         scene = w.circuit_view(name)['circuit']
         from_bits, to_bits = endpoint_bits(scene, a), endpoint_bits(scene, b)
-        if len(from_bits) != len(to_bits):
+        if from_bits and to_bits and len(from_bits) != len(to_bits):
             raise ValueError(f'端口位宽不匹配：{len(from_bits)} → {len(to_bits)}；请显式使用 Splitter')
         circuit = w.project_store.document.circuit(name)
         # Either end of a gesture may land on an existing wire. Only split at
@@ -152,16 +152,15 @@ class CircuitEditor:
         existing_segments = [(f'({p[0]},{p[1]})', f'({q[0]},{q[1]})') in wire_keys for p, q in segments]
         if existing_segments and all(existing_segments):
             return w.session()
-        if any(existing_segments):
-            raise ValueError('导线已经存在')
-        for p, q in segments:
-            ET.SubElement(circuit, 'wire', {'from': f'({p[0]},{p[1]})', 'to': f'({q[0]},{q[1]})'})
+        for (p, q), exists in zip(segments, existing_segments):
+            if not exists:
+                ET.SubElement(circuit, 'wire', {'from': f'({p[0]},{p[1]})', 'to': f'({q[0]},{q[1]})'})
         snapshot = w.project_store.freeze_circuit(circuit)
         loaded = self.inspect_snapshot(snapshot, name)
         if loaded.get('authority') != 'exact-runtime':
             raise ValueError('原生运行时未接受此导线')
         checked_bits = assert_preserved_connections(inspected['components'], loaded['components'], set(), 0, 0,
-                                                    joins=zip(from_bits, to_bits))
+                                                    joins=zip(from_bits, to_bits), resolve_unknown=True)
         baseline_coverage = w.circuit_view(name).get('coverage', {})
         if any(loaded.get('coverage', {}).get(key, 0) > baseline_coverage.get(key, 0)
                for key in ('invalidBundleEnds', 'widthIncompatibilities')):
@@ -216,5 +215,4 @@ class CircuitEditor:
         target_revision = snapshot.revision_id
         title = f'删除 {len(targets)} 个元件、{len(wires)} 段导线' if ids and wires else f'删除 {len(targets)} 个对象' if ids else f'删除 {len(wires)} 段导线'
         return self.history.advance('delete' if ids else 'delete-wire', title, target_revision, prepared=snapshot, circuits=[name], componentIds=sorted(ids), wireIds=sorted(wires))
-
 

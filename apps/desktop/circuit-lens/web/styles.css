@@ -85,6 +85,7 @@ kbd{font:11px var(--sans);color:#9ba1ad}
 .circuit-canvas[data-mode="poke"][data-simulation-busy="true"] .circuit-component[data-operable="true"]{cursor:progress}
 .circuit-canvas[data-mode="poke"] .wire-port-hit{display:none}
 .circuit-canvas[data-mode="pan"]{cursor:grab}
+.circuit-canvas[data-mode="wire"],.circuit-canvas[data-mode="wire"] .wire-hit{cursor:crosshair}
 .circuit-canvas.is-dragging{cursor:grabbing}
 .circuit-canvas{isolation:isolate}
 .grid-plane{display:none;fill:url(#majorGrid);mix-blend-mode:multiply;pointer-events:none}

@@ -56,6 +56,7 @@ from xml.parsers import expat
 from studio.domain.compaction import compact_x
 from studio.domain.routing import Router, Partition
 from studio.domain.fixed_geometry import fixed_copper
+from studio.domain.loose_wires import loose_wire_geometry
 from studio.domain.wire_geometry import subtract_segments
 
 GRID = 10
@@ -406,11 +407,13 @@ class SchematicLayout:
         self.focus = focus
         self.components = focus["components"]
         self.by_id = {c["componentId"]: c for c in self.components}
-        self.pinned = set(pinned_ids)
+        self.loose_wires, loose_anchors = loose_wire_geometry(focus)
+        self.pinned = set(pinned_ids) | loose_anchors
         self.keep_tunnels = set(keep_tunnels)
         self.localise_constants = localise_constants
         self.report = {"nets": {}, "moved": 0, "wires": 0, "tunnelsRemoved": 0, "tunnelsKept": 0, "constantsPlaced": 0, "unrouted": [], "synthesizedLabels": [],
-                       "portsWidthFromNet": resolved}
+                       "portsWidthFromNet": resolved, "preservedLooseWireSegments": len(self.loose_wires),
+                       "pinnedForLooseWires": sorted(loose_anchors)}
         self.column_gap = COLUMN_GAP
         # A named net that runs backwards (consumer left of its driver: write-
         # back, branch target, feedback) keeps its Tunnels, as in any hand-drawn
@@ -2412,6 +2415,11 @@ class SchematicLayout:
         # include distant body ports joined only by a Tunnel name.
         fixed_ids = {c['componentId'] for c in self.components if self._is_panel(c)}
         kept_wires, cuts = fixed_copper(self.focus, fixed_ids, self.panel_below_y)
+        # Port equivalence cannot account for half-built routes or drawings.
+        # Keep their physical geometry and anchors; arrange the remaining body.
+        for wire in self.loose_wires:
+            if wire not in kept_wires:
+                kept_wires.append(wire)
         bundle_by_id = {b["bundleId"]: b for b in self.focus.get("wireBundles", [])}
         self.boundary_bridges = []
         for cut in cuts:
@@ -3139,7 +3147,10 @@ class SchematicLayout:
                     circuit.remove(drv_el)
         for a, b in self.wires:
             ET.SubElement(circuit, "wire", {"from": f"({a[0]},{a[1]})", "to": f"({b[0]},{b[1]})"})
-        if self.sheet_gap:
+        # Global compaction only anchors components; it can translate free
+        # copper even when its owner is fixed. Leave that final pass off when
+        # preserving unfinished routes or independent drawings.
+        if self.sheet_gap and not self.loose_wires:
             self._compact_sheet(circuit)
         # Only this definition is rewritten; everything else in the file stays
         # byte for byte (a student diffing their file sees one circuit change).

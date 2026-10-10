@@ -49,7 +49,7 @@ def match_relocated_components(before, after, moved_ids, dx, dy, positions=None)
     return pairs
 
 
-def assert_preserved_connections(before, after, moved_ids, dx, dy, *, joins=(), positions=None):
+def assert_preserved_connections(before, after, moved_ids, dx, dy, *, joins=(), positions=None, resolve_unknown=False):
     parents = {}
     def root(net):
         parents.setdefault(net, net)
@@ -66,6 +66,8 @@ def assert_preserved_connections(before, after, moved_ids, dx, dy, *, joins=(), 
             raise ValueError('移动改变了元件接口')
         for end in component['ends']:
             new = ends.get(end['index'])
+            if new and resolve_unknown and (end['width'] is None or end['width'] < 1):
+                continue  # A newly wired Probe may acquire its native width.
             if not new or new['width'] != end['width']:
                 raise ValueError('移动改变了端口位宽')
             width = end['width']

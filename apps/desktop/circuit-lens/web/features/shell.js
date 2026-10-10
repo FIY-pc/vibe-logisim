@@ -60,12 +60,12 @@ function setCanvasStatus(message, kind = "warning") {
 
 function setMode(mode) {
     if(mode!=="place")ports.cancelPlacement();
-    if (mode !== 'select' && canvasState.wireStart) {
+    if (mode !== canvasState.mode && canvasState.wireStart) {
       ports.cancelWiring(); setCanvasStatus('');
     }
     canvasState.mode = mode;
     ui.circuitCanvas.dataset.mode = mode;
-    [ui.selectTool, ui.pokeTool, ui.panTool].forEach((button) => {
+    [ui.selectTool, ui.wireTool, ui.pokeTool, ui.panTool].forEach((button) => {
       const active = button.dataset.mode === mode;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", String(active));

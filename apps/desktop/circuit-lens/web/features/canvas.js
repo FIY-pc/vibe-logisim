@@ -10,7 +10,9 @@ export const dependencies = ["gridViewportChanged","commitCircuitRendering","pla
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
   let viewportSize = null;
-  let wireCursor = null, wireGesture = null, wireVerticalFirst = false, wireTarget = false;
+  let wireCursor = null, wireGesture = null, wireVerticalFirst = false;
+  const canWire = () => ['select', 'wire'].includes(canvasState.mode) && !canvasState.heldSpace &&
+    !projectState.sourceChanged && !projectState.projectBusy;
   const readViewportSize = () => ({width: ui.circuitCanvas.clientWidth, height: ui.circuitCanvas.clientHeight});
 
   function resizeViewport(from, to) {
@@ -69,7 +71,6 @@ function snapWirePoint(event) {
     }
     ui.circuitCanvas.querySelectorAll('.is-wire-target').forEach(node => node.classList.remove('is-wire-target'));
     nearest?.node?.classList.add('is-wire-target');
-    wireTarget = Boolean(nearest);
     return nearest?.location || {x:Math.round(point.x / 10) * 10, y:Math.round(point.y / 10) * 10};
   }
 
@@ -78,6 +79,10 @@ function beginWirePointer(event, location) {
     void chooseWireEndpoint(location);
     wireGesture = {id:event.pointerId, x:event.clientX, y:event.clientY, dragged:false};
     ui.circuitCanvas.setPointerCapture(event.pointerId);
+  }
+
+function finishWiring() {
+    if (canvasState.wireStart && canWire()) return chooseWireEndpoint(wireCursor || canvasState.wirePoints.at(-1));
   }
 
 function buildWireNetLookup() {
@@ -197,6 +202,7 @@ function renderCircuit({preserveCamera = false, preparedFrame = null} = {}) {
     if (!projectState.circuit) return;
     ui.circuitCanvas.classList.toggle("is-native", Boolean(projectState.circuit.render));
     const wireNetLookup = buildWireNetLookup();
+    const bundles = new Map(projectState.circuit.bundles.map(b => [firstDefined(b.bundleId, b.id), b]));
     const geometry = [];
     const exactConnectivity = projectState.capabilityState === "exact";
 
@@ -205,6 +211,7 @@ function renderCircuit({preserveCamera = false, preparedFrame = null} = {}) {
       if (points.length < 2) return;
       const id = wireId(wire, index);
       const bundleId = firstDefined(wire.bundleId, wire.bundle);
+      const bundle = exactConnectivity ? bundles.get(bundleId) : null;
       const relatedNets = exactConnectivity ? asArray(firstDefined(
         wire.netIds,
         wire.netId,
@@ -224,12 +231,12 @@ function renderCircuit({preserveCamera = false, preparedFrame = null} = {}) {
         tabindex: "0",
         role: "button",
         "aria-label": !hasExactNets
-          ? `${exactConnectivity ? "未映射" : "几何"}导线片段 ${id}，连通未知`
+          ? bundle?.valid === false ? '导线，位宽冲突' : bundle ? '导线，位宽未定' : '导线，连接信息不可用'
           : nets.length === 1 ? `网络 ${net}` : `总线，包含 ${nets.length} 个 bit-net`,
       });
       const pointString = points.map((point) => `${point.x},${point.y}`).join(" ");
       const hint = makeSvg('title', {});
-      hint.textContent = '拖动调整线段；Shift 多选；Alt + 单击接出分支';
+      hint.textContent = '拖动线端继续布线；拖动线段调整；Alt 接出分支';
       group.append(hint);
       group.append(
         makeSvg("polyline", { class: "circuit-wire", points: pointString }),
@@ -237,15 +244,17 @@ function renderCircuit({preserveCamera = false, preparedFrame = null} = {}) {
       );
       ports.bindSelectionDrag(group,{wireId:id});
       group.addEventListener('pointerdown', event => {
-        if (canvasState.mode !== 'select' || canvasState.heldSpace || event.button !== 0 || projectState.sourceChanged) return;
-        if (!canvasState.wireStart && !event.altKey) return;
-        event.preventDefault(); event.stopPropagation();
+        if (!canWire() || event.button !== 0) return;
         const p = clientToWorld(event.clientX, event.clientY);
         const a = points[0], b = points.at(-1);
-        const location = a.x === b.x ? {x:a.x,y:Math.max(Math.min(a.y,b.y),Math.min(Math.max(a.y,b.y),Math.round(p.y/10)*10))}
-          : {x:Math.max(Math.min(a.x,b.x),Math.min(Math.max(a.x,b.x),Math.round(p.x/10)*10)),y:a.y};
-        if (!projectState.projectBusy) beginWirePointer(event, location);
-      });
+        const tolerance = 10 / ui.circuitCanvas.getScreenCTM().a;
+        const endpoint = [a, b].find(end => Math.hypot(p.x - end.x, p.y - end.y) <= tolerance);
+        if (!canvasState.wireStart && canvasState.mode !== 'wire' && !event.altKey && !endpoint) return;
+        event.preventDefault(); event.stopPropagation();
+        const location = endpoint || (a.x === b.x ? {x:a.x,y:Math.max(Math.min(a.y,b.y),Math.min(Math.max(a.y,b.y),Math.round(p.y/10)*10))}
+          : {x:Math.max(Math.min(a.x,b.x),Math.min(Math.max(a.x,b.x),Math.round(p.x/10)*10)),y:a.y});
+        beginWirePointer(event, location);
+      }, true);
       group.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -373,14 +382,14 @@ function renderComponent(component, index, bounds, point) {
       const port = makeSvg("circle", { class: "component-port wire-port-hit", cx: location.x, cy: location.y, r: 6,
         tabindex: "0", "data-port-index": endIndex, "aria-label": `连接端口 ${endIndex}` });
       const choose = (event) => {
-        if (canvasState.mode !== "select" || canvasState.heldSpace || projectState.sourceChanged || projectState.projectBusy || (event.type === 'pointerdown' && event.button !== 0)) return;
+        if (!canWire() || (event.type === 'pointerdown' && event.button !== 0)) return;
         event.preventDefault(); event.stopPropagation();
         const starting = !canvasState.wireStart;
         if (starting) port.classList.add('is-wire-start');
         if (event.type === 'pointerdown') beginWirePointer(event, location);
         else void chooseWireEndpoint(location);
       };
-      const hint = makeSvg('title'); hint.textContent = '拖动连接，或点击后逐段布线；Shift 换向'; port.append(hint);
+      const hint = makeSvg('title'); hint.textContent = '拖动松手落线；点击拐弯，Enter 完成；Shift 换向'; port.append(hint);
       port.setAttribute('role', 'button');
       // Handle before the component's drag recognizer captures the pointer.
       port.addEventListener("pointerdown", choose);
@@ -556,7 +565,7 @@ function clientToWorld(clientX, clientY) {
 
 function onPointerDown(event) {
     if (!projectState.circuit || event.button > 1) return;
-    if (canvasState.wireStart && event.button === 0 && !event.target.closest?.(".wire-port-hit")) {
+    if (canvasState.wireStart && canWire() && event.button === 0 && !event.target.closest?.(".wire-port-hit")) {
       const snapped = snapWirePoint(event);
       const previous = canvasState.wirePoints[canvasState.wirePoints.length - 1];
       if (!previous || previous.x !== snapped.x || previous.y !== snapped.y) {
@@ -566,6 +575,10 @@ function onPointerDown(event) {
       }
       event.preventDefault();
       return;
+    }
+    if (canWire() && event.button === 0 && (canvasState.mode === 'wire' || event.altKey) &&
+        !event.target.closest?.('.circuit-component, .wire-group')) {
+      event.preventDefault(); beginWirePointer(event, snapWirePoint(event)); return;
     }
     // Port gestures own the pointer sequence; never let the enclosing
     // component turn a connection attempt into a move or marquee.
@@ -593,15 +606,7 @@ function onPointerDown(event) {
   }
 
 function onPointerMove(event) {
-    if (canvasState.wireStart) {
-      if (projectState.sourceChanged || canvasState.mode !== 'select') { cancelWiring(); return; }
-      wireVerticalFirst = event.shiftKey;
-      wireCursor = snapWirePoint(event);
-      if (wireGesture?.id === event.pointerId && Math.hypot(event.clientX - wireGesture.x, event.clientY - wireGesture.y) >= 4) wireGesture.dragged = true;
-      renderWirePreview(); return;
-    }
-    if (!canvasState.pointer || event.pointerId !== canvasState.pointer.id) return;
-    if (canvasState.pointer.mode === "pan") {
+    if (canvasState.pointer?.mode === 'pan' && event.pointerId === canvasState.pointer.id) {
       const rect = ui.circuitCanvas.getBoundingClientRect();
       const dx = ((event.clientX - canvasState.pointer.startClient.x) / rect.width) * canvasState.pointer.camera.width;
       const dy = ((event.clientY - canvasState.pointer.startClient.y) / rect.height) * canvasState.pointer.camera.height;
@@ -609,6 +614,14 @@ function onPointerMove(event) {
       applyCamera();
       return;
     }
+    if (canvasState.wireStart) {
+      if (projectState.sourceChanged || !['select', 'wire'].includes(canvasState.mode)) { cancelWiring(); return; }
+      wireVerticalFirst = event.shiftKey;
+      wireCursor = snapWirePoint(event);
+      if (wireGesture?.id === event.pointerId && Math.hypot(event.clientX - wireGesture.x, event.clientY - wireGesture.y) >= 4) wireGesture.dragged = true;
+      renderWirePreview(); return;
+    }
+    if (!canvasState.pointer || event.pointerId !== canvasState.pointer.id) return;
     const current = clientToWorld(event.clientX, event.clientY);
     const x = Math.min(current.x, canvasState.pointer.startWorld.x);
     const y = Math.min(current.y, canvasState.pointer.startWorld.y);
@@ -634,13 +647,7 @@ function onPointerUp(event) {
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) { cancelWiring(); return; }
         wireVerticalFirst = event.shiftKey;
         const location = snapWirePoint(event);
-        if (wireTarget) void chooseWireEndpoint(location);
-        else {
-          // A release in empty space fixes a bend; the route stays a draft
-          // until it reaches an electrically defined port or wire.
-          canvasState.wirePoints = wirePath([...canvasState.wirePoints, location], wireVerticalFirst);
-          wireCursor = location; renderWirePreview();
-        }
+        void chooseWireEndpoint(location);
       }
       return;
     }
@@ -675,5 +682,5 @@ function onPointerUp(event) {
     applyCamera();
   }
 
-  return Object.freeze({cancelWiring, mountCanvasViewport, focusComponents, captureViewport, restoreViewport, renderWirePreview, buildWireNetLookup, renderCircuit, renderComponent, appendOptimisticComponent, removeOptimisticComponent, beginOptimisticDeletion, rollbackOptimisticDeletion, fitCircuit, applyCamera, zoomAt, clientToWorld, onPointerDown, onPointerMove, onPointerUp});
+  return Object.freeze({finishWiring, cancelWiring, mountCanvasViewport, focusComponents, captureViewport, restoreViewport, renderWirePreview, buildWireNetLookup, renderCircuit, renderComponent, appendOptimisticComponent, removeOptimisticComponent, beginOptimisticDeletion, rollbackOptimisticDeletion, fitCircuit, applyCamera, zoomAt, clientToWorld, onPointerDown, onPointerMove, onPointerUp});
 }

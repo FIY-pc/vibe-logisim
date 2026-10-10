@@ -120,7 +120,15 @@ export function createController({models,ui,ports}) {
       if(c.factory==='Tunnel'&&components.length===1){const bits=c.ends?.[0]?.netBits;paint(bits,connectedPorts(index,bits));}
     }
     const bundles=new Set(circuit.wires.filter(w=>selection.wireIds.includes(w.wireId)).map(w=>w.bundleId));
-    for(const id of bundles){const b=index.bundles.get(id),bits=b?.valid===false?[]:b?.bitNets;ui.connectionList.append(group(`选中导线 · ${b?.width||'?'} 位`,bits));if(!components.length&&bundles.size===1)paint(bits,connectedPorts(index,bits));}
+    for(const id of bundles){
+      const b=index.bundles.get(id),bits=b?.valid===false?[]:b?.bitNets;
+      if(b&&(b.valid===false||!(b.width>0))){
+        const section=makeElement('section','connection-port');
+        section.append(makeElement('h3','',b.valid===false?'导线 · 位宽冲突':'导线 · 位宽未定'));
+        ui.connectionList.append(section);
+      }else ui.connectionList.append(group(`导线 · ${b?.width||'?'} 位`,bits));
+      if(!components.length&&bundles.size===1)paint(bits,connectedPorts(index,bits));
+    }
     if(!components.length&&!bundles.size&&selection.netIds.length)ui.connectionList.append(group('选中信号',selection.netIds.map((netId,bit)=>({bit,netId}))));
   }
   function mountConnections() {

@@ -54,6 +54,7 @@ export const ui = Object.fromEntries(
       "askButton",
       "interruptButton",
       "selectTool",
+      "wireTool",
       "panTool",
       "zoomOutButton",
       "zoomInButton",
