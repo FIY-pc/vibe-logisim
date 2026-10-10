@@ -43,12 +43,13 @@ class Simulation:
         self.frame_images = OrderedDict()
         self.running = False
         self.reason = None
+        self.reason_code = None
         self.log = None
         self.frames = threading.Condition(threading.RLock())
         self.controls = {}
         self.views = None
 
-    def close(self, reason=None):
+    def close(self, reason=None, reason_code=None):
         self.running = False
         with self.frames:
             process, self.process = self.process, None
@@ -69,6 +70,7 @@ class Simulation:
         self.frame_images.clear()
         self.controls = {}
         self.reason = reason
+        self.reason_code = reason_code
         self.views = None
 
     def status(self, since=None, include_observation=True):
@@ -76,10 +78,10 @@ class Simulation:
             self.close("原生运行进程已退出，请重新启动仿真")
         if self.record and (self.record["revisionId"] != self.w.revision_id or
                             self.record["projectId"] != self.w.history.record["id"]):
-            self.close("电路已修改，运行状态已结束。重新启动将建立全新状态。")
+            self.close("电路已修改，运行状态已结束。重新启动将建立全新状态。", "revision-changed")
         with self.frames:
             view = self.views.current if self.views else None
-            result = {"session": self.record, "view": view, "running": self.running, **self.controls, "reason": self.reason}
+            result = {"session": self.record, "view": view, "running": self.running, **self.controls, "reason": self.reason, "reasonCode": self.reason_code}
             if include_observation and (not self.latest or self.latest["id"] != since):
                 result["observation"] = self.latest if self.latest and view and self.latest['viewId']==view['id'] else None
             return result

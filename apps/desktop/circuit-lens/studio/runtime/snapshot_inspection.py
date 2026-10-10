@@ -19,6 +19,7 @@ def inspect_snapshot(snapshot, circuit, repo_root, state_root, observer=None):
         if document.get('revision', {}).get('artifactSha256') != snapshot.artifact_sha256:
             raise ValueError('原生观察与待修改快照不匹配')
         atomic_write_json(cache, {'observationProfile': profile, 'document': document})
+        circuit_names = {item['name'] for item in snapshot.raw_project['circuits']}
         return {
             'authority': 'exact-runtime',
             'coverage': document.get('coverage', {}),
@@ -27,6 +28,7 @@ def inspect_snapshot(snapshot, circuit, repo_root, state_root, observer=None):
             'components': [{
                 'componentId': component['componentId'],
                 'factory': component['factoryName'],
+                'subcircuit': component['factoryName'] if component['factoryName'] in circuit_names else None,
                 'location': component['location'],
                 'bounds': component['bounds'],
                 'ends': component.get('ends', []),

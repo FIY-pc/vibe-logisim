@@ -113,6 +113,7 @@ kbd{font:11px var(--sans);color:#9ba1ad}
 .component-detail,.component-port{fill:none;stroke:#57616f;stroke-width:1.2}
 .wire-port-hit{pointer-events:all;cursor:crosshair;fill:var(--canvas-bg);stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .wire-port-hit.is-wire-start{fill:var(--accent);stroke:var(--ink);stroke-width:2.5}
+.wire-port-hit.is-wire-target{fill:var(--selected);stroke:var(--accent);stroke-width:3}
 .wire-preview{stroke:var(--accent);stroke-width:2;stroke-dasharray:6 4;vector-effect:non-scaling-stroke;pointer-events:none;opacity:.8}
 .wire-group.is-selected-wire .wire-hit{stroke:var(--accent);stroke-width:5}
 .component-label,.component-subtitle{font:8px var(--sans);fill:#57616f;text-anchor:middle}

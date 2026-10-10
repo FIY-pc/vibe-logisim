@@ -125,7 +125,8 @@ class ProjectHistory:
             record['savedRevisionId'] = record['diskRevisionId'] = saved_revision
         self._commit(record, snapshot)
         simulation = self.workspace.simulation
-        simulation.close('电路已修改，运行状态已结束。重新启动将建立全新状态。' if simulation.record else None)
+        simulation.close('电路已修改，运行状态已结束。重新启动将建立全新状态。' if simulation.record else None,
+                         'revision-changed' if simulation.record else None)
         return self.workspace.session()
 
     def undo(self, project_id, revision):

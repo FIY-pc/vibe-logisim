@@ -154,6 +154,14 @@
             <button class="tool-button" id="deleteSelectionButton" aria-label="删除选中对象" title="删除选中对象（Backspace / Delete）" aria-keyshortcuts="Backspace Delete" disabled>⌫</button>
           </div>
 
+          <div class="simulation-transport" id="simulationTransport" role="toolbar" aria-label="仿真控制" hidden>
+            <output id="simulationActivity" role="status" aria-live="polite"></output>
+            <button id="simulationQuickRestart" class="simulation-recovery" hidden>重新仿真</button>
+            <button id="simulationQuickReturn" class="simulation-recovery" hidden>返回运行画面</button>
+            <button id="simulationQuickPlay" aria-label="运行时钟" title="运行时钟（Ctrl+K）"></button>
+            <button id="simulationQuickTick" aria-label="时钟一步" title="时钟一步（Ctrl+T）"></button>
+            <button id="simulationQuickReset" aria-label="复位仿真" title="复位仿真（Ctrl+R）"></button>
+          </div>
           <div class="placement-toolbar" id="placementToolbar" hidden></div>
           <div class="canvas-status" id="canvasStatus" hidden></div>
 

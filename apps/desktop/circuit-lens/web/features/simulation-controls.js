@@ -1,5 +1,6 @@
 // Menu, shortcuts and settings share commands; native session ownership stays in run.js.
-export const modelDependencies = ['project'];
+import {icon} from '../core/chat-dom.js';
+export const modelDependencies = ['project', 'canvas'];
 export const dependencies = ['simulationStatus', 'simulationAction', 'mountSimulationRuntime', 'returnToSimulation', 'captureMoment'];
 
 const commands = [
@@ -13,7 +14,7 @@ const commands = [
   {id: 'momentCapture', action: 'capture', key: 'F6', unmodified: true},
 ];
 
-export function createController({models: {project}, ui, ports}) {
+export function createController({models: {project, canvas}, ui, ports}) {
   let queue = Promise.resolve(), frequency = 2, settingsScope = null, focusLast = false;
   const modifier = /Mac/.test(navigator.platform) ? 'Meta' : 'Control';
   const menuOpen = () => ui.simulationMenu.matches(':popover-open');
@@ -82,8 +83,30 @@ export function createController({models: {project}, ui, ports}) {
     ui.simulationReset.title = `复位 ${s.circuit || project.circuitName} 及其所有内部模块的运行状态`;
     ui.simulationRate.hidden = !s.running;
     ui.simulationRate.textContent = `当前实测 ${(s.actualFrequency || 0).toFixed(1)} tick/s`;
-    ui.documentKind.textContent = s.visible ? status : project.circuit && !project.circuit.render ? '图面预览' : '';
-    ui.documentKind.title = s.visible ? '仿真动作和快捷键位于顶部“仿真”菜单' : '';
+    ui.simulationTransport.hidden = !project.circuit || (!s.exists && !s.busy && !s.stale && canvas.mode !== 'poke');
+    ui.simulationActivity.textContent = s.busy ? (s.busyAction === 'stop' ? '结束中…' : '启动中…')
+      : s.stale ? '电路已改动' : !s.exists ? '未仿真' : !s.visible ? `正在仿真 ${s.circuit}` : !s.automatic ? '传播已暂停' : s.running ? '时钟运行' : '交互中';
+    const elsewhere = s.exists && !s.visible;
+    ui.simulationQuickRestart.hidden = !s.stale;
+    ui.simulationQuickRestart.disabled = s.busy || !allowed('start');
+    ui.simulationQuickReturn.hidden = !elsewhere;
+    ui.simulationQuickReturn.disabled = s.viewBusy || s.busy;
+    for (const button of [ui.simulationQuickPlay, ui.simulationQuickTick, ui.simulationQuickReset]) button.hidden = s.stale || elsewhere;
+    ui.simulationTransport.dataset.running = String(s.running);
+    ui.simulationTransport.setAttribute('aria-busy', String(s.busy));
+    const playLabel = s.running ? '暂停时钟' : '运行时钟';
+    if (ui.simulationQuickPlay.getAttribute('aria-label') !== playLabel || !ui.simulationQuickPlay.childElementCount) {
+      ui.simulationQuickPlay.replaceChildren(icon(s.running ? 'Pause' : 'Play'));
+      ui.simulationQuickPlay.setAttribute('aria-label', playLabel);
+    }
+    ui.simulationQuickPlay.title = `${playLabel}（${modifier === 'Meta' ? '⌘' : 'Ctrl'}+K）`;
+    ui.simulationQuickPlay.disabled = !allowed('toggle-clock');
+    ui.simulationQuickTick.disabled = !allowed('tick') || s.running;
+    ui.simulationQuickReset.disabled = !allowed('reset') || !s.exists;
+    ui.simulationQuickTick.title = s.running ? '先暂停时钟，再逐步推进' : `时钟一步（${modifier === 'Meta' ? '⌘' : 'Ctrl'}+T）`;
+    ui.simulationQuickReset.title = ui.simulationReset.title;
+    ui.documentKind.textContent = !project.circuit || !ui.simulationTransport.hidden ? '' : s.visible ? '' : s.exists ? '图面预览' : '未仿真';
+    ui.documentKind.title = '';
     ui.simulationMenuButton.dataset.running = String(s.running);
     if (settingsScope && !sameDocument(settingsScope)) ui.simulationOptions.close();
   }
@@ -103,6 +126,13 @@ export function createController({models: {project}, ui, ports}) {
   }
 
   function mountSimulationControls() {
+    ui.simulationQuickRestart.addEventListener('click', () => void dispatch('start'));
+    ui.simulationQuickReturn.addEventListener('click', () => void ports.returnToSimulation());
+    ui.simulationQuickTick.replaceChildren(icon('StepForward'));
+    ui.simulationQuickReset.replaceChildren(icon('RotateCcw'));
+    for (const [button, action] of [[ui.simulationQuickPlay, 'toggle-clock'], [ui.simulationQuickTick, 'tick'], [ui.simulationQuickReset, 'reset']]) {
+      button.addEventListener('click', () => void dispatch(action));
+    }
     ui.simulationMenu.querySelectorAll('button').forEach(button => { button.tabIndex = -1; });
     for (const command of commands) {
       const button = ui[command.id];

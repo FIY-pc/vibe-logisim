@@ -2,7 +2,7 @@
 
 export const modelDependencies = ["project", "canvas"];
 
-export const dependencies = ["mountConnections","mountCanvasViewport","mountGrid","mountConversations","mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFeedback","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
+export const dependencies = ["cancelWiring","mountConnections","mountCanvasViewport","mountGrid","mountConversations","mountConversationStarters","mountComponents","mountPlacement","mountFiles","mountProjectInfo","mountDraft","mountMaterials","mountMoments","mountInterfaces","mountManipulation","mountComparison","mountNavigation","mountRendering","mountAgentConnection","mountAgentPreferences","mountFeedback","mountFinder","openFinder","mountLayout","selectionSnapshot","mountMemoryControls","mountHistoryControls","mountCandidateEvidence","mountSimulationControls","askAgent","bootstrap","chooseCircuitFile","clearSelection","closeMobilePanels","copyReference","draftPrompt","fitCircuit","handleStaleAction","initializeAgent","interruptAgent","loadCandidates","loadCircuit","onPointerDown","onPointerMove","onPointerUp","openFile","performProjectAction","renderCircuitList","renderWirePreview","requestSave","resizeQuestion","setCanvasStatus","setMode","showToast","switchReviewTab","updateCapabilityState","updateComposerState","zoomAt"];
 
 export function createController({models, ui, client, ports}) {
   const {project: projectState, canvas: canvasState} = models;
@@ -121,11 +121,8 @@ function bindEvents() {
       if (dialogOpen || document.querySelector(":popover-open")) return;
       if (canControlCanvas && event.key === "Escape" && canvasState.wireStart) {
         event.preventDefault();
-        canvasState.wireStart = null;
-        canvasState.wirePoints = [];
-        ports.renderWirePreview();
-        ui.circuitCanvas.querySelectorAll(".wire-port-hit.is-wire-start").forEach(node => node.classList.remove("is-wire-start"));
-        ports.setCanvasStatus("已取消端口连接", "idle");
+        ports.cancelWiring();
+        ports.setCanvasStatus("");
         return;
       }
       if (canControlCanvas && ["Delete", "Backspace"].includes(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey && !ui.deleteSelectionButton.disabled) {
