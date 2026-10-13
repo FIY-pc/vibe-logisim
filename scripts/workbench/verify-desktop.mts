@@ -1,8 +1,8 @@
 /** Launch the actual portable desktop from its archive, outside the checkout. */
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { checkDesktop, run } from "./desktop-check.mts";
+import { checkDesktop, cleanupDesktop, run } from "./desktop-check.mts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const windows = process.platform === "win32";
@@ -11,6 +11,7 @@ const base = `Vibe-Logisim-${target}`;
 const directory = await mkdtemp(
   path.join(tmpdir(), "Vibe desktop 安装 check "),
 );
+let failure: unknown;
 try {
   const archive = path.join(
     root,
@@ -62,6 +63,9 @@ try {
   console.log(
     "Portable desktop passed: mounted frontend and IPC, bundled Java simulation, bundled Node startup, and draft recovery after restart. No system runtime PATH.",
   );
+} catch (error) {
+  failure = error;
+  throw error;
 } finally {
-  await rm(directory, { recursive: true, force: true });
+  await cleanupDesktop(directory, failure);
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { retryWindowsFileOperation } from "./windows-file-operation.mts";
 
 export type DesktopReport = {
   schema: number;
@@ -13,8 +14,27 @@ export type DesktopReport = {
   recovered: boolean;
   documentId: string;
   revision: string;
+  stage?: string;
   error?: string;
 };
+
+export async function cleanupDesktop(
+  directory: string,
+  priorFailure?: unknown,
+) {
+  try {
+    await retryWindowsFileOperation(() =>
+      rm(directory, { recursive: true, force: true }),
+    );
+  } catch (error) {
+    if (priorFailure === undefined) throw error;
+    // Do not replace the original application failure with a WebView2 lock.
+    const code = (error as NodeJS.ErrnoException).code;
+    console.error(
+      `Temporary desktop cleanup also failed (${["EBUSY", "EPERM", "EACCES", "ENOTEMPTY"].includes(code || "") ? code : "filesystem-error"}); the original check failure is retained.`,
+    );
+  }
+}
 
 async function deadline<T>(operation: Promise<T>, message: string) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -178,10 +198,20 @@ export async function checkDesktop(options: {
     nativeSimulation: report.nativeSimulation === true,
     builtinRuntime: report.builtinRuntime === true,
     recovered: report.recovered === true,
+    stage: [
+      "frontend",
+      "recovery",
+      "import",
+      "simulation",
+      "runtime",
+      "complete",
+    ].includes(report.stage || "")
+      ? report.stage
+      : "unknown",
     success: false,
   };
   await writeFile(options.report, JSON.stringify(artifact, null, 2) + "\n");
-  assert(!report.error, report.error);
+  assert(!report.error, `Installed desktop ${artifact.stage}: ${report.error}`);
   if (failure) throw failure;
   assert.equal(report.schema, 1);
   assert.equal(

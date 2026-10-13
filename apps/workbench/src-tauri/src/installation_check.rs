@@ -73,10 +73,12 @@ async fn request(host: &Host, value: Value) -> Result<Value, String> {
     host.dispatch(request).await
 }
 
-async fn run(host: &Host, ready: &Notify) -> Result<Value, String> {
+async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), String> {
     tokio::time::timeout(Duration::from_secs(45), ready.notified())
         .await
         .map_err(|_| "The installed frontend did not mount or complete IPC".to_owned())?;
+    report["frontend"] = json!(true);
+    report["stage"] = json!("recovery");
     let status = host.dispatch(Request::Status).await?;
     if !status["recoveryError"].is_null() {
         return Err(format!("Recovery failed: {}", status["recoveryError"]));
@@ -86,6 +88,8 @@ async fn run(host: &Host, ready: &Notify) -> Result<Value, String> {
             .iter()
             .find(|document| document["name"] == "installation-check.circ")
     });
+    report["recovered"] = json!(existing.is_some());
+    report["stage"] = json!("import");
     let doc = if let Some(document) = existing {
         document.clone()
     } else {
@@ -101,6 +105,9 @@ async fn run(host: &Host, ready: &Notify) -> Result<Value, String> {
   </circuit>
 </project>"##})).await?
     };
+    report["documentId"] = doc["id"].clone();
+    report["revision"] = doc["revision"].clone();
+    report["stage"] = json!("simulation");
     let simulation = request(host, json!({"op":"simulate","id":doc["id"],"revision":doc["revision"],"circuit":"main","vectors":[
         {"inputs":{"input":0},"expected":{"output":1}},
         {"inputs":{"input":1},"expected":{"output":0}}
@@ -108,23 +115,36 @@ async fn run(host: &Host, ready: &Notify) -> Result<Value, String> {
     if simulation["passed"] != 2 || simulation["failed"] != 0 {
         return Err(format!("Installed Java simulation failed: {simulation}"));
     }
+    report["nativeSimulation"] = json!(true);
+    report["stage"] = json!("runtime");
     let agent = request(host, json!({"op":"agent","method":"status"})).await?;
     if agent["runtime"] != "builtin" {
         return Err("The bundled Node runtime did not start".to_owned());
     }
-    Ok(
-        json!({"frontend":true,"nativeSimulation":true,"builtinRuntime":true,
-        "recovered":existing.is_some(),"documentId":doc["id"],"revision":doc["revision"]}),
-    )
+    report["builtinRuntime"] = json!(true);
+    report["stage"] = json!("complete");
+    Ok(())
 }
 
 pub fn start(app: tauri::AppHandle, host: Host, root: PathBuf, check: Check) {
     tauri::async_runtime::spawn(async move {
-        let result = tokio::time::timeout(Duration::from_secs(90), run(&host, &check.ready)).await;
-        let (code, mut report) = match result {
-            Ok(Ok(report)) => (0, report),
-            Ok(Err(error)) => (1, json!({"error":error})),
-            Err(_) => (1, json!({"error":"Installed runtime check timed out"})),
+        let mut report = json!({"stage":"frontend","frontend":false,"nativeSimulation":false,
+            "builtinRuntime":false,"recovered":false});
+        let result = tokio::time::timeout(
+            Duration::from_secs(90),
+            run(&host, &check.ready, &mut report),
+        )
+        .await;
+        let code = match result {
+            Ok(Ok(())) => 0,
+            Ok(Err(error)) => {
+                report["error"] = json!(error);
+                1
+            }
+            Err(_) => {
+                report["error"] = json!("Installed runtime check timed out");
+                1
+            }
         };
         report["schema"] = json!(1);
         report["resources"] = json!(root);

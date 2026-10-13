@@ -1,9 +1,9 @@
 /** Destructive only to a temporary install on an ephemeral Windows CI runner. */
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, access, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { checkDesktop, run } from "./desktop-check.mts";
+import { checkDesktop, cleanupDesktop, run } from "./desktop-check.mts";
 
 if (process.platform !== "win32" || process.env.CI !== "true")
   throw new Error("Installer smoke must run on an ephemeral Windows CI runner");
@@ -31,6 +31,7 @@ const directory = await mkdtemp(path.join(tmpdir(), "Vibe installation 安装 ")
 const installed = path.join(directory, "application");
 const uninstall = path.join(installed, "uninstall.exe");
 let installedOnce = false;
+let failure: unknown;
 try {
   const options = {
     binary: path.join(installed, "vibe-logisim-app.exe"),
@@ -79,6 +80,9 @@ try {
   console.log(
     "Windows installation, version upgrade, restart recovery, and uninstall passed. This checks native installer mechanics, not migration from the Electron application.",
   );
+} catch (error) {
+  failure = error;
+  throw error;
 } finally {
   if (installedOnce) {
     try {
@@ -87,5 +91,5 @@ try {
       });
     } catch {}
   }
-  await rm(directory, { recursive: true, force: true });
+  await cleanupDesktop(directory, failure);
 }
