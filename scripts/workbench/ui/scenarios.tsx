@@ -1,3 +1,4 @@
+import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyProjectInfoUI } from "./project-info";
 import { verifyDocumentHistory } from "./history";
 import { verifyReferenceLinksAndCandidates } from "./reference-links";
@@ -1250,6 +1251,7 @@ await verifyReferencesUI();
 await verifyReferenceLinksAndCandidates();
 await verifyDocumentHistory();
 await verifyProjectInfoUI();
+await verifyConversationSummaries();
 console.log("All focused UI lifecycle checks passed");
 
 process.exit(0);

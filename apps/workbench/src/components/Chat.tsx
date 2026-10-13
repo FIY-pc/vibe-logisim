@@ -159,6 +159,12 @@ export function Chat({
     normalizePath(doc.path).startsWith(normalizePath(folder.path) + "/")
       ? folder.id
       : doc?.id || "";
+  const conversationScope = useRef({ workspaceKey, epoch: 0 });
+  if (conversationScope.current.workspaceKey !== workspaceKey)
+    conversationScope.current = {
+      workspaceKey,
+      epoch: conversationScope.current.epoch + 1,
+    };
   const workspaceReady = Boolean(doc && boundWorkspace === workspaceKey);
   const documentIdentity = doc
     ? JSON.stringify([workspaceKey, doc.id, circuit])
@@ -216,6 +222,25 @@ export function Chat({
   const buffered = useRef<{ sequence: number; event: any }[]>([]);
   const applyEvent = useRef<(event: any) => void>(() => {});
   const snapshotCursor = useRef(0);
+  const refreshConversations = async (
+    key: string,
+    isCurrent: () => boolean = () => true,
+  ) => {
+    const epoch = ++conversationScope.current.epoch;
+    const result = await runtime<{
+      workspaceKey?: string;
+      conversations: ConversationSummary[];
+    }>("conversations");
+    if (
+      isCurrent() &&
+      conversationScope.current.epoch === epoch &&
+      conversationScope.current.workspaceKey === key &&
+      binding.current === key &&
+      result &&
+      (!result.workspaceKey || result.workspaceKey === key)
+    )
+      setConversations(result.conversations);
+  };
   const refresh = async (): Promise<RuntimeState> => {
     const next = await runtime<RuntimeState>("status");
     // The cursor is captured when the sidecar writes its snapshot. Replay only newer events.
@@ -290,9 +315,16 @@ export function Chat({
             ? previous.map((m) => (m.id === e.id ? mergeActivity(m, e) : m))
             : [...previous, e],
         );
-      else if (e.type === "conversations-changed")
-        setConversations(e.conversations || []);
-      else if (e.type === "runtime-error") {
+      else if (e.type === "conversations-changed") {
+        if (
+          (e.workspaceKey || binding.current) ===
+          conversationScope.current.workspaceKey
+        ) {
+          // A newer rename/selection event supersedes any pending list snapshot.
+          conversationScope.current.epoch++;
+          setConversations(e.conversations || []);
+        }
+      } else if (e.type === "runtime-error") {
         setRuntimeError(e.message);
         setState((old) => (old ? { ...old, busy: false } : old));
       } else if (e.type === "question")
@@ -351,10 +383,7 @@ export function Chat({
       setBoundWorkspace(key);
       setBoundIdentity(identity);
       await refresh();
-      const result = await runtime<{ conversations: typeof conversations }>(
-        "conversations",
-      );
-      if (live && result) setConversations(result.conversations);
+      await refreshConversations(key, () => live);
     }).catch((error) => {
       if (live) onError(error);
     });
@@ -411,6 +440,7 @@ export function Chat({
         acknowledgeDraft(receipt);
         references.acknowledge(attachmentReceipt);
         await refresh();
+        await refreshConversations(workspaceKey);
       });
     } catch (e) {
       onError(e);
@@ -501,6 +531,7 @@ export function Chat({
         });
         setEditingMessage(null);
         await refresh();
+        await refreshConversations(workspaceKey);
       });
     } catch (e) {
       onError(e);
