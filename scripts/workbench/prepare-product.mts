@@ -17,6 +17,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createWriteStream, createReadStream } from "node:fs";
 import path from "node:path";
+import { patchWindowsJava } from "./windows-java-utf8.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64")
   throw new Error("Resource assembly supports Linux and Windows x64");
@@ -143,6 +144,7 @@ try {
     path.join(runtime, "java"),
   ]);
   const native = path.join(stage, "native");
+  if (windows) await patchWindowsJava(path.join(runtime, "java"));
   await mkdir(path.join(native, "classes"), { recursive: true });
   await cp(jar, path.join(native, "Logisim-ITA.jar"));
   for (const directory of ["native", "observer/src"]) {
