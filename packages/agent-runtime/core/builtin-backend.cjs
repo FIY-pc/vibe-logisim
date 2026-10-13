@@ -12,6 +12,7 @@ const {discoverModels}=require('./provider-probe.cjs');
 const {selectionFor,sameService,configurationIssue,recoverHistory}=require('./builtin-session.cjs');
 const {ModelCatalog,providerFor,URL:CATALOG_URL}=require('./model-catalog.cjs');
 const {toolActivity}=require('./tool-activity.cjs');
+const {loadSdk}=require('./sdk-loader.cjs');
 
 // Supply an error result for a call left unfinished by an application crash.
 // Never re-execute recorded calls when restoring a conversation.
@@ -159,7 +160,7 @@ class BuiltinBackend extends EventEmitter {
     this.starting=true;this.cancelStarting=false;this.preparing=new Promise(resolve=>{this.preparedDone=resolve;});this.emitStatus();
     let work;
     try {
-      const {Agent,createInitialSystemMessage,toToolDeclaration}=await import('./builtin-sdk.mjs');
+      const {Agent,createInitialSystemMessage,toToolDeclaration}=await loadSdk();
       const api=await transport(config.api),fetch=await this.requestFetch(config);
       const prepared=this.contextHost?.prepare(context);
       work=await this.workspaceHost?.prepare(context.revisionId);

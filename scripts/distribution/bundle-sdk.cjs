@@ -1,12 +1,23 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');
 const desktop=path.resolve(__dirname,'../../apps/desktop');
+const source=path.resolve(desktop,'../../packages/agent-runtime/core/builtin-sdk.mjs');
 const {build}=require(path.join(desktop,'node_modules/esbuild'));
 async function bundle(app) {
-  const result=await build({absWorkingDir:desktop,entryPoints:['electron/builtin-sdk.mjs'],outfile:path.join(app,'electron/builtin-sdk.mjs'),
+  const output=path.join(app,'runtime/core/builtin-sdk.mjs');
+  const result=await build({absWorkingDir:desktop,entryPoints:[source],outfile:output,
     bundle:true,platform:'node',format:'esm',target:'node22',minify:true,keepNames:true,metafile:true,legalComments:'inline',
     banner:{js:'import {createRequire as __createRequire} from "node:module"; const require=__createRequire(import.meta.url);'},
+    // The shared source is outside apps/desktop. Resolve its SDK imports from
+    // this distribution's own locked installation, including in a monorepo.
+    plugins:[{name:'desktop-sdk-dependencies',setup(builder){
+      builder.onResolve({filter:/^@earendil-works\//},args=>args.importer===source
+        ? builder.resolve(args.path,{kind:args.kind,resolveDir:desktop}) : undefined);
+    }}],
   });
+  await fs.promises.mkdir(path.join(app,'electron'),{recursive:true});
+  await fs.promises.writeFile(path.join(app,'electron/builtin-sdk.mjs'),
+    "export * from '../runtime/core/builtin-sdk.mjs';\n");
   // Preserve upstream licenses even when their code is reduced by tree shaking.
   const packages=new Set();
   for(const file of Object.keys(result.metafile.inputs)) {
@@ -24,7 +35,7 @@ async function bundle(app) {
     for(const name of fs.readdirSync(dir))if(/^(licen[sc]e|copying|notice|readme)/i.test(name)&&fs.statSync(path.join(dir,name)).isFile())fs.copyFileSync(path.join(dir,name),path.join(dest,name));
   }
   fs.writeFileSync(path.join(notices,'packages.json'),JSON.stringify(index,null,2));
-  console.log(`built-in SDK: ${fs.statSync(path.join(app,'electron/builtin-sdk.mjs')).size} bytes; ${packages.size} dependency notices`);
+  console.log(`built-in SDK: ${fs.statSync(output).size} bytes; ${packages.size} dependency notices`);
 }
 if(require.main===module)bundle(path.resolve(process.argv[2])).catch(error=>{console.error(error);process.exitCode=1;});
 module.exports={bundle};

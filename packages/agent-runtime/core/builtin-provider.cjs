@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {randomUUID,createHash} = require('node:crypto');
+const {loadSdk} = require('./sdk-loader.cjs');
 const {validate, maskKey, readCustomProvider, readStoredApiKey} = require('./custom-provider.cjs');
 const APIS = ['openai-completions', 'openai-responses', 'anthropic-messages'];
 function atomic(file, value) {
@@ -86,7 +87,7 @@ function modelFor(config,metadata=null) {
     cost:{input:0,output:0,cacheRead:0,cacheWrite:0},contextWindow:config.contextWindow,maxTokens:8192};
 }
 async function transport(api) {
-  const sdk=await import('./builtin-sdk.mjs');
+  const sdk=await loadSdk();
   if(api==='openai-responses')return {streamSimple:sdk.responses};
   if(api==='anthropic-messages')return {streamSimple:sdk.anthropic};
   if(api==='openai-completions')return {streamSimple:sdk.completions};
