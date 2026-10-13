@@ -1,0 +1,42 @@
+{
+  "name": "vibe-logisim",
+  "private": true,
+  "version": "0.6.0-dev",
+  "workspaces": [
+    "apps/workbench",
+    "packages/agent-runtime"
+  ],
+  "scripts": {
+    "dev": "node scripts/workbench/dev.mts",
+    "desktop": "npm run desktop -w @vibe-logisim/workbench",
+    "build": "npm run build -w @vibe-logisim/workbench",
+    "check": "npm run check -w @vibe-logisim/workbench && npm run check -w @vibe-logisim/agent-runtime && npm run check:scripts",
+    "host": "cargo run -p vibe-workbench-host",
+    "setup": "node scripts/workbench/setup.mts",
+    "check:rust": "cargo check --workspace",
+    "test:core": "cargo test -p vibe-workspace-core",
+    "test:native": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/verify.mts",
+    "contracts": "cargo run -p vibe-workbench-host --bin export-contract",
+    "format": "cargo fmt --all && prettier --write apps/workbench/src packages/agent-runtime/src/*.mts scripts/workbench/*.mts",
+    "check:contracts": "cargo run -p vibe-workbench-host --bin export-contract -- --check",
+    "bundle:agent": "node scripts/workbench/bundle-agent.mts",
+    "package:desktop": "node scripts/workbench/package.mts",
+    "prepare:product": "node scripts/workbench/prepare-product.mts",
+    "test:product": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/verify-product.mts",
+    "test:desktop": "node scripts/workbench/verify-desktop.mts",
+    "test:windows-install": "node scripts/workbench/verify-windows-install.mts",
+    "test:files": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/verify-files.mts",
+    "test:compatibility": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/compatibility-check.mts",
+    "test:codex": "node scripts/workbench/codex-protocol-check.mts",
+    "check:scripts": "tsc -p scripts/workbench/tsconfig.json",
+    "test:runtime": "node scripts/workbench/runtime-binding-check.mts && node scripts/workbench/context-transfer-check.mts && node scripts/workbench/question-check.mts && node scripts/workbench/network-check.mts && node scripts/workbench/installer-check.mts",
+    "test:ui": "node scripts/workbench/verify-ui.mts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "esbuild": "^0.28.2",
+    "jsdom": "29.1.1",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2"
+  }
+}

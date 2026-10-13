@@ -64,7 +64,7 @@ def main():
             home.mkdir()
             report = {'version': version, 'jar': str(jar), 'sha256': sha(jar)}
             evidence['runtimes'].append(report)
-            helper = REPO / 'apps/desktop/circuit-lens/native/com/cburch/logisim/file/NativeCircuitLoader.java'
+            helper = REPO / 'crates/logisim-adapter/java/native/com/cburch/logisim/file/NativeCircuitLoader.java'
             probe = Path(__file__).with_name('support') / 'NativeWireValidation.java'
             record, _, stderr = run(directory, 'compile', ['javac', '-encoding', 'UTF-8', '-cp', str(jar),
                 '-d', str(classes), str(helper), str(probe)], timeout=30)

@@ -1,0 +1,23 @@
+[package]
+name = "vibe-workspace-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+xmltree.workspace = true
+tempfile.workspace = true
+
+ts-rs.workspace = true
+schemars = { version = "1.2.2", features = ["derive"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rustix = { version = "1.1.5", features = ["fs"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem"] }

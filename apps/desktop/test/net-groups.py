@@ -278,7 +278,7 @@ def observe(root, label, source, circuit, expected_runtime_sha, expected_source_
 def product_hashes():
     base = REPO / 'apps/desktop/circuit-lens'
     paths = [*base.glob('studio/**/*.py'), *base.glob('studio/**/*.json'),
-             *base.glob('native/**/*.java'), *base.glob('observer/src/**/*.java')]
+             *(REPO / 'crates/logisim-adapter/java').glob('native/**/*.java'), *(REPO / 'crates/logisim-adapter/java').glob('observer/src/**/*.java')]
     return {str(p.relative_to(base)): sha(p.read_bytes()) for p in sorted(paths)}
 
 

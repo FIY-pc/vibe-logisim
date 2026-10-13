@@ -41,3 +41,10 @@ auth.json
 /apps/desktop/docs/
 **/evidence/
 .probe/
+
+# Rust / modern workbench
+/target/
+/apps/workbench/src-tauri/gen/
+*.tsbuildinfo
+/.workbench-state/
+/.workbench-cache/

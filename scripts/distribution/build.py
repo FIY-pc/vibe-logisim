@@ -164,6 +164,9 @@ def build(args):
         runtime = resources / 'runtime'
         copy_product(app / 'electron', 'apps/desktop/electron')
         copy_product(app / 'circuit-knowledge', 'apps/desktop/circuit-knowledge')
+        copy_product(app / 'runtime/core', 'packages/agent-runtime/core')
+        copy_product(app / 'runtime/circuit-knowledge', 'packages/agent-runtime/circuit-knowledge')
+        copy_product(product / 'crates/logisim-adapter/java', 'crates/logisim-adapter/java')
         copy_product(product / 'apps/desktop/circuit-lens', 'apps/desktop/circuit-lens')
         package = {k: metadata[k] for k in ('name', 'version', 'main', 'description')}
         (app / 'package.json').write_text(json.dumps(package, indent=2))

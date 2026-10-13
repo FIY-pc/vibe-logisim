@@ -24,7 +24,7 @@ class SimulationWorker:
     """
 
     def __init__(self, repo_root: Path, state_root: Path):
-        root = repo_root / 'apps/desktop/circuit-lens'
+        root = repo_root / 'crates/logisim-adapter/java'
         native = root / 'native/com/cburch/logisim/file'
         self.sources = [
             native / name for name in (

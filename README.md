@@ -75,12 +75,17 @@ macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功
 
 ## 从源码运行
 
-需要 Node.js 22+、Python 3.11+、JDK 17+；内置运行时无需 `codex`；选择 Codex 运行时才需要本机可用的 `codex` 命令。按 [开发说明](docs/development.md) 放好两个 Logisim 运行文件后：
+开发分支使用 **Rust、Tauri 2、React 19 和 TypeScript**。Rust 管理文档、编辑历史和仿真会话，Logisim 兼容层提供原生电路语义，独立 Node 进程连接 AI 运行时。当前发行版的下载与使用说明见上文。
+
+准备 Node.js 24、rustup、JDK 17+ 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)，然后运行：
 
 ```sh
-npm --prefix apps/desktop ci
-apps/desktop/run
+npm ci
+npm run setup
+npm run desktop
 ```
+
+`setup` 下载并校验兼容运行时；浏览器开发使用 `npm run dev`。桌面重写尚未替代正式发行版，平台验证范围见 [工作台开发说明](docs/native-workbench.md)。
 
 [开发说明](docs/development.md) · [分发构建](docs/distribution.md) · [架构](docs/architecture.md)
 

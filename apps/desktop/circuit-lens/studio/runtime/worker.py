@@ -21,7 +21,7 @@ from studio.domain.tool_errors import NativeRuntimeFailure
 
 class NativeWorker:
     def __init__(self, repo_root, state_root):
-        root = repo_root / 'apps/desktop/circuit-lens'
+        root = repo_root / 'crates/logisim-adapter/java'
         self.sources = [root / 'native/com/cburch/logisim/file' / name for name in (
             'NativeCircuitLoader.java', 'CircuitWorker.java', 'CircuitPalette.java', 'CircuitRenderer.java', 'CircuitObjects.java', 'CircuitInterface.java')]
         self.sources.append(root / 'native/com/cburch/logisim/std/memory/StudioMemory.java')

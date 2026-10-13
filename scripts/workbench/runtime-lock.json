@@ -1,0 +1,13 @@
+{
+  "node": {
+    "version": "24.14.0",
+    "linux-x64": {
+      "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-linux-x64.tar.xz",
+      "sha256": "41cd79bb7877c81605a9e68ec4c91547774f46a40c67a17e34d7179ef11729df"
+    },
+    "win32-x64": {
+      "url": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-win-x64.zip",
+      "sha256": "313fa40c0d7b18575821de8cb17483031fe07d95de5994f6f435f3b345f85c66"
+    }
+  }
+}

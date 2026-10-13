@@ -22,7 +22,7 @@ class ObserverRuntime:
     def __init__(self, repo_root: Path, state_root: Path):
         self.repo_root = repo_root
         self.state_root = state_root
-        self.observer_dir = self.repo_root / "apps/desktop/circuit-lens/observer"
+        self.observer_dir = self.repo_root / "crates/logisim-adapter/java/observer"
         self.source = (
             self.observer_dir
             / "src"
@@ -35,7 +35,7 @@ class ObserverRuntime:
         self.runtime_jar = self.repo_root / "apps/desktop/circuit-lens/native" / "Logisim-ITA.jar"
         self.attribute_adapter = self.source.with_name('NativeAttributeAdapter.java')
         self.port_semantics = self.source.with_name('NativePortSemantics.java')
-        self.circuit_loader = repo_root / 'apps/desktop/circuit-lens/native/com/cburch/logisim/file/NativeCircuitLoader.java'
+        self.circuit_loader = repo_root / 'crates/logisim-adapter/java/native/com/cburch/logisim/file/NativeCircuitLoader.java'
         self.full_runner = self.observer_dir / "run-precompiled.sh"
         self.query_runner = self.observer_dir / "query-precompiled.sh"
         self.query_program = self.observer_dir / "query.py"

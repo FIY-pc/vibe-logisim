@@ -1,0 +1,214 @@
+{
+  "$defs": {
+    "Point": {
+      "properties": {
+        "x": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "y": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "properties": {
+        "kind": {
+          "const": "wire",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/Point"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "points"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "attributes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "kind": {
+          "const": "place",
+          "type": "string"
+        },
+        "library": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "$ref": "#/$defs/Point"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "location"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "delta": {
+          "$ref": "#/$defs/Point"
+        },
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "move",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ids",
+        "delta"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "delete",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ids"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "attributes",
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "values"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "addCircuit",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "renameCircuit",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "deleteCircuit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "setMain",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "replace",
+          "type": "string"
+        },
+        "xml": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "xml"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Edit"
+}

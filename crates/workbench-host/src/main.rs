@@ -1,0 +1,103 @@
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::{
+        IntoResponse, Sse,
+        sse::{Event, KeepAlive},
+    },
+    routing::{get, post},
+};
+use serde_json::{Value, json};
+use std::path::PathBuf;
+use vibe_workbench_host::{Host, Request};
+async fn dispatch(
+    State(host): State<Host>,
+    headers: HeaderMap,
+    Json(request): Json<Request>,
+) -> impl IntoResponse {
+    // Dev-only loopback transport. Production uses Tauri's scoped IPC.
+    if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())
+        && origin != "http://127.0.0.1:5173"
+        && origin != "http://localhost:5173"
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error":"Origin rejected"})),
+        );
+    }
+    match host.dispatch(request).await {
+        Ok(result) => (StatusCode::OK, Json(json!({"result":result}))),
+        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))),
+    }
+}
+async fn events(State(host): State<Host>, headers: HeaderMap) -> axum::response::Response {
+    if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())
+        && origin != "http://127.0.0.1:5173"
+        && origin != "http://localhost:5173"
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let events = host.events().await;
+    let stream = futures_util::stream::unfold(events, |mut events| async move {
+        let event = events.next().await?;
+        Some((
+            Ok::<_, std::convert::Infallible>(Event::default().json_data(event).unwrap()),
+            events,
+        ))
+    });
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let root = std::env::var_os("VIBE_WORKBENCH_RESOURCES")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            if cfg!(debug_assertions) {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+            } else {
+                std::env::current_exe()
+                    .expect("Executable path")
+                    .parent()
+                    .unwrap()
+                    .join("resources/workbench")
+            }
+        })
+        .canonicalize()?;
+    let state = std::env::var_os("VIBE_WORKBENCH_STATE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join(".workbench-state"));
+    let host = Host::new(root, state, None)?;
+    let app = Router::new()
+        .route("/api/command", post(dispatch))
+        .route("/api/events", get(events))
+        .route(
+            "/api/health",
+            get(|| async { Json::<Value>(json!({"ok":true,"host":"rust"})) }),
+        )
+        .with_state(host.clone());
+    let port = std::env::var("VIBE_WORKBENCH_PORT")
+        .unwrap_or_else(|_| "8793".into())
+        .parse::<u16>()?;
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+    eprintln!("Vibe Logisim Rust host: http://{}", listener.local_addr()?);
+    let shutdown_host = host.clone();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            #[cfg(unix)]
+            {
+                let mut term =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("SIGTERM handler");
+                tokio::select! {_ = tokio::signal::ctrl_c()=>{},_ = term.recv()=>{}}
+            }
+            #[cfg(not(unix))]
+            let _ = tokio::signal::ctrl_c().await;
+            shutdown_host.shutdown().await;
+        })
+        .await?;
+    host.shutdown().await;
+    Ok(())
+}

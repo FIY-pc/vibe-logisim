@@ -1,5 +1,7 @@
 # 独立桌面应用包
 
+本文描述已发布的 Electron 应用。开发分支的 Rust/Tauri 应用使用 `npm run package:desktop` 构建；资源布局、安装与升级检查见 [工作台分发说明](native-workbench.md#desktop-packaging)。两种应用的数据目录独立，历史导入不复制账户凭据。
+
 Windows 使用安装程序，Linux 解压后打开 `vibe-logisim`，即可打开文件夹、创建或编辑电路、运行仿真、预览资料。无需安装 Node、Python、Java、Codex、Logisim 或 Poppler。AI 面板提供 ChatGPT 登录和取消入口，浏览器完成登录后自动更新连接；退出登录在 AI 设置里。未登录不影响人工编辑和仿真。
 
 提供 Windows x64 安装程序与 Linux x64 压缩包，两平台由 CI 分别运行打包程序验收。Linux 仍需桌面图形库（Electron 的 GTK/NSS 等）、glibc，AI 隔离需要 systemd 用户服务。macOS 暂无分发包；当前包未签名，版本更新仅提示，不自动安装。

@@ -95,12 +95,12 @@ class Simulation:
         if not view["circuit"].get("components"):
             raise ValueError("当前电路没有可用的原生运行对象")
         observer = self.w.observer
-        source = self.w.repo_root / "apps/desktop/circuit-lens/native/com/cburch/logisim/file/CircuitSession.java"
+        source = self.w.repo_root / "crates/logisim-adapter/java/native/com/cburch/logisim/file/CircuitSession.java"
         memory = source.parents[1] / "std/memory/StudioMemory.java"
         propagation = source.parents[1] / "circuit/StudioPropagation.java"
         view_source = source.with_name('CircuitSessionView.java')
         frame_source = source.with_name('CircuitFrame.java')
-        sources = [source, memory, propagation, view_source, frame_source, source.with_name('NativeCircuitLoader.java')]
+        sources = [source, source.with_name('CircuitTrace.java'), memory, propagation, view_source, frame_source, source.with_name('NativeCircuitLoader.java')]
         key = hashlib.sha256(b''.join(p.read_bytes() for p in sources) + observer.runtime_jar.read_bytes()).hexdigest()
         classes = self.w.state_root / "native-cache" / key
         with observer._compile_lock:

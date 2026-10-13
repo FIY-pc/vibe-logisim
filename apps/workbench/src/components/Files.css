@@ -1,0 +1,11 @@
+.file-context-menu {
+  position: fixed;
+  right: auto;
+  z-index: 50;
+  min-width: 210px;
+}
+.file-drop-target {
+  background: var(--accent-soft, #e7efff);
+  outline: 1px solid var(--accent, #4d75bd);
+  outline-offset: -1px;
+}

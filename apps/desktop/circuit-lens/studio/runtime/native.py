@@ -52,7 +52,7 @@ class NativeOperations:
             return ET.fromstring(observer.worker.request(runtime, artifact, request, output))
         artifact_sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
         runtime_sha = hashlib.sha256(runtime.read_bytes()).hexdigest()
-        source = self.workspace.repo_root / 'apps/desktop/circuit-lens/native/com/cburch/logisim/file/CircuitWorkbench.java'
+        source = self.workspace.repo_root / 'crates/logisim-adapter/java/native/com/cburch/logisim/file/CircuitWorkbench.java'
         memory = source.parents[1] / 'std/memory/StudioMemory.java'
         interface = source.with_name('CircuitInterface.java')
         sources = [source, source.with_name("NativeCircuitLoader.java"), memory, interface, source.with_name("CircuitPalette.java"), source.with_name("CircuitObjects.java")]
