@@ -8,7 +8,7 @@ export function nodeFailure(output: string) {
   const codes = [
     ...new Set(
       output.match(
-        /\b(?:ERR_[A-Z_]+|MODULE_NOT_FOUND|ENOENT|EACCES|EPERM)\b/g,
+        /\b(?:ERR_[A-Z_]+|MODULE_NOT_FOUND|ENOENT|EACCES|EPERM|EISDIR)\b/g,
       ) || [],
     ),
   ];
@@ -23,6 +23,7 @@ export function nodeFailure(output: string) {
       /Only URLs with a scheme|ERR_UNSUPPORTED_ESM_URL_SCHEME|ERR_INVALID_FILE_URL/,
     ],
     ["syntax", /SyntaxError/],
+    ["namespaced-realpath", /EISDIR.*(?:lstat|stat)|(?:lstat|stat).*EISDIR/s],
     ["missing-global", /ReferenceError/],
     ["native-library", /specified module could not be found|DLL|0xc0000135/i],
     ["invalid-argument", /TypeError|RangeError/],
