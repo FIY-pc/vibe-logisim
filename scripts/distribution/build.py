@@ -211,6 +211,8 @@ def build(args):
         if missing:
             raise ValueError('Runtime layout mismatch, electron/runtime-paths.cjs expects: ' + ', '.join(missing))
         native = product / 'apps/desktop/circuit-lens/native/Logisim-ITA.jar'
+        # The runtime keeps its legacy path; shared bridge sources now live under crates/.
+        native.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(shared['logisim.jar'], native)
         course = product / 'workspaces/hust-riscv/original/course-package'
         course.mkdir(parents=True)

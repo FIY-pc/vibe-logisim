@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
-const directory = await mkdtemp(path.join(tmpdir(), "Vibe product check "));
+// Windows host canonicalization returns verbatim paths. Keep spaces and Unicode
+// here so the actual packaged JVM must load these paths, not just simple CI paths.
+const directory = await mkdtemp(path.join(tmpdir(), "Vibe product 电路 check "));
 try {
   const resources = path.join(directory, "resources/workbench");
   await cp(path.join(root, ".workbench-cache/product"), resources, {

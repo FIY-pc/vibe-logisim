@@ -1,5 +1,7 @@
 //! The Logisim process boundary. No Python or desktop APIs are required.
+mod process;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
+use process::{StderrCapture, exit_failure, java_path};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -54,6 +56,7 @@ pub fn xml_json(node: &Element) -> Value {
 }
 struct Worker {
     child: Child,
+    stderr: StderrCapture,
     input: ChildStdin,
     lines: Lines<BufReader<tokio::process::ChildStdout>>,
     dependencies: BTreeMap<PathBuf, String>,
@@ -63,8 +66,12 @@ impl Worker {
         let line = tokio::time::timeout(Duration::from_secs(60), self.lines.next_line())
             .await
             .map_err(|_| "Logisim 响应超时，请重试")?
-            .map_err(|e| e.to_string())?
-            .ok_or("Logisim 进程已退出")?;
+            .map_err(|e| e.to_string())?;
+        let Some(line) = line else {
+            return Err(
+                exit_failure(&mut self.child, &mut self.stderr, "Logisim 进程已退出").await,
+            );
+        };
         if line.len() > 48_000_000 {
             return Err("Logisim 响应超过限制".into());
         }
@@ -181,10 +188,10 @@ impl Native {
             let mut command = Command::new(self.java_executable("javac"));
             command
                 .args(["-encoding", "UTF-8", "-cp"])
-                .arg(&runtime)
+                .arg(java_path(&runtime))
                 .arg("-d")
-                .arg(&classes)
-                .args(&sources)
+                .arg(java_path(&classes))
+                .args(sources.iter().map(|source| java_path(source)))
                 .kill_on_drop(true);
             let output = tokio::time::timeout(Duration::from_secs(90), command.output())
                 .await
@@ -208,7 +215,7 @@ impl Native {
         };
         let bundled = self.root.join("runtimes/java/bin").join(&binary);
         if bundled.is_file() {
-            bundled
+            java_path(&bundled)
         } else {
             PathBuf::from(binary)
         }
@@ -216,14 +223,15 @@ impl Native {
     async fn command(&mut self, class: &str) -> Result<Command> {
         let classes = self.classes().await?;
         let runtime = self.runtime()?;
-        let cp = std::env::join_paths([classes, runtime]).map_err(|e| e.to_string())?;
+        let cp = std::env::join_paths([java_path(&classes), java_path(&runtime)])
+            .map_err(|e| e.to_string())?;
         let mut cmd = Command::new(self.java_executable("java"));
         cmd.args(["-Xmx768m", "-Djava.awt.headless=true", "-cp"])
             .arg(cp)
             .arg(format!("com.cburch.logisim.file.{class}"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         Ok(cmd)
     }
@@ -253,15 +261,17 @@ impl Native {
                     "CircuitWorker"
                 })
                 .await?;
-            command.arg(runtime).arg(hash);
+            command.arg(java_path(&runtime)).arg(hash);
             if !verification {
-                command.arg(classes);
+                command.arg(java_path(&classes));
             }
             let mut child = command.spawn().map_err(|e| e.to_string())?;
             let input = child.stdin.take().ok_or("Logisim stdin 不可用")?;
+            let stderr = StderrCapture::start(child.stderr.take().ok_or("Logisim stderr 不可用")?);
             let lines = BufReader::new(child.stdout.take().ok_or("Logisim stdout 不可用")?).lines();
             let mut worker = Worker {
                 child,
+                stderr,
                 input,
                 lines,
                 dependencies: BTreeMap::new(),
@@ -290,7 +300,7 @@ impl Native {
         let request = xml(
             "request",
             &[
-                ("artifact", artifact.to_string_lossy().into()),
+                ("artifact", java_path(artifact).to_string_lossy().into()),
                 ("digest", hash),
             ],
             vec![operation],
@@ -546,11 +556,12 @@ impl Native {
         std::fs::write(&init_path, encode_xml(&init)?).map_err(|e| e.to_string())?;
         let mut command = self.command("CircuitSession").await?;
         let mut child = command
-            .arg(artifact)
-            .arg(init_path)
+            .arg(java_path(artifact))
+            .arg(java_path(&init_path))
             .spawn()
             .map_err(|e| e.to_string())?;
         let input = child.stdin.take().ok_or("仿真 stdin 不可用")?;
+        let stderr = StderrCapture::start(child.stderr.take().ok_or("仿真 stderr 不可用")?);
         let mut lines = BufReader::new(child.stdout.take().ok_or("仿真 stdout 不可用")?).lines();
         let (tx, latest) = watch::channel(Value::Null);
         let (acks_tx, acks) = mpsc::channel(16);
@@ -583,6 +594,9 @@ impl Native {
                 }
             }
             tx.send_modify(|value| {
+                if !value.is_object() {
+                    *value = json!({"exited": true});
+                }
                 if let Some(o) = value.as_object_mut() {
                     o.insert("exited".into(), Value::Bool(true));
                 }
@@ -591,6 +605,7 @@ impl Native {
         });
         let mut simulation = Simulation {
             child,
+            stderr,
             input,
             latest,
             acks,
@@ -606,6 +621,14 @@ impl Native {
             .map_err(|_| "仿真启动超时")?
             .map_err(|_| "仿真启动失败")?;
         let state = simulation.state();
+        if state["frame"]["exited"] == true {
+            return Err(exit_failure(
+                &mut simulation.child,
+                &mut simulation.stderr,
+                "仿真进程已退出",
+            )
+            .await);
+        }
         if state["frame"]["tag"] != "frame" || state["frame"]["exited"] == true {
             return Err(format!("仿真未启动：{}", frame_failure(&state["frame"])));
         }
@@ -689,6 +712,7 @@ fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String>> {
 }
 pub struct Simulation {
     child: Child,
+    stderr: StderrCapture,
     input: ChildStdin,
     latest: watch::Receiver<Value>,
     acks: mpsc::Receiver<Value>,
@@ -813,8 +837,10 @@ impl Simulation {
         self.input.flush().await.map_err(|e| e.to_string())?;
         let ack = tokio::time::timeout(Duration::from_secs(10), self.acks.recv())
             .await
-            .map_err(|_| "仿真操作超时")?
-            .ok_or("仿真已退出")?;
+            .map_err(|_| "仿真操作超时")?;
+        let Some(ack) = ack else {
+            return Err(exit_failure(&mut self.child, &mut self.stderr, "仿真进程已退出").await);
+        };
         if let Some(e) = ack["attributes"]["error"].as_str() {
             return Err(e.into());
         }
@@ -854,8 +880,10 @@ impl Simulation {
         self.input.flush().await.map_err(|e| e.to_string())?;
         let ack = tokio::time::timeout(Duration::from_secs(10), self.acks.recv())
             .await
-            .map_err(|_| "仿真操作超时")?
-            .ok_or("仿真已退出")?;
+            .map_err(|_| "仿真操作超时")?;
+        let Some(ack) = ack else {
+            return Err(exit_failure(&mut self.child, &mut self.stderr, "仿真进程已退出").await);
+        };
         if let Some(e) = ack["attributes"]["error"].as_str() {
             return Err(e.into());
         }

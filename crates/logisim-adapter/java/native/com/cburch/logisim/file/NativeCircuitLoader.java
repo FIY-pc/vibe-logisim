@@ -17,6 +17,16 @@ import org.xml.sax.helpers.DefaultHandler;
 public final class NativeCircuitLoader {
     private NativeCircuitLoader() {}
 
+    // java.io.File before JDK 22 cannot canonicalize Windows verbatim paths.
+    // External library descriptors can contain these even after argv is fixed.
+    static String javaPath(String path) {
+        if (File.separatorChar != '\\' || !path.startsWith("\\\\?\\")) return path;
+        if (path.startsWith("\\\\?\\UNC\\")) return "\\\\" + path.substring(8);
+        if (path.length() >= 7 && Character.isLetter(path.charAt(4))
+                && path.charAt(5) == ':' && path.charAt(6) == '\\') return path.substring(4);
+        return path;
+    }
+
     private static Element parseProject(File file) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
@@ -131,8 +141,9 @@ public final class NativeCircuitLoader {
              * plain load failure.
              */
             @Override File getFileFor(String name, FileFilter filter) {
+                name = javaPath(name);
                 String plugin = pluginAlias(name);
-                if (plugin != null) name = plugin;
+                if (plugin != null) name = javaPath(plugin);
                 File file = new File(name);
                 if (!file.isAbsolute()) {
                     File directory = getCurrentDirectory();
