@@ -62,15 +62,22 @@ struct Worker {
     dependencies: BTreeMap<PathBuf, String>,
 }
 impl Worker {
-    async fn receive(&mut self) -> Result<Vec<u8>> {
+    async fn receive(&mut self, starting: bool) -> Result<Vec<u8>> {
         let line = tokio::time::timeout(Duration::from_secs(60), self.lines.next_line())
             .await
             .map_err(|_| "Logisim 响应超时，请重试")?
             .map_err(|e| e.to_string())?;
         let Some(line) = line else {
-            return Err(
-                exit_failure(&mut self.child, &mut self.stderr, "Logisim 进程已退出").await,
-            );
+            return Err(exit_failure(
+                &mut self.child,
+                &mut self.stderr,
+                if starting {
+                    "Logisim 启动握手前退出"
+                } else {
+                    "Logisim 处理请求时退出"
+                },
+            )
+            .await);
         };
         if line.len() > 48_000_000 {
             return Err("Logisim 响应超过限制".into());
@@ -276,7 +283,7 @@ impl Native {
                 lines,
                 dependencies: BTreeMap::new(),
             };
-            if worker.receive().await? != b"ready" {
+            if worker.receive(true).await? != b"ready" {
                 return Err("Logisim 未就绪".into());
             }
             *self.worker_slot(verification) = Some(worker);
@@ -326,7 +333,7 @@ impl Native {
                 .await
                 .map_err(|e| e.to_string())?;
             worker.input.flush().await.map_err(|e| e.to_string())?;
-            worker.receive().await
+            worker.receive(false).await
         }
         .await;
         if result.is_ok() && !dependencies.is_empty() {
@@ -652,7 +659,7 @@ impl Native {
         }
     }
 }
-fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String>> {
+pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String>> {
     fn collect(
         source: &Path,
         dependencies: &mut BTreeMap<PathBuf, String>,

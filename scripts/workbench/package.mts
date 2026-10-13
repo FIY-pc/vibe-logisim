@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile, cp, chmod, rm, readFile } from "node:fs/promises";
 import path from "node:path";
+import { verifyJavaRelocation } from "./verify-java.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64")
   throw new Error("Packaging supports Linux and Windows x64");
@@ -25,6 +26,7 @@ async function run(command: string, args: string[], cwd = root) {
 await run(process.execPath, ["scripts/workbench/prepare-product.mts"]);
 const cache = path.join(root, ".workbench-cache"),
   product = path.join(cache, "product");
+await verifyJavaRelocation(path.join(product, "runtimes/java"));
 const config = path.join(cache, "tauri-package.json");
 await writeFile(
   config,

@@ -125,6 +125,13 @@ fn safe_stderr(stderr: &str) -> String {
             if [
                 "Error occurred during initialization of VM",
                 "Error occurred during initialization of boot layer",
+                "Error: Could not find Java SE Runtime Environment.",
+                "Error: could not find java.dll",
+                "Error: Unable to resolve current executable",
+                "Error: Path length exceeds maximum length (PATH_MAX)",
+                "Error: String processing operation failed",
+                "Error: Could not create the Java Virtual Machine.",
+                "Error: A fatal exception has occurred. Program will exit.",
             ]
             .contains(&line)
             {
@@ -176,7 +183,17 @@ pub async fn exit_failure(
         "{label}{}{}",
         code.map(|v| format!("（退出码 {v}）")).unwrap_or_default(),
         if detail.is_empty() {
-            String::new()
+            let count = stderr
+                .tail
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .len();
+            if count == 0 {
+                "；stderr 为空".to_owned()
+            } else {
+                format!("；stderr 最后 {count} 字节不含可公开的运行时诊断")
+            }
         } else {
             format!("；stderr: {detail}")
         }
@@ -252,6 +269,16 @@ mod tests {
                 expected.encode_utf16().collect::<Vec<_>>()
             );
         }
+    }
+    #[test]
+    fn windows_launcher_errors_are_visible_without_paths() {
+        let detail = safe_stderr(
+            "Error: could not find java.dll\nError: Could not find Java SE Runtime Environment.\nC:\\Users\\private\\java.dll\n",
+        );
+        assert_eq!(
+            detail,
+            "Error: could not find java.dll; Error: Could not find Java SE Runtime Environment."
+        );
     }
     #[tokio::test]
     async fn stderr_is_bounded_and_excludes_private_payloads() {

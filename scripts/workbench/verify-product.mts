@@ -3,16 +3,23 @@ import { mkdtemp, cp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { verifyJavaRuntime } from "./verify-java.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 // Windows host canonicalization returns verbatim paths. Keep spaces and Unicode
 // here so the actual packaged JVM must load these paths, not just simple CI paths.
-const directory = await mkdtemp(path.join(tmpdir(), "Vibe product 电路 check "));
+const directory = await mkdtemp(
+  path.join(tmpdir(), "Vibe product 电路 check "),
+);
 try {
   const resources = path.join(directory, "resources/workbench");
   await cp(path.join(root, ".workbench-cache/product"), resources, {
     recursive: true,
     dereference: true,
   });
+  await verifyJavaRuntime(
+    path.join(resources, "runtimes/java"),
+    "relocated product runtime",
+  );
   const binary =
     "vibe-workbench-host" + (process.platform === "win32" ? ".exe" : "");
   const host = path.join(directory, binary);
