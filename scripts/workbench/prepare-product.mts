@@ -19,6 +19,7 @@ import { createWriteStream, createReadStream } from "node:fs";
 import path from "node:path";
 import { verifyNodeRelocation } from "./verify-node.mts";
 import { patchWindowsJava } from "./windows-java-utf8.mts";
+import { retryWindowsFileOperation } from "./windows-file-operation.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64")
   throw new Error("Resource assembly supports Linux and Windows x64");
@@ -197,7 +198,7 @@ try {
     await chmod(file, (await stat(file)).mode | 0o200);
   // Only generated output under .workbench-cache is replaced.
   await rm(output, { recursive: true, force: true });
-  await rename(stage, output);
+  await retryWindowsFileOperation(() => rename(stage, output));
   const size = (
     await Promise.all(
       (await files(output)).map(async (f) => (await stat(f)).size),
