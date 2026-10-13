@@ -16,6 +16,20 @@ export type DesktopReport = {
   error?: string;
 };
 
+async function deadline<T>(operation: Promise<T>, message: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), 10_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function run(
   binary: string,
   args: string[],
@@ -27,33 +41,76 @@ export async function run(
   } = {},
 ) {
   await new Promise<void>((resolve, reject) => {
+    // spawn's own timeout kills only the parent. Keep a single deadline that
+    // terminates the whole tree before the caller removes its installation.
+    const { timeout = 150_000, ...spawnOptions } = options;
     const child = spawn(binary, args, {
       stdio: "inherit",
       detached: process.platform !== "win32",
-      ...options,
+      ...spawnOptions,
     });
+    let timedOut = false;
+    const closed = new Promise<void>((resolve) =>
+      child.once("close", () => resolve()),
+    );
     const timer = setTimeout(() => {
-      if (process.platform === "win32") {
-        spawn(
-          path.join(
-            process.env.SystemRoot || "C:\\Windows",
-            "System32/taskkill.exe",
-          ),
-          ["/PID", String(child.pid), "/T", "/F"],
-        );
-      } else if (child.pid) {
-        try {
-          process.kill(-child.pid, "SIGKILL");
-        } catch {}
-      }
-      reject(new Error(`${path.basename(binary)} timed out`));
-    }, options.timeout || 150_000);
+      timedOut = true;
+      const terminate = async () => {
+        if (process.platform === "win32" && child.pid) {
+          const killer = spawn(
+            path.join(
+              process.env.SystemRoot || "C:\\Windows",
+              "System32/taskkill.exe",
+            ),
+            ["/PID", String(child.pid), "/T", "/F"],
+            { stdio: "ignore", windowsHide: true },
+          );
+          try {
+            await deadline(
+              new Promise<void>((resolve, reject) => {
+                killer.once("error", reject);
+                killer.once("close", (code) => {
+                  if (
+                    code === 0 ||
+                    child.exitCode !== null ||
+                    child.signalCode !== null
+                  )
+                    resolve();
+                  else
+                    reject(
+                      new Error(
+                        `Windows process tree termination exited ${code}`,
+                      ),
+                    );
+                });
+              }),
+              "Windows process tree termination did not finish",
+            );
+          } finally {
+            if (killer.exitCode === null && killer.signalCode === null)
+              killer.kill();
+          }
+        } else if (child.pid) {
+          try {
+            process.kill(-child.pid, "SIGKILL");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+          }
+        }
+        await deadline(closed, "Timed-out desktop process did not close");
+      };
+      void terminate().then(
+        () => reject(new Error(`${path.basename(binary)} timed out`)),
+        reject,
+      );
+    }, timeout);
     child.once("error", (error) => {
       clearTimeout(timer);
       reject(error);
     });
-    child.once("exit", (code, signal) => {
+    child.once("close", (code, signal) => {
       clearTimeout(timer);
+      if (timedOut) return;
       code === 0
         ? resolve()
         : reject(
@@ -144,9 +201,7 @@ export async function checkDesktop(options: {
   );
   const canonical = async (file: string) => {
     const resolved = await realpath(file);
-    return process.platform === "win32"
-      ? resolved.replace(/^\\\\\?\\/, "").toLowerCase()
-      : resolved;
+    return path.toNamespacedPath(resolved);
   };
   assert.equal(
     await canonical(report.resources),
