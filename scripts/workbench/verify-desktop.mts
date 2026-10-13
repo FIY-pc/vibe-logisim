@@ -12,19 +12,37 @@ const directory = await mkdtemp(
   path.join(tmpdir(), "Vibe desktop 安装 check "),
 );
 try {
-  const tar = windows
-    ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/tar.exe")
-    : "tar";
-  await run(tar, [
-    "-xf",
-    path.join(
-      root,
-      ".workbench-cache",
-      `${base}.${windows ? "zip" : "tar.gz"}`,
-    ),
-    "-C",
-    directory,
-  ]);
+  const archive = path.join(
+    root,
+    ".workbench-cache",
+    `${base}.${windows ? "zip" : "tar.gz"}`,
+  );
+  if (windows) {
+    // Windows tar's narrow-character path handling loses the Unicode test
+    // directory. .NET receives the original paths through Unicode environment
+    // variables; neither path is interpolated into PowerShell source.
+    await run(
+      path.join(
+        process.env.SystemRoot || "C:\\Windows",
+        "System32/WindowsPowerShell/v1.0/powershell.exe",
+      ),
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:VIBE_DESKTOP_CHECK_ARCHIVE, $env:VIBE_DESKTOP_CHECK_DESTINATION)",
+      ],
+      {
+        env: {
+          ...process.env,
+          VIBE_DESKTOP_CHECK_ARCHIVE: archive,
+          VIBE_DESKTOP_CHECK_DESTINATION: directory,
+        },
+      },
+    );
+  } else {
+    await run("tar", ["-xf", archive, "-C", directory]);
+  }
   const app = path.join(directory, base);
   const reports = path.join(root, ".workbench-cache/checks");
   await mkdir(reports, { recursive: true });
