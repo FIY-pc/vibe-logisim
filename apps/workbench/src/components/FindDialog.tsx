@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { Circuit, Document } from "../lib/types";
 const names: Record<string, string> = {
@@ -31,6 +31,7 @@ export function FindDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const listId = useId();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   useEffect(() => {
@@ -67,8 +68,23 @@ export function FindDialog({
             .includes(part),
         ),
     )
+    .sort((a, b) => {
+      const value = query.toLocaleLowerCase().trim();
+      const score = (label: string) =>
+        label.toLocaleLowerCase() === value
+          ? 0
+          : label.toLocaleLowerCase().startsWith(value)
+            ? 1
+            : 2;
+      return score(a.label) - score(b.label);
+    })
     .slice(0, 100);
   const selected = Math.min(active, Math.max(0, results.length - 1));
+  useEffect(() => {
+    document
+      .getElementById(`${listId}-${selected}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selected, query, listId]);
   const choose = (index: number) => {
     const item = results[index];
     if (item) {
@@ -91,6 +107,12 @@ export function FindDialog({
       </header>
       <input
         autoFocus
+        role="combobox"
+        aria-expanded="true"
+        aria-controls={listId}
+        aria-activedescendant={
+          results.length ? `${listId}-${selected}` : undefined
+        }
         aria-label={mode === "circuit" ? "电路名称" : "元件名称或标签"}
         placeholder={mode === "circuit" ? "电路名称" : "元件名称或标签"}
         value={query}
@@ -116,11 +138,13 @@ export function FindDialog({
           }
         }}
       />
-      <div className="find-results" role="listbox">
+      <div className="find-results" role="listbox" id={listId}>
         {results.map((c, index) => (
           <button
             key={c.id}
             role="option"
+            id={`${listId}-${index}`}
+            tabIndex={-1}
             aria-selected={selected === index}
             onClick={() => choose(index)}
           >

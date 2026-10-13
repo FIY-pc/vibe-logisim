@@ -21,7 +21,7 @@ export function MemoryPanel({
   component: Component;
   simulation: Simulation | null;
   simulate: (op: string, attrs?: Record<string, string>) => Promise<void>;
-  onDocument: (doc: Document) => void;
+  onDocument: (doc: Document, expectedBaseRevision?: string) => void;
   onClose: () => void;
 }) {
   const [page, setPage] = useState<XmlNode | null>(null),
@@ -122,6 +122,7 @@ export function MemoryPanel({
             expected,
             value,
           }),
+          doc.revision,
         );
       }
     });

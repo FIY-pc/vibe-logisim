@@ -747,6 +747,7 @@ class CodexBackend extends EventEmitter {
       throw new Error("工作区上下文没有稳定的 workspace identity。");
     }
     const preparedContext = this.contextHost?.prepare(context) || null;
+    const referenceImages = (this.contextHost?.images?.(preparedContext) || []).map(image => ({type:"image", url:`data:${image.mimeType};base64,${image.data}`}));
     const clientMessageId = `vibe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const frozenContext = preparedContext?.frozenContext || {
       projectId:context.projectId || null,
@@ -756,7 +757,7 @@ class CodexBackend extends EventEmitter {
       preparedContext, {cwd, workspaceIndex});
     if (expectedTurnId !== null) {
       if (editMessageId) throw new Error("运行中只能追加意见；编辑旧问题需要先停止回答。");
-      return this.#steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext,
+      return this.#steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext, referenceImages,
         additionalContext: this.includeAgentContext && preparedContext
           ? additionalContext(this.currentCwd || this.runtimeWorkDir, this.pendingTurn?.work?.workspaceIndex || null)
           : undefined});
@@ -879,7 +880,7 @@ class CodexBackend extends EventEmitter {
           result = await this.#request("turn/start", {
             threadId,
             clientUserMessageId: clientMessageId,
-            input: [{ type: "text", text: question, text_elements: [] }],
+            input: [{ type: "text", text: question, text_elements: [] }, ...referenceImages],
             cwd: turnCwd,
             approvalPolicy: "never",
             sandboxPolicy: this.#sandboxPolicy(turnCwd),
@@ -960,7 +961,7 @@ class CodexBackend extends EventEmitter {
 
   // A steer is bound to the turn the user saw. Never promote it to turn/start
   // when the active turn ends while context is being gathered or sent.
-  async #steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext, additionalContext}) {
+  async #steer({question, workspaceKey, expectedTurnId, clientMessageId, frozenContext, additionalContext, referenceImages=[]}) {
     if (typeof expectedTurnId !== "string" || !expectedTurnId || this.activeTurnId !== expectedTurnId ||
         !this.snapshot().canSteer || this.workspaceKey !== workspaceKey) {
       throw new Error("当前任务已结束或状态变化，补充内容仍保留，请重新发送。");
@@ -973,7 +974,7 @@ class CodexBackend extends EventEmitter {
     try {
       const result = await this.#request("turn/steer", {
         threadId:submission.threadId, expectedTurnId, clientUserMessageId:clientMessageId,
-        input:[{type:"text",text:question,text_elements:[]}],
+        input:[{type:"text",text:question,text_elements:[]},...referenceImages],
         ...(additionalContext ? {additionalContext} : {}),
       });
       this.#assertWorkspace(submission.epoch, submission.generation);

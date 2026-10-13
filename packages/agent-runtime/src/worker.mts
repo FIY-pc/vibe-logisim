@@ -1,3 +1,9 @@
+import { ProposalStore } from "./proposals.mts";
+import {
+  storeReference,
+  readReferences,
+  referenceSummary,
+} from "./references.mts";
 import { systemProxy, networkFetch, closeNetwork } from "./network.mts";
 import {
   previewHistory,
@@ -7,7 +13,7 @@ import {
 /** Process adapter for the existing runtime. stdout is exclusively JSONL. */
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createCodexInstaller } from "./installer.mts";
@@ -20,6 +26,10 @@ delete editSchema.$schema;
 const state = path.resolve(process.argv[2]);
 const workDir = path.join(state, "agent-workspace");
 await mkdir(workDir, { recursive: true });
+const proposals = new ProposalStore(state, workDir);
+// Recovery failure must not hide existing conversations or model settings.
+// Listing candidates and preparing new work retry it without overwriting scratch.
+await proposals.recover().catch(() => undefined);
 const send = (message: unknown) =>
   process.stdout.write(JSON.stringify(message) + "\n");
 const requests = new Map<
@@ -33,6 +43,12 @@ const host = (request: unknown) =>
     send({ kind: "host", id, request });
   });
 let binding: any = null;
+const targetSchema = {
+  type: "string",
+  enum: ["current", "working-copy"],
+  description:
+    "Omit for the shared document. Use working-copy for circuit.circ after direct file edits, before applying.",
+};
 const toolHost = {
   tools: [
     {
@@ -69,10 +85,11 @@ const toolHost = {
     },
     {
       name: "read_circuit",
-      description: "Read the active circuit document, revision and source XML.",
+      description:
+        "Read the shared circuit document and XML, or the current scratch working copy with its own revision-local IDs.",
       inputSchema: {
         type: "object",
-        properties: {},
+        properties: { target: targetSchema },
         required: [],
         additionalProperties: false,
       },
@@ -83,7 +100,7 @@ const toolHost = {
         "Inspect connectivity and component geometry using the compatible Logisim runtime.",
       inputSchema: {
         type: "object",
-        properties: { circuit: { type: "string" } },
+        properties: { circuit: { type: "string" }, target: targetSchema },
         required: ["circuit"],
         additionalProperties: false,
       },
@@ -91,11 +108,12 @@ const toolHost = {
     {
       name: "render_circuit",
       description:
-        "Render the current circuit through Logisim. Coordinates are world coordinates.",
+        "Render the current circuit through Logisim. Coordinates are world coordinates. For working-copy the whole circuit is fitted.",
       inputSchema: {
         type: "object",
         properties: {
           circuit: { type: "string" },
+          target: targetSchema,
           x: { type: "integer" },
           y: { type: "integer" },
           width: { type: "integer" },
@@ -114,6 +132,7 @@ const toolHost = {
         type: "object",
         properties: {
           circuit: { type: "string" },
+          target: targetSchema,
           vectors: {
             type: "array",
             minItems: 1,
@@ -150,11 +169,12 @@ const toolHost = {
     {
       name: "trace_circuit",
       description:
-        "Run a fresh isolated sequential simulation for 1–256 native ticks. Supply initial input Pin values by label and exact component IDs/port indexes to watch. Samples include tick 0 and every requested tick. Input events apply before sampling their tick, in array order. Results expose unknown bits and oscillation; they do not modify the user's live simulation or source.",
+        "Run a fresh isolated sequential simulation for 1–256 native ticks. Supply initial input Pin values by label and exact component IDs/port indexes from read_circuit with the same target to watch. Samples include tick 0 and every requested tick. Input events apply before sampling their tick, in array order. Results expose unknown bits and oscillation; they do not modify the user's live simulation or source.",
       inputSchema: {
         type: "object",
         properties: {
           circuit: { type: "string" },
+          target: targetSchema,
           ticks: { type: "integer", minimum: 1, maximum: 256 },
           inputs: {
             type: "object",
@@ -200,7 +220,7 @@ const toolHost = {
     {
       name: "edit_circuit",
       description:
-        "Apply a structural edit to the active in-memory document. Supply the revision from read_circuit. Editing does not save the source file.",
+        "Apply a structural edit to the active in-memory document. Supply the revision from read_circuit. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved.",
       inputSchema: {
         type: "object",
         properties: {
@@ -263,6 +283,58 @@ const toolHost = {
         })),
       };
     }
+    if (request.arguments.target === "working-copy") {
+      const copy = await proposals.workingCopy(id);
+      scope.assertCurrent();
+      const circuit = request.arguments.circuit;
+      if (request.tool === "read_circuit") {
+        const review = await host({ op: "proposalReview", ...copy });
+        return {
+          ...review.after,
+          xml: copy.xml,
+          baseRevision: copy.revision,
+          target: "working-copy",
+        };
+      }
+      if (request.tool === "observe_circuit")
+        return host({ op: "proposalObserve", ...copy, circuit });
+      if (request.tool === "render_circuit") {
+        const result = await host({
+          op: "proposalPreview",
+          ...copy,
+          circuit,
+          candidate: true,
+        });
+        if (!result.image) throw new Error("工作副本中没有这个电路");
+        return {
+          circuit,
+          target: "working-copy",
+          modelContentItems: [
+            {
+              type: "inputImage",
+              mimeType: "image/png",
+              imageData: result.image.split(",")[1],
+            },
+          ],
+        };
+      }
+      if (
+        request.tool === "simulate_circuit" ||
+        request.tool === "trace_circuit"
+      ) {
+        const { target: _, circuit: __, ...verification } = request.arguments;
+        return host({
+          op: "proposalVerify",
+          ...copy,
+          circuit,
+          verification: {
+            kind: request.tool === "simulate_circuit" ? "vectors" : "trace",
+            ...verification,
+          },
+        });
+      }
+      throw new Error("该工具不支持工作副本");
+    }
     if (request.tool === "read_circuit") {
       const document = await host({ op: "read", id });
       const source = await host({
@@ -292,7 +364,7 @@ const toolHost = {
     if (op === "edit") {
       send({
         kind: "event",
-        event: { type: "document-changed", document: result },
+        event: { type: "document-changed", document: result, expectedBaseRevision: request.arguments.revision || current.revision },
       });
       binding = { ...binding, revision: result.revision };
       scope.updateBinding?.({
@@ -320,7 +392,7 @@ const {
   codex,
 } = await createCodexInstaller(state);
 const instructions =
-  "You collaborate on digital circuits in Vibe Logisim. Respond in the user language and send concise progress messages before tools. The Rust host owns the current document and revision. Use read_circuit, observe_circuit, render_circuit, and edit_circuit to work on that shared document. Editing does not save the user source file. Native observations are authoritative for electrical facts. simulate_circuit tests independent vectors and trace_circuit tests tick sequences in an isolated native simulation, leaving the user live simulation unchanged. project_files reads text files from the active project folder without writing them. kept_observations reads historical simulation evidence; check revision and instance identity before comparing. The general file tools operate in a scratch workspace, not the original project. A copy named circuit.circ is prepared for direct edits and scripts; changed content is offered to the user for explicit application at the end of the turn. Keep unknown XML, libraries and unrelated circuits. Circuit organization is part of delivery: preserve behavior and make the resulting drawing readable. Never invent tool results or claim you inspected an image if it was not delivered as image input.";
+  "You collaborate on digital circuits in Vibe Logisim. Respond in the user language and send concise progress messages before tools. The Rust host owns the current document and revision. Use read_circuit, observe_circuit, render_circuit, and edit_circuit to work on that shared document. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved. Native observations are authoritative for electrical facts. simulate_circuit tests independent vectors and trace_circuit tests tick sequences in an isolated native simulation, leaving the user live simulation unchanged. project_files reads text files from the active project folder without writing them. kept_observations reads historical simulation evidence; check revision and instance identity before comparing. The general file tools operate in a scratch workspace, not the original project. A copy named circuit.circ is prepared for direct edits and scripts; changed content is offered to the user for explicit application at the end of the turn. Use target=working-copy with read_circuit, observe_circuit, render_circuit, simulate_circuit or trace_circuit to inspect or verify that scratch file before application. Working-copy verification results are retained with its exact content and appear in the proposal review. Keep unknown XML, libraries and unrelated circuits. Circuit organization is part of delivery: preserve behavior and make the resulting drawing readable. Never invent tool results or claim you inspected an image if it was not delivered as image input.";
 const backend = new AgentRuntime({
   resolveProxy: systemProxy,
   networkFetch,
@@ -337,16 +409,36 @@ const backend = new AgentRuntime({
       return {
         frozenContext: {
           projectId: context.projectId,
+          workspaceKey: context.workspaceKey,
+          folderId: context.folderId,
           revisionId: context.revisionId,
           circuit: context.circuit,
           selection: context.selection,
+          references: context.references?.map(referenceSummary),
         },
+        references: context.references || [],
         history: context.transferredHistory,
       };
+    },
+    images(prepared: any) {
+      return prepared.references.flatMap((r: any) =>
+        r.image
+          ? [
+              {
+                data: r.image.split(",")[1],
+                mimeType: r.image.slice(5, r.image.indexOf(";")),
+              },
+            ]
+          : [],
+      );
     },
     additionalContext(prepared: any) {
       return {
         ...prepared.frozenContext,
+        referenceContents: prepared.references.map((r: any) => ({
+          ...referenceSummary(r),
+          text: r.text,
+        })),
         ...(prepared.history
           ? { "vibe-logisim.transferred-history": prepared.history }
           : {}),
@@ -362,32 +454,28 @@ const backend = new AgentRuntime({
     mode: "review",
     async prepare(revision: string) {
       const source = await host({ op: "source", id: binding.id, revision });
-      await writeFile(path.join(workDir, "circuit.circ"), source.xml);
-      return {
+      return proposals.prepare({
         projectId: binding.id,
         revisionId: revision,
         original: source.xml,
-      };
+      });
     },
     async finish(work: any) {
-      const xml = await readFile(path.join(workDir, "circuit.circ"), "utf8");
-      return xml === work.original
-        ? null
-        : {
-            type: "proposed-source",
-            documentId: work.projectId,
-            revision: work.revisionId,
-            original: work.original,
-            xml,
-          };
+      return proposals.finish(work);
     },
     finishEvent: (outcome: any) => outcome,
-    async abort() {},
+    async abort() {
+      await proposals.recover();
+    },
   },
 });
 function messageActions(snapshot: any) {
   const record = binding ? backend.store.active(binding.workspaceKey) : null;
-  const prefixIds = new Set((record?.contextTransfer?.prefix || []).flatMap((m: any) => [m.id, m.clientId].filter(Boolean)));
+  const prefixIds = new Set(
+    (record?.contextTransfer?.prefix || []).flatMap((m: any) =>
+      [m.id, m.clientId].filter(Boolean),
+    ),
+  );
   return {
     ...snapshot,
     messages: (snapshot.messages || []).map((m: any) => ({
@@ -397,7 +485,10 @@ function messageActions(snapshot: any) {
         Boolean(
           record?.runtime === "builtin"
             ? record.runtimeCheckpoints?.[m.id]
-            : record?.threadId && !m.contextTransferred && !prefixIds.has(m.id) && !record?.migration?.requiresContext,
+            : record?.threadId &&
+                !m.contextTransferred &&
+                !prefixIds.has(m.id) &&
+                !record?.migration?.requiresContext,
         ),
       canFork:
         m.type === "assistant" &&
@@ -405,7 +496,10 @@ function messageActions(snapshot: any) {
         Boolean(
           record?.runtime === "builtin"
             ? record.runtimeCheckpoints?.[m.id]
-            : record?.threadId && !m.contextTransferred && !prefixIds.has(m.id) && !record?.migration?.requiresContext,
+            : record?.threadId &&
+                !m.contextTransferred &&
+                !prefixIds.has(m.id) &&
+                !record?.migration?.requiresContext,
         ),
     })),
   };
@@ -434,6 +528,43 @@ async function dispatch(method: string, args: any) {
           ? backend.store.active(binding.workspaceKey)?.migration
           : null,
       };
+    case "proposals":
+      await host({ op: "read", id: args.documentId });
+      if (!backend.snapshot().busy) await proposals.recover();
+      return proposals.list(args.documentId);
+    case "discardProposal":
+      await host({ op: "read", id: args.documentId });
+      return proposals.discard(args.documentId, args.id);
+    case "stageReferences": {
+      if (
+        !binding ||
+        args.workspaceKey !== binding.workspaceKey ||
+        args.documentId !== binding.id
+      )
+        throw new Error("对话已切换，请重新添加引用");
+      if (!Array.isArray(args.references) || args.references.length > 8)
+        throw new Error("每条问题最多引用 8 处资料或观察");
+      const captured = binding;
+      const references = await Promise.all(
+        args.references.map((input: any) =>
+          storeReference(
+            state,
+            captured.workspaceKey,
+            captured.id,
+            input,
+            host,
+          ),
+        ),
+      );
+      if (binding !== captured)
+        throw new Error("对话已切换，引用未加入其他对话");
+      return references;
+    }
+    case "readReferences": {
+      if (!binding || args.workspaceKey !== binding.workspaceKey)
+        throw new Error("引用属于另一工作区");
+      return readReferences(state, binding.workspaceKey, args.ids);
+    }
     case "previewHistory":
       return previewHistory(args.file);
     case "importHistory": {
@@ -491,6 +622,11 @@ async function dispatch(method: string, args: any) {
         (args.circuit && args.circuit !== binding.circuit)
       )
         throw new Error("电路已切换，请重新发送");
+      const references = await readReferences(
+        state,
+        binding.workspaceKey,
+        args.references || [],
+      );
       const current = await host({ op: "read", id: binding.id });
       if (args.startupEpoch !== stopEpoch) throw new Error("已停止");
       const graph = current.circuits.find(
@@ -516,11 +652,15 @@ async function dispatch(method: string, args: any) {
         workspaceKey: binding.workspaceKey,
         context: {
           folder: { path: workDir },
+          workspaceKey: binding.workspaceKey,
+          folderId: binding.folderId,
           projectId: binding.id,
           revisionId: binding.revision,
           circuit: binding.circuit,
           selection,
-          transferredHistory: record?.runtime === "builtin" ? historyContext(record) : null,
+          references,
+          transferredHistory:
+            record?.runtime === "builtin" ? historyContext(record) : null,
         },
       });
       if (record?.runtime === "builtin" && record?.migration?.requiresContext)

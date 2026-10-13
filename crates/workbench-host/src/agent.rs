@@ -122,7 +122,11 @@ impl Agent {
                                         | Request::Render { .. }
                                         | Request::Edit { .. }
                                         | Request::ProjectFiles { .. }
-                                        | Request::Observations { .. }),
+                                        | Request::Observations { .. }
+                                        | Request::ProposalReview { .. }
+                                        | Request::ProposalObserve { .. }
+                                        | Request::ProposalPreview { .. }
+                                        | Request::ProposalVerify { .. }),
                                     ) => host.dispatch(request).await,
                                     _ => Err("AI 请求不在电路能力范围内".into()),
                                 };
@@ -148,6 +152,12 @@ impl Agent {
                 let _ = tx.send(Err("AI 运行时已退出".into()));
             }
             connected.store(false, Ordering::Release);
+            if !*host.stopping.borrow() {
+                host.failures
+                    .lock()
+                    .await
+                    .record(crate::diagnostics::Stage::Agent, "AI 运行时已退出");
+            }
             let mut queue = observed.lock().await;
             queue.0 += 1;
             let sequence = queue.0;

@@ -1,3 +1,9 @@
+import { verifyProjectInfoUI } from "./project-info";
+import { verifyDocumentHistory } from "./history";
+import { verifyReferenceLinksAndCandidates } from "./reference-links";
+import { verifyReferencesUI } from "./references";
+import { verifyFilesUI } from "./files";
+import { verifyRestoredInteractions } from "./restored-interactions";
 import { verifyProposalUI } from "./proposal";
 import assert from "node:assert/strict";
 import { act, useEffect, useRef, useState } from "react";
@@ -79,6 +85,7 @@ const state = () => ({
 (globalThis as any).__command = async (request: any) => {
   calls.push(request);
   if (request.op === "agent") {
+    if (request.method === "proposals") return [];
     if (request.method === "bind") runtimeDoc = request.args.id;
     if (request.method === "ask" && askGate) await askGate.promise;
     if (request.method === "conversations")
@@ -233,6 +240,8 @@ await act(async () => {
   });
   agent({
     type: "proposed-source",
+    id: "proposal-live",
+    createdAt: 1,
     documentId: "A",
     revision: "r2",
     xml: "<project/>",
@@ -279,7 +288,7 @@ runtimeDoc = "A";
 await render(<App />);
 await click(
   [...document.querySelectorAll(".panel-tabs button")].find(
-    (n) => n.textContent === "属性与信号",
+    (n) => n.textContent === "连接",
   )!,
 );
 await act(async () =>
@@ -295,7 +304,125 @@ await click(
   )!,
 );
 console.log(
-  "PASS: App property tab keeps agent document event subscription alive",
+  "PASS: App connection tab keeps agent document event subscription alive",
+);
+const saveTransport = (globalThis as any).__command;
+(globalThis as any).__command = async (request: any) =>
+  request.op === "save"
+    ? (calls.push(request),
+      {
+        ...doc("A"),
+        revision: request.revision,
+        path: request.path,
+        dirty: false,
+      })
+    : saveTransport(request);
+await act(async () =>
+  agent({
+    type: "document-changed",
+    document: {
+      ...doc("A"),
+      revision: "r2",
+      path: "/fixture/A.circ",
+      dirty: true,
+      saveError: "磁盘暂不可写",
+    },
+  }),
+);
+assert(
+  document.body.textContent?.includes("修改已保留，写回文件失败：磁盘暂不可写"),
+);
+await click(
+  [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "重试保存",
+  )!,
+);
+assert.equal(calls.filter((call) => call.op === "save").at(-1).revision, "r2");
+assert(!document.body.textContent?.includes("磁盘暂不可写"));
+assert(!document.querySelector(".file-title .dirty-dot"));
+(globalThis as any).__command = saveTransport;
+console.log(
+  "PASS: automatic save failure preserves the accepted revision and offers an exact-revision save retry",
+);
+const mutationGate = defer();
+let mutationRefreshes = 0;
+const latestMutationDocument = {
+  ...doc("A"),
+  path: "/fixture/A.circ",
+  revision: "r3",
+  dirty: true,
+};
+(globalThis as any).__command = async (request: any) => {
+  if (request.op === "save") {
+    calls.push(request);
+    return mutationGate.promise;
+  }
+  if (request.op === "status") {
+    mutationRefreshes++;
+    return {
+      documents: [latestMutationDocument, doc("B")],
+      active: "A",
+      folder: null,
+      recoveryError: null,
+    };
+  }
+  return saveTransport(request);
+};
+await click(
+  [...document.querySelectorAll(".menu-content button")].find((button) =>
+    button.textContent?.trim().startsWith("保存 "),
+  )!,
+);
+await act(async () =>
+  agent({
+    type: "document-changed",
+    expectedBaseRevision: "r2",
+    document: latestMutationDocument,
+  }),
+);
+await act(async () => {
+  mutationGate.resolve({
+    ...doc("A"),
+    path: "/fixture/A.circ",
+    revision: "r2",
+    dirty: false,
+  });
+  await mutationGate.promise;
+});
+await settle();
+assert.equal(
+  mutationRefreshes,
+  1,
+  "A late mutation response must refresh current host state instead of replacing a later event",
+);
+assert(document.querySelector(".file-title .dirty-dot"));
+assert.equal(
+  calls.filter((call) => call.op === "catalog").at(-1).revision,
+  "r3",
+);
+await act(async () =>
+  agent({
+    type: "document-changed",
+    expectedBaseRevision: "r2",
+    document: { ...doc("A"), revision: "r-delayed-agent", dirty: false },
+  }),
+);
+await settle();
+assert.equal(
+  mutationRefreshes,
+  2,
+  "A late agent response carries its original revision and must take the same refresh path",
+);
+assert(document.querySelector(".file-title .dirty-dot"));
+(globalThis as any).__command = saveTransport;
+await act(async () =>
+  agent({
+    type: "document-changed",
+    document: { ...doc("A"), revision: "r2", dirty: true },
+  }),
+);
+console.log(
+  "PASS: late save and agent mutation results refresh current status without overwriting newer document state",
 );
 await act(async () =>
   emit({
@@ -359,9 +486,12 @@ assert.equal(
   "url(#grid)",
 );
 await appKey("/");
-assert.ok(document.querySelector('dialog[aria-label="查找电路"]'));
+assert.equal(
+  document.activeElement,
+  document.querySelector('input[aria-label="查找电路"]'),
+);
 await click(
-  [...document.querySelectorAll(".find-results button")].find(
+  [...document.querySelectorAll(".circuit-list button")].find(
     (n) => n.textContent === "ancestor",
   )!,
 );
@@ -463,8 +593,8 @@ auditStatusGate = defer();
 const fileStatusGate = auditStatusGate;
 await click(document.querySelector('[aria-label="a.circ 的操作"]'));
 await click(
-  [...document.querySelectorAll('[role="menuitem"]')].find(
-    (n) => n.textContent === "重命名…",
+  [...document.querySelectorAll('[role="menuitem"]')].find((n) =>
+    n.textContent?.startsWith("重命名…"),
   )!,
 );
 await act(async () => {
@@ -1114,6 +1244,12 @@ console.log(
 await act(async () => root.unmount());
 assert.deepEqual(errors, []);
 await verifyProposalUI();
+await verifyRestoredInteractions();
+await verifyFilesUI();
+await verifyReferencesUI();
+await verifyReferenceLinksAndCandidates();
+await verifyDocumentHistory();
+await verifyProjectInfoUI();
 console.log("All focused UI lifecycle checks passed");
 
 process.exit(0);

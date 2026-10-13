@@ -1,8 +1,11 @@
 //! Documents and editing independent of desktop, simulation, and AI runtimes.
 mod document;
+pub mod history;
+pub mod symbol;
 mod workspace;
 pub use document::*;
 use serde::Serialize;
+pub use symbol::{SymbolDraft, SymbolPort, SymbolShape};
 pub use workspace::*;
 
 #[derive(Debug, thiserror::Error, Serialize)]

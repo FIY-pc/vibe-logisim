@@ -1,3 +1,15 @@
+import { useConversationReferences } from "./lib/conversationReferences";
+import { ProjectInfo } from "./components/ProjectInfo";
+import { DocumentHistory } from "./components/DocumentHistory";
+import type { LocateChange } from "./lib/reviewTypes";
+import { InterfaceEditor } from "./components/InterfaceEditor";
+import type { Quotation } from "./lib/references";
+import {
+  useWorkspaceLayout,
+  WorkspaceRail,
+  PanelResize,
+  ComponentPalette,
+} from "./components/WorkspaceLayout";
 import {
   useFeedback,
   FeedbackMenu,
@@ -33,6 +45,7 @@ import {
   Settings2,
   X,
   PanelRight,
+  PanelLeft,
   Code2,
   Download,
   RotateCw,
@@ -52,12 +65,19 @@ import type {
 } from "./lib/types";
 export function App() {
   const [notice, setNotice] = useState("");
+  const [infoTarget, setInfoTarget] = useState<string | null>(null);
+  const shownDocumentWarnings = useRef(new Set<string>());
+  const [saveFailures, setSaveFailures] = useState<Record<string, string>>({});
   const [decision, setDecision] = useState<Decision | null>(null);
   const [lastCapture, setLastCapture] = useState<ObservationRecord | null>(
     null,
   );
   const [circuitPrompt, setCircuitPrompt] = useState(false);
   const [renameCircuit, setRenameCircuit] = useState(false);
+  const [interfaceTarget, setInterfaceTarget] = useState<{
+    doc: Document;
+    circuit: string;
+  } | null>(null);
   const [memory, setMemory] = useState<{
     documentId: string;
     circuit: string;
@@ -71,12 +91,7 @@ export function App() {
   } | null>(null);
   const [folder, setFolder] = useState<ProjectFolder | null>(null);
   const [preview, setPreview] = useState<PreviewFile | null>(null);
-  const [quotation, setQuotation] = useState<{
-    id: string;
-    documentId: string;
-    label: string;
-    text: string;
-  } | null>(null);
+  const [quotation, setQuotation] = useState<Quotation | null>(null);
   const workspaceEpoch = useRef(0);
   const currentDocs = useRef<Document[]>([]);
   const currentActive = useRef<string | null>(null);
@@ -90,6 +105,33 @@ export function App() {
         typeof value === "function" ? value(currentDocs.current) : value;
       currentDocs.current = next;
       setDocsState(next);
+      for (const doc of next) {
+        const result = doc as Document & {
+          historyWarning?: string;
+          referenceWarning?: string;
+        };
+        const message = [result.historyWarning, result.referenceWarning]
+          .filter(Boolean)
+          .join("；");
+        const key = `${doc.id}:${doc.revision}:${message}`;
+        if (message && !shownDocumentWarnings.current.has(key)) {
+          shownDocumentWarnings.current.add(key);
+          setNotice(`${doc.name}：${message}`);
+        }
+      }
+      setSaveFailures((previous) =>
+        Object.fromEntries(
+          next.flatMap((doc) => {
+            const failure = (doc as Document & { saveError?: string })
+              .saveError;
+            return failure
+              ? [[doc.id, failure]]
+              : doc.dirty && previous[doc.id]
+                ? [[doc.id, previous[doc.id]]]
+                : [];
+          }),
+        ),
+      );
     },
     [],
   );
@@ -98,15 +140,6 @@ export function App() {
     currentActive.current = id;
     setActiveState(id);
   }, []);
-  const mergeDocument = useCallback(
-    (d: Document) =>
-      setDocs((previous) =>
-        previous.some((x) => x.id === d.id)
-          ? previous.map((x) => (x.id === d.id ? d : x))
-          : previous,
-      ),
-    [setDocs],
-  );
   const [tool, setTool] = useState<Tool>("select"),
     [place, setPlace] = useState<CatalogTool | null>(null);
   const [catalog, setCatalog] = useState<CatalogGroup[]>([]),
@@ -115,7 +148,7 @@ export function App() {
     [pending, setPending] = useState(0);
   const [sim, setSim] = useState<Simulation | null>(null),
     [fitToken, setFit] = useState(0),
-    [right, setRight] = useState<"chat" | "properties">("chat");
+    [right, setRight] = useState<"chat" | "connections" | "changes">("chat");
   const [source, setSource] = useState<{
       xml: string;
       id: string;
@@ -129,8 +162,13 @@ export function App() {
     save: saveShortcuts,
   } = useShortcuts();
   const [signalView, setSignalView] = useState<React.ReactNode>(null);
-  const [showExplorer, setShowExplorer] = useState(true);
-  const [showRight, setShowRight] = useState(true);
+  const layout = useWorkspaceLayout();
+  const { showExplorer, setShowExplorer, showRight, setShowRight } = layout;
+  const [resourceTab, setResourceTab] = useState<"files" | "components">(
+    "files",
+  );
+  const [circuitSearch, setCircuitSearch] = useState("");
+  const circuitSearchInput = useRef<HTMLInputElement>(null);
   const [showGrid, setShowGrid] = useState(true);
   const [find, setFind] = useState<"component" | "circuit" | null>(null);
   const [focusTarget, setFocusTarget] = useState<{
@@ -197,6 +235,27 @@ export function App() {
       }
     },
     [setDocs, setActive, onError],
+  );
+  const mergeDocument = useCallback(
+    (document: Document, expectedBaseRevision?: string) => {
+      const current = currentDocs.current.find(
+        (item) => item.id === document.id,
+      );
+      if (!current) return;
+      if (
+        expectedBaseRevision &&
+        current.revision !== expectedBaseRevision &&
+        current.revision !== document.revision
+      ) {
+        // A later host event may arrive before this mutation response. Hashes have no ordering.
+        void refreshWorkspace().catch(onError);
+        return;
+      }
+      setDocs((previous) =>
+        previous.map((item) => (item.id === document.id ? document : item)),
+      );
+    },
+    [setDocs, refreshWorkspace, onError],
   );
   const feedback = useFeedback(setNotice, onError);
   const busy = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
@@ -273,7 +332,7 @@ export function App() {
       path,
       target_revision,
     });
-    mergeDocument(saved);
+    mergeDocument(saved, target.revision);
     recheck();
     return saved;
   };
@@ -349,7 +408,7 @@ export function App() {
           discard,
         }),
       );
-      mergeDocument(next);
+      mergeDocument(next, doc.revision);
       recheck();
     };
     if (!doc.dirty) {
@@ -373,14 +432,14 @@ export function App() {
         edit,
       }),
     );
-    mergeDocument(next);
+    mergeDocument(next, doc.revision);
   };
   const history = (op: "undo" | "redo") => {
     if (doc)
       void busy(() =>
         command<Document>({ op, id: doc.id, revision: doc.revision }),
       )
-        .then(mergeDocument)
+        .then((next) => mergeDocument(next, doc.revision))
         .catch(onError);
   };
   const simulationQueue = useRef<Promise<unknown>>(Promise.resolve());
@@ -543,15 +602,18 @@ export function App() {
           setTool(shortcut as Tool);
           setPlace(null);
         } else if (shortcut === "palette") {
-          setShowExplorer(true);
+          layout.revealFiles();
+          setResourceTab("components");
           requestAnimationFrame(() => searchInput.current?.focus());
         } else if (shortcut === "rotate") {
           if (place && canRotate) placement.rotate();
         } else if (shortcut === "save") save();
         else if (shortcut === "undo") history("undo");
         else if (shortcut === "find" && doc) setFind("component");
-        else if (shortcut === "circuitSearch" && doc) setFind("circuit");
-        else if (shortcut === "fit") setFit((n) => n + 1);
+        else if (shortcut === "circuitSearch" && doc) {
+          layout.revealNavigator();
+          requestAnimationFrame(() => circuitSearchInput.current?.focus());
+        } else if (shortcut === "fit") setFit((n) => n + 1);
         else if (shortcut === "grid") setShowGrid((shown) => !shown);
         else if (shortcut === "rail") setShowExplorer((shown) => !shown);
         else if (shortcut === "review") setShowRight((shown) => !shown);
@@ -621,7 +683,7 @@ export function App() {
     return () => window.removeEventListener("beforeunload", listener);
   }, [pending]);
   const switchCircuit = (name: string) => {
-    navigationRequest.current++;
+    const requested = ++navigationRequest.current;
     if (
       sim &&
       doc &&
@@ -636,7 +698,15 @@ export function App() {
         revision: doc.revision,
         path: [],
       })
-        .then(setSim)
+        .then((next) => {
+          if (
+            requested === navigationRequest.current &&
+            currentActive.current === doc.id &&
+            currentDocs.current.find((current) => current.id === doc.id)
+              ?.revision === doc.revision
+          )
+            setSim(next);
+        })
         .catch(onError);
     }
     setCircuitName(name);
@@ -663,6 +733,75 @@ export function App() {
     setSelection([]);
     setPlace(null);
   };
+  const locateChange = ({ circuit: name, revision, object }: LocateChange) => {
+    if (!doc || revision !== doc.revision) {
+      onError("文档已有后续修改，无法定位这份对照中的对象");
+      return;
+    }
+    const definition = doc.circuits.find((item) => item.name === name);
+    const matches =
+      definition?.components.filter(
+        (item) =>
+          item.name === object.factory &&
+          item.location.x === object.location.x &&
+          item.location.y === object.location.y,
+      ) || [];
+    const wires =
+      object.factory === "wire" && object.from && object.to
+        ? definition?.wires.filter(
+            (wire) =>
+              wire.id === object.id &&
+              ((wire.from.x === object.from!.x &&
+                wire.from.y === object.from!.y &&
+                wire.to.x === object.to!.x &&
+                wire.to.y === object.to!.y) ||
+                (wire.from.x === object.to!.x &&
+                  wire.from.y === object.to!.y &&
+                  wire.to.x === object.from!.x &&
+                  wire.to.y === object.from!.y)),
+          ) || []
+        : [];
+    const targets = [...matches, ...wires];
+    if (targets.length !== 1) {
+      onError("无法唯一对应当前工程中的对象");
+      return;
+    }
+    const id = targets[0].id;
+    switchCircuit(name);
+    setSelected({ scope: `${doc.id}:${doc.revision}:${name}`, ids: [id] });
+    setFocusTarget({
+      documentId: doc.id,
+      revision: doc.revision,
+      circuit: name,
+      id,
+      token: Date.now(),
+    });
+    layout.revealInspector();
+  };
+  const followConversationReference = useConversationReferences({
+    doc,
+    folder,
+    onCircuit: (name, id) => {
+      if (!doc) return;
+      switchCircuit(name);
+      setSelected({ scope: `${doc.id}:${doc.revision}:${name}`, ids: [id] });
+      setFocusTarget({
+        documentId: doc.id,
+        revision: doc.revision,
+        circuit: name,
+        id,
+        token: Date.now(),
+      });
+      layout.revealInspector();
+    },
+    onDocument: (document) => {
+      update(document);
+      setCircuitName(document.main);
+    },
+    onPreview: setPreview,
+    onNotice: setNotice,
+    onError,
+  });
   const actionButton = (
     title: string,
     icon: React.ReactNode,
@@ -709,7 +848,12 @@ export function App() {
         <div className="file-title">
           {doc && (
             <>
-              {doc.name}
+              <button
+                title="文件信息与导出"
+                onClick={() => setInfoTarget(doc.id)}
+              >
+                {doc.name}
+              </button>
               {doc.dirty && (
                 <span className="dirty-dot" title="有未保存的修改" />
               )}
@@ -722,7 +866,7 @@ export function App() {
               文件 <ChevronDown size={13} />
             </summary>
             <div className="menu-content">
-              <button onClick={() => void newFile()}>
+              <button aria-label="新建电路文件" onClick={() => void newFile()}>
                 新建电路 <kbd>Ctrl N</kbd>
               </button>
               <button onClick={openFile}>
@@ -751,6 +895,17 @@ export function App() {
                 onClick={() => doc && requestClose(doc)}
               >
                 关闭文档 <kbd>Ctrl W</kbd>
+              </button>
+              <button
+                disabled={!doc}
+                onClick={(event) => {
+                  event.currentTarget
+                    .closest("details")
+                    ?.removeAttribute("open");
+                  if (doc) setInfoTarget(doc.id);
+                }}
+              >
+                文件信息与导出…
               </button>
               <button disabled={!doc} onClick={() => setFind("component")}>
                 查找元件… <kbd>{shortcuts.find}</kbd>
@@ -786,207 +941,274 @@ export function App() {
           {actionButton("快捷键设置", <Settings2 size={17} />, () =>
             setSettings(true),
           )}
+          {actionButton("展开 / 收起项目栏", <PanelLeft size={17} />, () =>
+            setShowExplorer((shown) => !shown),
+          )}
           {actionButton("展开 / 收起工作栏", <PanelRight size={17} />, () =>
             setShowRight((shown) => !shown),
           )}
         </div>
       </header>
       <UpdateNotice feedback={feedback} />
-      <div className="workspace">
-        <aside
-          className="explorer"
-          style={showExplorer ? undefined : { display: "none" }}
-        >
-          <div className="panel-heading">
-            工程
-            <div>
+      <div className="workspace" ref={layout.workspace}>
+        {layout.narrow && (showExplorer || showRight) && (
+          <button
+            className="workspace-shade"
+            aria-label="关闭侧栏"
+            onClick={layout.closeDrawers}
+          />
+        )}
+        <WorkspaceRail
+          layout={layout}
+          hasCircuit={Boolean(doc)}
+          title={folder?.name || "文件"}
+          resourceTab={resourceTab}
+          onResourceTab={setResourceTab}
+          files={
+            <Files
+              folder={folder}
+              activePath={doc?.path || null}
+              onFolder={(next) => {
+                workspaceEpoch.current++;
+                setFolder(next);
+              }}
+              onRename={() => refreshWorkspace()}
+              onOpen={(path) =>
+                void busy(() => command<Document>({ op: "open", path }))
+                  .then((d) => {
+                    update(d);
+                    setCircuitName(d.main);
+                  })
+                  .catch(onError)
+              }
+              onPreview={setPreview}
+              onError={onError}
+            />
+          }
+          palette={
+            <ComponentPalette
+              catalog={catalog}
+              search={search}
+              onSearch={setSearch}
+              inputRef={searchInput}
+              shortcut={shortcuts.palette}
+              place={place}
+              onSelect={(t) => {
+                setPlace(t);
+                setSelection([]);
+                layout.revealInspector();
+                setTool("select");
+                if (layout.narrow) layout.closeDrawers();
+              }}
+            />
+          }
+          navigation={
+            <>
+              <label className="circuit-search">
+                <Search size={14} />
+                <input
+                  ref={circuitSearchInput}
+                  aria-label="查找电路"
+                  placeholder="查找电路"
+                  value={circuitSearch}
+                  onChange={(e) => setCircuitSearch(e.target.value)}
+                />
+                <kbd>{shortcuts.circuitSearch}</kbd>
+              </label>{" "}
+              <div className="document-list">
+                {docs.map((d) => (
+                  <div key={d.id}>
+                    <div
+                      className={
+                        "document-row " + (d.id === active ? "active" : "")
+                      }
+                    >
+                      <button
+                        className="document-item"
+                        onClick={() => {
+                          navigationRequest.current++;
+                          setActive(d.id);
+                          setPlace(null);
+                          void command({ op: "activate", id: d.id }).catch(
+                            onError,
+                          );
+                          setCircuitName(d.main);
+                          setSelection([]);
+                          layout.closeDrawers();
+                        }}
+                      >
+                        <CircuitBoard size={15} />
+                        <span>{d.name}</span>
+                        {d.dirty && (
+                          <span className="dirty-dot" title="有未保存的修改" />
+                        )}
+                      </button>
+                      <button
+                        className="document-close"
+                        title={`关闭 ${d.name}`}
+                        aria-label={`关闭 ${d.name}`}
+                        disabled={Boolean(pending)}
+                        onClick={() => requestClose(d)}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                    {d.id === active && (
+                      <div className="circuit-list">
+                        {d.circuits
+                          .filter((c) =>
+                            c.name
+                              .toLowerCase()
+                              .includes(circuitSearch.toLowerCase()),
+                          )
+                          .map((c) => (
+                            <div className="circuit-row" key={c.name}>
+                              <button
+                                className={
+                                  c.name === circuit?.name ? "active" : ""
+                                }
+                                onClick={() => switchCircuit(c.name)}
+                                title={d.main === c.name ? "主电路" : undefined}
+                              >
+                                {c.name}
+                                {d.main === c.name && (
+                                  <span
+                                    className="main-marker"
+                                    aria-label="主电路"
+                                  >
+                                    ⌂
+                                  </span>
+                                )}
+                              </button>
+                              {c.name === circuit?.name && (
+                                <details className="menu">
+                                  <summary aria-label="电路操作">···</summary>
+                                  <div
+                                    className="menu-content"
+                                    onClick={(event) => {
+                                      if (
+                                        (event.target as HTMLElement).closest(
+                                          "button:not(:disabled)",
+                                        )
+                                      )
+                                        event.currentTarget
+                                          .closest("details")
+                                          ?.removeAttribute("open");
+                                    }}
+                                  >
+                                    <button
+                                      onClick={() => setRenameCircuit(true)}
+                                    >
+                                      重命名…
+                                    </button>
+                                    <button
+                                      onClick={() =>
+                                        setInterfaceTarget({
+                                          doc: d,
+                                          circuit: c.name,
+                                        })
+                                      }
+                                    >
+                                      封装与接口…
+                                    </button>
+                                    <button
+                                      disabled={d.main === c.name}
+                                      onClick={() =>
+                                        void edit({ kind: "setMain" }).catch(
+                                          onError,
+                                        )
+                                      }
+                                    >
+                                      设为主电路
+                                    </button>
+                                    <button
+                                      disabled={d.circuits.length === 1}
+                                      onClick={() =>
+                                        setDecision({
+                                          title: `删除电路 ${c.name}？`,
+                                          message: "删除后可以撤销。",
+                                          actions: [
+                                            {
+                                              label: "删除",
+                                              run: async () => {
+                                                await edit({
+                                                  kind: "deleteCircuit",
+                                                });
+                                                switchCircuit(
+                                                  d.circuits.find(
+                                                    (x) => x.name !== c.name,
+                                                  )!.name,
+                                                );
+                                              },
+                                            },
+                                          ],
+                                        })
+                                      }
+                                    >
+                                      删除电路
+                                    </button>
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          ))}
+                        <button
+                          className="muted"
+                          onClick={() => setCircuitPrompt(true)}
+                        >
+                          <Plus size={13} />
+                          新建电路
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          }
+          navigatorActions={
+            <>
               {actionButton("打开电路", <FolderOpen size={15} />, openFile)}
               {actionButton(
                 "新建电路文件",
                 <FilePlus2 size={15} />,
                 () => void newFile(),
               )}
-            </div>
-          </div>
-          <Files
-            folder={folder}
-            onFolder={(next) => {
-              workspaceEpoch.current++;
-              setFolder(next);
-            }}
-            onRename={() => refreshWorkspace()}
-            onOpen={(path) =>
-              void busy(() => command<Document>({ op: "open", path }))
-                .then((d) => {
-                  update(d);
-                  setCircuitName(d.main);
-                })
-                .catch(onError)
-            }
-            onPreview={setPreview}
-            onError={onError}
-          />
-          <div className="document-list">
-            {docs.map((d) => (
-              <div key={d.id}>
-                <div
-                  className={
-                    "document-row " + (d.id === active ? "active" : "")
-                  }
-                >
-                  <button
-                    className="document-item"
-                    onClick={() => {
-                      navigationRequest.current++;
-                      setActive(d.id);
-                      setPlace(null);
-                      void command({ op: "activate", id: d.id }).catch(onError);
-                      setCircuitName(d.main);
-                      setSelection([]);
-                    }}
-                  >
-                    <CircuitBoard size={15} />
-                    <span>{d.name}</span>
-                    {d.dirty && (
-                      <span className="dirty-dot" title="有未保存的修改" />
-                    )}
-                  </button>
-                  <button
-                    className="document-close"
-                    title={`关闭 ${d.name}`}
-                    aria-label={`关闭 ${d.name}`}
-                    disabled={Boolean(pending)}
-                    onClick={() => requestClose(d)}
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-                {d.id === active && (
-                  <div className="circuit-list">
-                    {d.circuits.map((c) => (
-                      <div className="circuit-row" key={c.name}>
-                        <button
-                          className={c.name === circuit?.name ? "active" : ""}
-                          onClick={() => switchCircuit(c.name)}
-                          title={d.main === c.name ? "主电路" : undefined}
-                        >
-                          {c.name}
-                          {d.main === c.name && (
-                            <span className="main-marker" aria-label="主电路">
-                              ⌂
-                            </span>
-                          )}
-                        </button>
-                        {c.name === circuit?.name && (
-                          <details className="menu">
-                            <summary aria-label="电路操作">···</summary>
-                            <div className="menu-content">
-                              <button onClick={() => setRenameCircuit(true)}>
-                                重命名…
-                              </button>
-                              <button
-                                disabled={d.main === c.name}
-                                onClick={() =>
-                                  void edit({ kind: "setMain" }).catch(onError)
-                                }
-                              >
-                                设为主电路
-                              </button>
-                              <button
-                                disabled={d.circuits.length === 1}
-                                onClick={() =>
-                                  setDecision({
-                                    title: `删除电路 ${c.name}？`,
-                                    message: "删除后可以撤销。",
-                                    actions: [
-                                      {
-                                        label: "删除",
-                                        run: async () => {
-                                          await edit({ kind: "deleteCircuit" });
-                                          switchCircuit(
-                                            d.circuits.find(
-                                              (x) => x.name !== c.name,
-                                            )!.name,
-                                          );
-                                        },
-                                      },
-                                    ],
-                                  })
-                                }
-                              >
-                                删除电路
-                              </button>
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      className="muted"
-                      onClick={() => setCircuitPrompt(true)}
-                    >
-                      <Plus size={13} />
-                      新建电路
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {doc && (
-            <>
-              <div className="palette-search">
-                <Search size={15} />
-                <input
-                  ref={searchInput}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索元件"
-                  aria-label="搜索元件"
-                />
-                <kbd>{shortcuts.palette}</kbd>
-              </div>
-              <div className="palette">
-                {catalog.map((group) => {
-                  const tools = group.tools.filter((t) =>
-                    (t.name + " " + t.label)
-                      .toLowerCase()
-                      .includes(search.toLowerCase()),
-                  );
-                  return tools.length ? (
-                    <details key={group.id} open>
-                      <summary>{group.label}</summary>
-                      {tools.map((t) => (
-                        <button
-                          key={t.name}
-                          disabled={Boolean(t.disabled)}
-                          title={t.disabled || t.label}
-                          aria-label={t.label}
-                          className={
-                            place?.name === t.name &&
-                            place.library === t.library
-                              ? "selected"
-                              : ""
-                          }
-                          onClick={() => {
-                            setPlace(t);
-                            setSelection([]);
-                            setRight("properties");
-                            setShowRight(true);
-                            setTool("select");
-                          }}
-                        >
-                          {t.icon && <img src={t.icon} alt="" />}
-                          <span>{t.label}</span>
-                        </button>
-                      ))}
-                    </details>
-                  ) : null;
-                })}
-              </div>
             </>
-          )}
-        </aside>
+          }
+          inspectorActions={
+            selection.length ? (
+              <button
+                className="quiet-button"
+                title="取消当前选择"
+                onClick={() => setSelection([])}
+              >
+                取消选择
+              </button>
+            ) : null
+          }
+          inspector={
+            place ? (
+              <PlacementInspector
+                key={`${doc?.id}:${place.library}:${place.name}`}
+                placement={placement}
+              />
+            ) : circuit ? (
+              <Inspector
+                doc={doc!}
+                circuit={circuit}
+                selection={selection}
+                onOpenMemory={openMemory}
+                edit={edit}
+                simulation={activeSim}
+                simulate={simulate}
+                onError={onError}
+              />
+            ) : (
+              <div className="quiet-empty">选择元件以查看属性</div>
+            )
+          }
+        />
         <main className="editor">
           {doc && circuit ? (
             <>
@@ -1019,6 +1241,14 @@ export function App() {
                     )}
                   </div>
                 )}
+              {saveFailures[doc.id] && (
+                <div className="source-notice" role="alert">
+                  <span>修改已保留，写回文件失败：{saveFailures[doc.id]}</span>
+                  <button disabled={Boolean(pending)} onClick={() => save()}>
+                    重试保存
+                  </button>
+                </div>
+              )}
               <EditorToolbar
                 tool={tool}
                 place={place}
@@ -1090,7 +1320,7 @@ export function App() {
                 selection={selection}
                 setSelection={(s) => {
                   setSelection(s);
-                  if (s.length) setRight("properties");
+                  if (s.length) layout.revealInspector();
                 }}
                 place={place}
                 edit={edit}
@@ -1111,7 +1341,7 @@ export function App() {
                       edit,
                     }),
                   );
-                  mergeDocument(next);
+                  mergeDocument(next, revision);
                   return next;
                 }}
                 focusTarget={
@@ -1123,7 +1353,7 @@ export function App() {
                 }
                 onSignalView={setSignalView}
                 onSignalOpen={() => {
-                  setRight("properties");
+                  setRight("connections");
                   setShowRight(true);
                 }}
                 onOpenMemory={openMemory}
@@ -1210,8 +1440,11 @@ export function App() {
           )}
         </main>
         <aside
-          className="right-panel"
-          style={showRight ? undefined : { display: "none" }}
+          className={"right-panel" + (layout.narrow ? " workspace-drawer" : "")}
+          style={{
+            width: layout.sizes.review,
+            display: showRight ? undefined : "none",
+          }}
         >
           <div className="panel-tabs">
             <button
@@ -1221,35 +1454,36 @@ export function App() {
               对话
             </button>
             <button
-              className={right === "properties" ? "active" : ""}
-              onClick={() => setRight("properties")}
+              className={right === "connections" ? "active" : ""}
+              onClick={() => setRight("connections")}
             >
-              属性与信号
+              连接
+            </button>
+            <button
+              className={right === "changes" ? "active" : ""}
+              onClick={() => setRight("changes")}
+            >
+              改动
             </button>
           </div>
-          {right === "properties" &&
-            (signalView ||
-              (place ? (
-                <PlacementInspector
-                  key={`${doc?.id}:${place.library}:${place.name}`}
-                  placement={placement}
-                />
-              ) : circuit ? (
-                <Inspector
-                  doc={doc!}
-                  circuit={circuit}
-                  selection={selection}
-                  onOpenMemory={openMemory}
-                  edit={edit}
-                  simulation={activeSim}
-                  simulate={simulate}
-                  onError={onError}
-                />
-              ) : (
-                <div className="quiet-empty">打开电路后查看属性</div>
-              )))}
+          {right === "connections" &&
+            (signalView || (
+              <div className="quiet-empty">
+                选中元件或导线后，Ctrl+点击信号可定位来源。
+              </div>
+            ))}
+          {!layout.narrow && <PanelResize side="review" layout={layout} />}
+          <DocumentHistory
+            doc={doc}
+            circuit={circuit?.name || null}
+            visible={right === "changes" && showRight}
+            onError={onError}
+            onDocument={mergeDocument}
+            onLocate={locateChange}
+          />
           <Chat
-            visible={right === "chat"}
+            onLocate={locateChange}
+            visible={right === "chat" && showRight}
             doc={doc}
             circuit={circuit?.name || null}
             onError={onError}
@@ -1257,7 +1491,12 @@ export function App() {
             folder={folder}
             selection={selection}
             quotation={quotation}
-            onQuoted={() => setQuotation(null)}
+            onFollowReference={(href, message) =>
+              followConversationReference(href, message.context)
+            }
+            onQuoted={(id) =>
+              setQuotation((current) => (current?.id === id ? null : current))
+            }
           />
         </aside>
       </div>
@@ -1304,7 +1543,29 @@ export function App() {
         <DecisionDialog decision={decision} onClose={() => setDecision(null)} />
       )}
       {observations && (
-        <Observations {...observations} onClose={() => setObservations(null)} />
+        <Observations
+          {...observations}
+          onClose={() => setObservations(null)}
+          onQuote={(references) => {
+            if (!doc || doc.id !== observations.documentId) return;
+            setQuotation({
+              id: crypto.randomUUID(),
+              documentId: doc.id,
+              references,
+            });
+            setObservations(null);
+            setRight("chat");
+            setShowRight(true);
+          }}
+        />
+      )}
+      {interfaceTarget && (
+        <InterfaceEditor
+          doc={interfaceTarget.doc}
+          circuit={interfaceTarget.circuit}
+          onDocument={mergeDocument}
+          onClose={() => setInterfaceTarget(null)}
+        />
       )}
       {renameCircuit && circuit && (
         <TextPrompt
@@ -1331,15 +1592,15 @@ export function App() {
         <FilePreview
           file={preview}
           onClose={() => setPreview(null)}
-          onQuote={(label, text) => {
+          onQuote={(reference) => {
             if (doc) {
               setQuotation({
                 id: crypto.randomUUID(),
                 documentId: doc.id,
-                label,
-                text,
+                references: [reference],
               });
               setRight("chat");
+              setShowRight(true);
             }
           }}
         />
@@ -1375,7 +1636,7 @@ export function App() {
                     circuit: source.circuit,
                     edit: { kind: "replace", xml: source.xml },
                   })
-                    .then(mergeDocument)
+                    .then((next) => mergeDocument(next, source.revision))
                     .then(() => setSource(null))
                     .catch(onError)
                 }
@@ -1396,8 +1657,7 @@ export function App() {
             switchCircuit(name);
             if (id) {
               setSelection([id]);
-              setRight("properties");
-              setShowRight(true);
+              layout.revealInspector();
               setFocusTarget({
                 documentId: doc.id,
                 revision: doc.revision,
@@ -1407,6 +1667,13 @@ export function App() {
               });
             }
           }}
+        />
+      )}
+      {infoTarget && docs.some((document) => document.id === infoTarget) && (
+        <ProjectInfo
+          key={infoTarget}
+          doc={docs.find((document) => document.id === infoTarget)!}
+          onClose={() => setInfoTarget(null)}
         />
       )}
       {settings && (

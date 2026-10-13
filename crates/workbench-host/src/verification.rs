@@ -28,6 +28,170 @@ pub struct TraceProgram {
     pub watches: Vec<TraceWatch>,
     pub events: Vec<InputEvent>,
 }
+#[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum VerificationInput {
+    Vectors {
+        vectors: Vec<TestVector>,
+    },
+    Trace {
+        ticks: u32,
+        inputs: BTreeMap<String, u32>,
+        watches: Vec<TraceWatch>,
+        #[serde(default)]
+        events: Vec<InputEvent>,
+    },
+}
+#[derive(Clone, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationRecord {
+    pub id: String,
+    pub document_id: String,
+    pub revision: String,
+    pub base_revision: String,
+    pub circuit: String,
+    pub created_at: f64,
+    pub kind: String,
+    #[ts(type = "Record<string,string>")]
+    pub runtime: Value,
+    pub dependencies_verified: bool,
+    #[ts(type = "any")]
+    pub result: Value,
+}
+#[derive(Deserialize, Serialize)]
+struct StoredVerification {
+    record: VerificationRecord,
+    dependencies: BTreeMap<std::path::PathBuf, String>,
+    checksum: String,
+}
+fn verification_checksum(
+    record: &VerificationRecord,
+    dependencies: &BTreeMap<std::path::PathBuf, String>,
+) -> Result<String> {
+    Ok(vibe_workspace_core::digest(
+        &serde_json::to_vec(&(record, dependencies)).map_err(|e| e.to_string())?,
+    ))
+}
+
+impl Host {
+    fn verification_directory(&self, id: &str) -> Result<std::path::PathBuf> {
+        uuid::Uuid::parse_str(id).map_err(|_| "无效文档标识")?;
+        Ok(self.state.join("verification-records").join(id))
+    }
+    pub(crate) fn verification_records(
+        &self,
+        id: &str,
+        revision: &str,
+    ) -> Result<Vec<VerificationRecord>> {
+        let directory = self.verification_directory(id)?;
+        if !directory.exists() {
+            return Ok(vec![]);
+        }
+        let mut result = vec![];
+        for file in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
+            let path = file.map_err(|e| e.to_string())?.path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let mut stored: StoredVerification =
+                serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
+                    .map_err(|_| "原生验证记录无法读取，原记录已保留")?;
+            if verification_checksum(&stored.record, &stored.dependencies)? != stored.checksum {
+                return Err("原生验证记录内容已改变，不能作为运行证据".into());
+            }
+            if stored.record.document_id == id && stored.record.revision == revision {
+                stored.record.dependencies_verified =
+                    stored.dependencies.iter().all(|(path, expected)| {
+                        std::fs::read(path)
+                            .is_ok_and(|bytes| vibe_workspace_core::digest(&bytes) == *expected)
+                    });
+                result.push(stored.record);
+            }
+        }
+        result.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
+        Ok(result)
+    }
+    pub(crate) async fn verify_proposal(
+        &self,
+        id: &str,
+        revision: &str,
+        original: &str,
+        xml: &str,
+        circuit: &str,
+        input: VerificationInput,
+    ) -> Result<Value> {
+        let (_, candidate, current) = self.proposal_documents(id, revision, original, xml).await?;
+        if current != revision {
+            return Err("原版本已改变，请先重新生成候选".into());
+        }
+        let (artifact, _) = self.materialize(&candidate)?;
+        let dependencies = vibe_logisim_adapter::artifact_dependencies(&artifact)?;
+        let kind = match &input {
+            VerificationInput::Vectors { .. } => "vectors",
+            VerificationInput::Trace { .. } => "trace",
+        };
+        let result = match input {
+            VerificationInput::Vectors { vectors } => {
+                self.verify_vectors_document(&candidate, circuit, vectors)
+                    .await?
+            }
+            VerificationInput::Trace {
+                ticks,
+                inputs,
+                watches,
+                events,
+            } => {
+                self.verify_trace_document(
+                    &candidate,
+                    circuit,
+                    TraceProgram {
+                        ticks,
+                        inputs,
+                        watches,
+                        events,
+                    },
+                )
+                .await?
+            }
+        };
+        if vibe_logisim_adapter::artifact_dependencies(&artifact)? != dependencies {
+            return Err("验证期间组件库已改变，结果未留存".into());
+        }
+        let record = VerificationRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            document_id: id.into(),
+            revision: candidate.revision(),
+            base_revision: revision.into(),
+            circuit: circuit.into(),
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as f64,
+            kind: kind.into(),
+            runtime: result["runtime"].clone(),
+            dependencies_verified: true,
+            result,
+        };
+        let directory = self.verification_directory(id)?;
+        std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+        use std::io::Write;
+        let mut temp = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
+        serde_json::to_writer(
+            temp.as_file_mut(),
+            &StoredVerification {
+                checksum: verification_checksum(&record, &dependencies)?,
+                record: record.clone(),
+                dependencies,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        temp.flush().map_err(|e| e.to_string())?;
+        temp.as_file().sync_all().map_err(|e| e.to_string())?;
+        temp.persist_noclobber(directory.join(format!("{}.json", record.id)))
+            .map_err(|e| e.to_string())?;
+        crate::value(record)
+    }
+}
 fn input_nodes(inputs: &BTreeMap<String, u32>) -> Result<Vec<Element>> {
     if inputs.len() > 256
         || inputs
@@ -75,7 +239,28 @@ impl Host {
         if vectors.is_empty() || vectors.len() > 256 {
             return Err("请提供 1–256 组测试向量".into());
         }
-        let (artifact, view) = self.snapshot(id, revision).await?;
+        let doc = self
+            .workspace
+            .lock()
+            .await
+            .get(id)
+            .map_err(|e| e.to_string())?
+            .clone();
+        doc.check(revision).map_err(|e| e.to_string())?;
+        self.verify_vectors_document(&doc, circuit, vectors).await
+    }
+    pub(crate) async fn verify_vectors_document(
+        &self,
+        doc: &vibe_workspace_core::Document,
+        circuit: &str,
+        vectors: Vec<TestVector>,
+    ) -> Result<Value> {
+        if vectors.is_empty() || vectors.len() > 256 {
+            return Err("请提供 1–256 组测试向量".into());
+        }
+        let id = &doc.id;
+        let revision = doc.revision();
+        let (artifact, view) = self.materialize(doc)?;
         let selected = view
             .circuits
             .iter()
@@ -130,6 +315,24 @@ impl Host {
         circuit: &str,
         program: TraceProgram,
     ) -> Result<Value> {
+        let doc = self
+            .workspace
+            .lock()
+            .await
+            .get(id)
+            .map_err(|e| e.to_string())?
+            .clone();
+        doc.check(revision).map_err(|e| e.to_string())?;
+        self.verify_trace_document(&doc, circuit, program).await
+    }
+    pub(crate) async fn verify_trace_document(
+        &self,
+        doc: &vibe_workspace_core::Document,
+        circuit: &str,
+        program: TraceProgram,
+    ) -> Result<Value> {
+        let id = &doc.id;
+        let revision = doc.revision();
         let TraceProgram {
             ticks,
             inputs,
@@ -143,7 +346,7 @@ impl Host {
         {
             return Err("时序检查支持 1–256 tick、1–16 个观察端口及最多 1024 个输入事件".into());
         }
-        let (artifact, view) = self.snapshot(id, revision).await?;
+        let (artifact, view) = self.materialize(doc)?;
         let selected = view
             .circuits
             .iter()

@@ -1,3 +1,4 @@
+import { useMovePreview } from "../lib/useMovePreview";
 import type { PlacementState } from "../lib/usePlacement";
 import { Connections } from "./Connections";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../lib/connections";
 import {
   useCallback,
+  useId,
   useEffect,
   useMemo,
   useRef,
@@ -223,12 +225,35 @@ export function Canvas({
   const [cursor, setCursor] = useState<Point | null>(null);
   const [drag, setDrag] = useState<{
     mode: "pan" | "move" | "box";
+    axis?: "x" | "y";
     start: Point;
     client: Point;
     ids: string[];
     origin: typeof view;
   } | null>(null);
   const [delta, setDelta] = useState<Point>({ x: 0, y: 0 });
+  const moving = drag?.mode === "move" && Boolean(delta.x || delta.y);
+  const moveClip = useId().replaceAll(":", "");
+  const movePreview = useMovePreview(
+    moving
+      ? {
+          id: doc.id,
+          revision: doc.revision,
+          circuit: circuit.name,
+          ids: drag.ids,
+          delta,
+        }
+      : null,
+  );
+  const segmentKey = (segment: { from: Point; to: Point }) =>
+    [segment.from, segment.to]
+      .map((p) => `${p.x},${p.y}`)
+      .sort()
+      .join(":");
+  const originalSegments = new Set(circuit.wires.map(segmentKey));
+  const movedSegments = movePreview.segments.filter(
+    (segment) => !originalSegments.has(segmentKey(segment)),
+  );
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const held = useRef<(() => Promise<void>) | null>(null);
@@ -778,7 +803,16 @@ export function Canvas({
         setSelection(ids);
         setDelta({ x: 0, y: 0 });
         e.currentTarget.setPointerCapture(e.pointerId);
+        const selectedWire =
+          ids.length === 1
+            ? circuit.wires.find((wire) => wire.id === ids[0])
+            : null;
         setDrag({
+          axis: selectedWire
+            ? selectedWire.from.y === selectedWire.to.y
+              ? "x"
+              : "y"
+            : undefined,
           mode: target ? "move" : "box",
           start: p,
           client: { x: e.clientX, y: e.clientY },
@@ -796,7 +830,10 @@ export function Canvas({
             y: drag.origin.y - (e.clientY - drag.client.y) / drag.origin.scale,
           });
         else if (drag)
-          setDelta({ x: p.x - drag.start.x, y: p.y - drag.start.y });
+          setDelta({
+            x: drag.axis === "x" ? 0 : p.x - drag.start.x,
+            y: drag.axis === "y" ? 0 : p.y - drag.start.y,
+          });
       }}
       onPointerUp={(e) => {
         const gesture = wireGesture.current;
@@ -887,7 +924,76 @@ export function Canvas({
           height={size.height / view.scale}
           fill={showGrid ? "url(#grid)" : "transparent"}
         />
-        {picture && <image href={picture.src} {...picture.bounds} />}
+        {picture && (
+          <image
+            href={picture.src}
+            {...picture.bounds}
+            opacity={moving ? 0.4 : 1}
+          />
+        )}
+        {moving && picture && (
+          <g
+            className="move-preview"
+            pointerEvents="none"
+            transform={`translate(${delta.x},${delta.y})`}
+          >
+            <defs>
+              <clipPath id={moveClip} clipPathUnits="userSpaceOnUse">
+                {circuit.components
+                  .filter((component) => drag.ids.includes(component.id))
+                  .map((component) => {
+                    const bounds = boundsFor(component.id);
+                    return (
+                      <rect
+                        key={component.id}
+                        x={bounds.x - 3}
+                        y={bounds.y - 3}
+                        width={bounds.width + 6}
+                        height={bounds.height + 6}
+                      />
+                    );
+                  })}
+              </clipPath>
+            </defs>
+            <image
+              href={picture.src}
+              {...picture.bounds}
+              clipPath={`url(#${moveClip})`}
+            />
+          </g>
+        )}
+        {moving && (
+          <g
+            className="move-wire-preview"
+            pointerEvents="none"
+            stroke="var(--accent)"
+            strokeWidth={2 / view.scale}
+            fill="none"
+          >
+            {movedSegments.map((segment) => (
+              <line
+                key={segmentKey(segment)}
+                x1={segment.from.x}
+                y1={segment.from.y}
+                x2={segment.to.x}
+                y2={segment.to.y}
+              />
+            ))}
+            {!movedSegments.length &&
+              circuit.wires
+                .filter((wire) => drag.ids.includes(wire.id))
+                .map((wire) => (
+                  <line
+                    key={wire.id}
+                    x1={wire.from.x + delta.x}
+                    y1={wire.from.y + delta.y}
+                    x2={wire.to.x + delta.x}
+                    y2={wire.to.y + delta.y}
+                    strokeDasharray="4 3"
+                  />
+                ))}
+          </g>
+        )}
         {signal &&
           connections &&
           focus?.wires
@@ -1014,6 +1120,9 @@ export function Canvas({
         )}
       </svg>
       <div className="canvas-status">
+        {moving && movePreview.error && (
+          <span role="status">{movePreview.error}</span>
+        )}
         <span>
           {loading ? "正在绘制…" : `${Math.round(view.scale * 100)}%`}
         </span>

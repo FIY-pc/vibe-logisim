@@ -144,7 +144,7 @@ class BuiltinBackend extends EventEmitter {
   async ask({question,context,workspaceKey,editMessageId=null,expectedTurnId=null}) {
     if(expectedTurnId!==null){
       if(!this.agent||!this.pending||expectedTurnId!==this.activeTurnId||workspaceKey!==this.workspaceKey||this.agent.signal?.aborted)throw new Error('回合已结束，请重新发送');
-      const prepared=this.contextHost?.prepare(context);const user={role:'user',content:question+'\n\n'+JSON.stringify(this.contextHost?.additionalContext(prepared,{cwd:this.workDir})||{}),timestamp:Date.now(),vibeId:randomUUID()};
+      const prepared=this.contextHost?.prepare(context);const images=this.contextHost?.images?.(prepared)||[];if(images.length&&!({...this.provider.resolve(this.selection),...this.selection}).vision)throw new Error('当前模型服务未启用图片输入，请开启后重试，或移除图片引用');const content=question+'\n\n'+JSON.stringify(this.contextHost?.additionalContext(prepared,{cwd:this.workDir})||{});const user={role:'user',content:images.length?[{type:'text',text:content},...images.map(image=>({type:'image',...image}))]:content,timestamp:Date.now(),vibeId:randomUUID()};
       this.steers.set(user.vibeId,{question,context:{...prepared?.frozenContext,turnContinuation:true},message:user});
       this.history.push({type:'user',id:user.vibeId,text:question,delivery:'queued',context:{...prepared?.frozenContext,turnContinuation:true}});
       this.emit('event',{type:'user-message',id:user.vibeId,text:question,delivery:'queued',context:{...prepared?.frozenContext,turnContinuation:true}});this.persist();this.agent.steer(user);return {threadId:this.threadId,turnId:this.activeTurnId};
@@ -163,6 +163,8 @@ class BuiltinBackend extends EventEmitter {
       const {Agent,createInitialSystemMessage,toToolDeclaration}=await loadSdk();
       const api=await transport(config.api),fetch=await this.requestFetch(config);
       const prepared=this.contextHost?.prepare(context);
+      const images=this.contextHost?.images?.(prepared)||[];
+      if(images.length&&!config.vision)throw new Error('当前模型服务未启用图片输入，请开启后重试，或移除图片引用');
       work=await this.workspaceHost?.prepare(context.revisionId);
       await this.toolHost?.prepare({live:true});
       if(this.cancelStarting)throw new Error('已停止');
@@ -191,6 +193,7 @@ class BuiltinBackend extends EventEmitter {
       this.agent.subscribe(e=>{if(this.pending===pending&&this.activeTurnId===pending.turnId)this.onAgentEvent(e);});this.persist();
       this.status='busy';this.starting=false;this.emitStatus();this.emit('event',{type:'turn-started',turnId:this.activeTurnId});
       const prompt={role:'user',content:question+'\n\n<workspace_context>\n'+JSON.stringify(prepared?this.contextHost.additionalContext(prepared,{cwd:this.workDir,workspaceIndex:work?.workspaceIndex}):{})+'\n</workspace_context>',timestamp:Date.now()};
+      if(images.length)prompt.content=[{type:'text',text:prompt.content},...images.map(image=>({type:'image',...image}))];
       this.run=this.runTurn(prompt,pending);
       this.preparedDone();this.preparing=null;
       return {threadId:this.threadId,turnId:this.activeTurnId,revisionId:this.revisionId};

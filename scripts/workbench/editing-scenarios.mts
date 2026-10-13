@@ -78,7 +78,42 @@ export async function verifyEditing(command: Command) {
   );
   await signal(fanout, "input", "1010", ["out", "branch"]);
   const original = fanout.revision;
+  const simulationBeforePreview = await command({ op: "simulationStatus" });
+  const preview = await command({
+    op: "movePreview",
+    id: fanout.id,
+    revision: fanout.revision,
+    circuit: "main",
+    ids: [component(fanout, "input")],
+    delta: { x: 0, y: 60 },
+  });
+  assert.deepEqual(
+    await command({ op: "read", id: fanout.id }),
+    fanout,
+    "Dragging a preview must preserve document revision, source and undo",
+  );
+  const simulationAfterPreview = await command({ op: "simulationStatus" });
+  assert.equal(
+    simulationAfterPreview.viewId,
+    simulationBeforePreview.viewId,
+    "Movement previews must not replace the live simulation",
+  );
   fanout = await move(fanout, [component(fanout, "input")], 0, 60);
+  assert.deepEqual(
+    preview.segments,
+    fanout.circuits[0].wires.map(({ from, to }) => ({ from, to })),
+    "Preview and committed movement must use the same routing plan",
+  );
+  await assert.rejects(
+    command({
+      op: "movePreview",
+      id: fanout.id,
+      revision: original,
+      circuit: "main",
+      ids: [component(fanout, "input")],
+      delta: { x: 0, y: 60 },
+    }),
+  );
   await signal(fanout, "input", "0101", ["out", "branch"]);
   fanout = await command({
     op: "undo",

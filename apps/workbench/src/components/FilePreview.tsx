@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReferenceInput } from "../lib/references";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -9,6 +10,9 @@ export interface PreviewFile {
   mime?: string;
   path?: string;
   revision?: string;
+  page?: number;
+  pathVersion?: number;
+  folderId?: string;
 }
 export function FilePreview({
   file,
@@ -17,13 +21,13 @@ export function FilePreview({
 }: {
   file: PreviewFile;
   onClose: () => void;
-  onQuote: (label: string, text: string) => void;
+  onQuote: (reference: ReferenceInput) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     canvas = useRef<HTMLCanvasElement>(null),
     textArea = useRef<HTMLTextAreaElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null),
-    [page, setPage] = useState(1),
+    [page, setPage] = useState(file.page || 1),
     [text, setText] = useState(file.text || ""),
     [error, setError] = useState(""),
     [pending, setPending] = useState(false);
@@ -105,10 +109,22 @@ export function FilePreview({
       textarea && textarea.selectionEnd > textarea.selectionStart
         ? text.slice(textarea.selectionStart, textarea.selectionEnd)
         : text;
-    onQuote(
-      `${file.path || file.name}${pdf ? ` · 第 ${page} 页` : ""}`,
-      selection.slice(0, 24000),
-    );
+    let image: string | undefined;
+    if (file.mime === "application/pdf" && canvas.current)
+      image = canvas.current.toDataURL("image/png");
+    else if (file.mime?.startsWith("image/") && file.data)
+      image = `data:${file.mime};base64,${file.data}`;
+    onQuote({
+      kind: "material",
+      label: file.name,
+      path: file.path || file.name,
+      revision: file.revision,
+      folderId: file.folderId,
+      pathVersion: file.pathVersion,
+      page: pdf ? page : undefined,
+      text: selection,
+      image,
+    });
     onClose();
   };
   return (
@@ -186,9 +202,17 @@ export function FilePreview({
           />
         )}
       </div>
-      {text && (
+      {(text || file.data) && (
         <footer>
-          <button onClick={quote}>引用到对话</button>
+          <button
+            onPointerDown={(e) => e.preventDefault()}
+            disabled={
+              pending || !!error || (file.mime === "application/pdf" && !pdf)
+            }
+            onClick={quote}
+          >
+            {pdf ? "引用这一页" : "引用到对话"}
+          </button>
         </footer>
       )}
     </dialog>

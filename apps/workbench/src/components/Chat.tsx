@@ -1,16 +1,30 @@
+import type { LocateChange } from "../lib/reviewTypes";
+import { useProposals } from "../lib/useProposals";
+import { useChatReferences } from "./ChatReferences";
+import type { Quotation } from "../lib/references";
 import { eventBinding } from "../lib/shortcuts";
 import { ProviderSettings } from "./ProviderSettings";
 import { ProposalReview, type SourceProposal } from "./ProposalReview";
 import { TextPrompt } from "./TextPrompt";
 import { ImportHistory } from "./ImportHistory";
 import { subscribeEvents } from "../lib/events";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import {
+  ActivityBatch,
+  ChatMarkdown,
+  ConversationPicker,
+  CopyButton,
+  FollowLatest,
+  mergeActivity,
+  useConversationScroll,
+  type ConversationSummary,
+  type Message,
+} from "./ConversationContent";
+export type { Message } from "./ConversationContent";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { desktop } from "../lib/transport";
 import type { ProjectFolder } from "./Files";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Plus,
   Send,
@@ -22,17 +36,6 @@ import {
 } from "lucide-react";
 import { command } from "../lib/transport";
 import type { Document } from "../lib/types";
-interface Message {
-  id: string;
-  type: string;
-  text?: string;
-  phase?: string;
-  label?: string;
-  detail?: string;
-  status?: string;
-  canEdit?: boolean;
-  canFork?: boolean;
-}
 interface RuntimeState {
   eventCursor: number;
   canSteer?: boolean;
@@ -77,19 +80,18 @@ interface RuntimeState {
 }
 interface Props {
   visible: boolean;
+  onLocate?: (target: LocateChange) => void;
   doc: Document | null;
   folder: ProjectFolder | null;
   circuit: string | null;
   onError: (e: unknown) => void;
-  onDocument: (d: Document) => void;
+  onDocument: (d: Document, expectedBaseRevision?: string) => void;
   selection: string[];
-  quotation: {
-    id: string;
-    documentId: string;
-    label: string;
-    text: string;
-  } | null;
-  onQuoted: () => void;
+  quotation: Quotation | null;
+  onQuoted: (id: string) => void;
+  composerAttachmentSlot?: ReactNode;
+  renderMessageContext?: (message: Message) => ReactNode;
+  onFollowReference?: (href: string, message: Message) => void;
 }
 const runtime = <T,>(method: string, args: unknown = {}) =>
   command<T>({ op: "agent", method, args: args as JsonValue });
@@ -103,39 +105,43 @@ export function Chat({
   quotation,
   onQuoted,
   selection,
+  composerAttachmentSlot,
+  renderMessageContext,
+  onFollowReference,
+  onLocate,
 }: Props) {
   const [state, setState] = useState<RuntimeState | null>(null),
     [messages, setMessages] = useState<Message[]>([]),
     [draftRecord, setDraftRecord] = useState({ key: "", text: "" }),
     [configure, setConfigure] = useState(false),
     [pending, setPending] = useState(false);
-  const [conversations, setConversations] = useState<
-      { id: string; title: string; archived: boolean }[]
-    >([]),
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]),
     [models, setModels] = useState<
       { model: string; name?: string; label?: string }[]
     >([]);
-  const [proposals, setProposals] = useState<Record<string, SourceProposal>>(
-    {},
-  );
-  const [reviewing, setReviewing] = useState<SourceProposal | null>(null);
-  const proposal = doc ? proposals[doc.id] : undefined;
-  useEffect(() => setReviewing(null), [doc?.id]);
-  const discardProposal = (target: SourceProposal) => {
-    setProposals((previous) => {
-      if (previous[target.documentId] !== target) return previous;
-      const next = { ...previous };
-      delete next[target.documentId];
-      return next;
-    });
-    setReviewing(null);
-  };
   const [connection, setConnection] = useState(0);
+  const proposals = useProposals(doc?.id, connection, onError);
+  const [reviewing, setReviewing] = useState<SourceProposal | null>(null);
+  useEffect(() => setReviewing(null), [doc?.id]);
+  const discardProposal = (proposal: SourceProposal) => {
+    void proposals.discard(proposal).then((discarded) => {
+      if (discarded)
+        setReviewing((current) =>
+          current?.id === proposal.id ? null : current,
+        );
+    });
+  };
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState("");
   const [runtimeError, setRuntimeError] = useState("");
   const [questions, setQuestions] = useState<any>(null);
   const [boundWorkspace, setBoundWorkspace] = useState<string | null>(null);
+  const [boundDocument, setBoundDocument] = useState<string | null>(null);
+  const boundDocumentRef = useRef<string | null>(null);
+  const setBoundIdentity = (identity: string | null) => {
+    boundDocumentRef.current = identity;
+    setBoundDocument(identity);
+  };
   const actionQueue = useRef<Promise<unknown>>(Promise.resolve());
   const enqueue = <T,>(action: () => Promise<T>): Promise<T> => {
     const next = actionQueue.current.catch(() => {}).then(action);
@@ -154,6 +160,10 @@ export function Chat({
       ? folder.id
       : doc?.id || "";
   const workspaceReady = Boolean(doc && boundWorkspace === workspaceKey);
+  const documentIdentity = doc
+    ? JSON.stringify([workspaceKey, doc.id, circuit])
+    : null;
+  const documentReady = workspaceReady && boundDocument === documentIdentity;
   const draftKey = workspaceReady
     ? "vibe.draft:" + workspaceKey + ":" + (state?.conversationId || "")
     : "";
@@ -180,28 +190,15 @@ export function Chat({
         : current,
     );
   };
-  useEffect(() => {
-    if (
-      !quotation ||
-      !workspaceReady ||
-      !draftKey ||
-      quotation.documentId !== doc?.id ||
-      !state?.conversationId
-    )
-      return;
-    const original = localStorage.getItem(draftKey) || "";
-    changeDraft(
-      original +
-        (original ? "\n\n" : "") +
-        `引用：${quotation.label}\n` +
-        quotation.text
-          .split("\n")
-          .map((line) => "> " + line)
-          .join("\n") +
-        "\n",
-    );
-    onQuoted();
-  }, [quotation?.id, state?.conversationId, draftKey, workspaceReady]);
+  const references = useChatReferences({
+    draftKey,
+    workspaceKey,
+    documentId: doc?.id,
+    quotation,
+    onQuoted,
+    onError,
+    ready: documentReady && Boolean(state?.conversationId),
+  });
   const [renameConversation, setRenameConversation] = useState(false);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [editedText, setEditedText] = useState("");
@@ -248,7 +245,7 @@ export function Chat({
       else if (e.type === "user-message")
         setMessages((previous) => [
           ...previous,
-          { id: e.id, type: "user", text: e.text },
+          { id: e.id, type: "user", text: e.text, context: e.context },
         ]);
       else if (e.type === "assistant-delta" || e.type === "reasoning-delta") {
         const id =
@@ -290,7 +287,7 @@ export function Chat({
       else if (e.type === "activity")
         setMessages((previous) =>
           previous.some((m) => m.id === e.id)
-            ? previous.map((m) => (m.id === e.id ? e : m))
+            ? previous.map((m) => (m.id === e.id ? mergeActivity(m, e) : m))
             : [...previous, e],
         );
       else if (e.type === "conversations-changed")
@@ -304,9 +301,9 @@ export function Chat({
         setQuestions((current: any) =>
           current?.turnId === e.turnId ? null : current,
         );
-      else if (e.type === "document-changed") onDocument(e.document);
-      else if (e.type === "proposed-source")
-        setProposals((previous) => ({ ...previous, [e.documentId]: e }));
+      else if (e.type === "document-changed")
+        onDocument(e.document, e.expectedBaseRevision);
+      else if (e.type === "proposed-source") proposals.receive(e);
     };
     const stop = subscribeEvents((event) => {
       if (event.topic === "resync")
@@ -314,6 +311,7 @@ export function Chat({
           .then(() => {
             binding.current = null;
             setBoundWorkspace(null);
+            setBoundIdentity(null);
             setConnection((value) => value + 1);
           })
           .catch(onError);
@@ -331,12 +329,17 @@ export function Chat({
   useEffect(() => {
     if (!doc || state?.busy) return;
     const key = workspaceKey;
-    if (binding.current === key) return;
+    const identity = documentIdentity;
+    if (binding.current === key && boundDocumentRef.current === identity)
+      return;
     let live = true;
     void enqueue(async () => {
       if (!live || currentBusy.current) return;
-      binding.current = null;
-      setBoundWorkspace(null);
+      if (binding.current !== key) {
+        binding.current = null;
+        setBoundWorkspace(null);
+      }
+      setBoundIdentity(null);
       await runtime("bind", {
         id: doc.id,
         revision: doc.revision,
@@ -346,6 +349,7 @@ export function Chat({
       if (!live) return;
       binding.current = key;
       setBoundWorkspace(key);
+      setBoundIdentity(identity);
       await refresh();
       const result = await runtime<{ conversations: typeof conversations }>(
         "conversations",
@@ -357,15 +361,31 @@ export function Chat({
     return () => {
       live = false;
     };
-  }, [doc?.id, doc?.path, workspaceKey, Boolean(state?.busy), connection]);
-  useEffect(() => {
-    if (scroller.current)
-      scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [messages.length]);
+  }, [
+    doc?.id,
+    doc?.path,
+    documentIdentity,
+    workspaceKey,
+    Boolean(state?.busy),
+    connection,
+  ]);
+  const scroll = useConversationScroll(
+    scroller,
+    draftKey,
+    visible && !configure,
+    messages,
+  );
   const send = async () => {
-    if (!doc || !workspaceReady || !draft.trim() || actionPending.current)
+    if (
+      !doc ||
+      !documentReady ||
+      !draft.trim() ||
+      actionPending.current ||
+      references.pending
+    )
       return;
     const receipt = { key: draftKey, text: draft };
+    const attachmentReceipt = references.receipt();
     actionPending.current = true;
     setPending(true);
     try {
@@ -382,12 +402,14 @@ export function Chat({
           });
         await runtime("ask", {
           question: draft,
+          references: attachmentReceipt.ids,
           documentId: doc.id,
           circuit,
           selection,
           expectedTurnId: state?.busy ? state.turnId : undefined,
         });
         acknowledgeDraft(receipt);
+        references.acknowledge(attachmentReceipt);
         await refresh();
       });
     } catch (e) {
@@ -448,7 +470,7 @@ export function Chat({
   };
   const resubmit = async () => {
     if (
-      !workspaceReady ||
+      !documentReady ||
       !editingMessage ||
       !doc ||
       !editedText.trim() ||
@@ -468,6 +490,10 @@ export function Chat({
         });
         await runtime("ask", {
           question: editedText,
+          references:
+            editingMessage.context?.references?.map(
+              (reference) => reference.id,
+            ) || [],
           documentId: doc.id,
           circuit,
           editMessageId: editingMessage.id,
@@ -489,6 +515,7 @@ export function Chat({
       await runtime("runtime", { runtime: kind });
       binding.current = null;
       setBoundWorkspace(null);
+      setBoundIdentity(null);
       setConnection((value) => value + 1);
       setModels([]);
       await refresh();
@@ -533,20 +560,13 @@ export function Chat({
         />
       )}
       <div className="chat-header">
-        <select
-          aria-label="会话"
-          value={state?.conversationId || ""}
+        <ConversationPicker
+          conversations={conversations}
+          active={state?.conversationId || null}
           disabled={!workspaceReady || pending || Boolean(state?.busy)}
-          onChange={(e) => void switchConversation("select", e.target.value)}
-        >
-          {conversations
-            .filter((c) => !c.archived)
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-        </select>
+          onSelect={(id) => void switchConversation("select", id)}
+          onRestore={(id) => void switchConversation("restore", id)}
+        />
         <button
           title="新建对话"
           aria-label="新建对话"
@@ -585,17 +605,6 @@ export function Chat({
             >
               归档
             </button>
-            {conversations
-              .filter((c) => c.archived)
-              .map((c) => (
-                <button
-                  key={c.id}
-                  disabled={!workspaceReady || state?.busy || pending}
-                  onClick={() => void switchConversation("restore", c.id)}
-                >
-                  恢复 · {c.title}
-                </button>
-              ))}
           </div>
         </details>
         <button
@@ -618,6 +627,7 @@ export function Chat({
                   setRuntimeError("");
                   binding.current = null;
                   setBoundWorkspace(null);
+                  setBoundIdentity(null);
                   setConnection((value) => value + 1);
                   return refresh();
                 })
@@ -719,158 +729,219 @@ export function Chat({
               {state?.contextTransfer?.truncated && "仅携带最近记录。"}
             </div>
           )}
-          <div ref={scroller} className="messages">
-            {(!workspaceReady || !messages.length) && (
-              <div className="quiet-empty">
-                {!doc ? (
-                  "打开电路后开始对话"
-                ) : !state?.services?.length && state?.runtime !== "codex" ? (
-                  <button onClick={() => setConfigure(true)}>
-                    添加模型服务
-                  </button>
-                ) : state?.runtime === "codex" &&
-                  state.status === "auth-required" ? (
-                  <button onClick={login}>使用 ChatGPT 登录</button>
-                ) : (
-                  "描述要完成的电路，或选中元件后提问。"
-                )}
-              </div>
-            )}
-            {(workspaceReady ? messages : []).map((m) =>
-              m.type === "activity" ? (
-                <details className="activity" key={m.id}>
-                  <summary>
-                    {m.status === "running" ? "◌ " : ""}
-                    {m.label}
-                  </summary>
-                  <pre>{m.detail}</pre>
-                </details>
-              ) : m.type === "reasoning" ? (
-                <details className="message reasoning" key={m.id}>
-                  <summary>思考过程</summary>
-                  {m.text}
-                </details>
-              ) : ["user", "assistant"].includes(m.type) ? (
-                <div className={"message " + m.type} key={m.id}>
-                  {editingMessage?.id === m.id ? (
-                    <div className="message-edit">
-                      <textarea
-                        aria-label="编辑消息"
-                        value={editedText}
-                        onChange={(e) => setEditedText(e.target.value)}
-                      />
-                      <button
-                        disabled={pending || !editedText.trim()}
-                        onClick={() => void resubmit()}
-                      >
-                        重新发送
-                      </button>
-                      <button
-                        disabled={pending}
-                        onClick={() => setEditingMessage(null)}
-                      >
-                        取消
-                      </button>
-                    </div>
-                  ) : m.type === "assistant" ? (
-                    <Markdown remarkPlugins={[remarkGfm]}>
-                      {m.text || ""}
-                    </Markdown>
+          <div
+            ref={scroller}
+            className="messages"
+            tabIndex={0}
+            onScroll={scroll.onScroll}
+            onWheel={scroll.onWheel}
+            onKeyDown={scroll.onKeyDown}
+          >
+            <div className="messages-content">
+              {(!workspaceReady || !messages.length) && (
+                <div className="quiet-empty">
+                  {!doc ? (
+                    "打开电路后开始对话"
+                  ) : !state?.services?.length && state?.runtime !== "codex" ? (
+                    <button onClick={() => setConfigure(true)}>
+                      添加模型服务
+                    </button>
+                  ) : state?.runtime === "codex" &&
+                    state.status === "auth-required" ? (
+                    <button onClick={login}>使用 ChatGPT 登录</button>
                   ) : (
-                    m.text
-                  )}
-                  {!state?.busy && !editingMessage && (
-                    <div className="message-actions">
-                      {m.canEdit && (
-                        <button
-                          title="编辑并重新发送"
-                          aria-label="编辑并重新发送"
-                          disabled={pending}
-                          onClick={() => {
-                            setEditingMessage(m);
-                            setEditedText(m.text || "");
-                          }}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                      )}
-                      {m.canFork && (
-                        <button
-                          title="从这里创建分支"
-                          aria-label="从这里创建分支"
-                          disabled={pending}
-                          onClick={() => void fork(m.id)}
-                        >
-                          <GitBranch size={12} />
-                        </button>
-                      )}
-                    </div>
+                    "描述要完成的电路，或选中元件后提问。"
                   )}
                 </div>
-              ) : null,
-            )}
-            {state?.transmission && (
-              <div className="error-bar">{state.transmission.message}</div>
-            )}
-            {workspaceReady && questions?.workspaceKey === workspaceKey && (
-              <form
-                className="agent-questions"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const data = new FormData(e.currentTarget);
-                  const answers = Object.fromEntries(
-                    questions.questions.map((q: any) => [
-                      q.id,
-                      String(data.get(q.id) || ""),
-                    ]),
-                  );
-                  void runtime("answer", {
-                    requestId: questions.requestId,
-                    answers,
-                  })
-                    .then(() =>
-                      setQuestions((current: any) =>
-                        current?.requestId === questions.requestId
-                          ? null
-                          : current,
-                      ),
-                    )
-                    .catch(onError);
-                }}
-              >
-                {questions.questions.map((q: any) => (
-                  <label key={q.id}>
-                    {q.question}
-                    <input
-                      required
-                      maxLength={4000}
-                      name={q.id}
-                      list={"answers-" + q.id}
+              )}
+              {(workspaceReady ? messages : []).map((m, index) =>
+                m.type === "activity" ? (
+                  index > 0 &&
+                  messages[index - 1].type === "activity" ? null : (
+                    <ActivityBatch
+                      messages={messages.slice(
+                        index,
+                        messages.findIndex(
+                          (item, next) =>
+                            next > index && item.type !== "activity",
+                        ) < 0
+                          ? undefined
+                          : messages.findIndex(
+                              (item, next) =>
+                                next > index && item.type !== "activity",
+                            ),
+                      )}
+                      key={m.id}
                     />
-                    <datalist id={"answers-" + q.id}>
-                      {q.options?.map((o: any) => (
-                        <option key={o.label} value={o.label} />
-                      ))}
-                    </datalist>
-                  </label>
-                ))}
-                <button type="submit">继续</button>
-              </form>
-            )}
-            {proposal && (
-              <div className="proposal">
-                <span>待审阅改动</span>
-                <button
-                  className="primary"
-                  onClick={() => setReviewing(proposal)}
+                  )
+                ) : m.type === "reasoning" ? (
+                  <details className="message reasoning" key={m.id}>
+                    <summary>思考过程</summary>
+                    {m.text}
+                  </details>
+                ) : ["user", "assistant"].includes(m.type) ? (
+                  <div className={"message " + m.type} key={m.id}>
+                    {editingMessage?.id === m.id ? (
+                      <div className="message-edit">
+                        <textarea
+                          aria-label="编辑消息"
+                          value={editedText}
+                          onChange={(e) => setEditedText(e.target.value)}
+                        />
+                        <button
+                          disabled={pending || !editedText.trim()}
+                          onClick={() => void resubmit()}
+                        >
+                          重新发送
+                        </button>
+                        <button
+                          disabled={pending}
+                          onClick={() => setEditingMessage(null)}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : m.type === "assistant" ? (
+                      <ChatMarkdown
+                        text={m.text || ""}
+                        onError={onError}
+                        onFollowReference={
+                          onFollowReference
+                            ? (href) =>
+                                onFollowReference(href, {
+                                  ...m,
+                                  context:
+                                    m.context ||
+                                    messages
+                                      .slice(0, index)
+                                      .reverse()
+                                      .find(
+                                        (message) => message.type === "user",
+                                      )?.context,
+                                })
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      m.text
+                    )}
+                    {references.renderContext(m.context)}
+                    {renderMessageContext?.(m)}
+                    {!editingMessage && (
+                      <div className="message-actions">
+                        <CopyButton text={m.text || ""} onError={onError} />
+                        {!state?.busy && m.canEdit && (
+                          <button
+                            title="编辑并重新发送"
+                            aria-label="编辑并重新发送"
+                            disabled={pending}
+                            onClick={() => {
+                              setEditingMessage(m);
+                              setEditedText(m.text || "");
+                            }}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                        )}
+                        {!state?.busy && m.canFork && (
+                          <button
+                            title="从这里创建分支"
+                            aria-label="从这里创建分支"
+                            disabled={pending}
+                            onClick={() => void fork(m.id)}
+                          >
+                            <GitBranch size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : null,
+              )}
+              {state?.transmission && (
+                <div className="error-bar">{state.transmission.message}</div>
+              )}
+              {workspaceReady && questions?.workspaceKey === workspaceKey && (
+                <form
+                  className="agent-questions"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const data = new FormData(e.currentTarget);
+                    const answers = Object.fromEntries(
+                      questions.questions.map((q: any) => [
+                        q.id,
+                        String(data.get(q.id) || ""),
+                      ]),
+                    );
+                    void runtime("answer", {
+                      requestId: questions.requestId,
+                      answers,
+                    })
+                      .then(() =>
+                        setQuestions((current: any) =>
+                          current?.requestId === questions.requestId
+                            ? null
+                            : current,
+                        ),
+                      )
+                      .catch(onError);
+                  }}
                 >
-                  审阅
-                </button>
-                <button onClick={() => discardProposal(proposal)}>放弃</button>
-              </div>
-            )}
+                  {questions.questions.map((q: any) => (
+                    <label key={q.id}>
+                      {q.question}
+                      <input
+                        required
+                        maxLength={4000}
+                        name={q.id}
+                        list={"answers-" + q.id}
+                      />
+                      <datalist id={"answers-" + q.id}>
+                        {q.options?.map((o: any) => (
+                          <option key={o.label} value={o.label} />
+                        ))}
+                      </datalist>
+                    </label>
+                  ))}
+                  <button type="submit">继续</button>
+                </form>
+              )}
+              {proposals.proposals.map((proposal) => (
+                <div className="proposal" key={proposal.id}>
+                  <span>
+                    待审阅改动
+                    {proposals.proposals.length > 1 && (
+                      <small>
+                        {" "}
+                        ·{" "}
+                        {new Date(proposal.createdAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </small>
+                    )}
+                  </span>
+                  <button
+                    className="primary"
+                    disabled={proposals.pending.has(proposal.id)}
+                    onClick={() => setReviewing(proposal)}
+                  >
+                    审阅
+                  </button>
+                  <button
+                    disabled={proposals.pending.has(proposal.id)}
+                    onClick={() => discardProposal(proposal)}
+                  >
+                    放弃
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
+          {!scroll.following && <FollowLatest onClick={scroll.latest} />}
           <div className="composer">
+            {references.composer}
+            {composerAttachmentSlot}
             <textarea
               value={draft}
               onChange={(e) => changeDraft(e.target.value)}
@@ -948,7 +1019,12 @@ export function Chat({
                 <button
                   aria-label="追加意见"
                   title="追加意见"
-                  disabled={!workspaceReady || pending || !state.canSteer}
+                  disabled={
+                    !documentReady ||
+                    pending ||
+                    references.pending ||
+                    !state.canSteer
+                  }
                   onClick={() => void send()}
                 >
                   <Send size={15} />
@@ -970,8 +1046,9 @@ export function Chat({
                   className="primary"
                   aria-label="发送"
                   disabled={
-                    !workspaceReady ||
+                    !documentReady ||
                     !draft.trim() ||
+                    references.pending ||
                     pending ||
                     !state?.available
                   }
@@ -986,13 +1063,14 @@ export function Chat({
       )}
       {visible && reviewing && doc && reviewing.documentId === doc.id && (
         <ProposalReview
-          key={reviewing.documentId + reviewing.revision}
+          key={reviewing.id}
           proposal={reviewing}
           doc={doc}
           circuit={circuit}
           onClose={() => setReviewing(null)}
           onDiscard={() => discardProposal(reviewing)}
           onDocument={onDocument}
+          onLocate={onLocate}
         />
       )}
       {importing && (

@@ -11,6 +11,8 @@ export async function verifyProposalUI() {
   const previous = (globalThis as any).__command;
   const calls: any[] = [];
   const proposal = {
+    id: "candidate-a",
+    createdAt: 1,
     documentId: "proposal-A",
     revision: "r1",
     original: "<project>\n<before/>\n</project>",
@@ -24,7 +26,8 @@ export async function verifyProposalUI() {
     circuits: [{ name: "main", components: [], wires: [] }],
   };
   let applied = 0,
-    discarded = 0;
+    discarded = 0,
+    baseRevision: string | undefined;
   (globalThis as any).__command = async (request: any) => {
     calls.push(request);
     if (request.op === "proposalReview")
@@ -57,7 +60,8 @@ export async function verifyProposalUI() {
           onDiscard={() => {
             discarded++;
           }}
-          onDocument={() => {
+          onDocument={(_doc, base) => {
+            baseRevision = base;
             applied++;
           }}
         />,
@@ -106,7 +110,44 @@ export async function verifyProposalUI() {
     assert.equal(apply.revision, proposal.revision);
     assert.equal(apply.edit.xml, proposal.xml);
     assert.equal(applied, 1);
+    assert.equal(baseRevision, proposal.revision);
     assert.equal(discarded, 1);
+    const originalCommand = (globalThis as any).__command;
+    (globalThis as any).__command = async (request: any) => {
+      const response = await originalCommand(request);
+      if (request.op !== "proposalReview") return response;
+      const circuits = [
+        ...doc.circuits,
+        { name: "second", components: [], wires: [] },
+      ];
+      return {
+        ...response,
+        before: { ...doc, circuits },
+        after: { ...doc, circuits },
+        rows: response.rows.map((row: any) => ({ ...row, circuit: "second" })),
+      };
+    };
+    await act(async () =>
+      root.render(
+        <ProposalReview
+          key="changed-other-circuit"
+          proposal={proposal}
+          doc={doc}
+          circuit="main"
+          onClose={() => {}}
+          onDiscard={() => {}}
+          onDocument={() => {}}
+        />,
+      ),
+    );
+    assert.equal(
+      node.querySelector<HTMLSelectElement>(".proposal-circuit select")?.value,
+      "second",
+      "Review should reveal the changed circuit when the current circuit has no changes",
+    );
+    assert(node.textContent?.includes("Pin · signal"));
+    assert(!node.textContent?.includes("这份电路没有结构改动"));
+    (globalThis as any).__command = originalCommand;
     const lines = sourceDiff("a\nb\nc\nd", "a\nx\nc\ny\nd");
     assert.deepEqual(
       lines.filter((l) => l.after !== undefined).map((l) => l.after),

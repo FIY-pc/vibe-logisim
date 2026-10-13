@@ -115,6 +115,7 @@ pub struct Native {
     worker: Option<Worker>,
     verification_worker: Option<Worker>,
     pub simulation: Option<Simulation>,
+    observed_version: Option<String>,
     updates: watch::Sender<()>,
 }
 impl Native {
@@ -127,7 +128,34 @@ impl Native {
             worker: None,
             verification_worker: None,
             simulation: None,
+            observed_version: None,
             updates: watch::channel(()).0,
+        }
+    }
+    pub fn observed_version(&self) -> Option<&str> {
+        self.observed_version.as_deref()
+    }
+    fn record_version(&mut self, bytes: &[u8]) {
+        let version = Element::parse(bytes)
+            .ok()
+            .and_then(|root| root.attributes.get("runtimeVersion").cloned())
+            .or_else(|| {
+                serde_json::from_slice::<Value>(bytes)
+                    .ok()
+                    .and_then(|value| {
+                        value["runtime"]["reportedVersion"]
+                            .as_str()
+                            .map(str::to_owned)
+                    })
+            });
+        if let Some(version) = version.filter(|version| {
+            !version.is_empty()
+                && version.len() <= 64
+                && version
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
+        }) {
+            self.observed_version = Some(version);
         }
     }
     pub fn updates(&self) -> watch::Receiver<()> {
@@ -342,6 +370,9 @@ impl Native {
                 Ok(_) => result = Err("操作期间组件库已改变，请重试".into()),
                 Err(error) => result = Err(error),
             }
+        }
+        if let Ok(bytes) = &result {
+            self.record_version(bytes);
         }
         if result.is_err() {
             *self.worker_slot(verification) = None;

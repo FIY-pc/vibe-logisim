@@ -59,6 +59,10 @@ const require=createRequire(import.meta.url);
 const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,HTMLDialogElement:dom.window.HTMLDialogElement,FormData:dom.window.FormData,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,IS_REACT_ACT_ENVIRONMENT:true});
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+// JSDOM has no layout engine; question dispatch does not need resize delivery.
+class FixtureResizeObserver { observe() {} unobserve() {} disconnect() {} }
+Object.assign(globalThis,{ResizeObserver:FixtureResizeObserver});
+Object.assign(dom.window,{ResizeObserver:FixtureResizeObserver});
 const nativeWrites=[];
 const child=new EventEmitter();
 Object.assign(child,{stdin:new PassThrough(),stdout:new PassThrough(),stderr:new PassThrough(),pid:null,exitCode:null,signalCode:null});

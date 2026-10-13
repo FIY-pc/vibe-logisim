@@ -29,8 +29,10 @@
     "test:compatibility": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/compatibility-check.mts",
     "test:codex": "node scripts/workbench/codex-protocol-check.mts",
     "check:scripts": "tsc -p scripts/workbench/tsconfig.json",
-    "test:runtime": "node scripts/workbench/runtime-binding-check.mts && node scripts/workbench/context-transfer-check.mts && node scripts/workbench/question-check.mts && node scripts/workbench/network-check.mts && node scripts/workbench/installer-check.mts",
-    "test:ui": "node scripts/workbench/verify-ui.mts"
+    "test:runtime": "node scripts/workbench/runtime-binding-check.mts && node scripts/workbench/context-transfer-check.mts && node scripts/workbench/question-check.mts && node scripts/workbench/network-check.mts && node scripts/workbench/installer-check.mts && node scripts/workbench/reference-check.mts && node scripts/workbench/proposal-recovery-check.mts",
+    "test:ui": "node scripts/workbench/verify-ui.mts",
+    "test:interfaces": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/interface-check.mts",
+    "test:history": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/history-check.mts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

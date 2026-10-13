@@ -202,6 +202,10 @@ struct Diagnostics {
     native_runtime_available: bool,
     simulation_active: bool,
     recovery_issue: bool,
+    #[serde(default)]
+    runtime_version: Option<String>,
+    #[serde(default)]
+    failures: Vec<crate::diagnostics::FailureCount>,
 }
 fn validated_report(report: Value) -> Result<Vec<u8>> {
     let report: Diagnostics =
@@ -213,6 +217,17 @@ fn validated_report(report: Value) -> Result<Vec<u8>> {
     {
         return Err("诊断预览已失效，请重新打开".into());
     }
+    if report.failures.len() > 128
+        || report.runtime_version.as_ref().is_some_and(|version| {
+            version.is_empty()
+                || version.len() > 64
+                || !version
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
+        })
+    {
+        return Err("诊断预览已失效，请重新打开".into());
+    }
     let value = serde_json::to_value(report).map_err(|_| "无法生成诊断")?;
     let mut bytes = serde_json::to_vec_pretty(&value).map_err(|_| "无法生成诊断")?;
     bytes.push(b'\n');
@@ -221,7 +236,7 @@ fn validated_report(report: Value) -> Result<Vec<u8>> {
 impl Host {
     pub(crate) async fn diagnostics(&self) -> Value {
         let native = self.native.lock().await;
-        json!({"schema":1,"appVersion":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"nativeRuntimeAvailable":native.runtime().is_ok(),"simulationActive":native.simulation.is_some(),"recoveryIssue":self.recovery_error.is_some()})
+        json!({"schema":1,"appVersion":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"nativeRuntimeAvailable":native.runtime().is_ok(),"simulationActive":native.simulation.is_some(),"recoveryIssue":self.recovery_error.is_some(),"runtimeVersion":native.observed_version(),"failures":self.failures.lock().await.report()})
     }
     pub(crate) fn diagnostics_export(
         &self,

@@ -38,6 +38,25 @@ export async function verifySimulation(command: Command, state: string) {
       command: op,
       attributes,
     });
+  const automatic = await command({
+    op: "observationCapture",
+    id: doc.id,
+    revision: doc.revision,
+    view_id: simulation.viewId,
+    title: "Named signals",
+  });
+  assert.deepEqual(
+    automatic.signals.map((s: any) => s.key),
+    [`${input.id}:0`],
+  );
+  assert(automatic.frame.children.some((n: any) => n.tag === "component"));
+  assert.equal(
+    automatic.frame.children
+      .find((n: any) => n.tag === "trace")
+      ?.children.filter((n: any) => n.tag === "signal").length || 0,
+    0,
+    "Capturing named signals must not change the live watch selection",
+  );
   await action("trace", { signals: `${clock.id}:0,${input.id}:0` });
   for (let n = 0; n < 8; n++) {
     await action("input", { componentId: input.id, bits: String(n % 2) });

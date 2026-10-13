@@ -1,6 +1,8 @@
+import { TextPrompt } from "./TextPrompt";
+import type { ReferenceInput } from "../lib/references";
 import { DecisionDialog, type Decision } from "./DecisionDialog";
 import { useEffect, useRef, useState } from "react";
-import { Trash2, X } from "lucide-react";
+import { Pencil, Trash2, X } from "lucide-react";
 import { command } from "../lib/transport";
 import type { ObservationRecord } from "../generated/ObservationRecord";
 import type { XmlNode } from "../lib/types";
@@ -9,12 +11,15 @@ export function Observations({
   documentId,
   onClose,
   initial,
+  onQuote,
 }: {
   documentId: string;
   onClose: () => void;
   initial?: string;
+  onQuote: (references: ReferenceInput[]) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [renaming, setRenaming] = useState<ObservationRecord | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [records, setRecords] = useState<ObservationRecord[]>([]),
     [selection, setSelection] = useState<string[]>(initial ? [initial] : []),
@@ -72,6 +77,12 @@ export function Observations({
                     <small>{new Date(r.createdAt).toLocaleString()}</small>
                   </span>
                 </label>
+                <button
+                  aria-label={`重命名观察 ${r.title}`}
+                  onClick={() => setRenaming(r)}
+                >
+                  <Pencil size={13} />
+                </button>
                 <button
                   aria-label={`删除观察 ${r.title}`}
                   onClick={() =>
@@ -157,6 +168,41 @@ export function Observations({
           })}
         </div>
       </div>
+      <footer>
+        <button
+          disabled={!selected.length}
+          onClick={() => {
+            onQuote(
+              selected.map((r) => ({
+                kind: "observation",
+                documentId: r.documentId,
+                recordId: r.id,
+              })),
+            );
+            onClose();
+          }}
+        >
+          {selected.length === 2 ? "引用两条观察" : "引用到对话"}
+        </button>
+      </footer>
+      {renaming && (
+        <TextPrompt
+          title="重命名观察"
+          initial={renaming.title}
+          onClose={() => setRenaming(null)}
+          onSubmit={async (title) => {
+            const result = await command<ObservationRecord>({
+              op: "observationRename",
+              id: documentId,
+              record: renaming.id,
+              title,
+            });
+            setRecords((old) =>
+              old.map((r) => (r.id === result.id ? result : r)),
+            );
+          }}
+        />
+      )}
       {decision && (
         <DecisionDialog decision={decision} onClose={() => setDecision(null)} />
       )}

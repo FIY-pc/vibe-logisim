@@ -27,7 +27,18 @@ try {
         setup(builder) {
           builder.onLoad({ filter: /\/lib\/transport\.ts$/ }, () => ({
             contents:
-              "export const command=(v)=>globalThis.__command(v);export const desktop=()=>false;export const openPath=async()=>null;export const savePath=async()=>null;",
+              "export const command=(v)=>globalThis.__command(v);export const desktop=()=>globalThis.__desktop??false;export const openPath=async()=>null;export const savePath=async()=>null;",
+          }));
+          builder.onLoad(
+            { filter: /@tauri-apps\/plugin-dialog\/.*\.js$/ },
+            () => ({
+              contents:
+                "export const open=async()=>globalThis.__pickedFiles??null;export const save=async()=>globalThis.__saveTarget??null;",
+            }),
+          );
+          builder.onLoad({ filter: /@tauri-apps\/api\/webview\.js$/ }, () => ({
+            contents:
+              "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{globalThis.__fileDropHandler=handler;return ()=>{if(globalThis.__fileDropHandler===handler)delete globalThis.__fileDropHandler}}});",
           }));
           builder.onLoad({ filter: /\/lib\/events\.ts$/ }, () => ({
             contents:
@@ -48,7 +59,7 @@ const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,HTMLTextAreaElement:dom.window.HTMLTextAreaElement,HTMLDialogElement:dom.window.HTMLDialogElement,Event:dom.window.Event,MouseEvent:dom.window.MouseEvent,KeyboardEvent:dom.window.KeyboardEvent,devicePixelRatio:1,IS_REACT_ACT_ENVIRONMENT:true,requestAnimationFrame:(fn)=>setTimeout(fn,0)});
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 globalThis.ResizeObserver=class{constructor(fn){this.fn=fn}observe(){this.fn([{contentRect:{width:600,height:400}}])}disconnect(){}};
-HTMLElement.prototype.setPointerCapture=()=>{};HTMLElement.prototype.releasePointerCapture=()=>{};HTMLElement.prototype.hasPointerCapture=()=>false;
+HTMLElement.prototype.scrollIntoView=()=>{};HTMLElement.prototype.setPointerCapture=()=>{};HTMLElement.prototype.releasePointerCapture=()=>{};HTMLElement.prototype.hasPointerCapture=()=>false;
 HTMLDialogElement.prototype.showModal=function(){this.open=true};HTMLDialogElement.prototype.close=function(){this.open=false};
 await import('./scenarios.mjs');
 `,

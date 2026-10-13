@@ -82,13 +82,43 @@ impl Host {
             .find(|n| n["tag"] == "trace")
             .cloned()
             .unwrap_or(Value::Null);
-        let watched: Vec<&str> = trace["children"]
+        let mut watched: Vec<String> = trace["children"]
             .as_array()
             .into_iter()
             .flatten()
             .filter(|n| n["tag"] == "signal")
-            .filter_map(|n| n["attributes"]["key"].as_str())
+            .filter_map(|n| n["attributes"]["key"].as_str().map(str::to_owned))
             .collect();
+        if watched.is_empty() {
+            watched = graph
+                .components
+                .iter()
+                .filter(|c| {
+                    matches!(
+                        c.name.as_str(),
+                        "Pin" | "Register" | "Probe" | "Clock" | "Button"
+                    )
+                })
+                .filter(|c| {
+                    c.attributes
+                        .get("label")
+                        .is_some_and(|label| !label.trim().is_empty())
+                })
+                .filter(|c| {
+                    children.iter().any(|n| {
+                        n["tag"] == "component"
+                            && n["attributes"]["id"] == c.id
+                            && n["children"].as_array().is_some_and(|ports| {
+                                ports
+                                    .iter()
+                                    .any(|p| p["tag"] == "port" && p["attributes"]["index"] == "0")
+                            })
+                    })
+                })
+                .take(24)
+                .map(|c| format!("{}:0", c.id))
+                .collect();
+        }
         let mut signals = vec![];
         for key in watched {
             let (id, port) = key.split_once(':').ok_or("无效信号")?;
@@ -108,7 +138,7 @@ impl Host {
                 })
                 .ok_or("无法读取观察的信号")?;
             signals.push(Signal {
-                key: key.into(),
+                key: key.clone(),
                 label: format!(
                     "{} [{}]",
                     component
@@ -121,8 +151,8 @@ impl Host {
                 bits: node["attributes"]["bits"].as_str().unwrap_or("?").into(),
             });
         }
-        // Keep the image and the exact watched set; do not promote other selected ports to watches.
-        children.retain(|n| n["tag"] == "trace" || n["tag"] == "render");
+        // Retain the sampled ports as frozen evidence. The summary follows explicit
+        // watches exactly, or named signals when no watches have been selected.
         let created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
@@ -170,5 +200,27 @@ impl Host {
         )
         .map_err(|e| e.to_string())?;
         Ok(Value::Null)
+    }
+    pub(crate) fn rename_observation(&self, id: &str, record: &str, title: &str) -> Result<Value> {
+        uuid::Uuid::parse_str(record).map_err(|_| "无效观察标识")?;
+        let title = title.trim();
+        if title.is_empty() || title.chars().count() > 160 {
+            return Err("观察名称应为 1–160 个字符".into());
+        }
+        let directory = self.observation_directory(id)?;
+        let path = directory.join(format!("{record}.json"));
+        let mut value: ObservationRecord =
+            serde_json::from_slice(&std::fs::read(&path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if value.document_id != id || value.id != record {
+            return Err("观察标识不匹配".into());
+        }
+        value.title = title.into();
+        let mut temp = tempfile::NamedTempFile::new_in(directory).map_err(|e| e.to_string())?;
+        serde_json::to_writer(temp.as_file_mut(), &value).map_err(|e| e.to_string())?;
+        temp.flush().map_err(|e| e.to_string())?;
+        temp.as_file().sync_all().map_err(|e| e.to_string())?;
+        temp.persist(&path).map_err(|e| e.to_string())?;
+        serde_json::to_value(value).map_err(|e| e.to_string())
     }
 }

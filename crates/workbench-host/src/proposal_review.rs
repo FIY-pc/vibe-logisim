@@ -1,4 +1,5 @@
-use crate::{Host, Result, value};
+pub use crate::comparison::ComparisonDetail;
+use crate::{Host, Result, value, verification::VerificationRecord};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,24 +12,54 @@ pub struct ProposalReview {
     before: DocumentView,
     after: DocumentView,
     current_revision: String,
-    rows: Vec<ProposalChange>,
+    pub rows: Vec<ProposalChange>,
+    pub evidence: Vec<VerificationRecord>,
+    pub evidence_warning: Option<String>,
 }
-#[derive(Serialize, ts_rs::TS)]
+#[derive(Clone, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ProposalChange {
-    circuit: Option<String>,
-    kind: String,
-    title: String,
-    fields: Vec<ProposalField>,
+    pub id: String,
+    pub category: String,
+    pub before_objects: Vec<String>,
+    pub after_objects: Vec<String>,
+    pub circuit: Option<String>,
+    pub kind: String,
+    pub title: String,
+    pub fields: Vec<ProposalField>,
 }
-#[derive(Serialize, ts_rs::TS)]
+#[derive(Clone, Serialize, ts_rs::TS)]
 pub struct ProposalField {
-    name: String,
-    before: Option<String>,
-    after: Option<String>,
+    pub name: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
 }
 
 impl Host {
-    async fn proposal_documents(
+    pub(crate) async fn observe_proposal(
+        &self,
+        id: &str,
+        revision: &str,
+        original: &str,
+        xml: &str,
+        circuit: &str,
+    ) -> Result<Value> {
+        let (_, candidate, current) = self.proposal_documents(id, revision, original, xml).await?;
+        if current != revision {
+            return Err("原版本已改变，请先重新生成候选".into());
+        }
+        let (path, view) = self.materialize(&candidate)?;
+        let observed = self.native.lock().await.observe(&path, circuit).await?;
+        self.workspace
+            .lock()
+            .await
+            .get(id)
+            .map_err(|e| e.to_string())?
+            .check(revision)
+            .map_err(|e| e.to_string())?;
+        Ok(json!({"document":view,"observation":observed}))
+    }
+    pub(crate) async fn proposal_documents(
         &self,
         id: &str,
         revision: &str,
@@ -41,10 +72,18 @@ impl Host {
         let workspace = self.workspace.lock().await;
         let current = workspace.get(id).map_err(|e| e.to_string())?;
         let name = current.view().map_err(|e| e.to_string())?.name;
+        let base_path = if current.revision() == revision {
+            current.path.clone()
+        } else {
+            self.history_store()
+                .find_revision(id, revision)
+                .map_err(|e| e.to_string())?
+                .and_then(|s| s.path)
+        };
         let parse = |bytes: &str| {
             let mut document = Document::from_bytes(
                 name.clone(),
-                current.path.clone(),
+                base_path.clone(),
                 bytes.as_bytes().to_vec(),
                 false,
             )
@@ -55,6 +94,38 @@ impl Host {
         };
         Ok((parse(original)?, parse(xml)?, current.revision()))
     }
+    async fn proposal_native_ready(&self, id: &str, revision: &str) -> Result<()> {
+        let current = self
+            .workspace
+            .lock()
+            .await
+            .get(id)
+            .map_err(|e| e.to_string())?
+            .revision();
+        if current != revision {
+            let base = self
+                .history_store()
+                .find_revision(id, revision)
+                .map_err(|e| e.to_string())?
+                .ok_or("候选原版本的组件库基准不再可用；仍可查看结构和源码")?;
+            self.historical_native(id, &base)?;
+        }
+        Ok(())
+    }
+    pub(crate) async fn detail_proposal(
+        &self,
+        id: &str,
+        revision: &str,
+        original: &str,
+        xml: &str,
+        circuit: &str,
+    ) -> Result<Value> {
+        let (before, after, _) = self.proposal_documents(id, revision, original, xml).await?;
+        if let Err(error) = self.proposal_native_ready(id, revision).await {
+            return value(ComparisonDetail::unavailable(circuit, error));
+        }
+        value(self.compare_documents(&before, &after, circuit).await?)
+    }
     pub(crate) async fn review_proposal(
         &self,
         id: &str,
@@ -64,11 +135,36 @@ impl Host {
     ) -> Result<Value> {
         let (before, after, current_revision) =
             self.proposal_documents(id, revision, original, xml).await?;
-        value(ProposalReview {
+        value(self.describe_pair(id, &current_revision, &before, &after)?)
+    }
+    pub(crate) fn describe_pair(
+        &self,
+        id: &str,
+        current_revision: &str,
+        before: &Document,
+        after: &Document,
+    ) -> Result<ProposalReview> {
+        let evidence_result = (|| -> Result<Vec<VerificationRecord>> {
+            let mut evidence = self.verification_records(id, &after.revision())?;
+            if before.revision() != after.revision() {
+                evidence.extend(self.verification_records(id, &before.revision())?);
+            }
+            Ok(evidence)
+        })();
+        let (evidence, evidence_warning) = match evidence_result {
+            Ok(records) => (records, None),
+            Err(error) => (vec![], Some(error)),
+        };
+        Ok(ProposalReview {
             before: before.view().map_err(|e| e.to_string())?,
             after: after.view().map_err(|e| e.to_string())?,
-            current_revision,
-            rows: changes(original, xml)?,
+            current_revision: current_revision.into(),
+            rows: changes(
+                &String::from_utf8_lossy(before.bytes()),
+                &String::from_utf8_lossy(after.bytes()),
+            )?,
+            evidence,
+            evidence_warning,
         })
     }
     pub(crate) async fn preview_proposal(
@@ -81,8 +177,12 @@ impl Host {
         candidate: bool,
     ) -> Result<Value> {
         let (before, after, _) = self.proposal_documents(id, revision, original, xml).await?;
+        self.proposal_native_ready(id, revision).await?;
         let doc = if candidate { after } else { before };
-        let (path, view) = self.materialize(&doc)?;
+        self.preview_document(&doc, circuit).await
+    }
+    pub(crate) async fn preview_document(&self, doc: &Document, circuit: &str) -> Result<Value> {
+        let (path, view) = self.materialize(doc)?;
         if !view.circuits.iter().any(|c| c.name == circuit) {
             return Ok(json!({"image":null,"missing":true,"warnings":[]}));
         }
@@ -102,7 +202,9 @@ impl Host {
             scale: (1400. / width as f64).min(900. / height as f64).min(2.),
         };
         let image = native.render(&path, circuit, viewport).await?;
-        Ok(json!({"image":image,"missing":false,"warnings":observed["project"]["loaderMessages"]}))
+        Ok(
+            json!({"image":image,"missing":false,"warnings":observed["project"]["loaderMessages"],"bounds":{"x":x,"y":y,"width":width,"height":height}}),
+        )
     }
 }
 fn elements(node: &Element) -> impl Iterator<Item = &Element> {
@@ -262,11 +364,38 @@ fn object_changes(
             let exact_location = new
                 .iter()
                 .position(|b| same_kind(b) && attr(a, "loc") == attr(b, "loc"));
-            if let Some(index) = exact_location {
+            let label = |e: &Element| {
+                elements(e)
+                    .find(|n| n.name == "a" && attr(n, "name") == "label")
+                    .map(|n| attr(n, "val").to_string())
+                    .unwrap_or_default()
+            };
+            let comparable = |e: &Element| {
+                settings(e, &[])
+                    .into_iter()
+                    .filter(|(k, _)| k != "loc")
+                    .collect::<BTreeMap<_, _>>()
+            };
+            let candidates = new
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| {
+                    same_kind(b)
+                        && ((!label(a).is_empty() && label(a) == label(b))
+                            || comparable(a) == comparable(b))
+                })
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
+            let index = exact_location.or_else(|| (candidates.len() == 1).then(|| candidates[0]));
+            if let Some(index) = index {
                 let b = new.remove(index);
                 let changed = fields(settings(a, &[]), settings(b, &[]));
                 if !changed.is_empty() {
                     rows.push(ProposalChange {
+                        id: String::new(),
+                        category: String::new(),
+                        before_objects: vec![],
+                        after_objects: vec![],
                         circuit: Some(circuit.into()),
                         kind: "modified".into(),
                         title: title(b),
@@ -288,6 +417,10 @@ fn object_changes(
                 (BTreeMap::new(), content)
             };
             rows.push(ProposalChange {
+                id: String::new(),
+                category: String::new(),
+                before_objects: vec![],
+                after_objects: vec![],
                 circuit: Some(circuit.into()),
                 kind: kind.into(),
                 title: title(entry),
@@ -296,7 +429,7 @@ fn object_changes(
         }
     }
 }
-fn changes(original: &str, xml: &str) -> Result<Vec<ProposalChange>> {
+pub(crate) fn changes(original: &str, xml: &str) -> Result<Vec<ProposalChange>> {
     let before = Element::parse(original.as_bytes()).map_err(|e| e.to_string())?;
     let after = Element::parse(xml.as_bytes()).map_err(|e| e.to_string())?;
     let mut rows = Vec::new();
@@ -306,6 +439,10 @@ fn changes(original: &str, xml: &str) -> Result<Vec<ProposalChange>> {
     );
     if !project.is_empty() {
         rows.push(ProposalChange {
+            id: String::new(),
+            category: String::new(),
+            before_objects: vec![],
+            after_objects: vec![],
             circuit: None,
             kind: "modified".into(),
             title: "工程设置与组件库".into(),
@@ -329,6 +466,10 @@ fn changes(original: &str, xml: &str) -> Result<Vec<ProposalChange>> {
                 );
                 if !definition.is_empty() {
                     rows.push(ProposalChange {
+                        id: String::new(),
+                        category: String::new(),
+                        before_objects: vec![],
+                        after_objects: vec![],
                         circuit: Some((*name).into()),
                         kind: "modified".into(),
                         title: "电路定义与外观".into(),
@@ -339,6 +480,10 @@ fn changes(original: &str, xml: &str) -> Result<Vec<ProposalChange>> {
                 object_changes(a, b, name, "wire", &mut rows);
             }
             (a, b) => rows.push(ProposalChange {
+                id: String::new(),
+                category: String::new(),
+                before_objects: vec![],
+                after_objects: vec![],
                 circuit: Some((*name).into()),
                 kind: if a.is_some() { "removed" } else { "added" }.into(),
                 title: format!("电路 {name}"),
@@ -349,6 +494,27 @@ fn changes(original: &str, xml: &str) -> Result<Vec<ProposalChange>> {
                 }],
             }),
         }
+    }
+    for (index, row) in rows.iter_mut().enumerate() {
+        row.id = index.to_string();
+        row.category = if row.circuit.is_none() {
+            "settings"
+        } else if row.title == "电路定义与外观" || row.title.starts_with("Pin ") {
+            "interfaces"
+        } else if row.title.starts_with("导线 ")
+            || (!row.fields.is_empty()
+                && row.fields.iter().all(|f| {
+                    matches!(
+                        f.name.as_str(),
+                        "位置" | "朝向" | "labelloc" | "labelfont" | "color" | "font"
+                    )
+                }))
+        {
+            "layout"
+        } else {
+            "components"
+        }
+        .into();
     }
     Ok(rows)
 }

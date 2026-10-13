@@ -323,6 +323,26 @@ impl Document {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+    pub fn legacy_versions(&self) -> Vec<Vec<u8>> {
+        self.undo
+            .iter()
+            .chain(std::iter::once(&self.bytes))
+            .chain(self.redo.iter().rev())
+            .cloned()
+            .collect()
+    }
+    pub fn saved_revision(&self) -> Option<&str> {
+        self.saved_digest.as_deref()
+    }
+    pub fn bytes_at_path(&self, path: Option<&Path>) -> Result<Vec<u8>> {
+        match (
+            self.path.as_deref().and_then(Path::parent),
+            path.and_then(Path::parent),
+        ) {
+            (Some(from), Some(to)) => rebase_libraries(&self.bytes, from, to),
+            _ => Ok(self.bytes.clone()),
+        }
+    }
     pub fn revision(&self) -> String {
         digest(&self.bytes)
     }

@@ -14,7 +14,7 @@
       {
         "title": "Vibe Logisim",
         "create": false,
-        "dragDropEnabled": false,
+        "dragDropEnabled": true,
         "width": 1440,
         "height": 940,
         "minWidth": 760,

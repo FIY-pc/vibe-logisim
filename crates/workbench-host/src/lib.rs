@@ -1,11 +1,24 @@
 mod agent;
+mod diagnostics;
 mod events;
 mod feedback;
+mod interfaces;
 pub use events::{Event, Events};
+pub use interfaces::{InterfaceImpact, InterfacePreview, InterfaceRead};
+mod file_history;
+mod file_references;
 mod folder_operations;
+pub use folder_operations::{ImportAction, ImportChoice};
+mod comparison;
+mod document_history;
+mod movement;
 mod observations;
+mod project_info;
 mod proposal_review;
+pub use comparison::ComparisonDetail;
+pub use document_history::{HistoryList, HistoryReview};
 pub use proposal_review::ProposalReview;
+pub use verification::{VerificationInput, VerificationRecord};
 mod topology;
 mod verification;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
@@ -22,7 +35,99 @@ use vibe_workspace_core::{Document, DocumentView, Edit, Workspace};
 #[serde(tag = "op", rename_all = "camelCase")]
 #[derive(ts_rs::TS)]
 pub enum Request {
+    ProposalObserve {
+        id: String,
+        revision: String,
+        original: String,
+        xml: String,
+        circuit: String,
+    },
+    HistoryList {
+        id: String,
+    },
+    HistoryReview {
+        id: String,
+        revision: String,
+        entry: String,
+        mode: String,
+    },
+    HistoryPreview {
+        id: String,
+        revision: String,
+        entry: String,
+        mode: String,
+        circuit: String,
+        candidate: bool,
+    },
+    HistoryDetail {
+        id: String,
+        revision: String,
+        entry: String,
+        mode: String,
+        circuit: String,
+    },
+    HistoryRestore {
+        id: String,
+        revision: String,
+        entry: String,
+    },
+    ProposalDetail {
+        id: String,
+        revision: String,
+        original: String,
+        xml: String,
+        circuit: String,
+    },
+    ProposalVerify {
+        id: String,
+        revision: String,
+        original: String,
+        xml: String,
+        circuit: String,
+        verification: VerificationInput,
+    },
     Status,
+    ProjectInfo {
+        id: String,
+        revision: String,
+    },
+    ProjectExport {
+        id: String,
+        revision: String,
+        #[serde(default)]
+        #[ts(optional)]
+        path: Option<PathBuf>,
+        #[serde(default)]
+        #[ts(optional)]
+        expected_revision: Option<String>,
+    },
+    ProjectExportTarget {
+        path: PathBuf,
+    },
+    InterfaceRead {
+        id: String,
+        revision: String,
+        circuit: String,
+    },
+    InterfacePreview {
+        id: String,
+        revision: String,
+        circuit: String,
+        draft: vibe_workspace_core::SymbolDraft,
+    },
+    InterfaceApply {
+        id: String,
+        revision: String,
+        circuit: String,
+        preview_id: String,
+        draft: vibe_workspace_core::SymbolDraft,
+    },
+    InterfaceRender {
+        id: String,
+        revision: String,
+        preview_id: String,
+        circuit: String,
+    },
     FeedbackStatus,
     FeedbackCheck {
         #[serde(default)]
@@ -51,9 +156,22 @@ pub enum Request {
     },
     FolderRead {
         path: String,
+        #[serde(default)]
+        #[ts(optional)]
+        folder_id: Option<String>,
     },
     FolderPreview {
         path: String,
+        #[serde(default)]
+        #[ts(optional)]
+        folder_id: Option<String>,
+    },
+    FolderResolve {
+        folder_id: String,
+        path: String,
+        #[serde(default)]
+        #[ts(optional)]
+        path_version: Option<u32>,
     },
     ProjectFiles {
         id: String,
@@ -76,6 +194,32 @@ pub enum Request {
     FolderTrash {
         folder_id: String,
         path: String,
+    },
+    FolderImportPrepare {
+        folder_id: String,
+        sources: Vec<PathBuf>,
+        destination: String,
+    },
+    FolderImportApply {
+        folder_id: String,
+        plan_id: String,
+        choices: Vec<ImportChoice>,
+    },
+    FolderImportCancel {
+        folder_id: String,
+        plan_id: String,
+    },
+    FolderHistory {
+        folder_id: String,
+    },
+    FolderHistoryDetail {
+        folder_id: String,
+        id: String,
+        path: String,
+    },
+    FolderHistoryUndo {
+        folder_id: String,
+        id: String,
     },
     Agent {
         method: String,
@@ -139,6 +283,13 @@ pub enum Request {
         revision: String,
         circuit: String,
         edit: Edit,
+    },
+    MovePreview {
+        id: String,
+        revision: String,
+        circuit: String,
+        ids: Vec<String>,
+        delta: vibe_workspace_core::Point,
     },
     Undo {
         id: String,
@@ -223,6 +374,11 @@ pub enum Request {
         #[serde(default)]
         title: String,
     },
+    ObservationRename {
+        id: String,
+        record: String,
+        title: String,
+    },
     ObservationDelete {
         id: String,
         record: String,
@@ -272,10 +428,13 @@ pub enum Request {
 }
 #[derive(Clone)]
 pub struct Host {
+    history_gate: Arc<Mutex<()>>,
     pub workspace: Arc<Mutex<Workspace>>,
     pub native: Arc<Mutex<Native>>,
     verifier: Arc<Mutex<Verifier>>,
     feedback: Arc<Mutex<feedback::Feedback>>,
+    failures: Arc<Mutex<diagnostics::FailureLog>>,
+    interface_previews: Arc<Mutex<interfaces::Previews>>,
     state: PathBuf,
     root: PathBuf,
     agent: Arc<Mutex<Option<Arc<agent::Agent>>>>,
@@ -322,6 +481,8 @@ impl Host {
         Ok(Self {
             _lease: Arc::new(lease),
             feedback: Arc::new(Mutex::new(feedback::Feedback::new(&state))),
+            failures: Arc::new(Mutex::new(diagnostics::FailureLog::default())),
+            interface_previews: Arc::new(Mutex::new(interfaces::Previews::default())),
             folder: Arc::new(Mutex::new(folder)),
             workspace: Arc::new(Mutex::new(workspace)),
             verifier: Arc::new(Mutex::new(Verifier::new(
@@ -338,6 +499,7 @@ impl Host {
             root,
             agent: Arc::new(Mutex::new(None)),
             recovery_error,
+            history_gate: Arc::new(Mutex::new(())),
             events: tokio::sync::broadcast::channel(512).0,
             stopping: tokio::sync::watch::channel(false).0,
         })
@@ -405,6 +567,10 @@ impl Host {
         request: Request,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + '_>> {
         Box::pin(async move {
+            let stage = diagnostics::stage(&request);
+            let outcome = async {
+            let auto_save = matches!(&request, Request::Edit { .. } | Request::InterfaceApply { .. }
+                | Request::MemoryWrite { .. } | Request::Undo { .. } | Request::Redo { .. } | Request::HistoryRestore { .. });
             let changes = matches!(
                 &request,
                 Request::Open { .. }
@@ -413,18 +579,123 @@ impl Host {
                     | Request::Close { .. }
                     | Request::Reload { .. }
                     | Request::Edit { .. }
+                    | Request::InterfaceApply { .. }
+                    | Request::HistoryRestore { .. }
                     | Request::MemoryWrite { .. }
                     | Request::Undo { .. }
                     | Request::Redo { .. }
                     | Request::Save { .. }
                     | Request::FolderRename { .. }
                     | Request::FolderTrash { .. }
+                    | Request::FolderImportApply { .. }
+                    | Request::FolderHistoryUndo { .. }
                     | Request::Activate { .. }
             );
             if changes && self.recovery_error.is_some() {
                 return Err(self.recovery_error.clone().unwrap());
             }
-            let result = match request {
+            let history_action = document_history::action(&request);
+            let _history_guard = if changes {
+                Some(self.history_gate.lock().await)
+            } else {
+                None
+            };
+            let history_before = if let Some(action) = &history_action {
+                self.history_before(action).await?
+            } else {
+                BTreeMap::new()
+            };
+            let mut result = match request {
+                Request::ProposalObserve{id,revision,original,xml,circuit}=>self.observe_proposal(&id,&revision,&original,&xml,&circuit).await,
+                Request::ProjectInfo { id, revision } => self.project_info(&id,&revision).await,
+                Request::ProjectExport { id, revision, path, expected_revision } => self.project_export(&id,&revision,path.as_deref(),expected_revision.as_deref()).await,
+                Request::ProjectExportTarget { path } => project_info::export_target(&path),
+                Request::HistoryList { id } => self.history_list(&id).await,
+                Request::HistoryReview {
+                    id,
+                    revision,
+                    entry,
+                    mode,
+                } => self.history_review(&id, &revision, &entry, &mode).await,
+                Request::HistoryPreview {
+                    id,
+                    revision,
+                    entry,
+                    mode,
+                    circuit,
+                    candidate,
+                } => {
+                    self.history_preview(&id, &revision, &entry, &mode, &circuit, candidate)
+                        .await
+                }
+                Request::HistoryDetail {
+                    id,
+                    revision,
+                    entry,
+                    mode,
+                    circuit,
+                } => {
+                    self.history_detail(&id, &revision, &entry, &mode, &circuit)
+                        .await
+                }
+                Request::HistoryRestore {
+                    id,
+                    revision,
+                    entry,
+                } => self.history_restore(&id, &revision, &entry).await,
+                Request::ProposalDetail {
+                    id,
+                    revision,
+                    original,
+                    xml,
+                    circuit,
+                } => {
+                    self.detail_proposal(&id,&revision,&original,&xml,&circuit).await
+                }
+                Request::ProposalVerify {
+                    id,
+                    revision,
+                    original,
+                    xml,
+                    circuit,
+                    verification,
+                } => {
+                    self.verify_proposal(&id, &revision, &original, &xml, &circuit, verification)
+                        .await
+                }
+                Request::InterfaceRead {
+                    id,
+                    revision,
+                    circuit,
+                } => self.read_interface(&id, &revision, &circuit).await,
+                Request::InterfacePreview {
+                    id,
+                    revision,
+                    circuit,
+                    draft,
+                } => {
+                    self.preview_interface(&id, &revision, &circuit, &draft)
+                        .await
+                }
+                Request::InterfaceApply {
+                    id,
+                    revision,
+                    circuit,
+                    preview_id,
+                    draft,
+                } => {
+                    self.apply_interface(&id, &revision, &circuit, &preview_id, &draft)
+                        .await
+                }
+                Request::InterfaceRender {
+                    id,
+                    revision,
+                    preview_id,
+                    circuit,
+                } => {
+                    self.render_interface(&id, &revision, &preview_id, &circuit)
+                        .await
+                }
                 Request::ProposalReview {
                     id,
                     revision,
@@ -451,33 +722,60 @@ impl Host {
                         serde_json::to_vec(&folder).map_err(|e| e.to_string())?,
                     )
                     .map_err(|e| e.to_string())?;
-                    let result = value(&folder)?;
+                    let history_warning = file_history::History::open(&self.state, &folder).err();
+                    let mut result = value(&folder)?;
+                    if let Some(warning) = history_warning {
+                        result["historyWarning"] = json!(warning);
+                    }
                     *self.folder.lock().await = Some(folder);
                     Ok(result)
                 }
                 Request::FolderList { path } => {
                     let guard = self.folder.lock().await;
                     let folder = guard.as_ref().ok_or("请先打开工程文件夹")?;
+                    let history_warning = file_history::History::open(&self.state, folder).err();
                     Ok(
-                        json!({"folder":folder,"entries":folder.list(&path).map_err(|e|e.to_string())?}),
+                        json!({"folder":folder,"entries":folder.list(&path).map_err(|e|e.to_string())?,"historyWarning":history_warning}),
                     )
                 }
-                Request::FolderRead { path } => {
+                Request::FolderResolve {
+                    folder_id,
+                    path,
+                    path_version,
+                } => {
                     let guard = self.folder.lock().await;
-                    let folder = guard.as_ref().ok_or("请先打开工程文件夹")?;
-                    Ok(
-                        json!({"path":folder.resolve(&path,true).map_err(|e|e.to_string())?,"text":folder.read(&path).map_err(|e|e.to_string())?}),
+                    let folder = guard
+                        .as_ref()
+                        .filter(|f| f.id == folder_id)
+                        .ok_or("工程文件夹已改变，请先打开引用所属文件夹")?;
+                    file_references::References::open(&self.state, folder)?.resolve(
+                        folder,
+                        &path,
+                        path_version,
                     )
                 }
-                Request::FolderPreview { path } => {
+                Request::FolderRead { path, folder_id } => {
                     let guard = self.folder.lock().await;
                     let folder = guard.as_ref().ok_or("请先打开工程文件夹")?;
-                    let file = folder.resolve(&path, true).map_err(|e| e.to_string())?;
-                    if std::fs::metadata(&file).map_err(|e| e.to_string())?.len() > 24 * 1024 * 1024
-                    {
-                        return Err("预览文件不能超过 24 MB".into());
+                    if folder_id.as_ref().is_some_and(|id| id != &folder.id) {
+                        return Err("工程文件夹已改变，未读取同名文件".into());
                     }
-                    let extension = file
+                    let (bytes, mut result) = file_references::References::open(
+                        &self.state,
+                        folder,
+                    )?
+                    .read(folder, &path, 2 * 1024 * 1024)?;
+                    result["text"] =
+                        json!(String::from_utf8(bytes).map_err(|_| "文件不是 UTF-8 文本")?);
+                    Ok(result)
+                }
+                Request::FolderPreview { path, folder_id } => {
+                    let guard = self.folder.lock().await;
+                    let folder = guard.as_ref().ok_or("请先打开工程文件夹")?;
+                    if folder_id.as_ref().is_some_and(|id| id != &folder.id) {
+                        return Err("工程文件夹已改变，未读取同名文件".into());
+                    }
+                    let extension = std::path::Path::new(&path)
                         .extension()
                         .unwrap_or_default()
                         .to_string_lossy()
@@ -489,13 +787,14 @@ impl Host {
                         "webp" => "image/webp",
                         _ => return Err("不支持这个文件的预览".into()),
                     };
-                    let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
-                    if bytes.len() > 24 * 1024 * 1024 {
-                        return Err("预览文件不能超过 24 MB".into());
-                    }
-                    Ok(
-                        json!({"path":path,"mime":mime,"revision":vibe_workspace_core::digest(&bytes),"data":B64.encode(bytes)}),
-                    )
+                    let (bytes, mut result) = file_references::References::open(
+                        &self.state,
+                        folder,
+                    )?
+                    .read(folder, &path, 24 * 1024 * 1024)?;
+                    result["data"] = json!(B64.encode(bytes));
+                    result["mime"] = json!(mime);
+                    Ok(result)
                 }
                 Request::ProjectFiles {
                     id,
@@ -503,12 +802,8 @@ impl Host {
                     path,
                     read,
                 } => {
-                    let folder = self
-                        .folder
-                        .lock()
-                        .await
-                        .clone()
-                        .ok_or("没有打开工程文件夹")?;
+                    let folder_guard = self.folder.lock().await;
+                    let folder = folder_guard.as_ref().ok_or("没有打开工程文件夹")?;
                     if folder.id != folder_id {
                         return Err("工程文件夹已改变，请重新绑定".into());
                     }
@@ -522,9 +817,14 @@ impl Host {
                         return Err("当前文档不属于这个工程文件夹".into());
                     }
                     if read {
-                        Ok(
-                            json!({"path":path,"text":folder.read(&path).map_err(|e|e.to_string())?}),
-                        )
+                        let (bytes, mut result) = file_references::References::open(
+                            &self.state,
+                            folder,
+                        )?
+                        .read(folder, &path, 2 * 1024 * 1024)?;
+                        result["text"] =
+                            json!(String::from_utf8(bytes).map_err(|_| "文件不是 UTF-8 文本")?);
+                        Ok(result)
                     } else {
                         value(folder.list(&path).map_err(|e| e.to_string())?)
                     }
@@ -534,12 +834,33 @@ impl Host {
                     path,
                     directory,
                 } => {
-                    let guard = self.folder.lock().await;
-                    let folder = guard.as_ref().ok_or("请先打开工程文件夹")?;
-                    if folder.id != folder_id {
-                        return Err("工程文件夹已改变，请重新操作".into());
-                    }
-                    value(folder.create(&path, directory).map_err(|e| e.to_string())?)
+                    self.create_project_entry(&folder_id, &path, directory)
+                        .await
+                }
+                Request::FolderImportPrepare {
+                    folder_id,
+                    sources,
+                    destination,
+                } => {
+                    self.prepare_file_import(&folder_id, sources, &destination)
+                        .await
+                }
+                Request::FolderImportApply {
+                    folder_id,
+                    plan_id,
+                    choices,
+                } => self.apply_file_import(&folder_id, &plan_id, choices).await,
+                Request::FolderImportCancel { folder_id, plan_id } => {
+                    self.cancel_file_import(&folder_id, &plan_id).await
+                }
+                Request::FolderHistory { folder_id } => self.file_history(&folder_id).await,
+                Request::FolderHistoryDetail {
+                    folder_id,
+                    id,
+                    path,
+                } => self.file_history_detail(&folder_id, &id, &path).await,
+                Request::FolderHistoryUndo { folder_id, id } => {
+                    self.undo_file_history(&folder_id, &id).await
                 }
                 Request::FolderRename {
                     folder_id,
@@ -810,52 +1131,8 @@ impl Host {
                         };
                     }
                     if let Edit::Move { ids, delta } = &edit {
-                        let mut candidate = {
-                            let w = self.workspace.lock().await;
-                            let d = w.get(&id).map_err(|e| e.to_string())?;
-                            d.check(&revision).map_err(|e| e.to_string())?;
-                            d.clone()
-                        };
-                        let (before_path, before_view) = self.materialize(&candidate)?;
-                        let graph = before_view
-                            .circuits
-                            .iter()
-                            .find(|c| c.name == circuit)
-                            .ok_or("找不到电路")?;
-                        let mut native = self.native.lock().await;
-                        let before = native.observe(&before_path, &circuit).await?;
-                        let (ports, fixed_ports) = topology::ports(graph, &before, ids)?;
-                        candidate
-                            .move_connected(
-                                &revision,
-                                &circuit,
-                                ids.clone(),
-                                *delta,
-                                ports,
-                                fixed_ports,
-                            )
-                            .map_err(|e| e.to_string())?;
-                        let (after_path, _) = self.materialize(&candidate)?;
-                        let after = native.observe(&after_path, &circuit).await?;
-                        topology::preserved(graph, &before, &after, ids, *delta)?;
-                        drop(native);
-                        let mut w = self.workspace.lock().await;
-                        let d = w.get_mut(&id).map_err(|e| e.to_string())?;
-                        d.check(&revision).map_err(|e| e.to_string())?;
-                        // Save As can change the source location without changing XML revision.
-                        if d.path != candidate.path {
-                            return Err("文档位置已改变，请重新移动".into());
-                        }
-                        d.edit(
-                            &revision,
-                            &circuit,
-                            Edit::Replace {
-                                xml: String::from_utf8(candidate.bytes().to_vec())
-                                    .map_err(|e| e.to_string())?,
-                            },
-                        )
-                        .map_err(|e| e.to_string())?;
-                        value(d.view().map_err(|e| e.to_string())?)
+                        self.commit_move(&id, &revision, &circuit, ids, *delta)
+                            .await
                     } else {
                         let mut w = self.workspace.lock().await;
                         let d = w.get_mut(&id).map_err(|e| e.to_string())?;
@@ -863,6 +1140,16 @@ impl Host {
                             .map_err(|e| e.to_string())?;
                         value(d.view().map_err(|e| e.to_string())?)
                     }
+                }
+                Request::MovePreview {
+                    id,
+                    revision,
+                    circuit,
+                    ids,
+                    delta,
+                } => {
+                    self.preview_move(&id, &revision, &circuit, &ids, delta)
+                        .await
                 }
                 Request::Undo { id, revision } => {
                     let mut w = self.workspace.lock().await;
@@ -882,11 +1169,13 @@ impl Host {
                     path,
                     target_revision,
                 } => {
-                    let mut w = self.workspace.lock().await;
-                    value(
-                        w.save_checked(&id, &revision, path.as_deref(), target_revision.as_deref())
-                            .map_err(|e| e.to_string())?,
+                    self.save_with_references(
+                        &id,
+                        &revision,
+                        path.as_deref(),
+                        target_revision.as_deref(),
                     )
+                    .await
                 }
                 Request::SaveTarget { path } => match std::fs::metadata(&path) {
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -1077,6 +1366,9 @@ impl Host {
                     };
                     self.capture(view, &view_id, title).await
                 }
+                Request::ObservationRename { id, record, title } => {
+                    self.rename_observation(&id, &record, &title)
+                }
                 Request::ObservationDelete { id, record } => self.delete_observation(&id, &record),
                 Request::Catalog {
                     id,
@@ -1200,7 +1492,15 @@ impl Host {
                     sim.command(&command, attributes).await
                 }
             };
+            if auto_save && let Ok(document) = &mut result {
+                self.auto_save_edit(document).await;
+            }
             if changes && result.is_ok() {
+                if let Some(action) = &history_action
+                    && let Err(error) = self.history_after(action, history_before).await
+                    && let Ok(document) = &mut result {
+                        document["historyWarning"] = json!(format!("修改已保留，但工程历史未能记录：{error}"));
+                }
                 self.workspace
                     .lock()
                     .await
@@ -1208,6 +1508,21 @@ impl Host {
                     .map_err(|e| e.to_string())?;
             }
             result
+            }.await;
+            if let Some(stage) = stage {
+                match &outcome {
+                    Err(error) => self.failures.lock().await.record(stage, error),
+                    Ok(value) => {
+                        if let Some(error) = value["saveError"].as_str() {
+                            self.failures
+                                .lock()
+                                .await
+                                .record(diagnostics::Stage::Save, error);
+                        }
+                    }
+                }
+            }
+            outcome
         })
     }
 }

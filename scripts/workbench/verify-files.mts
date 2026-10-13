@@ -1,5 +1,7 @@
 /** Linux filesystem integration with a temporary, isolated freedesktop trash. */
 import assert from "node:assert/strict";
+import { verifyFileHistory } from "./file-history-scenarios.mts";
+import { verifyFileReferences } from "./file-reference-scenarios.mts";
 import { spawn } from "node:child_process";
 import {
   access,
@@ -30,6 +32,7 @@ const child = spawn(path.join(root, "target/debug/vibe-workbench-host"), [], {
   cwd: directory,
   env: {
     ...process.env,
+    VIBE_LOGISIM_NO_UPDATE_CHECK: "1",
     XDG_DATA_HOME: dataHome,
     VIBE_WORKBENCH_STATE: path.join(directory, "state"),
     VIBE_WORKBENCH_RESOURCES: root,
@@ -74,6 +77,8 @@ try {
     path: path.join(project, "source/main.circ"),
   });
   const id = doc.id;
+  // A concurrent disk edit must keep a recoverable draft when automatic saving conflicts.
+  await writeFile(path.join(project, "source/main.circ"), source + "\n");
   doc = await command({
     op: "edit",
     id,
@@ -82,6 +87,8 @@ try {
     edit: { kind: "renameCircuit", name: "draft" },
   });
   assert(doc.dirty);
+  assert(doc.saveError);
+  await writeFile(path.join(project, "source/main.circ"), source);
   await assert.rejects(
     command({ op: "folderTrash", path: "source" }),
     /未保存/,
@@ -142,6 +149,8 @@ try {
   await symlink(outside, path.join(project, "link"));
   await command({ op: "folderTrash", path: "link" });
   assert.equal(await readFile(outside, "utf8"), "retain outside");
+  await verifyFileHistory(command, directory, project, folderId, source);
+  await verifyFileReferences(command, directory, project, folderId);
   console.log(
     "Verified project move identity/undo, dirty-delete rejection, no overwrite/escape/self-move, clean-tab closure, and recoverable system trash including symlink safety.",
   );

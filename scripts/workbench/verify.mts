@@ -1,6 +1,7 @@
 /** Real Rust -> Java and Pi -> Rust paths, with an entirely local model fixture. */
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
@@ -99,6 +100,77 @@ const model = http.createServer(async (req, res) => {
         events: [{ tick: 1, input: "input", value: 1 }],
       },
     } as any,
+  );
+  const workingSnapshot = toolMessages
+    .map((m: any) => {
+      try {
+        return JSON.parse(m.content);
+      } catch {
+        return null;
+      }
+    })
+    .find((m: any) => m?.target === "working-copy" && m?.circuits);
+  calls.splice(
+    3,
+    0,
+    ...([
+      {
+        name: "write_file",
+        args: {
+          path: "circuit.circ",
+          content: snapshot
+            ? JSON.parse(snapshot.content).xml.replace(
+                "</circuit>",
+                '<wire from="(40,280)" to="(90,280)"/></circuit>',
+              )
+            : "",
+        },
+      },
+      { name: "read_circuit", args: { target: "working-copy" } },
+      {
+        name: "observe_circuit",
+        args: { target: "working-copy", circuit: "main" },
+      },
+      {
+        name: "render_circuit",
+        args: {
+          target: "working-copy",
+          circuit: "main",
+          x: 0,
+          y: 0,
+          width: 400,
+          height: 300,
+          scale: 1,
+        },
+      },
+      {
+        name: "simulate_circuit",
+        args: {
+          target: "working-copy",
+          circuit: "main",
+          vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
+        },
+      },
+      {
+        name: "trace_circuit",
+        args: {
+          target: "working-copy",
+          circuit: "main",
+          ticks: 2,
+          inputs: { input: 0 },
+          watches: [
+            {
+              component:
+                workingSnapshot?.circuits[0].components.find(
+                  (c: any) => c.attributes.label === "output",
+                ).id || "unused",
+              port: 0,
+            },
+          ],
+          events: [],
+        },
+      },
+    ] as any[]),
   );
   const call = calls[requests - 1];
   if (call) {
@@ -380,17 +452,23 @@ try {
       { x: 80, y: 200 },
     ],
   });
+  const automaticallySaved = await readFile(source, "utf8");
+  assert.notEqual(
+    automaticallySaved,
+    saved,
+    "Folder edits must reach the source",
+  );
   const restoredRevision = doc.revision,
     id = doc.id;
   await stop();
   await start();
   doc = await command({ op: "read", id });
   assert.equal(doc.revision, restoredRevision);
-  assert.equal(doc.dirty, true);
+  assert.equal(doc.dirty, false);
   assert.equal(doc.canUndo, true);
   assert.equal(
     await readFile(source, "utf8"),
-    saved,
+    automaticallySaved,
     "Recovery changed the source",
   );
   await new Promise<void>((r) => model.listen(0, "127.0.0.1", r));
@@ -409,7 +487,24 @@ try {
     effort: "none",
     vision: true,
   });
-  await agent("ask", { question: "检查这个电路并画一段导线" });
+  const references = await agent("stageReferences", {
+    workspaceKey: (await agent("conversations")).workspaceKey,
+    documentId: doc.id,
+    references: [
+      {
+        kind: "material",
+        label: "diagram.png",
+        path: "diagram.png",
+        text: "Independent reference fixture",
+        image:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      },
+    ],
+  });
+  await agent("ask", {
+    question: "检查这个电路并画一段导线",
+    references: references.map((r: any) => r.id),
+  });
   let status: any;
   for (let n = 0; n < 500; n++) {
     status = await agent("status");
@@ -436,10 +531,52 @@ try {
     "Event stream duplicated an agent event",
   );
   assert.equal(status.transmission, null, JSON.stringify(status.transmission));
-  assert.equal(requests, 10, JSON.stringify(status.messages));
+  assert.deepEqual(
+    status.messages.find((m: any) => m.type === "user").context.references,
+    references,
+  );
+  assert(
+    bodies[0].messages.some(
+      (m: any) =>
+        m.role === "user" &&
+        Array.isArray(m.content) &&
+        m.content.some((c: any) => c.type === "image_url"),
+    ),
+    "Quoted image must reach the first user prompt, not just a later tool result",
+  );
+  assert(JSON.stringify(bodies[0]).includes("Independent reference fixture"));
+  await assert.rejects(
+    agent("readReferences", {
+      workspaceKey: "another-folder",
+      ids: references.map((r: any) => r.id),
+    }),
+    /另一工作区/,
+  );
+  assert.equal(requests, 16, JSON.stringify(status.messages));
   for (const body of bodies)
     for (const m of body.messages.filter((m: any) => m.role === "tool"))
       assert(!String(m.content).includes('"error"'), m.content);
+  const pendingProposals = await agent("proposals", { documentId: doc.id });
+  assert.equal(
+    pendingProposals.length,
+    1,
+    "Scratch edits must remain a durable proposal",
+  );
+  const reviewed = await command({
+    op: "proposalReview",
+    id: doc.id,
+    revision: pendingProposals[0].revision,
+    original: pendingProposals[0].original,
+    xml: pendingProposals[0].xml,
+  });
+  assert.equal(
+    reviewed.evidence.length,
+    2,
+    "Working-copy vector and trace results must be linked to the proposal",
+  );
+  assert(
+    reviewed.evidence.every((r: any) => r.revision === reviewed.after.revision),
+  );
   assert(
     bodies.some((b) =>
       b.messages.some(
@@ -459,13 +596,23 @@ try {
   assert.notEqual(after.revision, restoredRevision);
   assert.equal(
     await readFile(source, "utf8"),
-    saved,
-    "AI edit saved source without explicit save",
+    (await command({ op: "source", id, revision: after.revision })).xml,
+    "Shared document edits in the project folder must be automatically saved",
+  );
+  assert(
+    !(await readFile(source, "utf8")).includes('from="(40,280)"'),
+    "Scratch candidate must not be applied by verification",
   );
   const results = bodies
     .at(-1)
     .messages.filter((m: any) => m.role === "tool")
-    .map((m: any) => JSON.parse(m.content));
+    .flatMap((m: any) => {
+      try {
+        return [JSON.parse(m.content)];
+      } catch {
+        return [];
+      }
+    });
   assert(
     results.some((r: any) => r.isolated && r.passed === 2),
     "Model must receive real vector comparisons",
@@ -525,7 +672,14 @@ try {
   });
   const reopened = await command({ op: "open", path: source });
   assert.notEqual(reopened.id, id);
-  assert.equal((await command({ op: "read", id })).path, copyPath);
+  // Rust returns a canonical, namespaced Windows path while TEMP may use an
+  // 8.3 alias. Resolve both existing files before comparing their identity.
+  assert.equal(
+    path.toNamespacedPath(
+      realpathSync.native((await command({ op: "read", id })).path),
+    ),
+    path.toNamespacedPath(realpathSync.native(copyPath)),
+  );
   await writeFile(copyPath, saved);
   const changed = await command({ op: "sourceStatus", id });
   assert.equal(changed.state, "modified");
@@ -581,7 +735,7 @@ try {
     "Observation did not survive restart",
   );
   console.log(
-    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; dirty recovery and undo; Pi tool/image roundtrip; conversation selection; explicit source save; Save As identity; external reload and undo; guarded close and simulation cleanup.",
+    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; Pi tool/image roundtrip and candidate verification; conversation selection; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup.",
   );
 } finally {
   await stop();

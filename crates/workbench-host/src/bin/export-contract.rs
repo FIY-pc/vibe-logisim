@@ -35,6 +35,21 @@ fn generate(root: &Path) -> Result<()> {
     vibe_workbench_host::ProposalReview::export_all(
         &ts_rs::Config::default().with_out_dir(&directory),
     )?;
+    vibe_workbench_host::HistoryList::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_workbench_host::HistoryReview::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_workbench_host::ComparisonDetail::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_workbench_host::InterfaceRead::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_workbench_host::InterfacePreview::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
     let schema = root.join("packages/agent-runtime/src/generated");
     std::fs::create_dir_all(&schema)?;
     std::fs::write(

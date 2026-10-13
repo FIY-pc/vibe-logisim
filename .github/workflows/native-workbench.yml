@@ -42,6 +42,8 @@ jobs:
       - name: Verify native simulation, editing and local model transport
         run: |
           npm run test:native
+          npm run test:interfaces
+          npm run test:history
           npm run test:files
           npm run test:compatibility
       - name: Verify bundled sidecar without workspace modules
