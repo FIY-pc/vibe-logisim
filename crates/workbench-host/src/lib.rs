@@ -19,6 +19,8 @@ pub use comparison::ComparisonDetail;
 pub use document_history::{HistoryList, HistoryReview};
 pub use proposal_review::ProposalReview;
 pub use verification::{VerificationInput, VerificationRecord};
+#[cfg(test)]
+mod state_paths_tests;
 mod topology;
 mod verification;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
@@ -460,6 +462,11 @@ impl Host {
     }
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Result<Self> {
         std::fs::create_dir_all(&state).map_err(|e| e.to_string())?;
+        // tempfile's Windows persist calls Win32 directly, unlike std::fs: it does
+        // not add a verbatim prefix for long paths. Canonicalize the existing state
+        // root once so nested snapshots and every atomic state write retain it.
+        // Java paths are converted separately at the adapter boundary.
+        let state = state.canonicalize().map_err(|e| e.to_string())?;
         let lease = std::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
