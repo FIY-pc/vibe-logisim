@@ -3,6 +3,7 @@ import { mkdtemp, cp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import path from "node:path";
+import { verifyNodeRuntime } from "./verify-node.mts";
 import { verifyJavaRuntime } from "./verify-java.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 // Windows host canonicalization returns verbatim paths. Keep spaces and Unicode
@@ -20,6 +21,7 @@ try {
     path.join(resources, "runtimes/java"),
     "relocated product runtime",
   );
+  await verifyNodeRuntime(resources, "relocated product Node runtime");
   const binary =
     "vibe-workbench-host" + (process.platform === "win32" ? ".exe" : "");
   const host = path.join(directory, binary);

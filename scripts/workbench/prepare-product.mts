@@ -17,6 +17,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createWriteStream, createReadStream } from "node:fs";
 import path from "node:path";
+import { verifyNodeRelocation } from "./verify-node.mts";
 import { patchWindowsJava } from "./windows-java-utf8.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64")
@@ -190,6 +191,7 @@ try {
     ) + "\n",
   );
   await rm(unpack, { recursive: true });
+  await verifyNodeRelocation(stage);
   // Tauri overwrites its staged resources on rebuild. Vendor notices may be read-only.
   for (const file of await files(stage))
     await chmod(file, (await stat(file)).mode | 0o200);
