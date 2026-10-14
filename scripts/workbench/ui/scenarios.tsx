@@ -1,3 +1,5 @@
+import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
+import { verifyAISettings } from "./ai-settings";
 import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyProjectInfoUI } from "./project-info";
 import { verifyDocumentHistory } from "./history";
@@ -479,12 +481,12 @@ const appKey = async (key: string, extra: KeyboardEventInit = {}) =>
 await appKey("g");
 assert.equal(
   document.querySelector(".canvas svg > rect")!.getAttribute("fill"),
-  "transparent",
+  "url(#grid)",
 );
 await appKey("g");
 assert.equal(
   document.querySelector(".canvas svg > rect")!.getAttribute("fill"),
-  "url(#grid)",
+  "transparent",
 );
 await appKey("/");
 assert.equal(
@@ -1188,6 +1190,18 @@ await render(
     onClose={() => {}}
   />,
 );
+await click(
+  [...document.querySelectorAll("button")].find(
+    (n) => n.textContent === "添加服务",
+  )!,
+);
+await act(async () => {
+  const preset = document.querySelector<HTMLSelectElement>(
+    'select[aria-label="服务类型"]',
+  )!;
+  preset.value = "custom";
+  preset.dispatchEvent(new Event("change", { bubbles: true }));
+});
 const field = (text: string) =>
   [...document.querySelectorAll("label")]
     .find((n) => n.firstChild?.textContent === text)!
@@ -1212,8 +1226,9 @@ await click(
     (n) => n.textContent === "读取模型列表",
   )!,
 );
+await click(document.querySelector('button[aria-label="展开接口模型"]')!);
 assert.equal(
-  document.querySelector("datalist option")!.getAttribute("value"),
+  document.querySelector('[role="option"]')!.textContent,
   "fixture-new",
 );
 await click(
@@ -1252,6 +1267,8 @@ await verifyReferenceLinksAndCandidates();
 await verifyDocumentHistory();
 await verifyProjectInfoUI();
 await verifyConversationSummaries();
+await verifyAISettings();
+await verifyEditorRequestLifetimes();
 console.log("All focused UI lifecycle checks passed");
 
 process.exit(0);

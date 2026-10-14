@@ -324,6 +324,7 @@ export function WorkspaceRail({
       : { flex: `${weights[i]} 1 0` };
   return (
     <aside
+      id="workspace-projects"
       ref={rail}
       className={`explorer workspace-rail${layout.narrow ? " workspace-drawer" : ""}`}
       style={{

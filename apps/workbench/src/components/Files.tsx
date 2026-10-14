@@ -10,8 +10,6 @@ import {
   Folder,
   FolderOpen,
   Plus,
-  RefreshCw,
-  FolderPlus,
   Ellipsis,
   LocateFixed,
   History,
@@ -19,6 +17,7 @@ import {
 } from "lucide-react";
 import { command, desktop } from "../lib/transport";
 import { eventBinding } from "../lib/shortcuts";
+import { useFolderPicker } from "../lib/useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
 export interface ProjectFolder {
@@ -85,7 +84,7 @@ export function Files({
   onError,
   onRename,
 }: Props) {
-  const [chooseFolder, setChooseFolder] = useState(false);
+  const { openFolder: open, folderDialog } = useFolderPicker(onFolder, onError);
   const [create, setCreate] = useState<{
     kind: "file" | "folder";
     parent: string;
@@ -99,7 +98,15 @@ export function Files({
     y: number;
   } | null>(null);
   const [pending, setPending] = useState(false),
-    [selected, setSelected] = useState<string | null>(null);
+    [selected, setSelectedState] = useState<string | null>(null);
+  const previewRequest = useRef(0);
+  const selectedPath = useRef<string | null>(null);
+  const alive = useRef(true);
+  const setSelected = (path: string | null) => {
+    if (selectedPath.current !== path) previewRequest.current++;
+    selectedPath.current = path;
+    setSelectedState(path);
+  };
   const [entries, setEntries] = useState<Record<string, Entry[]>>({}),
     [expanded, setExpanded] = useState(new Set([""]));
   const [dragging, setDragging] = useState<string | null>(null),
@@ -110,7 +117,15 @@ export function Files({
     menuRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const currentFolder = useRef(folder?.id);
+  if (currentFolder.current !== folder?.id) previewRequest.current++;
   currentFolder.current = folder?.id;
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      previewRequest.current++;
+    };
+  }, []);
   const skipClick = useRef(false),
     search = useRef({ text: "", at: 0 });
   const pointer = useRef<{
@@ -184,15 +199,37 @@ export function Files({
     }
   };
   const reveal = async (path: string, focus = true) => {
+    const folderId = folder?.id;
+    if (!folderId || currentFolder.current !== folderId) return;
+    const request = ++previewRequest.current;
+    const current = () =>
+      alive.current &&
+      currentFolder.current === folderId &&
+      previewRequest.current === request;
     const parts = parentOf(path).split("/").filter(Boolean),
       paths = [""];
     for (let i = 1; i <= parts.length; i++)
       paths.push(parts.slice(0, i).join("/"));
-    for (const parent of paths) await list(parent);
+    try {
+      for (const parent of paths) {
+        await list(parent);
+        if (!current()) return;
+      }
+    } catch (error) {
+      if (current()) onError(error);
+      return;
+    }
     setExpanded((previous) => new Set([...previous, ...paths]));
     setSelected(path);
+    const selectedRequest = previewRequest.current;
     if (focus)
       requestAnimationFrame(() => {
+        if (
+          !alive.current ||
+          currentFolder.current !== folderId ||
+          previewRequest.current !== selectedRequest
+        )
+          return;
         rowRefs.current.get(path)?.focus();
         rowRefs.current.get(path)?.scrollIntoView({ block: "nearest" });
       });
@@ -221,56 +258,51 @@ export function Files({
     }
   };
   const select = async (entry: Entry) => {
+    const folderId = folder?.id;
+    if (!folderId || currentFolder.current !== folderId) return;
     setSelected(entry.path);
-    if (entry.directory) {
-      if (expanded.has(entry.path))
-        setExpanded((previous) => {
-          const next = new Set(previous);
-          next.delete(entry.path);
-          return next;
-        });
-      else {
-        await list(entry.path);
-        setExpanded((previous) => new Set([...previous, entry.path]));
+    const request = ++previewRequest.current;
+    const current = () =>
+      alive.current &&
+      currentFolder.current === folderId &&
+      previewRequest.current === request;
+    try {
+      if (entry.directory) {
+        if (expanded.has(entry.path))
+          setExpanded((previous) => {
+            const next = new Set(previous);
+            next.delete(entry.path);
+            return next;
+          });
+        else {
+          await list(entry.path);
+          if (current())
+            setExpanded((previous) => new Set([...previous, entry.path]));
+        }
+        return;
       }
-      return;
-    }
-    if (entry.name.toLowerCase().endsWith(".circ"))
-      onOpen(absolute(entry.path));
-    else if (/\.(pdf|png|jpe?g|webp)$/i.test(entry.name))
-      onPreview({
-        ...(await command<PreviewFile>({
+      if (entry.name.toLowerCase().endsWith(".circ")) {
+        onOpen(absolute(entry.path));
+      } else if (/\.(pdf|png|jpe?g|webp)$/i.test(entry.name)) {
+        const result = await command<PreviewFile>({
           op: "folderPreview",
-          folder_id: folder!.id,
+          folder_id: folderId,
           path: entry.path,
-        })),
-        name: entry.name,
-      });
-    else {
-      const result = await command<
-        PreviewFile & { relativePath: string; folderId: string }
-      >({
-        op: "folderRead",
-        folder_id: folder!.id,
-        path: entry.path,
-      });
-      onPreview({ ...result, name: entry.name, path: result.relativePath });
-    }
-  };
-  const open = async () => {
-    if (!desktop()) {
-      setChooseFolder(true);
-      return;
-    }
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const path = await open({ directory: true, multiple: false });
-    if (typeof path === "string") {
-      const opened = await command<ProjectFolder>({ op: "folderOpen", path });
-      onFolder(opened);
-      if (opened.historyWarning)
-        onError(
-          new Error(`文件夹已打开；文件历史暂不可用：${opened.historyWarning}`),
-        );
+        });
+        if (current()) onPreview({ ...result, name: entry.name });
+      } else {
+        const result = await command<
+          PreviewFile & { relativePath: string; folderId: string }
+        >({
+          op: "folderRead",
+          folder_id: folderId,
+          path: entry.path,
+        });
+        if (current())
+          onPreview({ ...result, name: entry.name, path: result.relativePath });
+      }
+    } catch (error) {
+      if (current()) onError(error);
     }
   };
   const showMenu = (entry: Entry | null, x: number, y: number) => {
@@ -721,20 +753,7 @@ export function Files({
     : "";
   return (
     <div className="files" ref={filesRef}>
-      {chooseFolder && (
-        <TextPrompt
-          title="打开文件夹"
-          onClose={() => setChooseFolder(false)}
-          onSubmit={async (path) => {
-            const opened = await command<ProjectFolder>({
-              op: "folderOpen",
-              path,
-            });
-            onFolder(opened);
-            warnHistory(opened.historyWarning);
-          }}
-        />
-      )}
+      {folderDialog}
       {menu &&
         createPortal(
           <div
@@ -853,6 +872,15 @@ export function Files({
               </>
             )}
             <hr />
+            <button
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                void refresh().catch(onError);
+              }}
+            >
+              刷新文件夹
+            </button>
             <button
               role="menuitem"
               onClick={() => {
@@ -978,16 +1006,6 @@ export function Files({
                 <Plus size={13} />
               </button>
               <button
-                aria-label="新建文件夹"
-                title="新建文件夹"
-                disabled={pending}
-                onClick={() =>
-                  setCreate({ kind: "folder", parent: selectedParent })
-                }
-              >
-                <FolderPlus size={13} />
-              </button>
-              <button
                 aria-label="定位当前文件"
                 title="定位当前文件"
                 disabled={!activeRelative || pending}
@@ -996,14 +1014,6 @@ export function Files({
                 }
               >
                 <LocateFixed size={13} />
-              </button>
-              <button
-                aria-label="刷新文件夹"
-                title="刷新"
-                disabled={pending}
-                onClick={() => void refresh().catch(onError)}
-              >
-                <RefreshCw size={13} />
               </button>
               <button
                 aria-label="文件夹操作"
@@ -1018,16 +1028,6 @@ export function Files({
                 <Ellipsis size={13} />
               </button>
             </>
-          )}
-          {folder && (
-            <button
-              aria-label="打开工程文件夹"
-              title="打开文件夹"
-              disabled={pending}
-              onClick={() => void open().catch(onError)}
-            >
-              <FolderOpen size={14} />
-            </button>
           )}
         </div>
       </div>

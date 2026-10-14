@@ -11,6 +11,7 @@ export interface PlacementState {
   setRepeat: (repeat: boolean) => void;
   change: (attributes: Record<string, string>) => void;
   rotate: () => void;
+  retry?: () => void;
 }
 export function usePlacement(
   doc: Document | null,
@@ -36,6 +37,7 @@ export function usePlacement(
     error: "",
   });
   const [repeat, setRepeat] = useState(true);
+  const [retryVersion, setRetryVersion] = useState(0);
   const template =
     result?.scope === scope && result.attributes === attributeKey
       ? result.template
@@ -76,7 +78,7 @@ export function usePlacement(
     return () => {
       live = false;
     };
-  }, [scope, doc?.revision, attributeKey]);
+  }, [scope, doc?.revision, attributeKey, retryVersion]);
   const change = (values: Record<string, string>) =>
     setPreferences((previous) => ({ ...previous, [preference]: values }));
   const rotate = () => {
@@ -112,5 +114,6 @@ export function usePlacement(
     setRepeat,
     change,
     rotate,
+    retry: () => setRetryVersion((value) => value + 1),
   };
 }

@@ -4,7 +4,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use process::{StderrCapture, exit_failure, java_path};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     process::Stdio,
     time::Duration,
@@ -653,6 +653,7 @@ impl Native {
             view_id,
             root_circuit: circuit.into(),
             instance_path: vec![],
+            held_buttons: BTreeSet::new(),
         };
         tokio::time::timeout(Duration::from_secs(30), simulation.latest.changed())
             .await
@@ -760,6 +761,8 @@ pub struct Simulation {
     view_id: String,
     root_circuit: String,
     instance_path: Vec<String>,
+    // Only acknowledged presses in the current native instance are retained.
+    held_buttons: BTreeSet<String>,
 }
 impl Simulation {
     pub fn failed(&self) -> bool {
@@ -848,6 +851,10 @@ impl Simulation {
             &[("circuit", circuit.clone()), ("viewId", next.clone())],
             children,
         );
+        // Release momentary inputs while their component IDs still address the
+        // old instance. UI teardown can happen after this view has changed.
+        // Target construction above must succeed before changing any stimulus.
+        self.release_buttons().await?;
         self.send(node).await?;
         tokio::time::timeout(Duration::from_secs(10), async {
             while self.latest.borrow()["attributes"]["viewId"] != next {
@@ -864,6 +871,19 @@ impl Simulation {
         self.view_id = next;
         self.instance_path = path;
         Ok(self.state())
+    }
+    async fn release_buttons(&mut self) -> Result<()> {
+        while let Some(component_id) = self.held_buttons.first().cloned() {
+            self.command(
+                "button",
+                BTreeMap::from([
+                    ("componentId".into(), component_id),
+                    ("value".into(), "0".into()),
+                ]),
+            )
+            .await?;
+        }
+        Ok(())
     }
     async fn send(&mut self, node: Element) -> Result<Value> {
         let mut bytes = encode_xml(&node)?;
@@ -907,23 +927,19 @@ impl Simulation {
         {
             return Err("未知的仿真命令".into());
         }
+        let component_id = attrs.get("componentId").cloned();
+        let pressed = attrs.get("value").is_some_and(|value| value == "1");
         let mut command = xml(op, &[("viewId", self.view_id.clone())], vec![]);
         command.attributes.extend(attrs);
-        let mut bytes = encode_xml(&command)?;
-        bytes.push(b'\n');
-        self.input
-            .write_all(&bytes)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.input.flush().await.map_err(|e| e.to_string())?;
-        let ack = tokio::time::timeout(Duration::from_secs(10), self.acks.recv())
-            .await
-            .map_err(|_| "仿真操作超时")?;
-        let Some(ack) = ack else {
-            return Err(exit_failure(&mut self.child, &mut self.stderr, "仿真进程已退出").await);
-        };
-        if let Some(e) = ack["attributes"]["error"].as_str() {
-            return Err(e.into());
+        let ack = self.send(command).await?;
+        if op == "reset" {
+            self.held_buttons.clear();
+        } else if let Some(component_id) = component_id {
+            if op == "button" && pressed {
+                self.held_buttons.insert(component_id);
+            } else if op == "button" || op == "pulse" {
+                self.held_buttons.remove(&component_id);
+            }
         }
         Ok(ack)
     }

@@ -1,14 +1,15 @@
 :root {
-  font-family: Inter, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI", sans-serif;
   font-size: 13px;
-  color: #30343b;
-  background: #f5f6f8;
+  line-height: 1.55;
+  color: #20242b;
+  background: #f4f5f7;
   font-synthesis: none;
   --paper: #fff;
-  --border: #e5e7eb;
-  --muted: #858b96;
-  --accent: #536cba;
-  --selection-fill: #536cba18;
+  --border: #e3e6ec;
+  --muted: #737c8a;
+  --accent: #315efb;
+  --selection-fill: #315efb18;
   --grid: #d3d8e1;
   color-scheme: light;
 }
@@ -78,24 +79,31 @@ button.primary {
   overflow: hidden;
 }
 .titlebar {
-  height: 47px;
+  height: 54px;
   flex: none;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
-  padding: 0 14px;
+  padding: 0 18px;
   background: var(--paper);
-  gap: 24px;
+  gap: 12px;
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-weight: 600;
-  letter-spacing: -0.25px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
 }
 .brand svg {
   color: var(--accent);
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
 }
 .file-title {
   display: flex;
@@ -103,6 +111,16 @@ button.primary {
   gap: 8px;
   color: #686e78;
   font-size: 12px;
+  min-width: 0;
+}
+.file-title > button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.file-title > button svg {
+  vertical-align: middle;
+  margin-right: 7px;
 }
 .dirty-dot {
   display: inline-block;
@@ -117,6 +135,39 @@ button.primary {
   align-items: center;
   gap: 5px;
   margin-left: auto;
+  flex-shrink: 0;
+}
+.app[data-workspace="empty"]
+  :is(.workspace-rail, .project-toggle, .open-folder),
+.app:not([data-workspace="circuit"]) .panel-tabs {
+  display: none;
+}
+.welcome .empty-symbol {
+  width: 180px;
+  height: 120px;
+  fill: var(--paper);
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.5;
+}
+.welcome h1 {
+  font-size: 20px;
+  font-weight: 500;
+}
+@media (max-width: 640px) {
+  .titlebar {
+    padding-inline: 8px;
+    gap: 6px;
+  }
+  .brand > span {
+    display: none;
+  }
+  .title-actions {
+    gap: 3px;
+  }
+  .open-folder {
+    padding-inline: 6px;
+  }
 }
 .icon-button {
   padding: 6px;
@@ -278,13 +329,15 @@ button.primary {
   background: #edf1fa;
 }
 .breadcrumbs {
-  min-height: 32px;
+  min-height: 46px;
   display: flex;
   align-items: center;
   padding: 0 16px;
   gap: 10px;
   font-size: 11px;
   color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .breadcrumbs strong {
   font-weight: 500;
@@ -292,6 +345,24 @@ button.primary {
 }
 .breadcrumbs .muted {
   margin-left: auto;
+  font-size: 10px;
+}
+.circuit-actions {
+  display: flex;
+  margin-left: auto;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.circuit-actions button {
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.breadcrumbs {
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-block: 5px;
+}
+.breadcrumbs > .muted {
   font-size: 10px;
 }
 .placing {

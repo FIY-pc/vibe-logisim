@@ -364,7 +364,11 @@ const toolHost = {
     if (op === "edit") {
       send({
         kind: "event",
-        event: { type: "document-changed", document: result, expectedBaseRevision: request.arguments.revision || current.revision },
+        event: {
+          type: "document-changed",
+          document: result,
+          expectedBaseRevision: request.arguments.revision || current.revision,
+        },
       });
       binding = { ...binding, revision: result.revision };
       scope.updateBinding?.({
@@ -601,7 +605,7 @@ async function dispatch(method: string, args: any) {
     case "models":
       return backend.listModels(Boolean(args?.refresh));
     case "selectModel":
-      return backend.selectModel(args);
+      return backend.selectModel(args?.inherit === true ? null : args);
     case "conversations": {
       if (!binding) return null;
       if (args?.action) {
@@ -690,6 +694,8 @@ async function dispatch(method: string, args: any) {
       return backend.snapshot();
     case "bindProvider":
       return backend.bindProvider(args);
+    case "defaultProvider":
+      return backend.defaultProvider(args);
     case "stop":
       return backend.interrupt();
     default:
@@ -708,6 +714,7 @@ const transitions = new Set([
   "removeProvider",
   "selectModel",
   "bindProvider",
+  "defaultProvider",
   "importHistory",
   "login",
   "logout",

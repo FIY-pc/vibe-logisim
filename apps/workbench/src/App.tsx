@@ -1,4 +1,5 @@
 import { useConversationReferences } from "./lib/conversationReferences";
+import { useFolderPicker } from "./lib/useFolderPicker";
 import { ProjectInfo } from "./components/ProjectInfo";
 import { DocumentHistory } from "./components/DocumentHistory";
 import type { LocateChange } from "./lib/reviewTypes";
@@ -22,6 +23,11 @@ import { FindDialog } from "./components/FindDialog";
 import { ShortcutSettings } from "./components/ShortcutSettings";
 import { eventBinding, useShortcuts } from "./lib/shortcuts";
 import { EditorToolbar } from "./components/EditorToolbar";
+import {
+  SimulationMenu,
+  SimulationTransport,
+} from "./components/SimulationControls";
+import { documentComponent, type ConnectionFocus } from "./lib/connections";
 import { FilePreview, type PreviewFile } from "./components/FilePreview";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { Waveform } from "./components/Waveform";
@@ -39,10 +45,10 @@ import {
   FolderOpen,
   FilePlus2,
   Trash2,
-  ChevronDown,
   Plus,
   Search,
-  Settings2,
+  Ellipsis,
+  FileText,
   X,
   PanelRight,
   PanelLeft,
@@ -149,11 +155,24 @@ export function App() {
   const [sim, setSim] = useState<Simulation | null>(null),
     [fitToken, setFit] = useState(0),
     [right, setRight] = useState<"chat" | "connections" | "changes">("chat");
+  const [zoom, setZoom] = useState(1);
+  const [zoomRequest, setZoomRequest] = useState({ token: 0, factor: 1 });
+  const [canvasObservation, setCanvasObservation] = useState<{
+    scope: string;
+    focus: ConnectionFocus | null;
+  }>({ scope: "", focus: null });
+  const [frequency, setFrequency] = useState(2);
+  const simulationSequence = useRef(0);
+  const [simulationRequests, setSimulationRequests] = useState<
+    { id: number; scope: string; op: string }[]
+  >([]);
   const [source, setSource] = useState<{
       xml: string;
       id: string;
+      name: string;
       revision: string;
       circuit: string;
+      error?: string;
     } | null>(null),
     [settings, setSettings] = useState(false);
   const {
@@ -169,7 +188,7 @@ export function App() {
   );
   const [circuitSearch, setCircuitSearch] = useState("");
   const circuitSearchInput = useRef<HTMLInputElement>(null);
-  const [showGrid, setShowGrid] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
   const [find, setFind] = useState<"component" | "circuit" | null>(null);
   const [focusTarget, setFocusTarget] = useState<{
     documentId: string;
@@ -181,6 +200,9 @@ export function App() {
   const upload = useRef<HTMLInputElement>(null),
     searchInput = useRef<HTMLInputElement>(null);
   const doc = docs.find((d) => d.id === active) || null;
+  useEffect(() => {
+    if (!doc) setRight("chat");
+  }, [doc?.id]);
   const circuit =
     doc?.circuits.find((c) => c.name === circuitName) || doc?.circuits[0];
   const placement = usePlacement(doc, circuit, place);
@@ -192,17 +214,38 @@ export function App() {
     ids: [],
   });
   const selectionScope = `${doc?.id}:${doc?.revision}:${circuit?.name}`;
+  const currentSelected = useRef(selected);
+  currentSelected.current = selected;
   const selection = selected.scope === selectionScope ? selected.ids : [];
   const setSelection = (ids: string[]) =>
     setSelected({ scope: selectionScope, ids });
   const currentSelectionScope = useRef(selectionScope);
   currentSelectionScope.current = selectionScope;
+  const simulationPending =
+    simulationRequests.find((request) => request.scope === selectionScope)
+      ?.op || null;
+  const connectionComponent =
+    canvasObservation.scope === selectionScope &&
+    selection.length === 1 &&
+    circuit
+      ? canvasObservation.focus?.components.find(
+          (component) =>
+            documentComponent(circuit, component)?.id === selection[0],
+        ) || null
+      : null;
   const navigationRequest = useRef(0);
+  const sourceRequest = useRef(0);
   const { sourceStatus, recheck } = useSourceStatus(doc);
   const onError = useCallback(
     (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
     [],
   );
+  const onFolder = (next: ProjectFolder) => {
+    workspaceEpoch.current++;
+    setFolder(next);
+    layout.revealFiles();
+  };
+  const { openFolder, folderDialog } = useFolderPicker(onFolder, onError);
   const refreshWorkspace = useCallback(
     async (includeFolder = false) => {
       for (;;) {
@@ -423,6 +466,8 @@ export function App() {
   };
   const edit = async (edit: Edit) => {
     if (!doc || !circuit) return;
+    const originSelection = currentSelected.current;
+    const originNavigation = navigationRequest.current;
     const next = await busy(() =>
       command<Document>({
         op: "edit",
@@ -433,6 +478,26 @@ export function App() {
       }),
     );
     mergeDocument(next, doc.revision);
+    // A field commit keeps its object selected. Preserve the revision guard for
+    // other edits, late responses and selections the user changed meanwhile.
+    if (
+      edit.kind === "attributes" &&
+      currentSelected.current === originSelection &&
+      currentActive.current === doc.id &&
+      navigationRequest.current === originNavigation &&
+      currentDocs.current.find((item) => item.id === doc.id)?.revision ===
+        next.revision &&
+      originSelection.scope === selectionScope &&
+      originSelection.ids.includes(edit.id) &&
+      next.circuits
+        .find((item) => item.name === circuit.name)
+        ?.components.some((item) => item.id === edit.id)
+    ) {
+      setSelected({
+        scope: `${doc.id}:${next.revision}:${circuit.name}`,
+        ids: [edit.id],
+      });
+    }
   };
   const history = (op: "undo" | "redo") => {
     if (doc)
@@ -442,12 +507,41 @@ export function App() {
         .then((next) => mergeDocument(next, doc.revision))
         .catch(onError);
   };
+  const readSource = async () => {
+    if (!doc || !circuit) return;
+    const requested = ++sourceRequest.current;
+    const navigation = navigationRequest.current;
+    const stillCurrent = () =>
+      requested === sourceRequest.current &&
+      navigation === navigationRequest.current &&
+      currentSelectionScope.current === selectionScope;
+    try {
+      const result = await command<{ xml: string }>({
+        op: "source",
+        id: doc.id,
+        revision: doc.revision,
+      });
+      if (stillCurrent())
+        setSource({
+          xml: result.xml,
+          id: doc.id,
+          name: doc.name,
+          revision: doc.revision,
+          circuit: circuit.name,
+        });
+    } catch (error) {
+      if (stillCurrent()) onError(error);
+    }
+  };
   const simulationQueue = useRef<Promise<unknown>>(Promise.resolve());
   const simulate = async (
     op: string,
     attributes: Record<string, string> = {},
   ) => {
     if (!doc || !circuit) return;
+    const origin = selectionScope;
+    const navigation = navigationRequest.current;
+    const sequence = ++simulationSequence.current;
     const request =
       op === "stop"
         ? { op: "simulationStop" as const }
@@ -457,11 +551,29 @@ export function App() {
             revision: doc.revision,
             circuit: circuit.name,
             command: op,
-            attributes,
+            attributes: { initialFrequency: String(frequency), ...attributes },
           };
-    const next = simulationQueue.current
-      .catch(() => {})
-      .then(() => busy(() => command(request)));
+    const previous = simulationQueue.current;
+    setSimulationRequests((items) => [
+      ...items,
+      { id: sequence, scope: origin, op },
+    ]);
+    const next = busy(async () => {
+      await previous.catch(() => {});
+      // A queued action belongs to the view where it was requested. Releasing
+      // a held button is safe across navigation: the host checks its viewId.
+      if (
+        op !== "button-release" &&
+        (currentSelectionScope.current !== origin ||
+          navigationRequest.current !== navigation)
+      )
+        return;
+      await command(request);
+    }).finally(() => {
+      setSimulationRequests((items) =>
+        items.filter((item) => item.id !== sequence),
+      );
+    });
     simulationQueue.current = next;
     await next;
   };
@@ -619,16 +731,9 @@ export function App() {
         else if (shortcut === "review") setShowRight((shown) => !shown);
         else if (shortcut === "capture") void capture().catch(onError);
         else if (shortcut === "clock")
-          void simulate(
-            activeSim?.frame.attributes.running === "true" ? "pause" : "play",
-          ).catch(onError);
+          void simulate("toggle-clock").catch(onError);
         else if (shortcut === "propagation")
-          void simulate("configure", {
-            automatic:
-              activeSim?.frame.attributes.automatic === "false"
-                ? "true"
-                : "false",
-          }).catch(onError);
+          void simulate("toggle-propagation").catch(onError);
         else if (["tick", "step", "reset"].includes(shortcut))
           void simulate(shortcut).catch(onError);
         return;
@@ -662,6 +767,7 @@ export function App() {
         openFile();
       }
       if (e.key === "Escape") {
+        sourceRequest.current++;
         setPlace(null);
         setSource(null);
         setSettings(false);
@@ -819,7 +925,11 @@ export function App() {
     </button>
   );
   return (
-    <div className="app">
+    <div
+      className="app"
+      data-workspace={doc ? "circuit" : folder ? "folder" : "empty"}
+    >
+      {folderDialog}
       <input
         hidden
         ref={upload}
@@ -841,8 +951,24 @@ export function App() {
         }}
       />
       <header className="titlebar">
+        <button
+          className="icon-button project-toggle"
+          title="展开 / 收起项目栏"
+          aria-label="展开 / 收起项目栏"
+          aria-controls="workspace-projects"
+          aria-expanded={showExplorer}
+          onClick={() => setShowExplorer((shown) => !shown)}
+        >
+          <PanelLeft size={18} />
+        </button>
         <div className="brand">
-          <CircuitBoard size={21} />
+          <svg aria-hidden="true" viewBox="0 0 38 38">
+            <path d="M4 10h10v9h10v9h10" />
+            <circle cx="4" cy="10" r="2.3" />
+            <circle cx="14" cy="19" r="2.3" />
+            <circle cx="24" cy="28" r="2.3" />
+            <circle cx="34" cy="28" r="2.3" />
+          </svg>
           <span>Vibe Logisim</span>
         </div>
         <div className="file-title">
@@ -852,6 +978,7 @@ export function App() {
                 title="文件信息与导出"
                 onClick={() => setInfoTarget(doc.id)}
               >
+                <FileText size={15} />
                 {doc.name}
               </button>
               {doc.dirty && (
@@ -861,9 +988,60 @@ export function App() {
           )}
         </div>
         <div className="title-actions">
+          {doc && circuit && (
+            <SimulationMenu
+              contextKey={selectionScope}
+              circuitName={circuit.name}
+              activeSim={activeSim}
+              busyAction={simulationPending}
+              disabled={Boolean(pending)}
+              shortcuts={shortcuts}
+              simulate={simulate}
+              capture={capture}
+              onError={onError}
+              onObservations={() => setObservations({ documentId: doc.id })}
+              frequency={
+                Number(activeSim?.frame.attributes.frequency) || frequency
+              }
+              onFrequencyChange={async (value) => {
+                if (activeSim)
+                  await simulate("configure", { frequency: String(value) });
+                if (currentSelectionScope.current === selectionScope)
+                  setFrequency(value);
+              }}
+              onReturnToSimulation={
+                sim &&
+                !activeSim &&
+                docs.some(
+                  (item) =>
+                    item.id === sim.documentId &&
+                    item.revision === sim.revision,
+                )
+                  ? () => {
+                      const owner = docs.find(
+                        (item) =>
+                          item.id === sim.documentId &&
+                          item.revision === sim.revision,
+                      );
+                      if (!owner) return;
+                      navigationRequest.current++;
+                      setActive(owner.id);
+                      setCircuitName(sim.circuit);
+                      setSelection([]);
+                      void command({ op: "activate", id: owner.id }).catch(
+                        onError,
+                      );
+                    }
+                  : undefined
+              }
+            />
+          )}
+          <button className="open-folder" onClick={() => void openFolder()}>
+            <FolderOpen size={17} /> 打开文件夹
+          </button>
           <details className="menu">
-            <summary>
-              文件 <ChevronDown size={13} />
+            <summary aria-label="更多" title="更多：文件、快捷键、反馈与更新">
+              <Ellipsis size={18} />
             </summary>
             <div className="menu-content">
               <button aria-label="新建电路文件" onClick={() => void newFile()}>
@@ -872,6 +1050,7 @@ export function App() {
               <button onClick={openFile}>
                 打开… <kbd>Ctrl O</kbd>
               </button>
+              <button onClick={() => void openFolder()}>打开文件夹…</button>
               <button
                 disabled={!doc || Boolean(pending)}
                 onClick={() => save()}
@@ -913,40 +1092,32 @@ export function App() {
               <button disabled={!doc} onClick={() => setFind("circuit")}>
                 查找电路… <kbd>{shortcuts.circuitSearch}</kbd>
               </button>
-              <button
-                disabled={!doc}
-                onClick={() =>
-                  doc &&
-                  void command<{ xml: string }>({
-                    op: "source",
-                    id: doc.id,
-                    revision: doc.revision,
-                  })
-                    .then((r) =>
-                      setSource({
-                        xml: r.xml,
-                        id: doc.id,
-                        revision: doc.revision,
-                        circuit: circuit?.name || doc.main,
-                      }),
-                    )
-                    .catch(onError)
-                }
-              >
+              <button disabled={!doc} onClick={() => void readSource()}>
                 编辑源文件
+              </button>
+              <button
+                onClick={(event) => {
+                  event.currentTarget
+                    .closest("details")
+                    ?.removeAttribute("open");
+                  setSettings(true);
+                }}
+              >
+                快捷键设置
               </button>
               <FeedbackMenu feedback={feedback} />
             </div>
           </details>
-          {actionButton("快捷键设置", <Settings2 size={17} />, () =>
-            setSettings(true),
-          )}
-          {actionButton("展开 / 收起项目栏", <PanelLeft size={17} />, () =>
-            setShowExplorer((shown) => !shown),
-          )}
-          {actionButton("展开 / 收起工作栏", <PanelRight size={17} />, () =>
-            setShowRight((shown) => !shown),
-          )}
+          <button
+            className="icon-button"
+            title="展开 / 收起工作栏"
+            aria-label="展开 / 收起工作栏"
+            aria-controls="workspace-review"
+            aria-expanded={showRight}
+            onClick={() => setShowRight((shown) => !shown)}
+          >
+            <PanelRight size={18} />
+          </button>
         </div>
       </header>
       <UpdateNotice feedback={feedback} />
@@ -968,10 +1139,7 @@ export function App() {
             <Files
               folder={folder}
               activePath={doc?.path || null}
-              onFolder={(next) => {
-                workspaceEpoch.current++;
-                setFolder(next);
-              }}
+              onFolder={onFolder}
               onRename={() => refreshWorkspace()}
               onOpen={(path) =>
                 void busy(() => command<Document>({ op: "open", path }))
@@ -1198,6 +1366,7 @@ export function App() {
                 doc={doc!}
                 circuit={circuit}
                 selection={selection}
+                connectionComponent={connectionComponent}
                 onOpenMemory={openMemory}
                 edit={edit}
                 simulation={activeSim}
@@ -1249,27 +1418,6 @@ export function App() {
                   </button>
                 </div>
               )}
-              <EditorToolbar
-                tool={tool}
-                place={place}
-                shortcuts={shortcuts}
-                pending={pending}
-                canUndo={doc.canUndo}
-                canRedo={doc.canRedo}
-                hasSelection={Boolean(selection.length)}
-                activeSim={activeSim}
-                onTool={setTool}
-                onCancelPlace={() => setPlace(null)}
-                onHistory={history}
-                onDelete={() =>
-                  void edit({ kind: "delete", ids: selection }).catch(onError)
-                }
-                onFit={() => setFit((n) => n + 1)}
-                onObservations={() => setObservations({ documentId: doc.id })}
-                simulate={simulate}
-                capture={capture}
-                onError={onError}
-              />
               <div className="breadcrumbs">
                 <span>{doc.name}</span>
                 <span>/</span>
@@ -1285,6 +1433,21 @@ export function App() {
                   </button>
                 )}
                 <strong>{circuit.name}</strong>
+                <div className="circuit-actions">
+                  <button
+                    onClick={() =>
+                      setInterfaceTarget({ doc, circuit: circuit.name })
+                    }
+                  >
+                    封装与接口
+                  </button>
+                  <button
+                    onClick={() => setFind("component")}
+                    title={`查找元件（${shortcuts.find}）`}
+                  >
+                    查找元件
+                  </button>
+                </div>
                 {place &&
                   actionButton(
                     `旋转 90° (${shortcuts.rotate})`,
@@ -1308,64 +1471,115 @@ export function App() {
                     <X size={12} />
                   </button>
                 )}
+                {activeSim && (
+                  <span className="muted">
+                    运行实例 · {activeSim.rootCircuit}
+                    {activeSim.instancePath.length ? ` / ${circuit.name}` : ""}
+                  </span>
+                )}
                 {sim && !activeSim && (
                   <span className="muted">{sim.circuit} 的仿真保留中</span>
                 )}
               </div>
-              <Canvas
-                key={`${doc.id}:${circuit.name}`}
-                doc={doc}
-                circuit={circuit}
-                tool={tool}
-                selection={selection}
-                setSelection={(s) => {
-                  setSelection(s);
-                  if (s.length) layout.revealInspector();
-                }}
-                place={place}
-                edit={edit}
-                simulation={sim}
-                simulate={simulate}
-                onError={onError}
-                fitToken={fitToken}
-                showGrid={showGrid}
-                placement={placement}
-                onCancelPlace={() => setPlace(null)}
-                onPlace={async (revision, edit) => {
-                  const next = await busy(() =>
-                    command<Document>({
-                      op: "edit",
-                      id: doc.id,
-                      revision,
-                      circuit: circuit.name,
-                      edit,
-                    }),
-                  );
-                  mergeDocument(next, revision);
-                  return next;
-                }}
-                focusTarget={
-                  focusTarget?.documentId === doc.id &&
-                  focusTarget.revision === doc.revision &&
-                  focusTarget.circuit === circuit.name
-                    ? focusTarget
-                    : null
-                }
-                onSignalView={setSignalView}
-                onSignalOpen={() => {
-                  setRight("connections");
-                  setShowRight(true);
-                }}
-                onOpenMemory={openMemory}
-                onEnterCircuit={(name, id) => {
-                  if (activeSim && doc)
-                    void navigateSimulation([
-                      ...activeSim.instancePath,
-                      id,
-                    ]).catch(onError);
-                  else switchCircuit(name);
-                }}
-              />
+              <div className="canvas-surface">
+                <EditorToolbar
+                  tool={tool}
+                  place={place}
+                  shortcuts={shortcuts}
+                  pending={pending}
+                  canUndo={doc.canUndo}
+                  canRedo={doc.canRedo}
+                  hasSelection={Boolean(selection.length)}
+                  onTool={setTool}
+                  onCancelPlace={() => setPlace(null)}
+                  onHistory={history}
+                  onDelete={() =>
+                    void edit({ kind: "delete", ids: selection }).catch(onError)
+                  }
+                  onFit={() => setFit((n) => n + 1)}
+                  zoom={zoom}
+                  onZoom={(factor) =>
+                    setZoomRequest((previous) => ({
+                      token: previous.token + 1,
+                      factor,
+                    }))
+                  }
+                  showGrid={showGrid}
+                  onToggleGrid={() => setShowGrid((shown) => !shown)}
+                />
+                <SimulationTransport
+                  activeSim={activeSim}
+                  busyAction={simulationPending}
+                  disabled={Boolean(pending)}
+                  shortcuts={shortcuts}
+                  simulate={simulate}
+                  onError={onError}
+                  tool={tool}
+                  stale={Boolean(
+                    sim &&
+                    sim.documentId === doc.id &&
+                    sim.circuit === circuit.name &&
+                    sim.revision !== doc.revision,
+                  )}
+                />
+                <Canvas
+                  key={`${doc.id}:${circuit.name}`}
+                  doc={doc}
+                  circuit={circuit}
+                  tool={tool}
+                  selection={selection}
+                  setSelection={(s) => {
+                    setSelection(s);
+                    if (s.length) layout.revealInspector();
+                  }}
+                  place={place}
+                  edit={edit}
+                  simulation={sim}
+                  simulate={simulate}
+                  onError={onError}
+                  fitToken={fitToken}
+                  zoomRequest={zoomRequest}
+                  onZoomChange={setZoom}
+                  onObservation={setCanvasObservation}
+                  showGrid={showGrid}
+                  placement={placement}
+                  onCancelPlace={() => setPlace(null)}
+                  onPlace={async (revision, edit) => {
+                    const next = await busy(() =>
+                      command<Document>({
+                        op: "edit",
+                        id: doc.id,
+                        revision,
+                        circuit: circuit.name,
+                        edit,
+                      }),
+                    );
+                    mergeDocument(next, revision);
+                    return next;
+                  }}
+                  focusTarget={
+                    focusTarget?.documentId === doc.id &&
+                    focusTarget.revision === doc.revision &&
+                    focusTarget.circuit === circuit.name
+                      ? focusTarget
+                      : null
+                  }
+                  onSignalView={setSignalView}
+                  onSignalOpen={() => {
+                    setRight("connections");
+                    setShowRight(true);
+                  }}
+                  onOpenMemory={openMemory}
+                  onEnterCircuit={(name, id) => {
+                    if (activeSim && doc)
+                      void navigateSimulation([
+                        ...activeSim.instancePath,
+                        id,
+                      ]).catch(onError);
+                    else switchCircuit(name);
+                  }}
+                />
+              </div>
               {activeSim?.frame.attributes.failure && (
                 <p className="dialog-error" role="alert">
                   {activeSim.frame.attributes.failure}
@@ -1424,22 +1638,33 @@ export function App() {
             </>
           ) : (
             <div className="welcome">
-              <CircuitBoard size={42} />
-              <h1>开始一个电路</h1>
+              <svg
+                className="empty-symbol"
+                aria-hidden="true"
+                viewBox="0 0 180 120"
+              >
+                <path d="M9 74h38V34h34v61h39V54h50" />
+                <circle cx="9" cy="74" r="5" />
+                <circle cx="47" cy="34" r="5" />
+                <circle cx="81" cy="95" r="5" />
+                <circle cx="120" cy="54" r="5" />
+                <circle cx="170" cy="54" r="5" />
+              </svg>
+              <h1>{folder ? "选择一个电路" : "尚未打开项目"}</h1>
               <div>
-                <button className="primary" onClick={openFile}>
+                <button
+                  className="primary"
+                  onClick={folder ? openFile : () => void openFolder()}
+                >
                   <FolderOpen size={17} />
-                  打开电路
-                </button>
-                <button onClick={() => void newFile()}>
-                  <Plus size={17} />
-                  新建
+                  {folder ? "打开电路" : "打开文件夹"}
                 </button>
               </div>
             </div>
           )}
         </main>
         <aside
+          id="workspace-review"
           className={"right-panel" + (layout.narrow ? " workspace-drawer" : "")}
           style={{
             width: layout.sizes.review,
@@ -1614,31 +1839,62 @@ export function App() {
             className="source-dialog"
           >
             <header>
-              <Code2 size={18} /> {doc?.name}
-              <button onClick={() => setSource(null)} aria-label="关闭">
+              <Code2 size={18} /> {source.name}
+              <button
+                disabled={Boolean(pending)}
+                onClick={() => setSource(null)}
+                aria-label="关闭"
+              >
                 <X size={18} />
               </button>
             </header>
             <textarea
               value={source.xml}
+              disabled={Boolean(pending)}
               onChange={(e) => setSource({ ...source, xml: e.target.value })}
               spellCheck={false}
             />
+            {source.error && (
+              <p className="dialog-error" role="alert">
+                {source.error}
+              </p>
+            )}
             <footer>
-              <button onClick={() => setSource(null)}>取消</button>
+              <button
+                disabled={Boolean(pending)}
+                onClick={() => setSource(null)}
+              >
+                取消
+              </button>
               <button
                 className="primary"
+                disabled={Boolean(pending)}
                 onClick={() =>
-                  void command<Document>({
-                    op: "edit",
-                    id: source.id,
-                    revision: source.revision,
-                    circuit: source.circuit,
-                    edit: { kind: "replace", xml: source.xml },
-                  })
+                  void busy(() =>
+                    command<Document>({
+                      op: "edit",
+                      id: source.id,
+                      revision: source.revision,
+                      circuit: source.circuit,
+                      edit: { kind: "replace", xml: source.xml },
+                    }),
+                  )
                     .then((next) => mergeDocument(next, source.revision))
                     .then(() => setSource(null))
-                    .catch(onError)
+                    .catch((error) =>
+                      setSource((current) =>
+                        current?.id === source.id &&
+                        current.revision === source.revision
+                          ? {
+                              ...current,
+                              error:
+                                error instanceof Error
+                                  ? error.message
+                                  : String(error),
+                            }
+                          : current,
+                      ),
+                    )
                 }
               >
                 应用修改

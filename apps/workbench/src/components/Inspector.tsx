@@ -7,7 +7,14 @@ import type {
   Simulation,
   XmlNode,
 } from "../lib/types";
+import type { ConnectionComponent } from "../lib/connections";
+import { portName } from "../lib/connections";
+import { componentLabels, isAppearanceProperty } from "../lib/componentLabels";
 import { command } from "../lib/transport";
+import { inputBits, inputDisplay } from "../lib/simulationInputs";
+import { PropertyField } from "./PropertyField";
+import "./inspector.css";
+
 interface Props {
   doc: Document;
   circuit: Circuit;
@@ -17,27 +24,80 @@ interface Props {
   simulate: (op: string, attrs?: Record<string, string>) => Promise<void>;
   onError: (e: unknown) => void;
   onOpenMemory: (id: string) => void;
+  connectionComponent?: ConnectionComponent | null;
 }
-export function Inspector({
+export function Inspector(props: Props) {
+  const { doc, circuit, selection } = props;
+  const selected =
+    selection.length === 1
+      ? circuit.components.find((c) => c.id === selection[0])
+      : undefined;
+  const wires = circuit.wires.filter((w) => selection.includes(w.id));
+  const count = circuit.components.filter((c) =>
+    selection.includes(c.id),
+  ).length;
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  return (
+    <div className="inspector">
+      {selected ? (
+        <SelectedInspector
+          {...props}
+          selected={selected}
+          key={`${doc.id}:${doc.revision}:${circuit.name}:${selected.id}`}
+          appearanceOpen={appearanceOpen}
+          setAppearanceOpen={setAppearanceOpen}
+        />
+      ) : selection.length ? (
+        <>
+          <div className="panel-heading">
+            {[
+              count && `${count} 个元件`,
+              wires.length && `${wires.length} 段导线`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+          <div className="inspector-content selected-wire-details">
+            {wires.slice(0, 8).map((w) => (
+              <p key={w.id}>
+                ({w.from.x}, {w.from.y}) → ({w.to.x}, {w.to.y})
+              </p>
+            ))}
+            {wires.length > 8 && <p>另有 {wires.length - 8} 段导线</p>}
+          </div>
+        </>
+      ) : (
+        <div className="quiet-empty">选择元件或导线以查看属性</div>
+      )}
+    </div>
+  );
+}
+
+function SelectedInspector({
   doc,
   circuit,
-  selection,
+  selected,
   edit,
   simulation,
   simulate,
   onError,
   onOpenMemory,
-}: Props) {
-  const selected = circuit.components.find((c) => c.id === selection[0]);
-  const [values, setValues] = useState<Record<string, string>>({});
+  connectionComponent,
+  appearanceOpen,
+  setAppearanceOpen,
+}: Props & {
+  selected: Circuit["components"][number];
+  appearanceOpen: boolean;
+  setAppearanceOpen: (value: boolean) => void;
+}) {
   const [fields, setFields] = useState<XmlNode[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    setFields([]);
-    setValues({});
-    if (!selected) return;
     let live = true;
     setLoading(true);
+    setLoadError("");
     void command<XmlNode>({
       op: "properties",
       id: doc.id,
@@ -46,18 +106,12 @@ export function Inspector({
       component: selected.id,
     })
       .then((result) => {
-        if (live) {
-          const attrs = result.children.filter((n) => n.tag === "attribute");
-          setFields(attrs);
-          setValues(
-            Object.fromEntries(
-              attrs.map((a) => [a.attributes.name, a.attributes.value]),
-            ),
-          );
-        }
+        if (live)
+          setFields(result.children.filter((n) => n.tag === "attribute"));
       })
-      .catch((e) => {
-        if (live) onError(e);
+      .catch((error) => {
+        if (live)
+          setLoadError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -65,35 +119,25 @@ export function Inspector({
     return () => {
       live = false;
     };
-  }, [doc.id, doc.revision, circuit.name, selected?.id]);
-  const changes = Object.fromEntries(
-    fields
-      .filter(
-        (f) =>
-          f.attributes.editable === "true" &&
-          values[f.attributes.name] !== f.attributes.value,
-      )
-      .map((f) => [f.attributes.name, values[f.attributes.name]]),
+  }, [doc.id, doc.revision, circuit.name, selected.id, retry]);
+  const live = simulation?.frame.children.find(
+    (n) =>
+      n.tag === "component" &&
+      [selected.id, connectionComponent?.componentId].includes(n.attributes.id),
   );
+  const input = live?.children.find((n) => n.tag === "input");
+  const ports = live?.children.filter((n) => n.tag === "port") || [];
   const trace = simulation?.frame.children.find((n) => n.tag === "trace");
   const watched =
     trace?.children
       .filter((n) => n.tag === "signal")
       .map((n) => n.attributes.key) || [];
-  const watchButton = (id: string, label: string, port: string) => (
-    <button
-      aria-label={`观察 ${label} 端口 ${port}`}
-      title="观察信号"
-      aria-pressed={watched.includes(`${id}:${port}`)}
-      disabled={watchPending}
-      onClick={() => void toggleWatch(`${id}:${port}`)}
-    >
-      <Eye size={13} />
-    </button>
-  );
   const [watchPending, setWatchPending] = useState(false);
-  const toggleWatch = async (key: string) => {
+  const nativeId =
+    live?.attributes.id || connectionComponent?.componentId || selected.id;
+  const toggleWatch = async (port: string) => {
     if (!simulation || watchPending) return;
+    const key = `${nativeId}:${port}`;
     setWatchPending(true);
     try {
       await simulate("trace", {
@@ -103,190 +147,204 @@ export function Inspector({
           : [...watched, key]
         ).join(","),
       });
-    } catch (e) {
-      onError(e);
+    } catch (error) {
+      onError(error);
     } finally {
       setWatchPending(false);
     }
   };
-  const signals =
-    simulation?.frame.children.filter((n) => n.tag === "component") || [];
+  const attributes = fields
+    .filter((f) => f.attributes.name !== "contents")
+    .sort(
+      (a, b) =>
+        Number(b.attributes.name === "label") -
+        Number(a.attributes.name === "label"),
+    );
+  const renderField = (field: XmlNode) => (
+    <PropertyField
+      key={field.attributes.name}
+      field={field}
+      disabled={loading}
+      onCommit={(value) =>
+        edit({
+          kind: "attributes",
+          id: selected.id,
+          values: { [field.attributes.name]: value },
+        })
+      }
+    />
+  );
+  const appearance = attributes.filter((f) =>
+    isAppearanceProperty(f.attributes.name),
+  );
+  const isInput =
+    live?.attributes.control === "input" ||
+    (!live && selected.name === "Pin" && selected.attributes.output !== "true");
+  const title =
+    selected.attributes.label ||
+    componentLabels[selected.name] ||
+    selected.name;
+  const subtitle = componentLabels[selected.name] || selected.name;
+  const ends = connectionComponent?.ends || [];
+  const valueOf = (name: string) =>
+    fields.find((f) => f.attributes.name === name)?.attributes.value ||
+    selected.attributes[name];
   return (
-    <div className="inspector">
-      {selected ? (
-        <>
-          <div className="panel-heading">
-            {selected.attributes.label || selected.name}
-          </div>
-          {["RAM", "ROM"].includes(selected.name) && (
-            <button
-              className="small-button"
-              onClick={() => onOpenMemory(selected.id)}
-            >
-              查看内容
-            </button>
-          )}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void edit({
-                kind: "attributes",
-                id: selected.id,
-                values: changes,
-              }).catch(onError);
+    <>
+      <div
+        className="panel-heading"
+        title={`${circuit.name} › ${selected.name} · (${selected.location.x}, ${selected.location.y})`}
+      >
+        {title}
+      </div>
+      <div className="inspector-content">
+        {title !== subtitle && (
+          <p className="inspector-description">{subtitle}</p>
+        )}
+        {isInput && (
+          <PropertyField
+            field={{
+              tag: "attribute",
+              text: null,
+              children: [],
+              attributes: {
+                name: "inputValue",
+                label: "输入值",
+                value: inputDisplay(
+                  input?.attributes.bits || ports[0]?.attributes.bits,
+                ),
+                editable: "true",
+              },
             }}
+            placeholder="未运行"
+            title="输入运行值并按 Enter；未运行时自动启动仿真"
+            onCommit={(value) =>
+              simulate("input", {
+                componentId: selected.id,
+                bits: inputBits(
+                  value,
+                  Number(
+                    input?.attributes.width ||
+                      ports[0]?.attributes.width ||
+                      valueOf("width") ||
+                      1,
+                  ),
+                  valueOf("tristate") === "true",
+                ),
+                ...(simulation ? { viewId: simulation.viewId } : {}),
+              })
+            }
+          />
+        )}
+        {live?.attributes.control === "parent-input" && (
+          <p className="inspector-description">
+            此输入由父电路驱动，可返回父图调整。
+          </p>
+        )}
+        {live?.attributes.control === "pulse" && simulation && (
+          <div className="input-action">
+            <span>按钮</span>
+            <HeldButton
+              simulate={simulate}
+              componentId={selected.id}
+              viewId={simulation.viewId}
+              onError={onError}
+            />
+          </div>
+        )}
+        {["RAM", "ROM"].includes(selected.name) && (
+          <button
+            className="inspector-memory"
+            onClick={() => onOpenMemory(selected.id)}
           >
-            {loading && (
-              <div role="status" className="muted">
-                正在读取属性…
-              </div>
-            )}
-            {fields
-              .filter((f) => f.attributes.editable === "true")
-              .map((field) => {
-                const key = field.attributes.name,
-                  value = values[key] || "";
-                const options = field.children.filter(
-                  (n) => n.tag === "option",
+            存储内容{" "}
+            <span>
+              {valueOf("addrWidth") && valueOf("dataWidth")
+                ? `${2 ** Number(valueOf("addrWidth"))} × ${valueOf("dataWidth")} bit　›`
+                : "›"}
+            </span>
+          </button>
+        )}
+        <h3 className="property-heading">属性</h3>
+        {loading && (
+          <p className="muted" role="status">
+            正在读取属性…
+          </p>
+        )}
+        {loadError && (
+          <div className="property-error" role="alert">
+            {loadError}
+            <button onClick={() => setRetry((value) => value + 1)}>
+              重新读取
+            </button>
+          </div>
+        )}
+        {attributes
+          .filter((f) => !isAppearanceProperty(f.attributes.name))
+          .map(renderField)}
+        {ends.length > 0 && (
+          <table className="pin-table">
+            <thead>
+              <tr>
+                <th>接口</th>
+                <th>位宽</th>
+                {simulation && (
+                  <>
+                    <th>运行值</th>
+                    <th />
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {ends.map((end) => {
+                const value = ports.find(
+                  (p) => p.attributes.index === String(end.index),
                 );
                 return (
-                  <label key={key}>
-                    <span>{field.attributes.label || key}</span>
-                    {options.length ? (
-                      <select
-                        value={value}
-                        onChange={(e) =>
-                          setValues({ ...values, [key]: e.target.value })
-                        }
-                      >
-                        {options.map((o) => (
-                          <option
-                            key={o.attributes.value}
-                            value={o.attributes.value}
+                  <tr key={end.index}>
+                    <td title={end.runtimeTooltip || undefined}>
+                      {portName(connectionComponent!, end)}
+                    </td>
+                    <td>{end.width ?? "?"}</td>
+                    {simulation && (
+                      <>
+                        <td>
+                          <code>{value?.attributes.bits || "—"}</code>
+                        </td>
+                        <td>
+                          <button
+                            aria-label={`观察端口 ${end.index}`}
+                            title="观察信号"
+                            aria-pressed={watched.includes(
+                              `${nativeId}:${end.index}`,
+                            )}
+                            disabled={watchPending || !value}
+                            onClick={() => void toggleWatch(String(end.index))}
                           >
-                            {o.attributes.label || o.attributes.value}
-                          </option>
-                        ))}
-                      </select>
-                    ) : value.includes("\n") || key === "contents" ? (
-                      <textarea
-                        rows={6}
-                        value={value}
-                        onChange={(e) =>
-                          setValues({ ...values, [key]: e.target.value })
-                        }
-                      />
-                    ) : (
-                      <input
-                        value={value}
-                        onChange={(e) =>
-                          setValues({ ...values, [key]: e.target.value })
-                        }
-                      />
+                            <Eye size={13} />
+                          </button>
+                        </td>
+                      </>
                     )}
-                  </label>
+                  </tr>
                 );
               })}
-            <button
-              className="small-button"
-              type="submit"
-              disabled={loading || !Object.keys(changes).length}
-            >
-              应用
-            </button>
-          </form>
-        </>
-      ) : (
-        <div className="quiet-empty">
-          {selection.length
-            ? `已选择 ${selection.length} 个对象`
-            : "选择元件以查看属性"}
-        </div>
-      )}
-      {simulation && (
-        <>
-          <div className="panel-heading">
-            信号 <span>{simulation.frame.attributes.ticks || 0} ticks</span>
-          </div>
-          <div className="signals">
-            {signals.map((signal) => {
-              const c = circuit.components.find(
-                (c) => c.id === signal.attributes.id,
-              );
-              if (!c) return null;
-              const input = signal.children.find((n) => n.tag === "input");
-              const ports = signal.children.filter((n) => n.tag === "port");
-              if (!ports.length) return null;
-              const output = ports.length === 1 ? ports[0] : null;
-              return (
-                <div className="signal-block" key={c.id}>
-                  <div className="signal">
-                    <span>{c.attributes.label || c.name}</span>
-                    {signal.attributes.control === "input" ? (
-                      <input
-                        aria-label={(c.attributes.label || c.name) + " 输入"}
-                        key={c.id + input?.attributes.bits}
-                        defaultValue={input?.attributes.bits || "0"}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.currentTarget.blur();
-                        }}
-                        onBlur={(e) => {
-                          if (e.currentTarget.value !== input?.attributes.bits)
-                            void simulate("input", {
-                              componentId: c.id,
-                              bits: e.currentTarget.value,
-                            }).catch(onError);
-                        }}
-                      />
-                    ) : signal.attributes.control === "pulse" ? (
-                      <HeldButton
-                        simulate={simulate}
-                        componentId={c.id}
-                        viewId={simulation.viewId}
-                        onError={onError}
-                      />
-                    ) : output ? (
-                      <code>{output.attributes.bits}</code>
-                    ) : null}
-                    {output &&
-                      watchButton(
-                        c.id,
-                        c.attributes.label || c.name,
-                        output.attributes.index,
-                      )}
-                  </div>
-                  {ports.length > 1 && (
-                    <div className="signal-ports">
-                      {signal.children
-                        .filter((n) => n.tag === "port")
-                        .map((port) => {
-                          const key = `${c.id}:${port.attributes.index}`;
-                          return (
-                            <div key={key}>
-                              <code>
-                                {port.attributes.index}: {port.attributes.bits}
-                              </code>
-                              <button
-                                aria-label={`观察 ${c.attributes.label || c.name} 端口 ${port.attributes.index}`}
-                                title="观察信号"
-                                aria-pressed={watched.includes(key)}
-                                disabled={watchPending}
-                                onClick={() => void toggleWatch(key)}
-                              >
-                                <Eye size={13} />
-                              </button>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+            </tbody>
+          </table>
+        )}
+        {appearance.length > 0 && (
+          <details
+            className="appearance-properties"
+            open={appearanceOpen}
+            onToggle={(e) => setAppearanceOpen(e.currentTarget.open)}
+          >
+            <summary>外观</summary>
+            {appearance.map(renderField)}
+          </details>
+        )}
+      </div>
+    </>
   );
 }
 

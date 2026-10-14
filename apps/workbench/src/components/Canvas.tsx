@@ -1,6 +1,7 @@
 import { useMovePreview } from "../lib/useMovePreview";
 import type { PlacementState } from "../lib/usePlacement";
 import { Connections } from "./Connections";
+import { SelectionConnections } from "./SelectionConnections";
 import {
   connectionIndex,
   documentComponent,
@@ -45,6 +46,12 @@ interface Props {
   simulate: (op: string, attrs?: Record<string, string>) => Promise<void>;
   onError: (e: unknown) => void;
   fitToken: number;
+  zoomRequest?: { token: number; factor: number };
+  onZoomChange?: (zoom: number) => void;
+  onObservation?: (observation: {
+    scope: string;
+    focus: ConnectionFocus | null;
+  }) => void;
   showGrid?: boolean;
   placement: PlacementState;
   onPlace: (revision: string, edit: Edit) => Promise<Document>;
@@ -72,6 +79,9 @@ export function Canvas({
   simulate,
   onError,
   fitToken,
+  zoomRequest,
+  onZoomChange,
+  onObservation,
   showGrid = true,
   placement,
   onPlace,
@@ -85,6 +95,29 @@ export function Canvas({
   const container = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [view, setView] = useState({ x: -40, y: -40, scale: 1 });
+  const lastZoom = useRef(zoomRequest?.token);
+  useEffect(() => {
+    onZoomChange?.(view.scale);
+  }, [view.scale, onZoomChange]);
+  useEffect(() => {
+    if (!zoomRequest || lastZoom.current === zoomRequest.token) return;
+    lastZoom.current = zoomRequest.token;
+    setView((previous) => {
+      const scale = Math.max(
+        0.05,
+        Math.min(8, previous.scale * zoomRequest.factor),
+      );
+      return {
+        x:
+          previous.x + size.width / 2 / previous.scale - size.width / 2 / scale,
+        y:
+          previous.y +
+          size.height / 2 / previous.scale -
+          size.height / 2 / scale,
+        scale,
+      };
+    });
+  }, [zoomRequest, size]);
   const [image, setImage] = useState<{
     src: string;
     bounds: Bounds;
@@ -211,12 +244,25 @@ export function Canvas({
   }>({ scope: "", focus: null });
   const focus =
     observation.scope === observationScope ? observation.focus : null;
+  const [observationError, setObservationError] = useState("");
+  useEffect(() => {
+    onObservation?.({ scope: observationScope, focus });
+  }, [onObservation, observationScope, focus]);
   const observed = useMemo(() => focus?.components || [], [focus]);
   const connections = useMemo(
     () => (focus ? connectionIndex(focus) : null),
     [focus],
   );
   const [signal, setSignal] = useState<SignalTarget | null>(null);
+  const internalSelection = useRef<string | null>(null);
+  useEffect(() => {
+    if (internalSelection.current !== selection.join(",")) setSignal(null);
+    internalSelection.current = null;
+  }, [selection.join(",")]);
+  const selectObjects = (ids: string[]) => {
+    setSignal(null);
+    setSelection(ids);
+  };
   const [signalHistory, setSignalHistory] = useState<
     { view: typeof view; selection: string[]; signal: SignalTarget | null }[]
   >([]);
@@ -302,6 +348,7 @@ export function Canvas({
     setDelta({ x: 0, y: 0 });
     releaseRef.current();
     setObservation({ scope: "", focus: null });
+    setObservationError("");
     setSignal(null);
     setSignalHistory([]);
     setImage(null);
@@ -323,7 +370,10 @@ export function Canvas({
           });
       })
       .catch((e) => {
-        if (live) onError(e);
+        if (live) {
+          setObservationError(e instanceof Error ? e.message : String(e));
+          onError(e);
+        }
       });
     return () => {
       live = false;
@@ -400,6 +450,7 @@ export function Canvas({
       ...previous.slice(-39),
       { view, selection: [...selection], signal: previousSignal },
     ]);
+    internalSelection.current = component.id;
     setSelection([component.id]);
     const b = peer.component.bounds;
     const scale = Math.min(
@@ -419,6 +470,7 @@ export function Canvas({
     if (!previous) return;
     setSignalHistory((items) => items.slice(0, -1));
     setSignal(previous.signal);
+    internalSelection.current = previous.selection.join(",");
     setSelection(previous.selection);
     setView(previous.view);
   };
@@ -432,7 +484,17 @@ export function Canvas({
           onClose={() => setSignal(null)}
           onBack={signalHistory.length ? signalBack : undefined}
         />
-      ) : null,
+      ) : (
+        <SelectionConnections
+          focus={focus}
+          circuit={circuit}
+          selection={selection}
+          error={observationError}
+          onVisit={visitSignal}
+          onTrace={(target) => startSignal(target, false)}
+          onBack={signalHistory.length ? signalBack : undefined}
+        />
+      ),
     );
   }, [
     signal,
@@ -441,6 +503,9 @@ export function Canvas({
     view,
     selection.join(","),
     onSignalView,
+    focus,
+    circuit,
+    observationError,
   ]);
   useEffect(() => () => onSignalView?.(null), [onSignalView]);
   useEffect(() => {
@@ -462,7 +527,7 @@ export function Canvas({
     window.addEventListener("keydown", listener, true);
     return () => window.removeEventListener("keydown", listener, true);
   }, [signalHistory]);
-  const startSignal = (target: SignalTarget | null) => {
+  const startSignal = (target: SignalTarget | null, jump = true) => {
     if (!connections || !target) {
       onError("未读取到此信号的连接信息");
       return;
@@ -475,7 +540,7 @@ export function Canvas({
       target.bits,
       target.origin,
     ).singleSource;
-    if (source) visitSignal(source, previous);
+    if (source && jump) visitSignal(source, previous);
   };
   const traceAt = (p: Point, id: string | null) => {
     if (!connections) {
@@ -509,7 +574,7 @@ export function Canvas({
       return;
     }
     if (component) {
-      setSelection([id!]);
+      selectObjects([id!]);
       onError("请选择要追踪的端口");
     }
   };
@@ -538,20 +603,35 @@ export function Canvas({
       setView({ x: -40, y: -40, scale: 1 });
       return;
     }
-    const minX = Math.min(...points.map((p) => p.x)) - 100,
-      minY = Math.min(...points.map((p) => p.y)) - 80,
-      maxX = Math.max(...points.map((p) => p.x)) + 70,
-      maxY = Math.max(...points.map((p) => p.y)) + 80;
+    const minX = Math.min(...points.map((p) => p.x)) - 45,
+      minY = Math.min(...points.map((p) => p.y)) - 45,
+      maxX = Math.max(...points.map((p) => p.x)) + 45,
+      maxY = Math.max(...points.map((p) => p.y)) + 45;
+    const viewport = container.current!.getBoundingClientRect();
+    const surface = container.current!.parentElement;
+    const toolbar = surface
+      ?.querySelector(".canvas-tools")
+      ?.getBoundingClientRect();
+    const transport = surface
+      ?.querySelector(".simulation-transport")
+      ?.getBoundingClientRect();
+    const top = transport
+      ? Math.max(0, transport.bottom - viewport.top) + 12
+      : 0;
+    const bottom = toolbar
+      ? Math.max(0, viewport.bottom - toolbar.top) + 12
+      : 0;
+    const availableHeight = Math.max(1, size.height - top - bottom);
     const scale = Math.min(
       2,
       Math.max(
         0.08,
-        Math.min(size.width / (maxX - minX), size.height / (maxY - minY)),
+        Math.min(size.width / (maxX - minX), availableHeight / (maxY - minY)),
       ),
     );
     setView({
       x: minX - (size.width / scale - (maxX - minX)) / 2,
-      y: minY - (size.height / scale - (maxY - minY)) / 2,
+      y: (minY + maxY) / 2 - (top + availableHeight / 2) / scale,
       scale,
     });
   }, [doc.id, circuit.name, fitToken, size, observed, boundsFor]);
@@ -718,7 +798,7 @@ export function Canvas({
           wireGesture.current = null;
           setDrag(null);
           setDelta({ x: 0, y: 0 });
-          setSelection([]);
+          selectObjects([]);
         }
         if (e.key === "Enter" && wire.length) {
           e.preventDefault();
@@ -800,7 +880,7 @@ export function Canvas({
               ? selection
               : [target]
           : [];
-        setSelection(ids);
+        selectObjects(ids);
         setDelta({ x: 0, y: 0 });
         e.currentTarget.setPointerCapture(e.pointerId);
         const selectedWire =
@@ -863,7 +943,7 @@ export function Canvas({
             right: Math.max(p.x, drag.start.x),
             bottom: Math.max(p.y, drag.start.y),
           };
-          setSelection(
+          selectObjects(
             [...circuit.components, ...circuit.wires]
               .filter((item) => {
                 const b = boundsFor(item.id);
@@ -1123,14 +1203,7 @@ export function Canvas({
         {moving && movePreview.error && (
           <span role="status">{movePreview.error}</span>
         )}
-        <span>
-          {loading ? "正在绘制…" : `${Math.round(view.scale * 100)}%`}
-        </span>
-        {cursor && (
-          <span>
-            {cursor.x}, {cursor.y}
-          </span>
-        )}
+        {loading && <span role="status">正在绘制…</span>}
       </div>
     </div>
   );

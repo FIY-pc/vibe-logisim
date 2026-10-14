@@ -1417,7 +1417,7 @@ impl Host {
                     revision,
                     circuit,
                     command,
-                    attributes,
+                    mut attributes,
                 } => {
                     if command == "button-release" {
                         let mut native = self.native.lock().await;
@@ -1435,18 +1435,41 @@ impl Host {
                         }
                         return Ok(Value::Null);
                     }
+                    let initial_frequency = attributes.remove("initialFrequency");
+                    if let Some(value) = &initial_frequency {
+                        let rate: f64 = value.parse().map_err(|_| "无效时钟频率")?;
+                        if !rate.is_finite() || !(0.25..=4096.0).contains(&rate) {
+                            return Err("时钟频率应在 0.25–4096 tick/s 之间".into());
+                        }
+                    }
                     let (path, view) = self.snapshot(&id, &revision).await?;
                     let mut native = self.native.lock().await;
-                    if !native.simulation.as_ref().is_some_and(|s| {
+                    let was_active = native.simulation.as_ref().is_some_and(|s| {
                         s.document_id == id
                             && s.revision == revision
                             && s.circuit == circuit
                             && !s.failed()
-                    }) {
+                    });
+                    if !was_active {
                         native.start_simulation(&path, &view, &circuit).await?;
                     }
                     let simulation = native.simulation.as_mut().unwrap();
-                    if command == "start" {
+                    if !was_active && let Some(frequency) = initial_frequency {
+                        simulation.command("configure", BTreeMap::from([("frequency".into(), frequency)])).await?;
+                    }
+                    // Resolve toggles against an acknowledged native frame under the same
+                    // lock as session selection. Rapid commands must not reuse a stale UI frame.
+                    if command == "toggle-clock" || command == "toggle-propagation" {
+                        let frame = simulation.sample().await?;
+                        if command == "toggle-clock" {
+                            let action = if frame["frame"]["attributes"]["running"] == "true" { "pause" } else { "play" };
+                            simulation.command(action, attributes).await?;
+                        } else if was_active {
+                            attributes.insert("automatic".into(), (frame["frame"]["attributes"]["automatic"] == "false").to_string());
+                            simulation.command("configure", attributes).await?;
+                        }
+                        simulation.sample().await
+                    } else if command == "start" {
                         Ok(simulation.state())
                     } else {
                         simulation.command(&command, attributes).await

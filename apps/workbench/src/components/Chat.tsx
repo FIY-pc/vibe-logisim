@@ -4,6 +4,11 @@ import { useChatReferences } from "./ChatReferences";
 import type { Quotation } from "../lib/references";
 import { eventBinding } from "../lib/shortcuts";
 import { ProviderSettings } from "./ProviderSettings";
+import {
+  ModelPicker,
+  type ModelOption,
+  type ModelListResult,
+} from "./ModelPicker";
 import { ProposalReview, type SourceProposal } from "./ProposalReview";
 import { TextPrompt } from "./TextPrompt";
 import { ImportHistory } from "./ImportHistory";
@@ -50,7 +55,13 @@ interface RuntimeState {
   status: string;
   available: boolean;
   detail?: string | null;
-  account?: unknown;
+  account?: { email?: string } | null;
+  signingIn?: boolean;
+  defaultRuntime?: "builtin" | "codex";
+  defaultServiceId?: string | null;
+  accountMode?: string;
+  inheritedModel?: string | null;
+  modelSelection?: { model: string; effort: string | null } | null;
   runtimeInstall?: {
     phase: string;
     received: number;
@@ -116,9 +127,7 @@ export function Chat({
     [configure, setConfigure] = useState(false),
     [pending, setPending] = useState(false);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]),
-    [models, setModels] = useState<
-      { model: string; name?: string; label?: string }[]
-    >([]);
+    [models, setModels] = useState<ModelOption[]>([]);
   const [connection, setConnection] = useState(0);
   const proposals = useProposals(doc?.id, connection, onError);
   const [reviewing, setReviewing] = useState<SourceProposal | null>(null);
@@ -398,12 +407,7 @@ export function Chat({
     Boolean(state?.busy),
     connection,
   ]);
-  const scroll = useConversationScroll(
-    scroller,
-    draftKey,
-    visible && !configure,
-    messages,
-  );
+  const scroll = useConversationScroll(scroller, draftKey, visible, messages);
   const send = async () => {
     if (
       !doc ||
@@ -554,23 +558,63 @@ export function Chat({
         "conversations",
       );
       if (c) setConversations(c.conversations);
-    } catch (e) {
-      onError(e);
     } finally {
       setPending(false);
     }
   };
   const login = () =>
-    void runtime<{ authUrl: string }>("login")
-      .then(async ({ authUrl }) => {
-        if (desktop()) await openUrl(authUrl);
-        else window.open(authUrl, "_blank", "noopener,noreferrer");
-      })
-      .catch(onError);
-  const loadModels = () =>
-    void runtime<{ models: typeof models }>("models", { refresh: true })
-      .then((r) => setModels(r.models))
-      .catch(onError);
+    runtime<{ authUrl: string }>("login").then(async ({ authUrl }) => {
+      if (desktop()) await openUrl(authUrl);
+      else window.open(authUrl, "_blank", "noopener,noreferrer");
+    });
+  const modelScope = JSON.stringify([
+    workspaceKey,
+    state?.conversationId,
+    state?.runtime,
+    state?.customProvider?.id,
+    state?.customProvider?.baseUrl,
+    state?.customProvider?.api,
+    state?.account?.email,
+  ]);
+  const modelScopeRef = useRef(modelScope);
+  modelScopeRef.current = modelScope;
+  useEffect(() => setModels([]), [modelScope]);
+  const loadModels = async (force: boolean): Promise<ModelListResult> => {
+    const scope = modelScope;
+    const response = await runtime<ModelListResult>("models", {
+      refresh: force,
+    });
+    if (scope !== modelScopeRef.current)
+      throw new Error("模型服务已变化，请重新打开列表");
+    setModels(response.models);
+    return response;
+  };
+  const currentModel = models.find((model) => model.model === state?.model);
+  const defaultEfforts = [
+    ["none", "默认"],
+    ["low", "轻度"],
+    ["medium", "中"],
+    ["high", "高"],
+    ["xhigh", "极高"],
+    ["max", "最高"],
+  ];
+  const effortLabels: Record<string, string> = Object.fromEntries([
+    ...defaultEfforts,
+    ["minimal", "最少"],
+    ["ultra", "Ultra"],
+  ]);
+  const effortOptions =
+    state?.runtime === "codex" && currentModel?.efforts
+      ? currentModel.efforts.map((effort) => [
+          effort.value,
+          effortLabels[effort.value] || effort.value,
+        ])
+      : defaultEfforts;
+  if (state?.effort && !effortOptions.some(([value]) => value === state.effort))
+    effortOptions.unshift([
+      state.effort,
+      effortLabels[state.effort] || state.effort,
+    ]);
   return (
     <div className="chat" style={visible ? undefined : { display: "none" }}>
       {renameConversation && (
@@ -639,8 +683,8 @@ export function Chat({
           </div>
         </details>
         <button
-          title="模型服务"
-          aria-label="模型服务"
+          title="AI 设置"
+          aria-label="AI 设置"
           onClick={() => setConfigure(!configure)}
         >
           <Settings2 size={15} />
@@ -671,40 +715,9 @@ export function Chat({
       )}
       {state?.runtime === "builtin" && state.modelConfigurationError && (
         <div className="runtime-progress">
-          {state.services.length ? (
-            <select
-              aria-label="为当前会话选择服务"
-              defaultValue=""
-              disabled={state.busy || pending}
-              onChange={(e) => {
-                const service = state.services.find(
-                  (s) => s.id === e.target.value,
-                );
-                if (!service) return;
-                setPending(true);
-                void runtime("bindProvider", {
-                  id: service.id,
-                  baseUrl: service.baseUrl,
-                  api: service.api,
-                  conversationId: state.conversationId,
-                })
-                  .then(() => refresh())
-                  .catch(onError)
-                  .finally(() => setPending(false));
-              }}
-            >
-              <option value="" disabled>
-                选择模型服务
-              </option>
-              {state.services.map((service) => (
-                <option key={service.id} value={service.id}>
-                  {service.name || service.baseUrl}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <button onClick={() => setConfigure(true)}>添加模型服务</button>
-          )}
+          <button onClick={() => setConfigure(true)}>
+            {state.services.length ? "选择模型服务" : "添加模型服务"}
+          </button>
         </div>
       )}
       {state?.runtimeInstall?.busy && state.runtime === "codex" && (
@@ -720,378 +733,387 @@ export function Chat({
           </button>
         </div>
       )}
-      {configure ? (
+      {configure && (
         <ProviderSettings
-          key={state?.runtime || "builtin"}
           runtime={state?.runtime || "builtin"}
           services={state?.services || []}
           provider={state?.customProvider || null}
+          defaultRuntime={state?.defaultRuntime}
+          defaultServiceId={state?.defaultServiceId}
+          conversationId={state?.conversationId}
+          hasHistory={messages.some((message) => message.type === "user")}
+          configurationError={state?.modelConfigurationError?.message}
+          account={state?.account}
+          signingIn={state?.signingIn}
+          install={state?.runtimeInstall}
           busy={pending || Boolean(state?.busy)}
           canImport={workspaceReady}
           request={runtime}
           onRuntime={chooseRuntime}
           onLogin={login}
-          onImport={() => setImporting(true)}
+          onImport={() => {
+            setConfigure(false);
+            setImporting(true);
+          }}
           onSaved={async () => {
             setModels([]);
             await refresh();
           }}
           onClose={() => setConfigure(false)}
         />
-      ) : (
-        <>
-          {importResult && (
-            <div className="runtime-progress" role="status">
-              {importResult}
-              <button
-                aria-label="关闭导入结果"
-                onClick={() => setImportResult("")}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-          {(state?.contextTransfer?.pending ||
-            (!state?.contextTransfer && state?.migration?.requiresContext)) && (
-            <div className="runtime-progress">
-              {state?.contextTransfer?.reason === "contract-change"
-                ? "运行时已更新，继续时会携带旧对话的文字记录。"
-                : "继续时会携带旧版文字记录，建立新的会话。"}
-              {state?.contextTransfer?.truncated && "仅携带最近记录。"}
-            </div>
-          )}
-          <div
-            ref={scroller}
-            className="messages"
-            tabIndex={0}
-            onScroll={scroll.onScroll}
-            onWheel={scroll.onWheel}
-            onKeyDown={scroll.onKeyDown}
-          >
-            <div className="messages-content">
-              {(!workspaceReady || !messages.length) && (
-                <div className="quiet-empty">
-                  {!doc ? (
-                    "打开电路后开始对话"
-                  ) : !state?.services?.length && state?.runtime !== "codex" ? (
-                    <button onClick={() => setConfigure(true)}>
-                      添加模型服务
-                    </button>
-                  ) : state?.runtime === "codex" &&
-                    state.status === "auth-required" ? (
-                    <button onClick={login}>使用 ChatGPT 登录</button>
+      )}
+      <>
+        {importResult && (
+          <div className="runtime-progress" role="status">
+            {importResult}
+            <button
+              aria-label="关闭导入结果"
+              onClick={() => setImportResult("")}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {(state?.contextTransfer?.pending ||
+          (!state?.contextTransfer && state?.migration?.requiresContext)) && (
+          <div className="runtime-progress">
+            {state?.contextTransfer?.reason === "contract-change"
+              ? "运行时已更新，继续时会携带旧对话的文字记录。"
+              : "继续时会携带旧版文字记录，建立新的会话。"}
+            {state?.contextTransfer?.truncated && "仅携带最近记录。"}
+          </div>
+        )}
+        <div
+          ref={scroller}
+          className="messages"
+          tabIndex={0}
+          onScroll={scroll.onScroll}
+          onWheel={scroll.onWheel}
+          onKeyDown={scroll.onKeyDown}
+        >
+          <div className="messages-content">
+            {(!workspaceReady || !messages.length) && (
+              <div className="quiet-empty">
+                {!doc ? (
+                  "打开电路后开始对话"
+                ) : !state?.services?.length && state?.runtime !== "codex" ? (
+                  <button onClick={() => setConfigure(true)}>
+                    添加模型服务
+                  </button>
+                ) : state?.runtime === "codex" &&
+                  state.status === "auth-required" ? (
+                  <button onClick={() => void login().catch(onError)}>
+                    使用 ChatGPT 登录
+                  </button>
+                ) : (
+                  "描述要完成的电路，或选中元件后提问。"
+                )}
+              </div>
+            )}
+            {(workspaceReady ? messages : []).map((m, index) =>
+              m.type === "activity" ? (
+                index > 0 && messages[index - 1].type === "activity" ? null : (
+                  <ActivityBatch
+                    messages={messages.slice(
+                      index,
+                      messages.findIndex(
+                        (item, next) =>
+                          next > index && item.type !== "activity",
+                      ) < 0
+                        ? undefined
+                        : messages.findIndex(
+                            (item, next) =>
+                              next > index && item.type !== "activity",
+                          ),
+                    )}
+                    key={m.id}
+                  />
+                )
+              ) : m.type === "reasoning" ? (
+                <details className="message reasoning" key={m.id}>
+                  <summary>思考过程</summary>
+                  {m.text}
+                </details>
+              ) : ["user", "assistant"].includes(m.type) ? (
+                <div className={"message " + m.type} key={m.id}>
+                  {editingMessage?.id === m.id ? (
+                    <div className="message-edit">
+                      <textarea
+                        aria-label="编辑消息"
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                      />
+                      <button
+                        disabled={pending || !editedText.trim()}
+                        onClick={() => void resubmit()}
+                      >
+                        重新发送
+                      </button>
+                      <button
+                        disabled={pending}
+                        onClick={() => setEditingMessage(null)}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  ) : m.type === "assistant" ? (
+                    <ChatMarkdown
+                      text={m.text || ""}
+                      onError={onError}
+                      onFollowReference={
+                        onFollowReference
+                          ? (href) =>
+                              onFollowReference(href, {
+                                ...m,
+                                context:
+                                  m.context ||
+                                  messages
+                                    .slice(0, index)
+                                    .reverse()
+                                    .find((message) => message.type === "user")
+                                    ?.context,
+                              })
+                          : undefined
+                      }
+                    />
                   ) : (
-                    "描述要完成的电路，或选中元件后提问。"
+                    m.text
+                  )}
+                  {references.renderContext(m.context)}
+                  {renderMessageContext?.(m)}
+                  {!editingMessage && (
+                    <div className="message-actions">
+                      <CopyButton text={m.text || ""} onError={onError} />
+                      {!state?.busy && m.canEdit && (
+                        <button
+                          title="编辑并重新发送"
+                          aria-label="编辑并重新发送"
+                          disabled={pending}
+                          onClick={() => {
+                            setEditingMessage(m);
+                            setEditedText(m.text || "");
+                          }}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      )}
+                      {!state?.busy && m.canFork && (
+                        <button
+                          title="从这里创建分支"
+                          aria-label="从这里创建分支"
+                          disabled={pending}
+                          onClick={() => void fork(m.id)}
+                        >
+                          <GitBranch size={12} />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-              {(workspaceReady ? messages : []).map((m, index) =>
-                m.type === "activity" ? (
-                  index > 0 &&
-                  messages[index - 1].type === "activity" ? null : (
-                    <ActivityBatch
-                      messages={messages.slice(
-                        index,
-                        messages.findIndex(
-                          (item, next) =>
-                            next > index && item.type !== "activity",
-                        ) < 0
-                          ? undefined
-                          : messages.findIndex(
-                              (item, next) =>
-                                next > index && item.type !== "activity",
-                            ),
-                      )}
-                      key={m.id}
-                    />
-                  )
-                ) : m.type === "reasoning" ? (
-                  <details className="message reasoning" key={m.id}>
-                    <summary>思考过程</summary>
-                    {m.text}
-                  </details>
-                ) : ["user", "assistant"].includes(m.type) ? (
-                  <div className={"message " + m.type} key={m.id}>
-                    {editingMessage?.id === m.id ? (
-                      <div className="message-edit">
-                        <textarea
-                          aria-label="编辑消息"
-                          value={editedText}
-                          onChange={(e) => setEditedText(e.target.value)}
-                        />
-                        <button
-                          disabled={pending || !editedText.trim()}
-                          onClick={() => void resubmit()}
-                        >
-                          重新发送
-                        </button>
-                        <button
-                          disabled={pending}
-                          onClick={() => setEditingMessage(null)}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    ) : m.type === "assistant" ? (
-                      <ChatMarkdown
-                        text={m.text || ""}
-                        onError={onError}
-                        onFollowReference={
-                          onFollowReference
-                            ? (href) =>
-                                onFollowReference(href, {
-                                  ...m,
-                                  context:
-                                    m.context ||
-                                    messages
-                                      .slice(0, index)
-                                      .reverse()
-                                      .find(
-                                        (message) => message.type === "user",
-                                      )?.context,
-                                })
-                            : undefined
-                        }
-                      />
-                    ) : (
-                      m.text
-                    )}
-                    {references.renderContext(m.context)}
-                    {renderMessageContext?.(m)}
-                    {!editingMessage && (
-                      <div className="message-actions">
-                        <CopyButton text={m.text || ""} onError={onError} />
-                        {!state?.busy && m.canEdit && (
-                          <button
-                            title="编辑并重新发送"
-                            aria-label="编辑并重新发送"
-                            disabled={pending}
-                            onClick={() => {
-                              setEditingMessage(m);
-                              setEditedText(m.text || "");
-                            }}
-                          >
-                            <Pencil size={12} />
-                          </button>
-                        )}
-                        {!state?.busy && m.canFork && (
-                          <button
-                            title="从这里创建分支"
-                            aria-label="从这里创建分支"
-                            disabled={pending}
-                            onClick={() => void fork(m.id)}
-                          >
-                            <GitBranch size={12} />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : null,
-              )}
-              {state?.transmission && (
-                <div className="error-bar">{state.transmission.message}</div>
-              )}
-              {workspaceReady && questions?.workspaceKey === workspaceKey && (
-                <form
-                  className="agent-questions"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const data = new FormData(e.currentTarget);
-                    const answers = Object.fromEntries(
-                      questions.questions.map((q: any) => [
-                        q.id,
-                        String(data.get(q.id) || ""),
-                      ]),
-                    );
-                    void runtime("answer", {
-                      requestId: questions.requestId,
-                      answers,
-                    })
-                      .then(() =>
-                        setQuestions((current: any) =>
-                          current?.requestId === questions.requestId
-                            ? null
-                            : current,
-                        ),
-                      )
-                      .catch(onError);
-                  }}
-                >
-                  {questions.questions.map((q: any) => (
-                    <label key={q.id}>
-                      {q.question}
-                      <input
-                        required
-                        maxLength={4000}
-                        name={q.id}
-                        list={"answers-" + q.id}
-                      />
-                      <datalist id={"answers-" + q.id}>
-                        {q.options?.map((o: any) => (
-                          <option key={o.label} value={o.label} />
-                        ))}
-                      </datalist>
-                    </label>
-                  ))}
-                  <button type="submit">继续</button>
-                </form>
-              )}
-              {proposals.proposals.map((proposal) => (
-                <div className="proposal" key={proposal.id}>
-                  <span>
-                    待审阅改动
-                    {proposals.proposals.length > 1 && (
-                      <small>
-                        {" "}
-                        ·{" "}
-                        {new Date(proposal.createdAt).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </small>
-                    )}
-                  </span>
-                  <button
-                    className="primary"
-                    disabled={proposals.pending.has(proposal.id)}
-                    onClick={() => setReviewing(proposal)}
-                  >
-                    审阅
-                  </button>
-                  <button
-                    disabled={proposals.pending.has(proposal.id)}
-                    onClick={() => discardProposal(proposal)}
-                  >
-                    放弃
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-          {!scroll.following && <FollowLatest onClick={scroll.latest} />}
-          <div className="composer">
-            {references.composer}
-            {composerAttachmentSlot}
-            <textarea
-              value={draft}
-              onChange={(e) => changeDraft(e.target.value)}
-              placeholder="描述你的想法…"
-              aria-label="消息"
-              disabled={!workspaceReady}
-              onKeyDown={(e) => {
-                if (
-                  e.key === "Enter" &&
-                  !e.shiftKey &&
-                  !e.nativeEvent.isComposing
-                ) {
+              ) : null,
+            )}
+            {state?.transmission && (
+              <div className="error-bar">{state.transmission.message}</div>
+            )}
+            {workspaceReady && questions?.workspaceKey === workspaceKey && (
+              <form
+                className="agent-questions"
+                onSubmit={(e) => {
                   e.preventDefault();
-                  void send();
-                }
-              }}
-            />
-            <footer>
-              <select
-                aria-label="模型"
-                value={state?.model || ""}
-                onFocus={() => {
-                  if (!models.length) loadModels();
+                  const data = new FormData(e.currentTarget);
+                  const answers = Object.fromEntries(
+                    questions.questions.map((q: any) => [
+                      q.id,
+                      String(data.get(q.id) || ""),
+                    ]),
+                  );
+                  void runtime("answer", {
+                    requestId: questions.requestId,
+                    answers,
+                  })
+                    .then(() =>
+                      setQuestions((current: any) =>
+                        current?.requestId === questions.requestId
+                          ? null
+                          : current,
+                      ),
+                    )
+                    .catch(onError);
                 }}
-                disabled={!workspaceReady || pending || state?.busy}
-                onChange={(e) =>
-                  void runtime("selectModel", {
-                    model: e.target.value,
-                    effort: state?.effort || "none",
-                  })
-                    .then(() => refresh())
-                    .catch(onError)
-                }
               >
-                <option value={state?.model || ""}>
-                  {state?.model || "选择模型"}
-                </option>
-                {models
-                  .filter((m) => m.model !== state?.model)
-                  .map((m) => (
-                    <option key={m.model} value={m.model}>
-                      {m.name || m.label || m.model}
-                    </option>
-                  ))}
-              </select>
-              <select
-                aria-label="思考深度"
-                value={state?.effort || "none"}
-                disabled={
-                  !workspaceReady || pending || !state?.model || state.busy
-                }
-                onChange={(e) =>
-                  void runtime("selectModel", {
-                    model: state?.model,
-                    effort: e.target.value,
-                  })
-                    .then(() => refresh())
-                    .catch(onError)
-                }
-              >
-                {[
-                  ["none", "默认"],
-                  ["low", "轻度"],
-                  ["medium", "中"],
-                  ["high", "高"],
-                  ["xhigh", "极高"],
-                  ["max", "最高"],
-                ].map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
+                {questions.questions.map((q: any) => (
+                  <label key={q.id}>
+                    {q.question}
+                    <input
+                      required
+                      maxLength={4000}
+                      name={q.id}
+                      list={"answers-" + q.id}
+                    />
+                    <datalist id={"answers-" + q.id}>
+                      {q.options?.map((o: any) => (
+                        <option key={o.label} value={o.label} />
+                      ))}
+                    </datalist>
+                  </label>
                 ))}
-              </select>
-              {state?.busy && draft.trim() && (
-                <button
-                  aria-label="追加意见"
-                  title="追加意见"
-                  disabled={
-                    !documentReady ||
-                    pending ||
-                    references.pending ||
-                    !state.canSteer
-                  }
-                  onClick={() => void send()}
-                >
-                  <Send size={15} />
-                </button>
-              )}
-              {state?.busy ? (
-                <button
-                  aria-label="停止回答"
-                  onClick={() =>
-                    void runtime("stop")
-                      .then(() => refresh())
-                      .catch(onError)
-                  }
-                >
-                  <Square size={15} />
-                </button>
-              ) : (
+                <button type="submit">继续</button>
+              </form>
+            )}
+            {proposals.proposals.map((proposal) => (
+              <div className="proposal" key={proposal.id}>
+                <span>
+                  待审阅改动
+                  {proposals.proposals.length > 1 && (
+                    <small>
+                      {" "}
+                      ·{" "}
+                      {new Date(proposal.createdAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </small>
+                  )}
+                </span>
                 <button
                   className="primary"
-                  aria-label="发送"
-                  disabled={
-                    !documentReady ||
-                    !draft.trim() ||
-                    references.pending ||
-                    pending ||
-                    !state?.available
-                  }
-                  onClick={() => void send()}
+                  disabled={proposals.pending.has(proposal.id)}
+                  onClick={() => setReviewing(proposal)}
                 >
-                  <Send size={15} />
+                  审阅
                 </button>
-              )}
-            </footer>
+                <button
+                  disabled={proposals.pending.has(proposal.id)}
+                  onClick={() => discardProposal(proposal)}
+                >
+                  放弃
+                </button>
+              </div>
+            ))}
           </div>
-        </>
-      )}
+        </div>
+        {!scroll.following && <FollowLatest onClick={scroll.latest} />}
+        <div className="composer">
+          {references.composer}
+          {composerAttachmentSlot}
+          <textarea
+            value={draft}
+            onChange={(e) => changeDraft(e.target.value)}
+            placeholder="描述你的想法…"
+            aria-label="消息"
+            disabled={!workspaceReady}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <footer>
+            <ModelPicker
+              scope={modelScope}
+              model={state?.model || null}
+              name={currentModel?.name || currentModel?.label}
+              disabled={!workspaceReady || pending}
+              busy={Boolean(state?.busy)}
+              configurationError={state?.modelConfigurationError?.message}
+              inheritedModel={state?.inheritedModel}
+              inheritLabel={
+                state?.runtime === "codex" && !state.customProvider
+                  ? state.accountMode === "application"
+                    ? "默认模型"
+                    : "跟随本机配置"
+                  : undefined
+              }
+              inheritSelected={
+                state?.runtime === "codex" &&
+                !state.modelSelection &&
+                !state.customProvider
+              }
+              load={loadModels}
+              select={async (model) => {
+                const effort = model?.efforts
+                  ? model.efforts.some((entry) => entry.value === state?.effort)
+                    ? state?.effort
+                    : (model.defaultEffort ?? null)
+                  : state?.effort || "none";
+                await runtime(
+                  "selectModel",
+                  model ? { model: model.model, effort } : { inherit: true },
+                );
+                await refresh();
+              }}
+            />
+            <select
+              aria-label="思考深度"
+              value={state?.effort || "none"}
+              disabled={
+                !workspaceReady || pending || !state?.model || state.busy
+              }
+              onChange={(e) =>
+                void runtime("selectModel", {
+                  model: state?.model,
+                  effort: e.target.value,
+                })
+                  .then(() => refresh())
+                  .catch(onError)
+              }
+            >
+              {effortOptions.map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+            {state?.busy && draft.trim() && (
+              <button
+                aria-label="追加意见"
+                title="追加意见"
+                disabled={
+                  !documentReady ||
+                  pending ||
+                  references.pending ||
+                  !state.canSteer
+                }
+                onClick={() => void send()}
+              >
+                <Send size={15} />
+              </button>
+            )}
+            {state?.busy ? (
+              <button
+                aria-label="停止回答"
+                onClick={() =>
+                  void runtime("stop")
+                    .then(() => refresh())
+                    .catch(onError)
+                }
+              >
+                <Square size={15} />
+              </button>
+            ) : (
+              <button
+                className="primary"
+                aria-label="发送"
+                disabled={
+                  !documentReady ||
+                  !draft.trim() ||
+                  references.pending ||
+                  pending ||
+                  !state?.available
+                }
+                onClick={() => void send()}
+              >
+                <Send size={15} />
+              </button>
+            )}
+          </footer>
+        </div>
+      </>
       {visible && reviewing && doc && reviewing.documentId === doc.id && (
         <ProposalReview
           key={reviewing.id}
