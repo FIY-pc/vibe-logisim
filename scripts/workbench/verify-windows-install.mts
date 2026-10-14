@@ -78,7 +78,7 @@ try {
   );
   await access(options.state); // Uninstall must not erase the separately stored user draft.
   console.log(
-    "Windows installation, version upgrade, restart recovery, and uninstall passed. This checks native installer mechanics, not migration from the Electron application.",
+    "Windows installation, version upgrade, restart recovery, and uninstall passed.",
   );
 } catch (error) {
   failure = error;

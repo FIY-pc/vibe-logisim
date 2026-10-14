@@ -323,14 +323,6 @@ impl Document {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
-    pub fn legacy_versions(&self) -> Vec<Vec<u8>> {
-        self.undo
-            .iter()
-            .chain(std::iter::once(&self.bytes))
-            .chain(self.redo.iter().rev())
-            .cloned()
-            .collect()
-    }
     pub fn saved_revision(&self) -> Option<&str> {
         self.saved_digest.as_deref()
     }

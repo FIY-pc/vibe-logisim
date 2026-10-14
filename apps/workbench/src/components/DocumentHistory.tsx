@@ -150,11 +150,6 @@ export function DocumentHistory({
               {error}
             </p>
           )}
-          {data?.warning && (
-            <p className="proposal-warning" role="alert">
-              {data.warning}
-            </p>
-          )}
           {data?.entries.map((entry, index) => (
             <button
               className="history-entry"
@@ -169,11 +164,9 @@ export function DocumentHistory({
                 {entry.saved && <small>已保存</small>}
                 {entry.baseline && <small>打开时</small>}
               </span>
-              {entry.createdAt !== null && (
-                <time dateTime={new Date(entry.createdAt).toISOString()}>
-                  {new Date(entry.createdAt).toLocaleString()}
-                </time>
-              )}
+              <time dateTime={new Date(entry.createdAt).toISOString()}>
+                {new Date(entry.createdAt).toLocaleString()}
+              </time>
             </button>
           ))}
           {!loading && !error && !data?.entries.length && (

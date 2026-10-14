@@ -5,7 +5,7 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const lock = JSON.parse(
   await readFile(
-    path.join(root, "scripts/distribution/runtime-lock.json"),
+    path.join(root, "config/runtime-lock.json"),
     "utf8",
   ),
 );

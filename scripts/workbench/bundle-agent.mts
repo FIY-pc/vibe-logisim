@@ -1,4 +1,4 @@
-/** Build the Node sidecar from explicit modules, without Electron or node_modules. */
+/** Bundle the TypeScript runtime as a single ESM worker plus reference data. */
 import { build } from "esbuild";
 import {
   mkdir,
@@ -23,23 +23,7 @@ async function copy(relative: string) {
     destination = path.join(output, relative);
   await mkdir(path.dirname(destination), { recursive: true });
   await copyFile(source, destination);
-  if (!relative.endsWith(".cjs")) return;
-  const text = await readFile(source, "utf8");
-  for (const match of text.matchAll(
-    /(?:require|import)\(\s*['"](\.[^'"]+)['"]\s*\)/g,
-  )) {
-    // These are repository-relative module identifiers, even on Windows.
-    const dependency = path.posix.normalize(
-      path.posix.join(path.posix.dirname(relative), match[1]),
-    );
-    if (!dependency.startsWith("packages/agent-runtime/core/"))
-      throw new Error("Unexpected runtime dependency: " + dependency);
-    if (dependency.endsWith("builtin-sdk.mjs")) continue;
-    await copy(dependency);
-  }
 }
-for (const entry of ["agent-runtime.cjs", "runtime-installer.cjs"])
-  await copy("packages/agent-runtime/core/" + entry);
 for (const file of [
   "index.md",
   "digital-design.md",
@@ -48,16 +32,12 @@ for (const file of [
   "skills/circuit-organization/references/arrangement.md",
 ])
   await copy("packages/agent-runtime/circuit-knowledge/" + file);
-await copy("scripts/distribution/runtime-lock.json");
-await copy("packages/agent-runtime/src/generated/edit-schema.json");
+await copy("config/runtime-lock.json");
+await copy("packages/agent-runtime/core/model-catalog.LICENSE");
 const entries = [
   [
     "packages/agent-runtime/src/worker.mts",
     "packages/agent-runtime/src/worker.mjs",
-  ],
-  [
-    "packages/agent-runtime/core/builtin-sdk.mjs",
-    "packages/agent-runtime/core/builtin-sdk.mjs",
   ],
 ];
 const inputs = new Set<string>();
@@ -124,5 +104,5 @@ await writeFile(
   JSON.stringify(index, null, 2) + "\n",
 );
 console.log(
-  `Agent product: ${copied.size} application files, ${packages.size} dependency notices. No Electron or Python application service.`,
+  `Agent product: ${copied.size} application files, ${packages.size} dependency notices. One bundled ESM runtime.`,
 );

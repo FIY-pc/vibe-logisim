@@ -57,6 +57,7 @@ export async function verifyReferenceLinksAndCandidates() {
   };
   let gate: ((value: any) => void) | null = null,
     delayed = false;
+  let runtimeExtra: Record<string, unknown> = {};
   const proposal = (id: string, documentId = doc.id) => ({
     id,
     documentId,
@@ -128,8 +129,13 @@ export async function verifyReferenceLinksAndCandidates() {
         services: [{ id: "fixture" }],
         messages: [
           { id: "user", type: "user", text: "inspect", context },
-          { id: "answer", type: "assistant", text: "[打开资料](notes.txt)" },
+          {
+            id: "answer",
+            type: "assistant",
+            text: "[打开资料](workspace://notes.txt?pathVersion=7) [失效旧引用](material://file?projectId=link-doc&id=notes.txt)",
+          },
         ],
+        ...runtimeExtra,
       };
     }
     throw new Error("Unexpected request " + request.op);
@@ -146,8 +152,23 @@ export async function verifyReferenceLinksAndCandidates() {
       "/etc/passwd",
       "file:///etc/passwd",
       "workspace://file?folderId=x&path=../bad",
+      "workspace://../private?pathVersion=7",
+      "workspace://%2e%2e/private?pathVersion=7",
+      "workspace://%252e%252e/private?pathVersion=7",
+      "workspace://notes.txt?pathVersion=1&pathVersion=2",
+      "workspace://notes.txt?pathVersion=-1",
+      "material://file?projectId=link-doc&id=notes.txt",
+      "/tmp/workspace/notes.txt",
+      "file:///tmp/workspace/notes.txt",
     ])
       assert.throws(() => parseConversationReference(href));
+    assert.deepEqual(
+      parseConversationReference(
+        "workspace://Notes/%E8%AF%B4%E6%98%8E%20%E6%96%87%E4%BB%B6.md?pathVersion=7&page=2",
+      ),
+      { kind: "file", path: "Notes/说明 文件.md", pathVersion: 7, page: 2 },
+      "Host links preserve case and decode the relative path once",
+    );
     const direct: any = {
       kind: "circuit",
       projectId: doc.id,
@@ -216,11 +237,42 @@ export async function verifyReferenceLinksAndCandidates() {
     await act(async () =>
       node.querySelector<HTMLButtonElement>(".message-reference")!.click(),
     );
+    assert.equal(node.querySelectorAll(".message-reference").length, 1);
     assert.deepEqual(
       visits[0],
-      { href: "notes.txt", context },
+      { href: "workspace://notes.txt?pathVersion=7", context },
       "Assistant links inherit their own turn context",
     );
+
+    runtimeExtra = {
+      modelConfigurationError: { message: "请选择可用的模型服务" },
+      contextTransfer: { pending: true, truncated: true },
+    };
+    await render(
+      <Chat
+        key="configuration"
+        visible
+        doc={doc}
+        circuit="main"
+        folder={folder}
+        selection={[]}
+        quotation={null}
+        onQuoted={() => {}}
+        onDocument={() => {}}
+        onError={(error) => errors.push(error)}
+      />,
+    );
+    assert.equal(node.querySelectorAll('.error-bar[role="alert"]').length, 1);
+    assert.equal(
+      node.querySelector(".error-bar button")?.textContent,
+      "选择模型服务",
+    );
+    assert.doesNotMatch(node.textContent!, /重新连接|旧版|导入/);
+    assert.match(
+      node.querySelector('.runtime-progress[role="status"]')!.textContent!,
+      /携带最近的对话/,
+    );
+    runtimeExtra = {};
 
     let follow: ReturnType<typeof useConversationReferences>;
     function ReferenceHarness({
@@ -250,6 +302,19 @@ export async function verifyReferenceLinksAndCandidates() {
     assert.equal(
       calls.filter((call) => call.op === "folderRead").at(-1).folder_id,
       folder.id,
+    );
+    await act(async () =>
+      follow!("workspace://Notes/report.txt?pathVersion=7", context),
+    );
+    assert.deepEqual(
+      calls.filter((call) => call.op === "folderResolve").at(-1),
+      {
+        op: "folderResolve",
+        folder_id: folder.id,
+        path: "Notes/report.txt",
+        path_version: 7,
+      },
+      "Host-generated links use their own durable path version",
     );
     const count = previews.length;
     delayed = true;

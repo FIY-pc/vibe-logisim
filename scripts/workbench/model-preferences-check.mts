@@ -5,18 +5,19 @@ import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-model-preferences-"));
-const preload = path.join(state, "capture-selection.cjs");
+const preload = path.join(state, "capture-selection.mjs");
 await writeFile(
   preload,
-  `const {AgentRuntime}=require(${JSON.stringify(path.join(root, "packages/agent-runtime/core/agent-runtime.cjs"))});AgentRuntime.prototype.selectModel=async function(selection){return {receivedSelection:selection};};`,
+  `import {AgentRuntime} from ${JSON.stringify(pathToFileURL(path.join(root, "packages/agent-runtime/core/agent-runtime.mts")).href)};AgentRuntime.prototype.selectModel=async function(selection){return {receivedSelection:selection};};`,
 );
 const child = spawn(
   process.execPath,
   [
-    "--require",
+    "--import",
     preload,
     path.join(root, "packages/agent-runtime/src/worker.mts"),
     state,

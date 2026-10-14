@@ -18,7 +18,6 @@ pub struct HistoryList {
     entries: Vec<HistoryEntry>,
     current_revision: String,
     saved_revision: Option<String>,
-    warning: Option<String>,
 }
 #[derive(Serialize, ts_rs::TS)]
 pub struct HistoryReview {
@@ -98,28 +97,6 @@ impl Host {
             dependencies: vibe_logisim_adapter::artifact_dependencies(&artifact).ok(),
         })
     }
-    fn ensure_history(&self, doc: &Document) -> Result<()> {
-        let store = self.history_store();
-        if !store.is_empty(&doc.id).map_err(|e| e.to_string())? {
-            return Ok(());
-        }
-        let view = doc.view().map_err(|e| e.to_string())?;
-        for bytes in doc.legacy_versions() {
-            let version = Document::from_bytes(view.name.clone(), doc.path.clone(), bytes, false)
-                .map_err(|e| e.to_string())?;
-            let snapshot = HistoricalSnapshot {
-                name: view.name.clone(),
-                path: doc.path.clone(),
-                xml: String::from_utf8_lossy(version.bytes()).into_owned(),
-                revision: version.revision(),
-                dependencies: None,
-            };
-            store
-                .append(&doc.id, None, &snapshot, "legacy", "恢复记录中的版本", None)
-                .map_err(|e| e.to_string())?;
-        }
-        Ok(())
-    }
     pub(crate) async fn history_before(
         &self,
         action: &Action,
@@ -136,7 +113,6 @@ impl Host {
         documents
             .into_iter()
             .map(|(id, doc)| {
-                self.ensure_history(&doc)?;
                 let snapshot = self.history_snapshot(&doc)?;
                 Ok((id, (doc, snapshot)))
             })
@@ -196,18 +172,14 @@ impl Host {
             .get(id)
             .map_err(|e| e.to_string())?
             .clone();
-        self.ensure_history(&doc)?;
         let entries = self
             .history_store()
             .entries(id)
             .map_err(|e| e.to_string())?;
-        let legacy = entries.iter().any(|e| e.kind == "legacy");
         value(HistoryList {
             entries,
             current_revision: doc.revision(),
             saved_revision: doc.saved_revision().map(str::to_string),
-            warning: legacy
-                .then(|| "早期恢复记录没有操作时间或冻结的组件库；只保留可恢复内容。".into()),
         })
     }
     async fn history_pair(

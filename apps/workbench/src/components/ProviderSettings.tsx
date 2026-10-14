@@ -368,11 +368,9 @@ interface SettingsProps {
     error: string | null;
   };
   busy: boolean;
-  canImport: boolean;
   request: <T>(method: string, args?: unknown) => Promise<T>;
   onRuntime: (runtime: string) => Promise<void>;
   onLogin: () => void | Promise<void>;
-  onImport: () => void;
   onSaved: () => Promise<unknown>;
   onClose: () => void;
 }
@@ -545,7 +543,7 @@ export function ProviderSettings(props: SettingsProps) {
                   <div>
                     <strong>
                       {service.name || service.baseUrl}
-                      {service.id === provider?.id && (
+                      {props.conversationId && service.id === provider?.id && (
                         <span className="ai-settings-badge">此对话</span>
                       )}
                     </strong>
@@ -658,7 +656,7 @@ export function ProviderSettings(props: SettingsProps) {
                   <div>
                     <strong>
                       {name}
-                      {runtime === kind && (
+                      {props.conversationId && runtime === kind && (
                         <span className="ai-settings-badge">此对话</span>
                       )}
                     </strong>
@@ -666,7 +664,7 @@ export function ProviderSettings(props: SettingsProps) {
                   </div>
                   {runtime !== kind && (
                     <button
-                      disabled={locked}
+                      disabled={locked || !props.conversationId}
                       onClick={() => void action(() => props.onRuntime(kind))}
                     >
                       用 {name} 新建对话
@@ -674,14 +672,6 @@ export function ProviderSettings(props: SettingsProps) {
                   )}
                 </div>
               ))}
-              <div className="ai-settings-footer">
-                <button
-                  disabled={!props.canImport || locked}
-                  onClick={props.onImport}
-                >
-                  导入旧版对话…
-                </button>
-              </div>
             </>
           )}
           {page === "edit" && (

@@ -111,8 +111,7 @@
   overflow-wrap: anywhere;
 }
 .ai-service-row button,
-.ai-settings-actions button,
-.ai-settings-footer button {
+.ai-settings-actions button {
   border: 1px solid var(--border);
   font-size: 12px;
   flex: none;
@@ -183,9 +182,6 @@
 .ai-settings-content .provider-advanced[open] summary {
   margin-bottom: 10px;
   border-bottom: 1px solid var(--border);
-}
-.ai-settings-footer {
-  margin-top: 24px;
 }
 .ai-settings-actions {
   display: flex;

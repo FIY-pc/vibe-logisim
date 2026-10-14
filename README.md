@@ -22,19 +22,20 @@ Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己
 
 ## 下载与启动
 
-到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载对应系统的安装包。内置运行时、Python 和 Java 随包提供，Codex 首次使用时自动下载。
+到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载对应系统的安装包。内置运行时、Node.js 和 Java 随包提供，Codex 首次使用时自动下载。
 
-| 系统 | 下载文件 | 启动方式 |
-| --- | --- | --- |
-| Windows 10/11 x64 | `vibe-logisim-<版本>-win32-x64-setup.exe` | 安装后从开始菜单打开 Vibe Logisim；未签名程序可能显示“未知发布者”提示 |
-| Linux x64 | `vibe-logisim-<版本>-linux-x64.tar.xz` | 运行 `./vibe-logisim`；需要 GTK3 桌面；Codex 与内置命令执行需要 systemd 用户会话 |
+| 系统                     | 下载文件                                         | 启动方式                                                                             |
+| ------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Windows 10/11 x64        | `vibe-logisim-<版本>-win32-x64-setup.exe`        | 安装后从开始菜单打开 Vibe Logisim；未签名程序可能显示“未知发布者”提示                |
+| Windows 10/11 x64 便携版 | `vibe-logisim-<版本>-win32-x64.zip`              | 解压后运行 `start.cmd`；需要 Microsoft Edge WebView2                                 |
+| Linux x64                | `vibe-logisim-<版本>-linux-x64.deb` 或 `.tar.gz` | 安装 deb 后从应用菜单打开；便携包解压后运行 `./start.sh`；需要 GTK3 与 WebKitGTK 4.1 |
 
-macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功能使用你自己的 API 接口及相应额度；也可以通过 Codex 运行时登录 ChatGPT。
+Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话。macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功能使用你自己的 API 接口及相应额度；也可以通过 Codex 运行时登录 ChatGPT。
 
 ## 开始一个电路任务
 
 1. **打开文件夹。** 放入已有的 `.circ`、组件库和参考资料，或在工作台中新建电路。已有工程建议保持原目录结构，避免组件库的相对路径失效。
-2. **自己编辑，或连接 AI。** 手工操作可以直接开始。要使用 AI，打开右栏“AI 设置”添加模型服务，选择预设或填写接口、密钥和模型。内置运行时直接使用 API；也可以从“模型服务”进入 ChatGPT 登录。
+2. **自己编辑，或连接 AI。** 手工操作可以直接开始。要使用 AI，打开右栏“AI 设置”添加模型服务，选择预设或填写接口、密钥和模型。内置运行时直接使用 API；也可以在“运行时”中选择 Codex 并登录 ChatGPT。
 3. **描述目标，边运行边完善。** 告诉 AI 想做什么、哪些结构需要保留、期望的输入输出是什么。它会读写工作文件夹中的工程；你可以查看改动、运行验证，再提出下一步调整。
 
 可以从这些小任务开始：
@@ -59,15 +60,15 @@ macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功
 
 会话保留原来的运行时。可以用另一运行时新建对话，已有对话仍可从列表中恢复。新对话默认运行时单独设置，不改变当前对话。内置模型服务可以并存，新增服务不会覆盖旧会话的连接。内置运行时支持文件读写、电路工具、流式输出、停止和追加意见；Linux 支持隔离命令执行，Windows 暂只提供文件与电路工具。
 
-应用读取系统 HTTP 代理或 `HTTPS_PROXY`，AI 设置中可以查看检测结果。调整代理后点击“重新连接”。纯 SOCKS 地址不支持，可使用代理软件的 HTTP 或混合端口。
+应用读取系统 HTTP 代理或 `HTTPS_PROXY`。连接失败时可在 AI 设置中重新检测；调整代理后重启应用，或使用错误提示中的“重新连接”。纯 SOCKS 地址不支持，可使用代理软件的 HTTP 或混合端口。
 
 ## 常见问题与反馈
 
-| 遇到的问题 | 可以怎么处理 |
-| --- | --- |
-| 电路提示缺少库 | 保持原目录结构，确认 `cs3410.jar`、`riscv-probe.jar` 等实际依赖齐全 |
-| AI 接口连接失败 | 在 AI 设置中重新检测；检查地址、模型名、Responses 支持和代理状态 |
-| 长任务中途报错 | 查看文件夹里已保存的电路和工作记录后继续；新建对话时，说明已完成内容与待办 |
+| 遇到的问题      | 可以怎么处理                                                               |
+| --------------- | -------------------------------------------------------------------------- |
+| 电路提示缺少库  | 保持原目录结构，确认 `cs3410.jar`、`riscv-probe.jar` 等实际依赖齐全        |
+| AI 接口连接失败 | 在 AI 设置中重新检测；检查地址、模型名、Responses 支持和代理状态           |
+| 长任务中途报错  | 查看文件夹里已保存的电路和工作记录后继续；新建对话时，说明已完成内容与待办 |
 
 遇到问题可通过右上角“…”→“反馈问题…”保存诊断包、复制摘要并打开 [GitHub Issues](https://github.com/FIY-pc/vibe-logisim/issues/new/choose)。诊断包不包含 API 密钥、登录信息或对话全文；当前电路默认不附带。公开提交前请查看预览，检查文件名、标签和附件中的个人信息。
 
@@ -75,7 +76,7 @@ macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功
 
 ## 从源码运行
 
-开发分支使用 **Rust、Tauri 2、React 19 和 TypeScript**。Rust 管理文档、编辑历史和仿真会话，Logisim 兼容层提供原生电路语义，独立 Node 进程连接 AI 运行时。当前发行版的下载与使用说明见上文。
+工作台使用 **Rust、Tauri 2、React 19 和 TypeScript**。Rust 管理文档、编辑历史和仿真会话，Logisim 兼容层提供原生电路语义，独立 Node 进程连接 AI 运行时。桌面窗口使用系统 WebView。
 
 准备 Node.js 24、rustup、JDK 17+ 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)，然后运行：
 
@@ -85,7 +86,7 @@ npm run setup
 npm run desktop
 ```
 
-`setup` 下载并校验兼容运行时；浏览器开发使用 `npm run dev`。桌面重写尚未替代正式发行版，平台验证范围见 [工作台开发说明](docs/native-workbench.md)。
+`setup` 下载并校验兼容运行时；浏览器开发使用 `npm run dev`。状态目录和模块说明见 [工作台开发参考](docs/native-workbench.md)。
 
 [开发说明](docs/development.md) · [分发构建](docs/distribution.md) · [架构](docs/architecture.md)
 

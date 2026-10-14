@@ -1,6 +1,6 @@
 # 开发
 
-开发分支的应用入口为 `apps/workbench`，使用 Rust、Tauri 2、React 和 TypeScript。已发布的 Electron 应用仍保留在 `apps/desktop`；其开发说明可查阅 [v0.5.0 文档](https://github.com/FIY-pc/vibe-logisim/blob/v0.5.0/docs/development.md)。
+应用入口为 `apps/workbench`，使用 Rust、Tauri 2、React 和 TypeScript。
 
 ## 启动
 
@@ -26,4 +26,4 @@ npm run desktop
 
 `npm run check` 检查 TypeScript，`npm run test:core` 检查文档边界，`npm run test:native` 使用临时电路、真实 Java 运行时和本地模型夹具检查跨进程行为。`npm run test:ui` 验证 React 的交互状态与异步边界，`npm run test:compatibility` 检查外部库、自定义外观与合成大电路。对话准备、取消、网络和安装器检查使用 `npm run test:runtime`。这些命令不调用远端模型。
 
-开发状态、外部运行时和分发资源不进入 Git。详细配置、持久化边界、分发命令和验证范围见 [工作台开发说明](native-workbench.md)，模块职责见 [架构](architecture.md)。
+开发状态、外部运行时和分发资源不进入 Git。详细配置、持久化边界、分发命令和验证范围见 [工作台开发参考](native-workbench.md)，模块职责见 [架构](architecture.md)。

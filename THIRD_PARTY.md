@@ -1,17 +1,21 @@
 # 第三方组件
 
-本项目源码以 GPL-3.0 发布（见 LICENSE）。Logisim 桥接代码需要外部 Logisim 运行文件及课程组件库；它们未包含在源码中，其原有许可不因本仓库的许可证而改变。安装位置和兼容版本见 [开发说明](docs/development.md)。
+本项目源码以 [GPL-3.0](LICENSE) 发布。依赖的原有许可不因本仓库许可证而改变。npm 与 Cargo 锁文件固定应用依赖；`config/runtime-lock.json` 和 `scripts/workbench/runtime-lock.json` 固定下载运行时的版本、来源与 SHA-256。
 
-前端使用锁文件固定版本的 Marked、DOMPurify 和 Lucide。生成的本地资源及各自许可证一起保存在 `apps/desktop/circuit-lens/web/vendor/`；`scripts/ui/vendor.cjs` 从安装的 npm 包重新生成这些资源。
+| 组件                                      | 用途与许可                                                    | 随包材料                                                        |
+| ----------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
+| Tauri 2                                   | 桌面窗口与系统集成，MIT / Apache-2.0                          | Rust 依赖遵循 Cargo 锁文件；源码中的许可证声明保留              |
+| React、Lucide、react-markdown、remark-gfm | 界面、图标和 Markdown 显示，各依赖保留原有 MIT / ISC 等许可证 | `third-party/frontend/` 包含前端依赖信息与许可证                |
+| PDF.js                                    | 本地 PDF 阅读，Apache-2.0                                     | 前端资源随应用提供，许可证位于 `third-party/frontend/`          |
+| Node.js                                   | 独立 AI 运行时进程，MIT 及其包含的第三方许可                  | `runtimes/node/LICENSE`                                         |
+| Pi SDK                                    | 内置模型协议与工具回合，MIT                                   | `third-party/node/` 中的包信息和许可证                          |
+| Models.dev                                | 模型名称与能力元数据，MIT                                     | 随 AI 运行时保留快照与许可证；不决定模型服务实际可用的模型      |
+| Eclipse Temurin                           | Java 运行时，GPL-2.0 with Classpath Exception 及其第三方许可  | 裁剪后的 `runtimes/java/legal/`                                 |
+| Logisim-ITA 2.16.2.2                      | 电路加载、绘制与仿真，GPL-3.0                                 | `native/Logisim-ITA.jar` 与 `third-party/logisim/source.tar.gz` |
+| Codex                                     | 可选的 ChatGPT / Responses 运行时，Apache-2.0                 | `third-party/codex-LICENSE`；程序首次使用时按清单下载           |
 
-内置 AI 运行时使用 Pi 的 `@earendil-works/pi-agent-core` 与 `@earendil-works/pi-ai` 1.1.0（MIT）。独立应用包包含 npm 锁文件固定的生产依赖；Pi npm 包未附许可证文件，其 [v1.1.0 MIT 许可证](https://github.com/earendil-works/pi/blob/v1.1.0/LICENSE) 单独保存在包内 `resources/third-party/pi-LICENSE`。
+上表中的路径相对于应用的 `workbench` 资源目录。Windows 便携包将其放在 `resources/workbench`；安装程序使用系统应用资源目录。第三方 Node 依赖的版本和许可证信息分别列于 `third-party/node/packages.json` 与 `third-party/frontend/packages.json`。
 
-模型名称与能力资料使用 [Models.dev](https://models.dev) 的 MIT 授权数据。随包精简快照与许可证分别位于 `resources/app/electron/model-catalog.snapshot.json` 和 `resources/app/electron/model-catalog.LICENSE.txt`；源码中的同名文件位于 `apps/desktop/electron/`。资料仅用于补充模型选择器，不决定用户服务可用的模型列表。
+Logisim 对应源码来自 [v2.16.2.2 标签](https://github.com/Logisim-Ita/Logisim/tree/v2.16.2.2)，源归档随每个应用包提供。用户可以通过 `VIBE_LOGISIM_JAR` 指定其他支持的运行文件；该文件及其外部组件库遵循各自许可，不自动进入分发包。
 
-Electron 和 Playwright 通过 npm 安装，依赖包中保留各自许可证。
-
-分组布局使用 [elkjs](https://github.com/kieler/elkjs) 0.12.0（EPL-2.0），版本固定在 npm 锁文件中。独立应用包附带 `elk.bundled.js`、包信息与 `LICENSE.md`，由应用自带的 Electron 以 Node 模式运行。
-
-独立应用包另包含 [CPython 独立构建](https://github.com/astral-sh/python-build-standalone)、[Eclipse Temurin](https://github.com/adoptium/temurin21-binaries) 和 [PDF.js](https://github.com/mozilla/pdf.js)。[官方 Codex 运行包](https://github.com/openai/codex/releases/tag/rust-v0.154.0) 在首次使用时下载。版本与下载摘要由 `scripts/distribution/runtime-lock.json` 和 npm 锁文件固定；程序许可证保留在各自运行目录，Codex 的 Apache-2.0 许可证另行随包附带。PDF.js 为 Apache-2.0；其浏览器资源无需可选 Node canvas 组件。
-
-[Logisim-ITA v2.16.2.2](https://github.com/Logisim-Ita/Logisim/releases/tag/v2.16.2.2) 的上游标注 GPL-3.0；本地验收包同时保存该标签的源码归档，内含许可证。课程发布的 HUST 修改版运行文件 `logisim-ita-cn-20200118.exe` 按课程原样附带、不作修改，由 Java 作为 jar 加载；课程没有随它发布对应源码。它是课程给全体学生的公开教学材料，本项目只是把它和编辑器放在一起分发，如课程组提出要求会随时移除并改为让用户自行放置该文件。详见 [分发说明](docs/distribution.md)。
+Windows 的 Java 启动程序附加 UTF-8 进程代码页声明，以支持非 ASCII 安装路径。此修改会使原签名失效；具体改动记录随 Java 运行时提供。Windows WebView2 与 Linux WebKitGTK 使用操作系统提供的 WebView，不包含在便携包内。

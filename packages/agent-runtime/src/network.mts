@@ -1,13 +1,10 @@
-import { createRequire } from "node:module";
+import { resolveSystemProxy } from "../core/system-proxy.mts";
 import { BlockList, isIP } from "node:net";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import { ProxyAgent, fetch as request } from "undici";
 
-const { resolveSystemProxy } = createRequire(import.meta.url)(
-  "../core/system-proxy.cjs",
-);
 const exec = promisify(execFile);
 type Read = (program: string, args: string[]) => Promise<string>;
 const read: Read = async (program, args) => {

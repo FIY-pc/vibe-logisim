@@ -1,15 +1,12 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { connect } from "node:net";
-import { createRequire } from "node:module";
 import {
   systemProxy,
   networkFetch,
   closeNetwork,
 } from "../../packages/agent-runtime/src/network.mts";
-const { resolveSystemProxy } = createRequire(import.meta.url)(
-  "../../packages/agent-runtime/core/system-proxy.cjs",
-);
+import { resolveSystemProxy } from "../../packages/agent-runtime/core/system-proxy.mts";
 const registry = `ProxyEnable REG_DWORD 0x1\nProxyServer REG_SZ http=127.0.0.1:8080;https=127.0.0.1:8443\nProxyOverride REG_SZ *.internal;<local>`;
 const windows = { platform: "win32", read: async () => registry };
 assert.equal(

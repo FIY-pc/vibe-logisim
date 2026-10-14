@@ -11,7 +11,6 @@ import {
 } from "./ModelPicker";
 import { ProposalReview, type SourceProposal } from "./ProposalReview";
 import { TextPrompt } from "./TextPrompt";
-import { ImportHistory } from "./ImportHistory";
 import { subscribeEvents } from "../lib/events";
 import {
   ActivityBatch,
@@ -38,6 +37,7 @@ import {
   X,
   Pencil,
   GitBranch,
+  MoreHorizontal,
 } from "lucide-react";
 import { command } from "../lib/transport";
 import type { Document } from "../lib/types";
@@ -45,9 +45,7 @@ interface RuntimeState {
   eventCursor: number;
   canSteer?: boolean;
   turnId?: string;
-  migration?: { requiresContext: boolean; sourceRuntime: string };
   contextTransfer?: {
-    reason: "contract-change" | "history-import";
     pending: boolean;
     truncated: boolean;
   } | null;
@@ -140,8 +138,6 @@ export function Chat({
         );
     });
   };
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState("");
   const [runtimeError, setRuntimeError] = useState("");
   const [questions, setQuestions] = useState<any>(null);
   const [boundWorkspace, setBoundWorkspace] = useState<string | null>(null);
@@ -651,7 +647,9 @@ export function Chat({
           <Plus size={15} />
         </button>
         <details className="menu">
-          <summary aria-label="对话操作">···</summary>
+          <summary aria-label="对话操作" title="对话操作">
+            <MoreHorizontal size={16} />
+          </summary>
           <div className="menu-content">
             <button
               disabled={
@@ -695,29 +693,28 @@ export function Chat({
           {runtimeError ||
             state?.modelConfigurationError?.message ||
             state?.detail}
-          <button
-            onClick={() =>
-              void runtime("reconnect")
-                .then(() => {
-                  setRuntimeError("");
-                  binding.current = null;
-                  setBoundWorkspace(null);
-                  setBoundIdentity(null);
-                  setConnection((value) => value + 1);
-                  return refresh();
-                })
-                .catch(onError)
-            }
-          >
-            重新连接
-          </button>
-        </div>
-      )}
-      {state?.runtime === "builtin" && state.modelConfigurationError && (
-        <div className="runtime-progress">
-          <button onClick={() => setConfigure(true)}>
-            {state.services.length ? "选择模型服务" : "添加模型服务"}
-          </button>
+          {!runtimeError && state?.modelConfigurationError ? (
+            <button onClick={() => setConfigure(true)}>
+              {state.services.length ? "选择模型服务" : "添加模型服务"}
+            </button>
+          ) : (
+            <button
+              onClick={() =>
+                void runtime("reconnect")
+                  .then(() => {
+                    setRuntimeError("");
+                    binding.current = null;
+                    setBoundWorkspace(null);
+                    setBoundIdentity(null);
+                    setConnection((value) => value + 1);
+                    return refresh();
+                  })
+                  .catch(onError)
+              }
+            >
+              重新连接
+            </button>
+          )}
         </div>
       )}
       {state?.runtimeInstall?.busy && state.runtime === "codex" && (
@@ -740,21 +737,16 @@ export function Chat({
           provider={state?.customProvider || null}
           defaultRuntime={state?.defaultRuntime}
           defaultServiceId={state?.defaultServiceId}
-          conversationId={state?.conversationId}
+          conversationId={workspaceReady ? state?.conversationId : null}
           hasHistory={messages.some((message) => message.type === "user")}
           configurationError={state?.modelConfigurationError?.message}
           account={state?.account}
           signingIn={state?.signingIn}
           install={state?.runtimeInstall}
           busy={pending || Boolean(state?.busy)}
-          canImport={workspaceReady}
           request={runtime}
           onRuntime={chooseRuntime}
           onLogin={login}
-          onImport={() => {
-            setConfigure(false);
-            setImporting(true);
-          }}
           onSaved={async () => {
             setModels([]);
             await refresh();
@@ -763,24 +755,11 @@ export function Chat({
         />
       )}
       <>
-        {importResult && (
+        {state?.contextTransfer?.pending && (
           <div className="runtime-progress" role="status">
-            {importResult}
-            <button
-              aria-label="关闭导入结果"
-              onClick={() => setImportResult("")}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {(state?.contextTransfer?.pending ||
-          (!state?.contextTransfer && state?.migration?.requiresContext)) && (
-          <div className="runtime-progress">
-            {state?.contextTransfer?.reason === "contract-change"
-              ? "运行时已更新，继续时会携带旧对话的文字记录。"
-              : "继续时会携带旧版文字记录，建立新的会话。"}
-            {state?.contextTransfer?.truncated && "仅携带最近记录。"}
+            {state.contextTransfer.truncated
+              ? "运行时已更新，继续时会携带最近的对话。"
+              : "运行时已更新，继续时会携带此前对话。"}
           </div>
         )}
         <div
@@ -1124,17 +1103,6 @@ export function Chat({
           onDiscard={() => discardProposal(reviewing)}
           onDocument={onDocument}
           onLocate={onLocate}
-        />
-      )}
-      {importing && (
-        <ImportHistory
-          workspaceKey={workspaceKey}
-          request={runtime}
-          onClose={() => setImporting(false)}
-          onDone={(message) => {
-            setImportResult(message);
-            setConfigure(false);
-          }}
         />
       )}
     </div>

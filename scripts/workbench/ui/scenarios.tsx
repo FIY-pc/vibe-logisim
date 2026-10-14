@@ -1179,11 +1179,9 @@ await render(
     services={[]}
     provider={null}
     busy={false}
-    canImport={true}
     request={providerRequest as any}
     onRuntime={async () => {}}
     onLogin={() => {}}
-    onImport={() => {}}
     onSaved={async () => {
       saved = true;
     }}

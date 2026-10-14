@@ -1,6 +1,7 @@
 /** Real Chat DOM and dispatch/backend code, with only native stdio replayed. */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
@@ -51,7 +52,7 @@ try {
   await writeFile(
     path.join(directory, "setup.mjs"),
     `
-import {createRequire} from 'node:module';
+import {createRequire,registerHooks,syncBuiltinESMExports} from 'node:module';
 import {EventEmitter} from 'node:events';
 import {PassThrough} from 'node:stream';
 import {JSDOM} from ${JSON.stringify(require.resolve("jsdom"))};
@@ -81,15 +82,23 @@ child.stdin.on('data',chunk=>{
  child.stdout.write(JSON.stringify({id:message.id,result})+'\\n');
 });
 const processTools=require('node:child_process'),originalSpawn=processTools.spawn;
-const isolation=require(${JSON.stringify(path.join(core, "agent-process.cjs"))}),originalIsolation=isolation.isolatedSpawn;
+const isolationUrl=${JSON.stringify(pathToFileURL(path.join(core, "agent-process.mts")).href)};
+const hooks=registerHooks({load(url,context,nextLoad){
+ if(url!==isolationUrl)return nextLoad(url,context);
+ return {format:'module',shortCircuit:true,source:${JSON.stringify(`
+ export const isolatedSpawn=()=>({command:'synthetic-stdio',args:[],cwd:${JSON.stringify(directory)},env:{}});
+ export const resolveExecutable=(command)=>command;
+ export const isolationKind=()=>"systemd-linux";
+ `)}};
+}});
 processTools.spawn=()=>child;
-isolation.isolatedSpawn=()=>({command:'synthetic-stdio',args:[],cwd:${JSON.stringify(directory)},env:{}});
-const {AgentRuntime}=require(${JSON.stringify(path.join(core, "agent-runtime.cjs"))});
+syncBuiltinESMExports();
+const {AgentRuntime}=await import(${JSON.stringify(pathToFileURL(path.join(core, "agent-runtime.mts")).href)});
+hooks.deregister();
 const runtime=new AgentRuntime({workDir:${JSON.stringify(directory)},profileDir:${JSON.stringify(path.join(directory, "profile"))},ownProfile:true});
-processTools.spawn=originalSpawn;isolation.isolatedSpawn=originalIsolation;
 runtime.kind='codex';const backend=runtime.backends.codex;
 backend.resolveNetwork=async()=>({proxyUrl:null});
-await backend.start();
+try{await backend.start()}finally{processTools.spawn=originalSpawn;syncBuiltinESMExports()}
 const dispatch=new Function('backend',${JSON.stringify(dispatch.code + ";return dispatch;")})(runtime);
 globalThis.__questionFixture={backend,nativeWrites,dispatch,notify:(message)=>child.stdout.write(JSON.stringify(message)+'\\n')};
 try{await import('./questions.mjs')}finally{await backend.stop();dom.window.close()}

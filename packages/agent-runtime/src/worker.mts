@@ -5,21 +5,15 @@ import {
   referenceSummary,
 } from "./references.mts";
 import { systemProxy, networkFetch, closeNetwork } from "./network.mts";
-import {
-  previewHistory,
-  importHistory,
-  historyContext,
-} from "./history-import.mts";
-/** Process adapter for the existing runtime. stdout is exclusively JSONL. */
-import { createRequire } from "node:module";
+/** Runtime process entry. stdout is exclusively JSONL. */
+import { AgentRuntime } from "../core/agent-runtime.mts";
+import editSchemaSource from "./generated/edit-schema.json" with { type: "json" };
 import { createInterface } from "node:readline";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createCodexInstaller } from "./installer.mts";
-const require = createRequire(import.meta.url);
-const { AgentRuntime } = require("../core/agent-runtime.cjs");
-const editSchema = require("./generated/edit-schema.json");
+const editSchema: Record<string, any> = structuredClone(editSchemaSource);
 const editDefinitions = editSchema.$defs;
 delete editSchema.$defs;
 delete editSchema.$schema;
@@ -421,7 +415,6 @@ const backend = new AgentRuntime({
           references: context.references?.map(referenceSummary),
         },
         references: context.references || [],
-        history: context.transferredHistory,
       };
     },
     images(prepared: any) {
@@ -443,9 +436,6 @@ const backend = new AgentRuntime({
           ...referenceSummary(r),
           text: r.text,
         })),
-        ...(prepared.history
-          ? { "vibe-logisim.transferred-history": prepared.history }
-          : {}),
       };
     },
   },
@@ -489,10 +479,7 @@ function messageActions(snapshot: any) {
         Boolean(
           record?.runtime === "builtin"
             ? record.runtimeCheckpoints?.[m.id]
-            : record?.threadId &&
-                !m.contextTransferred &&
-                !prefixIds.has(m.id) &&
-                !record?.migration?.requiresContext,
+            : record?.threadId && !m.contextTransferred && !prefixIds.has(m.id),
         ),
       canFork:
         m.type === "assistant" &&
@@ -500,10 +487,7 @@ function messageActions(snapshot: any) {
         Boolean(
           record?.runtime === "builtin"
             ? record.runtimeCheckpoints?.[m.id]
-            : record?.threadId &&
-                !m.contextTransferred &&
-                !prefixIds.has(m.id) &&
-                !record?.migration?.requiresContext,
+            : record?.threadId && !m.contextTransferred && !prefixIds.has(m.id),
         ),
     })),
   };
@@ -512,26 +496,13 @@ runtimeInstaller?.on("change", () => backend.emitStatus());
 backend.on("event", (event: any) =>
   send({
     kind: "event",
-    event:
-      event.type === "status"
-        ? {
-            ...messageActions(event),
-            migration: binding
-              ? backend.store.active(binding.workspaceKey)?.migration
-              : null,
-          }
-        : event,
+    event: event.type === "status" ? messageActions(event) : event,
   }),
 );
 async function dispatch(method: string, args: any) {
   switch (method) {
     case "status":
-      return {
-        ...messageActions(backend.snapshot()),
-        migration: binding
-          ? backend.store.active(binding.workspaceKey)?.migration
-          : null,
-      };
+      return messageActions(backend.snapshot());
     case "proposals":
       await host({ op: "read", id: args.documentId });
       if (!backend.snapshot().busy) await proposals.recover();
@@ -568,22 +539,6 @@ async function dispatch(method: string, args: any) {
       if (!binding || args.workspaceKey !== binding.workspaceKey)
         throw new Error("引用属于另一工作区");
       return readReferences(state, binding.workspaceKey, args.ids);
-    }
-    case "previewHistory":
-      return previewHistory(args.file);
-    case "importHistory": {
-      if (!binding) throw new Error("请先打开电路");
-      if (backend.snapshot().busy) throw new Error("请先停止当前回答");
-      const result = await importHistory(
-        backend.store,
-        args,
-        binding.workspaceKey,
-      );
-      backend.emit("event", {
-        type: "conversations-changed",
-        ...backend.conversationState(binding.workspaceKey),
-      });
-      return result;
     }
     case "bind": {
       if (backend.snapshot().busy) throw new Error("请先停止当前回答");
@@ -663,16 +618,8 @@ async function dispatch(method: string, args: any) {
           circuit: binding.circuit,
           selection,
           references,
-          transferredHistory:
-            record?.runtime === "builtin" ? historyContext(record) : null,
         },
       });
-      if (record?.runtime === "builtin" && record?.migration?.requiresContext)
-        backend.store.runtimeData(
-          binding.workspaceKey,
-          { migration: { ...record.migration, requiresContext: false } },
-          record.id,
-        );
       return result;
     }
     case "runtime":
@@ -715,7 +662,6 @@ const transitions = new Set([
   "selectModel",
   "bindProvider",
   "defaultProvider",
-  "importHistory",
   "login",
   "logout",
   "reconnect",

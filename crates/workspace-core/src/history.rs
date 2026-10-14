@@ -37,7 +37,7 @@ pub struct HistoryEntry {
     pub id: String,
     pub kind: String,
     pub title: String,
-    pub created_at: Option<f64>,
+    pub created_at: f64,
     pub before_revision: Option<String>,
     pub revision: String,
     pub baseline: bool,
@@ -193,16 +193,10 @@ impl DocumentHistory {
                 id: uuid::Uuid::new_v4().to_string(),
                 kind: kind.into(),
                 title: title.into(),
-                created_at: if kind == "legacy" {
-                    None
-                } else {
-                    Some(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as f64,
-                    )
-                },
+                created_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as f64,
                 before_revision,
                 revision: after.revision.clone(),
                 baseline: matches!(kind, "open" | "save"),

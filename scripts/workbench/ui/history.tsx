@@ -138,7 +138,6 @@ export async function verifyDocumentHistory() {
         ],
         currentRevision: doc.revision,
         savedRevision: entry.revision,
-        warning: null,
       };
     if (request.op === "historyReview")
       return {

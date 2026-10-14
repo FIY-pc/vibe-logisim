@@ -17,11 +17,13 @@ export interface Proposal {
   xml: string;
   createdAt: number;
 }
-interface Work {
-  workId?: string;
+interface WorkInput {
   projectId: string;
   revisionId: string;
   original: string;
+}
+interface Work extends WorkInput {
+  workId: string;
 }
 export class ProposalStore {
   private state: string;
@@ -62,8 +64,8 @@ export class ProposalStore {
       typeof work.projectId !== "string" ||
       typeof work.revisionId !== "string" ||
       typeof work.original !== "string" ||
-      (work.workId !== undefined &&
-        (typeof work.workId !== "string" || !work.workId))
+      typeof work.workId !== "string" ||
+      !work.workId
     )
       throw new Error("工作副本恢复信息无效，原内容已保留");
     return work;
@@ -88,7 +90,7 @@ export class ProposalStore {
       };
     });
   }
-  prepare(work: Work): Promise<Work> {
+  prepare(work: WorkInput): Promise<Work> {
     return this.exclusive(async () => {
       await this.recoverUnlocked();
       const prepared = { ...work, workId: randomUUID() };

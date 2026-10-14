@@ -29,8 +29,6 @@ type CircuitReference = {
 type FileReference = {
   kind: "file";
   path: string;
-  owner?: string;
-  legacy?: boolean;
   page: number;
   pathVersion?: number;
 };
@@ -63,9 +61,7 @@ export function parseConversationReference(
     new URL(value);
     return { kind: "web", href: value };
   }
-  if (
-    /^(?:circuit:\/\/object|(?:workspace|material):\/\/file)\?/i.test(value)
-  ) {
+  if (/^circuit:\/\/object\?/i.test(value)) {
     const url = new URL(value),
       params = url.searchParams;
     if (
@@ -73,16 +69,28 @@ export function parseConversationReference(
       [...params.keys()].some((key) => params.getAll(key).length !== 1)
     )
       throw new Error("引用参数无效");
-    if (url.protocol === "circuit:")
-      return { ...Object.fromEntries(params), kind: "circuit" };
-    const legacy = url.protocol === "material:";
-    const owner = params.get(legacy ? "projectId" : "folderId");
-    if (!owner) throw new Error("文件引用缺少所属工程");
+    return { ...Object.fromEntries(params), kind: "circuit" };
+  }
+  if (/^workspace:\/\//i.test(value)) {
+    // The host emits a case-sensitive workspace-relative path, not a URL host.
+    // Parse before decoding so URL normalization cannot hide path traversal.
+    const [encoded, query, extra] = value
+      .slice("workspace://".length)
+      .split("?");
+    if (!encoded || extra !== undefined || value.includes("#"))
+      throw new Error("文件引用参数无效");
+    const params = new URLSearchParams(query);
+    if (
+      [...params.keys()].some(
+        (key) =>
+          !["pathVersion", "page"].includes(key) ||
+          params.getAll(key).length !== 1,
+      )
+    )
+      throw new Error("文件引用参数无效");
     return {
       kind: "file",
-      owner,
-      legacy,
-      path: relativePath(params.get(legacy ? "id" : "path")),
+      path: relativePath(decodeURIComponent(encoded)),
       page: integer(params.get("page"), 1) || 1,
       pathVersion: integer(params.get("pathVersion"), 0),
     };
@@ -93,11 +101,7 @@ export function parseConversationReference(
   } catch {
     throw new Error("文件引用路径无效");
   }
-  if (path.startsWith("file:///tmp/workspace/"))
-    path = path.slice("file://".length);
-  if (path.startsWith("/tmp/workspace/"))
-    path = path.slice("/tmp/workspace/".length);
-  else if (path.startsWith("./")) path = path.slice(2);
+  if (path.startsWith("./")) path = path.slice(2);
   if (/[?#]/.test(path)) throw new Error("文件引用路径无效");
   return { kind: "file", path: relativePath(path), page: 1 };
 }
@@ -125,7 +129,7 @@ export async function locateCircuitReference(
       revision: doc.revision,
       circuit: circuit.name,
     });
-    // Old observer IDs are coordinate-derived. Resolve via native factory/location
+    // Native observer IDs are coordinate-derived. Resolve via factory/location
     // in the named circuit, never by an array index or a matching label alone.
     if (reference.componentId) {
       const native = focus.components.filter(
@@ -198,12 +202,6 @@ export function useConversationReferences({
       }
       if (!folder || (context?.folderId || context?.workspaceKey) !== folder.id)
         throw new Error("无法确认这条文件路径所属的工作区");
-      if (
-        reference.owner &&
-        reference.owner !== folder.id &&
-        !(reference.legacy && reference.owner === context?.projectId)
-      )
-        throw new Error("文件属于另一工作区");
       const resolved = await command<{
         path: string;
         folderId: string;

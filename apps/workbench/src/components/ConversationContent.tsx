@@ -102,9 +102,8 @@ export function ChatMarkdown({
   onFollowReference?: (href: string) => void;
 }) {
   const reference = (href: string) =>
-    /^(?:circuit:\/\/object\?|(?:material|workspace):\/\/file\?|(?:file:\/\/)?\/tmp\/workspace\/|\.\/)/i.test(
-      href,
-    ) || /^[^:/?#\\\s]+(?:\/[^:/?#\\\s]+)*$/.test(href);
+    /^(?:circuit:\/\/object\?|workspace:\/\/|\.\/)/i.test(href) ||
+    /^[^:/?#\\\s]+(?:\/[^:/?#\\\s]+)*$/.test(href);
   const link = (href: string | undefined, children: React.ReactNode) => {
     if (!href) return <>{children}</>;
     if (reference(href))

@@ -270,30 +270,6 @@ try {
     (await command({ op: "read", id: doc.id })).revision,
     doc.revision,
   );
-  // Legacy recovery imports content only; no fabricated timestamps or native proofs.
-  await stop();
-  await rm(path.join(state, "document-history", doc.id), { recursive: true });
-  await start();
-  doc = await command({ op: "read", id: doc.id });
-  const legacy = await history();
-  assert(legacy.warning);
-  assert(
-    legacy.entries.every(
-      (e: any) => e.kind === "legacy" && e.createdAt === null,
-    ),
-  );
-  await assert.rejects(
-    () =>
-      command({
-        op: "historyPreview",
-        ...binding(),
-        entry: legacy.entries[0].id,
-        mode: "current",
-        circuit: "child",
-        candidate: false,
-      }),
-    /没有冻结/,
-  );
   // Historical native views must reject changed external libraries, while
   // immutable source comparison and the original verification record survive.
   const library = path.join(state, "parts.circ");
@@ -426,7 +402,7 @@ try {
   assert.equal(corruptReview.evidence.length, 0);
   assert(corruptReview.rows.length > 0);
   console.log(
-    "Verified immutable history baselines, before/after and current comparison, native connectivity and parent impact, candidate-bound vector/trace evidence, readonly live simulation, restore+undo, stale/source guards and restart/legacy recovery.",
+    "Verified immutable history baselines, before/after and current comparison, native connectivity and parent impact, candidate-bound vector/trace evidence, readonly live simulation, restore+undo, stale/source guards and restart recovery.",
   );
 } finally {
   await stop();

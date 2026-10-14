@@ -1,10 +1,8 @@
 import { runtimeFetch } from "./network.mts";
-import { createRequire } from "node:module";
+import { RuntimeInstaller } from "../core/runtime-installer.mts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { x } from "tar";
-const require = createRequire(import.meta.url);
-const { RuntimeInstaller } = require("../core/runtime-installer.cjs");
 
 export async function extractRuntime(
   archive: string,
@@ -59,10 +57,7 @@ export async function createCodexInstaller(state: string) {
     };
   const lock = JSON.parse(
     await readFile(
-      new URL(
-        "../../../scripts/distribution/runtime-lock.json",
-        import.meta.url,
-      ),
+      new URL("../../../config/runtime-lock.json", import.meta.url),
       "utf8",
     ),
   );

@@ -37,15 +37,6 @@ try {
     await readFile(path.join(workDir, "circuit.circ"), "utf8"),
     xml + "\n",
   );
-  // Recovering legacy scratch remains supported without claiming a new turn identity.
-  await writeFile(
-    path.join(state, "active-agent-work.json"),
-    JSON.stringify({ projectId: "legacy", revisionId: "legacy-r", original }),
-  );
-  const legacy = await restarted.recover();
-  assert.equal(legacy?.documentId, "legacy");
-  assert.equal(legacy?.xml, xml + "\n");
-
   const turnA = await restarted.prepare({
     projectId: "race-A",
     revisionId: "race-r1",
@@ -134,7 +125,7 @@ try {
   );
   assert.equal((await restarted.list("B")).length, 1);
   console.log(
-    "Proposed source survives restart and legacy recovery; concurrent recovery/prepare serialize, and late or same-revision prior-turn finishes cannot consume another working copy.",
+    "Proposed source survives restart; concurrent recovery/prepare serialize, and late or same-revision prior-turn finishes cannot consume another working copy.",
   );
 } finally {
   await rm(state, { recursive: true, force: true });

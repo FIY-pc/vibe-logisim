@@ -7,7 +7,6 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { once } from "node:events";
-import { verifyHistory } from "./history-scenarios.mts";
 import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
@@ -661,7 +660,6 @@ try {
     1,
   );
   assert(revised.messages.some((m: any) => m.text === "Recheck the output"));
-  await verifyHistory(agent, state, previous);
   // Save As must not alias the old path to the open copy, including after restart.
   const copyPath = path.join(state, "copy.circ");
   const copied = await command({

@@ -1,5 +1,15 @@
 import { spawn } from "node:child_process";
-import { mkdir, writeFile, cp, chmod, rm, readFile } from "node:fs/promises";
+import {
+  mkdir,
+  writeFile,
+  cp,
+  chmod,
+  rm,
+  readFile,
+  readdir,
+} from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { verifyJavaRelocation } from "./verify-java.mts";
 const root = path.resolve(import.meta.dirname, "../..");
@@ -10,6 +20,19 @@ const tar = windows
   ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/tar.exe")
   : "tar";
 const target = `${process.platform}-${process.arch}`;
+const version: string = JSON.parse(
+  await readFile(
+    path.join(root, "apps/workbench/src-tauri/tauri.conf.json"),
+    "utf8",
+  ),
+).version;
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))
+  throw new Error("Invalid desktop package version");
+if (
+  process.env.GITHUB_REF_TYPE === "tag" &&
+  process.env.GITHUB_REF_NAME !== `v${version}`
+)
+  throw new Error("Release tag must match the desktop package version");
 // CI builds a lower-version installer from the same source to test NSIS upgrades.
 const baseline = process.argv.includes("--upgrade-baseline");
 if (baseline && !windows)
@@ -84,7 +107,6 @@ await run(
   path.join(root, "apps/workbench"),
 );
 if (baseline) {
-  const { readdir } = await import("node:fs/promises");
   const directory = path.join(root, "target/release/bundle/nsis");
   const files = (await readdir(directory)).filter(
     (file) => file.includes("_0.0.0_") && file.endsWith(".exe"),
@@ -145,6 +167,43 @@ if (windows) {
     path.basename(portable),
   ]);
 }
+// Keep stable local paths for desktop checks and versioned copies for distribution.
+const release = path.join(cache, "release");
+await rm(release, { recursive: true, force: true });
+await mkdir(release, { recursive: true });
+const extension = windows ? "zip" : "tar.gz";
+const archive = `vibe-logisim-${version}-${target}.${extension}`;
+await cp(
+  path.join(cache, `Vibe-Logisim-${target}.${extension}`),
+  path.join(release, archive),
+);
+const installers = path.join(
+  root,
+  "target/release/bundle",
+  windows ? "nsis" : "deb",
+);
+const installerFiles = (await readdir(installers)).filter(
+  (name) =>
+    name.includes(`_${version}_`) && name.endsWith(windows ? ".exe" : ".deb"),
+);
+if (installerFiles.length !== 1)
+  throw new Error("Expected one installer for the current version");
+const installer = `vibe-logisim-${version}-${target}${windows ? "-setup.exe" : ".deb"}`;
+await cp(
+  path.join(installers, installerFiles[0]),
+  path.join(release, installer),
+);
+const sums: string[] = [];
+for (const name of [archive, installer].sort()) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path.join(release, name)))
+    hash.update(chunk);
+  sums.push(`${hash.digest("hex")}  ${name}`);
+}
+await writeFile(
+  path.join(release, `SHA256SUMS-${target}.txt`),
+  sums.join("\n") + "\n",
+);
 console.log(
-  "Desktop packages ready in target/release/bundle and .workbench-cache.",
+  "Desktop packages ready in target/release/bundle and .workbench-cache/release.",
 );

@@ -36,10 +36,7 @@ const stage = await mkdtemp(path.join(cache, "product-stage-"));
 const downloads = path.join(cache, "downloads");
 await mkdir(downloads, { recursive: true });
 const lock = JSON.parse(
-  await readFile(
-    path.join(root, "scripts/distribution/runtime-lock.json"),
-    "utf8",
-  ),
+  await readFile(path.join(root, "config/runtime-lock.json"), "utf8"),
 );
 const own = JSON.parse(
   await readFile(
@@ -97,8 +94,64 @@ async function files(dir: string): Promise<string[]> {
   }
   return result;
 }
+async function copyFrontendNotices(destination: string) {
+  const packages = new Map<
+    string,
+    { name: string; version: string; license?: string; repository?: unknown }
+  >();
+  async function visit(name: string, from: string) {
+    let directory = from;
+    let packageRoot = "";
+    while (true) {
+      const candidate = path.join(directory, "node_modules", name);
+      try {
+        await stat(path.join(candidate, "package.json"));
+        packageRoot = candidate;
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const parent = path.dirname(directory);
+      if (parent === directory)
+        throw new Error("Missing frontend dependency: " + name);
+      directory = parent;
+    }
+    const info = JSON.parse(
+      await readFile(path.join(packageRoot, "package.json"), "utf8"),
+    );
+    const key = `${info.name}@${info.version}`;
+    if (packages.has(key)) return;
+    packages.set(key, {
+      name: info.name,
+      version: info.version,
+      license: info.license,
+      repository: info.repository,
+    });
+    const notices = path.join(destination, key);
+    await mkdir(notices, { recursive: true });
+    for (const file of await readdir(packageRoot)) {
+      if (
+        /^(licen[sc]e|copying|notice)/i.test(file) &&
+        (await stat(path.join(packageRoot, file))).isFile()
+      )
+        await cp(path.join(packageRoot, file), path.join(notices, file));
+    }
+    for (const dependency of Object.keys(info.dependencies || {}))
+      await visit(dependency, packageRoot);
+  }
+  const frontend = path.join(root, "apps/workbench");
+  const info = JSON.parse(
+    await readFile(path.join(frontend, "package.json"), "utf8"),
+  );
+  for (const name of Object.keys(info.dependencies))
+    await visit(name, frontend);
+  await writeFile(
+    path.join(destination, "packages.json"),
+    JSON.stringify([...packages.values()], null, 2) + "\n",
+  );
+}
 try {
-  const [node, java, jar, source] = await Promise.all([
+  const [node, java, jar, source, codexLicense] = await Promise.all([
     acquire(
       `node-${own.node.version}-${target}.${windows ? "zip" : "tar.xz"}`,
       own.node[target],
@@ -109,6 +162,7 @@ try {
     ),
     acquire("Logisim-ITA.jar", lock.artifacts["logisim.jar"]),
     acquire("Logisim-source.tar.gz", lock.artifacts["logisim-source.tar.gz"]),
+    acquire("codex-LICENSE", lock.artifacts["codex-LICENSE"]),
   ]);
   const unpack = path.join(stage, ".build");
   await mkdir(unpack);
@@ -175,7 +229,13 @@ try {
   );
   await mkdir(path.join(stage, "third-party/logisim"), { recursive: true });
   await cp(source, path.join(stage, "third-party/logisim/source.tar.gz"));
+  await cp(codexLicense, path.join(stage, "third-party/codex-LICENSE"));
+  await copyFrontendNotices(path.join(stage, "third-party/frontend"));
   await cp(path.join(root, "LICENSE"), path.join(stage, "LICENSE"));
+  await cp(
+    path.join(root, "THIRD_PARTY.md"),
+    path.join(stage, "THIRD_PARTY.md"),
+  );
   await writeFile(
     path.join(stage, "product.json"),
     JSON.stringify(

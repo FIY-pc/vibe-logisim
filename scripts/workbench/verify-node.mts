@@ -30,9 +30,6 @@ export function nodeFailure(output: string) {
   ] as const;
   const modules = [
     "worker.mjs",
-    "agent-runtime.cjs",
-    "system-proxy.cjs",
-    "builtin-sdk.mjs",
     "runtime-lock.json",
     "edit-schema.json",
   ].filter((name) => output.includes(name));
@@ -240,7 +237,7 @@ export async function verifyNodeRelocation(resources: string) {
     for (const item of [
       "runtimes/node",
       "packages/agent-runtime",
-      "scripts/distribution/runtime-lock.json",
+      "config/runtime-lock.json",
     ])
       await cp(path.join(resources, item), path.join(directory, item), {
         recursive: true,

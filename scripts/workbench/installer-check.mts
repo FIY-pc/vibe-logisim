@@ -12,12 +12,9 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
 import { c } from "tar";
 import { extractRuntime } from "../../packages/agent-runtime/src/installer.mts";
-const { RuntimeInstaller } = createRequire(import.meta.url)(
-  "../../packages/agent-runtime/core/runtime-installer.cjs",
-);
+import { RuntimeInstaller } from "../../packages/agent-runtime/core/runtime-installer.mts";
 const root = await mkdtemp(path.join(tmpdir(), "vibe-install-check-"));
 try {
   const input = path.join(root, "input"),
@@ -78,14 +75,17 @@ try {
     spec,
     directory: path.join(root, "managed/cancelled"),
     extract: extractRuntime,
-    fetch: async (_url: string, { signal }: { signal: AbortSignal }) =>
-      new Promise((_resolve, reject) => {
+    fetch: async (_url, options) => {
+      const signal = options?.signal;
+      assert.ok(signal, "Installer downloads must carry a cancellation signal");
+      return new Promise<Response>((_resolve, reject) => {
         if (signal.aborted) reject(signal.reason);
         else
           signal.addEventListener("abort", () => reject(signal.reason), {
             once: true,
           });
-      }),
+      });
+    },
   });
   const attempt = cancel.ensure();
   const rejected = assert.rejects(attempt, /已取消下载/);

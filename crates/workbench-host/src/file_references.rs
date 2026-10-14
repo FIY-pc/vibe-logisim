@@ -103,73 +103,13 @@ impl References {
         let directory = state.join("file-references");
         fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
         let file = directory.join(format!("{}.json", digest(folder.id.as_bytes())));
-        let mut upgraded = false;
         let journal = if file.exists() {
             let bytes = fs::read(&file).map_err(|e| e.to_string())?;
-            let value: Value =
-                serde_json::from_slice(&bytes).map_err(|e| format!("文件路径记录无法读取：{e}"))?;
-            if value.get("nodes").is_none() {
-                // Preserve references issued during the first native preview.
-                #[derive(Deserialize)]
-                struct OldAnchor {
-                    path: String,
-                    key: String,
-                }
-                #[derive(Deserialize)]
-                struct OldJournal {
-                    version: u32,
-                    anchors: BTreeMap<u32, OldAnchor>,
-                    movements: Vec<Movement>,
-                }
-                let old: OldJournal = serde_json::from_value(value).map_err(|e| e.to_string())?;
-                let mut journal = Journal {
-                    version: old.version,
-                    movements: old.movements,
-                    ..Journal::default()
-                };
-                for (version, anchor) in old.anchors {
-                    let node = digest(anchor.key.as_bytes());
-                    let mut current = anchor.path.clone();
-                    let mut retired = false;
-                    for movement in journal.movements.iter().filter(|m| m.version > version) {
-                        if under(&current, &movement.from) {
-                            if let Some(to) = &movement.to {
-                                current = to.clone() + &current[movement.from.len()..];
-                            } else {
-                                retired = true;
-                                break;
-                            }
-                        }
-                    }
-                    journal.nodes.insert(
-                        node.clone(),
-                        FileIdentity {
-                            path: current,
-                            key: anchor.key,
-                            retired,
-                        },
-                    );
-                    journal.anchors.insert(
-                        version,
-                        Anchor {
-                            path: anchor.path,
-                            node,
-                        },
-                    );
-                }
-                upgraded = true;
-                journal
-            } else {
-                serde_json::from_value(value).map_err(|e| format!("文件路径记录无法读取：{e}"))?
-            }
+            serde_json::from_slice(&bytes).map_err(|e| format!("文件路径记录无法读取：{e}"))?
         } else {
             Journal::default()
         };
-        let result = Self { file, journal };
-        if upgraded {
-            result.save()?;
-        }
-        Ok(result)
+        Ok(Self { file, journal })
     }
     fn next(&mut self) -> Result<u32> {
         self.journal.version = self

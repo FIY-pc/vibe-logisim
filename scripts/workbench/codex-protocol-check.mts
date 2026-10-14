@@ -4,19 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { createCodexInstaller } from "../../packages/agent-runtime/src/installer.mts";
-const require = createRequire(import.meta.url);
-const {
-  AgentRuntime,
-} = require("../../packages/agent-runtime/core/agent-runtime.cjs");
-const {
-  ConversationStore,
-} = require("../../packages/agent-runtime/core/conversation-store.cjs");
-const {
-  POLICY_SIGNATURE,
-} = require("../../packages/agent-runtime/core/codex-capabilities.cjs");
+import { AgentRuntime } from "../../packages/agent-runtime/core/agent-runtime.mts";
+import { ConversationStore } from "../../packages/agent-runtime/core/conversation-store.mts";
+import { POLICY_SIGNATURE } from "../../packages/agent-runtime/core/codex-capabilities.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 if (process.env.VIBE_LOGISIM_CODEX)
   throw new Error("Unset VIBE_LOGISIM_CODEX to verify the locked runtime");
@@ -213,6 +205,8 @@ try {
   );
   await runtime.changeConversation("fixture", "fork", { messageId: reply.id });
   const child = store.active("fixture");
+  assert.ok(child, "Fork must select a persisted child conversation");
+  assert.ok(child.forkedFrom, "Fork must retain its source boundary");
   assert.notEqual(child.threadId, source.threadId);
   assert.equal(
     child.messages.filter((message: any) => message.type === "assistant")

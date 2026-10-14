@@ -62,13 +62,11 @@ export async function verifyAISettings() {
       conversationId: "history-A",
       hasHistory: true,
       busy: false,
-      canImport: true,
       request: request as any,
       onRuntime: async (runtime: string) => {
         calls.push({ method: "runtime", args: { runtime } });
       },
       onLogin: () => {},
-      onImport: () => {},
       onSaved: async () => {},
       onClose: () => {},
     };
@@ -106,6 +104,7 @@ export async function verifyAISettings() {
       },
     });
     await click(button("运行时"));
+    assert.doesNotMatch(container.textContent!, /导入|旧版/);
     await change(
       container.querySelector('select[aria-label="新对话默认运行时"]')!,
       "codex",
@@ -145,6 +144,19 @@ export async function verifyAISettings() {
       calls.filter((call) => call.method === "bindProvider").length,
       1,
       "saving service settings must not rebind history",
+    );
+
+    await act(async () =>
+      root.render(<ProviderSettings {...props} conversationId={null} />),
+    );
+    await click(button("运行时"));
+    assert.doesNotMatch(container.textContent!, /此对话/);
+    assert.equal(button("用 Codex 新建对话").disabled, true);
+    assert.equal(
+      container.querySelector<HTMLSelectElement>(
+        'select[aria-label="新对话默认运行时"]',
+      )!.disabled,
+      false,
     );
 
     const listed: boolean[] = [],
