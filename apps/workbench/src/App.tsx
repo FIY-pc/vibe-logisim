@@ -1,5 +1,4 @@
 import { useConversationReferences } from "./lib/conversationReferences";
-import { useFolderPicker } from "./lib/useFolderPicker";
 import { ProjectInfo } from "./components/ProjectInfo";
 import { DocumentHistory } from "./components/DocumentHistory";
 import type { LocateChange } from "./lib/reviewTypes";
@@ -31,13 +30,10 @@ import { FilePreview } from "./components/FilePreview";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { Waveform } from "./components/Waveform";
 import { Observations } from "./components/Observations";
-import type { ObservationRecord } from "./generated/ObservationRecord";
 import { subscribeEvents } from "./lib/events";
 import { DecisionDialog } from "./components/DecisionDialog";
-import { useSourceStatus } from "./lib/useSourceStatus";
-import type { SourceStatus } from "./generated/SourceStatus";
 import { TextPrompt } from "./components/TextPrompt";
-import { Files, type ProjectFolder } from "./components/Files";
+import { Files } from "./components/Files";
 import { useEffect } from "react";
 import {
   CircuitBoard,
@@ -58,7 +54,7 @@ import {
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { Chat } from "./components/Chat";
-import { command, desktop, openPath, savePath } from "./lib/transport";
+import { command, desktop } from "./lib/transport";
 import {
   useConversation,
   useDocuments,
@@ -70,20 +66,14 @@ import {
   useSimulation,
   useView,
 } from "./workbench/hooks";
-import { currentView } from "./workbench/view";
+import { activeSimulation, currentView } from "./workbench/view";
+import { sourceStatusOf } from "./stores/documents";
 import {
   useOwnWorkbench,
   useWorkbench,
   WorkbenchProvider,
 } from "./workbench/provider";
-import type {
-  CatalogTool,
-  Document,
-  Edit,
-  Simulation,
-  Tool,
-  XmlNode,
-} from "./lib/types";
+import type { Edit, Simulation, Tool } from "./lib/types";
 export function App() {
   const workbench = useOwnWorkbench();
   useEffect(() => workbench.start(), [workbench]);
@@ -94,28 +84,29 @@ export function App() {
   );
 }
 function Shell() {
-  const { stores } = useWorkbench();
+  const { stores, actions } = useWorkbench();
+  const { workspace, editor: editing, simulation: simulating } = actions;
   const { notice, decision, error, setNotice, setDecision, setError, onError } =
     useNotices((state) => state);
   const {
     docs,
     active,
     saveFailures,
-    setDocs,
     setActive,
-    invalidate,
     refreshWorkspace,
     mergeDocument,
     update,
+    recheck,
   } = useDocuments((state) => state);
   const {
     folder,
     preview,
     infoTarget,
+    folderPrompt,
     uploadInput: upload,
-    setFolder,
     setPreview,
     setInfoTarget,
+    setFolderPrompt,
   } = useFiles((state) => state);
   const quotation = useConversation((state) => state.quotation);
   const { setQuotation } = stores.conversation.getState();
@@ -126,7 +117,6 @@ function Shell() {
     place,
     setPlace,
     catalog,
-    setCatalog,
     search,
     setSearch,
     selected,
@@ -166,22 +156,18 @@ function Shell() {
     sim,
     setSim,
     frequency,
-    setFrequency,
     requests: simulationRequests,
-    setRequests: setSimulationRequests,
     memory,
     setMemory,
     observations,
     setObservations,
     lastCapture,
     setLastCapture,
-    sequence: simulationSequence,
-    queue: simulationQueue,
   } = useSimulation((state) => state);
   const pending = useShell((state) => state.pending);
   const right = useShell((state) => state.right);
   const resourceTab = useShell((state) => state.resourceTab);
-  const { busy, setRight, setResourceTab } = stores.shell.getState();
+  const { setRight, setResourceTab } = stores.shell.getState();
   const settings = useSettings((state) => state.open);
   const shortcutBindings = useSettings((state) => state.bindings);
   const shortcuts = useSettings((state) => state.labels);
@@ -189,7 +175,8 @@ function Shell() {
     stores.settings.getState();
   const layout = useWorkspaceLayout();
   const { showExplorer, setShowExplorer, showRight, setShowRight } = layout;
-  const { doc, circuit, scope: selectionScope } = useView();
+  const view = useView();
+  const { doc, circuit, scope: selectionScope } = view;
   useEffect(() => {
     if (!doc) setRight("chat");
   }, [doc?.id]);
@@ -198,8 +185,18 @@ function Shell() {
     Boolean(placement.template?.attributes.facingAttribute) &&
     !placement.loading;
   const selection = selected.scope === selectionScope ? selected.ids : [];
-  const setSelection = (ids: string[]) =>
-    setSelected({ scope: selectionScope, ids });
+  // Handlers act on the view of this render.
+  const setSelection = (ids: string[]) => editing.select(view, ids);
+  const save = (saveAs = false) => workspace.save(view, saveAs);
+  const requestReload = () => workspace.requestReload(view);
+  const edit = (change: Edit) => editing.edit(view, change);
+  const history = (op: "undo" | "redo") => editing.history(view, op);
+  const readSource = () => editing.readSource(view);
+  const simulate = (op: string, attributes?: Record<string, string>) =>
+    simulating.simulate(view, op, attributes);
+  const capture = () => simulating.capture(view);
+  const openMemory = (id: string) => simulating.openMemory(view, id);
+  const { newFile, openFile, requestClose, openFolder } = workspace;
   const simulationPending =
     simulationRequests.find((request) => request.scope === selectionScope)
       ?.op || null;
@@ -212,281 +209,9 @@ function Shell() {
             documentComponent(circuit, component)?.id === selection[0],
         ) || null
       : null;
-  const { sourceStatus, recheck } = useSourceStatus(doc);
-  const onFolder = (next: ProjectFolder) => {
-    invalidate();
-    setFolder(next);
-    layout.revealFiles();
-  };
-  const { openFolder, folderDialog } = useFolderPicker(onFolder, onError);
+  const sourceStatus = useDocuments((state) => sourceStatusOf(state, doc));
   const feedback = useFeedback(setNotice, onError);
-  const newFile = () =>
-    busy(async () => {
-      const d = await command<Document>({ op: "new", name: "未命名.circ" });
-      update(d);
-      setCircuitName(d.main);
-    }).catch(onError);
-  const openFile = () => {
-    if (!desktop()) {
-      upload.current?.click();
-      return;
-    }
-    void busy(async () => {
-      const path = await openPath();
-      if (path) {
-        const d = await command<Document>({ op: "open", path });
-        update(d);
-        setCircuitName(d.main);
-      }
-    }).catch(onError);
-  };
-  const saveDocument = async (
-    target: Document,
-    saveAs = false,
-  ): Promise<Document | null> => {
-    let path = saveAs ? null : target.path;
-    let target_revision: string | undefined;
-    if (!path) {
-      if (!desktop()) {
-        const { xml } = await command<{ xml: string }>({
-          op: "source",
-          id: target.id,
-          revision: target.revision,
-        });
-        const url = URL.createObjectURL(
-          new Blob([xml], { type: "application/xml" }),
-        );
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = target.name;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        return null;
-      }
-      path = await savePath(target.path || target.name);
-      if (!path) return null;
-      const destination = await command<{ revision: string | null }>({
-        op: "saveTarget",
-        path,
-      });
-      target_revision = destination.revision || undefined;
-    }
-    const saved = await command<Document>({
-      op: "save",
-      id: target.id,
-      revision: target.revision,
-      path,
-      target_revision,
-    });
-    mergeDocument(saved, target.revision);
-    recheck();
-    return saved;
-  };
-  const save = (saveAs = false) => {
-    if (doc)
-      void busy(() => saveDocument(doc, saveAs)).catch((e) => {
-        recheck();
-        onError(e);
-      });
-  };
-  const closeDocument = async (target: Document, discard = false) => {
-    await busy(() =>
-      command({
-        op: "close",
-        id: target.id,
-        revision: target.revision,
-        discard,
-      }),
-    );
-    setDocs((previous) => previous.filter((d) => d.id !== target.id));
-    if (stores.documents.getState().active === target.id) {
-      const next = stores.documents.getState().docs[0];
-      setActive(next?.id || null);
-      setCircuitName(next?.main || "main");
-      if (next) await command({ op: "activate", id: next.id });
-    }
-    setSim((previous) =>
-      previous?.documentId === target.id ? null : previous,
-    );
-  };
-  const requestClose = (target: Document) => {
-    if (!target.dirty) {
-      void closeDocument(target).catch(onError);
-      return;
-    }
-    setDecision({
-      title: `关闭 ${target.name}？`,
-      message: "这个文档还有未保存的修改。",
-      actions: [
-        { label: "不保存", run: () => closeDocument(target, true) },
-        {
-          label: desktop() || target.path ? "保存并关闭" : "下载副本",
-          primary: true,
-          run: async () => {
-            const saved = await busy(() => saveDocument(target));
-            if (!saved) return false;
-            await closeDocument(saved);
-          },
-        },
-      ],
-    });
-  };
-  const requestReload = async () => {
-    if (!doc) return;
-    const status = await command<SourceStatus>({
-      op: "sourceStatus",
-      id: doc.id,
-    });
-    recheck();
-    if (status.state !== "unchanged" && status.state !== "modified")
-      throw new Error(
-        status.state === "missing"
-          ? "原文件已被移除，可以另存为保留当前文档。"
-          : "无法读取源文件",
-      );
-    const reload = async (discard: boolean) => {
-      const next = await busy(() =>
-        command<Document>({
-          op: "reload",
-          id: doc.id,
-          revision: doc.revision,
-          source_revision: status.revision,
-          discard,
-        }),
-      );
-      mergeDocument(next, doc.revision);
-      recheck();
-    };
-    if (!doc.dirty) {
-      await reload(false);
-      return;
-    }
-    setDecision({
-      title: `重新载入 ${doc.name}？`,
-      message: "当前未保存的修改将被源文件替换；载入后仍可撤销。",
-      actions: [{ label: "重新载入", primary: true, run: () => reload(true) }],
-    });
-  };
-  const edit = async (edit: Edit) => {
-    if (!doc || !circuit) return;
-    const originSelection = stores.editor.getState().selected;
-    const originNavigation = navigationRequest.current;
-    const next = await busy(() =>
-      command<Document>({
-        op: "edit",
-        id: doc.id,
-        revision: doc.revision,
-        circuit: circuit.name,
-        edit,
-      }),
-    );
-    mergeDocument(next, doc.revision);
-    // A field commit keeps its object selected. Preserve the revision guard for
-    // other edits, late responses and selections the user changed meanwhile.
-    if (
-      edit.kind === "attributes" &&
-      stores.editor.getState().selected === originSelection &&
-      stores.documents.getState().active === doc.id &&
-      navigationRequest.current === originNavigation &&
-      stores.documents.getState().docs.find((item) => item.id === doc.id)
-        ?.revision === next.revision &&
-      originSelection.scope === selectionScope &&
-      originSelection.ids.includes(edit.id) &&
-      next.circuits
-        .find((item) => item.name === circuit.name)
-        ?.components.some((item) => item.id === edit.id)
-    ) {
-      setSelected({
-        scope: `${doc.id}:${next.revision}:${circuit.name}`,
-        ids: [edit.id],
-      });
-    }
-  };
-  const history = (op: "undo" | "redo") => {
-    if (doc)
-      void busy(() =>
-        command<Document>({ op, id: doc.id, revision: doc.revision }),
-      )
-        .then((next) => mergeDocument(next, doc.revision))
-        .catch(onError);
-  };
-  const readSource = async () => {
-    if (!doc || !circuit) return;
-    const requested = sourceRequest.next();
-    const navigation = navigationRequest.current;
-    const stillCurrent = () =>
-      requested === sourceRequest.current &&
-      navigation === navigationRequest.current &&
-      currentView(stores).scope === selectionScope;
-    try {
-      const result = await command<{ xml: string }>({
-        op: "source",
-        id: doc.id,
-        revision: doc.revision,
-      });
-      if (stillCurrent())
-        setSource({
-          xml: result.xml,
-          id: doc.id,
-          name: doc.name,
-          revision: doc.revision,
-          circuit: circuit.name,
-        });
-    } catch (error) {
-      if (stillCurrent()) onError(error);
-    }
-  };
-  const simulate = async (
-    op: string,
-    attributes: Record<string, string> = {},
-  ) => {
-    if (!doc || !circuit) return;
-    const origin = selectionScope;
-    const navigation = navigationRequest.current;
-    const sequence = simulationSequence.next();
-    const request =
-      op === "stop"
-        ? { op: "simulationStop" as const }
-        : {
-            op: "simulationAction" as const,
-            id: doc.id,
-            revision: doc.revision,
-            circuit: circuit.name,
-            command: op,
-            attributes: { initialFrequency: String(frequency), ...attributes },
-          };
-    const previous = simulationQueue.current;
-    setSimulationRequests((items) => [
-      ...items,
-      { id: sequence, scope: origin, op },
-    ]);
-    const next = busy(async () => {
-      await previous.catch(() => {});
-      // A queued action belongs to the view where it was requested. Releasing
-      // a held button is safe across navigation: the host checks its viewId.
-      if (
-        op !== "button-release" &&
-        (currentView(stores).scope !== origin ||
-          navigationRequest.current !== navigation)
-      )
-        return;
-      await command(request);
-    }).finally(() => {
-      setSimulationRequests((items) =>
-        items.filter((item) => item.id !== sequence),
-      );
-    });
-    simulationQueue.current = next;
-    await next;
-  };
-  const activeSim =
-    sim &&
-    doc &&
-    sim.documentId === doc.id &&
-    sim.revision === doc.revision &&
-    sim.circuit === circuit?.name
-      ? sim
-      : null;
+  const activeSim = activeSimulation(sim, view);
   const memoryComponent =
     memory && memory.documentId === doc?.id && memory.circuit === circuit?.name
       ? circuit?.components.find(
@@ -496,30 +221,6 @@ function Shell() {
             c.location.y === memory.y,
         )
       : null;
-  const openMemory = (id: string) => {
-    const c = circuit?.components.find((c) => c.id === id);
-    if (doc && circuit && c)
-      setMemory({
-        documentId: doc.id,
-        circuit: circuit.name,
-        name: c.name,
-        x: c.location.x,
-        y: c.location.y,
-      });
-  };
-  const capture = async () => {
-    if (!doc || !activeSim) return;
-    const record = await busy(() =>
-      command<ObservationRecord>({
-        op: "observationCapture",
-        id: doc.id,
-        revision: doc.revision,
-        view_id: activeSim.viewId,
-        title: "",
-      }),
-    );
-    setLastCapture(record);
-  };
   const trace = activeSim?.frame.children.find((n) => n.tag === "trace");
   const traceLabels = Object.fromEntries(
     (trace?.children || [])
@@ -536,40 +237,6 @@ function Shell() {
   useEffect(() => {
     void refreshWorkspace(true).catch(onError);
   }, [refreshWorkspace, onError]);
-  useEffect(() => {
-    if (!doc || !circuit) {
-      setCatalog([]);
-      return;
-    }
-    let live = true;
-    command<XmlNode>({
-      op: "catalog",
-      id: doc.id,
-      revision: doc.revision,
-      circuit: circuit.name,
-    })
-      .then((root) => {
-        if (live)
-          setCatalog(
-            root.children
-              .filter((n) => n.tag === "group")
-              .map((g) => ({
-                id: g.attributes.id,
-                label: g.attributes.label,
-                tools: g.children.map((t) => ({
-                  ...t.attributes,
-                  library: g.attributes.id,
-                })) as unknown as CatalogTool[],
-              })),
-          );
-      })
-      .catch((e) => {
-        if (live) onError(e);
-      });
-    return () => {
-      live = false;
-    };
-  }, [doc?.id, doc?.revision, circuit?.name]);
   useEffect(() => {
     let live = true;
     let version = 0;
@@ -833,7 +500,13 @@ function Shell() {
       className="app"
       data-workspace={doc ? "circuit" : folder ? "folder" : "empty"}
     >
-      {folderDialog}
+      {folderPrompt && (
+        <TextPrompt
+          title="打开文件夹"
+          onClose={() => setFolderPrompt(false)}
+          onSubmit={workspace.openFolderAt}
+        />
+      )}
       <input
         hidden
         ref={upload}
@@ -841,16 +514,7 @@ function Shell() {
         accept=".circ"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file)
-            void busy(async () => {
-              const d = await command<Document>({
-                op: "import",
-                name: file.name,
-                xml: await file.text(),
-              });
-              update(d);
-              setCircuitName(d.main);
-            }).catch(onError);
+          if (file) workspace.importFile(file);
           e.target.value = "";
         }}
       />
@@ -907,12 +571,9 @@ function Shell() {
               frequency={
                 Number(activeSim?.frame.attributes.frequency) || frequency
               }
-              onFrequencyChange={async (value) => {
-                if (activeSim)
-                  await simulate("configure", { frequency: String(value) });
-                if (currentView(stores).scope === selectionScope)
-                  setFrequency(value);
-              }}
+              onFrequencyChange={(value) =>
+                simulating.changeFrequency(view, value)
+              }
               onReturnToSimulation={
                 sim &&
                 !activeSim &&
@@ -1043,16 +704,9 @@ function Shell() {
             <Files
               folder={folder}
               activePath={doc?.path || null}
-              onFolder={onFolder}
+              onFolder={workspace.onFolder}
               onRename={() => refreshWorkspace()}
-              onOpen={(path) =>
-                void busy(() => command<Document>({ op: "open", path }))
-                  .then((d) => {
-                    update(d);
-                    setCircuitName(d.main);
-                  })
-                  .catch(onError)
-              }
+              onOpen={workspace.openDocument}
               onPreview={setPreview}
               onError={onError}
             />
@@ -1065,13 +719,7 @@ function Shell() {
               inputRef={searchInput}
               shortcut={shortcuts.palette}
               place={place}
-              onSelect={(t) => {
-                setPlace(t);
-                setSelection([]);
-                layout.revealInspector();
-                setTool("select");
-                if (layout.narrow) layout.closeDrawers();
-              }}
+              onSelect={(t) => editing.startPlacing(view, t)}
             />
           }
           navigation={
@@ -1427,10 +1075,7 @@ function Shell() {
                   circuit={circuit}
                   tool={tool}
                   selection={selection}
-                  setSelection={(s) => {
-                    setSelection(s);
-                    if (s.length) layout.revealInspector();
-                  }}
+                  setSelection={(s) => editing.inspect(view, s)}
                   place={place}
                   edit={edit}
                   simulation={sim}
@@ -1443,19 +1088,9 @@ function Shell() {
                   showGrid={showGrid}
                   placement={placement}
                   onCancelPlace={() => setPlace(null)}
-                  onPlace={async (revision, edit) => {
-                    const next = await busy(() =>
-                      command<Document>({
-                        op: "edit",
-                        id: doc.id,
-                        revision,
-                        circuit: circuit.name,
-                        edit,
-                      }),
-                    );
-                    mergeDocument(next, revision);
-                    return next;
-                  }}
+                  onPlace={(revision, change) =>
+                    editing.placeComponent(doc, circuit.name, revision, change)
+                  }
                   focusTarget={
                     focusTarget?.documentId === doc.id &&
                     focusTarget.revision === doc.revision &&
@@ -1768,33 +1403,7 @@ function Shell() {
               <button
                 className="primary"
                 disabled={Boolean(pending)}
-                onClick={() =>
-                  void busy(() =>
-                    command<Document>({
-                      op: "edit",
-                      id: source.id,
-                      revision: source.revision,
-                      circuit: source.circuit,
-                      edit: { kind: "replace", xml: source.xml },
-                    }),
-                  )
-                    .then((next) => mergeDocument(next, source.revision))
-                    .then(() => setSource(null))
-                    .catch((error) =>
-                      setSource((current) =>
-                        current?.id === source.id &&
-                        current.revision === source.revision
-                          ? {
-                              ...current,
-                              error:
-                                error instanceof Error
-                                  ? error.message
-                                  : String(error),
-                            }
-                          : current,
-                      ),
-                    )
-                }
+                onClick={() => editing.applySource(source)}
               >
                 应用修改
               </button>

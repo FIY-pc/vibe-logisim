@@ -1,4 +1,13 @@
 import type { StoreApi } from "zustand/vanilla";
+import { createEditorActions, type EditorActions } from "../actions/editor";
+import {
+  createSimulationActions,
+  type SimulationActions,
+} from "../actions/simulation";
+import {
+  createWorkspaceActions,
+  type WorkspaceActions,
+} from "../actions/workspace";
 import {
   createConversationStore,
   type ConversationState,
@@ -29,9 +38,16 @@ export interface Stores {
   simulation: StoreApi<SimulationState>;
 }
 
+export interface Actions {
+  workspace: WorkspaceActions;
+  editor: EditorActions;
+  simulation: SimulationActions;
+}
+
 /** All state and actions of one workbench window. App creates one per mount. */
 export interface Workbench {
   stores: Stores;
+  actions: Actions;
   /** Starts the host subscriptions and window listeners; returns the stop. */
   start(): () => void;
 }
@@ -50,8 +66,14 @@ export function createWorkbench(): Workbench {
     editor,
     simulation: createSimulationStore(),
   };
+  const actions: Actions = {
+    workspace: createWorkspaceActions(stores),
+    editor: createEditorActions(stores),
+    simulation: createSimulationActions(stores),
+  };
   const workbench: Workbench = {
     stores,
+    actions,
     start: () => startWorkbench(workbench),
   };
   return workbench;

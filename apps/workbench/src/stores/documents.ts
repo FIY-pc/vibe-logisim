@@ -1,5 +1,6 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ProjectFolder } from "../components/Files";
+import type { SourceStatus } from "../generated/SourceStatus";
 import { command } from "../lib/transport";
 import type { Document } from "../lib/types";
 import type { EditorState } from "./editor";
@@ -21,6 +22,10 @@ export interface DocumentsState {
   active: string | null;
   /** The last failed automatic save per document, kept while it stays dirty. */
   saveFailures: Record<string, string>;
+  /** The last check of the active document's source file, for one revision. */
+  sourceStatus: { id: string; revision: string; status: SourceStatus } | null;
+  /** Changes whenever the active document's source file should be checked now. */
+  sourceCheck: number;
   /** Replaces the documents; shows their history and reference warnings once each. */
   setDocs(docs: Update<Document[]>): void;
   setActive(id: string | null): void;
@@ -34,7 +39,19 @@ export interface DocumentsState {
   mergeDocument(document: Document, expectedBaseRevision?: string): void;
   /** Adds or replaces a document and activates it. */
   update(document: Document): void;
+  setSourceStatus(record: DocumentsState["sourceStatus"]): void;
+  /** Checks the active document's source file again now. */
+  recheck(): void;
 }
+
+/** The source file status of `doc`, if the last check was for its revision. */
+export const sourceStatusOf = (
+  { sourceStatus }: DocumentsState,
+  doc: Document | null,
+) =>
+  sourceStatus?.id === doc?.id && sourceStatus?.revision === doc?.revision
+    ? sourceStatus?.status
+    : undefined;
 
 export function createDocumentsStore({
   notices,
@@ -51,6 +68,8 @@ export function createDocumentsStore({
     docs: [],
     active: null,
     saveFailures: {},
+    sourceStatus: null,
+    sourceCheck: 0,
     setDocs: (value) => {
       epoch++;
       const next = typeof value === "function" ? value(get().docs) : value;
@@ -144,5 +163,7 @@ export function createDocumentsStore({
       );
       get().setActive(document.id);
     },
+    setSourceStatus: (sourceStatus) => set({ sourceStatus }),
+    recheck: () => set((state) => ({ sourceCheck: state.sourceCheck + 1 })),
   }));
 }
