@@ -129,13 +129,13 @@ export function createDocumentsStore({
           editor
             .getState()
             .setCircuitName(
-              status.documents.find((d) => d.id === nextActive)?.main ||
-                "main",
+              status.documents.find((d) => d.id === nextActive)?.main || "main",
             );
           editor.getState().setPlace(null);
         }
         if (includeFolder) files.getState().setFolder(status.folder);
-        if (status.recoveryError) notices.getState().onError(status.recoveryError);
+        if (status.recoveryError)
+          notices.getState().onError(status.recoveryError);
         return;
       }
     },

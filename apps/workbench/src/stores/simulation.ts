@@ -19,6 +19,12 @@ export interface MemoryTarget {
   y: number;
 }
 
+/** The queued action requested in the view `scope`, if any. */
+export const pendingOperation = (
+  { requests }: SimulationState,
+  scope: string,
+) => requests.find((request) => request.scope === scope)?.op || null;
+
 export interface SimulationState {
   /** The host's simulation session, whichever document and circuit it runs. */
   sim: Simulation | null;

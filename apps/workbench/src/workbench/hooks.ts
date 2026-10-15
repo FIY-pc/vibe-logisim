@@ -35,3 +35,10 @@ export function useView(): View {
   const circuitName = useEditor((state) => state.circuitName);
   return viewOf(docs, active, circuitName);
 }
+
+/** The ids selected in the view of this render. */
+export function useSelection(): string[] {
+  const { scope } = useView();
+  const selected = useEditor((state) => state.selected);
+  return selected.scope === scope ? selected.ids : [];
+}

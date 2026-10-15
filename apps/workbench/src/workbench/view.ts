@@ -18,7 +18,11 @@ export function viewOf(
   const doc = docs.find((d) => d.id === active) || null;
   const circuit =
     doc?.circuits.find((c) => c.name === circuitName) || doc?.circuits[0];
-  return { doc, circuit, scope: `${doc?.id}:${doc?.revision}:${circuit?.name}` };
+  return {
+    doc,
+    circuit,
+    scope: `${doc?.id}:${doc?.revision}:${circuit?.name}`,
+  };
 }
 
 /** The view as of now; continuations compare it with the view they started in. */

@@ -198,7 +198,8 @@ export function createWorkspaceActions(stores: Stores) {
     files.getState().setFolder(next);
     shell.getState().revealFiles();
   };
-  const openFolderAt = (path: string) => openFolderPath(path, onFolder, onError);
+  const openFolderAt = (path: string) =>
+    openFolderPath(path, onFolder, onError);
   const openFolder = () =>
     chooseFolder(
       openFolderAt,

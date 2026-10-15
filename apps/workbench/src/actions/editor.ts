@@ -1,10 +1,5 @@
 import { command } from "../lib/transport";
-import type {
-  CatalogTool,
-  Document,
-  Edit,
-  XmlNode,
-} from "../lib/types";
+import type { CatalogTool, Document, Edit, XmlNode } from "../lib/types";
 import type { SourceDraft } from "../stores/editor";
 import type { Stores } from "../workbench/createWorkbench";
 import { reaction } from "../workbench/reaction";
@@ -38,8 +33,8 @@ export function createEditorActions(stores: Stores) {
       editor.getState().selected === originSelection &&
       documents.getState().active === doc.id &&
       navigation.current === originNavigation &&
-      documents.getState().docs.find((item) => item.id === doc.id)
-        ?.revision === next.revision &&
+      documents.getState().docs.find((item) => item.id === doc.id)?.revision ===
+        next.revision &&
       originSelection.scope === scope &&
       originSelection.ids.includes(change.id) &&
       next.circuits
@@ -145,16 +140,14 @@ export function createEditorActions(stores: Stores) {
       .then((next) => documents.getState().mergeDocument(next, source.revision))
       .then(() => editor.getState().setSource(null))
       .catch((error) =>
-        editor
-          .getState()
-          .setSource((current) =>
-            current?.id === source.id && current.revision === source.revision
-              ? {
-                  ...current,
-                  error: error instanceof Error ? error.message : String(error),
-                }
-              : current,
-          ),
+        editor.getState().setSource((current) =>
+          current?.id === source.id && current.revision === source.revision
+            ? {
+                ...current,
+                error: error instanceof Error ? error.message : String(error),
+              }
+            : current,
+        ),
       );
 
   /** Loads the component catalog of each shown circuit. Returns the stop. */

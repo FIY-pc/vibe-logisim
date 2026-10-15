@@ -38,10 +38,8 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
           if (
             requested === navigation.current &&
             documents.getState().active === doc.id &&
-            documents
-              .getState()
-              .docs.find((current) => current.id === doc.id)?.revision ===
-              doc.revision
+            documents.getState().docs.find((current) => current.id === doc.id)
+              ?.revision === doc.revision
           )
             simulation.getState().setSim(next);
         })
@@ -64,10 +62,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
       revision: doc.revision,
       path,
     });
-    if (
-      requested !== navigation.current ||
-      currentView(stores).scope !== scope
-    )
+    if (requested !== navigation.current || currentView(stores).scope !== scope)
       return;
     simulation.getState().setSim(next);
     editor.getState().setCircuitName(next.circuit);
@@ -185,7 +180,11 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
   };
 
   /** Adds a circuit to the view's document and shows it. */
-  const addCircuit = async (view: View, sim: Simulation | null, name: string) => {
+  const addCircuit = async (
+    view: View,
+    sim: Simulation | null,
+    name: string,
+  ) => {
     await editing.edit(view, { kind: "addCircuit", name });
     switchCircuit(view, sim, name);
   };
