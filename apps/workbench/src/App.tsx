@@ -4,7 +4,6 @@ import { ProjectInfo } from "./components/ProjectInfo";
 import { DocumentHistory } from "./components/DocumentHistory";
 import type { LocateChange } from "./lib/reviewTypes";
 import { InterfaceEditor } from "./components/InterfaceEditor";
-import type { Quotation } from "./lib/references";
 import {
   useWorkspaceLayout,
   WorkspaceRail,
@@ -21,7 +20,7 @@ import { usePlacement } from "./lib/usePlacement";
 import { PlacementInspector } from "./components/PlacementInspector";
 import { FindDialog } from "./components/FindDialog";
 import { ShortcutSettings } from "./components/ShortcutSettings";
-import { eventBinding, useShortcuts } from "./lib/shortcuts";
+import { eventBinding } from "./lib/shortcuts";
 import { EditorToolbar } from "./components/EditorToolbar";
 import {
   SimulationMenu,
@@ -34,7 +33,7 @@ import { Waveform } from "./components/Waveform";
 import { Observations } from "./components/Observations";
 import type { ObservationRecord } from "./generated/ObservationRecord";
 import { subscribeEvents } from "./lib/events";
-import { DecisionDialog, type Decision } from "./components/DecisionDialog";
+import { DecisionDialog } from "./components/DecisionDialog";
 import { useSourceStatus } from "./lib/useSourceStatus";
 import type { SourceStatus } from "./generated/SourceStatus";
 import { TextPrompt } from "./components/TextPrompt";
@@ -60,6 +59,17 @@ import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { Chat } from "./components/Chat";
 import { command, desktop, openPath, savePath } from "./lib/transport";
+import {
+  useConversation,
+  useNotices,
+  useSettings,
+  useShell,
+} from "./workbench/hooks";
+import {
+  useOwnWorkbench,
+  useWorkbench,
+  WorkbenchProvider,
+} from "./workbench/provider";
 import type {
   CatalogGroup,
   CatalogTool,
@@ -70,11 +80,23 @@ import type {
   XmlNode,
 } from "./lib/types";
 export function App() {
-  const [notice, setNotice] = useState("");
+  const workbench = useOwnWorkbench();
+  useEffect(() => workbench.start(), [workbench]);
+  return (
+    <WorkbenchProvider value={workbench}>
+      <Shell />
+    </WorkbenchProvider>
+  );
+}
+function Shell() {
+  const { stores } = useWorkbench();
+  const notice = useNotices((state) => state.notice);
+  const decision = useNotices((state) => state.decision);
+  const error = useNotices((state) => state.error);
+  const { setNotice, setDecision, setError, onError, warn } =
+    stores.notices.getState();
   const [infoTarget, setInfoTarget] = useState<string | null>(null);
-  const shownDocumentWarnings = useRef(new Set<string>());
   const [saveFailures, setSaveFailures] = useState<Record<string, string>>({});
-  const [decision, setDecision] = useState<Decision | null>(null);
   const [lastCapture, setLastCapture] = useState<ObservationRecord | null>(
     null,
   );
@@ -97,7 +119,8 @@ export function App() {
   } | null>(null);
   const [folder, setFolder] = useState<ProjectFolder | null>(null);
   const [preview, setPreview] = useState<PreviewFile | null>(null);
-  const [quotation, setQuotation] = useState<Quotation | null>(null);
+  const quotation = useConversation((state) => state.quotation);
+  const { setQuotation } = stores.conversation.getState();
   const workspaceEpoch = useRef(0);
   const currentDocs = useRef<Document[]>([]);
   const currentActive = useRef<string | null>(null);
@@ -119,11 +142,8 @@ export function App() {
         const message = [result.historyWarning, result.referenceWarning]
           .filter(Boolean)
           .join("；");
-        const key = `${doc.id}:${doc.revision}:${message}`;
-        if (message && !shownDocumentWarnings.current.has(key)) {
-          shownDocumentWarnings.current.add(key);
-          setNotice(`${doc.name}：${message}`);
-        }
+        if (message)
+          warn(`${doc.id}:${doc.revision}:${message}`, `${doc.name}：${message}`);
       }
       setSaveFailures((previous) =>
         Object.fromEntries(
@@ -149,12 +169,13 @@ export function App() {
   const [tool, setTool] = useState<Tool>("select"),
     [place, setPlace] = useState<CatalogTool | null>(null);
   const [catalog, setCatalog] = useState<CatalogGroup[]>([]),
-    [search, setSearch] = useState(""),
-    [error, setError] = useState(""),
-    [pending, setPending] = useState(0);
+    [search, setSearch] = useState("");
+  const pending = useShell((state) => state.pending);
+  const right = useShell((state) => state.right);
+  const resourceTab = useShell((state) => state.resourceTab);
+  const { busy, setRight, setResourceTab } = stores.shell.getState();
   const [sim, setSim] = useState<Simulation | null>(null),
-    [fitToken, setFit] = useState(0),
-    [right, setRight] = useState<"chat" | "connections" | "changes">("chat");
+    [fitToken, setFit] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [zoomRequest, setZoomRequest] = useState({ token: 0, factor: 1 });
   const [canvasObservation, setCanvasObservation] = useState<{
@@ -173,19 +194,15 @@ export function App() {
       revision: string;
       circuit: string;
       error?: string;
-    } | null>(null),
-    [settings, setSettings] = useState(false);
-  const {
-    bindings: shortcutBindings,
-    labels: shortcuts,
-    save: saveShortcuts,
-  } = useShortcuts();
+    } | null>(null);
+  const settings = useSettings((state) => state.open);
+  const shortcutBindings = useSettings((state) => state.bindings);
+  const shortcuts = useSettings((state) => state.labels);
+  const { setOpen: setSettings, saveBindings: saveShortcuts } =
+    stores.settings.getState();
   const [signalView, setSignalView] = useState<React.ReactNode>(null);
   const layout = useWorkspaceLayout();
   const { showExplorer, setShowExplorer, showRight, setShowRight } = layout;
-  const [resourceTab, setResourceTab] = useState<"files" | "components">(
-    "files",
-  );
   const [circuitSearch, setCircuitSearch] = useState("");
   const circuitSearchInput = useRef<HTMLInputElement>(null);
   const [showGrid, setShowGrid] = useState(false);
@@ -236,10 +253,6 @@ export function App() {
   const navigationRequest = useRef(0);
   const sourceRequest = useRef(0);
   const { sourceStatus, recheck } = useSourceStatus(doc);
-  const onError = useCallback(
-    (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
-    [],
-  );
   const onFolder = (next: ProjectFolder) => {
     workspaceEpoch.current++;
     setFolder(next);
@@ -301,14 +314,6 @@ export function App() {
     [setDocs, refreshWorkspace, onError],
   );
   const feedback = useFeedback(setNotice, onError);
-  const busy = useCallback(async <T,>(action: () => Promise<T>): Promise<T> => {
-    setPending((n) => n + 1);
-    try {
-      return await action();
-    } finally {
-      setPending((n) => n - 1);
-    }
-  }, []);
   const update = useCallback((d: Document) => {
     setDocs((old) =>
       old.some((x) => x.id === d.id)

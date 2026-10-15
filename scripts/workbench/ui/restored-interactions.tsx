@@ -8,6 +8,7 @@ import {
   PanelResize,
   useWorkspaceLayout,
 } from "../../../apps/workbench/src/components/WorkspaceLayout";
+import { Workbench } from "./workbench";
 
 export async function verifyRestoredInteractions() {
   const container = document.createElement("div");
@@ -306,7 +307,11 @@ export async function verifyRestoredInteractions() {
       configurable: true,
       value: 1600,
     });
-    await render(<LayoutHarness />);
+    await render(
+      <Workbench>
+        <LayoutHarness />
+      </Workbench>,
+    );
     assert.match(
       container.querySelector(".rail-inspector")!.textContent!,
       /属性内容/,
