@@ -1,6 +1,9 @@
 //! Documents and editing independent of desktop, simulation, and AI runtimes.
 mod document;
+mod editing;
 pub mod history;
+mod junction;
+mod splice;
 pub mod symbol;
 mod workspace;
 pub use document::*;

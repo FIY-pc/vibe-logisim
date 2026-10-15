@@ -24,13 +24,13 @@ final class CircuitTrace {
         List<Integer> nextPorts = new ArrayList<>();
         if (!selection.isEmpty()) for (String key : selection.split(",", -1)) {
             String[] parts = key.split(":", -1);
-            if (parts.length != 2) throw new IllegalArgumentException("Select a component port");
+            if (parts.length != 2) throw new SessionError("TRACE_PORT", "Select a component port");
             Component c = available.get(parts[0]);
             int port = Integer.parseInt(parts[1]);
             if (c == null || port < 0 || port >= c.getEnds().size() || nextKeys.contains(key))
-                throw new IllegalArgumentException("Signal selection changed; select it again");
+                throw new SessionError("TRACE_CHANGED", "Signal selection changed; select it again");
             nextKeys.add(key); nextComponents.add(c); nextPorts.add(port);
-            if (nextKeys.size() > 32) throw new IllegalArgumentException("Watch at most 32 signals");
+            if (nextKeys.size() > 32) throw new SessionError("TRACE_LIMIT", "Watch at most 32 signals");
         }
         keys.clear(); keys.addAll(nextKeys);
         components.clear(); components.addAll(nextComponents);

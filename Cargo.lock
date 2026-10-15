@@ -4742,9 +4742,12 @@ name = "vibe-logisim-adapter"
 version = "0.6.0-dev"
 dependencies = [
  "base64 0.22.1",
+ "quick-xml",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
+ "ts-rs",
  "uuid",
  "vibe-workspace-core",
  "xmltree",
@@ -4789,6 +4792,7 @@ dependencies = [
 name = "vibe-workspace-core"
 version = "0.6.0-dev"
 dependencies = [
+ "quick-xml",
  "rustix",
  "schemars 1.2.2",
  "serde",

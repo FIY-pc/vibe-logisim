@@ -2,6 +2,7 @@ package com.cburch.logisim.std.memory;
 
 import com.cburch.logisim.circuit.CircuitState;
 import com.cburch.logisim.comp.Component;
+import com.cburch.logisim.file.SessionError;
 import com.cburch.logisim.instance.Instance;
 import org.w3c.dom.*;
 
@@ -11,14 +12,14 @@ public final class StudioMemory {
         if (c.getFactory() instanceof Rom) return c.getAttributeSet().getValue(Rom.CONTENTS_ATTR);
         if (c.getFactory() instanceof Ram && state != null)
             return ((Ram)c.getFactory()).getState(Instance.getInstanceFor(c), state).getContents();
-        throw new IllegalArgumentException("RAM needs a running instance; only native RAM/ROM are supported");
+        throw new SessionError("NOT_RAM", "RAM needs a running instance; only native RAM/ROM are supported");
     }
     public static Element page(Component c, CircuitState state, Element request, Document doc) {
         MemContents mem = contents(c, state);
         long offset = Long.parseLong(request.getAttribute("offset"));
         int count = Integer.parseInt(request.getAttribute("count"));
         if (offset < 0 || offset > mem.getLastOffset() || count < 1 || count > 128)
-            throw new IllegalArgumentException("Memory page out of range");
+            throw new SessionError("MEMORY_ADDRESS", "Memory page out of range");
         Element page = doc.createElement("memory");
         page.setAttribute("componentId", request.getAttribute("componentId"));
         page.setAttribute("offset", String.valueOf(offset));
@@ -43,7 +44,7 @@ public final class StudioMemory {
     public static String prepareRomWrite(Component c, Element request) {
         MemContents original = contents(c, null);
         MemContents draft = original.clone();
-        if (draft == original) throw new IllegalStateException("Cannot isolate ROM contents");
+        if (draft == original) throw new SessionError("ROM_ISOLATE", "Cannot isolate ROM contents");
         writeWord(draft, request);
         return Rom.CONTENTS_ATTR.toStandardString(draft);
     }
@@ -51,10 +52,12 @@ public final class StudioMemory {
         long address = Long.parseLong(request.getAttribute("address"));
         long value = Long.parseUnsignedLong(request.getAttribute("value"), 16);
         long expected = Long.parseUnsignedLong(request.getAttribute("expected"), 16);
-        if (address < 0 || address > mem.getLastOffset() || value < 0 || value >= (1L << mem.getWidth()))
-            throw new IllegalArgumentException("Address or value exceeds memory width");
+        if (address < 0 || address > mem.getLastOffset())
+            throw new SessionError("MEMORY_ADDRESS", "Address or value exceeds memory width");
+        if (value < 0 || value >= (1L << mem.getWidth()))
+            throw new SessionError("MEMORY_WIDTH", "Address or value exceeds memory width");
         if (Integer.toUnsignedLong(mem.get(address)) != expected)
-            throw new IllegalArgumentException("This word changed. Refresh before editing it.");
+            throw new SessionError("MEMORY_WORD_CHANGED", "This word changed. Refresh before editing it.");
         mem.set(address, (int)value);
     }
     public static String serializeRom(Component c) {
