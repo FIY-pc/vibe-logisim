@@ -235,6 +235,8 @@ impl Launcher {
                 .arg(java_path(&classes))
                 .args(sources.iter().map(|source| java_path(source)))
                 .kill_on_drop(true);
+            #[cfg(windows)]
+            command.creation_flags(CREATE_NO_WINDOW);
             let output = tokio::time::timeout(Duration::from_secs(90), command.output())
                 .await
                 .map_err(|_| "Logisim 兼容模块编译超时")?
@@ -274,9 +276,15 @@ impl Launcher {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
         Ok(cmd)
     }
 }
+
+/// The release app has no console, so each console child would open its own window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn collect_java(path: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {

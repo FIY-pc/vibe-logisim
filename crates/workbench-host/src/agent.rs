@@ -49,14 +49,19 @@ impl Agent {
                     "node".into()
                 }
             });
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .arg("--use-env-proxy")
             .arg(entry)
             .arg(state)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        // The release app has no console; without this flag Node opens its own window.
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000);
+        let mut child = command
             .spawn()
             .map_err(|e| format!("AI 运行时启动失败: {e}"))?;
         let input = Arc::new(Mutex::new(child.stdin.take().ok_or("AI stdin 不可用")?));
