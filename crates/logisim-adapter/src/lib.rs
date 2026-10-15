@@ -63,6 +63,9 @@ struct Worker {
     lines: Lines<BufReader<tokio::process::ChildStdout>>,
     runtime: PathBuf,
     dependencies: BTreeMap<PathBuf, String>,
+    /// Set while a reply is owed. A caller dropped mid-request leaves it set, and
+    /// the unread reply would be taken by the next request.
+    awaiting: bool,
 }
 impl Worker {
     async fn receive(&mut self, starting: bool) -> Result<Vec<u8>> {
@@ -166,11 +169,9 @@ impl Native {
         }
     }
     async fn worker(&mut self, verification: bool, runtime: &Path) -> Result<&mut Worker> {
-        if self
-            .worker_slot(verification)
-            .as_mut()
-            .is_some_and(|w| w.child.try_wait().ok().flatten().is_some() || w.runtime != runtime)
-        {
+        if self.worker_slot(verification).as_mut().is_some_and(|w| {
+            w.awaiting || w.child.try_wait().ok().flatten().is_some() || w.runtime != runtime
+        }) {
             *self.worker_slot(verification) = None;
         }
         if self.worker_slot(verification).is_none() {
@@ -202,6 +203,7 @@ impl Native {
                 lines,
                 runtime: runtime.into(),
                 dependencies: BTreeMap::new(),
+                awaiting: false,
             };
             if worker.receive(true).await? != b"ready" {
                 return Err("Logisim 未就绪".into());
@@ -248,6 +250,7 @@ impl Native {
         }
         let worker = self.worker(verification, &runtime).await?;
         worker.dependencies = dependencies.clone();
+        worker.awaiting = true;
         let mut result = async {
             worker
                 .input
@@ -258,6 +261,7 @@ impl Native {
             worker.receive(false).await
         }
         .await;
+        worker.awaiting = false;
         if result.is_ok() && !dependencies.is_empty() {
             match artifact_dependencies(artifact) {
                 Ok(after) if after == dependencies => {}
@@ -866,4 +870,48 @@ fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
             )
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CIRCUIT: &str = r##"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project source="2.16.1.4" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <main name="main"/>
+  <circuit name="main">
+    <comp lib="0" loc="(100,100)" name="Pin"/>
+  </circuit>
+</project>
+"##;
+
+    /// A caller that goes away while its reply is owed must not hand that reply
+    /// to the next request. Needs a JDK and the runtime in `.workbench-cache`.
+    #[tokio::test]
+    #[ignore = "starts JVMs"]
+    async fn abandoned_request_does_not_shift_replies() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let files = tempfile::tempdir().unwrap();
+        let artifact = files.path().join("main.circ");
+        std::fs::write(&artifact, CIRCUIT).unwrap();
+        let mut native = Native::new(root, state.path().into(), None);
+        native.observe(&artifact, "main").await.unwrap();
+        // The catalog request is written on the first poll; its XML reply is
+        // still owed when the timeout drops the call.
+        let catalog = xml("component-catalog", &[("circuit", "main".into())], vec![]);
+        let abandoned =
+            tokio::time::timeout(Duration::from_micros(1), native.request(&artifact, catalog))
+                .await;
+        assert!(
+            abandoned.is_err(),
+            "the catalog call should still be waiting"
+        );
+        let observed = native.observe(&artifact, "main").await.unwrap();
+        assert!(observed.is_object(), "{observed}");
+    }
 }
