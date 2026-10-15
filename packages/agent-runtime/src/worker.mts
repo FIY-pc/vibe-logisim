@@ -561,15 +561,6 @@ async function dispatch(method: string, args: any) {
       const graph = current.circuits.find(
         (c: any) => c.name === binding.circuit,
       );
-      const selection = Array.isArray(args.selection)
-        ? args.selection
-            .filter(
-              (id: string) =>
-                graph?.components.some((c: any) => c.id === id) ||
-                graph?.wires.some((w: any) => w.id === id),
-            )
-            .slice(0, 1024)
-        : [];
       if (!args.expectedTurnId && current.revision !== binding.revision)
         throw new Error("电路已改变，请重新发送");
       await backend.start();
@@ -591,7 +582,7 @@ async function dispatch(method: string, args: any) {
             circuit: binding.circuit,
             projectId: binding.id,
             revisionId: binding.revision,
-            ids: selection,
+            ids: args.selection,
             visibleTools: toolNames,
           }),
           references,

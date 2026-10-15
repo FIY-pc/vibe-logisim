@@ -57,6 +57,14 @@ const graph = {
       location: { x: 10, y: 20 },
       attributes: { label: "G1" },
     },
+    // Two pins on one spot: the native locator cannot tell them apart.
+    ...["c30_40", "c30_40_2"].map((id) => ({
+      id,
+      name: "Pin",
+      library: "Wiring",
+      location: { x: 30, y: 40 },
+      attributes: {},
+    })),
   ],
   wires: [{ id: "w1", from: { x: 0, y: 0 }, to: { x: 10, y: 0 } }],
 };
@@ -506,7 +514,7 @@ try {
       const turn = await call("ask", {
         question: "Describe this gate.",
         references: [],
-        selection: ["c10_20"],
+        selection: ["c10_20", "c30_40", "w1", "c99_99"],
       });
       await until(
         () => Object.keys(toolResults(log)).length === calls.length,
@@ -541,10 +549,26 @@ try {
       "vibe-logisim.materials",
       "vibe-logisim.workspace",
     ]);
+    const binding = JSON.parse(
+      start.additionalContext["vibe-logisim.binding"].value,
+    );
+    assert.equal(binding.authority, "geometry-only");
+    assert.deepEqual(binding.selection.componentIds, ["c10_20"]);
+    assert.deepEqual(binding.selection.wireIds, []);
     assert.equal(
-      JSON.parse(start.additionalContext["vibe-logisim.binding"].value)
-        .authority,
-      "geometry-only",
+      binding.selection.dropped,
+      2,
+      "the stacked pin and the unknown id",
+    );
+    assert.deepEqual(
+      JSON.parse(start.additionalContext["vibe-logisim.evidence"].value)
+        .selectedWires,
+      [{ from: { x: 0, y: 0 }, to: { x: 10, y: 0 } }],
+    );
+    assert.doesNotMatch(
+      JSON.stringify(start.additionalContext),
+      /"w1"|wireId=/,
+      "document wire ids stay out of the model context",
     );
     assert.ok(sent(log, "turn/steer")[0].additionalContext);
     const results = toolResults(log);

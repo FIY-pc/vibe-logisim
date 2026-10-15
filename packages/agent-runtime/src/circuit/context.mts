@@ -47,6 +47,7 @@ export interface AskContext {
     rectangle?: unknown;
     intent?: unknown;
     reference?: unknown;
+    dropped?: number;
   };
   query?: unknown;
   evidence?: unknown;
@@ -62,9 +63,14 @@ interface WorkspaceIndexView {
   currentSource?: unknown;
 }
 
+const MAX_SELECTION = 1024;
+
 /**
  * The selection part of an ask. Without exact observation the evidence is
- * the document geometry of the selected objects only.
+ * the document geometry of the selected objects only. Wires travel as
+ * geometry: document wire ids never reach the model. Parts of one factory
+ * on one spot cannot be told apart by the native (x, y, factory) locator, so
+ * they are dropped like unknown ids instead of standing for the first one.
  */
 export function selectionContext({
   graph,
@@ -78,12 +84,38 @@ export function selectionContext({
   circuit: string;
   projectId: string | null;
   revisionId: string | null;
-  ids: string[];
+  ids: unknown;
   visibleTools: ReadonlySet<string>;
 }) {
-  const chosen = new Set(ids);
-  const components = (graph?.components || []).filter((c) => chosen.has(c.id));
+  const requested = [
+    ...new Set(
+      Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === "string")
+        : [],
+    ),
+  ];
+  const chosen = new Set(requested.slice(0, MAX_SELECTION));
+  const all = graph?.components || [];
+  const locator = (c: Graph["components"][number]) =>
+    JSON.stringify([c.location.x, c.location.y, c.library ?? null, c.name]);
+  const sharing = new Map<string, number>();
+  for (const c of all)
+    sharing.set(locator(c), (sharing.get(locator(c)) || 0) + 1);
+  const components = all.filter(
+    (c) => chosen.has(c.id) && sharing.get(locator(c)) === 1,
+  );
   const wires = (graph?.wires || []).filter((w) => chosen.has(w.id));
+  const dropped = requested.length - components.length - wires.length;
+  const selection = {
+    reference: null,
+    wireIds: [],
+    wires: wires.map((w) => ({ from: w.from, to: w.to })),
+    intent: null,
+    rectangle: null,
+    componentIds: components.map((c) => c.id),
+    netIds: [],
+    ...(dropped ? { dropped } : {}),
+  };
   if (!components.length && !wires.length)
     return {
       authority: "workspace-binding",
@@ -92,15 +124,7 @@ export function selectionContext({
         (visibleTools.has("inspect_circuit")
           ? "请按问题需要使用 inspect_circuit 读取精确结构和接口。"
           : ""),
-      selection: {
-        reference: null,
-        wireIds: [],
-        wires: [],
-        intent: null,
-        rectangle: null,
-        componentIds: [],
-        netIds: [],
-      },
+      selection,
       query: { kind: "overview", ids: [] },
       evidence: null,
       objectReferences: [],
@@ -111,22 +135,10 @@ export function selectionContext({
   ]
     .filter(Boolean)
     .join("，");
-  const targets = [
-    ...components.map((c) => ({ componentId: c.id })),
-    ...wires.map((w) => ({ wireId: w.id })),
-  ];
   return {
     authority: "geometry-only",
     summary: `${objects}，0 个 bit-net · 仅几何`,
-    selection: {
-      reference: null,
-      wireIds: wires.map((w) => w.id),
-      wires: wires.map((w) => ({ wireId: w.id, from: w.from, to: w.to })),
-      intent: null,
-      rectangle: null,
-      componentIds: components.map((c) => c.id),
-      netIds: [],
-    },
+    selection,
     query: null,
     evidence: {
       components: components.map((c) => ({
@@ -144,15 +156,15 @@ export function selectionContext({
       warning:
         "Geometry-only evidence does not establish electrical connectivity.",
     },
-    objectReferences: targets.map((target) => ({
-      ...target,
+    objectReferences: components.map((c) => ({
+      componentId: c.id,
       url:
         "circuit://object?" +
         new URLSearchParams({
           projectId: projectId || "",
           revisionId: revisionId || "",
           circuit,
-          ...target,
+          componentId: c.id,
         }),
     })),
   };
@@ -187,6 +199,9 @@ function splitContext(
         netIds: list(selection.netIds),
         wireIds: list(selection.wireIds),
         intent: selection.intent || null,
+        ...(typeof selection.dropped === "number" && selection.dropped > 0
+          ? { dropped: selection.dropped }
+          : {}),
       },
       query: context.query || null,
       observationId: context.displayedSimulation?.id || null,
