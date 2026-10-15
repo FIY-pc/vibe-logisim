@@ -315,7 +315,23 @@ public final class CircuitSession {
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
         DocumentBuilder parser = f.newDocumentBuilder();
         List<String> loaderMessages = new ArrayList<>();
-        CircuitSession session = new CircuitSession(NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages), parser.parse(new File(args[1])).getDocumentElement());
+        CircuitSession session;
+        try {
+            session = new CircuitSession(NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages), parser.parse(new File(args[1])).getDocumentElement());
+        } catch (Throwable error) {
+            // The host learns why the run could not start instead of only seeing the exit.
+            error.printStackTrace(System.err);
+            for (String message : loaderMessages) System.err.println("loader: " + message);
+            Document result = parser.newDocument();
+            Element failure = result.createElement("start-error"); result.appendChild(failure);
+            failure.setAttribute("error", error.toString());
+            String code = SessionError.code(error);
+            if (code != null) failure.setAttribute("code", code);
+            if (error.getMessage() != null) failure.setAttribute("message", error.getMessage());
+            send(result, protocol);
+            System.exit(1);
+            return;
+        }
         for (String message : loaderMessages) System.err.println("loader: " + message);
         session.startWorkers(protocol);
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));

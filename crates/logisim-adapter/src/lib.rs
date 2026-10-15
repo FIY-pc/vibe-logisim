@@ -1,6 +1,7 @@
 //! The Logisim process boundary. No Python or desktop APIs are required.
 mod process;
 mod runtime;
+pub mod simulation;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
@@ -507,6 +508,8 @@ impl Native {
                     break;
                 }
                 match Element::parse(line.as_bytes()) {
+                    // The runtime exits right after; the exit reports its diagnostics.
+                    Ok(e) if e.name == "start-error" => {}
                     Ok(e) => {
                         let mut value = xml_json(&e);
                         if e.name == "ack" {
