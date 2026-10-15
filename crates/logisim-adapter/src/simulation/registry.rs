@@ -1140,7 +1140,19 @@ mod tests {
             line.starts_with(r#"<view circuit="cell" viewId=""#),
             "{line}"
         );
-        assert!(line.contains(r#"<instance factory="cell" x="300" y="200"/><component id="c0" factory="Pin" x="100" y="100"/></view>"#), "{line}");
+        let inner_pin = &view
+            .circuits
+            .iter()
+            .find(|c| c.name == "cell")
+            .unwrap()
+            .components[0]
+            .id;
+        assert!(
+            line.contains(&format!(
+                r#"<instance factory="cell" x="300" y="200"/><component id="{inner_pin}" factory="Pin" x="100" y="100"/></view>"#
+            )),
+            "{line}"
+        );
         let inner = attribute(&line, "viewId");
         // Frames of the root view may still follow the switch.
         assert!(a.fake.line(&ack(request_id(&line), &inner, 1)).await);
