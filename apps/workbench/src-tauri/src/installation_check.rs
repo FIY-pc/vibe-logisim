@@ -11,7 +11,7 @@ use tauri::{
     webview::{PageLoadEvent, PageLoadPayload},
 };
 use tokio::sync::Notify;
-use vibe_workbench_host::{Host, Request};
+use vibe_workbench_host::{Host, Request, WorkspaceRequest};
 
 #[derive(Clone)]
 pub struct Check {
@@ -69,8 +69,10 @@ pub fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
 }
 
 async fn request(host: &Host, value: Value) -> Result<Value, String> {
-    let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
-    host.dispatch(request).await
+    let request = Request::from_value(value).map_err(|error| error.to_string())?;
+    host.dispatch(request)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), String> {
@@ -79,7 +81,10 @@ async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), Stri
         .map_err(|_| "The installed frontend did not mount or complete IPC".to_owned())?;
     report["frontend"] = json!(true);
     report["stage"] = json!("recovery");
-    let status = host.dispatch(Request::Status).await?;
+    let status = host
+        .dispatch(WorkspaceRequest::Status)
+        .await
+        .map_err(|error| error.to_string())?;
     if !status["recoveryError"].is_null() {
         return Err(format!("Recovery failed: {}", status["recoveryError"]));
     }

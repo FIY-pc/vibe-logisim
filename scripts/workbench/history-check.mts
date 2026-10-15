@@ -64,7 +64,8 @@ async function command(request: any) {
     body: JSON.stringify(request),
   });
   const data = await response.json();
-  if (data.error) throw Error(data.error);
+  if (data.error)
+    throw Object.assign(new Error(data.error.message), data.error);
   return data.result;
 }
 const source = `<project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><lib desc="#Gates" name="1"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main"><comp name="child" loc="(300,100)"/><comp name="child" loc="(300,300)"/></circuit><circuit name="child"><comp lib="0" name="Pin" loc="(100,100)"><a name="label" val="A"/><a name="width" val="4"/></comp><comp lib="1" name="NOT Gate" loc="(200,100)"><a name="width" val="4"/></comp><comp lib="0" name="Pin" loc="(280,100)"><a name="label" val="Y"/><a name="width" val="4"/><a name="output" val="true"/><a name="facing" val="west"/></comp><wire from="(100,100)" to="(170,100)"/><wire from="(200,100)" to="(280,100)"/></circuit></project>`;

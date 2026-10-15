@@ -122,7 +122,7 @@ impl Host {
     ) -> Result<Value> {
         let (before, after, _) = self.proposal_documents(id, revision, original, xml).await?;
         if let Err(error) = self.proposal_native_ready(id, revision).await {
-            return value(ComparisonDetail::unavailable(circuit, error));
+            return value(ComparisonDetail::unavailable(circuit, error.to_string()));
         }
         value(self.compare_documents(&before, &after, circuit).await?)
     }
@@ -153,7 +153,7 @@ impl Host {
         })();
         let (evidence, evidence_warning) = match evidence_result {
             Ok(records) => (records, None),
-            Err(error) => (vec![], Some(error)),
+            Err(error) => (vec![], Some(error.to_string())),
         };
         Ok(ProposalReview {
             before: before.view().map_err(|e| e.to_string())?,

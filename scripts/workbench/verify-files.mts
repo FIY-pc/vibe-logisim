@@ -58,7 +58,8 @@ async function command(value: Record<string, unknown>): Promise<any> {
     body: JSON.stringify(value),
   });
   const result = await response.json();
-  if (result.error) throw new Error(result.error);
+  if (result.error)
+    throw Object.assign(new Error(result.error.message), result.error);
   return result.result;
 }
 try {

@@ -66,7 +66,7 @@ pub(crate) fn version(path: &Path) -> Result<Option<Version>> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error.to_string()),
+        Err(error) => return Err(error.into()),
     };
     if metadata.is_symlink() {
         return Err("符号链接不能用于覆盖或历史恢复".into());
@@ -185,7 +185,8 @@ pub(crate) fn replace_checked(
                 return Err(format!(
                     "文件正在被其他程序修改；原内容保留在 {}",
                     retained.display()
-                ));
+                )
+                .into());
             }
             return Err("文件正在被其他程序修改，请重试".into());
         }
@@ -204,7 +205,7 @@ pub(crate) fn replace_checked(
             }
             if saved.exists() {
                 let retained = directory.keep();
-                return Err(format!("{error}；原内容保留在 {}", retained.display()));
+                return Err(format!("{error}；原内容保留在 {}", retained.display()).into());
             }
         }
         return Err(error);
@@ -226,7 +227,7 @@ fn restore_path(folder: &Folder, relative: &str) -> Result<PathBuf> {
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(path)
@@ -425,7 +426,7 @@ impl History {
                 self.bytes(value)?;
             }
             if current.get(&relative) != change.after.get(&relative) {
-                return Err(format!("“{relative}”在此之后又有改动，未覆盖当前内容"));
+                return Err(format!("“{relative}”在此之后又有改动，未覆盖当前内容").into());
             }
             // A newly added directory may now contain unrelated files, including
             // ignored entries. Never remove it recursively while undoing an import.
@@ -437,7 +438,7 @@ impl History {
                     let child = child.map_err(|e| e.to_string())?;
                     let path = format!("{relative}/{}", child.file_name().to_string_lossy());
                     if !change.after.contains_key(&path) {
-                        return Err(format!("“{relative}”含有后续新增文件，无法撤销"));
+                        return Err(format!("“{relative}”含有后续新增文件，无法撤销").into());
                     }
                 }
             }

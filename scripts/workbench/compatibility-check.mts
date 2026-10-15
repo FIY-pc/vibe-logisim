@@ -36,7 +36,8 @@ async function command(request: any) {
     body: JSON.stringify(request),
   });
   const body = await response.json();
-  if (body.error) throw new Error(body.error);
+  if (body.error)
+    throw Object.assign(new Error(body.error.message), body.error);
   return body.result;
 }
 const libs = '<lib desc="#Wiring" name="0"/><lib desc="#Gates" name="1"/>';

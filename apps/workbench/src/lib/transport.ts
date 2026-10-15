@@ -1,15 +1,19 @@
 import type { Request } from "../generated/Request";
 import { invoke } from "@tauri-apps/api/core";
+import { HostError } from "./host-error";
 export const desktop = () => "__TAURI_INTERNALS__" in window;
 export async function command<T = unknown>(request: Request): Promise<T> {
-  if (desktop()) return invoke<T>("command", { request });
+  if (desktop())
+    return invoke<T>("command", { request }).catch((reason: unknown) => {
+      throw HostError.from(reason);
+    });
   const response = await fetch("/api/command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
   });
   const data = await response.json();
-  if (!response.ok || data.error) throw new Error(data.error || "请求失败");
+  if (!response.ok || data.error) throw HostError.from(data.error);
   return data.result as T;
 }
 export async function openPath(): Promise<string | null> {

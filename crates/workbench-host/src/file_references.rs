@@ -1,5 +1,5 @@
 //! Durable logical file bindings, independent of the bounded content history.
-use crate::{Host, Result};
+use crate::{Host, HostError, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -210,7 +210,7 @@ impl References {
             return Err("请选择普通文件".into());
         }
         if metadata.len() > limit {
-            return Err(format!("文件超过 {} MB，无法预览", limit / 1024 / 1024));
+            return Err(format!("文件超过 {} MB，无法预览", limit / 1024 / 1024).into());
         }
         let key = file_key(&file)?;
         let mut bytes = Vec::new();
@@ -323,7 +323,7 @@ impl Host {
             workspace
                 .save_checked(&id, &revision, None, None)
                 .map(|saved| (relative, saved))
-                .map_err(|e| e.to_string())
+                .map_err(HostError::from)
         });
         drop(workspace);
         match saved {
@@ -334,11 +334,11 @@ impl Host {
                 if let Err(error) = References::open(&self.state, folder)
                     .and_then(|mut references| references.refresh_known(folder, &relative))
                 {
-                    result["referenceWarning"] = json!(error);
+                    result["referenceWarning"] = json!(error.to_string());
                 }
             }
             Err(error) => {
-                result["saveError"] = json!(error);
+                result["saveError"] = json!(error.to_string());
             }
         }
     }
@@ -369,7 +369,7 @@ impl Host {
             if let Err(error) = References::open(&self.state, folder)
                 .and_then(|mut references| references.refresh_known(folder, &relative))
             {
-                result["referenceWarning"] = json!(error);
+                result["referenceWarning"] = json!(error.to_string());
             }
         }
         Ok(result)
@@ -378,11 +378,11 @@ impl Host {
 
 #[cfg(test)]
 mod autosave_tests {
-    use crate::{Host, Request};
+    use crate::{EditingRequest, FolderRequest, Host, WorkspaceRequest};
     use serde_json::Value;
     use vibe_workspace_core::{EMPTY_CIRCUIT, Edit};
     async fn rename(host: &Host, doc: &Value, name: &str) -> Value {
-        host.dispatch(Request::Edit {
+        host.dispatch(EditingRequest::Edit {
             id: doc["id"].as_str().unwrap().into(),
             revision: doc["revision"].as_str().unwrap().into(),
             circuit: doc["main"].as_str().unwrap().into(),
@@ -400,19 +400,19 @@ mod autosave_tests {
         std::fs::write(&source, EMPTY_CIRCUIT).unwrap();
         let host = Host::new(temp.path().into(), temp.path().join("state"), None).unwrap();
         let folder = host
-            .dispatch(Request::FolderOpen {
+            .dispatch(FolderRequest::FolderOpen {
                 path: project.clone(),
             })
             .await
             .unwrap();
         let original = host
-            .dispatch(Request::Open {
+            .dispatch(WorkspaceRequest::Open {
                 path: source.clone(),
             })
             .await
             .unwrap();
         let reference = host
-            .dispatch(Request::FolderRead {
+            .dispatch(FolderRequest::FolderRead {
                 path: "main.circ".into(),
                 folder_id: Some(folder["id"].as_str().unwrap().into()),
             })
@@ -426,7 +426,7 @@ mod autosave_tests {
                 .unwrap()
                 .contains("changed")
         );
-        host.dispatch(Request::FolderResolve {
+        host.dispatch(FolderRequest::FolderResolve {
             folder_id: folder["id"].as_str().unwrap().into(),
             path: "main.circ".into(),
             path_version: Some(reference["pathVersion"].as_u64().unwrap() as u32),
@@ -434,7 +434,7 @@ mod autosave_tests {
         .await
         .unwrap();
         let undone = host
-            .dispatch(Request::Undo {
+            .dispatch(EditingRequest::Undo {
                 id: saved["id"].as_str().unwrap().into(),
                 revision: saved["revision"].as_str().unwrap().into(),
             })
@@ -452,7 +452,7 @@ mod autosave_tests {
         assert!(host.state.join("workspace.json").exists());
         std::fs::write(&source, prior).unwrap();
         let retry = host
-            .dispatch(Request::Save {
+            .dispatch(WorkspaceRequest::Save {
                 id: draft["id"].as_str().unwrap().into(),
                 revision: draft["revision"].as_str().unwrap().into(),
                 path: None,
@@ -464,7 +464,7 @@ mod autosave_tests {
         let outside = temp.path().join("outside.circ");
         std::fs::write(&outside, EMPTY_CIRCUIT).unwrap();
         let external = host
-            .dispatch(Request::Open {
+            .dispatch(WorkspaceRequest::Open {
                 path: outside.clone(),
             })
             .await
@@ -473,7 +473,7 @@ mod autosave_tests {
         assert_eq!(external["dirty"], true);
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), EMPTY_CIRCUIT);
         let untitled = host
-            .dispatch(Request::New {
+            .dispatch(WorkspaceRequest::New {
                 name: "untitled.circ".into(),
             })
             .await

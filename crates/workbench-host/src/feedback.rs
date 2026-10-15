@@ -147,10 +147,10 @@ impl Feedback {
                 self.preferences.latest = Some(latest);
                 self.preferences.last_checked_at = Some(now());
                 if let Err(error) = atomic_json(&self.path, &self.preferences) {
-                    self.error = Some(error);
+                    self.error = Some(error.to_string());
                 }
             }
-            Err(error) => self.error = Some(error),
+            Err(error) => self.error = Some(error.to_string()),
         }
         self.status()
     }
@@ -175,7 +175,7 @@ async fn download() -> Result<Vec<u8>> {
             }
         })?;
     if !response.status().is_success() {
-        return Err(format!("GitHub 返回 HTTP {}", response.status().as_u16()));
+        return Err(format!("GitHub 返回 HTTP {}", response.status().as_u16()).into());
     }
     if response
         .content_length()
