@@ -2,7 +2,7 @@ use crate::Result;
 
 #[cfg(not(windows))]
 pub(super) fn send(path: &std::path::Path) -> Result<()> {
-    trash::delete(path).map_err(|error| error.to_string())
+    trash::delete(path).map_err(|error| error.to_string().into())
 }
 
 #[cfg(windows)]

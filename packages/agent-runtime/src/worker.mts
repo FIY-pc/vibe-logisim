@@ -695,8 +695,11 @@ createInterface({ input: process.stdin })
       const pending = requests.get(message.id);
       if (pending) {
         requests.delete(message.id);
+        // Host failures carry code, hint, retryable and context beside the message.
         message.error
-          ? pending.reject(new Error(message.error))
+          ? pending.reject(
+              Object.assign(new Error(message.error.message), message.error),
+            )
           : pending.resolve(message.result);
       }
       return;

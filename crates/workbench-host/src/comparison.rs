@@ -480,5 +480,5 @@ impl Host {
     }
 }
 fn a_view(d: &Document) -> Result<DocumentView> {
-    d.view().map_err(|e| e.to_string())
+    Ok(d.view()?)
 }

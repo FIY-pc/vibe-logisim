@@ -1,4 +1,4 @@
-use crate::{Host, Request};
+use crate::{Host, ReviewRequest, WorkspaceRequest};
 use std::path::{Path, PathBuf};
 use vibe_workspace_core::{Document, Edit, Point};
 
@@ -31,7 +31,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     let state = deep_directory(temporary.path(), "state");
     let host = Host::new(temporary.path().into(), state.clone(), None).unwrap();
     let created = host
-        .dispatch(Request::New {
+        .dispatch(WorkspaceRequest::New {
             name: "long-path.circ".into(),
         })
         .await
@@ -48,7 +48,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     assert_eq!(host.snapshot(id, revision).await.unwrap().0, snapshot);
     assert_eq!(std::fs::read(&snapshot).unwrap(), bytes);
     let history = host
-        .dispatch(Request::HistoryList { id: id.into() })
+        .dispatch(ReviewRequest::HistoryList { id: id.into() })
         .await
         .unwrap();
     assert_eq!(history["entries"].as_array().unwrap().len(), 1);
@@ -57,7 +57,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     let restored = Host::new(temporary.path().into(), state, None).unwrap();
     assert_eq!(restored.snapshot(id, revision).await.unwrap().0, snapshot);
     let reloaded = restored
-        .dispatch(Request::HistoryList { id: id.into() })
+        .dispatch(ReviewRequest::HistoryList { id: id.into() })
         .await
         .unwrap();
     assert_eq!(reloaded["entries"], history["entries"]);

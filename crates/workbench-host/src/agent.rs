@@ -1,4 +1,4 @@
-use crate::{Host, Request};
+use crate::{ErrorCode, Event, Host, HostError, Request};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
@@ -15,7 +15,7 @@ use tokio::{
     process::{Child, ChildStdin, Command},
     sync::{Mutex, oneshot},
 };
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<(Value, u64), String>>>>>;
+type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<(Value, u64), HostError>>>>>;
 pub struct Agent {
     child: Mutex<Child>,
     input: Arc<Mutex<ChildStdin>>,
@@ -86,10 +86,13 @@ impl Agent {
                         if let Some(id) = message["id"].as_u64()
                             && let Some(tx) = awaiting.lock().await.remove(&id)
                         {
-                            let _ = tx.send(if let Some(e) = message["error"].as_str() {
-                                Err(e.to_string())
-                            } else {
-                                Ok((message["result"].clone(), observed.lock().await.0))
+                            let _ = tx.send(match &message["error"] {
+                                Value::Null => {
+                                    Ok((message["result"].clone(), observed.lock().await.0))
+                                }
+                                Value::String(error) => Err(error.clone().into()),
+                                error => Err(serde_json::from_value(error.clone())
+                                    .unwrap_or_else(|_| error.to_string().into())),
                             });
                         }
                     }
@@ -100,7 +103,9 @@ impl Agent {
                         queue
                             .1
                             .push_back(json!({"sequence":sequence,"event":message["event"]}));
-                        host.emit_agent(json!({"sequence":sequence,"event":message["event"]}));
+                        host.emit(Event::Agent(
+                            json!({"sequence":sequence,"event":message["event"]}),
+                        ));
                         while queue.1.len() > 2048 {
                             queue.1.pop_front();
                         }
@@ -110,26 +115,13 @@ impl Agent {
                         let host = host.clone();
                         let output = output.clone();
                         tokio::spawn(async move {
-                            let result =
-                                match serde_json::from_value::<Request>(message["request"].clone())
-                                {
-                                    Ok(
-                                        request @ (Request::Read { .. }
-                                        | Request::Source { .. }
-                                        | Request::Observe { .. }
-                                        | Request::Simulate { .. }
-                                        | Request::Trace { .. }
-                                        | Request::Render { .. }
-                                        | Request::Edit { .. }
-                                        | Request::ProjectFiles { .. }
-                                        | Request::Observations { .. }
-                                        | Request::ProposalReview { .. }
-                                        | Request::ProposalObserve { .. }
-                                        | Request::ProposalPreview { .. }
-                                        | Request::ProposalVerify { .. }),
-                                    ) => host.dispatch(request).await,
-                                    _ => Err("AI 请求不在电路能力范围内".into()),
-                                };
+                            const OUTSIDE: &str = "AI 请求不在电路能力范围内";
+                            let result = match Request::from_value(message["request"].clone()) {
+                                Ok(request) if request.meta().agent => host.dispatch(request).await,
+                                Ok(_) => Err(HostError::new(ErrorCode::NotAllowed, OUTSIDE)),
+                                Err(error) => Err(HostError::new(ErrorCode::InvalidInput, OUTSIDE)
+                                    .with_context(json!({"detail": error.message}))),
+                            };
                             let reply = match result {
                                 Ok(result) => {
                                     json!({"kind":"hostResult","id":message["id"],"result":result})
@@ -163,7 +155,7 @@ impl Agent {
             let sequence = queue.0;
             let event = json!({"sequence":sequence,"event":{"type":"runtime-error","message":"AI 运行时已退出，可重新连接；已有对话保留"}});
             queue.1.push_back(event.clone());
-            host.emit_agent(event);
+            host.emit(Event::Agent(event));
         });
         Ok(Self {
             child: Mutex::new(child),
@@ -184,7 +176,7 @@ impl Agent {
             let _ = child.kill().await;
         }
     }
-    pub async fn call(&self, method: &str, args: Value) -> Result<Value, String> {
+    pub async fn call(&self, method: &str, args: Value) -> Result<Value, HostError> {
         if method == "events" {
             let since = args["since"].as_u64().unwrap_or(0);
             let queue = self.events.lock().await;
@@ -208,7 +200,7 @@ impl Agent {
                 .map_err(|e| e.to_string());
             if let Err(error) = written {
                 self.pending.lock().await.remove(&id);
-                return Err(error);
+                return Err(error.into());
             }
             input.flush().await.map_err(|e| e.to_string())?;
         }

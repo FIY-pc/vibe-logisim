@@ -206,12 +206,12 @@ impl Package {
                         let name = filename(desc.split('#').nth(1).unwrap_or(&desc), "组件库");
                         self.issues.push(format!("{name}：{error}"));
                         self.libraries.push(
-                            json!({"name":name,"kind":"external","available":false,"error":error}),
+                            json!({"name":name,"kind":"external","available":false,"error":error.to_string()}),
                         );
                     }
                 }
             }
-            vibe_logisim_adapter::encode_xml(&tree)
+            Ok(vibe_logisim_adapter::encode_xml(&tree)?)
         })();
         self.depth -= 1;
         result
@@ -236,7 +236,7 @@ impl Package {
             .extension()
             .is_none_or(|ext| !ext.eq_ignore_ascii_case(expected))
         {
-            return Err(format!("需要 .{expected} 组件库"));
+            return Err(format!("需要 .{expected} 组件库").into());
         }
         let source = Path::new(source);
         let candidate = if source.is_absolute() {
@@ -286,7 +286,7 @@ impl Package {
     }
     fn archive(&self) -> Result<Vec<u8>> {
         if !self.issues.is_empty() {
-            return Err(self.issues.join("\n"));
+            return Err(self.issues.join("\n").into());
         }
         let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default()
@@ -476,7 +476,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let host = Host::new(temp.path().into(), temp.path().join("state"), None).unwrap();
         let doc = host
-            .dispatch(crate::Request::New {
+            .dispatch(crate::WorkspaceRequest::New {
                 name: "draft.circ".into(),
             })
             .await
@@ -522,7 +522,7 @@ mod tests {
         let original = circuit(r#"<lib name="1" desc="file#part.circ"/>"#, "main");
         std::fs::write(&source, &original).unwrap();
         let document = host
-            .dispatch(crate::Request::Open {
+            .dispatch(crate::WorkspaceRequest::Open {
                 path: source.clone(),
             })
             .await
@@ -657,7 +657,7 @@ mod tests {
             .unwrap();
         let host = Host::new(root, temp.path().join("state"), None).unwrap();
         let opened = host
-            .dispatch(crate::Request::Open {
+            .dispatch(crate::WorkspaceRequest::Open {
                 path: extracted.join("project/main.circ"),
             })
             .await
@@ -665,7 +665,7 @@ mod tests {
         let id = opened["id"].as_str().unwrap();
         let revision = opened["revision"].as_str().unwrap();
         let observation = host
-            .dispatch(crate::Request::Observe {
+            .dispatch(crate::EditingRequest::Observe {
                 id: id.into(),
                 revision: revision.into(),
                 circuit: "main".into(),
@@ -674,7 +674,7 @@ mod tests {
             .unwrap();
         assert!(observation["runtime"].is_object(), "{observation}");
         let catalog = host
-            .dispatch(crate::Request::Catalog {
+            .dispatch(crate::EditingRequest::Catalog {
                 id: id.into(),
                 revision: revision.into(),
                 circuit: "main".into(),
@@ -685,7 +685,7 @@ mod tests {
         let info = host.project_info(id, revision).await.unwrap();
         assert!(info["runtimeVersion"].is_string(), "{info}");
         let failed = host
-            .dispatch(crate::Request::Render {
+            .dispatch(crate::EditingRequest::Render {
                 id: id.into(),
                 revision: revision.into(),
                 circuit: "missing-circuit".into(),

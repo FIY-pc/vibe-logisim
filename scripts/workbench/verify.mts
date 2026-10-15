@@ -259,7 +259,8 @@ async function command(request: any) {
     body: JSON.stringify(request),
   });
   const body = await response.json();
-  if (body.error) throw new Error(body.error);
+  if (body.error)
+    throw Object.assign(new Error(body.error.message), body.error);
   return body.result;
 }
 const agent = (method: string, args: unknown = {}) =>

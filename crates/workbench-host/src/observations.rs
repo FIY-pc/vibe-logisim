@@ -1,4 +1,4 @@
-use crate::{Host, Result};
+use crate::{Host, Result, value};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -51,7 +51,7 @@ impl Host {
             }
         }
         result.sort_by(|a, b| b.created_at.total_cmp(&a.created_at));
-        serde_json::to_value(result).map_err(|e| e.to_string())
+        value(result)
     }
     pub(crate) async fn capture(
         &self,
@@ -190,7 +190,7 @@ impl Host {
         temp.as_file().sync_all().map_err(|e| e.to_string())?;
         temp.persist_noclobber(directory.join(format!("{}.json", record.id)))
             .map_err(|e| e.to_string())?;
-        serde_json::to_value(record).map_err(|e| e.to_string())
+        value(record)
     }
     pub(crate) fn delete_observation(&self, id: &str, record: &str) -> Result<Value> {
         uuid::Uuid::parse_str(record).map_err(|_| "无效观察标识")?;
@@ -221,6 +221,6 @@ impl Host {
         temp.flush().map_err(|e| e.to_string())?;
         temp.as_file().sync_all().map_err(|e| e.to_string())?;
         temp.persist(&path).map_err(|e| e.to_string())?;
-        serde_json::to_value(value).map_err(|e| e.to_string())
+        crate::value(value)
     }
 }

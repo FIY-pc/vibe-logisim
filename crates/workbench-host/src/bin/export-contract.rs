@@ -23,6 +23,7 @@ fn generate(root: &Path) -> Result<()> {
     let directory = root.join("apps/workbench/src/generated");
     std::fs::create_dir_all(&directory)?;
     vibe_workbench_host::Request::export_all(&ts_rs::Config::default().with_out_dir(&directory))?;
+    vibe_workbench_host::HostError::export_all(&ts_rs::Config::default().with_out_dir(&directory))?;
     vibe_workspace_core::DocumentView::export_all(
         &ts_rs::Config::default().with_out_dir(&directory),
     )?;

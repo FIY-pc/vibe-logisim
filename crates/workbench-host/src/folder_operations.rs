@@ -26,7 +26,7 @@ impl Recording {
             },
             Err(warning) => Self {
                 history: None,
-                warning: Some(warning),
+                warning: Some(warning.to_string()),
             },
         }
     }
@@ -39,7 +39,7 @@ impl Recording {
         if let Some(history) = &mut self.history
             && let Err(error) = history.checkpoint(folder, title, movement)
         {
-            self.warning = Some(error);
+            self.warning = Some(error.to_string());
         }
         self.warning
     }
@@ -111,8 +111,9 @@ impl Host {
                 if document.dirty() {
                     return Err(format!(
                         "“{}”还有未保存的修改，请先保存或关闭该文档",
-                        document.view().map_err(|error| error.to_string())?.name
-                    ));
+                        document.view()?.name
+                    )
+                    .into());
                 }
                 closed.push(document.id.clone());
             }
@@ -459,7 +460,7 @@ impl Host {
                     return Err("文件夹和大文件不能直接覆盖，请保留两者".into());
                 }
                 if version(&target)? != item.existing {
-                    return Err(format!("“{}”在确认后发生改变，请重新导入", item.name));
+                    return Err(format!("“{}”在确认后发生改变，请重新导入", item.name).into());
                 }
                 ensure_clean(&workspace, std::slice::from_ref(&target))?;
                 if workspace
@@ -550,9 +551,8 @@ impl Host {
         // Consume plans on publication, including partial failure. Retrying a consumed
         // batch would silently create another copy of already-imported entries.
         fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
-        workspace
-            .checkpoint(&self.state.join("workspace.json"))
-            .map_err(|e| e.to_string())?;
+        // Partial failures return an error, so record recovery state here as well.
+        self.persist(&workspace).await;
         publish.map_err(|e| format!("已导入 {} 项，其余未完成：{e}", imported.len()))?;
         Ok(json!({"imported":imported,"historyWarning":warning}))
     }
@@ -649,9 +649,7 @@ impl Host {
                     native.stop_simulation().await;
                 }
             }
-            workspace
-                .checkpoint(&self.state.join("workspace.json"))
-                .map_err(|e| e.to_string())?;
+            self.persist(&workspace).await;
             result.map_err(|e| format!("撤销未能全部完成，请刷新文件改动：{e}"))?;
         }
         Ok(json!({"restored":true}))

@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { desktop } from "./transport";
 export interface WorkbenchEvent {
-  topic: "agent" | "simulation" | "resync" | "connection";
+  topic: "agent" | "simulation" | "resync" | "warning" | "connection";
   data: any;
 }
 type Listener = (event: WorkbenchEvent) => void;

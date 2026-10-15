@@ -1,5 +1,5 @@
 use crate::{
-    Host, Request, Result,
+    Host, Result,
     proposal_review::{ComparisonDetail, ProposalReview},
     value,
     verification::VerificationRecord,
@@ -34,53 +34,52 @@ pub(crate) struct Action {
     pub target: Option<String>,
     pub restored: Option<String>,
 }
-pub(crate) fn action(request: &Request) -> Option<Action> {
-    let (kind, title, target, restored) = match request {
-        Request::Open { .. } | Request::New { .. } | Request::Import { .. } => {
-            ("open", "打开工程", None, None)
+impl Action {
+    pub(crate) fn open() -> Self {
+        Self {
+            kind: "open",
+            title: "打开工程",
+            target: None,
+            restored: None,
         }
-        Request::Save { id, .. } => ("save", "保存版本", Some(id.clone()), None),
-        Request::Undo { id, .. } => ("undo", "撤销修改", Some(id.clone()), None),
-        Request::Redo { id, .. } => ("redo", "重做修改", Some(id.clone()), None),
-        Request::Reload { id, .. } => ("reload", "读取磁盘版本", Some(id.clone()), None),
-        Request::InterfaceApply { id, .. } => {
-            ("interface", "修改封装与接口", Some(id.clone()), None)
+    }
+    pub(crate) fn files() -> Self {
+        Self {
+            kind: "files",
+            title: "工程文件更新",
+            target: None,
+            restored: None,
         }
-        Request::MemoryWrite { id, .. } => ("memory", "修改存储器内容", Some(id.clone()), None),
-        Request::HistoryRestore { id, entry, .. } => (
-            "restore",
-            "恢复历史版本",
-            Some(id.clone()),
-            Some(entry.clone()),
-        ),
-        Request::Edit { id, edit, .. } => (
-            "edit",
-            match edit {
-                Edit::Place { .. } => "放置元件",
-                Edit::Wire { .. } => "绘制导线",
-                Edit::Move { .. } => "移动对象",
-                Edit::Attributes { .. } => "修改元件属性",
-                Edit::Replace { .. } => "替换电路内容",
-                Edit::AddCircuit { .. } => "添加电路",
-                Edit::RenameCircuit { .. } => "重命名电路",
-                Edit::DeleteCircuit => "删除电路",
-                Edit::SetMain => "设置主电路",
-                _ => "编辑电路",
-            },
-            Some(id.clone()),
-            None,
-        ),
-        Request::FolderRename { .. }
-        | Request::FolderImportApply { .. }
-        | Request::FolderHistoryUndo { .. } => ("files", "工程文件更新", None, None),
-        _ => return None,
-    };
-    Some(Action {
-        kind,
-        title,
-        target,
-        restored,
-    })
+    }
+    pub(crate) fn document(kind: &'static str, title: &'static str, id: &str) -> Self {
+        Self {
+            kind,
+            title,
+            target: Some(id.to_string()),
+            restored: None,
+        }
+    }
+    pub(crate) fn edit(id: &str, edit: &Edit) -> Self {
+        let title = match edit {
+            Edit::Place { .. } => "放置元件",
+            Edit::Wire { .. } => "绘制导线",
+            Edit::Move { .. } => "移动对象",
+            Edit::Attributes { .. } => "修改元件属性",
+            Edit::Replace { .. } => "替换电路内容",
+            Edit::AddCircuit { .. } => "添加电路",
+            Edit::RenameCircuit { .. } => "重命名电路",
+            Edit::DeleteCircuit => "删除电路",
+            Edit::SetMain => "设置主电路",
+            _ => "编辑电路",
+        };
+        Self::document("edit", title, id)
+    }
+    pub(crate) fn restore(id: &str, entry: &str) -> Self {
+        Self {
+            restored: Some(entry.to_string()),
+            ..Self::document("restore", "恢复历史版本", id)
+        }
+    }
 }
 impl Host {
     pub(crate) fn history_store(&self) -> DocumentHistory {
@@ -278,7 +277,7 @@ impl Host {
         let before = before.document(id).map_err(|e| e.to_string())?;
         let after = after.document(id).map_err(|e| e.to_string())?;
         if let Err(error) = native_ok {
-            return value(ComparisonDetail::unavailable(circuit, error));
+            return value(ComparisonDetail::unavailable(circuit, error.to_string()));
         }
         value(self.compare_documents(&before, &after, circuit).await?)
     }
