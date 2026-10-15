@@ -4745,6 +4745,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "ts-rs",
  "uuid",
  "vibe-workspace-core",
  "xmltree",

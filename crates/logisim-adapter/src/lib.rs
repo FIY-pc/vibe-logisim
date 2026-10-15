@@ -1,17 +1,18 @@
 //! The Logisim process boundary. No Python or desktop APIs are required.
 mod process;
+mod runtime;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use process::{StderrCapture, exit_failure, java_path};
+pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    process::Stdio,
     time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
-    process::{Child, ChildStdin, Command},
+    process::{Child, ChildStdin},
     sync::{mpsc, watch},
 };
 use vibe_workspace_core::{DocumentView, digest};
@@ -25,28 +26,6 @@ pub struct Viewport {
     pub scale: f64,
 }
 type Result<T> = std::result::Result<T, String>;
-/// File name of the 2.15 compatibility runtime in the product and the development cache.
-/// It keeps the upstream name: the runtime records `2.15.0.2.exe` as the saving
-/// program only when its own file name ends in `.exe`, and files it saves must
-/// stay identical to those saved by the original program.
-pub const LEGACY_RUNTIME: &str = "logisim-ita-cn-20200118.exe";
-/// The `source` attribute of the root `<project>` element, which names the
-/// Logisim build that last saved the file.
-fn source_version(bytes: &[u8]) -> Option<String> {
-    let find =
-        |haystack: &[u8], needle: &[u8]| haystack.windows(needle.len()).position(|w| w == needle);
-    let start = find(bytes, b"<project")?;
-    let tag = &bytes[start..];
-    let tag = &tag[..find(tag, b">")?];
-    let at = find(tag, b"source=")? + "source=".len();
-    let quote = *tag.get(at)?;
-    if quote != b'"' && quote != b'\'' {
-        return None;
-    }
-    let value = &tag[at + 1..];
-    let end = value.iter().position(|&b| b == quote)?;
-    String::from_utf8(value[..end].to_vec()).ok()
-}
 
 fn frame_failure(frame: &Value) -> String {
     let detail = frame["attributes"]["failure"].as_str().unwrap_or("");
@@ -131,10 +110,7 @@ impl Verifier {
     }
 }
 pub struct Native {
-    root: PathBuf,
-    state: PathBuf,
-    runtime: Option<PathBuf>,
-    classes: BTreeMap<PathBuf, PathBuf>,
+    launcher: Launcher,
     worker: Option<Worker>,
     verification_worker: Option<Worker>,
     pub simulation: Option<Simulation>,
@@ -143,11 +119,13 @@ pub struct Native {
 }
 impl Native {
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Self {
+        Self::with_launcher(Launcher::new(RuntimeFacts::new(root, runtime), state))
+    }
+    /// An editor process owner that shares runtime facts and bridge builds
+    /// with other owners of the same launcher.
+    pub fn with_launcher(launcher: Launcher) -> Self {
         Self {
-            root,
-            state,
-            runtime,
-            classes: BTreeMap::new(),
+            launcher,
             worker: None,
             verification_worker: None,
             simulation: None,
@@ -155,29 +133,18 @@ impl Native {
             updates: watch::channel(()).0,
         }
     }
+    pub fn launcher(&self) -> &Launcher {
+        &self.launcher
+    }
+    pub fn facts(&self) -> &RuntimeFacts {
+        self.launcher.facts()
+    }
     pub fn observed_version(&self) -> Option<&str> {
         self.observed_version.as_deref()
     }
     fn record_version(&mut self, bytes: &[u8]) {
-        let version = Element::parse(bytes)
-            .ok()
-            .and_then(|root| root.attributes.get("runtimeVersion").cloned())
-            .or_else(|| {
-                serde_json::from_slice::<Value>(bytes)
-                    .ok()
-                    .and_then(|value| {
-                        value["runtime"]["reportedVersion"]
-                            .as_str()
-                            .map(str::to_owned)
-                    })
-            });
-        if let Some(version) = version.filter(|version| {
-            !version.is_empty()
-                && version.len() <= 64
-                && version
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
-        }) {
+        if let Some(version) = runtime::reported_version(bytes) {
+            self.facts().record_version(version.clone());
             self.observed_version = Some(version);
         }
     }
@@ -185,137 +152,10 @@ impl Native {
         self.updates.subscribe()
     }
     pub fn runtime(&self) -> Result<PathBuf> {
-        let candidates = [
-            self.runtime.clone(),
-            std::env::var_os("VIBE_LOGISIM_JAR").map(PathBuf::from),
-            Some(self.root.join("native/Logisim-ITA.jar")),
-            Some(self.root.join(".workbench-cache/Logisim-ITA.jar")),
-        ];
-        candidates
-            .into_iter()
-            .flatten()
-            .find(|p| p.is_file())
-            .ok_or_else(|| {
-                "尚未安装 Logisim 兼容运行时；开发环境请运行 npm run setup，或设置 VIBE_LOGISIM_JAR"
-                    .into()
-            })
-    }
-    fn legacy_runtime(&self) -> Option<PathBuf> {
-        [
-            std::env::var_os("VIBE_LOGISIM_LEGACY_JAR").map(PathBuf::from),
-            Some(self.root.join("native").join(LEGACY_RUNTIME)),
-            Some(self.root.join(".workbench-cache").join(LEGACY_RUNTIME)),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|p| p.is_file())
-    }
-    /// The runtime that interprets this file the way the program that saved it did.
-    /// Builds of the 2.15 line write `<project source="2.15.*">` and accept
-    /// attributes that ITA 2.16 rejects or reads differently (for example
-    /// level-triggered flip-flops), so their files run on the matching runtime.
-    fn runtime_for(&self, source: &[u8]) -> Result<PathBuf> {
-        if self.runtime.is_none() && source_version(source).is_some_and(|v| v.starts_with("2.15."))
-        {
-            return self.legacy_runtime().ok_or_else(|| {
-                "这个文件由 Logisim 2.15 保存，需要配套的 2.15 兼容运行时，但应用里缺少它；请重新安装应用（开发环境运行 npm run setup）"
-                    .into()
-            });
-        }
-        self.runtime()
+        self.facts().runtime()
     }
     pub fn status(&self) -> Value {
-        let legacy = self.legacy_runtime().is_some();
-        match self.runtime() {
-            Ok(p) => json!({"available":true,"path":p,"legacyAvailable":legacy}),
-            Err(e) => json!({"available":false,"message":e,"legacyAvailable":legacy}),
-        }
-    }
-    /// The bridge compiled against one runtime. Packages ship it precompiled per
-    /// runtime digest; other runtimes compile once into the state directory.
-    async fn classes(&mut self, runtime: &Path) -> Result<PathBuf> {
-        if let Some(p) = self.classes.get(runtime) {
-            return Ok(p.clone());
-        }
-        let runtime_bytes = std::fs::read(runtime).map_err(|e| e.to_string())?;
-        let packaged = self.root.join("native");
-        let precompiled = packaged.join("classes").join(digest(&runtime_bytes));
-        if precompiled
-            .join("com/cburch/logisim/file/CircuitSession.class")
-            .is_file()
-        {
-            self.classes.insert(runtime.into(), precompiled.clone());
-            return Ok(precompiled);
-        }
-        let base = self.root.join("crates/logisim-adapter/java");
-        let mut sources = Vec::new();
-        let folders = if packaged.join("src").is_dir() {
-            vec![packaged.join("src")]
-        } else {
-            vec![base.join("native"), base.join("observer/src")]
-        };
-        for folder in folders {
-            collect_java(&folder, &mut sources)?
-        }
-        sources.sort();
-        let mut bytes = runtime_bytes;
-        for p in &sources {
-            bytes.extend(std::fs::read(p).map_err(|e| e.to_string())?)
-        }
-        let classes = self.state.join("java").join(digest(&bytes));
-        if !classes
-            .join("com/cburch/logisim/file/CircuitSession.class")
-            .is_file()
-        {
-            std::fs::create_dir_all(&classes).map_err(|e| e.to_string())?;
-            let mut command = Command::new(self.java_executable("javac"));
-            command
-                .args(["-encoding", "UTF-8", "-cp"])
-                .arg(java_path(runtime))
-                .arg("-d")
-                .arg(java_path(&classes))
-                .args(sources.iter().map(|source| java_path(source)))
-                .kill_on_drop(true);
-            let output = tokio::time::timeout(Duration::from_secs(90), command.output())
-                .await
-                .map_err(|_| "Logisim 兼容模块编译超时")?
-                .map_err(|e| format!("需要 JDK 17 或更新版本: {e}"))?;
-            if !output.status.success() {
-                return Err(String::from_utf8_lossy(&output.stderr)
-                    .chars()
-                    .take(6000)
-                    .collect());
-            }
-        }
-        self.classes.insert(runtime.into(), classes.clone());
-        Ok(classes)
-    }
-    fn java_executable(&self, name: &str) -> PathBuf {
-        let binary = if cfg!(windows) {
-            format!("{name}.exe")
-        } else {
-            name.into()
-        };
-        let bundled = self.root.join("runtimes/java/bin").join(&binary);
-        if bundled.is_file() {
-            java_path(&bundled)
-        } else {
-            PathBuf::from(binary)
-        }
-    }
-    async fn command(&mut self, class: &str, runtime: &Path) -> Result<Command> {
-        let classes = self.classes(runtime).await?;
-        let cp = std::env::join_paths([java_path(&classes), java_path(runtime)])
-            .map_err(|e| e.to_string())?;
-        let mut cmd = Command::new(self.java_executable("java"));
-        cmd.args(["-Xmx768m", "-Djava.awt.headless=true", "-cp"])
-            .arg(cp)
-            .arg(format!("com.cburch.logisim.file.{class}"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        Ok(cmd)
+        self.facts().status()
     }
     fn worker_slot(&mut self, verification: bool) -> &mut Option<Worker> {
         if verification {
@@ -333,9 +173,10 @@ impl Native {
             *self.worker_slot(verification) = None;
         }
         if self.worker_slot(verification).is_none() {
-            let classes = self.classes(runtime).await?;
+            let classes = self.launcher.classes(runtime).await?;
             let hash = digest(&std::fs::read(runtime).map_err(|e| e.to_string())?);
             let mut command = self
+                .launcher
                 .command(
                     if verification {
                         "CircuitSimulationWorker"
@@ -382,7 +223,7 @@ impl Native {
         verification: bool,
     ) -> Result<Vec<u8>> {
         let source = std::fs::read(artifact).map_err(|e| e.to_string())?;
-        let runtime = self.runtime_for(&source)?;
+        let (runtime, _) = self.facts().runtime_for(&source)?;
         let hash = digest(&source);
         let request = xml(
             "request",
@@ -641,11 +482,14 @@ impl Native {
             &[("circuit", circuit.into()), ("viewId", view_id.clone())],
             nodes,
         );
-        let init_path = self.state.join("session.xml");
-        std::fs::create_dir_all(&self.state).map_err(|e| e.to_string())?;
+        let state = self.launcher.state();
+        let init_path = state.join("session.xml");
+        std::fs::create_dir_all(state).map_err(|e| e.to_string())?;
         std::fs::write(&init_path, encode_xml(&init)?).map_err(|e| e.to_string())?;
-        let runtime = self.runtime_for(&std::fs::read(artifact).map_err(|e| e.to_string())?)?;
-        let mut command = self.command("CircuitSession", &runtime).await?;
+        let (runtime, _) = self
+            .facts()
+            .runtime_for(&std::fs::read(artifact).map_err(|e| e.to_string())?)?;
+        let mut command = self.launcher.command("CircuitSession", &runtime).await?;
         let mut child = command
             .arg(java_path(artifact))
             .arg(java_path(&init_path))
@@ -997,18 +841,6 @@ impl Simulation {
         Ok(ack)
     }
 }
-fn collect_java(path: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
-        let p = entry.map_err(|e| e.to_string())?.path();
-        if p.is_dir() {
-            collect_java(&p, out)?
-        } else if p.extension().is_some_and(|e| e == "java") {
-            out.push(p)
-        }
-    }
-    Ok(())
-}
-
 fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
     let root = Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?;

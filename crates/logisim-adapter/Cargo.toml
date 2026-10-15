@@ -11,3 +11,4 @@ tokio.workspace = true
 base64.workspace = true
 xmltree.workspace = true
 uuid.workspace = true
+ts-rs.workspace = true
