@@ -1,9 +1,9 @@
 import { ProposalStore } from "./proposals.mts";
+import { storeReference, readReferences } from "./references.mts";
 import {
-  storeReference,
-  readReferences,
-  referenceSummary,
-} from "./references.mts";
+  createCircuitContextHost,
+  selectionContext,
+} from "./circuit/context.mts";
 import { systemProxy, networkFetch, closeNetwork } from "./network.mts";
 /** Runtime process entry. stdout is exclusively JSONL. */
 import { AgentRuntime } from "../core/agent-runtime.mts";
@@ -389,6 +389,9 @@ const {
   codexRoot,
   codex,
 } = await createCodexInstaller(state);
+const toolNames: ReadonlySet<string> = new Set(
+  toolHost.tools.map((tool) => tool.name),
+);
 const instructions =
   "You collaborate on digital circuits in Vibe Logisim. Respond in the user language and send concise progress messages before tools. The Rust host owns the current document and revision. Use read_circuit, observe_circuit, render_circuit, and edit_circuit to work on that shared document. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved. Native observations are authoritative for electrical facts. simulate_circuit tests independent vectors and trace_circuit tests tick sequences in an isolated native simulation, leaving the user live simulation unchanged. project_files reads text files from the active project folder without writing them. kept_observations reads historical simulation evidence; check revision and instance identity before comparing. The general file tools operate in a scratch workspace, not the original project. A copy named circuit.circ is prepared for direct edits and scripts; changed content is offered to the user for explicit application at the end of the turn. Use target=working-copy with read_circuit, observe_circuit, render_circuit, simulate_circuit or trace_circuit to inspect or verify that scratch file before application. Working-copy verification results are retained with its exact content and appear in the proposal review. Keep unknown XML, libraries and unrelated circuits. Circuit organization is part of delivery: preserve behavior and make the resulting drawing readable. Never invent tool results or claim you inspected an image if it was not delivered as image input.";
 const backend = new AgentRuntime({
@@ -402,43 +405,10 @@ const backend = new AgentRuntime({
   developerInstructions: instructions,
   includeAgentContext: true,
   startOnResume: false,
-  contextHost: {
-    prepare(context: any) {
-      return {
-        frozenContext: {
-          projectId: context.projectId,
-          workspaceKey: context.workspaceKey,
-          folderId: context.folderId,
-          revisionId: context.revisionId,
-          circuit: context.circuit,
-          selection: context.selection,
-          references: context.references?.map(referenceSummary),
-        },
-        references: context.references || [],
-      };
-    },
-    images(prepared: any) {
-      return prepared.references.flatMap((r: any) =>
-        r.image
-          ? [
-              {
-                data: r.image.split(",")[1],
-                mimeType: r.image.slice(5, r.image.indexOf(";")),
-              },
-            ]
-          : [],
-      );
-    },
-    additionalContext(prepared: any) {
-      return {
-        ...prepared.frozenContext,
-        referenceContents: prepared.references.map((r: any) => ({
-          ...referenceSummary(r),
-          text: r.text,
-        })),
-      };
-    },
-  },
+  contextHost: createCircuitContextHost({
+    changeMode: "review",
+    visibleTools: () => toolNames,
+  }),
   ownProfile: true,
   nodeExecutable: process.execPath,
   codex,
@@ -610,13 +580,20 @@ async function dispatch(method: string, args: any) {
         expectedTurnId: args.expectedTurnId || null,
         workspaceKey: binding.workspaceKey,
         context: {
-          folder: { path: workDir },
+          folder: { path: workDir, activeFile: "circuit.circ" },
           workspaceKey: binding.workspaceKey,
           folderId: binding.folderId,
           projectId: binding.id,
           revisionId: binding.revision,
           circuit: binding.circuit,
-          selection,
+          ...selectionContext({
+            graph,
+            circuit: binding.circuit,
+            projectId: binding.id,
+            revisionId: binding.revision,
+            ids: selection,
+            visibleTools: toolNames,
+          }),
           references,
         },
       });
