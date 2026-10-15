@@ -1,7 +1,7 @@
 /** Real Rust -> Java and Pi -> Rust paths, with an entirely local model fixture. */
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
@@ -723,6 +723,32 @@ try {
   await verifySimulationViewport(command);
   await verifyProposals(command);
   await verifyEditing(command);
+  // Files saved by 2.15 builds load on the bundled 2.15 runtime. A relocated
+  // product must serve both runtimes from its precompiled bridge classes.
+  const legacyPath = path.join(state, "legacy-2.15.circ");
+  await writeFile(
+    legacyPath,
+    '<project source="2.15.0.2.exe" version="1.0"><lib desc="#Wiring" name="0"/><lib desc="#Memory" name="1"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main"><comp lib="1" name="D Flip-Flop" loc="(300,100)"><a name="trigger" val="high"/></comp></circuit></project>',
+  );
+  const legacy = await command({ op: "open", path: legacyPath });
+  assert(
+    (
+      await command({
+        op: "observe",
+        id: legacy.id,
+        revision: legacy.revision,
+        circuit: "main",
+      })
+    ).focus.components.some((c: any) => c.factoryName === "D Flip-Flop"),
+    "2.15 flip-flop missing",
+  );
+  if (process.env.VIBE_WORKBENCH_RESOURCES)
+    assert(
+      ![state, path.join(state, "verification")].some((dir) =>
+        existsSync(path.join(dir, "java")),
+      ),
+      "The product compiled the bridge instead of using its precompiled classes",
+    );
   const retained = await verifySimulation(command, state);
   await stop();
   await start();
