@@ -26,6 +26,7 @@ let observedFocus: any = null;
 let templateHandler: ((request: any) => any) | null = null;
 import { usePlacement } from "../../../apps/workbench/src/lib/usePlacement";
 import { PlacementInspector } from "../../../apps/workbench/src/components/PlacementInspector";
+import { Workbench } from "./workbench";
 const noPlacement = {
   tool: null,
   template: null,
@@ -197,17 +198,19 @@ const input = async (value: string) => {
 const errors: any[] = [];
 const changed: any[] = [];
 const chat = (d: any, visible = true) => (
-  <Chat
-    visible={visible}
-    doc={d}
-    circuit={d.main}
-    folder={null}
-    selection={[]}
-    quotation={null}
-    onQuoted={() => {}}
-    onDocument={(d: any) => changed.push(d)}
-    onError={(e: any) => errors.push(e)}
-  />
+  <Workbench>
+    <Chat
+      visible={visible}
+      doc={d}
+      circuit={d.main}
+      folder={null}
+      selection={[]}
+      quotation={null}
+      onQuoted={() => {}}
+      onDocument={(d: any) => changed.push(d)}
+      onError={(e: any) => errors.push(e)}
+    />
+  </Workbench>
 );
 await render(chat(doc("A")));
 assert.equal(

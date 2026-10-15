@@ -157,17 +157,19 @@ export async function verifyRestoredInteractions() {
     });
   try {
     await render(
-      <Chat
-        visible
-        doc={doc}
-        circuit="main"
-        folder={null}
-        selection={[]}
-        quotation={null}
-        onQuoted={() => {}}
-        onDocument={() => {}}
-        onError={(error) => errors.push(error)}
-      />,
+      <Workbench>
+        <Chat
+          visible
+          doc={doc}
+          circuit="main"
+          folder={null}
+          selection={[]}
+          quotation={null}
+          onQuoted={() => {}}
+          onDocument={() => {}}
+          onError={(error) => errors.push(error)}
+        />
+      </Workbench>,
     );
     await click('[aria-label="复制代码"]');
     assert.equal(copied, "const value = 1;");

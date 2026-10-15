@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/components/Chat";
 import { useChatReferences } from "../../../apps/workbench/src/components/ChatReferences";
+import { Workbench } from "./workbench";
 export async function verifyReferencesUI() {
   const container = document.createElement("div");
   document.body.append(container);
@@ -198,23 +199,25 @@ async function verifyDocumentReferenceBinding() {
   const render = (id: string, quote = false) =>
     act(async () =>
       root.render(
-        <Chat
-          visible
-          doc={doc(id) as any}
-          folder={
-            {
-              id: "folder:reference-binding",
-              path: "/project",
-              name: "project",
-            } as any
-          }
-          circuit="main"
-          selection={[]}
-          quotation={quote ? quotation(id) : null}
-          onQuoted={() => {}}
-          onDocument={() => {}}
-          onError={(e) => errors.push(e)}
-        />,
+        <Workbench>
+          <Chat
+            visible
+            doc={doc(id) as any}
+            folder={
+              {
+                id: "folder:reference-binding",
+                path: "/project",
+                name: "project",
+              } as any
+            }
+            circuit="main"
+            selection={[]}
+            quotation={quote ? quotation(id) : null}
+            onQuoted={() => {}}
+            onDocument={() => {}}
+            onError={(e) => errors.push(e)}
+          />
+        </Workbench>,
       ),
     );
   const settle = () =>

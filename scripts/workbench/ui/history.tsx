@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { DocumentHistory } from "../../../apps/workbench/src/components/DocumentHistory";
 import { HistoryReview } from "../../../apps/workbench/src/components/ProposalReview";
 import { useProposals } from "../../../apps/workbench/src/lib/useProposals";
+import { Workbench } from "./workbench";
 
 export async function verifyDocumentHistory() {
   const globals = globalThis as any,
@@ -253,14 +254,14 @@ export async function verifyDocumentHistory() {
   try {
     await act(async () =>
       root.render(
-        <>
+        <Workbench>
           <DocumentHistory
             {...common}
             visible
             onError={(e) => errors.push(e)}
           />
           <Mirror />
-        </>,
+        </Workbench>,
       ),
     );
     await settle();

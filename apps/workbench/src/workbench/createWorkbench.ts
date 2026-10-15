@@ -13,13 +13,11 @@ import {
   createConversationStore,
   type ConversationState,
 } from "../stores/conversation";
-import {
-  createDocumentsStore,
-  type DocumentsState,
-} from "../stores/documents";
+import { createDocumentsStore, type DocumentsState } from "../stores/documents";
 import { createEditorStore, type EditorState } from "../stores/editor";
 import { createFilesStore, type FilesState } from "../stores/files";
 import { createNoticesStore, type NoticesState } from "../stores/notices";
+import { createProposalsStore, type ProposalsState } from "../stores/proposals";
 import { createSettingsStore, type SettingsState } from "../stores/settings";
 import { createShellStore, type ShellState } from "../stores/shell";
 import {
@@ -33,6 +31,7 @@ export interface Stores {
   settings: StoreApi<SettingsState>;
   shell: StoreApi<ShellState>;
   conversation: StoreApi<ConversationState>;
+  proposals: StoreApi<ProposalsState>;
   documents: StoreApi<DocumentsState>;
   files: StoreApi<FilesState>;
   editor: StoreApi<EditorState>;
@@ -63,6 +62,7 @@ export function createWorkbench(): Workbench {
     settings: createSettingsStore(),
     shell: createShellStore(),
     conversation: createConversationStore(),
+    proposals: createProposalsStore(),
     documents: createDocumentsStore({ notices, editor, files }),
     files,
     editor,

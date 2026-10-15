@@ -38,7 +38,7 @@ try {
         setup(builder) {
           builder.onLoad({ filter: /\/lib\/transport\.ts$/ }, () => ({
             contents:
-              "export const command=(r)=>globalThis.__command(r);export const desktop=()=>false;export const openPath=async()=>null;",
+              "export const command=(r)=>globalThis.__command(r);export const desktop=()=>false;export const openPath=async()=>null;export const savePath=async()=>null;",
           }));
           builder.onLoad({ filter: /\/lib\/events\.ts$/ }, () => ({
             contents:
