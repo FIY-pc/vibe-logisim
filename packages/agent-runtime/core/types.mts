@@ -132,7 +132,11 @@ export interface AskRequest {
   expectedTurnId?: string | null;
 }
 export interface ToolHost {
-  tools: { name: string; description: string; inputSchema: ProtocolObject }[];
+  readonly tools: readonly {
+    name: string;
+    description: string;
+    inputSchema: ProtocolObject;
+  }[];
   mode?: string;
   prepare(options?: ProtocolObject): Promise<ProtocolObject>;
   get(name: string): unknown;

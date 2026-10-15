@@ -8,8 +8,19 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 // sent once in agent-instructions.mts; do not repeat it for every tool.
 const CODE_MODE_RESULT_CONTRACT =
   "Code Mode return type: string. Parse JSON text with JSON.parse(result) before reading fields. Image-bearing results use the image delivery format described by the tool.";
-function describeCodeModeResult(tool: Record<string, unknown>) {
-  return { ...tool };
+
+// app-server 0.154.0 DynamicToolSpec: a function entry must carry its type.
+function dynamicToolSpec(tool: {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+}) {
+  return {
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  };
 }
 
 function splitModelContent(result: any) {
@@ -65,6 +76,17 @@ function dynamicToolResponse(result: any) {
   };
 }
 
+// A failed call answers in the same content-item form; the payload is the
+// structured tool error the model reads to decide whether to retry.
+function dynamicToolError(payload: unknown) {
+  return {
+    contentItems: [
+      { type: "inputText", text: JSON.stringify({ error: payload }) },
+    ],
+    success: false,
+  };
+}
+
 // Opt-in evaluation sees only the shape of the native model-facing output.
 // Never forward raw response text, code, data URLs or image bytes to telemetry.
 function modelMediaEvidence(item: any) {
@@ -98,7 +120,8 @@ export {
   MAX_IMAGE_BYTES,
   splitModelContent,
   dynamicToolResponse,
+  dynamicToolError,
+  dynamicToolSpec,
   modelMediaEvidence,
   CODE_MODE_RESULT_CONTRACT,
-  describeCodeModeResult,
 };
