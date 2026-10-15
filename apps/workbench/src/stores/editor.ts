@@ -2,6 +2,7 @@ import { createRef, type ReactNode, type RefObject } from "react";
 import { createStore } from "zustand/vanilla";
 import type { ConnectionFocus } from "../lib/connections";
 import type { CatalogGroup, CatalogTool, Document, Tool } from "../lib/types";
+import type { PlacementState } from "../lib/usePlacement";
 import { createCounter, type Counter } from "./counter";
 import { field, type Update } from "./setter";
 
@@ -73,6 +74,8 @@ export interface EditorState {
   searchInput: RefObject<HTMLInputElement | null>;
   /** The circuit list's search input. */
   circuitSearchInput: RefObject<HTMLInputElement | null>;
+  /** The placement as last rendered, for the rotate shortcut. Not reactive. */
+  placement: { current: PlacementState | null };
   setCircuitName(name: Update<string>): void;
   setTool(tool: Update<Tool>): void;
   setPlace(place: Update<CatalogTool | null>): void;
@@ -121,6 +124,7 @@ export function createEditorStore() {
     sourceRequest: createCounter(),
     searchInput: createRef<HTMLInputElement>(),
     circuitSearchInput: createRef<HTMLInputElement>(),
+    placement: { current: null },
     setCircuitName: field(set, "circuitName"),
     setTool: field(set, "tool"),
     setPlace: field(set, "place"),

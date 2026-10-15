@@ -1,5 +1,6 @@
 import type { StoreApi } from "zustand/vanilla";
 import { createEditorActions, type EditorActions } from "../actions/editor";
+import { createNavigation, type Navigation } from "../actions/navigation";
 import {
   createSimulationActions,
   type SimulationActions,
@@ -42,6 +43,7 @@ export interface Actions {
   workspace: WorkspaceActions;
   editor: EditorActions;
   simulation: SimulationActions;
+  navigation: Navigation;
 }
 
 /** All state and actions of one workbench window. App creates one per mount. */
@@ -66,10 +68,12 @@ export function createWorkbench(): Workbench {
     editor,
     simulation: createSimulationStore(),
   };
+  const editing = createEditorActions(stores);
   const actions: Actions = {
     workspace: createWorkspaceActions(stores),
-    editor: createEditorActions(stores),
+    editor: editing,
     simulation: createSimulationActions(stores),
+    navigation: createNavigation(stores, editing),
   };
   const workbench: Workbench = {
     stores,

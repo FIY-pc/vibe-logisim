@@ -15,11 +15,10 @@ import {
   FeedbackDialog,
   UpdateNotice,
 } from "./components/Feedback";
-import { usePlacement } from "./lib/usePlacement";
+import { canRotate, usePlacement } from "./lib/usePlacement";
 import { PlacementInspector } from "./components/PlacementInspector";
 import { FindDialog } from "./components/FindDialog";
 import { ShortcutSettings } from "./components/ShortcutSettings";
-import { eventBinding } from "./lib/shortcuts";
 import { EditorToolbar } from "./components/EditorToolbar";
 import {
   SimulationMenu,
@@ -30,11 +29,10 @@ import { FilePreview } from "./components/FilePreview";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { Waveform } from "./components/Waveform";
 import { Observations } from "./components/Observations";
-import { subscribeEvents } from "./lib/events";
 import { DecisionDialog } from "./components/DecisionDialog";
 import { TextPrompt } from "./components/TextPrompt";
 import { Files } from "./components/Files";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import {
   CircuitBoard,
   FolderOpen,
@@ -54,7 +52,7 @@ import {
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { Chat } from "./components/Chat";
-import { command, desktop } from "./lib/transport";
+import { desktop } from "./lib/transport";
 import {
   useConversation,
   useDocuments,
@@ -66,14 +64,14 @@ import {
   useSimulation,
   useView,
 } from "./workbench/hooks";
-import { activeSimulation, currentView } from "./workbench/view";
+import { activeSimulation } from "./workbench/view";
 import { sourceStatusOf } from "./stores/documents";
 import {
   useOwnWorkbench,
   useWorkbench,
   WorkbenchProvider,
 } from "./workbench/provider";
-import type { Edit, Simulation, Tool } from "./lib/types";
+import type { Edit } from "./lib/types";
 export function App() {
   const workbench = useOwnWorkbench();
   useEffect(() => workbench.start(), [workbench]);
@@ -85,17 +83,20 @@ export function App() {
 }
 function Shell() {
   const { stores, actions } = useWorkbench();
-  const { workspace, editor: editing, simulation: simulating } = actions;
+  const {
+    workspace,
+    editor: editing,
+    simulation: simulating,
+    navigation,
+  } = actions;
   const { notice, decision, error, setNotice, setDecision, setError, onError } =
     useNotices((state) => state);
   const {
     docs,
     active,
     saveFailures,
-    setActive,
     refreshWorkspace,
     mergeDocument,
-    update,
     recheck,
   } = useDocuments((state) => state);
   const {
@@ -111,7 +112,6 @@ function Shell() {
   const quotation = useConversation((state) => state.quotation);
   const { setQuotation } = stores.conversation.getState();
   const {
-    setCircuitName,
     tool,
     setTool,
     place,
@@ -120,7 +120,6 @@ function Shell() {
     search,
     setSearch,
     selected,
-    setSelected,
     fitToken,
     requestFit,
     zoom,
@@ -140,21 +139,17 @@ function Shell() {
     find,
     setFind,
     focusTarget,
-    setFocusTarget,
     circuitPrompt,
     setCircuitPrompt,
     renameCircuit,
     setRenameCircuit,
     interfaceTarget,
     setInterfaceTarget,
-    navigation: navigationRequest,
-    sourceRequest,
     searchInput,
     circuitSearchInput,
   } = useEditor((state) => state);
   const {
     sim,
-    setSim,
     frequency,
     requests: simulationRequests,
     memory,
@@ -177,13 +172,10 @@ function Shell() {
   const { showExplorer, setShowExplorer, showRight, setShowRight } = layout;
   const view = useView();
   const { doc, circuit, scope: selectionScope } = view;
-  useEffect(() => {
-    if (!doc) setRight("chat");
-  }, [doc?.id]);
   const placement = usePlacement(doc, circuit, place);
-  const canRotate =
-    Boolean(placement.template?.attributes.facingAttribute) &&
-    !placement.loading;
+  useLayoutEffect(() => {
+    stores.editor.getState().placement.current = placement;
+  });
   const selection = selected.scope === selectionScope ? selected.ids : [];
   // Handlers act on the view of this render.
   const setSelection = (ids: string[]) => editing.select(view, ids);
@@ -234,247 +226,17 @@ function Shell() {
         ];
       }),
   );
-  useEffect(() => {
-    void refreshWorkspace(true).catch(onError);
-  }, [refreshWorkspace, onError]);
-  useEffect(() => {
-    let live = true;
-    let version = 0;
-    const stop = subscribeEvents((event) => {
-      if (event.topic === "simulation") {
-        version++;
-        setSim(event.data);
-      }
-      if (event.topic === "resync") {
-        setError((previous) =>
-          previous === "连接中断，正在重新连接…" ? "" : previous,
-        );
-        const requested = ++version;
-        void command<Simulation | null>({ op: "simulationStatus" })
-          .then((next) => {
-            if (live && requested === version) setSim(next);
-          })
-          .catch(onError);
-      }
-      if (event.topic === "connection") onError(event.data);
-    });
-    return () => {
-      live = false;
-      stop();
-    };
-  }, []);
-  useEffect(() => {
-    const listener = (e: KeyboardEvent) => {
-      if (document.querySelector('dialog[open],[aria-modal="true"]')) return;
-      if (
-        (e.target as HTMLElement).closest(
-          'input,textarea,select,[contenteditable="true"]',
-        )
-      )
-        return;
-      const key = eventBinding(e);
-      if (!key) return;
-      const shortcut = Object.entries(shortcutBindings).find(
-        ([, binding]) => binding === key,
-      )?.[0];
-      if (shortcut) {
-        e.preventDefault();
-        if (["select", "wire", "poke", "pan"].includes(shortcut)) {
-          setTool(shortcut as Tool);
-          setPlace(null);
-        } else if (shortcut === "palette") {
-          layout.revealFiles();
-          setResourceTab("components");
-          requestAnimationFrame(() => searchInput.current?.focus());
-        } else if (shortcut === "rotate") {
-          if (place && canRotate) placement.rotate();
-        } else if (shortcut === "save") save();
-        else if (shortcut === "undo") history("undo");
-        else if (shortcut === "find" && doc) setFind("component");
-        else if (shortcut === "circuitSearch" && doc) {
-          layout.revealNavigator();
-          requestAnimationFrame(() => circuitSearchInput.current?.focus());
-        } else if (shortcut === "fit") requestFit();
-        else if (shortcut === "grid") setShowGrid((shown) => !shown);
-        else if (shortcut === "rail") setShowExplorer((shown) => !shown);
-        else if (shortcut === "review") setShowRight((shown) => !shown);
-        else if (shortcut === "capture") void capture().catch(onError);
-        else if (shortcut === "clock")
-          void simulate("toggle-clock").catch(onError);
-        else if (shortcut === "propagation")
-          void simulate("toggle-propagation").catch(onError);
-        else if (["tick", "step", "reset"].includes(shortcut))
-          void simulate(shortcut).catch(onError);
-        return;
-      }
-      if (key === "Mod+N") {
-        e.preventDefault();
-        void newFile();
-      }
-      if (key === "Mod+Shift+S") {
-        e.preventDefault();
-        save(true);
-      }
-      if (key === "Mod+W" && doc) {
-        e.preventDefault();
-        requestClose(doc);
-      }
-      if (["Mod+Shift+Z", "Mod+Y"].includes(key)) {
-        e.preventDefault();
-        history("redo");
-      }
-      if (key === "Mod+,") {
-        e.preventDefault();
-        setSettings(true);
-      }
-      if (key === "Mod+Shift+O") {
-        setShowRight(true);
-        setRight("chat");
-      }
-      if (key === "Mod+O") {
-        e.preventDefault();
-        openFile();
-      }
-      if (e.key === "Escape") {
-        sourceRequest.next();
-        setPlace(null);
-        setSource(null);
-        setSettings(false);
-      }
-    };
-    window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
-  });
-  useEffect(() => {
-    const listener = (e: BeforeUnloadEvent) => {
-      // Acknowledged drafts are already checkpointed by Rust. Only warn while an
-      // operation is still waiting for acknowledgement, rather than on every reload.
-      if (pending) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", listener);
-    return () => window.removeEventListener("beforeunload", listener);
-  }, [pending]);
-  const switchCircuit = (name: string) => {
-    const requested = navigationRequest.next();
-    if (
-      sim &&
-      doc &&
-      sim.documentId === doc.id &&
-      sim.revision === doc.revision &&
-      sim.rootCircuit === name &&
-      sim.instancePath.length
-    ) {
-      void command<Simulation>({
-        op: "simulationView",
-        id: doc.id,
-        revision: doc.revision,
-        path: [],
-      })
-        .then((next) => {
-          if (
-            requested === navigationRequest.current &&
-            stores.documents.getState().active === doc.id &&
-            stores.documents
-              .getState()
-              .docs.find((current) => current.id === doc.id)?.revision ===
-              doc.revision
-          )
-            setSim(next);
-        })
-        .catch(onError);
-    }
-    setCircuitName(name);
-    setSelection([]);
-    setPlace(null);
-  };
-  const navigateSimulation = async (path: string[]) => {
-    if (!doc || !circuit) return;
-    const scope = selectionScope;
-    const requested = navigationRequest.next();
-    const next = await command<Simulation>({
-      op: "simulationView",
-      id: doc.id,
-      revision: doc.revision,
-      path,
-    });
-    if (
-      requested !== navigationRequest.current ||
-      currentView(stores).scope !== scope
-    )
-      return;
-    setSim(next);
-    setCircuitName(next.circuit);
-    setSelection([]);
-    setPlace(null);
-  };
-  const locateChange = ({ circuit: name, revision, object }: LocateChange) => {
-    if (!doc || revision !== doc.revision) {
-      onError("文档已有后续修改，无法定位这份对照中的对象");
-      return;
-    }
-    const definition = doc.circuits.find((item) => item.name === name);
-    const matches =
-      definition?.components.filter(
-        (item) =>
-          item.name === object.factory &&
-          item.location.x === object.location.x &&
-          item.location.y === object.location.y,
-      ) || [];
-    const wires =
-      object.factory === "wire" && object.from && object.to
-        ? definition?.wires.filter(
-            (wire) =>
-              wire.id === object.id &&
-              ((wire.from.x === object.from!.x &&
-                wire.from.y === object.from!.y &&
-                wire.to.x === object.to!.x &&
-                wire.to.y === object.to!.y) ||
-                (wire.from.x === object.to!.x &&
-                  wire.from.y === object.to!.y &&
-                  wire.to.x === object.from!.x &&
-                  wire.to.y === object.from!.y)),
-          ) || []
-        : [];
-    const targets = [...matches, ...wires];
-    if (targets.length !== 1) {
-      onError("无法唯一对应当前工程中的对象");
-      return;
-    }
-    const id = targets[0].id;
-    switchCircuit(name);
-    setSelected({ scope: `${doc.id}:${doc.revision}:${name}`, ids: [id] });
-    setFocusTarget({
-      documentId: doc.id,
-      revision: doc.revision,
-      circuit: name,
-      id,
-      token: Date.now(),
-    });
-    layout.revealInspector();
-  };
+  const switchCircuit = (name: string) =>
+    navigation.switchCircuit(view, sim, name);
+  const navigateSimulation = (path: string[]) =>
+    navigation.navigateSimulation(view, path);
+  const locateChange = (change: LocateChange) =>
+    navigation.locateChange(view, sim, change);
   const followConversationReference = useConversationReferences({
     doc,
     folder,
-    onCircuit: (name, id) => {
-      if (!doc) return;
-      switchCircuit(name);
-      setSelected({ scope: `${doc.id}:${doc.revision}:${name}`, ids: [id] });
-      setFocusTarget({
-        documentId: doc.id,
-        revision: doc.revision,
-        circuit: name,
-        id,
-        token: Date.now(),
-      });
-      layout.revealInspector();
-    },
-    onDocument: (document) => {
-      update(document);
-      setCircuitName(document.main);
-    },
+    onCircuit: (name, id) => navigation.focusObject(view, sim, name, id),
+    onDocument: workspace.showDocument,
     onPreview: setPreview,
     onNotice: setNotice,
     onError,
@@ -582,21 +344,7 @@ function Shell() {
                     item.id === sim.documentId &&
                     item.revision === sim.revision,
                 )
-                  ? () => {
-                      const owner = docs.find(
-                        (item) =>
-                          item.id === sim.documentId &&
-                          item.revision === sim.revision,
-                      );
-                      if (!owner) return;
-                      navigationRequest.next();
-                      setActive(owner.id);
-                      setCircuitName(sim.circuit);
-                      setSelection([]);
-                      void command({ op: "activate", id: owner.id }).catch(
-                        onError,
-                      );
-                    }
+                  ? () => navigation.returnToSimulation(view, sim)
                   : undefined
               }
             />
@@ -745,17 +493,7 @@ function Shell() {
                     >
                       <button
                         className="document-item"
-                        onClick={() => {
-                          navigationRequest.next();
-                          setActive(d.id);
-                          setPlace(null);
-                          void command({ op: "activate", id: d.id }).catch(
-                            onError,
-                          );
-                          setCircuitName(d.main);
-                          setSelection([]);
-                          layout.closeDrawers();
-                        }}
+                        onClick={() => navigation.activateDocument(view, d)}
                       >
                         <CircuitBoard size={15} />
                         <span>{d.name}</span>
@@ -844,25 +582,10 @@ function Shell() {
                                     <button
                                       disabled={d.circuits.length === 1}
                                       onClick={() =>
-                                        setDecision({
-                                          title: `删除电路 ${c.name}？`,
-                                          message: "删除后可以撤销。",
-                                          actions: [
-                                            {
-                                              label: "删除",
-                                              run: async () => {
-                                                await edit({
-                                                  kind: "deleteCircuit",
-                                                });
-                                                switchCircuit(
-                                                  d.circuits.find(
-                                                    (x) => x.name !== c.name,
-                                                  )!.name,
-                                                );
-                                              },
-                                            },
-                                          ],
-                                        })
+                                        navigation.requestDeleteCircuit(
+                                          view,
+                                          sim,
+                                        )
                                       }
                                     >
                                       删除电路
@@ -1005,7 +728,7 @@ function Shell() {
                     `旋转 90° (${shortcuts.rotate})`,
                     <RotateCw size={14} />,
                     () => placement.rotate(),
-                    !canRotate,
+                    !canRotate(placement),
                   )}
                 {place && (
                   <label className="placement-repeat">
@@ -1104,14 +827,9 @@ function Shell() {
                     setShowRight(true);
                   }}
                   onOpenMemory={openMemory}
-                  onEnterCircuit={(name, id) => {
-                    if (activeSim && doc)
-                      void navigateSimulation([
-                        ...activeSim.instancePath,
-                        id,
-                      ]).catch(onError);
-                    else switchCircuit(name);
-                  }}
+                  onEnterCircuit={(name, id) =>
+                    navigation.enterCircuit(view, sim, name, id)
+                  }
                 />
               </div>
               {activeSim?.frame.attributes.failure && (
@@ -1331,20 +1049,14 @@ function Shell() {
           title="重命名电路"
           initial={circuit.name}
           onClose={() => setRenameCircuit(false)}
-          onSubmit={async (name) => {
-            await edit({ kind: "renameCircuit", name });
-            switchCircuit(name);
-          }}
+          onSubmit={(name) => navigation.renameCircuit(view, sim, name)}
         />
       )}
       {circuitPrompt && (
         <TextPrompt
           title="新建电路"
           onClose={() => setCircuitPrompt(false)}
-          onSubmit={async (name) => {
-            await edit({ kind: "addCircuit", name });
-            switchCircuit(name);
-          }}
+          onSubmit={(name) => navigation.addCircuit(view, sim, name)}
         />
       )}
       {preview && (
@@ -1417,20 +1129,11 @@ function Shell() {
           doc={doc}
           circuit={circuit}
           onClose={() => setFind(null)}
-          onChoose={(name, id) => {
-            switchCircuit(name);
-            if (id) {
-              setSelection([id]);
-              layout.revealInspector();
-              setFocusTarget({
-                documentId: doc.id,
-                revision: doc.revision,
-                circuit: name,
-                id,
-                token: Date.now(),
-              });
-            }
-          }}
+          onChoose={(name, id) =>
+            id
+              ? navigation.focusObject(view, sim, name, id)
+              : switchCircuit(name)
+          }
         />
       )}
       {infoTarget && docs.some((document) => document.id === infoTarget) && (

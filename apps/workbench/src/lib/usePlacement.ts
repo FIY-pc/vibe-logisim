@@ -13,6 +13,9 @@ export interface PlacementState {
   rotate: () => void;
   retry?: () => void;
 }
+/** Whether rotation can turn the placed component: its template has loaded and has a facing. */
+export const canRotate = (placement: PlacementState) =>
+  Boolean(placement.template?.attributes.facingAttribute) && !placement.loading;
 export function usePlacement(
   doc: Document | null,
   circuit: Circuit | undefined,

@@ -13,14 +13,14 @@ export function createWorkspaceActions(stores: Stores) {
   const busy = <T>(action: () => Promise<T>) => shell.getState().busy(action);
   const onError = (error: unknown) => notices.getState().onError(error);
   /** Shows a document the host opened or created, at its main circuit. */
-  const show = (d: Document) => {
+  const showDocument = (d: Document) => {
     documents.getState().update(d);
     editor.getState().setCircuitName(d.main);
   };
 
   const newFile = () =>
     busy(async () => {
-      show(await command<Document>({ op: "new", name: "未命名.circ" }));
+      showDocument(await command<Document>({ op: "new", name: "未命名.circ" }));
     }).catch(onError);
 
   /** Asks for a circuit file: the system dialog in the desktop app, otherwise the upload input. */
@@ -31,20 +31,20 @@ export function createWorkspaceActions(stores: Stores) {
     }
     void busy(async () => {
       const path = await openPath();
-      if (path) show(await command<Document>({ op: "open", path }));
+      if (path) showDocument(await command<Document>({ op: "open", path }));
     }).catch(onError);
   };
 
   /** Opens a circuit file from the project folder. */
   const openDocument = (path: string) =>
     void busy(() => command<Document>({ op: "open", path }))
-      .then(show)
+      .then(showDocument)
       .catch(onError);
 
   /** Imports a circuit file chosen in the upload input. */
   const importFile = (file: File) =>
     void busy(async () => {
-      show(
+      showDocument(
         await command<Document>({
           op: "import",
           name: file.name,
@@ -259,6 +259,7 @@ export function createWorkspaceActions(stores: Stores) {
     );
 
   return {
+    showDocument,
     newFile,
     openFile,
     openDocument,
