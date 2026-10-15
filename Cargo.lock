@@ -4789,6 +4789,7 @@ dependencies = [
 name = "vibe-workspace-core"
 version = "0.6.0-dev"
 dependencies = [
+ "quick-xml",
  "rustix",
  "schemars 1.2.2",
  "serde",
