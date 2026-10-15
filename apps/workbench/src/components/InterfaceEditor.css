@@ -1,0 +1,215 @@
+.interface-editor {
+  width: min(1140px, calc(100vw - 32px));
+  max-width: none;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-height: calc(100vh - 32px);
+}
+.interface-editor[open] {
+  display: flex;
+  flex-direction: column;
+}
+.interface-editor > header,
+.interface-editor > footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  flex-shrink: 0;
+}
+.interface-editor > header {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.interface-editor h2 {
+  font-size: 17px;
+  margin: 0;
+}
+.interface-editor h3 {
+  font-size: 13px;
+  margin: 0;
+}
+.interface-editor > footer {
+  border-top: 1px solid var(--border);
+}
+.interface-editor > footer > span {
+  flex: 1;
+  color: var(--muted);
+  font-size: 12px;
+}
+.symbol-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 365px;
+  min-height: 0;
+  height: min(650px, calc(100vh - 200px));
+}
+.symbol-drawing {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f8faff;
+}
+.symbol-toolbar {
+  display: flex;
+  gap: 5px;
+  padding: 10px 14px;
+}
+.symbol-toolbar button:nth-last-child(2) {
+  margin-left: auto;
+}
+.interface-editor .symbol-canvas {
+  width: 100%;
+  height: 100%;
+  flex: 1 1 0;
+  min-height: 200px;
+  touch-action: none;
+  fill: none;
+  stroke: none;
+  outline-offset: -3px;
+}
+.symbol-canvas text {
+  stroke: none;
+}
+.symbol-port {
+  fill: white;
+  stroke: #4567d8;
+  stroke-width: 1.5;
+  cursor: grab;
+}
+.symbol-port.selected {
+  fill: #4569ff;
+  stroke: #244abf;
+}
+.symbol-selected {
+  filter: drop-shadow(0 0 2px #4569ff);
+}
+.symbol-properties {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+  background: white;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 20px;
+  max-height: 156px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.symbol-properties label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.symbol-properties input {
+  width: 75px;
+}
+.symbol-properties input[aria-label="文字内容"] {
+  width: 210px;
+}
+.symbol-properties p {
+  width: 100%;
+  font-size: 12px;
+}
+.symbol-ports {
+  padding: 16px 14px;
+  border-left: 1px solid var(--border);
+  overflow: auto;
+}
+.symbol-ports > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.symbol-port-row,
+.symbol-port-columns {
+  display: grid;
+  grid-template-columns: 24px minmax(80px, 1fr) 64px 46px 24px;
+  gap: 5px;
+  padding: 10px 5px;
+  border: 0;
+  margin: 0;
+}
+.symbol-port-row.selected {
+  background: #edf1ff;
+  border-radius: 6px;
+}
+.symbol-port-row label {
+  display: flex;
+  min-width: 0;
+}
+.symbol-port-row label > span {
+  display: none;
+}
+.symbol-port-row input,
+.symbol-port-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+}
+.symbol-port-row button {
+  padding: 0;
+}
+.symbol-port-columns {
+  font-size: 11px;
+  color: var(--muted);
+  padding-bottom: 3px;
+}
+.symbol-impact {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 14px;
+  font-size: 12px;
+}
+.symbol-impact > div {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0;
+}
+.symbol-impact button {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.symbol-parent-preview {
+  position: absolute;
+  inset: 65px 20px 70px;
+  overflow: auto;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px #17223520;
+}
+.symbol-parent-preview button {
+  position: sticky;
+  top: 5px;
+  left: calc(100% - 35px);
+}
+.symbol-parent-preview img {
+  display: block;
+  max-width: 100%;
+}
+@media (max-width: 850px) {
+  .symbol-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    max-height: calc(100vh - 180px);
+    overflow: auto;
+  }
+  .interface-editor .symbol-canvas {
+    height: 280px;
+    flex: none;
+  }
+  .symbol-ports {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    overflow: visible;
+  }
+}

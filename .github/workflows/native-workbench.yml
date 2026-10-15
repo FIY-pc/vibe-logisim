@@ -1,0 +1,209 @@
+name: Workbench
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Validate release version and notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const read = (file) => fs.readFileSync(file, "utf8");
+          const json = (file) => JSON.parse(read(file));
+          const version = json("apps/workbench/src-tauri/tauri.conf.json").version;
+          if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) || process.env.GITHUB_REF_NAME !== `v${version}`)
+            throw new Error("Release tag must match the desktop version");
+          for (const file of ["package.json", "apps/workbench/package.json", "packages/agent-runtime/package.json"])
+            if (json(file).version !== version) throw new Error(`Version mismatch: ${file}`);
+          const lock = json("package-lock.json");
+          if (lock.version !== version) throw new Error("Version mismatch: package-lock.json");
+          for (const name of ["", "apps/workbench", "packages/agent-runtime"])
+            if (lock.packages[name]?.version !== version) throw new Error(`Lock version mismatch: ${name}`);
+          const cargoVersion = read("Cargo.toml").split("[workspace.package]")[1]?.split(/\n\[/)[0]?.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+          if (cargoVersion !== version) throw new Error("Version mismatch: Cargo.toml");
+          if (!read(`docs/releases/v${version}.md`).trim()) throw new Error("Release notes must not be empty");
+          NODE
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install pinned toolchain and dependencies
+        run: |
+          rustup show
+          npm ci
+          npm run setup
+      - name: Check document and generated contracts
+        run: |
+          cargo fmt --all --check
+          cargo clippy -p vibe-workspace-core -p vibe-logisim-adapter -p vibe-workbench-host --all-targets -- -D warnings
+          npm run check:contracts
+          npm run test:core
+          npm run check
+          npm run test:runtime
+          npm run test:ui
+          npm run build
+      - name: Verify native simulation, editing and local model transport
+        run: |
+          npm run test:native
+          npm run test:interfaces
+          npm run test:history
+          npm run test:files
+          npm run test:compatibility
+      - name: Verify bundled sidecar without workspace modules
+        run: |
+          npm run bundle:agent
+          VIBE_LOGISIM_AGENT_ROOT="$PWD/.workbench-cache/agent-product" node scripts/workbench/verify.mts
+
+  desktop-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x64
+          - os: windows-2025
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb
+      - name: Restore Rust compilation cache
+        id: rust_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            target/debug/deps
+            target/debug/build
+            target/debug/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/.fingerprint
+          key: native-rust-${{ matrix.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
+          restore-keys: native-rust-${{ matrix.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '**/Cargo.toml') }}-
+      - name: Install toolchain and project dependencies
+        run: |
+          rustup show
+          npm ci
+      - name: Verify Windows state persistence under long Unicode paths
+        if: runner.os == 'Windows'
+        run: cargo test -p vibe-workbench-host state_paths -- --nocapture
+      - name: Build desktop packages and verify relocated resources
+        run: |
+          npm run package:desktop
+          npm run test:product
+      # Save before desktop checks so a platform failure does not discard the
+      # compiled dependencies. Installers, product resources and state stay uncached.
+      - name: Save Rust compilation cache
+        if: steps.rust_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git/db
+            target/debug/deps
+            target/debug/build
+            target/debug/.fingerprint
+            target/release/deps
+            target/release/build
+            target/release/.fingerprint
+          key: ${{ steps.rust_cache.outputs.cache-primary-key }}
+      - name: Launch Linux portable desktop and verify restart recovery
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:desktop
+      - name: Launch Windows portable desktop and verify restart recovery
+        if: runner.os == 'Windows'
+        run: npm run test:desktop
+      - name: Build Windows installer upgrade baseline
+        if: runner.os == 'Windows'
+        run: node scripts/workbench/package.mts --upgrade-baseline
+      - name: Verify Windows installation, upgrade and uninstall
+        if: runner.os == 'Windows'
+        run: npm run test:windows-install
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-checks-${{ matrix.target }}
+          path: .workbench-cache/checks/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-${{ matrix.target }}
+          path: .workbench-cache/release/*
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [integration, desktop-package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: workbench-*
+          merge-multiple: true
+          path: dist
+      - name: Verify release assets
+        working-directory: dist
+        run: |
+          sha256sum --check --strict SHA256SUMS-linux-x64.txt
+          sha256sum --check --strict SHA256SUMS-win32-x64.txt
+          cat SHA256SUMS-linux-x64.txt SHA256SUMS-win32-x64.txt | sort -k2 > SHA256SUMS
+          version="${GITHUB_REF_NAME#v}"
+          expected=(
+            "vibe-logisim-$version-linux-x64.deb"
+            "vibe-logisim-$version-linux-x64.tar.gz"
+            "vibe-logisim-$version-win32-x64-setup.exe"
+            "vibe-logisim-$version-win32-x64.zip"
+          )
+          diff -u <(printf '%s\n' "${expected[@]}" | sort) <(awk '{print $2}' SHA256SUMS | sort)
+          rm SHA256SUMS-linux-x64.txt SHA256SUMS-win32-x64.txt
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "docs/releases/$GITHUB_REF_NAME.md" "${prerelease[@]}"
+          fi
