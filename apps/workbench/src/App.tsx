@@ -26,8 +26,8 @@ import {
   SimulationMenu,
   SimulationTransport,
 } from "./components/SimulationControls";
-import { documentComponent, type ConnectionFocus } from "./lib/connections";
-import { FilePreview, type PreviewFile } from "./components/FilePreview";
+import { documentComponent } from "./lib/connections";
+import { FilePreview } from "./components/FilePreview";
 import { MemoryPanel } from "./components/MemoryPanel";
 import { Waveform } from "./components/Waveform";
 import { Observations } from "./components/Observations";
@@ -38,7 +38,7 @@ import { useSourceStatus } from "./lib/useSourceStatus";
 import type { SourceStatus } from "./generated/SourceStatus";
 import { TextPrompt } from "./components/TextPrompt";
 import { Files, type ProjectFolder } from "./components/Files";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import {
   CircuitBoard,
   FolderOpen,
@@ -61,17 +61,22 @@ import { Chat } from "./components/Chat";
 import { command, desktop, openPath, savePath } from "./lib/transport";
 import {
   useConversation,
+  useDocuments,
+  useEditor,
+  useFiles,
   useNotices,
   useSettings,
   useShell,
+  useSimulation,
+  useView,
 } from "./workbench/hooks";
+import { currentView } from "./workbench/view";
 import {
   useOwnWorkbench,
   useWorkbench,
   WorkbenchProvider,
 } from "./workbench/provider";
 import type {
-  CatalogGroup,
   CatalogTool,
   Document,
   Edit,
@@ -90,154 +95,111 @@ export function App() {
 }
 function Shell() {
   const { stores } = useWorkbench();
-  const notice = useNotices((state) => state.notice);
-  const decision = useNotices((state) => state.decision);
-  const error = useNotices((state) => state.error);
-  const { setNotice, setDecision, setError, onError, warn } =
-    stores.notices.getState();
-  const [infoTarget, setInfoTarget] = useState<string | null>(null);
-  const [saveFailures, setSaveFailures] = useState<Record<string, string>>({});
-  const [lastCapture, setLastCapture] = useState<ObservationRecord | null>(
-    null,
-  );
-  const [circuitPrompt, setCircuitPrompt] = useState(false);
-  const [renameCircuit, setRenameCircuit] = useState(false);
-  const [interfaceTarget, setInterfaceTarget] = useState<{
-    doc: Document;
-    circuit: string;
-  } | null>(null);
-  const [memory, setMemory] = useState<{
-    documentId: string;
-    circuit: string;
-    name: string;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [observations, setObservations] = useState<{
-    documentId: string;
-    initial?: string;
-  } | null>(null);
-  const [folder, setFolder] = useState<ProjectFolder | null>(null);
-  const [preview, setPreview] = useState<PreviewFile | null>(null);
+  const { notice, decision, error, setNotice, setDecision, setError, onError } =
+    useNotices((state) => state);
+  const {
+    docs,
+    active,
+    saveFailures,
+    setDocs,
+    setActive,
+    invalidate,
+    refreshWorkspace,
+    mergeDocument,
+    update,
+  } = useDocuments((state) => state);
+  const {
+    folder,
+    preview,
+    infoTarget,
+    uploadInput: upload,
+    setFolder,
+    setPreview,
+    setInfoTarget,
+  } = useFiles((state) => state);
   const quotation = useConversation((state) => state.quotation);
   const { setQuotation } = stores.conversation.getState();
-  const workspaceEpoch = useRef(0);
-  const currentDocs = useRef<Document[]>([]);
-  const currentActive = useRef<string | null>(null);
-  const [docs, setDocsState] = useState<Document[]>([]),
-    [active, setActiveState] = useState<string | null>(null),
-    [circuitName, setCircuitName] = useState("main");
-  const setDocs = useCallback(
-    (value: Document[] | ((previous: Document[]) => Document[])) => {
-      workspaceEpoch.current++;
-      const next =
-        typeof value === "function" ? value(currentDocs.current) : value;
-      currentDocs.current = next;
-      setDocsState(next);
-      for (const doc of next) {
-        const result = doc as Document & {
-          historyWarning?: string;
-          referenceWarning?: string;
-        };
-        const message = [result.historyWarning, result.referenceWarning]
-          .filter(Boolean)
-          .join("；");
-        if (message)
-          warn(`${doc.id}:${doc.revision}:${message}`, `${doc.name}：${message}`);
-      }
-      setSaveFailures((previous) =>
-        Object.fromEntries(
-          next.flatMap((doc) => {
-            const failure = (doc as Document & { saveError?: string })
-              .saveError;
-            return failure
-              ? [[doc.id, failure]]
-              : doc.dirty && previous[doc.id]
-                ? [[doc.id, previous[doc.id]]]
-                : [];
-          }),
-        ),
-      );
-    },
-    [],
-  );
-  const setActive = useCallback((id: string | null) => {
-    workspaceEpoch.current++;
-    currentActive.current = id;
-    setActiveState(id);
-  }, []);
-  const [tool, setTool] = useState<Tool>("select"),
-    [place, setPlace] = useState<CatalogTool | null>(null);
-  const [catalog, setCatalog] = useState<CatalogGroup[]>([]),
-    [search, setSearch] = useState("");
+  const {
+    setCircuitName,
+    tool,
+    setTool,
+    place,
+    setPlace,
+    catalog,
+    setCatalog,
+    search,
+    setSearch,
+    selected,
+    setSelected,
+    fitToken,
+    requestFit,
+    zoom,
+    setZoom,
+    zoomRequest,
+    requestZoom,
+    canvasObservation,
+    setCanvasObservation,
+    source,
+    setSource,
+    signalView,
+    setSignalView,
+    circuitSearch,
+    setCircuitSearch,
+    showGrid,
+    setShowGrid,
+    find,
+    setFind,
+    focusTarget,
+    setFocusTarget,
+    circuitPrompt,
+    setCircuitPrompt,
+    renameCircuit,
+    setRenameCircuit,
+    interfaceTarget,
+    setInterfaceTarget,
+    navigation: navigationRequest,
+    sourceRequest,
+    searchInput,
+    circuitSearchInput,
+  } = useEditor((state) => state);
+  const {
+    sim,
+    setSim,
+    frequency,
+    setFrequency,
+    requests: simulationRequests,
+    setRequests: setSimulationRequests,
+    memory,
+    setMemory,
+    observations,
+    setObservations,
+    lastCapture,
+    setLastCapture,
+    sequence: simulationSequence,
+    queue: simulationQueue,
+  } = useSimulation((state) => state);
   const pending = useShell((state) => state.pending);
   const right = useShell((state) => state.right);
   const resourceTab = useShell((state) => state.resourceTab);
   const { busy, setRight, setResourceTab } = stores.shell.getState();
-  const [sim, setSim] = useState<Simulation | null>(null),
-    [fitToken, setFit] = useState(0);
-  const [zoom, setZoom] = useState(1);
-  const [zoomRequest, setZoomRequest] = useState({ token: 0, factor: 1 });
-  const [canvasObservation, setCanvasObservation] = useState<{
-    scope: string;
-    focus: ConnectionFocus | null;
-  }>({ scope: "", focus: null });
-  const [frequency, setFrequency] = useState(2);
-  const simulationSequence = useRef(0);
-  const [simulationRequests, setSimulationRequests] = useState<
-    { id: number; scope: string; op: string }[]
-  >([]);
-  const [source, setSource] = useState<{
-      xml: string;
-      id: string;
-      name: string;
-      revision: string;
-      circuit: string;
-      error?: string;
-    } | null>(null);
   const settings = useSettings((state) => state.open);
   const shortcutBindings = useSettings((state) => state.bindings);
   const shortcuts = useSettings((state) => state.labels);
   const { setOpen: setSettings, saveBindings: saveShortcuts } =
     stores.settings.getState();
-  const [signalView, setSignalView] = useState<React.ReactNode>(null);
   const layout = useWorkspaceLayout();
   const { showExplorer, setShowExplorer, showRight, setShowRight } = layout;
-  const [circuitSearch, setCircuitSearch] = useState("");
-  const circuitSearchInput = useRef<HTMLInputElement>(null);
-  const [showGrid, setShowGrid] = useState(false);
-  const [find, setFind] = useState<"component" | "circuit" | null>(null);
-  const [focusTarget, setFocusTarget] = useState<{
-    documentId: string;
-    revision: string;
-    circuit: string;
-    id: string;
-    token: number;
-  } | null>(null);
-  const upload = useRef<HTMLInputElement>(null),
-    searchInput = useRef<HTMLInputElement>(null);
-  const doc = docs.find((d) => d.id === active) || null;
+  const { doc, circuit, scope: selectionScope } = useView();
   useEffect(() => {
     if (!doc) setRight("chat");
   }, [doc?.id]);
-  const circuit =
-    doc?.circuits.find((c) => c.name === circuitName) || doc?.circuits[0];
   const placement = usePlacement(doc, circuit, place);
   const canRotate =
     Boolean(placement.template?.attributes.facingAttribute) &&
     !placement.loading;
-  const [selected, setSelected] = useState<{ scope: string; ids: string[] }>({
-    scope: "",
-    ids: [],
-  });
-  const selectionScope = `${doc?.id}:${doc?.revision}:${circuit?.name}`;
-  const currentSelected = useRef(selected);
-  currentSelected.current = selected;
   const selection = selected.scope === selectionScope ? selected.ids : [];
   const setSelection = (ids: string[]) =>
     setSelected({ scope: selectionScope, ids });
-  const currentSelectionScope = useRef(selectionScope);
-  currentSelectionScope.current = selectionScope;
   const simulationPending =
     simulationRequests.find((request) => request.scope === selectionScope)
       ?.op || null;
@@ -250,78 +212,14 @@ function Shell() {
             documentComponent(circuit, component)?.id === selection[0],
         ) || null
       : null;
-  const navigationRequest = useRef(0);
-  const sourceRequest = useRef(0);
   const { sourceStatus, recheck } = useSourceStatus(doc);
   const onFolder = (next: ProjectFolder) => {
-    workspaceEpoch.current++;
+    invalidate();
     setFolder(next);
     layout.revealFiles();
   };
   const { openFolder, folderDialog } = useFolderPicker(onFolder, onError);
-  const refreshWorkspace = useCallback(
-    async (includeFolder = false) => {
-      for (;;) {
-        const epoch = workspaceEpoch.current;
-        const status = await command<{
-          documents: Document[];
-          active: string | null;
-          folder: ProjectFolder | null;
-          recoveryError: string | null;
-        }>({ op: "status" });
-        // Status can wait on the native runtime after taking its document snapshot.
-        // Never let that earlier snapshot replace a newer event or local action.
-        if (epoch !== workspaceEpoch.current) continue;
-        const nextActive = status.documents.some(
-          (d) => d.id === currentActive.current,
-        )
-          ? currentActive.current
-          : status.active;
-        setDocs(status.documents);
-        if (currentActive.current !== nextActive) {
-          setActive(nextActive);
-          setCircuitName(
-            status.documents.find((d) => d.id === nextActive)?.main || "main",
-          );
-          setPlace(null);
-        }
-        if (includeFolder) setFolder(status.folder);
-        if (status.recoveryError) onError(status.recoveryError);
-        return;
-      }
-    },
-    [setDocs, setActive, onError],
-  );
-  const mergeDocument = useCallback(
-    (document: Document, expectedBaseRevision?: string) => {
-      const current = currentDocs.current.find(
-        (item) => item.id === document.id,
-      );
-      if (!current) return;
-      if (
-        expectedBaseRevision &&
-        current.revision !== expectedBaseRevision &&
-        current.revision !== document.revision
-      ) {
-        // A later host event may arrive before this mutation response. Hashes have no ordering.
-        void refreshWorkspace().catch(onError);
-        return;
-      }
-      setDocs((previous) =>
-        previous.map((item) => (item.id === document.id ? document : item)),
-      );
-    },
-    [setDocs, refreshWorkspace, onError],
-  );
   const feedback = useFeedback(setNotice, onError);
-  const update = useCallback((d: Document) => {
-    setDocs((old) =>
-      old.some((x) => x.id === d.id)
-        ? old.map((x) => (x.id === d.id ? d : x))
-        : [...old, d],
-    );
-    setActive(d.id);
-  }, []);
   const newFile = () =>
     busy(async () => {
       const d = await command<Document>({ op: "new", name: "未命名.circ" });
@@ -401,8 +299,8 @@ function Shell() {
       }),
     );
     setDocs((previous) => previous.filter((d) => d.id !== target.id));
-    if (currentActive.current === target.id) {
-      const next = currentDocs.current[0];
+    if (stores.documents.getState().active === target.id) {
+      const next = stores.documents.getState().docs[0];
       setActive(next?.id || null);
       setCircuitName(next?.main || "main");
       if (next) await command({ op: "activate", id: next.id });
@@ -471,7 +369,7 @@ function Shell() {
   };
   const edit = async (edit: Edit) => {
     if (!doc || !circuit) return;
-    const originSelection = currentSelected.current;
+    const originSelection = stores.editor.getState().selected;
     const originNavigation = navigationRequest.current;
     const next = await busy(() =>
       command<Document>({
@@ -487,11 +385,11 @@ function Shell() {
     // other edits, late responses and selections the user changed meanwhile.
     if (
       edit.kind === "attributes" &&
-      currentSelected.current === originSelection &&
-      currentActive.current === doc.id &&
+      stores.editor.getState().selected === originSelection &&
+      stores.documents.getState().active === doc.id &&
       navigationRequest.current === originNavigation &&
-      currentDocs.current.find((item) => item.id === doc.id)?.revision ===
-        next.revision &&
+      stores.documents.getState().docs.find((item) => item.id === doc.id)
+        ?.revision === next.revision &&
       originSelection.scope === selectionScope &&
       originSelection.ids.includes(edit.id) &&
       next.circuits
@@ -514,12 +412,12 @@ function Shell() {
   };
   const readSource = async () => {
     if (!doc || !circuit) return;
-    const requested = ++sourceRequest.current;
+    const requested = sourceRequest.next();
     const navigation = navigationRequest.current;
     const stillCurrent = () =>
       requested === sourceRequest.current &&
       navigation === navigationRequest.current &&
-      currentSelectionScope.current === selectionScope;
+      currentView(stores).scope === selectionScope;
     try {
       const result = await command<{ xml: string }>({
         op: "source",
@@ -538,7 +436,6 @@ function Shell() {
       if (stillCurrent()) onError(error);
     }
   };
-  const simulationQueue = useRef<Promise<unknown>>(Promise.resolve());
   const simulate = async (
     op: string,
     attributes: Record<string, string> = {},
@@ -546,7 +443,7 @@ function Shell() {
     if (!doc || !circuit) return;
     const origin = selectionScope;
     const navigation = navigationRequest.current;
-    const sequence = ++simulationSequence.current;
+    const sequence = simulationSequence.next();
     const request =
       op === "stop"
         ? { op: "simulationStop" as const }
@@ -569,7 +466,7 @@ function Shell() {
       // a held button is safe across navigation: the host checks its viewId.
       if (
         op !== "button-release" &&
-        (currentSelectionScope.current !== origin ||
+        (currentView(stores).scope !== origin ||
           navigationRequest.current !== navigation)
       )
         return;
@@ -730,7 +627,7 @@ function Shell() {
         else if (shortcut === "circuitSearch" && doc) {
           layout.revealNavigator();
           requestAnimationFrame(() => circuitSearchInput.current?.focus());
-        } else if (shortcut === "fit") setFit((n) => n + 1);
+        } else if (shortcut === "fit") requestFit();
         else if (shortcut === "grid") setShowGrid((shown) => !shown);
         else if (shortcut === "rail") setShowExplorer((shown) => !shown);
         else if (shortcut === "review") setShowRight((shown) => !shown);
@@ -772,7 +669,7 @@ function Shell() {
         openFile();
       }
       if (e.key === "Escape") {
-        sourceRequest.current++;
+        sourceRequest.next();
         setPlace(null);
         setSource(null);
         setSettings(false);
@@ -794,7 +691,7 @@ function Shell() {
     return () => window.removeEventListener("beforeunload", listener);
   }, [pending]);
   const switchCircuit = (name: string) => {
-    const requested = ++navigationRequest.current;
+    const requested = navigationRequest.next();
     if (
       sim &&
       doc &&
@@ -812,9 +709,11 @@ function Shell() {
         .then((next) => {
           if (
             requested === navigationRequest.current &&
-            currentActive.current === doc.id &&
-            currentDocs.current.find((current) => current.id === doc.id)
-              ?.revision === doc.revision
+            stores.documents.getState().active === doc.id &&
+            stores.documents
+              .getState()
+              .docs.find((current) => current.id === doc.id)?.revision ===
+              doc.revision
           )
             setSim(next);
         })
@@ -827,7 +726,7 @@ function Shell() {
   const navigateSimulation = async (path: string[]) => {
     if (!doc || !circuit) return;
     const scope = selectionScope;
-    const requested = ++navigationRequest.current;
+    const requested = navigationRequest.next();
     const next = await command<Simulation>({
       op: "simulationView",
       id: doc.id,
@@ -836,7 +735,7 @@ function Shell() {
     });
     if (
       requested !== navigationRequest.current ||
-      currentSelectionScope.current !== scope
+      currentView(stores).scope !== scope
     )
       return;
     setSim(next);
@@ -1011,7 +910,7 @@ function Shell() {
               onFrequencyChange={async (value) => {
                 if (activeSim)
                   await simulate("configure", { frequency: String(value) });
-                if (currentSelectionScope.current === selectionScope)
+                if (currentView(stores).scope === selectionScope)
                   setFrequency(value);
               }}
               onReturnToSimulation={
@@ -1029,7 +928,7 @@ function Shell() {
                           item.revision === sim.revision,
                       );
                       if (!owner) return;
-                      navigationRequest.current++;
+                      navigationRequest.next();
                       setActive(owner.id);
                       setCircuitName(sim.circuit);
                       setSelection([]);
@@ -1199,7 +1098,7 @@ function Shell() {
                       <button
                         className="document-item"
                         onClick={() => {
-                          navigationRequest.current++;
+                          navigationRequest.next();
                           setActive(d.id);
                           setPlace(null);
                           void command({ op: "activate", id: d.id }).catch(
@@ -1501,14 +1400,9 @@ function Shell() {
                   onDelete={() =>
                     void edit({ kind: "delete", ids: selection }).catch(onError)
                   }
-                  onFit={() => setFit((n) => n + 1)}
+                  onFit={requestFit}
                   zoom={zoom}
-                  onZoom={(factor) =>
-                    setZoomRequest((previous) => ({
-                      token: previous.token + 1,
-                      factor,
-                    }))
-                  }
+                  onZoom={requestZoom}
                   showGrid={showGrid}
                   onToggleGrid={() => setShowGrid((shown) => !shown)}
                 />
