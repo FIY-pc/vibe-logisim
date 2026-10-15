@@ -25,6 +25,28 @@ pub struct Viewport {
     pub scale: f64,
 }
 type Result<T> = std::result::Result<T, String>;
+/// File name of the 2.15 compatibility runtime in the product and the development cache.
+/// It keeps the upstream name: the runtime records `2.15.0.2.exe` as the saving
+/// program only when its own file name ends in `.exe`, and files it saves must
+/// stay identical to those saved by the original program.
+pub const LEGACY_RUNTIME: &str = "logisim-ita-cn-20200118.exe";
+/// The `source` attribute of the root `<project>` element, which names the
+/// Logisim build that last saved the file.
+fn source_version(bytes: &[u8]) -> Option<String> {
+    let find =
+        |haystack: &[u8], needle: &[u8]| haystack.windows(needle.len()).position(|w| w == needle);
+    let start = find(bytes, b"<project")?;
+    let tag = &bytes[start..];
+    let tag = &tag[..find(tag, b">")?];
+    let at = find(tag, b"source=")? + "source=".len();
+    let quote = *tag.get(at)?;
+    if quote != b'"' && quote != b'\'' {
+        return None;
+    }
+    let value = &tag[at + 1..];
+    let end = value.iter().position(|&b| b == quote)?;
+    String::from_utf8(value[..end].to_vec()).ok()
+}
 
 fn frame_failure(frame: &Value) -> String {
     let detail = frame["attributes"]["failure"].as_str().unwrap_or("");
@@ -59,6 +81,7 @@ struct Worker {
     stderr: StderrCapture,
     input: ChildStdin,
     lines: Lines<BufReader<tokio::process::ChildStdout>>,
+    runtime: PathBuf,
     dependencies: BTreeMap<PathBuf, String>,
 }
 impl Worker {
@@ -111,7 +134,7 @@ pub struct Native {
     root: PathBuf,
     state: PathBuf,
     runtime: Option<PathBuf>,
-    classes: Option<PathBuf>,
+    classes: BTreeMap<PathBuf, PathBuf>,
     worker: Option<Worker>,
     verification_worker: Option<Worker>,
     pub simulation: Option<Simulation>,
@@ -124,7 +147,7 @@ impl Native {
             root,
             state,
             runtime,
-            classes: None,
+            classes: BTreeMap::new(),
             worker: None,
             verification_worker: None,
             simulation: None,
@@ -177,27 +200,52 @@ impl Native {
                     .into()
             })
     }
+    fn legacy_runtime(&self) -> Option<PathBuf> {
+        [
+            std::env::var_os("VIBE_LOGISIM_LEGACY_JAR").map(PathBuf::from),
+            Some(self.root.join("native").join(LEGACY_RUNTIME)),
+            Some(self.root.join(".workbench-cache").join(LEGACY_RUNTIME)),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|p| p.is_file())
+    }
+    /// The runtime that interprets this file the way the program that saved it did.
+    /// Builds of the 2.15 line write `<project source="2.15.*">` and accept
+    /// attributes that ITA 2.16 rejects or reads differently (for example
+    /// level-triggered flip-flops), so their files run on the matching runtime.
+    fn runtime_for(&self, source: &[u8]) -> Result<PathBuf> {
+        if self.runtime.is_none() && source_version(source).is_some_and(|v| v.starts_with("2.15."))
+        {
+            return self.legacy_runtime().ok_or_else(|| {
+                "这个文件由 Logisim 2.15 保存，需要配套的 2.15 兼容运行时，但应用里缺少它；请重新安装应用（开发环境运行 npm run setup）"
+                    .into()
+            });
+        }
+        self.runtime()
+    }
     pub fn status(&self) -> Value {
+        let legacy = self.legacy_runtime().is_some();
         match self.runtime() {
-            Ok(p) => json!({"available":true,"path":p}),
-            Err(e) => json!({"available":false,"message":e}),
+            Ok(p) => json!({"available":true,"path":p,"legacyAvailable":legacy}),
+            Err(e) => json!({"available":false,"message":e,"legacyAvailable":legacy}),
         }
     }
-    async fn classes(&mut self) -> Result<PathBuf> {
-        if let Some(p) = &self.classes {
+    /// The bridge compiled against one runtime. Packages ship it precompiled per
+    /// runtime digest; other runtimes compile once into the state directory.
+    async fn classes(&mut self, runtime: &Path) -> Result<PathBuf> {
+        if let Some(p) = self.classes.get(runtime) {
             return Ok(p.clone());
         }
-        let runtime = self.runtime()?;
+        let runtime_bytes = std::fs::read(runtime).map_err(|e| e.to_string())?;
         let packaged = self.root.join("native");
-        if let Ok(expected) = std::fs::read_to_string(packaged.join("runtime.sha256"))
-            && digest(&std::fs::read(&runtime).map_err(|e| e.to_string())?) == expected.trim()
-            && packaged
-                .join("classes/com/cburch/logisim/file/CircuitSession.class")
-                .is_file()
+        let precompiled = packaged.join("classes").join(digest(&runtime_bytes));
+        if precompiled
+            .join("com/cburch/logisim/file/CircuitSession.class")
+            .is_file()
         {
-            let classes = packaged.join("classes");
-            self.classes = Some(classes.clone());
-            return Ok(classes);
+            self.classes.insert(runtime.into(), precompiled.clone());
+            return Ok(precompiled);
         }
         let base = self.root.join("crates/logisim-adapter/java");
         let mut sources = Vec::new();
@@ -210,7 +258,7 @@ impl Native {
             collect_java(&folder, &mut sources)?
         }
         sources.sort();
-        let mut bytes = std::fs::read(&runtime).map_err(|e| e.to_string())?;
+        let mut bytes = runtime_bytes;
         for p in &sources {
             bytes.extend(std::fs::read(p).map_err(|e| e.to_string())?)
         }
@@ -223,7 +271,7 @@ impl Native {
             let mut command = Command::new(self.java_executable("javac"));
             command
                 .args(["-encoding", "UTF-8", "-cp"])
-                .arg(java_path(&runtime))
+                .arg(java_path(runtime))
                 .arg("-d")
                 .arg(java_path(&classes))
                 .args(sources.iter().map(|source| java_path(source)))
@@ -239,7 +287,7 @@ impl Native {
                     .collect());
             }
         }
-        self.classes = Some(classes.clone());
+        self.classes.insert(runtime.into(), classes.clone());
         Ok(classes)
     }
     fn java_executable(&self, name: &str) -> PathBuf {
@@ -255,10 +303,9 @@ impl Native {
             PathBuf::from(binary)
         }
     }
-    async fn command(&mut self, class: &str) -> Result<Command> {
-        let classes = self.classes().await?;
-        let runtime = self.runtime()?;
-        let cp = std::env::join_paths([java_path(&classes), java_path(&runtime)])
+    async fn command(&mut self, class: &str, runtime: &Path) -> Result<Command> {
+        let classes = self.classes(runtime).await?;
+        let cp = std::env::join_paths([java_path(&classes), java_path(runtime)])
             .map_err(|e| e.to_string())?;
         let mut cmd = Command::new(self.java_executable("java"));
         cmd.args(["-Xmx768m", "-Djava.awt.headless=true", "-cp"])
@@ -277,26 +324,28 @@ impl Native {
             &mut self.worker
         }
     }
-    async fn worker(&mut self, verification: bool) -> Result<&mut Worker> {
+    async fn worker(&mut self, verification: bool, runtime: &Path) -> Result<&mut Worker> {
         if self
             .worker_slot(verification)
             .as_mut()
-            .is_some_and(|w| w.child.try_wait().ok().flatten().is_some())
+            .is_some_and(|w| w.child.try_wait().ok().flatten().is_some() || w.runtime != runtime)
         {
             *self.worker_slot(verification) = None;
         }
         if self.worker_slot(verification).is_none() {
-            let runtime = self.runtime()?;
-            let classes = self.classes().await?;
-            let hash = digest(&std::fs::read(&runtime).map_err(|e| e.to_string())?);
+            let classes = self.classes(runtime).await?;
+            let hash = digest(&std::fs::read(runtime).map_err(|e| e.to_string())?);
             let mut command = self
-                .command(if verification {
-                    "CircuitSimulationWorker"
-                } else {
-                    "CircuitWorker"
-                })
+                .command(
+                    if verification {
+                        "CircuitSimulationWorker"
+                    } else {
+                        "CircuitWorker"
+                    },
+                    runtime,
+                )
                 .await?;
-            command.arg(java_path(&runtime)).arg(hash);
+            command.arg(java_path(runtime)).arg(hash);
             if !verification {
                 command.arg(java_path(&classes));
             }
@@ -309,6 +358,7 @@ impl Native {
                 stderr,
                 input,
                 lines,
+                runtime: runtime.into(),
                 dependencies: BTreeMap::new(),
             };
             if worker.receive(true).await? != b"ready" {
@@ -331,7 +381,9 @@ impl Native {
         operation: Element,
         verification: bool,
     ) -> Result<Vec<u8>> {
-        let hash = digest(&std::fs::read(artifact).map_err(|e| e.to_string())?);
+        let source = std::fs::read(artifact).map_err(|e| e.to_string())?;
+        let runtime = self.runtime_for(&source)?;
+        let hash = digest(&source);
         let request = xml(
             "request",
             &[
@@ -352,7 +404,7 @@ impl Native {
         {
             *self.worker_slot(verification) = None;
         }
-        let worker = self.worker(verification).await?;
+        let worker = self.worker(verification, &runtime).await?;
         worker.dependencies = dependencies.clone();
         let mut result = async {
             worker
@@ -592,7 +644,8 @@ impl Native {
         let init_path = self.state.join("session.xml");
         std::fs::create_dir_all(&self.state).map_err(|e| e.to_string())?;
         std::fs::write(&init_path, encode_xml(&init)?).map_err(|e| e.to_string())?;
-        let mut command = self.command("CircuitSession").await?;
+        let runtime = self.runtime_for(&std::fs::read(artifact).map_err(|e| e.to_string())?)?;
+        let mut command = self.command("CircuitSession", &runtime).await?;
         let mut child = command
             .arg(java_path(artifact))
             .arg(java_path(&init_path))

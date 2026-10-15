@@ -10,6 +10,11 @@
       "url": "https://github.com/Logisim-Ita/Logisim/releases/download/v2.16.2.2/Logisim-ITA.jar",
       "sha256": "9eb1aae5e87cf0c6e4af845dde00624338c6dce25d945b6482cad017aa6cbb34"
     },
+    "logisim-2.15": {
+      "version": "Logisim ITA 2.15.0.2 (2020-01-18 Chinese build)",
+      "url": "https://github.com/FIY-pc/vibe-logisim/releases/download/build-inputs/logisim-ita-cn-20200118.exe",
+      "sha256": "b2400702fb9e8e4c71c512d7e09678a788039f402be55164209cde4cee8fc996"
+    },
     "logisim-source.tar.gz": {
       "url": "https://github.com/Logisim-Ita/Logisim/archive/refs/tags/v2.16.2.2.tar.gz",
       "sha256": "91864a5b475e77357ab3fac8bc18e87d709601c0af88351ef8d620a49b5101c2"

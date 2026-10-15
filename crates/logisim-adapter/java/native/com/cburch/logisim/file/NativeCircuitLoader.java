@@ -166,13 +166,13 @@ public final class NativeCircuitLoader {
             loaded = open(loader, file);
         } catch (Exception error) {
             if (reported.isEmpty()) throw error;
-            throw new IllegalStateException("Logisim load error: " + String.join("；", reported), error);
+            throw new IllegalStateException("Logisim 无法载入这个文件：" + String.join("；", reported), error);
         }
         if (!reported.isEmpty()) {
             String loss = coverageLoss(loaded, file);
             if (loss != null) {
                 throw new IllegalStateException(
-                    "Logisim load error: " + String.join("；", reported) + "（" + loss + "）");
+                    "Logisim 无法载入这个文件：" + String.join("；", reported) + "（" + loss + "）");
             }
             warnings.addAll(reported);
         }

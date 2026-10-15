@@ -160,6 +160,32 @@ try {
   );
   await evaluate(local, true);
   await render(local);
+  // Files saved by 2.15 builds run on the bundled 2.15 runtime, which accepts
+  // level-triggered flip-flops that ITA 2.16 rejects.
+  const legacy = await open(
+    "legacy-2.15.circ",
+    '<project source="2.15.0.2.exe" version="1.0"><lib desc="#Wiring" name="0"/><lib desc="#Memory" name="1"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main"><comp lib="1" name="D Flip-Flop" loc="(300,100)"><a name="trigger" val="high"/></comp></circuit></project>',
+  );
+  const legacyObserved = await command({ op: "observe", ...scope(legacy) });
+  assert(
+    legacyObserved.focus.components.some(
+      (c: any) => c.factoryName === "D Flip-Flop",
+    ),
+    "2.15 flip-flop missing",
+  );
+  const legacyInfo = await command({
+    op: "projectInfo",
+    id: legacy.id,
+    revision: legacy.revision,
+  });
+  assert.match(String(legacyInfo.runtimeVersion), /^2\.15\./);
+  assert.equal(
+    (await command({ op: "observe", ...scope(local) })).focus.components.some(
+      (c: any) => c.factoryName === "inverter",
+    ),
+    true,
+    "Switching back to a 2.16 file must restart on the 2.16 runtime",
+  );
   const unrotated = await command({
     op: "template",
     ...scope(local),

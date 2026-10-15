@@ -151,7 +151,7 @@ async function copyFrontendNotices(destination: string) {
   );
 }
 try {
-  const [node, java, jar, source, codexLicense] = await Promise.all([
+  const [node, java, jar, legacyJar, source, codexLicense] = await Promise.all([
     acquire(
       `node-${own.node.version}-${target}.${windows ? "zip" : "tar.xz"}`,
       own.node[target],
@@ -161,6 +161,7 @@ try {
       lock.targets[target].artifacts.java,
     ),
     acquire("Logisim-ITA.jar", lock.artifacts["logisim.jar"]),
+    acquire("logisim-ita-cn-20200118.exe", lock.artifacts["logisim-2.15"]),
     acquire("Logisim-source.tar.gz", lock.artifacts["logisim-source.tar.gz"]),
     acquire("codex-LICENSE", lock.artifacts["codex-LICENSE"]),
   ]);
@@ -201,8 +202,9 @@ try {
   ]);
   const native = path.join(stage, "native");
   if (windows) await patchWindowsJava(path.join(runtime, "java"));
-  await mkdir(path.join(native, "classes"), { recursive: true });
   await cp(jar, path.join(native, "Logisim-ITA.jar"));
+  // The runtime derives its reported version from its own file name; keep it.
+  await cp(legacyJar, path.join(native, "logisim-ita-cn-20200118.exe"));
   for (const directory of ["native", "observer/src"]) {
     const base = path.join(root, "crates/logisim-adapter/java", directory);
     for (const file of await files(base))
@@ -212,21 +214,24 @@ try {
         await cp(file, dest);
       }
   }
-  await run(path.join(jdk, "bin", executable("javac")), [
-    "--release",
-    "17",
-    "-encoding",
-    "UTF-8",
-    "-cp",
-    jar,
-    "-d",
-    path.join(native, "classes"),
-    ...(await files(path.join(native, "src"))),
-  ]);
-  await writeFile(
-    path.join(native, "runtime.sha256"),
-    lock.artifacts["logisim.jar"].sha256 + "\n",
-  );
+  // The bridge is compiled against each runtime it runs on; the adapter looks
+  // up the classes by the runtime's digest.
+  for (const [runtimeJar, artifact] of [
+    [jar, "logisim.jar"],
+    [legacyJar, "logisim-2.15"],
+  ]) {
+    await run(path.join(jdk, "bin", executable("javac")), [
+      "--release",
+      "17",
+      "-encoding",
+      "UTF-8",
+      "-cp",
+      runtimeJar,
+      "-d",
+      path.join(native, "classes", lock.artifacts[artifact].sha256),
+      ...(await files(path.join(native, "src"))),
+    ]);
+  }
   await mkdir(path.join(stage, "third-party/logisim"), { recursive: true });
   await cp(source, path.join(stage, "third-party/logisim/source.tar.gz"));
   await cp(codexLicense, path.join(stage, "third-party/codex-LICENSE"));
@@ -245,6 +250,7 @@ try {
         node: own.node.version,
         java: lock.targets[target].artifacts.java.version,
         logisim: lock.artifacts["logisim.jar"],
+        logisimLegacy: lock.artifacts["logisim-2.15"],
         source: lock.artifacts["logisim-source.tar.gz"],
       },
       null,
