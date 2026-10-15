@@ -11,6 +11,11 @@ use axum::{
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use vibe_workbench_host::{Host, Request};
+// The Vite dev server is the only browser page allowed to call the loopback host.
+fn dev_origin(origin: &str) -> bool {
+    let port = std::env::var("VIBE_WORKBENCH_DEV_PORT").unwrap_or_else(|_| "5173".into());
+    origin == format!("http://127.0.0.1:{port}") || origin == format!("http://localhost:{port}")
+}
 async fn dispatch(
     State(host): State<Host>,
     headers: HeaderMap,
@@ -18,8 +23,7 @@ async fn dispatch(
 ) -> impl IntoResponse {
     // Dev-only loopback transport. Production uses Tauri's scoped IPC.
     if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())
-        && origin != "http://127.0.0.1:5173"
-        && origin != "http://localhost:5173"
+        && !dev_origin(origin)
     {
         return (
             StatusCode::FORBIDDEN,
@@ -33,8 +37,7 @@ async fn dispatch(
 }
 async fn events(State(host): State<Host>, headers: HeaderMap) -> axum::response::Response {
     if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())
-        && origin != "http://127.0.0.1:5173"
-        && origin != "http://localhost:5173"
+        && !dev_origin(origin)
     {
         return StatusCode::FORBIDDEN.into_response();
     }

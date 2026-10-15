@@ -51,6 +51,11 @@ export default defineConfig({
       },
     },
   ],
-  server: { proxy: { "/api": "http://127.0.0.1:8793" } },
+  // Follow the host's port so several previews can run side by side.
+  server: {
+    proxy: {
+      "/api": `http://127.0.0.1:${process.env.VIBE_WORKBENCH_PORT || "8793"}`,
+    },
+  },
   clearScreen: false,
 });
