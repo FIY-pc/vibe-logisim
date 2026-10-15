@@ -20,7 +20,7 @@ final class CircuitFrame {
             if (!Double.isFinite(scale) || scale <= 0 || scale > 32 || width <= 0 || height <= 0 ||
                 Math.max(Math.max(Math.abs((long)x), Math.abs((long)y)), Math.max(width, height)) > 10_000_000 ||
                 w < 1 || h < 1 || w > 4096 || h > 4096 || w*h > 8_000_000)
-                throw new IllegalArgumentException("Viewport exceeds pixel budget");
+                throw new SessionError("VIEWPORT_BUDGET", "Viewport exceeds pixel budget");
             this.x=x; this.y=y; this.width=width; this.height=height; this.scale=scale;
         }
         static Viewport from(Element request) {
