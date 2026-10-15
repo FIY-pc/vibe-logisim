@@ -33,6 +33,28 @@ import {
 import { toolActivity } from "./tool-activity.mts";
 import { loadSdk } from "./sdk-loader.mts";
 
+// The shared instructions describe Code Mode results; pi-ai delivers tool
+// content blocks directly. Only Linux has the isolated shell.
+export function builtinInstructions(
+  override?: string | null,
+  platform: NodeJS.Platform = process.platform,
+) {
+  if (override) return override;
+  const shell =
+    platform === "linux"
+      ? "Shell cwd is /tmp/workspace; file tools use workspace-relative paths."
+      : "No shell is available; file tools use workspace-relative paths.";
+  return (
+    DEVELOPER_INSTRUCTIONS.split(REFERENCE_PATH_TOKEN)
+      .join(referenceRoot)
+      .replace(
+        /Tool result transport[\s\S]*?Running and historical state/,
+        "Tool results contain JSON text and optional image blocks. Read them directly; no Code Mode wrapper is needed.\n\nRunning and historical state",
+      ) +
+    `\nRespond in the user language. Send concise progress messages before tool work. Use the provided tools directly. ${shell} Do not claim success without tool evidence.`
+  );
+}
+
 // Supply an error result for a call left unfinished by an application crash.
 // Never re-execute recorded calls when restoring a conversation.
 function recoverTranscript(messages: AgentMessage[]): AgentMessage[] {
@@ -533,12 +555,14 @@ class BuiltinBackend extends EventEmitter {
         );
       const content =
         question +
-        "\n\n" +
+        "\n\n<workspace_context>\n" +
         JSON.stringify(
           this.contextHost?.additionalContext(prepared, {
             cwd: this.workDir,
+            workspaceIndex: this.pending?.work?.workspaceIndex,
           }) || {},
-        );
+        ) +
+        "\n</workspace_context>";
       const user = {
         role: "user" as const,
         content: images.length
@@ -715,15 +739,7 @@ class BuiltinBackend extends EventEmitter {
             }
           },
         });
-      const instructions =
-        this.instructions ||
-        DEVELOPER_INSTRUCTIONS.split(REFERENCE_PATH_TOKEN)
-          .join(referenceRoot)
-          .replace(
-            /Tool result transport[\s\S]*?Running and historical state/,
-            "Tool results contain JSON text and optional image blocks. Read them directly; no Code Mode wrapper is needed.\n\nRunning and historical state",
-          ) +
-          "\nRespond in the user language. Send concise progress messages before tool work. Use the provided tools directly. Shell cwd is /tmp/workspace; file tools use workspace-relative paths. Do not claim success without tool evidence.";
+      const instructions = builtinInstructions(this.instructions);
       if (this.raw[0]?.role === "system")
         this.raw = [
           createInitialSystemMessage(
