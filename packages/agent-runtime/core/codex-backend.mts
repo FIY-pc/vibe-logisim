@@ -64,7 +64,9 @@ import { AgentModelError, classifyModelError } from "./model-errors.mts";
 import { TurnHealth } from "./turn-health.mts";
 import { revertThroughMessage } from "./conversation-edit.mts";
 import {
+  dynamicToolError,
   dynamicToolResponse,
+  dynamicToolSpec,
   modelMediaEvidence,
 } from "./model-tool-output.mts";
 import {
@@ -1777,7 +1779,7 @@ class CodexBackend extends EventEmitter {
             approvalPolicy: "never",
             sandbox: this.#sandboxMode(),
             ...this.#nativeModelOverrides(),
-            dynamicTools: this.toolHost?.tools || [],
+            dynamicTools: (this.toolHost?.tools || []).map(dynamicToolSpec),
             config: THREAD_CONFIG,
             developerInstructions: this.developerInstructions,
           });
@@ -1803,7 +1805,7 @@ class CodexBackend extends EventEmitter {
             ? { experimentalRawEvents: true }
             : {}),
           developerInstructions: this.developerInstructions,
-          dynamicTools: this.toolHost?.tools || [],
+          dynamicTools: (this.toolHost?.tools || []).map(dynamicToolSpec),
         });
         provisionalThreadId = result?.thread?.id || null;
       }
@@ -2531,19 +2533,14 @@ class CodexBackend extends EventEmitter {
       Promise.resolve()
         .then(invoke)
         .catch((error: any) => {
-          return {
-            contentItems: [
-              {
-                type: "inputText",
-                text: JSON.stringify({
-                  error: this.toolHost?.errorPayload(error, request, {
-                    pending: this.pendingTurn,
-                  }) || { message: plainError(error) },
-                }),
-              },
-            ],
-            success: false,
-          };
+          // The model always gets an answer, even if the payload cannot be built.
+          let payload;
+          try {
+            payload = this.toolHost?.errorPayload(error, request, {
+              pending: this.pendingTurn,
+            });
+          } catch {}
+          return dynamicToolError(payload || { message: plainError(error) });
         })
         .then((result: any) => {
           // An interrupted, switched or restarted turn has no response target.
