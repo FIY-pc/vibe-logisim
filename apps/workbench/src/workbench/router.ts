@@ -5,7 +5,8 @@ import type { Stores } from "./createWorkbench";
 import { reaction } from "./reaction";
 
 /** Applies host events: simulation frames, resynchronization after a
- * (re)connection and connection failures. Returns the stop. */
+ * (re)connection, connection failures and warnings about changes that took
+ * effect while something around them failed. Returns the stop. */
 export function routeEvents({
   documents,
   notices,
@@ -41,6 +42,8 @@ export function routeEvents({
           .catch(notices.getState().onError);
       synced = true;
     }
+    if (event.topic === "warning")
+      notices.getState().warn(`host:${event.data.message}`, event.data.message);
     if (event.topic === "connection") notices.getState().onError(event.data);
   });
   return () => {
