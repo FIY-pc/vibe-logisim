@@ -609,14 +609,7 @@ pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String
             return Err("外部组件库数量超过限制".into());
         }
         let bytes = std::fs::read(&source).map_err(|e| e.to_string())?;
-        let tree = Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?;
-        for library in tree.children.iter().filter_map(XMLNode::as_element) {
-            if library.name != "lib" {
-                continue;
-            }
-            let Some(desc) = library.attributes.get("desc") else {
-                continue;
-            };
+        for desc in library_descriptors(&bytes)? {
             let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
                 (name, true)
             } else if let Some(name) = desc.strip_prefix("jar#") {
@@ -870,6 +863,48 @@ fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
             )
         })
         .collect())
+}
+
+/// The `desc` of each top-level `<lib>`. This runs twice per worker request on
+/// a file that can be megabytes, so UTF-8 text is scanned without building a tree.
+fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
+    use quick_xml::{XmlVersion, events::Event, reader::Reader};
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        let tree = Element::parse(bytes).map_err(|e| e.to_string())?;
+        return Ok(tree
+            .children
+            .iter()
+            .filter_map(XMLNode::as_element)
+            .filter(|e| e.name == "lib")
+            .filter_map(|e| e.attributes.get("desc").cloned())
+            .collect());
+    };
+    let mut reader = Reader::from_str(text);
+    let (mut depth, mut descriptors) = (0usize, Vec::new());
+    loop {
+        let (element, opens) = match reader.read_event().map_err(|e| e.to_string())? {
+            Event::Start(element) => (element, true),
+            Event::Empty(element) => (element, false),
+            Event::End(_) => {
+                depth = depth.saturating_sub(1);
+                continue;
+            }
+            Event::Eof => return Ok(descriptors),
+            _ => continue,
+        };
+        if depth == 1 && element.name().as_ref() == "lib" {
+            for attribute in element.attributes() {
+                let attribute = attribute.map_err(|e| e.to_string())?;
+                if attribute.key.as_ref() == "desc" {
+                    let value = attribute
+                        .normalized_value(XmlVersion::Implicit1_0)
+                        .map_err(|e| e.to_string())?;
+                    descriptors.push(value.into_owned());
+                }
+            }
+        }
+        depth += usize::from(opens);
+    }
 }
 
 #[cfg(test)]
