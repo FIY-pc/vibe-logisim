@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReferenceInput } from "../lib/references";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { openPdf, pageText } from "../lib/pdf";
 export interface PreviewFile {
   name: string;
   text?: string;
@@ -40,16 +40,8 @@ export function FilePreview({
     let live = true,
       loaded: PDFDocumentProxy | undefined;
     setPending(true);
-    void import("pdfjs-dist")
-      .then(async ({ GlobalWorkerOptions, getDocument }) => {
-        GlobalWorkerOptions.workerSrc = workerUrl;
-        const result = await getDocument({
-          cMapUrl: "/pdfjs/cmaps/",
-          cMapPacked: true,
-          standardFontDataUrl: "/pdfjs/standard_fonts/",
-          wasmUrl: "/pdfjs/wasm/",
-          data: Uint8Array.from(atob(file.data!), (c) => c.charCodeAt(0)),
-        }).promise;
+    void openPdf(file.data)
+      .then(async (result) => {
         loaded = result;
         if (live) setPdf(result);
         else await result.loadingTask.destroy();
@@ -80,15 +72,8 @@ export function FilePreview({
         canvas.current.width = viewport.width;
         canvas.current.height = viewport.height;
         task = current.render({ canvas: canvas.current, viewport });
-        const contents = await current.getTextContent();
-        if (live)
-          setText(
-            contents.items
-              .map((item) =>
-                "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "",
-              )
-              .join(""),
-          );
+        const contents = await pageText(pdf, page);
+        if (live) setText(contents);
         await task.promise;
       })
       .catch((e) => {

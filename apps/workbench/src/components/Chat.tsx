@@ -103,6 +103,8 @@ interface Props {
   selection: string[];
   quotation: Quotation | null;
   onQuoted: (id: string) => void;
+  /** A dragged file is over the conversation. */
+  referenceDrop?: boolean;
   composerAttachmentSlot?: ReactNode;
   renderMessageContext?: (message: Message) => ReactNode;
   onFollowReference?: (href: string, message: Message) => void;
@@ -177,6 +179,7 @@ export function Chat({
   folder,
   quotation,
   onQuoted,
+  referenceDrop,
   selection,
   composerAttachmentSlot,
   renderMessageContext,
@@ -683,7 +686,12 @@ export function Chat({
       effortLabels[state.effort] || state.effort,
     ]);
   return (
-    <div className="chat" style={visible ? undefined : { display: "none" }}>
+    <div
+      className="chat"
+      style={visible ? undefined : { display: "none" }}
+      // Files dragged from the tree or the desktop become references here.
+      data-reference-drop={workspaceReady ? "" : undefined}
+    >
       {renameConversation && (
         <TextPrompt
           title="重命名对话"
@@ -1094,7 +1102,9 @@ export function Chat({
           </div>
         </div>
         {!scroll.following && <FollowLatest onClick={scroll.latest} />}
-        <div className="composer">
+        <div
+          className={"composer" + (referenceDrop ? " is-reference-drop" : "")}
+        >
           {references.composer}
           {composerAttachmentSlot}
           <textarea

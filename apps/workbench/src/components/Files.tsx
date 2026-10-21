@@ -37,6 +37,8 @@ interface OperationResult {
 }
 interface ImportPlan {
   id: string;
+  /** Dropped on the conversation: the imported files become references. */
+  reference?: boolean;
   items: {
     index: number;
     name: string;
@@ -74,7 +76,13 @@ interface Props {
   onPreview: (file: PreviewFile) => void;
   onError: (e: unknown) => void;
   onRename: () => Promise<void>;
+  /** Files dropped on the conversation (`[data-reference-drop]`). */
+  onReference?: (paths: string[]) => void;
+  onReferenceHover?: (active: boolean) => void;
 }
+const FOLDER_REFERENCE = "请选择文件；文件夹可以在问题中按路径说明";
+const referenceZoneAt = (x: number, y: number) =>
+  Boolean(document.elementFromPoint(x, y)?.closest("[data-reference-drop]"));
 export function Files({
   folder,
   activePath,
@@ -83,6 +91,8 @@ export function Files({
   onPreview,
   onError,
   onRename,
+  onReference,
+  onReferenceHover,
 }: Props) {
   const { openFolder: open, folderDialog } = useFolderPicker(onFolder, onError);
   const [create, setCreate] = useState<{
@@ -135,6 +145,12 @@ export function Files({
     started: boolean;
     folder: string;
   } | null>(null);
+  const referenceHover = useRef(false);
+  const hoverReference = (active: boolean) => {
+    if (referenceHover.current === active) return;
+    referenceHover.current = active;
+    onReferenceHover?.(active);
+  };
   const absolute = (relative: string) => {
     const base = folder!.path
       .replace(/^\\\\\?\\UNC\\/, "\\\\")
@@ -315,8 +331,14 @@ export function Files({
       });
     }
   };
-  const importSources = async (sources: string[], destination: string) => {
+  const importSources = async (
+    sources: string[],
+    destination: string,
+    reference = false,
+  ) => {
     if (!folder || pending || document.querySelector("dialog[open]")) return;
+    if (reference && sources.length > 8)
+      throw new Error("每条问题最多引用 8 处资料或观察");
     const folder_id = folder.id;
     setPending(true);
     try {
@@ -326,15 +348,21 @@ export function Files({
         sources,
         destination,
       });
-      if (currentFolder.current !== folder_id) {
+      const refused =
+        reference && plan.items.some((item) => item.directory)
+          ? FOLDER_REFERENCE
+          : null;
+      if (currentFolder.current !== folder_id || refused) {
         await command({
           op: "folderImportCancel",
           folder_id,
           plan_id: plan.id,
         });
+        if (refused) throw new Error(refused);
         return;
       }
-      if (plan.items.some((item) => item.conflict)) setImportPlan(plan);
+      if (plan.items.some((item) => item.conflict))
+        setImportPlan({ ...plan, reference });
       else {
         try {
           const result = await command<
@@ -349,6 +377,7 @@ export function Files({
             })),
           });
           await afterChange(result.imported[0], result.historyWarning);
+          if (reference) onReference?.(result.imported);
         } catch (error) {
           await command({
             op: "folderImportCancel",
@@ -453,6 +482,9 @@ export function Files({
       drag.started = true;
       event.preventDefault();
       setDragging(drag.entry.path);
+      hoverReference(
+        !drag.entry.directory && referenceZoneAt(event.clientX, event.clientY),
+      );
       const parent = targetAt(event.clientX, event.clientY);
       setDropTarget(
         parent === drag.entry.path || parent?.startsWith(drag.entry.path + "/")
@@ -471,11 +503,18 @@ export function Files({
       pointer.current = null;
       setDragging(null);
       setDropTarget(null);
+      hoverReference(false);
       if (!drag?.started) return;
       skipClick.current = true;
       setTimeout(() => {
         skipClick.current = false;
       }, 0);
+      if (referenceZoneAt(event.clientX, event.clientY)) {
+        if (drag.folder !== currentFolder.current) return;
+        if (drag.entry.directory) onError(new Error(FOLDER_REFERENCE));
+        else onReference?.([drag.entry.path]);
+        return;
+      }
       const parent = targetAt(event.clientX, event.clientY);
       if (
         drag.folder !== currentFolder.current ||
@@ -490,6 +529,7 @@ export function Files({
       pointer.current = null;
       setDragging(null);
       setDropTarget(null);
+      hoverReference(false);
     };
     window.addEventListener("pointermove", update, { passive: false });
     window.addEventListener("pointerup", finish);
@@ -512,18 +552,25 @@ export function Files({
           const payload = event.payload;
           if (payload.type === "leave") {
             setDropTarget(null);
+            hoverReference(false);
             return;
           }
-          const parent = targetAt(
-            payload.position.x / window.devicePixelRatio,
-            payload.position.y / window.devicePixelRatio,
-          );
+          const x = payload.position.x / window.devicePixelRatio,
+            y = payload.position.y / window.devicePixelRatio;
+          const parent = targetAt(x, y),
+            reference = referenceZoneAt(x, y);
           if (payload.type === "drop") {
             setDropTarget(null);
-            if (parent !== null)
+            hoverReference(false);
+            // Files dropped on the conversation land in the project root.
+            if (reference)
+              void importSources(payload.paths, "", true).catch(onError);
+            else if (parent !== null)
               void importSources(payload.paths, parent).catch(onError);
-          } else if (!pending && !document.querySelector("dialog[open]"))
+          } else if (!pending && !document.querySelector("dialog[open]")) {
             setDropTarget(parent);
+            hoverReference(reference);
+          }
         });
         if (disposed) stop();
         else unlisten = stop;
@@ -970,6 +1017,7 @@ export function Files({
           folderId={folder.id}
           onClose={() => setImportPlan(null)}
           onChanged={afterChange}
+          onImported={importPlan.reference ? onReference : undefined}
         />
       )}
       {history && folder && (
@@ -1070,11 +1118,14 @@ function ImportDialog({
   folderId,
   onClose,
   onChanged,
+  onImported,
 }: {
   plan: ImportPlan;
   folderId: string;
   onClose: () => void;
   onChanged: (path?: string, warning?: string | null) => Promise<void>;
+  /** The imported files, and the existing ones kept instead of a copy. */
+  onImported?: (paths: string[]) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
     [pending, setPending] = useState(false),
@@ -1172,6 +1223,12 @@ function ImportDialog({
             })
               .then(async (result) => {
                 await onChanged(result.imported[0], result.historyWarning);
+                onImported?.([
+                  ...plan.items
+                    .filter((item) => choices[item.index] === "skip")
+                    .map((item) => item.path),
+                  ...result.imported,
+                ]);
                 onClose();
               })
               .catch(async (e) => {
