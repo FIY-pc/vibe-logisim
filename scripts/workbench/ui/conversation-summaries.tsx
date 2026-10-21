@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/components/Chat";
+import { Workbench } from "./workbench";
 
 export async function verifyConversationSummaries() {
   const container = document.createElement("div");
@@ -79,25 +80,27 @@ export async function verifyConversationSummaries() {
   const render = (id: string) =>
     act(async () =>
       root.render(
-        <Chat
-          visible
-          doc={
-            {
-              id,
-              path: null,
-              revision: "r1",
-              main: "main",
-              circuits: [],
-            } as any
-          }
-          folder={null}
-          circuit="main"
-          selection={[]}
-          quotation={null}
-          onQuoted={() => {}}
-          onDocument={() => {}}
-          onError={(error) => errors.push(error)}
-        />,
+        <Workbench>
+          <Chat
+            visible
+            doc={
+              {
+                id,
+                path: null,
+                revision: "r1",
+                main: "main",
+                circuits: [],
+              } as any
+            }
+            folder={null}
+            circuit="main"
+            selection={[]}
+            quotation={null}
+            onQuoted={() => {}}
+            onDocument={() => {}}
+            onError={(error) => errors.push(error)}
+          />
+        </Workbench>,
       ),
     );
   const settle = () =>

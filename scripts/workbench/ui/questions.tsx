@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/components/Chat";
+import { Workbench } from "./workbench";
 const { backend, nativeWrites, dispatch, notify } = (globalThis as any)
   .__questionFixture;
 const subscribers = new Set<any>();
@@ -73,17 +74,19 @@ const doc: any = {
 };
 await act(async () => {
   root.render(
-    <Chat
-      visible
-      doc={doc}
-      circuit="main"
-      folder={null}
-      selection={[]}
-      quotation={null}
-      onQuoted={() => {}}
-      onDocument={() => {}}
-      onError={(e) => errors.push(e as Error)}
-    />,
+    <Workbench>
+      <Chat
+        visible
+        doc={doc}
+        circuit="main"
+        folder={null}
+        selection={[]}
+        quotation={null}
+        onQuoted={() => {}}
+        onDocument={() => {}}
+        onError={(e) => errors.push(e as Error)}
+      />
+    </Workbench>,
   );
 });
 await act(async () => {

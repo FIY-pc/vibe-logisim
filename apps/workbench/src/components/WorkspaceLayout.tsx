@@ -1,136 +1,56 @@
 import {
-  useEffect,
   useRef,
-  useState,
   type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
 import { Search } from "lucide-react";
 import type { CatalogGroup, CatalogTool } from "../lib/types";
+import {
+  clamp,
+  layoutDefaults as defaults,
+  layoutLimits as limits,
+  panelSizes,
+  railSections as sections,
+  type Side,
+} from "../stores/shell";
+import { useShell } from "../workbench/hooks";
+import { useWorkbench } from "../workbench/provider";
 import "./WorkspaceLayout.css";
-const defaults = {
-  rail: 260,
-  review: 400,
-  fileShare: 0.32,
-  navigatorShare: 0.3,
-  filesCollapsed: false,
-  navigatorCollapsed: false,
-  inspectorCollapsed: false,
-};
-type Layout = typeof defaults;
-type Side = "rail" | "review";
-const limits = { rail: [224, 420], review: [320, 820] };
-const sections = [
-  "filesCollapsed",
-  "navigatorCollapsed",
-  "inspectorCollapsed",
-] as const;
-const clamp = (n: number, min: number, max: number) =>
-  Math.max(min, Math.min(n, max));
-function savedLayout(): Layout {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem("vibe.workspace.layout") || "null",
-    );
-    if (!saved) return { ...defaults };
-    return {
-      ...defaults,
-      rail: clamp(Number(saved.rail) || 260, 224, 420),
-      review: clamp(Number(saved.review) || 400, 320, 820),
-      fileShare: clamp(Number(saved.fileShare) || 0.32, 0.1, 0.8),
-      navigatorShare: clamp(Number(saved.navigatorShare) || 0.3, 0.1, 0.8),
-      filesCollapsed: saved.filesCollapsed === true,
-      navigatorCollapsed: saved.navigatorCollapsed === true,
-      inspectorCollapsed:
-        saved.inspectorCollapsed === true &&
-        !(saved.filesCollapsed && saved.navigatorCollapsed),
-    };
-  } catch {
-    return { ...defaults };
-  }
-}
+/** The workspace frame's layout, read from the shell store. */
 export function useWorkspaceLayout() {
-  const [layout, setLayout] = useState(savedLayout);
-  const [narrow, setNarrow] = useState(() => window.innerWidth <= 820);
-  const [visible, setVisible] = useState({ rail: true, review: true });
-  const [drawer, setDrawer] = useState<Side | null>(null);
-  const [width, setWidth] = useState(window.innerWidth);
-  const workspace = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    try {
-      localStorage.setItem("vibe.workspace.layout", JSON.stringify(layout));
-    } catch {}
-  }, [layout]);
-  useEffect(() => {
-    const resize = () => {
-      setNarrow(window.innerWidth <= 820);
-      setWidth(workspace.current?.clientWidth || window.innerWidth);
-    };
-    window.addEventListener("resize", resize);
-    const observer = new ResizeObserver(resize);
-    if (workspace.current) observer.observe(workspace.current);
-    resize();
-    return () => {
-      window.removeEventListener("resize", resize);
-      observer.disconnect();
-    };
-  }, []);
-  useEffect(() => setDrawer(null), [narrow]);
-  const showExplorer = narrow ? drawer === "rail" : visible.rail;
-  const showRight = narrow ? drawer === "review" : visible.review;
-  const setSide = (
-    side: Side,
-    next: boolean | ((shown: boolean) => boolean),
-  ) => {
-    const open = side === "rail" ? showExplorer : showRight;
-    const value = typeof next === "function" ? next(open) : next;
-    if (narrow) setDrawer(value ? side : null);
-    else setVisible((v) => ({ ...v, [side]: value }));
-  };
-  const extra = Math.max(
-    0,
-    width - 440 - (visible.rail ? 224 : 0) - (visible.review ? 320 : 0),
-  );
-  const requested =
-    (visible.rail ? layout.rail - 224 : 0) +
-    (visible.review ? layout.review - 320 : 0);
-  const ratio = requested > extra ? extra / requested : 1;
-  const sizes = {
-    rail: 224 + (layout.rail - 224) * ratio,
-    review: 320 + (layout.review - 320) * ratio,
-  };
-  const changeWidth = (side: Side, value: number) =>
-    setLayout((old) => ({
-      ...old,
-      [side]: clamp(value, limits[side][0], limits[side][1]),
-    }));
+  const {
+    setLayout,
+    setSide,
+    closeDrawers,
+    changeWidth,
+    revealInspector,
+    revealFiles,
+    revealNavigator,
+    workspaceRef,
+  } = useWorkbench().stores.shell.getState();
+  const layout = useShell((state) => state.layout);
+  const narrow = useShell((state) => state.narrow);
+  const width = useShell((state) => state.width);
+  const visible = useShell((state) => state.visible);
+  const drawer = useShell((state) => state.drawer);
   return {
     layout,
     setLayout,
     narrow,
-    workspace,
-    showExplorer,
-    showRight,
+    workspace: workspaceRef,
+    showExplorer: narrow ? drawer === "rail" : visible.rail,
+    showRight: narrow ? drawer === "review" : visible.review,
     setShowExplorer: (v: boolean | ((shown: boolean) => boolean)) =>
       setSide("rail", v),
     setShowRight: (v: boolean | ((shown: boolean) => boolean)) =>
       setSide("review", v),
-    closeDrawers: () => setDrawer(null),
-    sizes,
+    closeDrawers,
+    sizes: panelSizes(layout, visible, width),
     changeWidth,
-    revealInspector: () => {
-      setLayout((v) => ({ ...v, inspectorCollapsed: false }));
-      setSide("rail", true);
-    },
-    revealFiles: () => {
-      setLayout((v) => ({ ...v, filesCollapsed: false }));
-      setSide("rail", true);
-    },
-    revealNavigator: () => {
-      setLayout((v) => ({ ...v, navigatorCollapsed: false }));
-      setSide("rail", true);
-    },
+    revealInspector,
+    revealFiles,
+    revealNavigator,
   };
 }
 export type WorkspaceLayout = ReturnType<typeof useWorkspaceLayout>;

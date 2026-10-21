@@ -1,32 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { command } from "./transport";
 import type { SourceProposal } from "../components/ProposalReview";
-const discardedListeners = new Set<
-  (documentId: string, proposalId: string) => void
->();
+import { useWorkbench } from "../workbench/provider";
 export function useProposals(
   documentId: string | undefined,
   connection: number,
   onError: (error: unknown) => void,
 ) {
+  const store = useWorkbench().stores.proposals;
   const [records, setRecords] = useState<Record<string, SourceProposal[]>>({});
   const [pending, setPending] = useState<Set<string>>(new Set());
   const epochs = useRef(new Map<string, number>());
   const bump = (id: string) =>
     epochs.current.set(id, (epochs.current.get(id) || 0) + 1);
-  useEffect(() => {
-    const discarded = (id: string, proposalId: string) => {
-      bump(id);
-      setRecords((old) => ({
-        ...old,
-        [id]: (old[id] || []).filter((item) => item.id !== proposalId),
-      }));
-    };
-    discardedListeners.add(discarded);
-    return () => {
-      discardedListeners.delete(discarded);
-    };
-  }, []);
+  useEffect(
+    () =>
+      store.subscribe(({ discarded }, previous) => {
+        if (!discarded || discarded === previous.discarded) return;
+        const { documentId: id, proposalId } = discarded;
+        bump(id);
+        setRecords((old) => ({
+          ...old,
+          [id]: (old[id] || []).filter((item) => item.id !== proposalId),
+        }));
+      }),
+    [store],
+  );
   const receive = useCallback((proposal: SourceProposal) => {
     if (!proposal.id || !proposal.documentId) return;
     bump(proposal.documentId);
@@ -81,8 +80,7 @@ export function useProposals(
         method: "discardProposal",
         args: { id: proposal.id, documentId: proposal.documentId },
       });
-      for (const listener of discardedListeners)
-        listener(proposal.documentId, proposal.id);
+      store.getState().setDiscarded(proposal.documentId, proposal.id);
       return true;
     } catch (error) {
       onError(error);

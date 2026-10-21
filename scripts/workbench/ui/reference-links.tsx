@@ -8,6 +8,7 @@ import {
   parseConversationReference,
   useConversationReferences,
 } from "../../../apps/workbench/src/lib/conversationReferences";
+import { Workbench } from "./workbench";
 export async function verifyReferenceLinksAndCandidates() {
   const node = document.createElement("div");
   document.body.append(node);
@@ -219,20 +220,22 @@ export async function verifyReferenceLinksAndCandidates() {
       /唯一确定/,
     );
     await render(
-      <Chat
-        visible
-        doc={doc}
-        circuit="main"
-        folder={folder}
-        selection={[]}
-        quotation={null}
-        onQuoted={() => {}}
-        onDocument={() => {}}
-        onError={(error) => errors.push(error)}
-        onFollowReference={(href, message) =>
-          visits.push({ href, context: message.context })
-        }
-      />,
+      <Workbench>
+        <Chat
+          visible
+          doc={doc}
+          circuit="main"
+          folder={folder}
+          selection={[]}
+          quotation={null}
+          onQuoted={() => {}}
+          onDocument={() => {}}
+          onError={(error) => errors.push(error)}
+          onFollowReference={(href, message) =>
+            visits.push({ href, context: message.context })
+          }
+        />
+      </Workbench>,
     );
     await act(async () =>
       node.querySelector<HTMLButtonElement>(".message-reference")!.click(),
@@ -249,18 +252,19 @@ export async function verifyReferenceLinksAndCandidates() {
       contextTransfer: { pending: true, truncated: true },
     };
     await render(
-      <Chat
-        key="configuration"
-        visible
-        doc={doc}
-        circuit="main"
-        folder={folder}
-        selection={[]}
-        quotation={null}
-        onQuoted={() => {}}
-        onDocument={() => {}}
-        onError={(error) => errors.push(error)}
-      />,
+      <Workbench key="configuration">
+        <Chat
+          visible
+          doc={doc}
+          circuit="main"
+          folder={folder}
+          selection={[]}
+          quotation={null}
+          onQuoted={() => {}}
+          onDocument={() => {}}
+          onError={(error) => errors.push(error)}
+        />
+      </Workbench>,
     );
     assert.equal(node.querySelectorAll('.error-bar[role="alert"]').length, 1);
     assert.equal(
@@ -351,7 +355,11 @@ export async function verifyReferenceLinksAndCandidates() {
       );
     }
     listDelay = true;
-    await render(<CandidateHarness />);
+    await render(
+      <Workbench>
+        <CandidateHarness />
+      </Workbench>,
+    );
     const firstList = listResolve!;
     await act(async () => {
       persisted.push(proposal("b"));
@@ -375,9 +383,17 @@ export async function verifyReferenceLinksAndCandidates() {
       ["b"],
     );
     listDelay = true;
-    await render(<CandidateHarness connection={1} />);
+    await render(
+      <Workbench>
+        <CandidateHarness connection={1} />
+      </Workbench>,
+    );
     const staleList = listResolve!;
-    await render(<CandidateHarness id="another-document" />);
+    await render(
+      <Workbench>
+        <CandidateHarness id="another-document" />
+      </Workbench>,
+    );
     const currentList = listResolve!;
     await act(async () => staleList([proposal("a")]));
     await act(async () => currentList([]));

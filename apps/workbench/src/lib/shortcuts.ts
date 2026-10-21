@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 export const shortcutCommands = [
   { id: "select", label: "选择", group: "工具", key: "1" },
   { id: "wire", label: "布线", group: "工具", key: "2" },
@@ -168,29 +166,4 @@ export function loadBindings(value: unknown): Bindings {
   return shortcutCommands.some((c) => bindingProblem(c.id, next[c.id], next))
     ? { ...defaultBindings }
     : next;
-}
-export function useShortcuts() {
-  const [bindings, setBindings] = useState<Bindings>(() => {
-    try {
-      return loadBindings(
-        JSON.parse(localStorage.getItem("vibe.shortcuts") || "null"),
-      );
-    } catch {
-      return { ...defaultBindings };
-    }
-  });
-  const save = (next: Bindings) => {
-    localStorage.setItem("vibe.shortcuts", JSON.stringify(next));
-    setBindings(next);
-  };
-  return {
-    bindings,
-    save,
-    labels: Object.fromEntries(
-      Object.entries(bindings).map(([id, binding]) => [
-        id,
-        bindingLabel(binding),
-      ]),
-    ),
-  };
 }
