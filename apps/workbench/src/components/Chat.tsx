@@ -465,6 +465,13 @@ export function Chat({
       setPending(false);
     }
   };
+  // The shortcut listener stays registered for the component's lifetime and
+  // reaches the current state through this ref. A listener added again after
+  // every render would be dropped from a key press whenever an earlier window
+  // listener (the workbench shortcuts reveal this panel on the same key)
+  // renders this component before it runs.
+  const startConversation = useRef(switchConversation);
+  startConversation.current = switchConversation;
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (
@@ -473,11 +480,11 @@ export function Chat({
       )
         return;
       event.preventDefault();
-      void switchConversation("new");
+      void startConversation.current("new");
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  });
+  }, []);
   const fork = async (messageId: string) => {
     if (!workspaceReady || actionPending.current || state?.busy) return;
     actionPending.current = true;
