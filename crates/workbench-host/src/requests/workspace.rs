@@ -160,16 +160,8 @@ impl Host {
             } => {
                 let mut w = self.workspace.lock().await;
                 w.get(&id)?.check(&revision)?;
+                // Dispatch ends a run of the closed document after this request.
                 w.close(&id, discard)?;
-                drop(w);
-                let mut native = self.native.lock().await;
-                if native
-                    .simulation
-                    .as_ref()
-                    .is_some_and(|s| s.document_id == id)
-                {
-                    native.stop_simulation().await;
-                }
                 Ok(json!({"closed":true}))
             }
             WorkspaceRequest::Save {

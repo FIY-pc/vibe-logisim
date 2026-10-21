@@ -1,40 +1,82 @@
 use super::{Effect::*, Meta};
 use crate::{Host, Result, diagnostics::Stage, document_history::Action, value};
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use vibe_logisim_adapter::simulation::{ActResult, Command, RunDocument, Snapshot, Target};
 use vibe_workspace_core::Edit;
+
+/// What a command addresses, as the request carries it: the view of a run, or
+/// the circuit definition on screen.
+#[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "camelCase"
+)]
+pub enum TargetRequest {
+    Run { session_id: String, view_id: String },
+    Definition { circuit: String },
+}
 
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum SimulationRequest {
-    SimulationStart {
-        id: String,
+    /// Starts, drives or configures the run the target names.
+    SimulationAct {
+        document_id: String,
         revision: String,
-        circuit: String,
-    },
-    SimulationAction {
-        id: String,
-        revision: String,
-        circuit: String,
-        command: String,
+        target: TargetRequest,
+        command: Command,
         #[serde(default)]
-        attributes: BTreeMap<String, String>,
+        #[ts(optional)]
+        initial_frequency: Option<f64>,
+    },
+    /// Shows a subcircuit instance of the run; an empty path returns to the root.
+    SimulationNavigate {
+        session_id: String,
+        instance_path: Vec<String>,
+    },
+    SimulationViewport {
+        session_id: String,
+        view_id: String,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        scale: f64,
+    },
+    SimulationStop {
+        session_id: String,
     },
     SimulationStatus,
-    SimulationStop,
-    SimulationView {
-        id: String,
-        revision: String,
-        path: Vec<String>,
-    },
-    SimulationCommand {
-        id: String,
-        revision: String,
-        command: String,
+    /// A kept frame of the run, paged to the components asked for.
+    SimulationSnapshot {
+        session_id: String,
         #[serde(default)]
-        attributes: BTreeMap<String, String>,
+        #[ts(optional)]
+        frame_sequence: Option<u64>,
+        #[serde(default)]
+        #[ts(optional)]
+        component_ids: Option<Vec<String>>,
+        #[serde(default)]
+        #[ts(optional)]
+        offset: Option<usize>,
+        #[serde(default)]
+        #[ts(optional)]
+        limit: Option<usize>,
+        #[serde(default)]
+        trace: bool,
+        #[serde(default)]
+        memory: bool,
     },
+    /// The PNG of a kept frame, as a data URL over JSON transports.
+    SimulationFrameImage {
+        session_id: String,
+        frame_sequence: u64,
+    },
+    /// ROM content, read through the editor worker; RAM content is in the run.
     Memory {
         id: String,
         revision: String,
@@ -43,6 +85,7 @@ pub enum SimulationRequest {
         offset: u32,
         count: u32,
     },
+    /// A ROM word: a document edit that ends the run like any other.
     MemoryWrite {
         id: String,
         revision: String,
@@ -52,58 +95,123 @@ pub enum SimulationRequest {
         expected: String,
         value: String,
     },
-    Observations {
+    /// Kept frames of a document, newest first; the records themselves follow.
+    ObservationList {
         id: String,
     },
-    ObservationCapture {
+    /// One kept frame, cut to the components asked for like a snapshot. The
+    /// document is the one the record was kept under.
+    ObservationGet {
         id: String,
-        revision: String,
+        record: String,
+        #[serde(default)]
+        #[ts(optional)]
+        component_ids: Option<Vec<String>>,
+        #[serde(default)]
+        #[ts(optional)]
+        offset: Option<usize>,
+        #[serde(default)]
+        #[ts(optional)]
+        limit: Option<usize>,
+    },
+    /// The PNG of a kept frame, as a data URL over JSON transports.
+    ObservationImage {
+        record: String,
+    },
+    /// Freezes the frame the user saw; reads the run's rings, never the runtime.
+    ObservationCapture {
+        session_id: String,
         view_id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        frame_sequence: Option<u64>,
         #[serde(default)]
         title: String,
     },
     ObservationRename {
-        id: String,
         record: String,
         title: String,
     },
     ObservationDelete {
-        id: String,
         record: String,
     },
 }
 
+/// Components one snapshot returns at most.
+const PAGE: usize = 64;
+
+/// A kept frame cut to the components asked for; unchanged components stay
+/// shared, so paging costs one filter per request.
+fn paged(
+    snapshot: Snapshot,
+    component_ids: Option<Vec<String>>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+    memory: bool,
+) -> Snapshot {
+    let mut frame = snapshot.frame;
+    page_frame(&mut frame, component_ids, offset, limit);
+    if !memory {
+        frame.memory = None;
+    }
+    Snapshot {
+        session: snapshot.session,
+        trace: snapshot.trace,
+        frame,
+    }
+}
+
+fn page_frame(
+    frame: &mut vibe_logisim_adapter::simulation::Frame,
+    component_ids: Option<Vec<String>>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) {
+    frame.page(
+        component_ids.as_deref(),
+        offset.unwrap_or(0),
+        limit.unwrap_or(PAGE).min(PAGE),
+    );
+}
+
 impl SimulationRequest {
     pub(crate) const OPS: &[&str] = &[
-        "simulationStart",
-        "simulationAction",
-        "simulationStatus",
+        "simulationAct",
+        "simulationNavigate",
+        "simulationViewport",
         "simulationStop",
-        "simulationView",
-        "simulationCommand",
+        "simulationStatus",
+        "simulationSnapshot",
+        "simulationFrameImage",
         "memory",
         "memoryWrite",
-        "observations",
+        "observationList",
+        "observationGet",
+        "observationImage",
         "observationCapture",
         "observationRename",
         "observationDelete",
     ];
     pub(crate) fn meta(&self) -> Meta {
         match self {
-            Self::SimulationStart { .. }
-            | Self::SimulationAction { .. }
-            | Self::SimulationView { .. }
-            | Self::SimulationCommand { .. } => Meta::new(Read).stage(Stage::Simulation),
+            Self::SimulationAct { .. }
+            | Self::SimulationNavigate { .. }
+            | Self::SimulationViewport { .. } => Meta::new(Read).stage(Stage::Simulation),
+            Self::SimulationStop { .. } => Meta::new(Read),
+            // The AI reads the run state the user asks from; it never drives it.
             Self::SimulationStatus
-            | Self::SimulationStop
-            | Self::ObservationCapture { .. }
+            | Self::SimulationSnapshot { .. }
+            | Self::SimulationFrameImage { .. }
+            | Self::ObservationList { .. }
+            | Self::ObservationGet { .. }
+            | Self::ObservationImage { .. } => Meta::new(Read).agent(),
+            Self::ObservationCapture { .. }
             | Self::ObservationRename { .. }
             | Self::ObservationDelete { .. } => Meta::new(Read),
             Self::Memory { .. } => Meta::new(Read).stage(Stage::Library),
             Self::MemoryWrite { id, .. } => Meta::new(AutoSave)
                 .stage(Stage::Edit)
                 .history(Action::document("memory", "修改存储器内容", id)),
-            Self::Observations { .. } => Meta::new(Read).agent(),
         }
     }
 }
@@ -111,6 +219,110 @@ impl SimulationRequest {
 impl Host {
     pub(crate) async fn simulation_request(&self, request: SimulationRequest) -> Result<Value> {
         match request {
+            SimulationRequest::SimulationAct {
+                document_id,
+                revision,
+                target,
+                command,
+                initial_frequency,
+            } => {
+                let target = match target {
+                    TargetRequest::Run {
+                        session_id,
+                        view_id,
+                    } => Target::Run {
+                        session_id,
+                        view_id,
+                        revision,
+                    },
+                    TargetRequest::Definition { circuit } => {
+                        // A command that cannot start a run applies to nothing.
+                        if command.starts_run() {
+                            let (artifact, view) = self.snapshot(&document_id, &revision).await?;
+                            Target::Definition {
+                                document: RunDocument { artifact, view },
+                                circuit,
+                            }
+                        } else {
+                            return value(ActResult::default());
+                        }
+                    }
+                };
+                let result = self
+                    .simulation
+                    .act(target, command, initial_frequency)
+                    .await?;
+                value(result)
+            }
+            SimulationRequest::SimulationNavigate {
+                session_id,
+                instance_path,
+            } => {
+                let result = self.simulation.navigate(&session_id, instance_path).await?;
+                value(result)
+            }
+            SimulationRequest::SimulationViewport {
+                session_id,
+                view_id,
+                x,
+                y,
+                width,
+                height,
+                scale,
+            } => {
+                let revision = self
+                    .simulation
+                    .session()
+                    .filter(|session| session.session_id == session_id)
+                    .map(|session| session.revision)
+                    .ok_or_else(|| {
+                        vibe_logisim_adapter::simulation::SimError::from(
+                            vibe_logisim_adapter::simulation::Code::SessionEnded,
+                        )
+                    })?;
+                let target = Target::Run {
+                    session_id,
+                    view_id,
+                    revision,
+                };
+                let command = Command::Viewport {
+                    x,
+                    y,
+                    width,
+                    height,
+                    scale,
+                };
+                let result = self.simulation.act(target, command, None).await?;
+                value(result)
+            }
+            SimulationRequest::SimulationStop { session_id } => {
+                value(serde_json::json!({"stopped": self.simulation.stop(&session_id)}))
+            }
+            SimulationRequest::SimulationStatus => value(self.simulation.status()),
+            SimulationRequest::SimulationSnapshot {
+                session_id,
+                frame_sequence,
+                component_ids,
+                offset,
+                limit,
+                trace,
+                memory,
+            } => {
+                let snapshot = self
+                    .simulation
+                    .snapshot(&session_id, frame_sequence, trace)?;
+                value(paged(snapshot, component_ids, offset, limit, memory))
+            }
+            SimulationRequest::SimulationFrameImage {
+                session_id,
+                frame_sequence,
+            } => {
+                let bytes = self.simulation.frame_image(&session_id, frame_sequence)?;
+                Ok(Value::String(format!(
+                    "data:image/png;base64,{}",
+                    B64.encode(bytes.as_slice())
+                )))
+            }
             SimulationRequest::Memory {
                 id,
                 revision,
@@ -119,32 +331,8 @@ impl Host {
                 offset,
                 count,
             } => {
-                let (path, view) = self.snapshot(&id, &revision).await?;
-                let component = view
-                    .circuits
-                    .iter()
-                    .find(|c| c.name == circuit)
-                    .and_then(|c| {
-                        c.components
-                            .iter()
-                            .find(|c| c.id == component && c.name == "ROM")
-                    })
-                    .ok_or("请选择 ROM；RAM 内容需要在运行实例中读取")?;
-                Ok(self
-                    .native
-                    .lock()
+                self.rom_memory(id, revision, circuit, component, offset, count)
                     .await
-                    .memory(
-                        &path,
-                        &circuit,
-                        component,
-                        BTreeMap::from([
-                            ("offset".into(), offset.to_string()),
-                            ("count".into(), count.to_string()),
-                        ]),
-                        false,
-                    )
-                    .await?)
             }
             SimulationRequest::MemoryWrite {
                 id,
@@ -155,195 +343,122 @@ impl Host {
                 expected,
                 value: word,
             } => {
-                let (path, view) = self.snapshot(&id, &revision).await?;
-                let selected = view
-                    .circuits
-                    .iter()
-                    .find(|c| c.name == circuit)
-                    .and_then(|c| {
-                        c.components
-                            .iter()
-                            .find(|c| c.id == component && c.name == "ROM")
-                    })
-                    .ok_or("请选择 ROM；RAM 修改属于运行实例")?;
-                let result = self
-                    .native
-                    .lock()
+                self.rom_write(id, revision, circuit, component, address, &expected, &word)
                     .await
-                    .memory(
-                        &path,
-                        &circuit,
-                        selected,
-                        BTreeMap::from([
-                            ("address".into(), address.to_string()),
-                            ("expected".into(), expected),
-                            ("value".into(), word),
-                        ]),
-                        true,
-                    )
-                    .await?;
-                let contents = result["contents"].as_str().ok_or("无法序列化 ROM")?.into();
-                let mut workspace = self.workspace.lock().await;
-                let document = workspace.get_mut(&id)?;
-                document.edit(
-                    &revision,
-                    &circuit,
-                    Edit::Attributes {
-                        id: component,
-                        values: BTreeMap::from([("contents".into(), contents)]),
-                    },
-                )?;
-                value(document.view()?)
             }
-            SimulationRequest::Observations { id } => self.observations(&id).await,
+            SimulationRequest::ObservationList { id } => self.observations(&id).await,
+            SimulationRequest::ObservationGet {
+                record,
+                component_ids,
+                offset,
+                limit,
+                ..
+            } => {
+                let mut record = self.observation_record(&record).await?;
+                page_frame(&mut record.frame, component_ids, offset, limit);
+                value(record)
+            }
+            SimulationRequest::ObservationImage { record } => self.observation_image(&record),
             SimulationRequest::ObservationCapture {
-                id,
-                revision,
+                session_id,
                 view_id,
+                frame_sequence,
                 title,
             } => {
-                let view = {
-                    let workspace = self.workspace.lock().await;
-                    let document = workspace.get(&id)?;
-                    document.check(&revision)?;
-                    document.view()?
-                };
-                self.capture(view, &view_id, title).await
-            }
-            SimulationRequest::ObservationRename { id, record, title } => {
-                self.rename_observation(&id, &record, &title)
-            }
-            SimulationRequest::ObservationDelete { id, record } => {
-                self.delete_observation(&id, &record)
-            }
-            SimulationRequest::SimulationStart {
-                id,
-                revision,
-                circuit,
-            } => {
-                let (p, v) = self.snapshot(&id, &revision).await?;
-                Ok(self
-                    .native
-                    .lock()
+                self.capture(&session_id, &view_id, frame_sequence, title)
                     .await
-                    .start_simulation(&p, &v, &circuit)
-                    .await?)
             }
-            SimulationRequest::SimulationAction {
-                id,
-                revision,
-                circuit,
-                command,
-                mut attributes,
-            } => {
-                if command == "button-release" {
-                    let mut native = self.native.lock().await;
-                    if let Some(sim) = native.simulation.as_mut()
-                        && sim.document_id == id
-                        && sim.revision == revision
-                        && sim.circuit == circuit
-                        && attributes
-                            .get("viewId")
-                            .is_none_or(|v| sim.state()["viewId"] == *v)
-                    {
-                        let mut attrs = attributes;
-                        attrs.insert("value".into(), "0".into());
-                        return Ok(sim.command("button", attrs).await?);
-                    }
-                    return Ok(Value::Null);
-                }
-                let initial_frequency = attributes.remove("initialFrequency");
-                if let Some(value) = &initial_frequency {
-                    let rate: f64 = value.parse().map_err(|_| "无效时钟频率")?;
-                    if !rate.is_finite() || !(0.25..=4096.0).contains(&rate) {
-                        return Err("时钟频率应在 0.25–4096 tick/s 之间".into());
-                    }
-                }
-                let (path, view) = self.snapshot(&id, &revision).await?;
-                let mut native = self.native.lock().await;
-                let was_active = native.simulation.as_ref().is_some_and(|s| {
-                    s.document_id == id
-                        && s.revision == revision
-                        && s.circuit == circuit
-                        && !s.failed()
-                });
-                if !was_active {
-                    native.start_simulation(&path, &view, &circuit).await?;
-                }
-                let simulation = native.simulation.as_mut().unwrap();
-                if !was_active && let Some(frequency) = initial_frequency {
-                    simulation
-                        .command(
-                            "configure",
-                            BTreeMap::from([("frequency".into(), frequency)]),
-                        )
-                        .await?;
-                }
-                // Resolve toggles against an acknowledged native frame under the same
-                // lock as session selection. Rapid commands must not reuse a stale UI frame.
-                if command == "toggle-clock" || command == "toggle-propagation" {
-                    let frame = simulation.sample().await?;
-                    if command == "toggle-clock" {
-                        let action = if frame["frame"]["attributes"]["running"] == "true" {
-                            "pause"
-                        } else {
-                            "play"
-                        };
-                        simulation.command(action, attributes).await?;
-                    } else if was_active {
-                        attributes.insert(
-                            "automatic".into(),
-                            (frame["frame"]["attributes"]["automatic"] == "false").to_string(),
-                        );
-                        simulation.command("configure", attributes).await?;
-                    }
-                    Ok(simulation.sample().await?)
-                } else if command == "start" {
-                    Ok(simulation.state())
-                } else {
-                    Ok(simulation.command(&command, attributes).await?)
-                }
+            SimulationRequest::ObservationRename { record, title } => {
+                self.rename_observation(&record, &title)
             }
-            SimulationRequest::SimulationView { id, revision, path } => {
-                let view = {
-                    let w = self.workspace.lock().await;
-                    let d = w.get(&id)?;
-                    d.check(&revision)?;
-                    d.view()?
-                };
-                let mut native = self.native.lock().await;
-                let sim = native.simulation.as_mut().ok_or("请先启动仿真")?;
-                if sim.document_id != id || sim.revision != revision {
-                    return Err("仿真版本已改变".into());
-                }
-                Ok(sim.navigate(&view, path).await?)
-            }
-            SimulationRequest::SimulationStatus => Ok(self
-                .native
-                .lock()
-                .await
-                .simulation
-                .as_ref()
-                .map(|s| s.state())
-                .unwrap_or(Value::Null)),
-            SimulationRequest::SimulationStop => {
-                self.native.lock().await.stop_simulation().await;
-                Ok(Value::Null)
-            }
-            SimulationRequest::SimulationCommand {
-                id,
-                revision,
-                command,
-                attributes,
-            } => {
-                self.workspace.lock().await.get(&id)?.check(&revision)?;
-                let mut native = self.native.lock().await;
-                let sim = native.simulation.as_mut().ok_or("请先启动仿真")?;
-                if sim.document_id != id || sim.revision != revision {
-                    return Err("仿真对应的电路已改变，请重新启动".into());
-                }
-                Ok(sim.command(&command, attributes).await?)
-            }
+            SimulationRequest::ObservationDelete { record } => self.delete_observation(&record),
         }
+    }
+    async fn rom_memory(
+        &self,
+        id: String,
+        revision: String,
+        circuit: String,
+        component: String,
+        offset: u32,
+        count: u32,
+    ) -> Result<Value> {
+        let (path, view) = self.snapshot(&id, &revision).await?;
+        let selected = view
+            .circuits
+            .iter()
+            .find(|c| c.name == circuit)
+            .and_then(|c| {
+                c.components
+                    .iter()
+                    .find(|c| c.id == component && c.name == "ROM")
+            })
+            .ok_or("请选择 ROM；RAM 内容需要在运行实例中读取")?;
+        Ok(self
+            .native
+            .lock()
+            .await
+            .memory(
+                &path,
+                &circuit,
+                selected,
+                BTreeMap::from([
+                    ("offset".into(), offset.to_string()),
+                    ("count".into(), count.to_string()),
+                ]),
+                false,
+            )
+            .await?)
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn rom_write(
+        &self,
+        id: String,
+        revision: String,
+        circuit: String,
+        component: String,
+        address: u32,
+        expected: &str,
+        word: &str,
+    ) -> Result<Value> {
+        let (path, view) = self.snapshot(&id, &revision).await?;
+        let selected = view
+            .circuits
+            .iter()
+            .find(|c| c.name == circuit)
+            .and_then(|c| {
+                c.components
+                    .iter()
+                    .find(|c| c.id == component && c.name == "ROM")
+            })
+            .ok_or("请选择 ROM；RAM 修改属于运行实例")?;
+        let result = self
+            .native
+            .lock()
+            .await
+            .memory(
+                &path,
+                &circuit,
+                selected,
+                BTreeMap::from([
+                    ("address".into(), address.to_string()),
+                    ("expected".into(), expected.into()),
+                    ("value".into(), word.into()),
+                ]),
+                true,
+            )
+            .await?;
+        let contents = result["contents"].as_str().ok_or("无法序列化 ROM")?.into();
+        let mut workspace = self.workspace.lock().await;
+        let document = workspace.get_mut(&id)?;
+        document.edit(
+            &revision,
+            &circuit,
+            Edit::Attributes {
+                id: component,
+                values: BTreeMap::from([("contents".into(), contents)]),
+            },
+        )?;
+        value(document.view()?)
     }
 }

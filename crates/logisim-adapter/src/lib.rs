@@ -7,14 +7,13 @@ use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{Child, ChildStdin},
-    sync::{mpsc, watch},
 };
 use vibe_workspace_core::{DocumentView, digest};
 use xmltree::{Element, XMLNode};
@@ -27,18 +26,6 @@ pub struct Viewport {
     pub scale: f64,
 }
 type Result<T> = std::result::Result<T, String>;
-
-fn frame_failure(frame: &Value) -> String {
-    let detail = frame["attributes"]["failure"].as_str().unwrap_or("");
-    if detail.contains("Viewport exceeds pixel budget") || detail.contains("画面范围超过限制")
-    {
-        "画面范围超过限制，请调整电路范围后重试".into()
-    } else if frame["exited"] == true {
-        "仿真进程已退出，请重新启动".into()
-    } else {
-        "仿真画面生成失败，请重新启动".into()
-    }
-}
 
 pub fn xml(tag: &str, attrs: &[(&str, String)], children: Vec<Element>) -> Element {
     let mut node = Element::new(tag);
@@ -117,9 +104,7 @@ pub struct Native {
     launcher: Launcher,
     worker: Option<Worker>,
     verification_worker: Option<Worker>,
-    pub simulation: Option<Simulation>,
     observed_version: Option<String>,
-    updates: watch::Sender<()>,
 }
 impl Native {
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Self {
@@ -132,9 +117,7 @@ impl Native {
             launcher,
             worker: None,
             verification_worker: None,
-            simulation: None,
             observed_version: None,
-            updates: watch::channel(()).0,
         }
     }
     pub fn launcher(&self) -> &Launcher {
@@ -151,9 +134,6 @@ impl Native {
             self.facts().record_version(version.clone());
             self.observed_version = Some(version);
         }
-    }
-    pub fn updates(&self) -> watch::Receiver<()> {
-        self.updates.subscribe()
     }
     pub fn runtime(&self) -> Result<PathBuf> {
         self.facts().runtime()
@@ -454,139 +434,7 @@ impl Native {
             .await?;
         Ok(format!("data:image/png;base64,{}", B64.encode(bytes)))
     }
-    pub async fn start_simulation(
-        &mut self,
-        artifact: &Path,
-        view: &DocumentView,
-        circuit: &str,
-    ) -> Result<Value> {
-        let graph = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
-            .ok_or("电路不存在")?;
-        let view_id = uuid::Uuid::new_v4().to_string();
-        let nodes = graph
-            .components
-            .iter()
-            .map(|c| {
-                xml(
-                    "component",
-                    &[
-                        ("id", c.id.clone()),
-                        ("factory", c.name.clone()),
-                        ("x", c.location.x.to_string()),
-                        ("y", c.location.y.to_string()),
-                    ],
-                    vec![],
-                )
-            })
-            .collect();
-        let init = xml(
-            "session",
-            &[("circuit", circuit.into()), ("viewId", view_id.clone())],
-            nodes,
-        );
-        let state = self.launcher.state();
-        let init_path = state.join("session.xml");
-        std::fs::create_dir_all(state).map_err(|e| e.to_string())?;
-        std::fs::write(&init_path, encode_xml(&init)?).map_err(|e| e.to_string())?;
-        let (runtime, _) = self
-            .facts()
-            .runtime_for(&std::fs::read(artifact).map_err(|e| e.to_string())?)?;
-        let mut command = self.launcher.command("CircuitSession", &runtime).await?;
-        let mut child = command
-            .arg(java_path(artifact))
-            .arg(java_path(&init_path))
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        let input = child.stdin.take().ok_or("仿真 stdin 不可用")?;
-        let stderr = StderrCapture::start(child.stderr.take().ok_or("仿真 stderr 不可用")?);
-        let mut lines = BufReader::new(child.stdout.take().ok_or("仿真 stdout 不可用")?).lines();
-        let (tx, latest) = watch::channel(Value::Null);
-        let (acks_tx, acks) = mpsc::channel(16);
-        let updates = self.updates.clone();
-        tokio::spawn(async move {
-            while let Ok(Some(line)) = lines.next_line().await {
-                if line.len() > 48_000_000 {
-                    break;
-                }
-                match Element::parse(line.as_bytes()) {
-                    // The runtime exits right after; the exit reports its diagnostics.
-                    Ok(e) if e.name == "start-error" => {}
-                    Ok(e) => {
-                        let mut value = xml_json(&e);
-                        if e.name == "ack" {
-                            if acks_tx.send(value).await.is_err() {
-                                break;
-                            }
-                        } else {
-                            if e.name == "frame-error" {
-                                value["attributes"]["failure"] =
-                                    Value::String(frame_failure(&value));
-                            }
-                            tx.send_replace(value);
-                            updates.send_replace(());
-                        }
-                    }
-                    Err(_) => {
-                        tx.send_replace(json!({"tag":"frame-error","attributes":{"failure":"仿真返回了无效数据，请重新启动"},"children":[],"text":null}));
-                        break;
-                    }
-                }
-            }
-            tx.send_modify(|value| {
-                if !value.is_object() {
-                    *value = json!({"exited": true});
-                }
-                if let Some(o) = value.as_object_mut() {
-                    o.insert("exited".into(), Value::Bool(true));
-                }
-            });
-            updates.send_replace(());
-        });
-        let mut simulation = Simulation {
-            child,
-            stderr,
-            input,
-            latest,
-            acks,
-            document_id: view.id.clone(),
-            revision: view.revision.clone(),
-            circuit: circuit.into(),
-            view_id,
-            root_circuit: circuit.into(),
-            instance_path: vec![],
-            held_buttons: BTreeSet::new(),
-        };
-        tokio::time::timeout(Duration::from_secs(30), simulation.latest.changed())
-            .await
-            .map_err(|_| "仿真启动超时")?
-            .map_err(|_| "仿真启动失败")?;
-        let state = simulation.state();
-        if state["frame"]["exited"] == true {
-            return Err(exit_failure(
-                &mut simulation.child,
-                &mut simulation.stderr,
-                "仿真进程已退出",
-            )
-            .await);
-        }
-        if state["frame"]["tag"] != "frame" || state["frame"]["exited"] == true {
-            return Err(format!("仿真未启动：{}", frame_failure(&state["frame"])));
-        }
-        self.simulation = Some(simulation);
-        self.updates.send_replace(());
-        Ok(state)
-    }
-    pub async fn stop_simulation(&mut self) {
-        if let Some(mut sim) = self.simulation.take() {
-            let _ = sim.child.kill().await;
-        }
-        self.updates.send_replace(());
-    }
     pub async fn shutdown(&mut self) {
-        self.stop_simulation().await;
         for mut worker in [self.worker.take(), self.verification_worker.take()]
             .into_iter()
             .flatten()
@@ -652,201 +500,6 @@ pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String
     let mut dependencies = BTreeMap::new();
     collect(artifact, &mut dependencies, &mut Default::default())?;
     Ok(dependencies)
-}
-pub struct Simulation {
-    child: Child,
-    stderr: StderrCapture,
-    input: ChildStdin,
-    latest: watch::Receiver<Value>,
-    acks: mpsc::Receiver<Value>,
-    pub document_id: String,
-    pub revision: String,
-    pub circuit: String,
-    view_id: String,
-    root_circuit: String,
-    instance_path: Vec<String>,
-    // Only acknowledged presses in the current native instance are retained.
-    held_buttons: BTreeSet<String>,
-}
-impl Simulation {
-    pub fn failed(&self) -> bool {
-        let frame = self.latest.borrow();
-        frame["exited"] == true || frame["tag"] != "frame"
-    }
-    pub fn state(&self) -> Value {
-        json!({"documentId":self.document_id,"revision":self.revision,"circuit":self.circuit,"viewId":self.view_id,"rootCircuit":self.root_circuit,"instancePath":self.instance_path,"frame":self.latest.borrow().clone()})
-    }
-    pub async fn sample(&mut self) -> Result<Value> {
-        let ack = self.command("sample", BTreeMap::new()).await?;
-        let sequence = ack["attributes"]["commandSequence"]
-            .as_str()
-            .and_then(|s| s.parse::<u64>().ok())
-            .ok_or("无效仿真响应")?;
-        tokio::time::timeout(Duration::from_secs(10), async {
-            loop {
-                let frame = self.latest.borrow().clone();
-                if frame["exited"] == true || frame["tag"] == "frame-error" {
-                    return Err("仿真已退出或无法采样".to_string());
-                }
-                if frame["attributes"]["commandSequence"]
-                    .as_str()
-                    .and_then(|s| s.parse::<u64>().ok())
-                    .is_some_and(|s| s >= sequence)
-                {
-                    return Ok(self.state());
-                }
-                self.latest
-                    .changed()
-                    .await
-                    .map_err(|_| "仿真已退出".to_string())?;
-            }
-        })
-        .await
-        .map_err(|_| "仿真采样超时")?
-    }
-    pub async fn navigate(&mut self, view: &DocumentView, path: Vec<String>) -> Result<Value> {
-        if path.len() > 64 {
-            return Err("子电路层级过深".into());
-        }
-        let mut circuit = self.root_circuit.clone();
-        let mut children = Vec::new();
-        for id in &path {
-            let graph = view
-                .circuits
-                .iter()
-                .find(|c| c.name == circuit)
-                .ok_or("找不到电路")?;
-            let c = graph
-                .components
-                .iter()
-                .find(|c| c.id == *id && c.library.is_none())
-                .ok_or("找不到子电路实例")?;
-            children.push(xml(
-                "instance",
-                &[
-                    ("factory", c.name.clone()),
-                    ("x", c.location.x.to_string()),
-                    ("y", c.location.y.to_string()),
-                ],
-                vec![],
-            ));
-            circuit = c.name.clone();
-        }
-        let graph = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
-            .ok_or("找不到子电路定义")?;
-        children.extend(graph.components.iter().map(|c| {
-            xml(
-                "component",
-                &[
-                    ("id", c.id.clone()),
-                    ("factory", c.name.clone()),
-                    ("x", c.location.x.to_string()),
-                    ("y", c.location.y.to_string()),
-                ],
-                vec![],
-            )
-        }));
-        let next = uuid::Uuid::new_v4().to_string();
-        let node = xml(
-            "view",
-            &[("circuit", circuit.clone()), ("viewId", next.clone())],
-            children,
-        );
-        // Release momentary inputs while their component IDs still address the
-        // old instance. UI teardown can happen after this view has changed.
-        // Target construction above must succeed before changing any stimulus.
-        self.release_buttons().await?;
-        self.send(node).await?;
-        tokio::time::timeout(Duration::from_secs(10), async {
-            while self.latest.borrow()["attributes"]["viewId"] != next {
-                self.latest
-                    .changed()
-                    .await
-                    .map_err(|_| "仿真已退出".to_string())?;
-            }
-            Ok::<(), String>(())
-        })
-        .await
-        .map_err(|_| "切换仿真视图超时")??;
-        self.circuit = circuit;
-        self.view_id = next;
-        self.instance_path = path;
-        Ok(self.state())
-    }
-    async fn release_buttons(&mut self) -> Result<()> {
-        while let Some(component_id) = self.held_buttons.first().cloned() {
-            self.command(
-                "button",
-                BTreeMap::from([
-                    ("componentId".into(), component_id),
-                    ("value".into(), "0".into()),
-                ]),
-            )
-            .await?;
-        }
-        Ok(())
-    }
-    async fn send(&mut self, node: Element) -> Result<Value> {
-        let mut bytes = encode_xml(&node)?;
-        bytes.push(b'\n');
-        self.input
-            .write_all(&bytes)
-            .await
-            .map_err(|e| e.to_string())?;
-        self.input.flush().await.map_err(|e| e.to_string())?;
-        let ack = tokio::time::timeout(Duration::from_secs(10), self.acks.recv())
-            .await
-            .map_err(|_| "仿真操作超时")?;
-        let Some(ack) = ack else {
-            return Err(exit_failure(&mut self.child, &mut self.stderr, "仿真进程已退出").await);
-        };
-        if let Some(e) = ack["attributes"]["error"].as_str() {
-            return Err(e.into());
-        }
-        Ok(ack)
-    }
-    pub async fn command(&mut self, op: &str, attrs: BTreeMap<String, String>) -> Result<Value> {
-        if ![
-            "tick",
-            "play",
-            "pause",
-            "reset",
-            "step",
-            "configure",
-            "poke",
-            "input",
-            "pulse",
-            "button",
-            "sample",
-            "memory",
-            "memory-write",
-            "viewport",
-            "trace",
-            "trace-stop",
-        ]
-        .contains(&op)
-        {
-            return Err("未知的仿真命令".into());
-        }
-        let component_id = attrs.get("componentId").cloned();
-        let pressed = attrs.get("value").is_some_and(|value| value == "1");
-        let mut command = xml(op, &[("viewId", self.view_id.clone())], vec![]);
-        command.attributes.extend(attrs);
-        let ack = self.send(command).await?;
-        if op == "reset" {
-            self.held_buttons.clear();
-        } else if let Some(component_id) = component_id {
-            if op == "button" && pressed {
-                self.held_buttons.insert(component_id);
-            } else if op == "button" || op == "pulse" {
-                self.held_buttons.remove(&component_id);
-            }
-        }
-        Ok(ack)
-    }
 }
 fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;

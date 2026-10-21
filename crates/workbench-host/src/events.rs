@@ -2,14 +2,15 @@ use crate::Host;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};
+use vibe_logisim_adapter::simulation::{SimulationEvent, Subscription};
 /// Pushed to the window as `{topic, data}`.
 #[derive(Clone, Serialize)]
 #[serde(tag = "topic", content = "data", rename_all = "camelCase")]
 pub enum Event {
     /// `{sequence, event}` from the AI runtime.
     Agent(Value),
-    /// The running simulation's state, or null when none runs.
-    Simulation(Value),
+    /// A run's session, frames and end, in order.
+    Simulation(SimulationEvent),
     /// Snapshots may be stale; read them again.
     Resync(()),
     /// A change took effect but something around it failed.
@@ -20,20 +21,19 @@ pub struct Warning {
     pub message: String,
 }
 pub struct Events {
-    host: Host,
     initial: bool,
     stopping: watch::Receiver<bool>,
     events: broadcast::Receiver<Event>,
-    simulation: watch::Receiver<()>,
+    /// This listener's own frames: component deltas are per subscriber.
+    simulation: Option<Subscription>,
 }
 impl Host {
     pub async fn events(&self) -> Events {
         Events {
-            host: self.clone(),
             initial: true,
             stopping: self.stopping.subscribe(),
             events: self.events.subscribe(),
-            simulation: self.native.lock().await.updates(),
+            simulation: Some(self.simulation.subscribe()),
         }
     }
     pub(crate) fn emit(&self, event: Event) {
@@ -51,11 +51,18 @@ impl Events {
         tokio::select! {
             _ = self.stopping.changed() => None,
             event = self.events.recv() => Some(event.unwrap_or(Event::Resync(()))),
-            _ = self.simulation.changed() => {
-                // Read under the native lock: navigation and replacement finish before a frame is published.
-                let native = self.host.native.lock().await;
-                Some(Event::Simulation(native.simulation.as_ref().map(|s| s.state()).unwrap_or(Value::Null)))
-            }
+            event = async {
+                match self.simulation.as_mut() {
+                    Some(simulation) => simulation.next().await,
+                    None => std::future::pending().await,
+                }
+            } => match event {
+                Some(event) => Some(Event::Simulation(event)),
+                None => {
+                    self.simulation = None;
+                    Some(Event::Resync(()))
+                }
+            },
         }
     }
 }

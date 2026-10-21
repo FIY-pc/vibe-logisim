@@ -2,7 +2,7 @@
 //! process. Facts are file checks and copies that never wait for a process;
 //! the launcher compiles the bridge once per runtime and builds commands.
 use crate::{Result, process::java_path};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -21,7 +21,7 @@ use vibe_workspace_core::digest;
 pub const LEGACY_RUNTIME: &str = "logisim-ita-cn-20200118.exe";
 
 /// The runtime line that interprets a document.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
 pub enum RuntimeKind {
     #[serde(rename = "current")]
     Current,

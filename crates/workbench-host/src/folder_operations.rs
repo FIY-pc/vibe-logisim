@@ -134,14 +134,7 @@ impl Host {
         references.changed(relative, None)?;
         let warning = history.finish(folder, "移入回收站", None);
         drop(workspace);
-        let mut native = self.native.lock().await;
-        if native
-            .simulation
-            .as_ref()
-            .is_some_and(|session| closed.contains(&session.document_id))
-        {
-            native.stop_simulation().await;
-        }
+        // Dispatch ends a run of any document this request closed.
         Ok(json!({"trashed":true,"closed":closed,"historyWarning":warning}))
     }
 }
@@ -638,17 +631,7 @@ impl Host {
                 }
             }
             history.checkpoint(folder, &format!("撤销：{}", change.title), None)?;
-            let closed = refresh_documents(&mut workspace, &paths)?;
-            if !closed.is_empty() {
-                let mut native = self.native.lock().await;
-                if native
-                    .simulation
-                    .as_ref()
-                    .is_some_and(|s| closed.contains(&s.document_id))
-                {
-                    native.stop_simulation().await;
-                }
-            }
+            refresh_documents(&mut workspace, &paths)?;
             self.persist(&workspace).await;
             result.map_err(|e| format!("撤销未能全部完成，请刷新文件改动：{e}"))?;
         }
