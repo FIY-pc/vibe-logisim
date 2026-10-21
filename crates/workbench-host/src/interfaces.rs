@@ -81,8 +81,10 @@ async fn native_symbol(native: &mut Native, path: &Path, circuit: &str) -> Resul
             xml("interface", &[("circuit", circuit.into())], vec![]),
         )
         .await?;
-    symbol::read(&Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    Ok(
+        symbol::read(&Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?,
+    )
 }
 fn candidate(doc: &Document, root: &Element) -> Result<Document> {
     let mut result = Document::from_bytes(
@@ -339,7 +341,8 @@ impl Host {
                 {
                     return Err(format!(
                         "{name}：接线位宽不再匹配；请同步调整电路，或为更改的端口选择「断开接线」"
-                    ));
+                    )
+                    .into());
                 }
             }
             let (_, _, pairs) =

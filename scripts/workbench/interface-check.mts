@@ -26,7 +26,8 @@ async function command(request: any) {
     body: JSON.stringify(request),
   });
   const data = await response.json();
-  if (data.error) throw Error(data.error);
+  if (data.error)
+    throw Object.assign(new Error(data.error.message), data.error);
   return data.result;
 }
 try {

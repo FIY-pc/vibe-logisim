@@ -48,8 +48,12 @@ async function command<T>(request: Record<string, unknown>): Promise<T> {
     body: JSON.stringify(request),
     signal: AbortSignal.timeout(30_000),
   });
-  const body = (await response.json()) as { error?: string; result: T };
-  if (body.error) throw new Error(body.error);
+  const body = (await response.json()) as {
+    error?: { code: string; message: string };
+    result: T;
+  };
+  if (body.error)
+    throw Object.assign(new Error(body.error.message), body.error);
   assert(response.ok, `Host returned HTTP ${response.status}`);
   return body.result;
 }

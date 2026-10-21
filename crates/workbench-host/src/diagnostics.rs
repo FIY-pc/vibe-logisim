@@ -1,5 +1,4 @@
 //! Session diagnostics never retain request data, source paths, or process output.
-use crate::Request;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -68,7 +67,7 @@ impl FailureLog {
         self.entries.clone()
     }
 }
-fn classify(error: &str) -> Failure {
+pub(crate) fn classify(error: &str) -> Failure {
     let text = error.to_ascii_lowercase();
     if text.contains("超时") || text.contains("timeout") || text.contains("timed out") {
         Failure::Timeout
@@ -113,45 +112,6 @@ fn classify(error: &str) -> Failure {
     } else {
         Failure::Unavailable
     }
-}
-pub(crate) fn stage(request: &Request) -> Option<Stage> {
-    Some(match request {
-        Request::Open { .. } | Request::Import { .. } | Request::Reload { .. } => Stage::Open,
-        Request::Save { .. } => Stage::Save,
-        Request::Edit { .. }
-        | Request::Undo { .. }
-        | Request::Redo { .. }
-        | Request::InterfaceApply { .. }
-        | Request::MemoryWrite { .. }
-        | Request::HistoryRestore { .. } => Stage::Edit,
-        Request::Render { .. }
-        | Request::ProposalPreview { .. }
-        | Request::HistoryPreview { .. }
-        | Request::InterfaceRender { .. } => Stage::Render,
-        Request::Observe { .. } => Stage::Observe,
-        Request::SimulationStart { .. }
-        | Request::SimulationAction { .. }
-        | Request::SimulationView { .. }
-        | Request::SimulationCommand { .. } => Stage::Simulation,
-        Request::Simulate { .. } | Request::Trace { .. } | Request::ProposalVerify { .. } => {
-            Stage::Verify
-        }
-        Request::Catalog { .. }
-        | Request::Template { .. }
-        | Request::Properties { .. }
-        | Request::Memory { .. } => Stage::Library,
-        Request::Agent { .. } => Stage::Agent,
-        Request::FolderOpen { .. }
-        | Request::FolderRead { .. }
-        | Request::FolderPreview { .. }
-        | Request::FolderResolve { .. }
-        | Request::FolderRename { .. }
-        | Request::FolderTrash { .. }
-        | Request::FolderImportApply { .. }
-        | Request::FolderHistoryUndo { .. } => Stage::Files,
-        Request::ProjectExport { .. } => Stage::Export,
-        _ => return None,
-    })
 }
 #[cfg(test)]
 mod tests {
