@@ -109,6 +109,8 @@ pub struct DocumentView {
     pub name: String,
     pub path: Option<PathBuf>,
     pub revision: String,
+    /// The component palette this document produces; see `Document::palette_identity`.
+    pub palette_identity: String,
     pub dirty: bool,
     pub can_undo: bool,
     pub can_redo: bool,
@@ -164,6 +166,18 @@ pub enum Edit {
     },
 }
 
+/// What an edit, undo or redo changed: the history title, the circuit it
+/// applied to, the objects to select, and the circuits whose bytes differ.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditOutcome {
+    pub title: String,
+    pub circuit: String,
+    pub components: Vec<String>,
+    pub wires: Vec<String>,
+    pub changed_circuits: Vec<String>,
+}
+
 /// One revision of a circuit file: its bytes and their span index.
 struct Source {
     tree: Tree,
@@ -191,6 +205,13 @@ impl Source {
     }
 }
 
+/// One undo step: the bytes before a change, and the title that produced it.
+#[derive(Clone)]
+struct Step {
+    bytes: Vec<u8>,
+    title: String,
+}
+
 #[derive(Clone)]
 pub struct Document {
     pub id: String,
@@ -198,8 +219,8 @@ pub struct Document {
     name: String,
     source: Arc<Source>,
     saved_digest: Option<String>,
-    undo: Vec<Vec<u8>>,
-    redo: Vec<Vec<u8>>,
+    undo: Vec<Step>,
+    redo: Vec<Step>,
 }
 fn precheck(bytes: &[u8]) -> Result<()> {
     if bytes.len() > MAX_BYTES {
@@ -348,6 +369,19 @@ impl Document {
     pub fn revision(&self) -> String {
         self.source.revision.clone()
     }
+    /// What the component palette is built from: the project version and its
+    /// libraries. Editing a circuit leaves it unchanged, so the UI keeps its
+    /// icons instead of asking the native side to redraw them.
+    pub fn palette_identity(&self) -> String {
+        let tree = &self.source.tree;
+        let root = tree.root();
+        let mut definition = format!("{} {}", tree.get(root, "source"), tree.get(root, "version"));
+        for lib in tree.named(root, "lib") {
+            definition.push('\n');
+            definition.push_str(tree.source(lib));
+        }
+        digest(definition.as_bytes())
+    }
     pub fn dirty(&self) -> bool {
         self.saved_digest.as_deref() != Some(self.source.revision.as_str())
     }
@@ -413,6 +447,7 @@ impl Document {
             name: self.name.clone(),
             path: self.path.clone(),
             revision: self.revision(),
+            palette_identity: self.palette_identity(),
             dirty: self.dirty(),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
@@ -430,58 +465,157 @@ impl Document {
     /// Applies an edit as splices of the stored file, so bytes the edit does
     /// not touch stay as they are. `Replace` keeps the current bytes of every
     /// top-level element (circuit, library, …) whose content it leaves equal.
-    pub fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<()> {
+    /// Returns what changed, for the host's edit result and history title.
+    pub fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<EditOutcome> {
         self.check(expected)?;
-        let next = match edit {
+        let outcome = EditOutcome {
+            title: edit_title(&edit, circuit, self),
+            circuit: circuit.to_string(),
+            ..EditOutcome::default()
+        };
+        let selecting = matches!(
+            edit,
+            Edit::Wire { .. }
+                | Edit::Place { .. }
+                | Edit::Move { .. }
+                | Edit::Delete { .. }
+                | Edit::Attributes { .. }
+        );
+        let old_wires = if matches!(edit, Edit::Wire { .. }) {
+            self.circuit_wire_count(circuit)?
+        } else {
+            0
+        };
+        let next = match &edit {
             Edit::Replace { xml } => {
                 precheck(xml.as_bytes())?;
-                let input = Tree::index(xml)?;
+                let input = Tree::index(xml.clone())?;
                 validate(&input)?;
                 Some(splice::merge(&self.source.tree, &input)?)
             }
-            edit => editing::apply(&self.source.tree, circuit, edit)?,
+            edit => editing::apply(&self.source.tree, circuit, edit.clone())?,
         };
-        match next {
-            // A file read in another encoding indexes as its UTF-8 text.
-            Some(text) if text != self.source.tree.text() => self.replace(text.into_bytes()),
-            _ => Ok(()),
+        // A file read in another encoding indexes as its UTF-8 text.
+        let Some(text) = next.filter(|text| *text != self.source.tree.text()) else {
+            return Ok(outcome);
+        };
+        let before = self.circuit_view()?;
+        let mut outcome = self.change(text.into_bytes(), outcome)?;
+        let after = self.circuit_view()?;
+        outcome.changed_circuits = changed_circuits(&before, &after);
+        if selecting {
+            let sheet = |view: &[Circuit]| view.iter().find(|c| c.name == circuit).cloned();
+            let after = sheet(&after);
+            match edit {
+                Edit::Wire { .. } => {
+                    let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
+                    outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
+                }
+                Edit::Place { .. } | Edit::Attributes { .. } => {
+                    let placed = match &edit {
+                        Edit::Place { location, name, .. } => {
+                            Some((location.x, location.y, name.clone()))
+                        }
+                        Edit::Attributes { id, .. } => {
+                            outcome.components.push(id.clone());
+                            None
+                        }
+                        _ => None,
+                    };
+                    if let Some((x, y, name)) = placed
+                        && let Some(component) = after.as_ref().and_then(|c| {
+                            c.components
+                                .iter()
+                                .find(|c| c.location.x == x && c.location.y == y && c.name == name)
+                        })
+                    {
+                        outcome.components.push(component.id.clone());
+                    }
+                }
+                Edit::Move { ids, .. } => {
+                    for id in ids {
+                        outcome.components.push(id.clone());
+                    }
+                }
+                _ => {}
+            }
         }
+        Ok(outcome)
     }
-    fn replace(&mut self, bytes: Vec<u8>) -> Result<()> {
+    fn circuit_wire_count(&self, circuit: &str) -> Result<usize> {
+        let tree = &self.source.tree;
+        let node = tree
+            .named(tree.root(), "circuit")
+            .find(|&c| tree.get(c, "name") == circuit)
+            .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))?;
+        Ok(editing::Sheet::new(tree, node)?.view().wires.len())
+    }
+    /// The document's circuits in file order, for change detection.
+    fn circuit_view(&self) -> Result<Vec<Circuit>> {
+        let tree = &self.source.tree;
+        tree.named(tree.root(), "circuit")
+            .map(|c| editing::Sheet::new(tree, c).map(editing::Sheet::view))
+            .collect()
+    }
+    /// Commits new bytes with `title`, keeping the undo/redo stacks.
+    fn change(&mut self, bytes: Vec<u8>, outcome: EditOutcome) -> Result<EditOutcome> {
         if bytes == self.bytes() {
-            return Ok(());
+            return Ok(outcome);
         }
         let source = Arc::new(Source::new(bytes)?);
         let previous = std::mem::replace(&mut self.source, source);
-        self.undo.push(previous.bytes().to_vec());
+        let title = if outcome.title.is_empty() {
+            "编辑电路".to_string()
+        } else {
+            outcome.title.clone()
+        };
+        self.undo.push(Step {
+            bytes: previous.bytes().to_vec(),
+            title,
+        });
         while self.undo.len() > 100
             || (self.undo.len() > 1
-                && self.undo.iter().map(Vec::len).sum::<usize>() > 64 * 1024 * 1024)
+                && self.undo.iter().map(|s| s.bytes.len()).sum::<usize>() > 64 * 1024 * 1024)
         {
             self.undo.remove(0);
         }
         self.redo.clear();
-        Ok(())
+        Ok(outcome)
     }
-    pub fn undo(&mut self, expected: &str) -> Result<()> {
-        self.check(expected)?;
-        if let Some(bytes) = self.undo.last() {
-            let source = Arc::new(Source::new(bytes.clone())?);
-            self.undo.pop();
-            let current = std::mem::replace(&mut self.source, source);
-            self.redo.push(current.bytes().to_vec());
-        }
-        Ok(())
+    fn replace(&mut self, bytes: Vec<u8>) -> Result<()> {
+        self.change(bytes, EditOutcome::default()).map(|_| ())
     }
-    pub fn redo(&mut self, expected: &str) -> Result<()> {
+    pub fn undo(&mut self, expected: &str) -> Result<EditOutcome> {
         self.check(expected)?;
-        if let Some(bytes) = self.redo.last() {
-            let source = Arc::new(Source::new(bytes.clone())?);
-            self.redo.pop();
-            let current = std::mem::replace(&mut self.source, source);
-            self.undo.push(current.bytes().to_vec());
-        }
-        Ok(())
+        let Some(step) = self.undo.pop() else {
+            return Ok(EditOutcome::default());
+        };
+        let source = Arc::new(Source::new(step.bytes.clone())?);
+        let current = std::mem::replace(&mut self.source, source);
+        self.redo.push(Step {
+            bytes: current.bytes().to_vec(),
+            title: step.title.clone(),
+        });
+        Ok(EditOutcome {
+            title: step.title,
+            ..EditOutcome::default()
+        })
+    }
+    pub fn redo(&mut self, expected: &str) -> Result<EditOutcome> {
+        self.check(expected)?;
+        let Some(step) = self.redo.pop() else {
+            return Ok(EditOutcome::default());
+        };
+        let source = Arc::new(Source::new(step.bytes.clone())?);
+        let current = std::mem::replace(&mut self.source, source);
+        self.undo.push(Step {
+            bytes: current.bytes().to_vec(),
+            title: step.title.clone(),
+        });
+        Ok(EditOutcome {
+            title: step.title,
+            ..EditOutcome::default()
+        })
     }
     pub fn save(&mut self, expected: &str, target: Option<&Path>) -> Result<()> {
         self.save_checked(expected, target, None)
@@ -534,12 +668,22 @@ impl Document {
             next.undo = self
                 .undo
                 .iter()
-                .map(|b| rebase_libraries(b, previous, &parent))
+                .map(|step| {
+                    Ok(Step {
+                        bytes: rebase_libraries(&step.bytes, previous, &parent)?,
+                        title: step.title.clone(),
+                    })
+                })
                 .collect::<Result<_>>()?;
             next.redo = self
                 .redo
                 .iter()
-                .map(|b| rebase_libraries(b, previous, &parent))
+                .map(|step| {
+                    Ok(Step {
+                        bytes: rebase_libraries(&step.bytes, previous, &parent)?,
+                        title: step.title.clone(),
+                    })
+                })
                 .collect::<Result<_>>()?;
         }
         let mut temp = tempfile::NamedTempFile::new_in(&parent)?;
@@ -586,12 +730,12 @@ impl Document {
             undo: self
                 .undo
                 .iter()
-                .map(|b| String::from_utf8_lossy(b).into_owned())
+                .map(|s| String::from_utf8_lossy(&s.bytes).into_owned())
                 .collect(),
             redo: self
                 .redo
                 .iter()
-                .map(|b| String::from_utf8_lossy(b).into_owned())
+                .map(|s| String::from_utf8_lossy(&s.bytes).into_owned())
                 .collect(),
         }
     }
@@ -599,8 +743,8 @@ impl Document {
         let mut d = Self::from_bytes(saved.name, saved.path, saved.xml.into_bytes(), false)?;
         d.id = saved.id;
         d.saved_digest = saved.saved_digest;
-        d.undo = saved.undo.into_iter().map(String::into_bytes).collect();
-        d.redo = saved.redo.into_iter().map(String::into_bytes).collect();
+        d.undo = saved.undo.into_iter().map(untitled).collect();
+        d.redo = saved.redo.into_iter().map(untitled).collect();
         Ok(d)
     }
 }
@@ -638,5 +782,102 @@ impl Document {
             Some(text) => self.replace(text.into_bytes()),
             None => Ok(()),
         }
+    }
+}
+
+/// A restored step keeps its bytes; titles are in memory only, so a restored
+/// recovery entry gets the generic title.
+fn untitled(bytes: String) -> Step {
+    Step {
+        bytes: bytes.into_bytes(),
+        title: String::new(),
+    }
+}
+
+fn changed_circuits(before: &[Circuit], after: &[Circuit]) -> Vec<String> {
+    use std::collections::BTreeMap;
+    let key = |circuit: &Circuit| {
+        let mut out = String::new();
+        for c in &circuit.components {
+            out.push_str(&format!(
+                "c{}|{}|{}|{}|{:?};",
+                c.id, c.name, c.location.x, c.location.y, c.attributes
+            ));
+        }
+        for w in &circuit.wires {
+            out.push_str(&format!(
+                "w{}|{},{}|{},{};",
+                w.id, w.from.x, w.from.y, w.to.x, w.to.y
+            ));
+        }
+        out
+    };
+    let old: BTreeMap<&str, String> = before.iter().map(|c| (c.name.as_str(), key(c))).collect();
+    let mut changed = Vec::new();
+    for circuit in after {
+        if old.get(circuit.name.as_str()) != Some(&key(circuit)) {
+            changed.push(circuit.name.clone());
+        }
+    }
+    for circuit in before {
+        if !after.iter().any(|c| c.name == circuit.name) {
+            changed.push(circuit.name.clone());
+        }
+    }
+    changed
+}
+
+/// The history title for an edit, in the old application's formats.
+fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
+    let short = |value: &str| {
+        let mut text: String = value.chars().take(24).collect();
+        if value.chars().count() > 24 {
+            text.push('\u{2026}');
+        }
+        text.replace(['\n', '\r'], " ")
+    };
+    match edit {
+        Edit::Wire { points } => match (points.first(), points.last()) {
+            (Some(a), Some(b)) => format!("连接导线 ({},{}) \u{2192} ({},{})", a.x, a.y, b.x, b.y),
+            _ => "绘制导线".into(),
+        },
+        Edit::Place { name, .. } => format!("放置 {name}"),
+        Edit::Move { ids, .. } => format!("移动 {} 个对象", ids.len()),
+        Edit::Delete { ids } => format!("删除 {} 个对象", ids.len()),
+        Edit::Attributes { id, values } => {
+            let label = doc
+                .circuit_component(circuit, id)
+                .map(|c| {
+                    c.attributes
+                        .get("label")
+                        .filter(|l| !l.is_empty())
+                        .cloned()
+                        .unwrap_or_else(|| c.name.clone())
+                })
+                .unwrap_or_else(|| id.clone());
+            let parts: Vec<String> = values
+                .iter()
+                .map(|(name, value)| format!("{} \u{2192} {}", name, short(value)))
+                .collect();
+            format!("{} \u{b7} {}", label, parts.join("\u{3001}"))
+        }
+        Edit::Replace { .. } => "替换电路内容".into(),
+        Edit::AddCircuit { .. } => "添加电路".into(),
+        Edit::RenameCircuit { .. } => "重命名电路".into(),
+        Edit::DeleteCircuit => "删除电路".into(),
+        Edit::SetMain => "设置主电路".into(),
+    }
+}
+
+impl Document {
+    fn circuit_component(&self, circuit: &str, id: &str) -> Option<Component> {
+        self.view()
+            .ok()?
+            .circuits
+            .into_iter()
+            .find(|c| c.name == circuit)?
+            .components
+            .into_iter()
+            .find(|c| c.id == id)
     }
 }

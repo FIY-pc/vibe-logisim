@@ -28,9 +28,10 @@ pub struct HistoryReview {
     xml: String,
     evidence: Vec<VerificationRecord>,
 }
+#[derive(Clone)]
 pub(crate) struct Action {
     pub kind: &'static str,
-    pub title: &'static str,
+    pub title: String,
     pub target: Option<String>,
     pub restored: Option<String>,
 }
@@ -38,7 +39,7 @@ impl Action {
     pub(crate) fn open() -> Self {
         Self {
             kind: "open",
-            title: "打开工程",
+            title: "打开工程".into(),
             target: None,
             restored: None,
         }
@@ -46,15 +47,15 @@ impl Action {
     pub(crate) fn files() -> Self {
         Self {
             kind: "files",
-            title: "工程文件更新",
+            title: "工程文件更新".into(),
             target: None,
             restored: None,
         }
     }
-    pub(crate) fn document(kind: &'static str, title: &'static str, id: &str) -> Self {
+    pub(crate) fn document(kind: &'static str, title: &str, id: &str) -> Self {
         Self {
             kind,
-            title,
+            title: title.into(),
             target: Some(id.to_string()),
             restored: None,
         }
@@ -73,6 +74,11 @@ impl Action {
             _ => "编辑电路",
         };
         Self::document("edit", title, id)
+    }
+    /// The same action under the title the edit or undo reported.
+    pub(crate) fn entitled(mut self, title: String) -> Self {
+        self.title = title;
+        self
     }
     pub(crate) fn restore(id: &str, entry: &str) -> Self {
         Self {
@@ -154,7 +160,7 @@ impl Host {
                     if kind == "open" {
                         "打开工程"
                     } else {
-                        action.title
+                        &action.title
                     },
                     action.restored.clone(),
                 )

@@ -252,6 +252,8 @@ async function stop() {
   await stream?.close();
   child = undefined;
 }
+/** Edits, undo and redo answer with an edit result; scripts work with the view. */
+const documentOf = (result: any) => (result && result.view ? result.view : result);
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
@@ -261,7 +263,7 @@ async function command(request: any) {
   const body = await response.json();
   if (body.error)
     throw Object.assign(new Error(body.error.message), body.error);
-  return body.result;
+  return documentOf(body.result);
 }
 const agent = (method: string, args: unknown = {}) =>
   command({ op: "agent", method, args });

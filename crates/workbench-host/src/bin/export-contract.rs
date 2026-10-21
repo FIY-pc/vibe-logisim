@@ -45,6 +45,12 @@ fn generate(root: &Path) -> Result<()> {
     vibe_workbench_host::ComparisonDetail::export_all(
         &ts_rs::Config::default().with_out_dir(&directory),
     )?;
+    vibe_workbench_host::EditResult::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_workbench_host::MovePreview::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
     vibe_workbench_host::InterfaceRead::export_all(
         &ts_rs::Config::default().with_out_dir(&directory),
     )?;

@@ -1,10 +1,11 @@
 import { ProposalStore } from "./proposals.mts";
+import { storeReference, readReferences } from "./references.mts";
 import {
-  storeReference,
-  readReferences,
-  referenceSummary,
-} from "./references.mts";
+  createCircuitContextHost,
+  selectionContext,
+} from "./circuit/context.mts";
 import { systemProxy, networkFetch, closeNetwork } from "./network.mts";
+import { arrangeInWorker } from "./arrange.mts";
 /** Runtime process entry. stdout is exclusively JSONL. */
 import { AgentRuntime } from "../core/agent-runtime.mts";
 import editSchemaSource from "./generated/edit-schema.json" with { type: "json" };
@@ -212,6 +213,51 @@ const toolHost = {
       },
     },
     {
+      name: "arrange_circuit",
+      description:
+        "Rearrange one circuit definition: place the components by signal flow, keep the drawing readable and preserve behaviour. Returns the arranged source with the readability before and after; verify it with observe_circuit and simulate_circuit, then apply it with edit_circuit replace. Passing organization groups components into columns; pinnedComponentIds and keepTunnels protect what must stay.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          revision: { type: "string" },
+          circuit: { type: "string" },
+          options: {
+            type: "object",
+            properties: {
+              organization: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    components: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                  },
+                  required: ["components"],
+                  additionalProperties: false,
+                },
+              },
+              pinnedComponentIds: {
+                type: "array",
+                items: { type: "string" },
+              },
+              keepTunnels: { type: "boolean" },
+              localiseConstants: { type: "boolean" },
+              panelBelowY: { type: "number" },
+              columnGap: { type: "integer", minimum: 1 },
+              maxLayerSpan: { type: "integer", minimum: 1 },
+              tunnelSpan: { type: "integer", minimum: 1 },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["circuit"],
+        additionalProperties: false,
+      },
+    },
+    {
       name: "edit_circuit",
       description:
         "Apply a structural edit to the active in-memory document. Supply the revision from read_circuit. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved.",
@@ -248,6 +294,7 @@ const toolHost = {
       observe_circuit: "检查电路",
       render_circuit: "查看电路",
       edit_circuit: "修改电路",
+      arrange_circuit: "整理布局与连线",
       simulate_circuit: "验证测试向量",
       trace_circuit: "验证时序",
     })[name] || name,
@@ -338,6 +385,41 @@ const toolHost = {
       });
       return { ...document, ...source };
     }
+    if (request.tool === "arrange_circuit") {
+      const current = await host({ op: "read", id });
+      const revision = request.arguments.revision || current.revision;
+      const circuit = request.arguments.circuit;
+      const source = await host({ op: "source", id, revision });
+      const focus = await host({ op: "observe", id, revision, circuit });
+      const options = request.arguments.options || {};
+      const outcome = await arrangeInWorker(
+        {
+          xml: source.xml,
+          circuit,
+          focus,
+          options: {
+            organization: options.organization,
+            pinnedComponentIds: options.pinnedComponentIds,
+            keepTunnels: options.keepTunnels,
+            localiseConstants: options.localiseConstants,
+            panelBelowY: options.panelBelowY,
+            columnGap: options.columnGap,
+            maxLayerSpan: options.maxLayerSpan,
+            tunnelSpan: options.tunnelSpan,
+          },
+        },
+        60_000,
+      );
+      return {
+        circuit,
+        revision,
+        xml: outcome.xml,
+        readabilityBefore: outcome.readabilityBefore,
+        readabilityAfter: outcome.readabilityAfter,
+        fixed: outcome.fixedComponentIds.length,
+        note: "整理结果还没有写回电路：先用 observe_circuit 和 simulate_circuit 核对，再把 xml 通过 edit_circuit replace 应用。",
+      };
+    }
     const current = await host({ op: "read", id });
     const op = (
       {
@@ -356,19 +438,23 @@ const toolHost = {
       revision: request.arguments.revision || current.revision,
     });
     if (op === "edit") {
+      // The event carries the document view for the interface; the model gets a
+      // summary of what changed, not the whole circuit again.
+      const { view, ...summary } = result;
       send({
         kind: "event",
         event: {
           type: "document-changed",
-          document: result,
+          document: view,
           expectedBaseRevision: request.arguments.revision || current.revision,
         },
       });
-      binding = { ...binding, revision: result.revision };
+      binding = { ...binding, revision: view.revision };
       scope.updateBinding?.({
         workspace: { id },
-        revision: { id: result.revision },
+        revision: { id: view.revision },
       });
+      return summary;
     }
     if (op === "render")
       return {
@@ -389,6 +475,9 @@ const {
   codexRoot,
   codex,
 } = await createCodexInstaller(state);
+const toolNames: ReadonlySet<string> = new Set(
+  toolHost.tools.map((tool) => tool.name),
+);
 const instructions =
   "You collaborate on digital circuits in Vibe Logisim. Respond in the user language and send concise progress messages before tools. The Rust host owns the current document and revision. Use read_circuit, observe_circuit, render_circuit, and edit_circuit to work on that shared document. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved. Native observations are authoritative for electrical facts. simulate_circuit tests independent vectors and trace_circuit tests tick sequences in an isolated native simulation, leaving the user live simulation unchanged. project_files reads text files from the active project folder without writing them. kept_observations reads historical simulation evidence; check revision and instance identity before comparing. The general file tools operate in a scratch workspace, not the original project. A copy named circuit.circ is prepared for direct edits and scripts; changed content is offered to the user for explicit application at the end of the turn. Use target=working-copy with read_circuit, observe_circuit, render_circuit, simulate_circuit or trace_circuit to inspect or verify that scratch file before application. Working-copy verification results are retained with its exact content and appear in the proposal review. Keep unknown XML, libraries and unrelated circuits. Circuit organization is part of delivery: preserve behavior and make the resulting drawing readable. Never invent tool results or claim you inspected an image if it was not delivered as image input.";
 const backend = new AgentRuntime({
@@ -402,43 +491,10 @@ const backend = new AgentRuntime({
   developerInstructions: instructions,
   includeAgentContext: true,
   startOnResume: false,
-  contextHost: {
-    prepare(context: any) {
-      return {
-        frozenContext: {
-          projectId: context.projectId,
-          workspaceKey: context.workspaceKey,
-          folderId: context.folderId,
-          revisionId: context.revisionId,
-          circuit: context.circuit,
-          selection: context.selection,
-          references: context.references?.map(referenceSummary),
-        },
-        references: context.references || [],
-      };
-    },
-    images(prepared: any) {
-      return prepared.references.flatMap((r: any) =>
-        r.image
-          ? [
-              {
-                data: r.image.split(",")[1],
-                mimeType: r.image.slice(5, r.image.indexOf(";")),
-              },
-            ]
-          : [],
-      );
-    },
-    additionalContext(prepared: any) {
-      return {
-        ...prepared.frozenContext,
-        referenceContents: prepared.references.map((r: any) => ({
-          ...referenceSummary(r),
-          text: r.text,
-        })),
-      };
-    },
-  },
+  contextHost: createCircuitContextHost({
+    changeMode: "review",
+    visibleTools: () => toolNames,
+  }),
   ownProfile: true,
   nodeExecutable: process.execPath,
   codex,
@@ -591,15 +647,6 @@ async function dispatch(method: string, args: any) {
       const graph = current.circuits.find(
         (c: any) => c.name === binding.circuit,
       );
-      const selection = Array.isArray(args.selection)
-        ? args.selection
-            .filter(
-              (id: string) =>
-                graph?.components.some((c: any) => c.id === id) ||
-                graph?.wires.some((w: any) => w.id === id),
-            )
-            .slice(0, 1024)
-        : [];
       if (!args.expectedTurnId && current.revision !== binding.revision)
         throw new Error("电路已改变，请重新发送");
       await backend.start();
@@ -610,13 +657,20 @@ async function dispatch(method: string, args: any) {
         expectedTurnId: args.expectedTurnId || null,
         workspaceKey: binding.workspaceKey,
         context: {
-          folder: { path: workDir },
+          folder: { path: workDir, activeFile: "circuit.circ" },
           workspaceKey: binding.workspaceKey,
           folderId: binding.folderId,
           projectId: binding.id,
           revisionId: binding.revision,
           circuit: binding.circuit,
-          selection,
+          ...selectionContext({
+            graph,
+            circuit: binding.circuit,
+            projectId: binding.id,
+            revisionId: binding.revision,
+            ids: args.selection,
+            visibleTools: toolNames,
+          }),
           references,
         },
       });

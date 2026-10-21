@@ -3,7 +3,7 @@
 //! history entry it records, its diagnostics stage and whether the AI runtime
 //! may call it; dispatch applies those rules for every op alike.
 mod agent;
-mod editing;
+pub(crate) mod editing;
 mod folder;
 mod interface;
 mod project;

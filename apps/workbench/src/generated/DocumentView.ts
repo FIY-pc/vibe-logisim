@@ -2,4 +2,8 @@
 import type { Circuit } from "./Circuit";
 import type { Library } from "./Library";
 
-export type DocumentView = { id: string, name: string, path: string | null, revision: string, dirty: boolean, canUndo: boolean, canRedo: boolean, main: string, circuits: Array<Circuit>, libraries: Array<Library>, };
+export type DocumentView = { id: string, name: string, path: string | null, revision: string, 
+/**
+ * The component palette this document produces; see `Document::palette_identity`.
+ */
+paletteIdentity: string, dirty: boolean, canUndo: boolean, canRedo: boolean, main: string, circuits: Array<Circuit>, libraries: Array<Library>, };

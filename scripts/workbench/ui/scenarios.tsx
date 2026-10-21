@@ -402,9 +402,11 @@ assert.equal(
   "A late mutation response must refresh current host state instead of replacing a later event",
 );
 assert(document.querySelector(".file-title .dirty-dot"));
+// Icons follow the project's libraries, not its edits: a newer revision of the
+// same project must not send the canvas back for a redraw.
 assert.equal(
   calls.filter((call) => call.op === "catalog").at(-1).revision,
-  "r3",
+  "r1",
 );
 await act(async () =>
   agent({

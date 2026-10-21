@@ -1,5 +1,9 @@
-use crate::{Host, Result, topology, value};
-use serde_json::{Value, json};
+use crate::{
+    ErrorCode, Host, Result,
+    requests::editing::{EditResult, ErrorDetail, MovePreview, edit_result_for_move},
+    topology,
+};
+use serde_json::Value;
 use vibe_workspace_core::{Circuit, Document, Edit, Point};
 
 struct MovePlan {
@@ -39,6 +43,9 @@ impl Host {
             before,
         })
     }
+    /// The wires a move would remove and add, so the canvas draws only the
+    /// difference. A failed plan is reported in `error`, not thrown, so the
+    /// drag can continue and the status line shows the reason.
     pub(crate) async fn preview_move(
         &self,
         id: &str,
@@ -46,25 +53,72 @@ impl Host {
         circuit: &str,
         ids: &[String],
         delta: Point,
-    ) -> Result<Value> {
-        let plan = self.plan_move(id, revision, circuit, ids, delta).await?;
-        let workspace = self.workspace.lock().await;
-        let current = workspace.get(id).map_err(|e| e.to_string())?;
-        current.check(revision).map_err(|e| e.to_string())?;
-        if current.path != plan.candidate.path {
-            return Err("文档位置已改变，请重新移动".into());
+    ) -> Result<MovePreview> {
+        match self.plan_move(id, revision, circuit, ids, delta).await {
+            Ok(plan) => {
+                let workspace = self.workspace.lock().await;
+                let current = workspace.get(id).map_err(|e| e.to_string())?;
+                current.check(revision).map_err(|e| e.to_string())?;
+                if current.path != plan.candidate.path {
+                    return Ok(preview_failure(
+                        ErrorCode::StaleRevision,
+                        "文档位置已改变，请重新移动",
+                    ));
+                }
+                drop(workspace);
+                let view = plan.candidate.view().map_err(|e| e.to_string())?;
+                let graph = view
+                    .circuits
+                    .iter()
+                    .find(|c| c.name == circuit)
+                    .ok_or("找不到电路")?;
+                // The preview is geometry only. Release still validates native bit
+                // connectivity before committing; no preview writes a checkpoint
+                // or an undo entry.
+                let key = |from: Point, to: Point| {
+                    if (from.x, from.y) <= (to.x, to.y) {
+                        format!("{},{}:{},{}", from.x, from.y, to.x, to.y)
+                    } else {
+                        format!("{},{}:{},{}", to.x, to.y, from.x, from.y)
+                    }
+                };
+                let after: std::collections::BTreeSet<String> =
+                    graph.wires.iter().map(|w| key(w.from, w.to)).collect();
+                let before: std::collections::BTreeSet<String> =
+                    plan.graph.wires.iter().map(|w| key(w.from, w.to)).collect();
+                let removed: Vec<String> = plan
+                    .graph
+                    .wires
+                    .iter()
+                    .filter(|w| !after.contains(&key(w.from, w.to)))
+                    .map(|w| w.id.clone())
+                    .collect();
+                let added = graph
+                    .wires
+                    .iter()
+                    .filter(|w| !before.contains(&key(w.from, w.to)))
+                    .cloned()
+                    .collect();
+                Ok(MovePreview {
+                    revision: Some(revision.to_string()),
+                    delta: Some(delta),
+                    removed_wires: removed,
+                    added_wires: added,
+                    error: None,
+                })
+            }
+            // A rejected position is part of dragging, not a failed request;
+            // a stale document is a real error the caller must recover from.
+            Err(error)
+                if matches!(
+                    error.code,
+                    ErrorCode::StaleRevision | ErrorCode::DocumentNotFound | ErrorCode::Io
+                ) =>
+            {
+                Err(error)
+            }
+            Err(error) => Ok(preview_failure(error.code, &error.message)),
         }
-        let view = plan.candidate.view().map_err(|e| e.to_string())?;
-        let graph = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
-            .ok_or("找不到电路")?;
-        // The preview is geometry only. Release still validates native bit connectivity
-        // before committing; no preview writes a workspace checkpoint or undo entry.
-        Ok(
-            json!({"segments": graph.wires.iter().map(|w| json!({"from":w.from,"to":w.to})).collect::<Vec<_>>()}),
-        )
     }
     pub(crate) async fn commit_move(
         &self,
@@ -73,7 +127,7 @@ impl Host {
         circuit: &str,
         ids: &[String],
         delta: Point,
-    ) -> Result<Value> {
+    ) -> Result<EditResult> {
         let plan = self.plan_move(id, revision, circuit, ids, delta).await?;
         let (path, _) = self.materialize(&plan.candidate)?;
         let after = self.native.lock().await.observe(&path, circuit).await?;
@@ -94,6 +148,39 @@ impl Host {
                 },
             )
             .map_err(|e| e.to_string())?;
-        value(current.view().map_err(|e| e.to_string())?)
+        let view = current.view().map_err(|e| e.to_string())?;
+        // Wires keep their ids by file order, so a move's changed wires are the
+        // ones whose geometry differs plus any the move added.
+        let wires = view
+            .circuits
+            .iter()
+            .find(|c| c.name == circuit)
+            .map(|c| {
+                c.wires
+                    .iter()
+                    .filter(|w| {
+                        let index = w.id[1..].parse::<usize>().ok();
+                        index
+                            .and_then(|k| plan.graph.wires.get(k))
+                            .is_none_or(|old| old.from != w.from || old.to != w.to)
+                    })
+                    .map(|w| w.id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        Ok(edit_result_for_move(circuit, ids.to_vec(), wires, view))
+    }
+}
+
+fn preview_failure(code: ErrorCode, message: &str) -> MovePreview {
+    MovePreview {
+        revision: None,
+        delta: None,
+        removed_wires: Vec::new(),
+        added_wires: Vec::new(),
+        error: Some(ErrorDetail {
+            code,
+            message: message.to_string(),
+        }),
     }
 }

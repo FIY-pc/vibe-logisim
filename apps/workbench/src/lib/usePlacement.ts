@@ -81,7 +81,8 @@ export function usePlacement(
     return () => {
       live = false;
     };
-  }, [scope, doc?.revision, attributeKey, retryVersion]);
+    // A placement default depends on the tools and circuit, not on the edits.
+  }, [scope, attributeKey, retryVersion]);
   const change = (values: Record<string, string>) =>
     setPreferences((previous) => ({ ...previous, [preference]: values }));
   const rotate = () => {
