@@ -783,14 +783,26 @@ export function Chat({
                 {!doc ? (
                   "打开电路后开始对话"
                 ) : !state?.services?.length && state?.runtime !== "codex" ? (
-                  <button onClick={() => setConfigure(true)}>
-                    添加模型服务
-                  </button>
+                  <div className="proposal">
+                    <span>使用 API 密钥或 ChatGPT 账号。</span>
+                    <button
+                      className="primary"
+                      onClick={() => setConfigure(true)}
+                    >
+                      连接 AI
+                    </button>
+                  </div>
                 ) : state?.runtime === "codex" &&
                   state.status === "auth-required" ? (
-                  <button onClick={() => void login().catch(onError)}>
-                    使用 ChatGPT 登录
-                  </button>
+                  <div className="proposal">
+                    <span>本机 Codex 需要登录 ChatGPT 账号。</span>
+                    <button
+                      className="primary"
+                      onClick={() => void login().catch(onError)}
+                    >
+                      登录 ChatGPT
+                    </button>
+                  </div>
                 ) : (
                   "描述要完成的电路，或选中元件后提问。"
                 )}
