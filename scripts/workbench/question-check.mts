@@ -44,6 +44,14 @@ try {
             contents:
               "export const subscribeEvents=(fn)=>globalThis.__subscribe(fn);",
           }));
+          // A module worker has no meaning in jsdom: question scenarios never arrange.
+          builder.onResolve({ filter: /\?worker&url$/ }, () => ({
+            path: "arrange-worker",
+            namespace: "worker-url",
+          }));
+          builder.onLoad({ filter: /.*/, namespace: "worker-url" }, () => ({
+            contents: 'export default "arrange-worker.js";',
+          }));
         },
       },
     ],
