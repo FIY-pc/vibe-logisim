@@ -6,11 +6,12 @@ import {
 } from "./circuit/context.mts";
 import { systemProxy, networkFetch, closeNetwork } from "./network.mts";
 import { arrangeInWorker } from "./arrange.mts";
+import { inspectView, observationView } from "./circuit/observation.mts";
 /** Runtime process entry. stdout is exclusively JSONL. */
 import { AgentRuntime } from "../core/agent-runtime.mts";
 import editSchemaSource from "./generated/edit-schema.json" with { type: "json" };
 import { createInterface } from "node:readline";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { createCodexInstaller } from "./installer.mts";
@@ -38,6 +39,21 @@ const host = (request: unknown) =>
     send({ kind: "host", id, request });
   });
 let binding: any = null;
+/** Document facts without the per-component views; those come from observe_circuit. */
+const documentSummary = (document: any) => ({
+  id: document.id,
+  name: document.name,
+  revision: document.revision,
+  main: document.main,
+  dirty: document.dirty,
+  libraries: document.libraries,
+  circuits: document.circuits.map((c: any) => ({
+    name: c.name,
+    components: c.components.length,
+    wires: c.wires.length,
+  })),
+});
+const inspectArguments = ({ target: _, circuit: __, ...args }: any) => args;
 const targetSchema = {
   type: "string",
   enum: ["current", "working-copy"],
@@ -81,7 +97,7 @@ const toolHost = {
     {
       name: "read_circuit",
       description:
-        "Read the shared circuit document and XML, or the current scratch working copy with its own revision-local IDs.",
+        "Summarize the shared circuit document, or the scratch working copy: revision, main circuit, libraries and each definition's component and wire counts. The complete XML of this revision is circuit.circ in the file workspace; read or search it with the file tools.",
       inputSchema: {
         type: "object",
         properties: { target: targetSchema },
@@ -92,10 +108,53 @@ const toolHost = {
     {
       name: "observe_circuit",
       description:
-        "Inspect connectivity and component geometry using the compatible Logisim runtime.",
+        "Observe one circuit definition through the compatible Logisim runtime. Without options: counts, input/output pins, clocks, subcircuit instances, a connectivity signature and the first page of components with their port geometry, within about 32 KB. componentDirectory.cursor continues the component pages. componentIds returns attributes, allowed values and per-bit nets of those components. portConnections lists which ports share a native net with chosen ports. includeWires pages the loaded wire segments. Use one of these options per call. IDs belong to this revision.",
       inputSchema: {
         type: "object",
-        properties: { circuit: { type: "string" }, target: targetSchema },
+        properties: {
+          circuit: { type: "string" },
+          target: targetSchema,
+          componentIds: {
+            type: "array",
+            minItems: 1,
+            maxItems: 64,
+            items: { type: "string" },
+          },
+          componentDirectory: {
+            type: "object",
+            properties: {
+              maxBytes: { type: "integer", minimum: 1024, maximum: 32000 },
+              cursor: { type: "string" },
+            },
+            additionalProperties: false,
+          },
+          portConnections: {
+            type: "object",
+            properties: {
+              ports: {
+                type: "array",
+                minItems: 1,
+                maxItems: 24,
+                items: {
+                  type: "object",
+                  properties: {
+                    componentId: { type: "string" },
+                    port: { type: "integer", minimum: 0 },
+                  },
+                  required: ["componentId", "port"],
+                  additionalProperties: false,
+                },
+              },
+              maxBytes: { type: "integer", minimum: 1024, maximum: 32000 },
+              cursor: { type: "string" },
+            },
+            required: ["ports"],
+            additionalProperties: false,
+          },
+          includeWires: { type: "boolean" },
+          wireOffset: { type: "integer", minimum: 0 },
+          wireLimit: { type: "integer", minimum: 1, maximum: 256 },
+        },
         required: ["circuit"],
         additionalProperties: false,
       },
@@ -164,7 +223,7 @@ const toolHost = {
     {
       name: "trace_circuit",
       description:
-        "Run a fresh isolated sequential simulation for 1–256 native ticks. Supply initial input Pin values by label and exact component IDs/port indexes from read_circuit with the same target to watch. Samples include tick 0 and every requested tick. Input events apply before sampling their tick, in array order. Results expose unknown bits and oscillation; they do not modify the user's live simulation or source.",
+        "Run a fresh isolated sequential simulation for 1–256 native ticks. Supply initial input Pin values by label and exact component IDs/port indexes from observe_circuit with the same target to watch. Samples include tick 0 and every requested tick. Input events apply before sampling their tick, in array order. Results expose unknown bits and oscillation; they do not modify the user's live simulation or source.",
       inputSchema: {
         type: "object",
         properties: {
@@ -215,7 +274,7 @@ const toolHost = {
     {
       name: "arrange_circuit",
       description:
-        "Rearrange one circuit definition: place the components by signal flow, keep the drawing readable and preserve behaviour. Returns the arranged source with the readability before and after; verify it with observe_circuit and simulate_circuit, then apply it with edit_circuit replace. Passing organization groups components into columns; pinnedComponentIds and keepTunnels protect what must stay.",
+        "Rearrange one circuit definition of the shared document: place the components by signal flow, keep the drawing readable and preserve behaviour. The arranged source replaces the scratch working copy circuit.circ, which is offered to the user for review at the end of the turn; the shared document is unchanged. Returns readability before and after; inspect and verify the result with target=working-copy. Passing organization groups components into columns; pinnedComponentIds and keepTunnels protect what must stay.",
       inputSchema: {
         type: "object",
         properties: {
@@ -331,14 +390,30 @@ const toolHost = {
       if (request.tool === "read_circuit") {
         const review = await host({ op: "proposalReview", ...copy });
         return {
-          ...review.after,
-          xml: copy.xml,
+          ...documentSummary(review.after),
           baseRevision: copy.revision,
           target: "working-copy",
         };
       }
-      if (request.tool === "observe_circuit")
-        return host({ op: "proposalObserve", ...copy, circuit });
+      if (request.tool === "observe_circuit") {
+        const { observation } = await host({
+          op: "proposalObserve",
+          ...copy,
+          circuit,
+        });
+        return inspectView(
+          observationView(observation),
+          {
+            projectId: id,
+            revisionId: null,
+            candidateId: null,
+            target: "working-copy",
+            baseRevision: copy.revision,
+            circuit,
+          },
+          inspectArguments(request.arguments),
+        );
+      }
       if (request.tool === "render_circuit") {
         const result = await host({
           op: "proposalPreview",
@@ -376,14 +451,27 @@ const toolHost = {
       }
       throw new Error("该工具不支持工作副本");
     }
-    if (request.tool === "read_circuit") {
-      const document = await host({ op: "read", id });
-      const source = await host({
-        op: "source",
+    if (request.tool === "read_circuit")
+      return documentSummary(await host({ op: "read", id }));
+    if (request.tool === "observe_circuit") {
+      const current = await host({ op: "read", id });
+      const circuit = request.arguments.circuit;
+      const document = await host({
+        op: "observe",
         id,
-        revision: document.revision,
+        revision: current.revision,
+        circuit,
       });
-      return { ...document, ...source };
+      return inspectView(
+        observationView(document),
+        {
+          projectId: id,
+          revisionId: current.revision,
+          candidateId: null,
+          circuit,
+        },
+        inspectArguments(request.arguments),
+      );
     }
     if (request.tool === "arrange_circuit") {
       const current = await host({ op: "read", id });
@@ -410,20 +498,24 @@ const toolHost = {
         },
         60_000,
       );
+      // The arranged source is a whole file; it goes to the working copy, never
+      // back through the model.
+      await proposals.workingCopy(id);
+      scope.assertCurrent();
+      await writeFile(path.join(workDir, "circuit.circ"), outcome.xml);
       return {
         circuit,
         revision,
-        xml: outcome.xml,
+        target: "working-copy",
         readabilityBefore: outcome.readabilityBefore,
         readabilityAfter: outcome.readabilityAfter,
         fixed: outcome.fixedComponentIds.length,
-        note: "整理结果还没有写回电路：先用 observe_circuit 和 simulate_circuit 核对，再把 xml 通过 edit_circuit replace 应用。",
+        note: "整理结果已写入工作副本 circuit.circ，回合结束后交给用户审阅；共享文档未改变。用 target=working-copy 检查和验证。",
       };
     }
     const current = await host({ op: "read", id });
     const op = (
       {
-        observe_circuit: "observe",
         render_circuit: "render",
         edit_circuit: "edit",
         simulate_circuit: "simulate",
@@ -479,7 +571,7 @@ const toolNames: ReadonlySet<string> = new Set(
   toolHost.tools.map((tool) => tool.name),
 );
 const instructions =
-  "You collaborate on digital circuits in Vibe Logisim. Respond in the user language and send concise progress messages before tools. The Rust host owns the current document and revision. Use read_circuit, observe_circuit, render_circuit, and edit_circuit to work on that shared document. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved. Native observations are authoritative for electrical facts. simulate_circuit tests independent vectors and trace_circuit tests tick sequences in an isolated native simulation, leaving the user live simulation unchanged. project_files reads text files from the active project folder without writing them. kept_observations reads historical simulation evidence; check revision and instance identity before comparing. The general file tools operate in a scratch workspace, not the original project. A copy named circuit.circ is prepared for direct edits and scripts; changed content is offered to the user for explicit application at the end of the turn. Use target=working-copy with read_circuit, observe_circuit, render_circuit, simulate_circuit or trace_circuit to inspect or verify that scratch file before application. Working-copy verification results are retained with its exact content and appear in the proposal review. Keep unknown XML, libraries and unrelated circuits. Circuit organization is part of delivery: preserve behavior and make the resulting drawing readable. Never invent tool results or claim you inspected an image if it was not delivered as image input.";
+  "You collaborate on digital circuits in Vibe Logisim. Respond in the user language and send concise progress messages before tools. The Rust host owns the current document and revision. Use read_circuit, observe_circuit, render_circuit, and edit_circuit to work on that shared document. observe_circuit returns bounded pages; ask for the components, ports or wires you need instead of the whole definition. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved. Native observations are authoritative for electrical facts. simulate_circuit tests independent vectors and trace_circuit tests tick sequences in an isolated native simulation, leaving the user live simulation unchanged. project_files reads text files from the active project folder without writing them. kept_observations reads historical simulation evidence; check revision and instance identity before comparing. The general file tools operate in a scratch workspace, not the original project. A copy named circuit.circ is prepared for direct edits and scripts; changed content is offered to the user for explicit application at the end of the turn. Use target=working-copy with read_circuit, observe_circuit, render_circuit, simulate_circuit or trace_circuit to inspect or verify that scratch file before application. Working-copy verification results are retained with its exact content and appear in the proposal review. Keep unknown XML, libraries and unrelated circuits. Circuit organization is part of delivery: preserve behavior and make the resulting drawing readable. Never invent tool results or claim you inspected an image if it was not delivered as image input.";
 const backend = new AgentRuntime({
   resolveProxy: systemProxy,
   networkFetch,
