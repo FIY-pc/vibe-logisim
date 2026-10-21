@@ -57,6 +57,7 @@ jobs:
           npm run check:contracts
           npm run test:core
           npm run check
+          npm run test:arranger
           npm run test:runtime
           npm run test:ui
           npm run build

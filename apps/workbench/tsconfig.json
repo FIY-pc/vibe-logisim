@@ -9,6 +9,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
     "types": ["vite/client"]
   },
   "include": ["src", "vite.config.ts"]

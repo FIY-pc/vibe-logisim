@@ -1,8 +1,9 @@
 // The group solver: each group's parts are placed by ELK's layered algorithm
 // (or stacked as a bank), then the groups are packed into rows or stages.
 // Geometry only; nothing here adds or removes a connection.
-import elkjs from "elkjs/lib/elk.bundled.js";
-import type { ElkNode } from "elkjs/lib/elk.bundled.js";
+import elkjs from "elkjs/lib/elk-api.js";
+import type { ElkNode } from "elkjs/lib/elk-api.js";
+import { elkWorkerFactory } from "./elk-worker.mts";
 import { orderBanks, placeBank } from "./bank-order.mts";
 import { packGroups } from "./group-packing.mts";
 import { packStages } from "./stage-packing.mts";
@@ -87,8 +88,18 @@ export interface SolverInput {
   alignTop?: boolean;
 }
 
-const ELK = elkjs.default;
-const elk = new ELK();
+// The API file is CommonJS: under NodeNext its class is the module's
+// `default`, while a browser bundler hands the class itself. The worker is
+// passed explicitly because the library's own choice resolves to undefined
+// under a bundler.
+interface ElkConstructor {
+  new (options: { workerFactory: () => unknown }): {
+    layout(graph: unknown): Promise<ElkNode>;
+  };
+}
+const ELK = ((elkjs as unknown as { default?: ElkConstructor }).default ??
+  elkjs) as unknown as ElkConstructor;
+const elk = new ELK({ workerFactory: elkWorkerFactory });
 const snap: Snap = (v) => Math.ceil(v / 10) * 10;
 
 function port(

@@ -5,6 +5,7 @@ import {
   referenceSummary,
 } from "./references.mts";
 import { systemProxy, networkFetch, closeNetwork } from "./network.mts";
+import { arrangeInWorker } from "./arrange.mts";
 /** Runtime process entry. stdout is exclusively JSONL. */
 import { AgentRuntime } from "../core/agent-runtime.mts";
 import editSchemaSource from "./generated/edit-schema.json" with { type: "json" };
@@ -212,6 +213,51 @@ const toolHost = {
       },
     },
     {
+      name: "arrange_circuit",
+      description:
+        "Rearrange one circuit definition: place the components by signal flow, keep the drawing readable and preserve behaviour. Returns the arranged source with the readability before and after; verify it with observe_circuit and simulate_circuit, then apply it with edit_circuit replace. Passing organization groups components into columns; pinnedComponentIds and keepTunnels protect what must stay.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          revision: { type: "string" },
+          circuit: { type: "string" },
+          options: {
+            type: "object",
+            properties: {
+              organization: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    components: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                  },
+                  required: ["components"],
+                  additionalProperties: false,
+                },
+              },
+              pinnedComponentIds: {
+                type: "array",
+                items: { type: "string" },
+              },
+              keepTunnels: { type: "boolean" },
+              localiseConstants: { type: "boolean" },
+              panelBelowY: { type: "number" },
+              columnGap: { type: "integer", minimum: 1 },
+              maxLayerSpan: { type: "integer", minimum: 1 },
+              tunnelSpan: { type: "integer", minimum: 1 },
+            },
+            additionalProperties: false,
+          },
+        },
+        required: ["circuit"],
+        additionalProperties: false,
+      },
+    },
+    {
       name: "edit_circuit",
       description:
         "Apply a structural edit to the active in-memory document. Supply the revision from read_circuit. Edits to existing files in the open project folder are automatically saved with conflict checks; other documents stay unsaved.",
@@ -248,6 +294,7 @@ const toolHost = {
       observe_circuit: "检查电路",
       render_circuit: "查看电路",
       edit_circuit: "修改电路",
+      arrange_circuit: "整理布局与连线",
       simulate_circuit: "验证测试向量",
       trace_circuit: "验证时序",
     })[name] || name,
@@ -337,6 +384,41 @@ const toolHost = {
         revision: document.revision,
       });
       return { ...document, ...source };
+    }
+    if (request.tool === "arrange_circuit") {
+      const current = await host({ op: "read", id });
+      const revision = request.arguments.revision || current.revision;
+      const circuit = request.arguments.circuit;
+      const source = await host({ op: "source", id, revision });
+      const focus = await host({ op: "observe", id, revision, circuit });
+      const options = request.arguments.options || {};
+      const outcome = await arrangeInWorker(
+        {
+          xml: source.xml,
+          circuit,
+          focus,
+          options: {
+            organization: options.organization,
+            pinnedComponentIds: options.pinnedComponentIds,
+            keepTunnels: options.keepTunnels,
+            localiseConstants: options.localiseConstants,
+            panelBelowY: options.panelBelowY,
+            columnGap: options.columnGap,
+            maxLayerSpan: options.maxLayerSpan,
+            tunnelSpan: options.tunnelSpan,
+          },
+        },
+        60_000,
+      );
+      return {
+        circuit,
+        revision,
+        xml: outcome.xml,
+        readabilityBefore: outcome.readabilityBefore,
+        readabilityAfter: outcome.readabilityAfter,
+        fixed: outcome.fixedComponentIds.length,
+        note: "整理结果还没有写回电路：先用 observe_circuit 和 simulate_circuit 核对，再把 xml 通过 edit_circuit replace 应用。",
+      };
     }
     const current = await host({ op: "read", id });
     const op = (

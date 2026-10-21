@@ -112,7 +112,10 @@ export async function verifyRestoredInteractions() {
           previewResolve = resolve;
         });
       return {
-        segments: [
+        revision: null,
+        delta: request.delta,
+        removedWires: [],
+        addedWires: [
           {
             from: { x: request.delta.x, y: 20 },
             to: { x: request.delta.x + 30, y: 20 },
@@ -464,7 +467,10 @@ export async function verifyRestoredInteractions() {
     delayedPreview = false;
     await act(async () => {
       previewResolve!({
-        segments: [{ from: { x: 1, y: 1 }, to: { x: 2, y: 1 } }],
+        revision: null,
+        delta: { x: 1, y: 0 },
+        removedWires: [],
+        addedWires: [{ from: { x: 1, y: 1 }, to: { x: 2, y: 1 } }],
       });
       await new Promise((resolve) => setTimeout(resolve, 5));
     });

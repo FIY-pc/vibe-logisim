@@ -1,4 +1,5 @@
 import type { EditResult } from "../generated/EditResult";
+import { arrangeCircuit } from "../lib/arrange";
 import { command } from "../lib/transport";
 import type { CatalogTool, Document, Edit, XmlNode } from "../lib/types";
 import type { SourceDraft } from "../stores/editor";
@@ -9,6 +10,9 @@ import { currentView, type View } from "../workbench/view";
 /** Editing the shown circuit: edits, history, selection, placement and the XML source. */
 export function createEditorActions(stores: Stores) {
   const { documents, editor, notices, shell } = stores;
+  // Arranging runs off the interface thread; the toolbar stays disabled until
+  // the slowest one returns.
+  const arrangeCount = { current: 0 };
   const busy = <T>(action: () => Promise<T>) => shell.getState().busy(action);
   const onError = (error: unknown) => notices.getState().onError(error);
 
@@ -36,7 +40,7 @@ export function createEditorActions(stores: Stores) {
       documents.getState().active === doc.id &&
       navigation.current === originNavigation &&
       documents.getState().docs.find((item) => item.id === doc.id)?.revision ===
-        next.revision &&
+        result.revision &&
       originSelection.scope === scope &&
       originSelection.ids.includes(change.id) &&
       next.circuits
@@ -79,6 +83,54 @@ export function createEditorActions(stores: Stores) {
           documents.getState().mergeDocument(result.view, doc.revision),
         )
         .catch(onError);
+  };
+
+  /** Rearranges the shown circuit and applies the result as one undoable edit. */
+  const arrange = async ({ doc, circuit }: View) => {
+    if (!doc || !circuit) return;
+    const revision = doc.revision;
+    arrangeCount.current += 1;
+    editor.getState().setArranging(true);
+    try {
+      const source = await busy(() =>
+        command<{ xml: string }>({ op: "source", id: doc.id, revision }),
+      );
+      const focus = await busy(() =>
+        command<unknown>({
+          op: "observe",
+          id: doc.id,
+          revision,
+          circuit: circuit.name,
+        }),
+      );
+      const arranged = await arrangeCircuit({
+        xml: source.xml,
+        circuit: circuit.name,
+        focus,
+      });
+      const result = await busy(() =>
+        command<EditResult>({
+          op: "edit",
+          id: doc.id,
+          revision,
+          circuit: circuit.name,
+          edit: { kind: "replace", xml: arranged.xml },
+        }),
+      );
+      documents.getState().mergeDocument(result.view, revision);
+      const before = arranged.before;
+      const after = arranged.after;
+      notices
+        .getState()
+        .setNotice(
+          `已整理：导线 ${before.wireSegments} → ${after.wireSegments} 段，交叉 ${before.crossings} → ${after.crossings}，占用 ${before.extent.width}×${before.extent.height} → ${after.extent.width}×${after.extent.height}。可用 Ctrl+Z 撤销。`,
+        );
+    } catch (error) {
+      onError(error);
+    } finally {
+      arrangeCount.current -= 1;
+      editor.getState().setArranging(arrangeCount.current > 0);
+    }
   };
 
   /** Selects objects of the view's circuit. */
@@ -204,6 +256,7 @@ export function createEditorActions(stores: Stores) {
 
   return {
     edit,
+    arrange,
     placeComponent,
     history,
     select,

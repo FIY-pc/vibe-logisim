@@ -19,6 +19,7 @@ export function EditorToolbarRegion() {
   const place = useEditor((state) => state.place);
   const zoom = useEditor((state) => state.zoom);
   const showGrid = useEditor((state) => state.showGrid);
+  const arranging = useEditor((state) => state.arranging);
   const pending = useShell((state) => state.pending);
   const shortcuts = useSettings((state) => state.labels);
   const onError = useNotices((state) => state.onError);
@@ -47,7 +48,9 @@ export function EditorToolbarRegion() {
       zoom={zoom}
       onZoom={requestZoom}
       showGrid={showGrid}
+      arranging={arranging}
       onToggleGrid={() => setShowGrid((shown) => !shown)}
+      onArrange={() => void editing.arrange(view)}
     />
   );
 }

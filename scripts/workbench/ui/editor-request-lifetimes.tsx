@@ -141,7 +141,15 @@ export async function verifyEditorRequestLifetimes() {
         ],
       };
       records[request.id] = next;
-      return next;
+      return {
+        view: next,
+        revision: next.revision,
+        noop: false,
+        title: "修改属性",
+        circuit: request.circuit,
+        changedCircuits: [request.circuit],
+        selection: { components: [request.edit.id], wires: [] },
+      };
     }
     if (request.op === "source")
       return sourceGate
