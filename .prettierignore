@@ -1,2 +1,4 @@
 apps/workbench/src/generated/
 packages/agent-runtime/src/generated/
+
+packages/arranger/test/fixtures/

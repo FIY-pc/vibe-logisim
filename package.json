@@ -4,7 +4,8 @@
   "version": "0.6.0-dev",
   "workspaces": [
     "apps/workbench",
-    "packages/agent-runtime"
+    "packages/agent-runtime",
+    "packages/arranger"
   ],
   "scripts": {
     "dev": "node scripts/workbench/dev.mts",
