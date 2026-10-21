@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import type { MovePreview as Preview } from "../generated/MovePreview";
 import { command } from "./transport";
 import type { Point } from "./types";
-type Segment = { from: Point; to: Point };
 type Move = {
   id: string;
   revision: string;
@@ -18,27 +18,29 @@ export function useMovePreview(move: Move | null) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [preview, setPreview] = useState<{
     key: string;
-    segments: Segment[];
+    wires: Preview | null;
     error: string;
-  }>({ key: "", segments: [], error: "" });
+  }>({ key: "", wires: null, error: "" });
   const request = useRef<() => void>(() => {});
   request.current = () => {
     if (running.current || !live.current || !latest.current.move) return;
     const target = latest.current;
     running.current = true;
-    void command<{ segments: Segment[] }>({
-      op: "movePreview",
-      ...target.move!,
-    })
+    void command<Preview>({ op: "movePreview", ...target.move! })
       .then((result) => {
         if (live.current && latest.current.key === target.key)
-          setPreview({ key: target.key, segments: result.segments, error: "" });
+          setPreview({
+            key: target.key,
+            wires: result,
+            // A rejected position is a normal part of dragging.
+            error: result.error?.message ?? "",
+          });
       })
       .catch((error) => {
         if (live.current && latest.current.key === target.key)
           setPreview({
             key: target.key,
-            segments: [],
+            wires: null,
             error: String(error instanceof Error ? error.message : error),
           });
       })
@@ -69,5 +71,5 @@ export function useMovePreview(move: Move | null) {
   }, [key]);
   return key && preview.key === key
     ? preview
-    : { key, segments: [] as Segment[], error: "" };
+    : { key, wires: null, error: "" };
 }

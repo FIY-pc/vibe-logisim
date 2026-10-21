@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, LocateFixed, Minus, Plus, Maximize } from "lucide-react";
+import type { EditResult } from "../generated/EditResult";
 import { command } from "../lib/transport";
 import type { Document, Bounds } from "../lib/types";
 import type {
@@ -387,13 +388,15 @@ function ChangeReview({
             revision: initial.revision,
             entry: entry!.id,
           })
-        : await command<Document>({
-            op: "edit",
-            id: proposal!.documentId,
-            revision: proposal!.revision,
-            circuit: doc.main,
-            edit: { kind: "replace", xml: proposal!.xml },
-          });
+        : (
+            await command<EditResult>({
+              op: "edit",
+              id: proposal!.documentId,
+              revision: proposal!.revision,
+              circuit: doc.main,
+              edit: { kind: "replace", xml: proposal!.xml },
+            })
+          ).view;
       onDocument(updated, expectedRevision);
       if (history) onClose();
       else onDiscard?.();

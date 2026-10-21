@@ -374,3 +374,35 @@ fn save_as_rebases_external_libraries_and_history_without_changing_original() {
     assert_eq!(d.view().unwrap().circuits[0].wires.len(), 1);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), xml);
 }
+
+#[test]
+fn palette_identity_ignores_edits_but_follows_libraries() {
+    use vibe_workspace_core::EMPTY_CIRCUIT;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("source.circ");
+    std::fs::write(&path, EMPTY_CIRCUIT).unwrap();
+    let mut d = Document::open(&path).unwrap();
+    let original = d.palette_identity();
+    d.edit(
+        &d.revision(),
+        "main",
+        Edit::Wire {
+            points: vec![Point { x: 10, y: 10 }, Point { x: 90, y: 10 }],
+        },
+    )
+    .unwrap();
+    assert_eq!(d.palette_identity(), original);
+    assert_eq!(d.view().unwrap().palette_identity, original);
+    let with_library = EMPTY_CIRCUIT.replace(
+        "<lib desc=\"#Wiring\" name=\"0\"/>",
+        "<lib desc=\"#Wiring\" name=\"0\"/><lib desc=\"#Gates\" name=\"1\"/>",
+    );
+    std::fs::write(&path, &with_library).unwrap();
+    d.reload(
+        &d.revision(),
+        &vibe_workspace_core::digest(with_library.as_bytes()),
+        true,
+    )
+    .unwrap();
+    assert_ne!(d.palette_identity(), original);
+}

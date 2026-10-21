@@ -8,6 +8,8 @@ import {
   access,
 } from "node:fs/promises";
 import path from "node:path";
+/** Edits, undo and redo answer with an edit result; scripts work with the view. */
+const documentOf = (result: any) => (result && result.view ? result.view : result);
 export async function verifyFileHistory(
   command: (request: Record<string, unknown>) => Promise<any>,
   directory: string,
@@ -133,13 +135,15 @@ export async function verifyFileHistory(
   let doc = await call({ op: "open", path: circuitPath });
   const id = doc.id;
   await writeFile(circuitPath, source + "\n");
-  doc = await call({
-    op: "edit",
-    id,
-    revision: doc.revision,
-    circuit: "main",
-    edit: { kind: "renameCircuit", name: "draft" },
-  });
+  doc = documentOf(
+    await call({
+      op: "edit",
+      id,
+      revision: doc.revision,
+      circuit: "main",
+      edit: { kind: "renameCircuit", name: "draft" },
+    }),
+  );
   assert(doc.saveError);
   await writeFile(circuitPath, source);
   await call({
@@ -162,7 +166,7 @@ export async function verifyFileHistory(
   );
   plan = await prepare([replacementSource]);
   await assert.rejects(apply(plan, "replace"), /未保存/);
-  doc = await call({ op: "undo", id, revision: doc.revision });
+  doc = documentOf(await call({ op: "undo", id, revision: doc.revision }));
   await apply(plan, "replace");
   const overwrite = await latest();
   doc = await call({ op: "open", path: circuitPath });
@@ -174,20 +178,22 @@ export async function verifyFileHistory(
     circuitPath,
     Buffer.concat([importedBytes, Buffer.from("\n")]),
   );
-  doc = await call({
-    op: "edit",
-    id,
-    revision: doc.revision,
-    circuit: "imported",
-    edit: { kind: "renameCircuit", name: "new-draft" },
-  });
+  doc = documentOf(
+    await call({
+      op: "edit",
+      id,
+      revision: doc.revision,
+      circuit: "imported",
+      edit: { kind: "renameCircuit", name: "new-draft" },
+    }),
+  );
   assert(doc.saveError);
   await writeFile(circuitPath, importedBytes);
   await assert.rejects(
     call({ op: "folderHistoryUndo", id: overwrite.id }),
     /未保存/,
   );
-  doc = await call({ op: "undo", id, revision: doc.revision });
+  doc = documentOf(await call({ op: "undo", id, revision: doc.revision }));
   await call({ op: "folderHistoryUndo", id: overwrite.id });
   doc = await call({ op: "open", path: circuitPath });
   assert.equal(doc.id, id);

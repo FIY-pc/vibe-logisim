@@ -294,7 +294,7 @@ impl Tree {
         a == b
     }
 
-    fn source(&self, n: usize) -> &str {
+    pub(crate) fn source(&self, n: usize) -> &str {
         &self.text[self.nodes[n].span.clone()]
     }
 

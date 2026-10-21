@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 type Command = (request: any) => Promise<any>;
+/** Edits, undo and redo answer with an edit result; scripts work with the view. */
+const documentOf = (result: any) => (result && result.view ? result.view : result);
 /** Frozen candidate review, using only synthetic source and native rendering. */
 export async function verifyProposals(command: Command) {
   const original =
@@ -86,31 +88,37 @@ export async function verifyProposals(command: Command) {
     true,
   );
   assert.equal((await command({ op: "read", id: doc.id })).canUndo, false);
-  const applied = await command({
-    op: "edit",
-    id: doc.id,
-    revision: doc.revision,
-    circuit: "main",
-    edit: { kind: "replace", xml },
-  });
+  const applied = documentOf(
+    await command({
+      op: "edit",
+      id: doc.id,
+      revision: doc.revision,
+      circuit: "main",
+      edit: { kind: "replace", xml },
+    }),
+  );
   assert.equal(applied.circuits.length, 2);
-  const undone = await command({
-    op: "undo",
-    id: doc.id,
-    revision: applied.revision,
-  });
+  const undone = documentOf(
+    await command({
+      op: "undo",
+      id: doc.id,
+      revision: applied.revision,
+    }),
+  );
   assert.equal(
     undone.revision,
     doc.revision,
     "One undo must restore the entire pre-application draft",
   );
-  const newer = await command({
-    op: "edit",
-    id: doc.id,
-    revision: undone.revision,
-    circuit: "main",
-    edit: { kind: "addCircuit", name: "manual" },
-  });
+  const newer = documentOf(
+    await command({
+      op: "edit",
+      id: doc.id,
+      revision: undone.revision,
+      circuit: "main",
+      edit: { kind: "addCircuit", name: "manual" },
+    }),
+  );
   const oldReview = await command({ op: "proposalReview", ...binding });
   assert.equal(oldReview.currentRevision, newer.revision);
   assert.equal(

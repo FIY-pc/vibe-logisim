@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
 type Command = (request: any) => Promise<any>;
+/** Edits, undo and redo answer with an edit result; scripts work with the view. */
+const documentOf = (result: any) => (result && result.view ? result.view : result);
 
 // Independently constructed circuits. Expected behavior is checked through real native stimuli.
 export async function verifyEditing(command: Command) {
@@ -30,7 +32,7 @@ export async function verifyEditing(command: Command) {
       revision: doc.revision,
       circuit: "main",
       edit: { kind: "move", ids, delta: { x, y } },
-    });
+    }).then(documentOf);
   const component = (doc: Document, label: string) =>
     doc.circuits[0].components.find((c) => c.attributes.label === label)!.id;
   const signal = async (
@@ -98,10 +100,19 @@ export async function verifyEditing(command: Command) {
     simulationBeforePreview.viewId,
     "Movement previews must not replace the live simulation",
   );
+  const beforeWires = fanout.circuits[0].wires;
+  const segment = ({ from, to }: { from: any; to: any }) =>
+    `${from.x},${from.y}:${to.x},${to.y}`;
   fanout = await move(fanout, [component(fanout, "input")], 0, 60);
+  const expected = new Set(
+    beforeWires
+      .filter((w) => !preview.removedWires.includes(w.id))
+      .map(segment),
+  );
+  for (const added of preview.addedWires) expected.add(segment(added));
   assert.deepEqual(
-    preview.segments,
-    fanout.circuits[0].wires.map(({ from, to }) => ({ from, to })),
+    new Set(fanout.circuits[0].wires.map(segment)),
+    expected,
     "Preview and committed movement must use the same routing plan",
   );
   await assert.rejects(
@@ -115,11 +126,13 @@ export async function verifyEditing(command: Command) {
     }),
   );
   await signal(fanout, "input", "0101", ["out", "branch"]);
-  fanout = await command({
-    op: "undo",
-    id: fanout.id,
-    revision: fanout.revision,
-  });
+  fanout = documentOf(
+    await command({
+      op: "undo",
+      id: fanout.id,
+      revision: fanout.revision,
+    }),
+  );
   assert.equal(fanout.revision, original, "Move must be one undo step");
   fanout = await move(fanout, [component(fanout, "branch")], 60, 0);
   await signal(fanout, "input", "1100", ["out", "branch"]);

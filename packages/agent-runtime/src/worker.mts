@@ -356,19 +356,23 @@ const toolHost = {
       revision: request.arguments.revision || current.revision,
     });
     if (op === "edit") {
+      // The event carries the document view for the interface; the model gets a
+      // summary of what changed, not the whole circuit again.
+      const { view, ...summary } = result;
       send({
         kind: "event",
         event: {
           type: "document-changed",
-          document: result,
+          document: view,
           expectedBaseRevision: request.arguments.revision || current.revision,
         },
       });
-      binding = { ...binding, revision: result.revision };
+      binding = { ...binding, revision: view.revision };
       scope.updateBinding?.({
         workspace: { id },
-        revision: { id: result.revision },
+        revision: { id: view.revision },
       });
+      return summary;
     }
     if (op === "render")
       return {

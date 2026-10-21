@@ -291,15 +291,8 @@ export function Canvas({
         }
       : null,
   );
-  const segmentKey = (segment: { from: Point; to: Point }) =>
-    [segment.from, segment.to]
-      .map((p) => `${p.x},${p.y}`)
-      .sort()
-      .join(":");
-  const originalSegments = new Set(circuit.wires.map(segmentKey));
-  const movedSegments = movePreview.segments.filter(
-    (segment) => !originalSegments.has(segmentKey(segment)),
-  );
+  // The preview answers with the routing difference, not a whole picture.
+  const movedSegments = movePreview.wires?.addedWires ?? [];
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const held = useRef<(() => Promise<void>) | null>(null);
@@ -1052,7 +1045,7 @@ export function Canvas({
           >
             {movedSegments.map((segment) => (
               <line
-                key={segmentKey(segment)}
+                key={`${segment.from.x},${segment.from.y}:${segment.to.x},${segment.to.y}`}
                 x1={segment.from.x}
                 y1={segment.from.y}
                 x2={segment.to.x}

@@ -1,3 +1,4 @@
+import type { EditResult } from "../generated/EditResult";
 import { command } from "../lib/transport";
 import type { CatalogTool, Document, Edit, XmlNode } from "../lib/types";
 import type { SourceDraft } from "../stores/editor";
@@ -16,8 +17,8 @@ export function createEditorActions(stores: Stores) {
     const { navigation } = editor.getState();
     const originSelection = editor.getState().selected;
     const originNavigation = navigation.current;
-    const next = await busy(() =>
-      command<Document>({
+    const result = await busy(() =>
+      command<EditResult>({
         op: "edit",
         id: doc.id,
         revision: doc.revision,
@@ -25,6 +26,7 @@ export function createEditorActions(stores: Stores) {
         edit: change,
       }),
     );
+    const next = result.view;
     documents.getState().mergeDocument(next, doc.revision);
     // A field commit keeps its object selected. Preserve the revision guard for
     // other edits, late responses and selections the user changed meanwhile.
@@ -55,8 +57,8 @@ export function createEditorActions(stores: Stores) {
     revision: string,
     change: Edit,
   ) => {
-    const next = await busy(() =>
-      command<Document>({
+    const result = await busy(() =>
+      command<EditResult>({
         op: "edit",
         id: doc.id,
         revision,
@@ -64,16 +66,18 @@ export function createEditorActions(stores: Stores) {
         edit: change,
       }),
     );
-    documents.getState().mergeDocument(next, revision);
-    return next;
+    documents.getState().mergeDocument(result.view, revision);
+    return result.view;
   };
 
   const history = ({ doc }: View, op: "undo" | "redo") => {
     if (doc)
       void busy(() =>
-        command<Document>({ op, id: doc.id, revision: doc.revision }),
+        command<EditResult>({ op, id: doc.id, revision: doc.revision }),
       )
-        .then((next) => documents.getState().mergeDocument(next, doc.revision))
+        .then((result) =>
+          documents.getState().mergeDocument(result.view, doc.revision),
+        )
         .catch(onError);
   };
 
@@ -129,7 +133,7 @@ export function createEditorActions(stores: Stores) {
   /** Replaces the document with the source dialog's draft; a failure stays in the dialog. */
   const applySource = (source: SourceDraft) =>
     void busy(() =>
-      command<Document>({
+      command<EditResult>({
         op: "edit",
         id: source.id,
         revision: source.revision,
@@ -137,7 +141,9 @@ export function createEditorActions(stores: Stores) {
         edit: { kind: "replace", xml: source.xml },
       }),
     )
-      .then((next) => documents.getState().mergeDocument(next, source.revision))
+      .then((result) =>
+        documents.getState().mergeDocument(result.view, source.revision),
+      )
       .then(() => editor.getState().setSource(null))
       .catch((error) =>
         editor.getState().setSource((current) =>
@@ -156,7 +162,8 @@ export function createEditorActions(stores: Stores) {
       [documents, editor],
       () => {
         const { doc, circuit } = currentView(stores);
-        return [doc?.id, doc?.revision, circuit?.name];
+        // Icons depend on the project's libraries, not on its edits.
+        return [doc?.id, doc?.paletteIdentity, circuit?.name];
       },
       () => {
         const { doc, circuit } = currentView(stores);

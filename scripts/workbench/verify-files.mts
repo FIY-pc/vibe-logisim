@@ -47,6 +47,8 @@ child.stderr.on("data", (chunk) => {
   logs += chunk;
   url = logs.match(/Rust host: (http:\/\/127\.0\.0\.1:\d+)/)?.[1] || "";
 });
+/** Edits, undo and redo answer with an edit result; scripts work with the view. */
+const documentOf = (result: any) => (result && result.view ? result.view : result);
 async function command(value: Record<string, unknown>): Promise<any> {
   if (
     ["folderCreate", "folderRename", "folderTrash"].includes(String(value.op))
@@ -60,7 +62,7 @@ async function command(value: Record<string, unknown>): Promise<any> {
   const result = await response.json();
   if (result.error)
     throw Object.assign(new Error(result.error.message), result.error);
-  return result.result;
+  return documentOf(result.result);
 }
 try {
   for (let tries = 0; tries < 200 && !url; tries++) {

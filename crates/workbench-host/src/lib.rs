@@ -32,6 +32,7 @@ mod topology;
 mod verification;
 pub use observations::ObservationRecord;
 use requests::Effect;
+pub use requests::editing::{EditResult, ErrorDetail, MovePreview, Selection};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
@@ -248,13 +249,37 @@ impl Host {
         if !writes || unchanged {
             return result;
         }
+        // An edit result nests the document view so it can also carry the
+        // selection and title; other auto-saving ops return the view itself.
+        let nested = document.get("view").is_some();
         if meta.effect == Effect::AutoSave {
-            self.auto_save_edit(document).await;
+            if nested {
+                let mut view = document["view"].clone();
+                self.auto_save_edit(&mut view).await;
+                if let Some(revision) = view["revision"].as_str() {
+                    document["revision"] = json!(revision);
+                }
+                if let Some(error) = view.get("saveError") {
+                    document["saveError"] = error.clone();
+                }
+                if let Some(warning) = view.get("referenceWarning") {
+                    document["referenceWarning"] = warning.clone();
+                }
+                document["view"] = view;
+            } else {
+                self.auto_save_edit(document).await;
+            }
         }
-        if let Some(action) = &meta.history
-            && let Err(error) = self.history_after(action, history_before).await
-        {
-            document["historyWarning"] = json!(format!("修改已保留，但工程历史未能记录：{error}"));
+        let title = document["title"].as_str().map(str::to_owned);
+        if let Some(action) = &meta.history {
+            let action = match title {
+                Some(title) => action.clone().entitled(title),
+                None => action.clone(),
+            };
+            if let Err(error) = self.history_after(&action, history_before).await {
+                document["historyWarning"] =
+                    json!(format!("修改已保留，但工程历史未能记录：{error}"));
+            }
         }
         self.persist(&*self.workspace.lock().await).await;
         result
