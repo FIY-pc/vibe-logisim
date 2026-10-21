@@ -149,12 +149,29 @@ impl Host {
             )
             .map_err(|e| e.to_string())?;
         let view = current.view().map_err(|e| e.to_string())?;
+        let shown = view.circuits.iter().find(|c| c.name == circuit);
+        // Component ids name their location, so the moved ones are found again
+        // at the old place plus the delta.
+        let components = shown
+            .map(|c| {
+                ids.iter()
+                    .filter_map(|id| {
+                        let old = plan.graph.components.iter().find(|o| &o.id == id)?;
+                        let at = Point {
+                            x: old.location.x + delta.x,
+                            y: old.location.y + delta.y,
+                        };
+                        c.components
+                            .iter()
+                            .find(|n| n.location == at && n.name == old.name)
+                            .map(|n| n.id.clone())
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         // Wires keep their ids by file order, so a move's changed wires are the
         // ones whose geometry differs plus any the move added.
-        let wires = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
+        let wires = shown
             .map(|c| {
                 c.wires
                     .iter()
@@ -168,7 +185,7 @@ impl Host {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        Ok(edit_result_for_move(circuit, ids.to_vec(), wires, view))
+        Ok(edit_result_for_move(circuit, components, wires, view))
     }
 }
 
