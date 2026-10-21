@@ -33,11 +33,14 @@ public final class CircuitSession {
     private double frequency = 2, actualFrequency;
     private long version, commandSequence, nextTick, rateStart = System.nanoTime();
     private int rateTicks;
-    private String failure;
+    private String failure, failureCode;
+    // Buttons pressed through this session, in the state that holds them. They are
+    // released before the view changes, while their component IDs still resolve.
+    private final Map<Component, CircuitState> held = new LinkedHashMap<>();
 
     private CircuitSession(LogisimFile file, Element init) {
         circuit = file.getCircuit(init.getAttribute("circuit"));
-        if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
+        if (circuit == null) throw new SessionError("UNKNOWN_CIRCUIT", "Unknown circuit");
         project = new Project(file);
         view = new CircuitSessionView(circuit, init);
         reset();
@@ -48,8 +51,34 @@ public final class CircuitSession {
         ticks = 0;
         // Floating inputs are not invented as zeros. All stimuli are explicit.
         state.getPropagator().propagate();
-        pending = false;
+        pending = false; held.clear(); failure = null; failureCode = null;
         rateStart = System.nanoTime(); rateTicks = 0; actualFrequency = 0;
+    }
+
+    private void play() {
+        if (state.getPropagator().isOscillating()) throw new SessionError("OSCILLATING", "Circuit is oscillating; reset or edit it first");
+        automatic = true; settle();
+        running = !state.getPropagator().isOscillating();
+        nextTick = System.nanoTime() + (long)(1e9 / frequency);
+        rateStart = System.nanoTime(); rateTicks = 0; actualFrequency = 0;
+    }
+
+    private void setAutomatic(boolean value) {
+        automatic = value;
+        if (automatic) settle(); else running = false;
+    }
+
+    private void press(Component c, CircuitState local, Value value, String cause) {
+        local.getInstanceState(c).setData(new InstanceDataSingleton(value));
+        local.markComponentAsDirty(c);
+        settle();
+        trace.capture(local, ticks, cause);
+    }
+
+    private void release() {
+        for (Map.Entry<Component, CircuitState> entry : held.entrySet())
+            press(entry.getKey(), entry.getValue(), Value.FALSE, "button");
+        held.clear();
     }
 
     private void settle() {
@@ -67,9 +96,9 @@ public final class CircuitSession {
 
     private void command(Element request) {
         String op = request.getTagName();
-        if (op.equals("view")) { view.navigate(request, state); trace.clear(); memoryRequest = null; viewport = null; version++; return; }
+        if (op.equals("view")) { view.navigate(request, state, this::release); trace.clear(); memoryRequest = null; viewport = null; version++; return; }
         if (request.hasAttribute("viewId") && !view.id.equals(request.getAttribute("viewId")))
-            throw new IllegalArgumentException("运行视图已切换，请重新选择对象");
+            throw new SessionError("VIEW_CHANGED", "运行视图已切换，请重新选择对象");
         if (op.equals("viewport")) { viewport = CircuitFrame.Viewport.from(request); version++; return; }
         Map<String, Component> components = view.components;
         CircuitState local = view.resolve(state);
@@ -80,37 +109,34 @@ public final class CircuitSession {
         else if (op.equals("reset")) { reset(); trace.reset(); trace.capture(view.resolve(state), ticks, "reset"); }
         else if (op.equals("tick")) {
             running = false; tick();
-        } else if (op.equals("play")) {
-            if (state.getPropagator().isOscillating()) throw new IllegalArgumentException("Circuit is oscillating; reset or edit it first");
-            automatic = true; settle();
-            running = !state.getPropagator().isOscillating();
-            nextTick = System.nanoTime() + (long)(1e9 / frequency);
-            rateStart = System.nanoTime(); rateTicks = 0; actualFrequency = 0;
-        } else if (op.equals("pause")) running = false;
+        } else if (op.equals("play")) play();
+        else if (op.equals("pause")) running = false;
+        // Toggles read this session's own state, so rapid requests cannot act on a stale frame.
+        else if (op.equals("toggle-clock")) { if (running) running = false; else play(); }
+        else if (op.equals("toggle-propagation")) setAutomatic(!automatic);
         else if (op.equals("configure")) {
             if (request.hasAttribute("frequency")) {
-                double value = Double.parseDouble(request.getAttribute("frequency"));
-                if (!Double.isFinite(value) || value < .25 || value > 4096) throw new IllegalArgumentException("Frequency must be 0.25–4096 ticks/s");
+                double value;
+                try { value = Double.parseDouble(request.getAttribute("frequency")); }
+                catch (NumberFormatException error) { value = Double.NaN; }
+                if (!Double.isFinite(value) || value < .25 || value > 4096) throw new SessionError("FREQUENCY_RANGE", "Frequency must be 0.25–4096 ticks/s");
                 frequency = value; nextTick = System.nanoTime() + (long)(1e9 / frequency);
                 rateStart = System.nanoTime(); rateTicks = 0; actualFrequency = 0;
             }
-            if (request.hasAttribute("automatic")) {
-                automatic = request.getAttribute("automatic").equals("true");
-                if (automatic) settle(); else running = false;
-            }
+            if (request.hasAttribute("automatic")) setAutomatic(request.getAttribute("automatic").equals("true"));
         } else if (op.equals("step")) {
             running = false; automatic = false;
             StudioPropagation.step(state); pending = StudioPropagation.pending(state);
         } else if (op.equals("poke")) {
             Component c = components.get(request.getAttribute("componentId"));
-            if (c == null) throw new IllegalArgumentException("Unknown input");
+            if (c == null) throw new SessionError("INPUT_NOT_OPERABLE", "Unknown input");
             view.checkInput(c);
             InstancePoker poker;
             if (c.getFactory() instanceof Pin && Pin.FACTORY.isInputPin(Instance.getInstanceFor(c))) poker = new Pin.PinPoker();
             else if (c.getFactory() instanceof Clock) poker = new Clock.ClockPoker();
-            else throw new IllegalArgumentException("Only input pins and clocks can be poked");
+            else throw new SessionError("INPUT_NOT_OPERABLE", "Only input pins and clocks can be poked");
             int x = Integer.parseInt(request.getAttribute("x")), y = Integer.parseInt(request.getAttribute("y"));
-            if (!c.getBounds().expand(2).contains(x, y)) throw new IllegalArgumentException("Click outside component");
+            if (!c.getBounds().expand(2).contains(x, y)) throw new SessionError("INPUT_OUTSIDE", "Click outside component");
             InstanceState instance = local.getInstanceState(c);
             // A plain AWT event source avoids the native GUI's subcircuit-clone dialog.
             java.awt.Canvas source = new java.awt.Canvas();
@@ -120,28 +146,26 @@ public final class CircuitSession {
             local.markComponentAsDirty(c); settle();
         } else if (op.equals("memory") || op.equals("memory-write")) {
             Component c = components.get(request.getAttribute("componentId"));
-            if (c == null || !c.getFactory().getName().equals("RAM")) throw new IllegalArgumentException("Select RAM in this instance");
+            if (c == null || !c.getFactory().getName().equals("RAM")) throw new SessionError("NOT_RAM", "Select RAM in this instance");
+            // Validate the page here: the frame thread renders it later and must not fail on it.
+            StudioMemory.page(c, local, request, request.getOwnerDocument());
             if (op.equals("memory-write")) { StudioMemory.write(c, local, request); settle(); }
             memoryRequest = request;
         } else if (op.equals("input") || op.equals("pulse") || op.equals("button")) {
             Component c = components.get(request.getAttribute("componentId"));
-            if (c == null) throw new IllegalArgumentException("Unknown input");
+            if (c == null) throw new SessionError("INPUT_NOT_OPERABLE", "Unknown input");
             if (op.equals("pulse") || op.equals("button")) {
-                if (!c.getFactory().getName().equals("Button")) throw new IllegalArgumentException("Not a button");
+                if (!c.getFactory().getName().equals("Button")) throw new SessionError("INPUT_NOT_OPERABLE", "Not a button");
                 Value[] values = op.equals("pulse") ? new Value[] {Value.TRUE, Value.FALSE} : new Value[] {request.getAttribute("value").equals("1") ? Value.TRUE : Value.FALSE};
-                for (Value v : values) {
-                    local.getInstanceState(c).setData(new InstanceDataSingleton(v));
-                    local.markComponentAsDirty(c);
-                    settle();
-                    trace.capture(local, ticks, op);
-                }
+                for (Value v : values) press(c, local, v, op);
+                if (values[values.length - 1] == Value.TRUE) held.put(c, local); else held.remove(c);
             } else {
                 if (!(c.getFactory() instanceof Pin) || !Pin.FACTORY.isInputPin(Instance.getInstanceFor(c)))
-                    throw new IllegalArgumentException("Not an input pin");
+                    throw new SessionError("INPUT_NOT_OPERABLE", "Not an input pin");
                 view.checkInput(c);
                 BitWidth width = c.getAttributeSet().getValue(StdAttr.WIDTH);
                 String bits = request.getAttribute("bits");
-                if (bits.length() != width.getWidth() || !bits.matches("[01x]+")) throw new IllegalArgumentException("Input value out of range");
+                if (bits.length() != width.getWidth() || !bits.matches("[01x]+")) throw new SessionError("INPUT_FORMAT", "Input value out of range");
                 Value[] values = new Value[bits.length()];
                 for (int i = 0; i < values.length; i++) {
                     char bit = bits.charAt(bits.length() - 1 - i);
@@ -169,6 +193,7 @@ public final class CircuitSession {
         root.setAttribute("actualFrequency", String.valueOf(actualFrequency));
         root.setAttribute("oscillating", String.valueOf(state.getPropagator().isOscillating()));
         if (failure != null) root.setAttribute("failure", failure);
+        if (failureCode != null) root.setAttribute("failureCode", failureCode);
     }
 
     private BufferedImage sample(Document result) throws Exception {
@@ -237,7 +262,7 @@ public final class CircuitSession {
                     }
                     Thread.sleep(1);
                 } catch (Throwable error) {
-                    synchronized (this) { running = false; failure = error.toString(); version++; }
+                    synchronized (this) { running = false; failure = error.toString(); failureCode = "CLOCK_FAILURE"; version++; }
                 }
             }
         }, "studio-clock");
@@ -270,7 +295,10 @@ public final class CircuitSession {
                 try {
                     Document result = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
                     result.appendChild(result.createElement("frame-error"));
-                    synchronized (this) { running = false; failure = error.toString(); metadata(result.getDocumentElement()); }
+                    synchronized (this) {
+                        running = false; failure = error.toString(); failureCode = SessionError.code(error);
+                        metadata(result.getDocumentElement());
+                    }
                     send(result, protocol);
                 } catch (Exception ignored) { }
             }
@@ -287,23 +315,45 @@ public final class CircuitSession {
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
         DocumentBuilder parser = f.newDocumentBuilder();
         List<String> loaderMessages = new ArrayList<>();
-        CircuitSession session = new CircuitSession(NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages), parser.parse(new File(args[1])).getDocumentElement());
+        CircuitSession session;
+        try {
+            session = new CircuitSession(NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages), parser.parse(new File(args[1])).getDocumentElement());
+        } catch (Throwable error) {
+            // The host learns why the run could not start instead of only seeing the exit.
+            error.printStackTrace(System.err);
+            for (String message : loaderMessages) System.err.println("loader: " + message);
+            Document result = parser.newDocument();
+            Element failure = result.createElement("start-error"); result.appendChild(failure);
+            failure.setAttribute("error", error.toString());
+            String code = SessionError.code(error);
+            if (code != null) failure.setAttribute("code", code);
+            if (error.getMessage() != null) failure.setAttribute("message", error.getMessage());
+            send(result, protocol);
+            System.exit(1);
+            return;
+        }
         for (String message : loaderMessages) System.err.println("loader: " + message);
         session.startWorkers(protocol);
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String line;
         while ((line = in.readLine()) != null) {
-            Document result = parser.newDocument(); result.appendChild(result.createElement("ack"));
+            Document result = parser.newDocument();
+            Element ack = result.createElement("ack"); result.appendChild(ack);
             try {
                 Element request = parser.parse(new ByteArrayInputStream(line.getBytes("UTF-8"))).getDocumentElement();
+                // Acks are paired with their command by this ID, never by order.
+                if (request.hasAttribute("requestId")) ack.setAttribute("requestId", request.getAttribute("requestId"));
                 synchronized (session) {
                     session.commandSequence++;
                     session.command(request);
-                    session.metadata(result.getDocumentElement());
+                    session.metadata(ack);
                 }
             } catch (Throwable error) {
                 error.printStackTrace(System.err);
-                result.getDocumentElement().setAttribute("error", error.toString());
+                ack.setAttribute("error", error.toString());
+                String code = SessionError.code(error);
+                if (code != null) ack.setAttribute("code", code);
+                if (error.getMessage() != null) ack.setAttribute("message", error.getMessage());
             }
             send(result, protocol);
         }

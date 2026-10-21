@@ -29,9 +29,9 @@ final class CircuitSessionView {
             found = c;
         }
         // (x, y, factory) is the whole selector; stacked exact copies are unaddressable by design.
-        if (matches > 1) throw new IllegalArgumentException("元件定位有歧义: " + loc + " 处堆叠了 "
+        if (matches > 1) throw new SessionError("COMPONENT_AMBIGUOUS", "元件定位有歧义: " + loc + " 处堆叠了 "
                 + matches + " 个 " + item.getAttribute("factory") + "；请删除或移开重复元件后重试");
-        if (found == null) throw new IllegalArgumentException("找不到元件: " + item.getAttribute("factory") + " " + loc);
+        if (found == null) throw new SessionError("COMPONENT_MISSING", "找不到元件: " + item.getAttribute("factory") + " " + loc);
         return found;
     }
 
@@ -41,7 +41,7 @@ final class CircuitSessionView {
         for (int i = 0; i < nodes.getLength(); i++) {
             Element node = (Element) nodes.item(i);
             if (result.put(node.getAttribute("id"), find(circuit, node)) != null)
-                throw new IllegalArgumentException("Duplicate component ID");
+                throw new SessionError("DUPLICATE_ID", "Duplicate component ID");
         }
         return result;
     }
@@ -50,7 +50,7 @@ final class CircuitSessionView {
         for (Component c : path) {
             Object data = state.getData(c);
             if (!(data instanceof CircuitState) || ((CircuitState)data).getParentState() != state)
-                throw new IllegalArgumentException("Subcircuit state is not available; propagate the parent first");
+                throw new SessionError("INSTANCE_NOT_READY", "Subcircuit state is not available; propagate the parent first");
             state = (CircuitState)data;
         }
         return state;
@@ -59,23 +59,25 @@ final class CircuitSessionView {
     CircuitState resolve(CircuitState state) { return resolve(state, path); }
     boolean nested() { return !path.isEmpty(); }
 
-    void navigate(Element request, CircuitState rootState) {
+    /** Switches to the requested instance; {@code beforeSwitch} runs only after the target is valid. */
+    void navigate(Element request, CircuitState rootState, Runnable beforeSwitch) {
         Circuit target = root;
         List<Component> next = new ArrayList<>();
         NodeList nodes = request.getElementsByTagName("instance");
-        if (nodes.getLength() > 64) throw new IllegalArgumentException("Instance path is too deep");
+        if (nodes.getLength() > 64) throw new SessionError("PATH_TOO_DEEP", "Instance path is too deep");
         for (int i = 0; i < nodes.getLength(); i++) {
             Component c = find(target, (Element)nodes.item(i));
-            if (!(c.getFactory() instanceof SubcircuitFactory)) throw new IllegalArgumentException("Not a subcircuit");
+            if (!(c.getFactory() instanceof SubcircuitFactory)) throw new SessionError("NOT_SUBCIRCUIT", "Not a subcircuit");
             next.add(c); target = ((SubcircuitFactory)c.getFactory()).getSubcircuit();
         }
         Map<String, Component> mapped = bind(target, request);
         resolve(rootState, next);
+        beforeSwitch.run();
         path = next; circuit = target; components = mapped; id = request.getAttribute("viewId");
     }
 
     void checkInput(Component component) {
         if (nested() && component.getFactory() instanceof com.cburch.logisim.std.wiring.Pin)
-            throw new IllegalArgumentException("此输入由父电路驱动，请返回父图修改信号");
+            throw new SessionError("PARENT_INPUT", "此输入由父电路驱动，请返回父图修改信号");
     }
 }
