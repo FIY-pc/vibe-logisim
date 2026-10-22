@@ -1,4 +1,4 @@
-use crate::{Document, DocumentView, Error, Result};
+use crate::{Document, DocumentView, Error, Result, session::Session};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -8,6 +8,7 @@ pub struct Workspace {
     pub documents: BTreeMap<String, Document>,
     pub active: Option<String>,
     identities: BTreeMap<PathBuf, String>,
+    session: Option<Session>,
 }
 impl Workspace {
     pub fn insert(&mut self, document: Document) -> Result<DocumentView> {
@@ -76,6 +77,11 @@ impl Workspace {
             .insert(view.path.clone().unwrap(), id.into());
         Ok(view)
     }
+    /// Writes a document back to its own source file. Only `dirty` changes,
+    /// so no view is built.
+    pub fn save_in_place(&mut self, id: &str, revision: &str) -> Result<()> {
+        self.get_mut(id)?.save_checked(revision, None, None)
+    }
     pub fn close(&mut self, id: &str, discard: bool) -> Result<()> {
         if self.get(id)?.dirty() && !discard {
             return Err(Error::InvalidCommand("还有未保存的修改".into()));
@@ -91,66 +97,38 @@ impl Workspace {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Checkpoint {
-    schema: u32,
-    active: Option<String>,
-    documents: Vec<crate::Recovery>,
-    #[serde(default)]
-    identities: BTreeMap<PathBuf, String>,
-}
 impl Workspace {
-    pub fn restore(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let bytes = std::fs::read(path)?;
-        let saved: Checkpoint = serde_json::from_slice(&bytes).map_err(|e| {
-            Error::InvalidDocument(format!("无法恢复上次工作区，原记录已保留: {e}"))
-        })?;
-        if saved.schema != 1 {
-            return Err(Error::InvalidDocument("不支持的工作区记录版本".into()));
-        }
-        let mut workspace = Self {
-            identities: saved.identities,
-            ..Self::default()
-        };
-        for record in saved.documents {
-            let doc = Document::restore(record)?;
-            workspace.documents.insert(doc.id.clone(), doc);
-        }
-        workspace.active = saved
-            .active
-            .filter(|id| workspace.documents.contains_key(id));
-        Ok(workspace)
+    /// Reopens the documents a previous run left in the session directory.
+    pub fn restore(dir: &Path) -> Result<Self> {
+        let restored = Session::restore(dir.to_path_buf())?;
+        Ok(Self {
+            documents: restored.documents,
+            active: restored.active,
+            identities: restored.identities,
+            session: Some(restored.session),
+        })
     }
-    pub fn checkpoint(&self, path: &Path) -> Result<()> {
-        use std::io::Write;
-        let parent = path
-            .parent()
-            .ok_or_else(|| Error::Io("无效恢复记录路径".into()))?;
-        std::fs::create_dir_all(parent)?;
-        let saved = Checkpoint {
-            schema: 1,
-            active: self.active.clone(),
-            documents: self.documents.values().map(Document::recovery).collect(),
-            identities: self
-                .identities
-                .iter()
-                .map(|(p, id)| (p.clone(), id.clone()))
-                .chain(
-                    self.documents
-                        .values()
-                        .filter_map(|d| Some((d.path.clone()?, d.id.clone()))),
-                )
-                .collect(),
-        };
-        let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-        serde_json::to_writer(temp.as_file_mut(), &saved).map_err(|e| Error::Io(e.to_string()))?;
-        temp.flush()?;
-        temp.as_file().sync_all()?;
-        temp.persist(path).map_err(|e| Error::Io(e.to_string()))?;
-        Ok(())
+    /// Records every change since the last call in the session directory;
+    /// an edit costs a record the size of the change.
+    pub fn persist(&mut self, dir: &Path) -> Result<()> {
+        if self.session.as_ref().is_none_or(|s| s.dir != dir) {
+            self.session = Some(Session::new(dir.to_path_buf()));
+            for document in self.documents.values_mut() {
+                document.pending = None;
+            }
+        }
+        let identities = self
+            .identities
+            .iter()
+            .map(|(p, id)| (p.clone(), id.clone()))
+            .chain(
+                self.documents
+                    .values()
+                    .filter_map(|d| Some((d.path.clone()?, d.id.clone()))),
+            )
+            .collect();
+        let session = self.session.as_mut().expect("set above");
+        session.persist(&mut self.documents, self.active.clone(), identities)
     }
     pub fn relocate(&mut self, from: &Path, to: &Path) {
         self.identities = std::mem::take(&mut self.identities)

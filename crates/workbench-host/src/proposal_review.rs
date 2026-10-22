@@ -71,7 +71,7 @@ impl Host {
         }
         let workspace = self.workspace.lock().await;
         let current = workspace.get(id).map_err(|e| e.to_string())?;
-        let name = current.view().map_err(|e| e.to_string())?.name;
+        let name = current.name().to_string();
         let base_path = if current.revision() == revision {
             current.path.clone()
         } else {

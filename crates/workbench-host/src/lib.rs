@@ -22,6 +22,7 @@ mod movement;
 mod observations;
 mod project_info;
 mod proposal_review;
+mod snapshots;
 pub use comparison::ComparisonDetail;
 pub use document_history::{HistoryList, HistoryReview};
 pub use proposal_review::ProposalReview;
@@ -39,7 +40,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 pub use verification::{InputEvent, TestVector, TraceWatch};
 use vibe_logisim_adapter::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
-use vibe_workspace_core::{Document, DocumentView, Workspace};
+use vibe_workspace_core::{Document, DocumentView, Workspace, history::DocumentHistory};
 
 #[derive(Clone)]
 pub struct Host {
@@ -60,10 +61,14 @@ pub struct Host {
     events: tokio::sync::broadcast::Sender<Event>,
     stopping: tokio::sync::watch::Sender<bool>,
     folder: Arc<Mutex<Option<vibe_workspace_core::Folder>>>,
+    history: Arc<DocumentHistory>,
+    /// Digests of library files, by path, length and modification time.
+    digests: Arc<std::sync::Mutex<document_history::Digests>>,
     // The OS releases this lease after a crash; no stale PID files to delete.
     _lease: Arc<std::fs::File>,
 }
 type Result<T> = std::result::Result<T, HostError>;
+
 fn value<T: Serialize>(v: T) -> Result<Value> {
     serde_json::to_value(v).map_err(|e| HostError::new(ErrorCode::Internal, e.to_string()))
 }
@@ -75,6 +80,9 @@ impl Host {
         }
         self.simulation.shutdown().await;
         self.native.lock().await.shutdown().await;
+        // Edits reach the session journal before they return; wait for the
+        // background sync so the last ones are on disk before exit.
+        let _ = tokio::task::spawn_blocking(vibe_workspace_core::flush_journals).await;
     }
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Result<Self> {
         std::fs::create_dir_all(&state).map_err(|e| e.to_string())?;
@@ -93,7 +101,7 @@ impl Host {
         lease
             .try_lock()
             .map_err(|_| "这个工作区已在另一个窗口中打开".to_string())?;
-        let (workspace, recovery_error) = match Workspace::restore(&state.join("workspace.json")) {
+        let (workspace, recovery_error) = match Workspace::restore(&state.join("session")) {
             Ok(w) => (w, None),
             Err(e) => (Workspace::default(), Some(e.to_string())),
         };
@@ -112,6 +120,8 @@ impl Host {
             failures: Arc::new(Mutex::new(diagnostics::FailureLog::default())),
             interface_previews: Arc::new(Mutex::new(interfaces::Previews::default())),
             folder: Arc::new(Mutex::new(folder)),
+            history: Arc::new(DocumentHistory::new(state.join("document-history"))),
+            digests: Arc::default(),
             workspace: Arc::new(Mutex::new(workspace)),
             native: Arc::new(Mutex::new(Native::with_launcher(launcher))),
             state,
@@ -129,56 +139,37 @@ impl Host {
         doc.check(revision).map_err(|e| e.to_string())?;
         self.materialize(doc)
     }
+    /// Writes the document where the native runtime can load it: one file per
+    /// revision and source location, written once. Only the newest revisions
+    /// of each document are kept; an older one is written again when needed.
     fn materialize(&self, doc: &Document) -> Result<(PathBuf, DocumentView)> {
-        let id = &doc.id;
-        let revision = doc.revision();
         let view = doc.view().map_err(|e| e.to_string())?;
-        let directory =
-            self.state
-                .join("snapshots")
-                .join(id)
-                .join(revision)
-                .join(vibe_workspace_core::digest(
-                    view.path
-                        .as_ref()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_default()
-                        .as_bytes(),
-                ));
-        std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+        let documents = self.state.join("snapshots").join(&doc.id);
+        let directory = documents
+            .join(&view.revision)
+            .join(vibe_workspace_core::digest(
+                view.path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+                    .as_bytes(),
+            ));
         let path = directory.join("circuit.circ");
+        // Pruning deletes by write time, so a file written for this revision
+        // is the one it needs; an older revision is written again.
         if path.is_file() {
             return Ok((path, view));
         }
+        std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
         // A snapshot must resolve external libraries beside the source, not beside the cache.
-        let mut tree = xmltree::Element::parse(doc.bytes()).map_err(|e| e.to_string())?;
-        if let Some(parent) = view.path.as_ref().and_then(|p| p.parent()) {
-            for node in &mut tree.children {
-                if let Some(e) = node.as_mut_element()
-                    && e.name == "lib"
-                    && let Some(desc) = e.attributes.get_mut("desc")
-                {
-                    for prefix in ["jar#", "file#"] {
-                        if let Some(rest) = desc.strip_prefix(prefix) {
-                            let (file, suffix) = rest
-                                .split_once('#')
-                                .map(|(a, b)| (a, format!("#{b}")))
-                                .unwrap_or((rest, String::new()));
-                            let file = PathBuf::from(file);
-                            if file.is_relative() {
-                                *desc = format!("{prefix}{}{suffix}", parent.join(file).display());
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        let bytes = vibe_logisim_adapter::encode_xml(&tree)?;
+        let bytes = doc
+            .bytes_with_absolute_libraries()
+            .map_err(|e| e.to_string())?;
         use std::io::Write;
         let mut temp = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
         temp.write_all(&bytes).map_err(|e| e.to_string())?;
         temp.persist(&path).map_err(|e| e.to_string())?;
+        snapshots::prune(&documents, &view.revision);
         Ok((path, view))
     }
     pub fn dispatch(
@@ -252,21 +243,16 @@ impl Host {
         }
         // An edit result nests the document view so it can also carry the
         // selection and title; other auto-saving ops return the view itself.
-        let nested = document.get("view").is_some();
         if meta.effect == Effect::AutoSave {
-            if nested {
-                let mut view = document["view"].clone();
-                self.auto_save_edit(&mut view).await;
-                if let Some(revision) = view["revision"].as_str() {
-                    document["revision"] = json!(revision);
+            if let Some(view) = document.get_mut("view") {
+                self.auto_save_edit(view).await;
+                let reported =
+                    ["saveError", "referenceWarning"].map(|key| (key, view.get(key).cloned()));
+                for (key, value) in reported {
+                    if let Some(value) = value {
+                        document[key] = value;
+                    }
                 }
-                if let Some(error) = view.get("saveError") {
-                    document["saveError"] = error.clone();
-                }
-                if let Some(warning) = view.get("referenceWarning") {
-                    document["referenceWarning"] = warning.clone();
-                }
-                document["view"] = view;
             } else {
                 self.auto_save_edit(document).await;
             }
@@ -282,7 +268,7 @@ impl Host {
                     json!(format!("修改已保留，但工程历史未能记录：{error}"));
             }
         }
-        self.persist(&*self.workspace.lock().await).await;
+        self.persist(&mut *self.workspace.lock().await).await;
         result
     }
     /// Ends the run when its document closed or moved to another revision. Runs
@@ -301,10 +287,14 @@ impl Host {
     async fn revision(&self, id: &str) -> Option<String> {
         Some(self.workspace.lock().await.get(id).ok()?.revision())
     }
-    /// Saves the workspace for crash recovery. A failure leaves the applied
-    /// change in place and is reported as a warning.
-    pub(crate) async fn persist(&self, workspace: &Workspace) {
-        if let Err(error) = workspace.checkpoint(&self.state.join("workspace.json")) {
+    /// Records the workspace's changes for crash recovery. A failure leaves
+    /// the applied change in place and is reported as a warning. After a
+    /// failed restore nothing is written, so the old records stay intact.
+    pub(crate) async fn persist(&self, workspace: &mut Workspace) {
+        if self.recovery_error.is_some() {
+            return;
+        }
+        if let Err(error) = workspace.persist(&self.state.join("session")) {
             let message = format!("修改已生效，但工作区恢复信息未能写入：{error}");
             self.failures
                 .lock()

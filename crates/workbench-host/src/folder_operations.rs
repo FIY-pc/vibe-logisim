@@ -545,7 +545,7 @@ impl Host {
         // batch would silently create another copy of already-imported entries.
         fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
         // Partial failures return an error, so record recovery state here as well.
-        self.persist(&workspace).await;
+        self.persist(&mut workspace).await;
         publish.map_err(|e| format!("已导入 {} 项，其余未完成：{e}", imported.len()))?;
         Ok(json!({"imported":imported,"historyWarning":warning}))
     }
@@ -632,7 +632,7 @@ impl Host {
             }
             history.checkpoint(folder, &format!("撤销：{}", change.title), None)?;
             refresh_documents(&mut workspace, &paths)?;
-            self.persist(&workspace).await;
+            self.persist(&mut workspace).await;
             result.map_err(|e| format!("撤销未能全部完成，请刷新文件改动：{e}"))?;
         }
         Ok(json!({"restored":true}))

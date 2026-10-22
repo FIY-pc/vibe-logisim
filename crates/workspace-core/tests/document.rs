@@ -70,7 +70,7 @@ fn save_as_cannot_reuse_identity_of_another_open_document() {
     let dir = tempfile::tempdir().unwrap();
     let original = dir.path().join("original.circ");
     let copy = dir.path().join("copy.circ");
-    let checkpoint = dir.path().join("workspace.json");
+    let session = dir.path().join("session");
     std::fs::write(&original, EMPTY_CIRCUIT).unwrap();
     let mut w = Workspace::default();
     let doc = w.open(&original).unwrap();
@@ -82,8 +82,8 @@ fn save_as_cannot_reuse_identity_of_another_open_document() {
     assert_eq!(w.documents.len(), 2);
     assert_eq!(w.get(&doc.id).unwrap().path.as_ref(), Some(&copy));
     assert!(w.save(&doc.id, &doc.revision, Some(&original)).is_err());
-    w.checkpoint(&checkpoint).unwrap();
-    let mut recovered = Workspace::restore(&checkpoint).unwrap();
+    w.persist(&session).unwrap();
+    let mut recovered = Workspace::restore(&session).unwrap();
     recovered.close(&doc.id, false).unwrap();
     assert_eq!(recovered.open(&copy).unwrap().id, doc.id);
     assert_eq!(recovered.open(&original).unwrap().id, reopened.id);
@@ -224,30 +224,67 @@ fn recovery_and_reopening_keep_identity_without_saving_drafts() {
     use vibe_workspace_core::Workspace;
     let directory = tempfile::tempdir().unwrap();
     let file = directory.path().join("example.circ");
-    let checkpoint = directory.path().join("workspace.json");
+    let session = directory.path().join("session");
+    let wire = |x: i32| Edit::Wire {
+        points: vec![Point { x, y: 0 }, Point { x: x + 50, y: 0 }],
+    };
     let mut w = Workspace::default();
     let id = w.insert(Document::new("example.circ".into())).unwrap().id;
+    w.persist(&session).unwrap();
     let d = w.get_mut(&id).unwrap();
     d.save(&d.revision(), Some(&file)).unwrap();
     let original = std::fs::read(&file).unwrap();
-    d.edit(
-        &d.revision(),
-        "main",
-        Edit::Wire {
-            points: vec![Point { x: 0, y: 0 }, Point { x: 50, y: 0 }],
-        },
-    )
-    .unwrap();
+    for x in [0, 100, 200] {
+        d.edit(&d.revision(), "main", wire(x)).unwrap();
+    }
+    d.undo(&d.revision()).unwrap();
     let revision = d.revision();
-    w.checkpoint(&checkpoint).unwrap();
-    let mut recovered = Workspace::restore(&checkpoint).unwrap();
-    assert_eq!(recovered.get(&id).unwrap().revision(), revision);
-    assert!(recovered.get(&id).unwrap().view().unwrap().can_undo);
+    // Edits after the first write are appended to the journal; a crash can
+    // leave a torn record behind them.
+    w.persist(&session).unwrap();
+    let journal = std::fs::read_dir(&session)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|e| e == "log"))
+        .unwrap();
+    let mut torn = std::fs::read(&journal).unwrap();
+    torn.extend_from_slice(b"VLJ1\x10\0\0\0");
+    std::fs::write(&journal, torn).unwrap();
+    let mut recovered = Workspace::restore(&session).unwrap();
+    let d = recovered.get_mut(&id).unwrap();
+    assert_eq!(d.revision(), revision);
+    assert!(d.dirty());
+    assert_eq!(
+        d.path.as_deref(),
+        Some(file.canonicalize().unwrap().as_path())
+    );
+    assert_eq!(
+        d.redo(&d.revision()).unwrap().title,
+        "连接导线 (200,0) \u{2192} (250,0)"
+    );
+    assert_eq!(
+        d.undo(&d.revision()).unwrap().title,
+        "连接导线 (200,0) \u{2192} (250,0)"
+    );
+    d.edit(&d.revision(), "main", wire(300)).unwrap();
+    let revision = d.revision();
+    recovered.persist(&session).unwrap();
+    let mut recovered = Workspace::restore(&session).unwrap();
+    let d = recovered.get_mut(&id).unwrap();
+    assert_eq!(d.revision(), revision);
+    assert!(!d.view().unwrap().can_redo);
+    for _ in 0..3 {
+        d.undo(&d.revision()).unwrap();
+    }
+    assert_eq!(d.bytes(), original);
+    assert!(!d.dirty());
     assert_eq!(std::fs::read(&file).unwrap(), original);
+    d.redo(&d.revision()).unwrap();
     assert!(recovered.close(&id, false).is_err());
     recovered.close(&id, true).unwrap();
-    recovered.checkpoint(&checkpoint).unwrap();
-    let mut recovered = Workspace::restore(&checkpoint).unwrap();
+    recovered.persist(&session).unwrap();
+    let mut recovered = Workspace::restore(&session).unwrap();
+    assert!(recovered.documents.is_empty());
     assert_eq!(recovered.open(&file).unwrap().id, id);
     assert_eq!(recovered.get(&id).unwrap().bytes(), original);
 }

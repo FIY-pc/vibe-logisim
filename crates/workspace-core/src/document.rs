@@ -1,10 +1,11 @@
 use crate::{
-    Error, Result, digest, editing,
+    Error, Result, digest, editing, patch,
     splice::{self, Splices, Tree},
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashSet},
+    borrow::Cow,
+    collections::{BTreeMap, HashMap, HashSet},
     io::Write,
     path::{Path, PathBuf},
     sync::Arc,
@@ -179,14 +180,14 @@ pub struct EditOutcome {
 }
 
 /// One revision of a circuit file: its bytes and their span index.
-struct Source {
-    tree: Tree,
+pub(crate) struct Source {
+    pub(crate) tree: Tree,
     /// The stored bytes when they are not the index's UTF-8 text.
     encoded: Option<Vec<u8>>,
-    revision: String,
+    pub(crate) revision: String,
 }
 impl Source {
-    fn new(bytes: Vec<u8>) -> Result<Self> {
+    pub(crate) fn new(bytes: Vec<u8>) -> Result<Self> {
         precheck(&bytes)?;
         let revision = digest(&bytes);
         let (text, encoded) = splice::decode(bytes)?;
@@ -198,29 +199,68 @@ impl Source {
             revision,
         })
     }
-    fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         self.encoded
             .as_deref()
             .unwrap_or(self.tree.text().as_bytes())
     }
 }
 
-/// One undo step: the bytes before a change, and the title that produced it.
+/// One undo or redo step: the bytes of the other revision, and the title of
+/// the change between them.
 #[derive(Clone)]
-struct Step {
-    bytes: Vec<u8>,
-    title: String,
+pub(crate) struct Step {
+    pub(crate) bytes: Arc<[u8]>,
+    pub(crate) title: String,
+}
+
+const UNDO_STEPS: usize = 100;
+const UNDO_BYTES: usize = 64 * 1024 * 1024;
+
+/// Adds an undo step and drops the oldest ones beyond the limits. Restoring
+/// the session replays changes through the same rule.
+pub(crate) fn push_undo(undo: &mut Vec<Step>, step: Step) {
+    undo.push(step);
+    let mut total: usize = undo.iter().map(|s| s.bytes.len()).sum();
+    let mut oldest = 0;
+    while undo.len() - oldest > UNDO_STEPS || (undo.len() - oldest > 1 && total > UNDO_BYTES) {
+        total -= undo[oldest].bytes.len();
+        oldest += 1;
+    }
+    undo.drain(..oldest);
+}
+
+/// A change the session journal has not recorded yet.
+#[derive(Clone)]
+pub(crate) enum Op {
+    /// New bytes, as a patch from the previous ones, under an undo title.
+    Change {
+        title: String,
+        revision: String,
+        patch: Vec<u8>,
+    },
+    /// An undo or redo, with the revision it leads to.
+    Undo(String),
+    Redo(String),
+    Saved(Option<String>),
+    Location {
+        path: Option<PathBuf>,
+        name: String,
+    },
 }
 
 #[derive(Clone)]
 pub struct Document {
     pub id: String,
     pub path: Option<PathBuf>,
-    name: String,
-    source: Arc<Source>,
-    saved_digest: Option<String>,
-    undo: Vec<Step>,
-    redo: Vec<Step>,
+    pub(crate) name: String,
+    pub(crate) source: Arc<Source>,
+    pub(crate) saved_digest: Option<String>,
+    pub(crate) undo: Vec<Step>,
+    pub(crate) redo: Vec<Step>,
+    /// Changes the session journal has yet to record; `None` when it has to
+    /// write the whole document again.
+    pub(crate) pending: Option<Vec<Op>>,
 }
 fn precheck(bytes: &[u8]) -> Result<()> {
     if bytes.len() > MAX_BYTES {
@@ -265,15 +305,9 @@ fn validate(tree: &Tree) -> Result<()> {
     Ok(())
 }
 
-// Keep relative library references meaningful when Save As changes the source
-// directory. History uses the same base so undo cannot resurrect broken paths.
-// Only the affected `desc` values change.
-fn rebase_libraries(bytes: &[u8], from: &Path, to: &Path) -> Result<Vec<u8>> {
-    if from == to {
-        return Ok(bytes.to_vec());
-    }
-    let source = Source::new(bytes.to_vec())?;
-    let tree = &source.tree;
+/// Replaces the relative file of every `file#` and `jar#` library with
+/// `rewrite(file)`; `None` when there is none. Only those `desc` values change.
+fn rewrite_libraries(tree: &Tree, rewrite: impl Fn(&Path) -> PathBuf) -> Result<Option<String>> {
     let mut out = Splices::new(tree);
     for lib in tree.named(tree.root(), "lib") {
         let desc = tree.get(lib, "desc");
@@ -287,32 +321,44 @@ fn rebase_libraries(bytes: &[u8], from: &Path, to: &Path) -> Result<Vec<u8>> {
                 .unwrap_or((rest, String::new()));
             let file = Path::new(file);
             if file.is_relative() {
-                let absolute = from.join(file);
-                let base: Vec<_> = to.components().collect();
-                let target: Vec<_> = absolute.components().collect();
-                let common = base.iter().zip(&target).take_while(|(a, b)| a == b).count();
-                let next = if common == 0 {
-                    absolute
-                } else {
-                    let mut relative = PathBuf::new();
-                    for _ in common..base.len() {
-                        relative.push("..");
-                    }
-                    for part in &target[common..] {
-                        relative.push(part.as_os_str());
-                    }
-                    relative
-                };
+                let next = rewrite(file);
                 out.set(lib, "desc", &format!("{prefix}{}{suffix}", next.display()));
             }
             break;
         }
     }
     if out.is_empty() {
-        Ok(bytes.to_vec())
+        Ok(None)
     } else {
-        Ok(out.finish()?.into_bytes())
+        Ok(Some(out.finish()?))
     }
+}
+
+// Keep relative library references meaningful when Save As changes the source
+// directory. History uses the same base so undo cannot resurrect broken paths.
+fn rebase_libraries(bytes: &[u8], from: &Path, to: &Path) -> Result<Vec<u8>> {
+    if from == to {
+        return Ok(bytes.to_vec());
+    }
+    let source = Source::new(bytes.to_vec())?;
+    let rebased = rewrite_libraries(&source.tree, |file| {
+        let absolute = from.join(file);
+        let base: Vec<_> = to.components().collect();
+        let target: Vec<_> = absolute.components().collect();
+        let common = base.iter().zip(&target).take_while(|(a, b)| a == b).count();
+        if common == 0 {
+            return absolute;
+        }
+        let mut relative = PathBuf::new();
+        for _ in common..base.len() {
+            relative.push("..");
+        }
+        for part in &target[common..] {
+            relative.push(part.as_os_str());
+        }
+        relative
+    })?;
+    Ok(rebased.map_or_else(|| bytes.to_vec(), String::into_bytes))
 }
 
 impl Document {
@@ -349,10 +395,37 @@ impl Document {
             saved_digest,
             undo: Vec::new(),
             redo: Vec::new(),
+            pending: None,
         })
     }
     pub fn bytes(&self) -> &[u8] {
         self.source.bytes()
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    /// The `desc` of every `<lib>`, in file order.
+    pub fn library_descriptors(&self) -> Vec<String> {
+        let tree = &self.source.tree;
+        tree.named(tree.root(), "lib")
+            .map(|lib| tree.get(lib, "desc").into_owned())
+            .collect()
+    }
+    fn record(&mut self, op: Op) {
+        if let Some(pending) = &mut self.pending {
+            pending.push(op);
+        }
+    }
+    /// The bytes to load from a copy stored in another folder: relative
+    /// library paths made absolute against the source's folder.
+    pub fn bytes_with_absolute_libraries(&self) -> Result<Cow<'_, [u8]>> {
+        let Some(directory) = self.path.as_deref().and_then(Path::parent) else {
+            return Ok(Cow::Borrowed(self.bytes()));
+        };
+        let rewritten = rewrite_libraries(&self.source.tree, |file| directory.join(file))?;
+        Ok(rewritten.map_or(Cow::Borrowed(self.bytes()), |text| {
+            Cow::Owned(text.into_bytes())
+        }))
     }
     pub fn saved_revision(&self) -> Option<&str> {
         self.saved_digest.as_deref()
@@ -428,6 +501,7 @@ impl Document {
         // Validate before changing anything; keep the draft in undo history.
         self.replace(bytes)?;
         self.saved_digest = Some(revision);
+        self.record(Op::Saved(self.saved_digest.clone()));
         Ok(())
     }
     pub fn view(&self) -> Result<DocumentView> {
@@ -499,13 +573,11 @@ impl Document {
         let Some(text) = next.filter(|text| *text != self.source.tree.text()) else {
             return Ok(outcome);
         };
-        let before = self.circuit_view()?;
+        let previous = self.source.clone();
         let mut outcome = self.change(text.into_bytes(), outcome)?;
-        let after = self.circuit_view()?;
-        outcome.changed_circuits = changed_circuits(&before, &after);
+        outcome.changed_circuits = changed_circuits(&previous.tree, &self.source.tree);
         if selecting {
-            let sheet = |view: &[Circuit]| view.iter().find(|c| c.name == circuit).cloned();
-            let after = sheet(&after);
+            let after = self.circuit(circuit)?;
             match edit {
                 Edit::Wire { .. } => {
                     let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
@@ -543,19 +615,18 @@ impl Document {
         Ok(outcome)
     }
     fn circuit_wire_count(&self, circuit: &str) -> Result<usize> {
-        let tree = &self.source.tree;
-        let node = tree
-            .named(tree.root(), "circuit")
-            .find(|&c| tree.get(c, "name") == circuit)
+        let circuit = self
+            .circuit(circuit)?
             .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))?;
-        Ok(editing::Sheet::new(tree, node)?.view().wires.len())
+        Ok(circuit.wires.len())
     }
-    /// The document's circuits in file order, for change detection.
-    fn circuit_view(&self) -> Result<Vec<Circuit>> {
+    /// One circuit's view, without building the others.
+    fn circuit(&self, name: &str) -> Result<Option<Circuit>> {
         let tree = &self.source.tree;
         tree.named(tree.root(), "circuit")
+            .find(|&c| tree.get(c, "name") == name)
             .map(|c| editing::Sheet::new(tree, c).map(editing::Sheet::view))
-            .collect()
+            .transpose()
     }
     /// Commits new bytes with `title`, keeping the undo/redo stacks.
     fn change(&mut self, bytes: Vec<u8>, outcome: EditOutcome) -> Result<EditOutcome> {
@@ -569,16 +640,21 @@ impl Document {
         } else {
             outcome.title.clone()
         };
-        self.undo.push(Step {
-            bytes: previous.bytes().to_vec(),
-            title,
-        });
-        while self.undo.len() > 100
-            || (self.undo.len() > 1
-                && self.undo.iter().map(|s| s.bytes.len()).sum::<usize>() > 64 * 1024 * 1024)
-        {
-            self.undo.remove(0);
+        if self.pending.is_some() {
+            let patch = patch::diff(previous.bytes(), self.bytes());
+            self.record(Op::Change {
+                title: title.clone(),
+                revision: self.source.revision.clone(),
+                patch,
+            });
         }
+        push_undo(
+            &mut self.undo,
+            Step {
+                bytes: previous.bytes().into(),
+                title,
+            },
+        );
         self.redo.clear();
         Ok(outcome)
     }
@@ -587,15 +663,17 @@ impl Document {
     }
     pub fn undo(&mut self, expected: &str) -> Result<EditOutcome> {
         self.check(expected)?;
-        let Some(step) = self.undo.pop() else {
+        let Some(step) = self.undo.last() else {
             return Ok(EditOutcome::default());
         };
-        let source = Arc::new(Source::new(step.bytes.clone())?);
+        let source = Arc::new(Source::new(step.bytes.to_vec())?);
+        let step = self.undo.pop().expect("checked above");
         let current = std::mem::replace(&mut self.source, source);
         self.redo.push(Step {
-            bytes: current.bytes().to_vec(),
+            bytes: current.bytes().into(),
             title: step.title.clone(),
         });
+        self.record(Op::Undo(self.source.revision.clone()));
         Ok(EditOutcome {
             title: step.title,
             ..EditOutcome::default()
@@ -603,15 +681,17 @@ impl Document {
     }
     pub fn redo(&mut self, expected: &str) -> Result<EditOutcome> {
         self.check(expected)?;
-        let Some(step) = self.redo.pop() else {
+        let Some(step) = self.redo.last() else {
             return Ok(EditOutcome::default());
         };
-        let source = Arc::new(Source::new(step.bytes.clone())?);
+        let source = Arc::new(Source::new(step.bytes.to_vec())?);
+        let step = self.redo.pop().expect("checked above");
         let current = std::mem::replace(&mut self.source, source);
         self.undo.push(Step {
-            bytes: current.bytes().to_vec(),
+            bytes: current.bytes().into(),
             title: step.title.clone(),
         });
+        self.record(Op::Redo(self.source.revision.clone()));
         Ok(EditOutcome {
             title: step.title,
             ..EditOutcome::default()
@@ -659,35 +739,36 @@ impl Document {
         if target_revision.is_some() && !target.exists() {
             return Err(Error::ExternalChange);
         }
-        let mut next = self.clone();
-        if let Some(previous) = self.path.as_ref().and_then(|p| p.parent()) {
-            let bytes = rebase_libraries(self.bytes(), previous, &parent)?;
-            if bytes != self.bytes() {
-                next.source = Arc::new(Source::new(bytes)?);
+        // Saving into another directory rewrites relative library paths in
+        // the draft and in every undo and redo step.
+        let rebased = match self.path.as_ref().and_then(|p| p.parent()) {
+            Some(previous) if previous != parent => {
+                let bytes = rebase_libraries(self.bytes(), previous, &parent)?;
+                let source = if bytes != self.bytes() {
+                    Arc::new(Source::new(bytes)?)
+                } else {
+                    self.source.clone()
+                };
+                let rebase = |steps: &[Step]| {
+                    steps
+                        .iter()
+                        .map(|step| {
+                            Ok(Step {
+                                bytes: rebase_libraries(&step.bytes, previous, &parent)?.into(),
+                                title: step.title.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()
+                };
+                Some((source, rebase(&self.undo)?, rebase(&self.redo)?))
             }
-            next.undo = self
-                .undo
-                .iter()
-                .map(|step| {
-                    Ok(Step {
-                        bytes: rebase_libraries(&step.bytes, previous, &parent)?,
-                        title: step.title.clone(),
-                    })
-                })
-                .collect::<Result<_>>()?;
-            next.redo = self
-                .redo
-                .iter()
-                .map(|step| {
-                    Ok(Step {
-                        bytes: rebase_libraries(&step.bytes, previous, &parent)?,
-                        title: step.title.clone(),
-                    })
-                })
-                .collect::<Result<_>>()?;
-        }
+            _ => None,
+        };
+        let bytes = rebased
+            .as_ref()
+            .map_or(self.bytes(), |(source, _, _)| source.bytes());
         let mut temp = tempfile::NamedTempFile::new_in(&parent)?;
-        temp.write_all(next.bytes())?;
+        temp.write_all(bytes)?;
         temp.as_file().sync_all()?;
         if let Ok(meta) = std::fs::metadata(&target) {
             temp.as_file().set_permissions(meta.permissions())?;
@@ -700,52 +781,24 @@ impl Document {
             temp.persist_noclobber(&target)
                 .map_err(|e| Error::Io(e.to_string()))?;
         }
-        next.path = Some(target.clone());
-        next.name = target.file_name().unwrap().to_string_lossy().into_owned();
-        next.saved_digest = Some(next.revision());
-        *self = next;
-        Ok(())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Recovery {
-    id: String,
-    path: Option<PathBuf>,
-    name: String,
-    xml: String,
-    saved_digest: Option<String>,
-    undo: Vec<String>,
-    redo: Vec<String>,
-}
-impl Document {
-    pub fn recovery(&self) -> Recovery {
-        Recovery {
-            id: self.id.clone(),
-            path: self.path.clone(),
-            name: self.name.clone(),
-            xml: String::from_utf8_lossy(self.bytes()).into_owned(),
-            saved_digest: self.saved_digest.clone(),
-            undo: self
-                .undo
-                .iter()
-                .map(|s| String::from_utf8_lossy(&s.bytes).into_owned())
-                .collect(),
-            redo: self
-                .redo
-                .iter()
-                .map(|s| String::from_utf8_lossy(&s.bytes).into_owned())
-                .collect(),
+        if let Some((source, undo, redo)) = rebased {
+            self.source = source;
+            self.undo = undo;
+            self.redo = redo;
+            self.pending = None;
         }
-    }
-    pub fn restore(saved: Recovery) -> Result<Self> {
-        let mut d = Self::from_bytes(saved.name, saved.path, saved.xml.into_bytes(), false)?;
-        d.id = saved.id;
-        d.saved_digest = saved.saved_digest;
-        d.undo = saved.undo.into_iter().map(untitled).collect();
-        d.redo = saved.redo.into_iter().map(untitled).collect();
-        Ok(d)
+        let name = target.file_name().unwrap().to_string_lossy().into_owned();
+        if self.path.as_deref() != Some(target.as_path()) || self.name != name {
+            self.path = Some(target);
+            self.name = name;
+            self.record(Op::Location {
+                path: self.path.clone(),
+                name: self.name.clone(),
+            });
+        }
+        self.saved_digest = Some(self.revision());
+        self.record(Op::Saved(self.saved_digest.clone()));
+        Ok(())
     }
 }
 
@@ -761,6 +814,10 @@ impl Document {
                 .to_string_lossy()
                 .into_owned();
             self.path = Some(next);
+            self.record(Op::Location {
+                path: self.path.clone(),
+                name: self.name.clone(),
+            });
         }
     }
 }
@@ -785,43 +842,28 @@ impl Document {
     }
 }
 
-/// A restored step keeps its bytes; titles are in memory only, so a restored
-/// recovery entry gets the generic title.
-fn untitled(bytes: String) -> Step {
-    Step {
-        bytes: bytes.into_bytes(),
-        title: String::new(),
-    }
-}
-
-fn changed_circuits(before: &[Circuit], after: &[Circuit]) -> Vec<String> {
-    use std::collections::BTreeMap;
-    let key = |circuit: &Circuit| {
-        let mut out = String::new();
-        for c in &circuit.components {
-            out.push_str(&format!(
-                "c{}|{}|{}|{}|{:?};",
-                c.id, c.name, c.location.x, c.location.y, c.attributes
-            ));
-        }
-        for w in &circuit.wires {
-            out.push_str(&format!(
-                "w{}|{},{}|{},{};",
-                w.id, w.from.x, w.from.y, w.to.x, w.to.y
-            ));
-        }
-        out
+/// The circuits whose element differs between two revisions: added and
+/// changed ones in file order, then removed ones. A circuit's view depends on
+/// its element alone, so equal bytes mean an equal circuit.
+fn changed_circuits(before: &Tree, after: &Tree) -> Vec<String> {
+    let circuits = |tree: &Tree| -> Vec<(String, usize)> {
+        tree.named(tree.root(), "circuit")
+            .map(|c| (tree.get(c, "name").into_owned(), c))
+            .collect()
     };
-    let old: BTreeMap<&str, String> = before.iter().map(|c| (c.name.as_str(), key(c))).collect();
-    let mut changed = Vec::new();
-    for circuit in after {
-        if old.get(circuit.name.as_str()) != Some(&key(circuit)) {
-            changed.push(circuit.name.clone());
-        }
-    }
-    for circuit in before {
-        if !after.iter().any(|c| c.name == circuit.name) {
-            changed.push(circuit.name.clone());
+    let (old, new) = (circuits(before), circuits(after));
+    let sources: HashMap<&str, &str> = old
+        .iter()
+        .map(|(name, c)| (name.as_str(), before.source(*c)))
+        .collect();
+    let mut changed: Vec<String> = new
+        .iter()
+        .filter(|(name, c)| sources.get(name.as_str()) != Some(&after.source(*c)))
+        .map(|(name, _)| name.clone())
+        .collect();
+    for (name, _) in &old {
+        if !new.iter().any(|(other, _)| other == name) {
+            changed.push(name.clone());
         }
     }
     changed
@@ -871,11 +913,8 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
 
 impl Document {
     fn circuit_component(&self, circuit: &str, id: &str) -> Option<Component> {
-        self.view()
-            .ok()?
-            .circuits
-            .into_iter()
-            .find(|c| c.name == circuit)?
+        self.circuit(circuit)
+            .ok()??
             .components
             .into_iter()
             .find(|c| c.id == id)
