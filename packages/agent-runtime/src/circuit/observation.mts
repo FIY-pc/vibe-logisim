@@ -625,9 +625,13 @@ export function wireGeometry(
       "INVALID_ARGUMENT",
       "wireOffset 必须为非负整数，wireLimit 必须在 1–256 之间。",
     );
+  // Ids follow the loaded segments, which is what removeWireIds and reroute
+  // resolve against. The runtime merges collinear wires, so one id can stand
+  // for several file lines; the end points are always the loaded ones.
   const wires = view.circuit.wires
     .slice(offset, offset + limit)
-    .map((w: any) => ({
+    .map((w: any, index: number) => ({
+      id: `w${offset + index}`,
       from: w.from,
       to: w.to,
       bundleId: w.bundleId,
@@ -649,17 +653,14 @@ export function wireGeometry(
         valid: b.valid,
       })),
     scope:
-      "Segments after native loading (overlapping or collinear segments may be merged), identified by their end points.",
+      "Segments after native loading (overlapping or collinear segments may be merged), one id per loaded segment; removeWireIds takes these ids.",
   };
 }
-
 const MAX_SCHEMA_ITEMS = 96;
 const capped = <T,>(items: T[]) =>
   items.length > MAX_SCHEMA_ITEMS
     ? { items: items.slice(0, MAX_SCHEMA_ITEMS), truncated: items.length }
     : { items };
-
-/** The default view: facts about the whole definition and the first page of components. */
 export function circuitOverview(
   view: ObservationView,
   identity: Identity,
