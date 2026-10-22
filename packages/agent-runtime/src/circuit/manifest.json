@@ -2,7 +2,7 @@
   "schema": "vibe-logisim.circuit-plugin/v1",
   "resultSchema": "vibe-logisim.circuit-plugin.result/v1",
   "id": "vibe-logisim.circuit",
-  "version": "1.51.0",
+  "version": "1.52.0",
   "displayName": "Vibe Logisim Circuit Plugin",
   "workflow": "user-directed",
   "tools": [
@@ -102,7 +102,9 @@
         "type": "object",
         "properties": {
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           }
         },
         "required": [
@@ -169,7 +171,9 @@
             "type": "string"
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "componentIds": {
             "type": "array",
@@ -329,8 +333,8 @@
           },
           "candidateId": {
             "type": "string",
-            "minLength": 26,
-            "maxLength": 26
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "viewport": {
             "type": "object",
@@ -392,7 +396,9 @@
             "type": "string"
           },
           "artifactSha256": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Exact content hash from inspect_circuit. Checked when supplied, and required when removing wires, so edits never land on content the model has not seen."
           },
           "wireIds": {
             "type": "array",
@@ -403,7 +409,9 @@
             }
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "title": {
             "type": "string"
@@ -434,10 +442,14 @@
             "type": "string"
           },
           "artifactSha256": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Exact content hash from inspect_circuit. Checked when supplied, and required when removing wires, so edits never land on content the model has not seen."
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "positions": {
             "type": "array",
@@ -537,12 +549,14 @@
             "type": "string"
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "artifactSha256": {
             "type": "string",
-            "description": "Exact target artifact hash from inspect_circuit. Required when removeWireIds is nonempty; checked whenever supplied.",
-            "pattern": "^[0-9a-f]{64}$"
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Exact content hash from inspect_circuit. Checked when supplied, and required when removing wires, so edits never land on content the model has not seen."
           },
           "removeWireIds": {
             "type": "array",
@@ -692,10 +706,14 @@
             "type": "string"
           },
           "artifactSha256": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "Exact content hash from inspect_circuit. Checked when supplied, and required when removing wires, so edits never land on content the model has not seen."
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "edits": {
             "type": "array",
@@ -744,285 +762,6 @@
     },
     {
       "type": "function",
-      "name": "arrange_candidate",
-      "description": "Create a layout-only candidate with native connectivity, interface, protected-component and other-definition checks. For readable functional organization, supply organization:{groups:[{id,label,row,componentIds}],namedLinks?:[{componentId,port,label}],localSignals?:[labels]}. Read inspect_circuit({circuit,layoutContext:{}}) for the actual groupable components and compact graph; choose meaningful groups, reading order and names from the circuit purpose. Assign every listed component once; omit fixed components, Tunnel objects and localized constants. Keep touching members in one group. With organization, artifactSha256 is required from the same observation. ELK places group interiors; the router uses local wires and named remote bridges, aligns connected group interfaces, attaches terminal buffers and emits native section headings. No CPU-specific group template is applied. Without organization, the existing flat signal-flow layout remains available. Optional protection/representation settings: pinnedComponentIds, panelBelowY, keepTunnels, localiseConstants (default true); inspect layoutContext with those same options if changed. Other flat-layout controls: columnGap, tunnelSpan, maxLayerSpan. candidateId composes from a previous candidate. A fixed panel may be inferred from geometry; this is not knowledge of course requirements, so respect supplied template/user constraints. Unknown or electrically changed output fails without altering the source. Unchanged connectivity does not establish the original circuit behavior or visual quality. The result reports native checks and geometric metrics; render_circuit(candidateId) shows the actual result. checkout_candidate explicitly applies it. Direct file edits/scripts remain available. Large circuits may use organization.stages:[{id,label,groups:[group IDs],mainPath:[group IDs],row?}]. Within a stage, keep the principal path consecutive; place related logic/status as branches. A branch may use attachTo to select its mainPath owner. Stage boundaries and wrapped continuation headings are native annotations. Estimated label geometry is repaired locally where possible; inspect remaining reported collisions. Source Text appears separately in layoutContext.annotations; optionally associate it using organization.annotations. Long notes never occupy a register-bank cell. Feedback includes sourceAnnotations, annotationOnlyGroups, readingTransitions and representationChoices; zero crossings alone do not establish readability.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "circuit": {
-            "type": "string"
-          },
-          "artifactSha256": {
-            "type": "string"
-          },
-          "candidateId": {
-            "type": "string"
-          },
-          "keepTunnels": {
-            "type": "array",
-            "maxItems": 256,
-            "items": {
-              "type": "string",
-              "maxLength": 128
-            }
-          },
-          "pinnedComponentIds": {
-            "type": "array",
-            "maxItems": 2048,
-            "items": {
-              "type": "string",
-              "maxLength": 64
-            }
-          },
-          "localiseConstants": {
-            "type": "boolean"
-          },
-          "columnGap": {
-            "type": "integer",
-            "minimum": 60,
-            "maximum": 1000
-          },
-          "panelBelowY": {
-            "type": "integer",
-            "minimum": -100000,
-            "maximum": 100000
-          },
-          "title": {
-            "type": "string",
-            "maxLength": 120
-          },
-          "maxLayerSpan": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 64
-          },
-          "tunnelSpan": {
-            "type": "integer",
-            "minimum": 100,
-            "maximum": 5000
-          },
-          "organization": {
-            "type": "object",
-            "description": "Functional organization for this exact artifact, not coordinates. Use layoutContext to get the required membership and connectivity. Groups follow array order within each reading row. Optional stages express a larger functional unit and its mainPath independently of side branches; stage order/rows take precedence over group row.",
-            "properties": {
-              "groups": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 64,
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 64
-                    },
-                    "label": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 80
-                    },
-                    "row": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 64,
-                      "description": "Reading row, from top to bottom. Keep the principal data path continuous in one row; auxiliary monitoring, control or display groups can use a later row when their relationships allow it."
-                    },
-                    "componentIds": {
-                      "type": "array",
-                      "minItems": 1,
-                      "maxItems": 2048,
-                      "items": {
-                        "type": "string",
-                        "maxLength": 64
-                      }
-                    },
-                    "layout": {
-                      "type": "string",
-                      "enum": [
-                        "flow",
-                        "bank"
-                      ],
-                      "description": "flow: port-aware layered logic; bank: repeated parallel parts in one or two narrow columns. Connected banks align corresponding lanes using actual ports. Use bank for parallel storage, not a combinational chain."
-                    },
-                    "columns": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 2,
-                      "description": "Only for bank: 1 (default) or 2 narrow columns. Choose 2 for a large bank to control its height."
-                    },
-                    "role": {
-                      "type": "string",
-                      "enum": [
-                        "main",
-                        "support"
-                      ],
-                      "description": "main: core functional path (default). support: auxiliary observation/display/status or control branches; placed near their strongest connected main group in available space, without disrupting main reading order."
-                    },
-                    "bankOrder": {
-                      "type": "string",
-                      "enum": [
-                        "connected",
-                        "given"
-                      ],
-                      "description": "Bank order: connected (default) reorders whole parts using neighboring ports and keeps directly connected lanes in consistent columns across banks. componentIds order is a semantic prior. given preserves the supplied order when its exact sequence carries meaning."
-                    },
-                    "attachTo": {
-                      "type": "string",
-                      "description": "Optional branch owner on its stage mainPath. Express semantic affiliation when connection strength alone is misleading. Requires stages; no coordinates or electrical connection are implied."
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label",
-                    "row",
-                    "componentIds"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "namedLinks": {
-                "type": "array",
-                "maxItems": 256,
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "componentId": {
-                      "type": "string"
-                    },
-                    "port": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "label": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    }
-                  },
-                  "required": [
-                    "componentId",
-                    "port",
-                    "label"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "localSignals": {
-                "description": "Prefer physical connections within local groups. This does not require every control signal to be wired: shared bank controls still prefer regular per-column rails and fall back to named connections when no clear rail fits. keepTunnels takes priority.",
-                "type": "array",
-                "maxItems": 256,
-                "items": {
-                  "type": "string"
-                }
-              },
-              "maxRowWidth": {
-                "type": "integer",
-                "minimum": 0,
-                "description": "Optional explicit row-width constraint in native units; 0 disables wrapping. With stages, omit it to choose the page width automatically from actual stage sizes, area and aspect, avoiding needless singleton rows. Without stages the default is 3600. Oversized indivisible groups/stages remain intact."
-              },
-              "sharedControls": {
-                "type": "boolean",
-                "description": "Default true: native-identified repeated one-bit control inputs on any bank edge prefer straight local rails within each column. Existing top/bottom rails have priority; side controls use clear straight combs when possible. If a rail cannot fit, retain named connections rather than winding trees or cross-column detours. Other groups and fixed structures remain connected by names. keepTunnels overrides this preference."
-              },
-              "stages": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 32,
-                "description": "Optional semantic hierarchy for large circuits. Array order is stage reading order. Cover every group once in groups; mainPath is the ordered backbone within that stage. Other members are side branches packed above/below its backbone. Whole stages wrap without splitting. No electrical links are invented. Omit for small circuits.",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 64
-                    },
-                    "label": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 80
-                    },
-                    "groups": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "mainPath": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "row": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 64,
-                      "description": "Optional explicit stage reading row; otherwise stages wrap at maxRowWidth."
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "label",
-                    "groups",
-                    "mainPath"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "annotations": {
-                "type": "array",
-                "maxItems": 2048,
-                "description": "Optional placement of existing movable Text, separate from electrical group membership. Unassigned Text is preserved above the diagram. A heading replaces the generated group heading and must fit its title area.",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "componentId": {
-                      "type": "string"
-                    },
-                    "role": {
-                      "type": "string",
-                      "enum": [
-                        "heading",
-                        "overview"
-                      ]
-                    },
-                    "groupId": {
-                      "type": "string",
-                      "description": "Required for heading; group from organization.groups."
-                    }
-                  },
-                  "required": [
-                    "componentId",
-                    "role"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "required": [
-              "groups"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "circuit"
-        ],
-        "additionalProperties": false
-      },
-      "category": "construct",
-      "sourceMutation": false,
-      "candidate": true,
-      "exposure": "direct",
-      "owner": "studio",
-      "label": "整理布局与连线"
-    },
-    {
-      "type": "function",
       "name": "trace_circuit",
       "description": "Use this for detailed sequential/time-series observation when you need trace rows but do not need an explicit pass/fail judgment; use evaluate_circuit when you have expectedRows and simulate_circuit for combinational vectors. Observe sequential behavior in the current working circuit (omit candidateId) or an independent candidate using actual Logisim. Supply ALL top-level input Pins; watches are component/port pairs from inspect_circuit of that exact target. Fresh state: initial inputs settle, optional resetButton is pulsed, then tick-0 events and sample 0. For t > 0: native tick and settle, inputEvents, inputClocks transitions, buttonEvents, sample t. Same-tick events run in array order within each list and settle individually; values persist. Native Clock timing follows configured high/low durations, so a tick need not be a transition, cycle or instruction. Pins used as clocks can use inputClocks for periodic transitions or inputEvents for arbitrary changes. To affect a native edge at t, set data by t-1. Unknown values stay null; oscillation ends capture. Optional program {component,words} replaces one ROM in simulation memory only (<=4096 words); otherwise uses embedded contents. No source changes. Up to 10000 ticks and 24 watches. rowStart/rowLimit select returned rows (default first 32, limit 1-256); each call reruns from fresh state. Full trace is retained with the revision/candidate. Observations are not a pass verdict. execution identifies the JVM's actual JAR/artifact, checked by the host.",
       "inputSchema": {
@@ -1032,7 +771,9 @@
             "type": "string"
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "ticks": {
             "type": "integer",
@@ -1218,54 +959,6 @@
     },
     {
       "type": "function",
-      "name": "build_candidate",
-      "description": "Use this only for an EMPTY pin-only combinational definition that can be described as Boolean expressions; use wire_candidate or direct .circ editing for existing circuits, buses, sequential logic or general construction. Fill 1–4 existing EMPTY pin-only combinational definitions into an independent candidate, never source. Each definition <=12 one-bit inputs and <=16 outputs. Original custom appearance and external pin mapping are preserved. Supply EVERY output using exact pin label and Boolean expression over input labels, with ~, &, |, ^, parentheses, constants 0/1. Native Logisim generates gates/wires and verifies external port footprint. simulate_circuit can observe its behavior. For other construction, direct .circ edits/scripts with submit_circuit remain available; wire_candidate can add supported parts and connect full ports (including buses) in one existing definition.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "modules": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 4,
-            "items": {
-              "type": "object",
-              "properties": {
-                "circuit": {
-                  "type": "string"
-                },
-                "expressions": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
-                }
-              },
-              "required": [
-                "circuit",
-                "expressions"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": [
-          "title",
-          "modules"
-        ],
-        "additionalProperties": false
-      },
-      "category": "construct",
-      "sourceMutation": false,
-      "candidate": true,
-      "exposure": "direct",
-      "owner": "studio",
-      "label": "构建候选电路"
-    },
-    {
-      "type": "function",
       "name": "simulate_circuit",
       "description": "Use this for combinational pin-vector checks, especially large input sets via vectorsFile; it does not advance clocks or produce a time trace. For sequential observation use trace_circuit, and for an explicit pass/fail specification use evaluate_circuit. Native Logisim pin-vector propagation, fresh state per vector: COMBINATIONAL only, no clock steps. Omit candidateId for the current on-disk module. Supply ALL input pins as unsigned integers, optionally expected outputs from independent requirements. Unknown outputs are null. Success covers only supplied vectors/expectations, not untested behavior. Supply exactly one of vectors (1–1024 items) or vectorsFile (workspace-relative JSON file, a nonempty array of the same {inputs, expected?} objects; up to 131072 items and 32 MiB). Generate larger input sets with ordinary scripts and pass their file path; no Java program or per-batch tool calls are needed. Files are data only, never executed. Large results return totals and bounded failure/unknown samples; full rows are retained in observations or candidate review/export. vectorsFile metadata identifies the exact bytes read; expected remains caller-provided, not an independent oracle. Rerun fewer vectors for specific details. Returns execution.runtimeJarSha256 and runtimeVersion from the executing JVM, checked against the requested runtime/artifact; runtimeProfile is observed after a real run. For independent CLI/Java checks, optional /tmp/vibe-circuit-reference/java-runtime.md covers this runtime’s APIs and process lifecycle.",
       "inputSchema": {
@@ -1275,7 +968,9 @@
             "type": "string"
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "vectorsFile": {
             "type": "string",
@@ -1335,7 +1030,9 @@
             "type": "string"
           },
           "candidateId": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^candidate-[0-9a-f]{16}$",
+            "description": "Current working-copy candidate id from inspect_circuit, render_circuit or a candidate edit. Defaults to the working copy as it is now."
           },
           "mode": {
             "type": "string",
@@ -1751,49 +1448,6 @@
     },
     {
       "type": "function",
-      "name": "list_verifications",
-      "description": "Discover optional verification recipes declared by the current workspace in the nearest vibe-verification.json. A recipe is an ordinary workspace-owned command or script; this tool only lists its declared id, scope, result mode, optional oracleFiles and manifest/recipe identity hashes. No verification is run and a missing manifest is normal.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      },
-      "category": "evaluate",
-      "sourceMutation": false,
-      "candidate": false,
-      "exposure": "direct",
-      "owner": "studio",
-      "label": "查找验证器"
-    },
-    {
-      "type": "function",
-      "name": "run_verification",
-      "description": "Run one workspace-owned verification recipe from vibe-verification.json against the current immutable circuit artifact. The recipe receives ${artifact}, ${artifactDir}, ${source}, ${workspace}, ${circuit}, ${revision}, ${artifactSha256} and ${oracleSha256} placeholders plus matching VIBE_LOGISIM_* environment variables. artifactDir contains the exact circuit and frozen project dependencies as a disposable input package; ${source} is also this disposable input, never the live user file. A recipe may declare relative oracleFiles for identity binding; omitted declarations remain compatible but are marked incomplete. The result includes artifact, manifest, recipe and optional oracle identity hashes, stdout/stderr, and separate execution=completed|timed-out|output-limited|identity-changed|failed-to-start and verdict=passed|failed|unknown fields. Log previews retain the first and last 8 KiB per stream without stopping ordinary output; stdoutBytes/stderrBytes and truncation flags report what was omitted. json-status requires a complete JSON result of at most 1 MiB; excess produces output-limited/unknown, not a timeout. The deadline also covers descendants holding output pipes. This is an optional external oracle; the circuit harness does not interpret its domain meaning or impose when to run it.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "circuit": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "additionalProperties": false
-      },
-      "category": "evaluate",
-      "sourceMutation": false,
-      "candidate": false,
-      "exposure": "direct",
-      "owner": "studio",
-      "label": "运行验证器"
-    },
-    {
-      "type": "function",
       "name": "check_native_loadability",
       "description": "Internal host acknowledgement: load the selected definition through the native Logisim loader without rendering or returning an inspection view. With previousRevisionId, also summarize which circuit definitions the file write changed relative to that earlier revision.",
       "inputSchema": {
@@ -1825,6 +1479,35 @@
       "exposure": "hidden",
       "owner": "studio",
       "label": "原生加载预检"
+    },
+    {
+      "type": "function",
+      "name": "project_files",
+      "description": "List or read text files in the active circuit's project folder. Paths are relative to the folder. Reads never modify anything. PDFs and images are not interpreted as text; ask the user for the part that matters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative file or directory path; empty lists the root"
+          },
+          "read": {
+            "type": "boolean",
+            "description": "true to read a text file; false to list a directory"
+          }
+        },
+        "required": [
+          "path",
+          "read"
+        ],
+        "additionalProperties": false
+      },
+      "category": "observe",
+      "sourceMutation": false,
+      "candidate": false,
+      "exposure": "direct",
+      "owner": "studio",
+      "label": "读取工程资料"
     }
   ]
 }

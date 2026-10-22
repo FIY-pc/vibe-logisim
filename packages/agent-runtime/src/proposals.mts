@@ -16,6 +16,8 @@ export interface Proposal {
   original: string;
   xml: string;
   createdAt: number;
+  /** Short summary shown in the review list. */
+  title?: string;
 }
 interface WorkInput {
   projectId: string;
@@ -37,9 +39,14 @@ export class ProposalStore {
     );
     return next;
   }
+  /** Title for the proposal the current turn will produce. */
+  private title: string | null = null;
   constructor(state: string, workDir: string) {
     this.state = state;
     this.workDir = workDir;
+  }
+  setTitle(title: string | null) {
+    this.title = title;
   }
   private directory() {
     return path.join(this.state, "proposals");
@@ -119,6 +126,8 @@ export class ProposalStore {
     )
       throw new Error("工作副本已属于另一回合，迟到的收束请求未修改任何文件");
     const xml = await readFile(path.join(this.workDir, "circuit.circ"), "utf8");
+    const title = this.title;
+    this.title = null;
     let proposal: Proposal | null = null;
     if (xml !== work.original) {
       await mkdir(this.directory(), { recursive: true });
@@ -137,6 +146,7 @@ export class ProposalStore {
         original: work.original,
         xml,
         createdAt: Date.now(),
+        ...(title ? { title } : {}),
       };
       if (!existing) {
         const temp = this.file(proposal.id) + ".tmp";

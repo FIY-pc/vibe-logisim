@@ -40,6 +40,22 @@ export interface CircuitTurn {
   checkout(candidateId: string): Promise<AgentSession>;
   /** Host path of a workspace-relative file, for runtime inputs only. */
   resolveFile(relative: string): string;
+  /** The scratch copy the model edits and the revision it came from. */
+  workingCopy(): Promise<{
+    id: string;
+    revision: string;
+    original: string;
+    xml: string;
+  }>;
+  /** Replace the scratch copy; the next tool reads the new text. */
+  writeWorkingCopy(xml: string): Promise<{
+    candidateId: string;
+    artifactSha256: string;
+  }>;
+  /** Raw host request, for tools that own their own view of the document. */
+  call(request: Record<string, unknown>): Promise<any>;
+  /** Name the proposal this turn will produce. */
+  setTitle(title: string): void;
 }
 export interface ToolContext {
   request: ToolRequest;

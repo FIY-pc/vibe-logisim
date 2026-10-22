@@ -15,6 +15,9 @@ pub struct TestVector {
 pub struct TraceWatch {
     pub component: String,
     pub port: u32,
+    /// Sample label; defaults to `component:port`.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 pub struct InputEvent {
@@ -27,6 +30,23 @@ pub struct TraceProgram {
     pub inputs: BTreeMap<String, u32>,
     pub watches: Vec<TraceWatch>,
     pub events: Vec<InputEvent>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, ts_rs::TS)]
+pub struct ButtonEvent {
+    pub component: String,
+    pub tick: u32,
+    pub pressed: bool,
+}
+/// One trace run: initial inputs, stimulus per tick and the ports sampled.
+pub struct TracePlan {
+    pub ticks: u32,
+    pub inputs: BTreeMap<String, u32>,
+    pub watches: Vec<TraceWatch>,
+    pub events: Vec<InputEvent>,
+    pub buttons: Vec<ButtonEvent>,
+    pub reset: Option<String>,
+    /// ROM component id and the words loaded into it before the run.
+    pub program: Option<(String, Vec<u32>)>,
 }
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -331,8 +351,6 @@ impl Host {
         circuit: &str,
         program: TraceProgram,
     ) -> Result<Value> {
-        let id = &doc.id;
-        let revision = doc.revision();
         let TraceProgram {
             ticks,
             inputs,
@@ -346,6 +364,46 @@ impl Host {
         {
             return Err("时序检查支持 1–256 tick、1–16 个观察端口及最多 1024 个输入事件".into());
         }
+        self.trace_document(
+            doc,
+            circuit,
+            TracePlan {
+                ticks,
+                inputs,
+                watches,
+                events,
+                buttons: Vec::new(),
+                reset: None,
+                program: None,
+            },
+        )
+        .await
+    }
+    pub(crate) async fn trace_document(
+        &self,
+        doc: &vibe_workspace_core::Document,
+        circuit: &str,
+        plan: TracePlan,
+    ) -> Result<Value> {
+        let id = &doc.id;
+        let revision = doc.revision();
+        let TracePlan {
+            ticks,
+            inputs,
+            watches,
+            events,
+            buttons,
+            reset,
+            program,
+        } = plan;
+        let stimulus = events.len() + buttons.len() + program.as_ref().map_or(0, |p| p.1.len());
+        if !(1..=10000).contains(&ticks)
+            || watches.is_empty()
+            || watches.len() > 24
+            || stimulus > 6000
+        {
+            return Err("时序检查支持 1–10000 tick、1–24 个观察端口及最多 6000 个刺激事件".into());
+        }
         let (artifact, view) = self.materialize(doc)?;
         let selected = view
             .circuits
@@ -354,8 +412,12 @@ impl Host {
             .ok_or("找不到电路")?;
         let mut nodes = input_nodes(&inputs)?;
         let mut seen = BTreeSet::new();
-        for watch in watches {
-            let key = format!("{}:{}", watch.component, watch.port);
+        for watch in &watches {
+            let key = watch
+                .name
+                .clone()
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| format!("{}:{}", watch.component, watch.port));
             if !seen.insert(key.clone()) || watch.port > 255 {
                 return Err("观察端口重复或无效".into());
             }
@@ -376,19 +438,82 @@ impl Host {
                 vec![],
             ));
         }
-        for event in events {
+        if let Some(id) = &reset {
+            let button = selected
+                .components
+                .iter()
+                .find(|c| &c.id == id)
+                .ok_or("找不到复位按钮")?;
+            nodes.push(xml(
+                "reset",
+                &[
+                    ("factory", button.name.clone()),
+                    ("x", button.location.x.to_string()),
+                    ("y", button.location.y.to_string()),
+                ],
+                vec![],
+            ));
+        }
+        for event in &events {
             if event.tick > ticks || !inputs.contains_key(&event.input) {
                 return Err("输入事件超出 tick 范围或未在初始输入中声明".into());
             }
             nodes.push(xml(
                 "input-event",
                 &[
-                    ("name", event.input),
+                    ("name", event.input.clone()),
                     ("tick", event.tick.to_string()),
                     ("value", event.value.to_string()),
                 ],
                 vec![],
             ));
+        }
+        for button in &buttons {
+            if button.tick > ticks {
+                return Err("按钮事件超出 tick 范围".into());
+            }
+            let component = selected
+                .components
+                .iter()
+                .find(|c| c.id == button.component)
+                .ok_or("找不到按钮元件")?;
+            nodes.push(xml(
+                "button-event",
+                &[
+                    ("factory", component.name.clone()),
+                    ("x", component.location.x.to_string()),
+                    ("y", component.location.y.to_string()),
+                    ("tick", button.tick.to_string()),
+                    ("pressed", if button.pressed { "true" } else { "false" }.into()),
+                ],
+                vec![],
+            ));
+        }
+        if let Some((rom_id, words)) = &program {
+            if words.len() > 4096 {
+                return Err("程序刺激最多 4096 个字".into());
+            }
+            let rom = selected
+                .components
+                .iter()
+                .find(|c| &c.id == rom_id)
+                .ok_or("找不到程序 ROM")?;
+            let mut rom_node = xml(
+                "program",
+                &[
+                    ("factory", rom.name.clone()),
+                    ("x", rom.location.x.to_string()),
+                    ("y", rom.location.y.to_string()),
+                ],
+                vec![],
+            );
+            rom_node.children = words
+                .iter()
+                .map(|word| {
+                    XMLNode::Element(xml("word", &[("value", word.to_string())], vec![]))
+                })
+                .collect();
+            nodes.push(rom_node);
         }
         let result = self
             .verifier

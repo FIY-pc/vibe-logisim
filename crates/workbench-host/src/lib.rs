@@ -238,6 +238,7 @@ impl Host {
             Request::Folder(r) => self.folder_request(r).await,
             Request::Project(r) => self.project_request(r).await,
             Request::Agent(r) => self.agent_request(r).await,
+            Request::Draft(r) => self.draft_request(r).await,
         };
         let Ok(document) = &mut result else {
             return result;
