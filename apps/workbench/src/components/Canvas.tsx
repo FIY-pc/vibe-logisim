@@ -27,13 +27,16 @@ import type {
   Bounds,
   CatalogTool,
   Circuit,
+  Component,
   Document,
   Edit,
   Point,
-  Simulation,
   Tool,
 } from "../lib/types";
+import type { RunState } from "../generated/RunState";
+import type { FrameImage } from "../generated/FrameImage";
 import { command } from "../lib/transport";
+import { liveViewport } from "../lib/simulation";
 interface Props {
   doc: Document;
   circuit: Circuit;
@@ -42,8 +45,23 @@ interface Props {
   setSelection: (s: string[]) => void;
   place: CatalogTool | null;
   edit: (e: Edit) => Promise<void>;
-  simulation: Simulation | null;
-  simulate: (op: string, attrs?: Record<string, string>) => Promise<void>;
+  /** The run, when the canvas shows its view rather than the definition. */
+  run: RunState | null;
+  /** The decoded picture of the run's frame, and where it was drawn. */
+  picture: { frameSequence: number; url: string; image: FrameImage } | null;
+  /** Components of the run whose input the user changed, until a frame shows it. */
+  pending: string[];
+  /** The button held down in the run. */
+  pressed: string | null;
+  /** Operates a component of the run: the poke tool, a button press and its
+   * point, or an open memory. */
+  onPoke: (component: Component, point: Point) => void;
+  onPress: (component: Component) => void;
+  onRelease: () => void;
+  onViewport: (
+    viewId: string,
+    area: { x: number; y: number; width: number; height: number; scale: number },
+  ) => void;
   onError: (e: unknown) => void;
   fitToken: number;
   zoomRequest?: { token: number; factor: number };
@@ -75,8 +93,14 @@ export function Canvas({
   setSelection,
   place,
   edit,
-  simulation,
-  simulate,
+  run,
+  picture: frame,
+  pending,
+  pressed,
+  onPoke,
+  onPress,
+  onRelease,
+  onViewport,
   onError,
   fitToken,
   zoomRequest,
@@ -316,12 +340,12 @@ export function Canvas({
   const shownPicture = useRef("");
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
-  const held = useRef<(() => Promise<void>) | null>(null);
+  const held = useRef<(() => void) | null>(null);
   const wireGesture = useRef<{ x: number; y: number } | null>(null);
   const releaseHeld = () => {
     const release = held.current;
     held.current = null;
-    if (release) void release().catch(onError);
+    if (release) release();
   };
   const releaseRef = useRef(releaseHeld);
   releaseRef.current = releaseHeld;
@@ -333,12 +357,7 @@ export function Canvas({
       window.removeEventListener("blur", release);
     };
   }, []);
-  const activeSimulation =
-    simulation?.documentId === doc.id &&
-    simulation.revision === doc.revision &&
-    simulation.circuit === circuit.name
-      ? simulation
-      : null;
+  const live = Boolean(run);
   const bindings = {
     id: doc.id,
     revision: doc.revision,
@@ -683,7 +702,7 @@ export function Canvas({
       ?.querySelector(".canvas-tools")
       ?.getBoundingClientRect();
     const transport = surface
-      ?.querySelector(".simulation-transport")
+      ?.querySelector(".runtime-transport")
       ?.getBoundingClientRect();
     const top = transport
       ? Math.max(0, transport.bottom - viewport.top) + 12
@@ -722,7 +741,7 @@ export function Canvas({
     }));
   }, [focusTarget?.id, focusTarget?.token, size.width, size.height, boundsFor]);
   useEffect(() => {
-    if (activeSimulation || !size.width || !size.height) {
+    if (live || !size.width || !size.height) {
       setLoading(false);
       return;
     }
@@ -774,8 +793,27 @@ export function Canvas({
     view.scale,
     size.width,
     size.height,
-    Boolean(activeSimulation),
+    live,
   ]);
+  // The run draws only what the canvas shows, at the canvas's zoom.
+  const reported = useRef("");
+  useEffect(() => {
+    if (!run || !size.width || !size.height) return;
+    const timer = setTimeout(() => {
+      const area = liveViewport(
+        { x: view.x, y: view.y, scale: view.scale },
+        size,
+      );
+      const key = `${run.viewId}:${area.x},${area.y},${area.width},${area.height},${area.scale}`;
+      if (reported.current === key) return;
+      reported.current = key;
+      onViewport(run.viewId, area);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [run, size.width, size.height, view.x, view.y, view.scale, onViewport]);
+  useEffect(() => {
+    if (!run) reported.current = "";
+  }, [run]);
   useEffect(() => {
     if (tool !== "wire") setWire([]);
   }, [tool]);
@@ -821,20 +859,13 @@ export function Canvas({
     }
     return null;
   };
-  const simRender = activeSimulation?.frame.children.find(
-    (c) => c.tag === "render",
-  );
-  const picture = simRender
-    ? {
-        src: "data:image/png;base64," + simRender.text,
-        bounds: {
-          x: +simRender.attributes.x,
-          y: +simRender.attributes.y,
-          width: +simRender.attributes.width,
-          height: +simRender.attributes.height,
-        },
-      }
-    : image;
+  // A live canvas paints the run's frame over the static picture, keeping the
+  // static one until the frame is decoded: no blank in between.
+  const picture = frame
+    ? { src: frame.url, bounds: frame.image.bounds, live: true }
+    : image
+      ? { ...image, live: false }
+      : null;
   const pendingWire =
     wire.length && cursor
       ? [...wire, ...route(wire[wire.length - 1], cursor).slice(1)]
@@ -924,23 +955,16 @@ export function Canvas({
           return;
         }
         if (tool === "poke" && target) {
-          const c = circuit.components.find((c) => c.id === target);
-          if (c?.name === "Button") {
-            const attrs = {
-              componentId: c.id,
-              ...(activeSimulation ? { viewId: activeSimulation.viewId } : {}),
-            };
-            held.current = () => simulate("button-release", attrs);
+          const component = circuit.components.find((c) => c.id === target);
+          if (!component) return;
+          if (component.name === "Button") {
+            held.current = onRelease;
             e.currentTarget.setPointerCapture(e.pointerId);
-            void simulate("button", { componentId: c.id, value: "1" }).catch(
-              onError,
-            );
-          } else if (c)
-            void simulate("poke", {
-              componentId: c.id,
-              x: String(p.x),
-              y: String(p.y),
-            }).catch(onError);
+            onPress(component);
+          } else {
+            // Inputs take the point clicked; memories open their contents.
+            onPoke(component, point(e, false));
+          }
           return;
         }
         const ids = target
@@ -1078,6 +1102,7 @@ export function Canvas({
           <image
             href={picture.src}
             {...picture.bounds}
+            preserveAspectRatio="none"
             opacity={overlay?.kind === "move" ? 0.4 : 1}
           />
         )}
@@ -1103,6 +1128,7 @@ export function Canvas({
             <image
               href={picture.src}
               {...picture.bounds}
+              preserveAspectRatio="none"
               clipPath={`url(#${moveClip})`}
             />
           </g>
@@ -1202,6 +1228,26 @@ export function Canvas({
                 <circle r={5} fill="var(--accent)" />
               )}
             </g>
+          );
+        })}
+        {[...new Set(pressed ? [pressed, ...pending] : pending)].map((id) => {
+          const b = boundsFor(id);
+          return (
+            <rect
+              key={`operated-${id}`}
+              className={pressed === id ? "input-pressed" : "input-pending"}
+              x={b.x - 3}
+              y={b.y - 3}
+              width={b.width + 6}
+              height={b.height + 6}
+              rx={3 / view.scale}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth={1.5 / view.scale}
+              strokeDasharray={pressed === id ? undefined : `${4 / view.scale} ${3 / view.scale}`}
+              opacity={pressed === id ? 0.9 : 0.55}
+              pointerEvents="none"
+            />
           );
         })}
         {selection.map((id) => {

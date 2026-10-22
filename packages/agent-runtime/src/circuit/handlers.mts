@@ -434,15 +434,20 @@ function route(view: any, from: any, to: any) {
 
 /** Collapse a grid path into straight wire segments. */
 function pointsOf(start: { x: number; y: number }, path: any[]) {
-  const points = [{ x: start.x, y: start.y }];
-  for (let i = 1; i < path.length; i += 1) {
-    const previous = path[i - 1];
-    const current = path[i];
-    const next = path[i + 1];
-    const turn = next && (previous.x === current.x) !== (next.x === current.x);
-    if (turn) points.push({ x: current.x, y: current.y });
+  // The start takes part in the bend test: the first step may already turn,
+  // and a path that begins with a diagonal would never reach the file.
+  const nodes = [{ x: start.x, y: start.y }, ...path];
+  const points = [nodes[0]];
+  for (let i = 1; i < nodes.length - 1; i += 1) {
+    const previous = nodes[i - 1];
+    const current = nodes[i];
+    const next = nodes[i + 1];
+    const turn = (previous.x === current.x) !== (next.x === current.x);
+    if (turn) points.push(current);
   }
-  points.push({ x: path[path.length - 1].x, y: path[path.length - 1].y });
+  const last = nodes[nodes.length - 1];
+  if (last.x !== points[points.length - 1].x || last.y !== points[points.length - 1].y)
+    points.push(last);
   return points;
 }
 
@@ -648,6 +653,8 @@ function stimulus(args: Record<string, any>) {
       events.push({ tick, input: clock.name, value });
     }
   }
+  // The manifest names input Pins with `name`; the host keys events by the
+  // Pin label under `input`, the same field the review request uses.
   for (const event of args.inputEvents || [])
     events.push({ tick: event.tick, input: event.name, value: event.value });
   events.sort((a, b) => a.tick - b.tick);
@@ -774,16 +781,33 @@ const compare: ToolHandler = async (args, context) => {
 };
 
 const keptObservations: ToolHandler = async (_args, context) => {
-  const records = await context.turn.call({
-    op: "observations",
-    id: context.session.documentId,
-  });
-  return {
-    observations: records.map(({ frame, ...record }: any) => ({
-      ...record,
-      state: frame?.attributes ?? null,
-    })),
-  };
+  // The list names what was kept; each record's frame and waveform are read on
+  // demand, so a list of many keeps stays small.
+  const id = context.session.documentId;
+  const records = await context.turn.call({ op: "observationList", id });
+  const kept = await Promise.all(
+    records.map(async (row: any) => {
+      if (row.damaged) return { ...row };
+      const record = await context.turn.call({
+        op: "observationGet",
+        id,
+        record: row.id,
+        limit: 0,
+      });
+      const { frame, trace, ...rest } = record;
+      return {
+        ...rest,
+        state: {
+          circuit: frame.circuit,
+          instancePath: frame.instancePath,
+          clock: frame.clock,
+          frameSequence: frame.frameSequence,
+        },
+        trace,
+      };
+    }),
+  );
+  return { observations: kept };
 };
 
 const loadability: ToolHandler = async (args, context) => {

@@ -14,7 +14,6 @@ export function ChangesRegion() {
   const { actions } = useWorkbench();
   const view = useView();
   const { doc, circuit } = view;
-  const sim = useSimulation((state) => state.sim);
   const visible = useShell(
     (state) => state.right === "changes" && showRight(state),
   );
@@ -27,7 +26,7 @@ export function ChangesRegion() {
       visible={visible}
       onError={onError}
       onDocument={mergeDocument}
-      onLocate={(change) => actions.navigation.locateChange(view, sim, change)}
+      onLocate={(change) => actions.navigation.locateChange(view, change)}
     />
   );
 }

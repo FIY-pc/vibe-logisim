@@ -12,17 +12,23 @@ use super::{
 use crate::{
     process::{StderrCapture, java_path},
     runtime::Launcher,
+    xml,
 };
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard, atomic::Ordering},
     time::Duration,
 };
-use tokio::sync::{
-    mpsc::{self, error::TryRecvError},
-    watch,
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
+    process::{Child, ChildStdin, ChildStdout},
+    sync::{
+        mpsc::{self, error::TryRecvError},
+        watch,
+    },
 };
-use vibe_workspace_core::DocumentView;
+use vibe_workspace_core::{DocumentView, digest};
+use xmltree::Element;
 
 /// The deepest subcircuit path a view may have.
 const MAX_DEPTH: usize = 64;
@@ -53,6 +59,18 @@ enum Lifecycle {
     Ended(EndedInfo),
 }
 
+/// The process that runs circuit checks: the same class and protocol as a run,
+/// started with `--verify` so it serves requests instead of holding a run.
+/// Checks never become the current run and never touch its clock.
+struct Check {
+    child: Child,
+    input: ChildStdin,
+    lines: Lines<BufReader<ChildStdout>>,
+    runtime: PathBuf,
+    /// Held so the pipe keeps draining; the tail goes to diagnostics.
+    _stderr: StderrCapture,
+}
+
 #[derive(Default)]
 struct Inner {
     current: Option<Arc<Session>>,
@@ -73,6 +91,8 @@ struct Shared {
     deadlines: Deadlines,
     /// Held by starts only: starts queue in order and nothing else waits on them.
     gate: tokio::sync::Mutex<()>,
+    /// Checks run one at a time on their own process.
+    checks: tokio::sync::Mutex<Option<Check>>,
     inner: Mutex<Inner>,
 }
 
@@ -184,6 +204,53 @@ async fn apply(session: &Session, view_id: &str, command: &Command) -> Result<Ac
     })
 }
 
+/// Switches the run to a new view of the instance at `instance_path`.
+async fn show(session: &Session, instance_path: Vec<String>) -> Result<NavigateResult, SimError> {
+    if instance_path.len() > MAX_DEPTH {
+        return Err(Code::PathTooDeep.into());
+    }
+    let circuits = session.circuits();
+    let definition = |name: &str| circuits.iter().find(|circuit| circuit.name == name);
+    let mut circuit = definition(&session.root.circuit).ok_or(Code::UnknownCircuit)?;
+    let mut instances = Vec::with_capacity(instance_path.len());
+    for id in &instance_path {
+        let instance = circuit
+            .components
+            .iter()
+            .find(|component| component.id == *id)
+            .ok_or_else(|| {
+                SimError::new(Code::ComponentMissing).with_message("找不到子电路实例")
+            })?;
+        circuit = definition(&instance.name)
+            .filter(|_| instance.library.is_none())
+            .ok_or(Code::NotSubcircuit)?;
+        instances.push(instance);
+    }
+    let view = View {
+        id: uuid::Uuid::new_v4().to_string(),
+        circuit: circuit.name.clone(),
+        instance_path,
+    };
+    // Known before the runtime acknowledges it, so its frames resolve.
+    session.register(view.clone());
+    session
+        .send(|request_id| {
+            protocol::view_line(
+                request_id,
+                &view.circuit,
+                &view.id,
+                &instances,
+                &circuit.components,
+            )
+        })
+        .await?;
+    Ok(NavigateResult {
+        view_id: view.id,
+        circuit: view.circuit,
+        instance_path: view.instance_path,
+    })
+}
+
 /// Owns the current run. Clones share it.
 #[derive(Clone)]
 pub struct SimulationRegistry(Arc<Shared>);
@@ -199,6 +266,7 @@ impl SimulationRegistry {
             spawner,
             deadlines,
             gate: tokio::sync::Mutex::new(()),
+            checks: tokio::sync::Mutex::new(None),
             inner: Mutex::new(Inner::default()),
         }))
     }
@@ -216,8 +284,8 @@ impl SimulationRegistry {
 
     /// Applies a command. Sent for a definition, a command that starts runs
     /// first starts a run of it, or uses the current run when that one is of
-    /// the same circuit and revision and shows its root; other commands for a
-    /// definition do nothing. A run that is gone or of another revision
+    /// the same circuit and revision (back at its root view); other commands
+    /// for a definition do nothing. A run that is gone or of another revision
     /// refuses commands that start runs and ignores the others.
     pub async fn act(
         &self,
@@ -294,7 +362,10 @@ impl SimulationRegistry {
                     };
                     result = Some(apply(&session, &view_id, &configure).await?);
                 }
-                if command != Command::Start {
+                // Propagation is on from the start, so a cold toggle would turn it off.
+                if command != Command::Start
+                    && !(started && command == Command::TogglePropagation)
+                {
                     result = Some(apply(&session, &view_id, &command).await?);
                 }
                 let mut result = result.unwrap_or_else(|| current_result(&session));
@@ -305,7 +376,9 @@ impl SimulationRegistry {
     }
 
     /// The run a definition command goes to, the root view to address and
-    /// whether the run was started for it.
+    /// whether the run was started for it. A run of the same circuit and
+    /// revision that shows a subcircuit instance returns to its root with its
+    /// state kept, as the circuit on screen is that root.
     async fn run_of(
         &self,
         document: RunDocument,
@@ -320,6 +393,12 @@ impl SimulationRegistry {
             let view = session.current_view();
             if view.instance_path.is_empty() {
                 return Ok((session, view.id, false));
+            }
+            match show(&session, Vec::new()).await {
+                Ok(root) => return Ok((session, root.view_id, false)),
+                // It ended meanwhile: start a new one below.
+                Err(error) if error.code == Code::SessionEnded => {}
+                Err(error) => return Err(error),
             }
         }
         let session = self.start(document, circuit).await?;
@@ -427,56 +506,16 @@ impl SimulationRegistry {
     }
 
     /// Shows a subcircuit instance of the run: `instance_path` holds component
-    /// ids from the root circuit; an empty path returns to the root.
+    /// ids from the root circuit; an empty path returns to the root. Every call
+    /// makes a new view: the runtime releases held buttons, clears the
+    /// waveform and the shown memory page, and renders the default viewport.
     pub async fn navigate(
         &self,
         session_id: &str,
         instance_path: Vec<String>,
     ) -> Result<NavigateResult, SimError> {
         let session = self.live(session_id).ok_or(Code::SessionEnded)?;
-        if instance_path.len() > MAX_DEPTH {
-            return Err(Code::PathTooDeep.into());
-        }
-        let circuits = session.circuits();
-        let definition = |name: &str| circuits.iter().find(|circuit| circuit.name == name);
-        let mut circuit = definition(&session.root.circuit).ok_or(Code::UnknownCircuit)?;
-        let mut instances = Vec::with_capacity(instance_path.len());
-        for id in &instance_path {
-            let instance = circuit
-                .components
-                .iter()
-                .find(|component| component.id == *id)
-                .ok_or_else(|| {
-                    SimError::new(Code::ComponentMissing).with_message("找不到子电路实例")
-                })?;
-            circuit = definition(&instance.name)
-                .filter(|_| instance.library.is_none())
-                .ok_or(Code::NotSubcircuit)?;
-            instances.push(instance);
-        }
-        let view = View {
-            id: uuid::Uuid::new_v4().to_string(),
-            circuit: circuit.name.clone(),
-            instance_path,
-        };
-        // Known before the runtime acknowledges it, so its frames resolve.
-        session.register(view.clone());
-        session
-            .send(|request_id| {
-                protocol::view_line(
-                    request_id,
-                    &view.circuit,
-                    &view.id,
-                    &instances,
-                    &circuit.components,
-                )
-            })
-            .await?;
-        Ok(NavigateResult {
-            view_id: view.id,
-            circuit: view.circuit,
-            instance_path: view.instance_path,
-        })
+        show(&session, instance_path).await
     }
 
     /// Ends the run because the user stopped it. False when it already ended.
@@ -560,8 +599,132 @@ impl SimulationRegistry {
         }
     }
 
+    /// Runs one bounded check on a circuit snapshot and returns its result
+    /// document. `operation` is a `simulate` or `trace` element exactly as the
+    /// batch checker reads it.
+    ///
+    /// The check process is separate from the current run: the check cannot
+    /// stall the run's clock or frames, and an interactive run is never
+    /// replaced or interrupted. Every check loads the artifact afresh inside
+    /// that process, because trace program stimuli mutate ROM contents.
+    pub async fn verify(&self, artifact: &Path, operation: Element) -> Result<Element, SimError> {
+        let source = tokio::fs::read(artifact)
+            .await
+            .map_err(|error| failed(format!("{}: {error}", artifact.display())))?;
+        let runtime = self
+            .0
+            .launcher
+            .facts()
+            .runtime_for(&source)
+            .map_err(|message| SimError::new(Code::RuntimeUnavailable).with_message(message))?
+            .0;
+        let runtime_hash = digest(&std::fs::read(&runtime).map_err(|error| {
+            SimError::new(Code::RuntimeUnavailable).with_detail(error.to_string())
+        })?);
+        let request = xml(
+            "request",
+            &[
+                ("artifact", java_path(artifact).to_string_lossy().into()),
+                ("digest", digest(&source)),
+            ],
+            vec![operation],
+        );
+        let mut bytes = Vec::new();
+        request
+            .write(&mut bytes)
+            .map_err(|error| SimError::new(Code::Internal).with_detail(error.to_string()))?;
+        let mut line = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+        line.push('\n');
+
+        let mut checks = self.0.checks.lock().await;
+        let stale = checks.as_mut().is_some_and(|check| {
+            check.runtime != runtime || check.child.try_wait().ok().flatten().is_some()
+        });
+        if stale {
+            *checks = None;
+        }
+        if checks.is_none() {
+            *checks = Some(self.start_check(&runtime, &runtime_hash).await?);
+        }
+        let check = checks.as_mut().expect("the check process was just started");
+        let reply = async {
+            check
+                .input
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|error| failed(error.to_string()))?;
+            check
+                .input
+                .flush()
+                .await
+                .map_err(|error| failed(error.to_string()))?;
+            let line = tokio::time::timeout(Duration::from_secs(120), check.lines.next_line())
+                .await
+                .map_err(|_| SimError::new(Code::Unresponsive))?
+                .map_err(|error| failed(error.to_string()))?
+                .ok_or_else(|| failed("校验进程在处理请求时退出"))?;
+            let (status, payload) = line
+                .split_once('\t')
+                .ok_or_else(|| failed("无效的校验响应"))?;
+            let payload = base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                payload,
+            )
+            .map_err(|error| failed(error.to_string()))?;
+            if status != "ok" {
+                return Err(SimError::new(Code::Internal)
+                    .with_detail(String::from_utf8_lossy(&payload).into_owned()));
+            }
+            Element::parse(payload.as_slice()).map_err(|error| failed(error.to_string()))
+        }
+        .await;
+        if reply.is_err() {
+            // A rejected circuit leaves the process in an uncertain state; the
+            // next check starts a new one.
+            *checks = None;
+        }
+        reply
+    }
+
+    async fn start_check(
+        &self,
+        runtime: &Path,
+        runtime_hash: &str,
+    ) -> Result<Check, SimError> {
+        let mut command = self
+            .0
+            .launcher
+            .command("CircuitSession", runtime)
+            .await
+            .map_err(failed)?;
+        let mut child = command
+            .arg("--verify")
+            .arg(java_path(runtime))
+            .arg(runtime_hash)
+            .spawn()
+            .map_err(|error| {
+                SimError::new(Code::RuntimeUnavailable).with_detail(error.to_string())
+            })?;
+        let (Some(stdin), Some(stdout), Some(stderr)) = (
+            child.stdin.take(),
+            child.stdout.take(),
+            child.stderr.take(),
+        ) else {
+            return Err(failed("the check process has no standard streams"));
+        };
+        Ok(Check {
+            child,
+            input: stdin,
+            lines: BufReader::new(stdout).lines(),
+            runtime: runtime.to_owned(),
+            _stderr: StderrCapture::start(stderr),
+        })
+    }
+
     /// Stops the run and waits briefly for its process to go.
     pub async fn shutdown(&self) {
+        // The check process is killed with its handle, not kept alive by it.
+        self.0.checks.lock().await.take();
         let current = self.0.lock().current.clone();
         if let Some(session) = current {
             session.end(EndReason::Stopped, None, None);
@@ -1193,6 +1356,31 @@ mod tests {
         );
         let image = h.registry.frame_image(&session_id, 3).unwrap();
         assert!(!image.is_empty());
+
+        // A command for the root circuit's definition returns the run to its
+        // root instead of starting a new one, so its state is kept.
+        let act = h.act(h.definition("main"), Command::Tick, None);
+        let line = a.fake.command().await;
+        assert!(
+            line.starts_with(r#"<view circuit="main" viewId=""#),
+            "{line}"
+        );
+        let root = attribute(&line, "viewId");
+        assert_ne!(Some(&root), first.view_id.as_ref());
+        assert!(a.fake.line(&ack(request_id(&line), &root, 4)).await);
+        let tick = a.fake.command().await;
+        assert!(
+            tick.starts_with("<tick ") && tick.contains(&format!(r#" viewId="{root}""#)),
+            "{tick}"
+        );
+        assert!(a.fake.line(&ack(request_id(&tick), &root, 5)).await);
+        let result = timeout(WAIT, act).await.unwrap().unwrap().unwrap();
+        assert_eq!(
+            (result.session_id.as_deref(), result.view_id.as_deref()),
+            (Some(session_id.as_str()), Some(root.as_str()))
+        );
+        assert!(result.applied && !result.started);
+        assert!(h.spawned.try_recv().is_err());
 
         h.registry.shutdown().await;
         timeout(WAIT, &mut a.fake.killed).await.unwrap().unwrap();

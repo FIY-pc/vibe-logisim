@@ -17,7 +17,7 @@ const samePath = (a: string, b: string) => {
 
 /** Opening, saving, reloading and closing documents, and the project folder. */
 export function createWorkspaceActions(stores: Stores) {
-  const { documents, editor, files, notices, shell, simulation } = stores;
+  const { documents, editor, files, notices, shell } = stores;
   const busy = <T>(action: () => Promise<T>) => shell.getState().busy(action);
   const onError = (error: unknown) => notices.getState().onError(error);
   /** Shows a document the host opened or created, at its main circuit. */
@@ -142,11 +142,8 @@ export function createWorkspaceActions(stores: Stores) {
       editor.getState().setCircuitName(next?.main || "main");
       if (next) await command({ op: "activate", id: next.id });
     }
-    simulation
-      .getState()
-      .setSim((previous) =>
-        previous?.documentId === target.id ? null : previous,
-      );
+    // A run of the closed document ends on the host, which sends `ended` to
+    // this window like any other run event.
   };
 
   /** Closes a document, first asking what to do with unsaved changes. */

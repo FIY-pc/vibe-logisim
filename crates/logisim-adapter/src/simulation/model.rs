@@ -6,7 +6,7 @@ use std::{path::PathBuf, sync::Arc};
 use ts_rs::TS;
 
 /// One run of one root circuit of one document revision.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfo {
     pub session_id: String,
@@ -22,7 +22,7 @@ pub struct SessionInfo {
 }
 
 /// The clock and propagation as of one frame or acknowledgement.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockState {
     #[ts(type = "number")]
@@ -40,7 +40,7 @@ pub struct ClockState {
 }
 
 /// How the user can operate a component in this run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Control {
     Input,
@@ -52,7 +52,7 @@ pub enum Control {
 
 /// A value as Logisim displays it: binary digits grouped by four, `x` for
 /// unknown bits. `value` is present when every bit is defined.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Signal {
     pub width: u32,
@@ -62,7 +62,7 @@ pub struct Signal {
     pub value: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PortState {
     pub index: u32,
@@ -70,7 +70,7 @@ pub struct PortState {
     pub signal: Signal,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentState {
     pub id: String,
@@ -84,8 +84,16 @@ pub struct ComponentState {
     pub ports: Vec<PortState>,
 }
 
-/// One page of a RAM in the viewed instance.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+/// Where a memory's contents live: the design's stored words, or the run's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum MemoryStorage {
+    Design,
+    Runtime,
+}
+
+/// One page of a memory.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryPage {
     pub component_id: String,
@@ -93,11 +101,16 @@ pub struct MemoryPage {
     pub address_bits: u32,
     pub data_bits: u32,
     pub length: u32,
+    #[serde(default = "runtime_storage")]
+    pub storage: MemoryStorage,
     pub words: Vec<u32>,
+}
+fn runtime_storage() -> MemoryStorage {
+    MemoryStorage::Runtime
 }
 
 /// World coordinates of a picture.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
 pub struct Bounds {
     pub x: f64,
     pub y: f64,
@@ -106,7 +119,7 @@ pub struct Bounds {
 }
 
 /// Size and placement of a frame picture; the bytes are fetched separately.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
 pub struct FrameImage {
     /// Pixels.
     pub width: u32,
@@ -116,14 +129,14 @@ pub struct FrameImage {
 }
 
 /// Runtime cost of one frame, in milliseconds.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Timing {
     pub capture_ms: f64,
     pub encode_ms: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TraceSignal {
     /// `componentId:port`.
@@ -133,7 +146,8 @@ pub struct TraceSignal {
     pub width: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct TraceSample {
     /// Position in this waveform, counting dropped samples.
     #[ts(type = "number")]
@@ -149,7 +163,8 @@ pub struct TraceSample {
 /// Waveform samples. A new `id` starts a new waveform. When `full`, `signals`
 /// is set and `samples` holds every kept sample; otherwise `signals` is empty
 /// and `samples` holds only those since the last delivery.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct TraceDelta {
     pub id: String,
     pub recording: bool,
@@ -165,7 +180,7 @@ pub struct TraceDelta {
 }
 
 /// One frame as the runtime produced it, numbered by the host.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
     /// Strictly increasing within a session, across views.
@@ -193,15 +208,33 @@ pub struct Frame {
     pub(crate) trace: TraceMark,
 }
 
+impl Frame {
+    /// Keeps at most `limit` components, in order, optionally only those with
+    /// an id in `ids`. Components stay shared with the frame they came from.
+    pub fn page(&mut self, ids: Option<&[String]>, offset: usize, limit: usize) {
+        let kept = self
+            .components
+            .iter()
+            .filter(|component| ids.is_none_or(|ids| ids.contains(&component.id)))
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect();
+        self.components = kept;
+    }
+}
+
 /// The waveform as of one frame.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct TraceMark {
     pub id: String,
     pub total: u64,
     pub recording: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentDelta {
     /// `items` is every component of the view, not only the changed ones.
     pub full: bool,
@@ -264,6 +297,8 @@ impl EndReason {
 #[serde(rename_all = "camelCase")]
 pub struct EndedInfo {
     pub session_id: String,
+    pub document_id: String,
+    pub root_circuit: String,
     pub reason_code: EndReason,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -380,6 +415,7 @@ impl Command {
             self,
             Self::Start
                 | Self::ToggleClock
+                | Self::TogglePropagation
                 | Self::Play
                 | Self::Tick
                 | Self::Step
@@ -465,7 +501,7 @@ pub struct Status {
 }
 
 /// A kept frame of the current run, with its waveform up to that frame.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub session: SessionInfo,

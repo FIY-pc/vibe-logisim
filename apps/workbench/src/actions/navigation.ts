@@ -1,8 +1,10 @@
+import { liveRun } from "../stores/simulation";
 import { command } from "../lib/transport";
 import type { LocateChange } from "../lib/reviewTypes";
-import type { Document, Simulation } from "../lib/types";
-import type { Stores } from "../workbench/createWorkbench";
-import { activeSimulation, currentView, type View } from "../workbench/view";
+import type { SessionInfo } from "../generated/SessionInfo";
+import type { Document } from "../lib/types";
+import type { Actions, Stores } from "../workbench/createWorkbench";
+import { currentView, type View } from "../workbench/view";
 import type { EditorActions } from "./editor";
 
 /**
@@ -10,93 +12,47 @@ import type { EditorActions } from "./editor";
  * including the circuit changes that move the view. Every navigation bumps
  * the editor's navigation counter, so results requested before it are dropped.
  */
-export function createNavigation(stores: Stores, editing: EditorActions) {
+export function createNavigation(
+  stores: Stores,
+  editing: EditorActions,
+  actions: Pick<Actions, "simulation">,
+) {
   const { documents, editor, notices, shell, simulation } = stores;
   const onError = (error: unknown) => notices.getState().onError(error);
 
-  /** Shows a circuit of the view's document. Showing the root circuit of a
-   * simulation that is inside an instance returns the simulation to the root. */
-  const switchCircuit = (view: View, sim: Simulation | null, name: string) => {
-    const { doc } = view;
-    const { navigation } = editor.getState();
-    const requested = navigation.next();
-    if (
-      sim &&
-      doc &&
-      sim.documentId === doc.id &&
-      sim.revision === doc.revision &&
-      sim.rootCircuit === name &&
-      sim.instancePath.length
-    ) {
-      void command<Simulation>({
-        op: "simulationView",
-        id: doc.id,
-        revision: doc.revision,
-        path: [],
-      })
-        .then((next) => {
-          if (
-            requested === navigation.current &&
-            documents.getState().active === doc.id &&
-            documents.getState().docs.find((current) => current.id === doc.id)
-              ?.revision === doc.revision
-          )
-            simulation.getState().setSim(next);
-        })
-        .catch(onError);
-    }
+  /** Shows a circuit of the view's document. Switching to the root circuit
+   * of a run that is inside an instance shows the run again, from its root;
+   * switching anywhere else leaves the run alone. */
+  const switchCircuit = (view: View, name: string) => {
+    editor.getState().navigation.next();
     editor.getState().setCircuitName(name);
     editing.select(view, []);
     editor.getState().setPlace(null);
+    // The window's own simulation reaction restores the run once the circuit
+    // is shown; nothing to do here but keep this the only place that moves.
   };
 
   /** Shows the instance of the running simulation at `path`. */
   const navigateSimulation = async (view: View, path: string[]) => {
-    const { doc, circuit, scope } = view;
-    if (!doc || !circuit) return;
-    const { navigation } = editor.getState();
-    const requested = navigation.next();
-    const next = await command<Simulation>({
-      op: "simulationView",
-      id: doc.id,
-      revision: doc.revision,
-      path,
-    });
-    if (requested !== navigation.current || currentView(stores).scope !== scope)
-      return;
-    simulation.getState().setSim(next);
-    editor.getState().setCircuitName(next.circuit);
-    editing.select(view, []);
-    editor.getState().setPlace(null);
+    if (!view.doc || !view.circuit) return;
+    await actions.simulation.navigate(view, path).catch(onError);
   };
 
   /** Opens a subcircuit: inside the running simulation, its instance;
    * otherwise its definition. */
-  const enterCircuit = (
-    view: View,
-    sim: Simulation | null,
-    name: string,
-    id: string,
-  ) => {
-    const active = activeSimulation(sim, view);
-    if (active && view.doc)
-      void navigateSimulation(view, [...active.instancePath, id]).catch(
-        onError,
-      );
-    else switchCircuit(view, sim, name);
+  const enterCircuit = (view: View, name: string, id: string) => {
+    const live = liveRun(simulation.getState(), view.doc, view.circuit?.name);
+    if (live)
+      void navigateSimulation(view, [...live.view.instancePath, id]);
+    else switchCircuit(view, name);
   };
 
   /** Shows an object of the view's document: selected, revealed on the
    * canvas and in the inspector. */
-  const focusObject = (
-    view: View,
-    sim: Simulation | null,
-    name: string,
-    id: string,
-  ) => {
+  const focusObject = (view: View, name: string, id: string) => {
     const { doc } = view;
     if (!doc) return;
-    switchCircuit(view, sim, name);
+    switchCircuit(view, name);
     editor
       .getState()
       .setSelected({ scope: `${doc.id}:${doc.revision}:${name}`, ids: [id] });
@@ -114,7 +70,6 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
    * shown revision and the object is unambiguous. */
   const locateChange = (
     view: View,
-    sim: Simulation | null,
     { circuit: name, revision, object }: LocateChange,
   ) => {
     const { doc } = view;
@@ -150,7 +105,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
       onError("无法唯一对应当前工程中的对象");
       return;
     }
-    focusObject(view, sim, name, targets[0].id);
+    focusObject(view, name, targets[0].id);
   };
 
   /** Shows an open document at its main circuit. */
@@ -164,43 +119,37 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
     shell.getState().closeDrawers();
   };
 
-  /** Shows the circuit the simulation runs, in its document. */
-  const returnToSimulation = (view: View, sim: Simulation) => {
+  /** Shows the circuit the run is showing, in its document. */
+  const returnToSimulation = (view: View, session: SessionInfo) => {
+    const run = simulation.getState().view;
     const owner = documents
       .getState()
       .docs.find(
-        (item) => item.id === sim.documentId && item.revision === sim.revision,
+        (item) =>
+          item.id === session.documentId && item.revision === session.revision,
       );
-    if (!owner) return;
+    if (!owner || !run) return;
     editor.getState().navigation.next();
     documents.getState().setActive(owner.id);
-    editor.getState().setCircuitName(sim.circuit);
+    editor.getState().setCircuitName(run.circuit);
     editing.select(view, []);
     void command({ op: "activate", id: owner.id }).catch(onError);
   };
 
   /** Adds a circuit to the view's document and shows it. */
-  const addCircuit = async (
-    view: View,
-    sim: Simulation | null,
-    name: string,
-  ) => {
+  const addCircuit = async (view: View, name: string) => {
     await editing.edit(view, { kind: "addCircuit", name });
-    switchCircuit(view, sim, name);
+    switchCircuit(view, name);
   };
 
   /** Renames the shown circuit and keeps showing it. */
-  const renameCircuit = async (
-    view: View,
-    sim: Simulation | null,
-    name: string,
-  ) => {
+  const renameCircuit = async (view: View, name: string) => {
     await editing.edit(view, { kind: "renameCircuit", name });
-    switchCircuit(view, sim, name);
+    switchCircuit(view, name);
   };
 
   /** Asks to delete the shown circuit, then shows another circuit. */
-  const requestDeleteCircuit = (view: View, sim: Simulation | null) => {
+  const requestDeleteCircuit = (view: View) => {
     const { doc, circuit } = view;
     if (!doc || !circuit) return;
     notices.getState().setDecision({
@@ -213,7 +162,6 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
             await editing.edit(view, { kind: "deleteCircuit" });
             switchCircuit(
               view,
-              sim,
               doc.circuits.find((x) => x.name !== circuit.name)!.name,
             );
           },

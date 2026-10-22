@@ -30,7 +30,7 @@ pub use verification::{VerificationInput, VerificationRecord};
 mod state_paths_tests;
 mod topology;
 mod verification;
-pub use observations::ObservationRecord;
+pub use observations::{ObservationRecord, ObservationSummary};
 use requests::Effect;
 pub use requests::editing::{EditResult, ErrorDetail, MovePreview, Selection};
 use serde::Serialize;
@@ -38,7 +38,7 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 pub use verification::{InputEvent, TestVector, TraceWatch};
-use vibe_logisim_adapter::{Native, Verifier};
+use vibe_logisim_adapter::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
 use vibe_workspace_core::{Document, DocumentView, Workspace};
 
 #[derive(Clone)]
@@ -46,7 +46,10 @@ pub struct Host {
     history_gate: Arc<Mutex<()>>,
     pub workspace: Arc<Mutex<Workspace>>,
     pub native: Arc<Mutex<Native>>,
-    verifier: Arc<Mutex<Verifier>>,
+    /// The current run and its process, and the separate process that answers
+    /// circuit checks. Commands, frames and the run's lifetime never wait on
+    /// editor or check work.
+    pub simulation: SimulationRegistry,
     feedback: Arc<Mutex<feedback::Feedback>>,
     failures: Arc<Mutex<diagnostics::FailureLog>>,
     interface_previews: Arc<Mutex<interfaces::Previews>>,
@@ -70,8 +73,8 @@ impl Host {
         if let Some(agent) = self.agent.lock().await.take() {
             agent.shutdown().await;
         }
+        self.simulation.shutdown().await;
         self.native.lock().await.shutdown().await;
-        self.verifier.lock().await.shutdown().await;
     }
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Result<Self> {
         std::fs::create_dir_all(&state).map_err(|e| e.to_string())?;
@@ -98,23 +101,19 @@ impl Host {
             .ok()
             .and_then(|b| serde_json::from_slice::<vibe_workspace_core::Folder>(&b).ok())
             .and_then(|f| vibe_workspace_core::Folder::open(&f.path).ok());
+        let launcher = Launcher::new(
+            RuntimeFacts::new(root.clone(), runtime.clone()),
+            state.clone(),
+        );
         Ok(Self {
             _lease: Arc::new(lease),
+            simulation: SimulationRegistry::new(launcher.clone()),
             feedback: Arc::new(Mutex::new(feedback::Feedback::new(&state))),
             failures: Arc::new(Mutex::new(diagnostics::FailureLog::default())),
             interface_previews: Arc::new(Mutex::new(interfaces::Previews::default())),
             folder: Arc::new(Mutex::new(folder)),
             workspace: Arc::new(Mutex::new(workspace)),
-            verifier: Arc::new(Mutex::new(Verifier::new(
-                root.clone(),
-                state.join("verification"),
-                runtime.clone(),
-            ))),
-            native: Arc::new(Mutex::new(Native::new(
-                root.clone(),
-                state.clone(),
-                runtime,
-            ))),
+            native: Arc::new(Mutex::new(Native::with_launcher(launcher))),
             state,
             root,
             agent: Arc::new(Mutex::new(None)),
@@ -190,6 +189,7 @@ impl Host {
         Box::pin(async move {
             let meta = request.meta();
             let outcome = self.apply(request, &meta).await;
+            self.reconcile().await;
             if let Some(stage) = meta.stage {
                 match &outcome {
                     Err(error) => self.failures.lock().await.record(stage, &error.message),
@@ -284,6 +284,19 @@ impl Host {
         }
         self.persist(&*self.workspace.lock().await).await;
         result
+    }
+    /// Ends the run when its document closed or moved to another revision. Runs
+    /// after every request, so no path can leave a run of a document that changed.
+    async fn reconcile(&self) {
+        let Some(id) = self.simulation.session().map(|session| session.document_id) else {
+            return;
+        };
+        let revision = {
+            let workspace = self.workspace.lock().await;
+            workspace.get(&id).ok().map(|document| document.revision())
+        };
+        self.simulation
+            .reconcile(|candidate| (candidate == id).then(|| revision.clone()).flatten());
     }
     async fn revision(&self, id: &str) -> Option<String> {
         Some(self.workspace.lock().await.get(id).ok()?.revision())

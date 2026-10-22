@@ -44,6 +44,7 @@ let sequence = 0,
   runtimeDoc = "A",
   askGate: any = null,
   navGate: any = null;
+(globalThis as any).__simState = null;
 const defer = () => {
   let resolve: any;
   const promise = new Promise((r) => (resolve = r));
@@ -158,7 +159,17 @@ const state = () => ({
       image:
         "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
     };
-  if (request.op === "simulationView" && navGate) return navGate.promise;
+  if (request.op === "simulationFrameImage")
+    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+  if (request.op === "simulationNavigate") {
+    if (navGate) return navGate.promise;
+    const child = request.instancePath.length > 0;
+    return {
+      viewId: child ? "view-child" : "view",
+      circuit: child ? "child" : "main",
+      instancePath: request.instancePath,
+    };
+  }
   return null;
 };
 const emit = (event: any) => {
@@ -254,7 +265,9 @@ await act(async () => {
   });
 });
 assert.equal(changed.at(-1).revision, "r2");
-await render(chat(doc("A")));
+// A proposal is actionable on the revision it was written from, so the chat
+// shows it once the document has moved to that revision.
+await render(chat({ ...doc("A"), revision: "r2" }));
 assert.ok(document.querySelector(".proposal"));
 console.log(
   "PASS: hidden conversation continues receiving document changes and proposals",
@@ -432,43 +445,77 @@ await act(async () =>
 console.log(
   "PASS: late save and agent mutation results refresh current status without overwriting newer document state",
 );
+const simSession = {
+  sessionId: "sim",
+  documentId: "A",
+  documentName: "A.circ",
+  documentPath: null,
+  revision: "r2",
+  rootCircuit: "main",
+  runtime: "current",
+  startedAt: 0,
+};
+const simClock = {
+  ticks: 0,
+  running: false,
+  automatic: true,
+  pending: false,
+  frequency: 2,
+  actualFrequency: 0,
+  oscillating: false,
+};
+const simImage = {
+  width: 1,
+  height: 1,
+  bounds: { x: 0, y: 0, width: 1, height: 1 },
+  scale: 1,
+};
+const simState = (
+  viewId: string,
+  circuit: string,
+  instancePath: string[],
+  frameSequence: number,
+) => ({
+  kind: "state",
+  ...simSession,
+  viewId,
+  circuit,
+  instancePath,
+  frameSequence,
+  commandSequence: frameSequence,
+  clock: simClock,
+  components: { full: true, items: [] },
+  image: simImage,
+  timing: { captureMs: 0, encodeMs: 0 },
+});
+await act(async () => {
+  emit({ topic: "simulation", data: { kind: "session", session: simSession } });
+  emit({
+    topic: "simulation",
+    data: simState("view", "main", [], 1),
+  });
+});
+await settle();
+// The run enters an instance while the user stays on the root circuit, then
+// switches document with the navigation back to the root still in flight.
+navGate = defer();
 await act(async () =>
   emit({
     topic: "simulation",
-    data: {
-      documentId: "A",
-      revision: "r2",
-      circuit: "main",
-      rootCircuit: "top",
-      instancePath: ["child"],
-      viewId: "view",
-      frame: { attributes: {}, children: [] },
-    },
+    data: simState("view-child", "child", ["child"], 2),
   }),
 );
-navGate = defer();
-await click(
-  [...document.querySelectorAll(".breadcrumbs button")].find((n) =>
-    n.textContent?.includes("返回上层"),
-  )!,
-);
+await settle();
 await click(
   [...document.querySelectorAll(".document-item")].find((n) =>
     n.textContent?.includes("B.circ"),
   )!,
 );
 await act(async () => {
-  navGate.resolve({
-    documentId: "A",
-    revision: "r2",
-    circuit: "ancestor",
-    rootCircuit: "top",
-    instancePath: [],
-    viewId: "late",
-    frame: { attributes: {}, children: [] },
-  });
+  navGate.resolve({ viewId: "late", circuit: "ancestor", instancePath: [] });
   await navGate.promise;
 });
+await settle();
 navGate = null;
 assert.equal(
   document.querySelector(".breadcrumbs strong")!.textContent,
@@ -695,8 +742,14 @@ const canvas = (d: any) => (
     edit={async (e: any) => {
       edits.push(e);
     }}
-    simulation={null}
-    simulate={async () => {}}
+    run={null}
+    picture={null}
+    pending={[]}
+    pressed={null}
+    onPoke={() => {}}
+    onPress={() => {}}
+    onRelease={() => {}}
+    onViewport={() => {}}
     onError={(e: any) => errors.push(e)}
     fitToken={0}
     onOpenMemory={() => {}}
@@ -762,8 +815,14 @@ function PlacementHarness({ token }: { token: number }) {
       edit={async (e) => {
         edits.push(e);
       }}
-      simulation={null}
-      simulate={async () => {}}
+      run={null}
+      picture={null}
+      pending={[]}
+      pressed={null}
+      onPoke={() => {}}
+      onPress={() => {}}
+      onRelease={() => {}}
+      onViewport={() => {}}
       onError={(e) => errors.push(e)}
       fitToken={0}
       onOpenMemory={() => {}}
@@ -858,8 +917,14 @@ function QueueHarness() {
         edit={async () => {
           throw new Error("Unexpected structural edit before placement");
         }}
-        simulation={null}
-        simulate={async () => {}}
+        run={null}
+        picture={null}
+        pending={[]}
+        pressed={null}
+        onPoke={() => {}}
+        onPress={() => {}}
+        onRelease={() => {}}
+        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         fitToken={0}
         onOpenMemory={() => {}}
@@ -1068,8 +1133,14 @@ function TraceHarness() {
         edit={async (e) => {
           edits.push(e);
         }}
-        simulation={null}
-        simulate={async () => {}}
+        run={null}
+        picture={null}
+        pending={[]}
+        pressed={null}
+        onPoke={() => {}}
+        onPress={() => {}}
+        onRelease={() => {}}
+        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         fitToken={0}
         onOpenMemory={() => {}}

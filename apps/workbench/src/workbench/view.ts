@@ -1,4 +1,4 @@
-import type { Circuit, Document, Simulation } from "../lib/types";
+import type { Circuit, Document } from "../lib/types";
 import type { Stores } from "./createWorkbench";
 
 /** The shown document and circuit. `scope` identifies them with the document
@@ -32,18 +32,4 @@ export function currentView({
 }: Pick<Stores, "documents" | "editor">): View {
   const { docs, active } = documents.getState();
   return viewOf(docs, active, editor.getState().circuitName);
-}
-
-/** The simulation session, if it runs the shown circuit at the shown revision. */
-export function activeSimulation(
-  sim: Simulation | null,
-  { doc, circuit }: View,
-): Simulation | null {
-  return sim &&
-    doc &&
-    sim.documentId === doc.id &&
-    sim.revision === doc.revision &&
-    sim.circuit === circuit?.name
-    ? sim
-    : null;
 }

@@ -7,7 +7,6 @@ export function CircuitPrompts() {
   const { stores, actions } = useWorkbench();
   const view = useView();
   const { circuit } = view;
-  const sim = useSimulation((state) => state.sim);
   const renameCircuit = useEditor((state) => state.renameCircuit);
   const circuitPrompt = useEditor((state) => state.circuitPrompt);
   const { setRenameCircuit, setCircuitPrompt } = stores.editor.getState();
@@ -19,14 +18,14 @@ export function CircuitPrompts() {
           title="重命名电路"
           initial={circuit.name}
           onClose={() => setRenameCircuit(false)}
-          onSubmit={(name) => navigation.renameCircuit(view, sim, name)}
+          onSubmit={(name) => navigation.renameCircuit(view, name)}
         />
       )}
       {circuitPrompt && (
         <TextPrompt
           title="新建电路"
           onClose={() => setCircuitPrompt(false)}
-          onSubmit={(name) => navigation.addCircuit(view, sim, name)}
+          onSubmit={(name) => navigation.addCircuit(view, name)}
         />
       )}
     </>

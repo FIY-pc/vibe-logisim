@@ -1,12 +1,18 @@
-import { TextPrompt } from "./TextPrompt";
-import type { ReferenceInput } from "../lib/references";
 import { DecisionDialog, type Decision } from "./DecisionDialog";
+import { TextPrompt } from "./TextPrompt";
 import { useEffect, useRef, useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
-import { command } from "../lib/transport";
 import type { ObservationRecord } from "../generated/ObservationRecord";
-import type { XmlNode } from "../lib/types";
+import type { ObservationSummary } from "../generated/ObservationSummary";
+import type { ReferenceInput } from "../lib/references";
+import { command } from "../lib/transport";
 import { Waveform } from "./Waveform";
+
+/**
+ * The observations a document kept, with one or two shown side by side. The
+ * list is cheap; a record's frame and waveform are read when it is selected,
+ * and its picture when it reaches the viewer.
+ */
 export function Observations({
   documentId,
   onClose,
@@ -19,21 +25,33 @@ export function Observations({
   onQuote: (references: ReferenceInput[]) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [renaming, setRenaming] = useState<ObservationRecord | null>(null);
+  const [renaming, setRenaming] = useState<ObservationSummary | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [records, setRecords] = useState<ObservationRecord[]>([]),
+  const [records, setRecords] = useState<ObservationSummary[]>([]),
     [selection, setSelection] = useState<string[]>(initial ? [initial] : []),
+    [shown, setShown] = useState<Record<string, ObservationRecord>>({}),
     [error, setError] = useState("");
   useEffect(() => {
     dialog.current?.showModal();
-    void command<ObservationRecord[]>({ op: "observations", id: documentId })
+    void command<ObservationSummary[]>({ op: "observationList", id: documentId })
       .then(setRecords)
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
     return () => dialog.current?.close();
   }, [documentId]);
+  useEffect(() => {
+    for (const id of selection.slice(-2))
+      if (!shown[id])
+        void command<ObservationRecord>({
+          op: "observationGet",
+          id: documentId,
+          record: id,
+        })
+          .then((record) => setShown((all) => ({ ...all, [record.id]: record })))
+          .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [selection, shown, documentId]);
   const selected = selection
-    .map((id) => records.find((r) => r.id === id))
-    .filter((r): r is ObservationRecord => !!r);
+    .map((id) => shown[id])
+    .filter((record): record is ObservationRecord => !!record);
   return (
     <dialog
       ref={dialog}
@@ -58,36 +76,42 @@ export function Observations({
       <div className="observations-body">
         <div className="observation-list">
           {records.length ? (
-            records.map((r) => (
-              <div key={r.id}>
+            records.map((record) => (
+              <div key={record.id}>
                 <label>
                   <input
                     type="checkbox"
-                    checked={selection.includes(r.id)}
+                    disabled={Boolean(record.damaged)}
+                    checked={selection.includes(record.id)}
                     onChange={(e) =>
                       setSelection((old) =>
                         e.target.checked
-                          ? [...old.slice(-1), r.id]
-                          : old.filter((id) => id !== r.id),
+                          ? [...old.slice(-1), record.id]
+                          : old.filter((id) => id !== record.id),
                       )
                     }
                   />
                   <span>
-                    {r.title}
-                    <small>{new Date(r.createdAt).toLocaleString()}</small>
+                    {record.title}
+                    <small>
+                      {record.damaged
+                        ? record.damaged
+                        : new Date(record.createdAt).toLocaleString()}
+                    </small>
                   </span>
                 </label>
                 <button
-                  aria-label={`重命名观察 ${r.title}`}
-                  onClick={() => setRenaming(r)}
+                  aria-label={`重命名观察 ${record.title}`}
+                  disabled={Boolean(record.damaged)}
+                  onClick={() => setRenaming(record)}
                 >
                   <Pencil size={13} />
                 </button>
                 <button
-                  aria-label={`删除观察 ${r.title}`}
+                  aria-label={`删除观察 ${record.title}`}
                   onClick={() =>
                     setDecision({
-                      title: `删除 ${r.title}？`,
+                      title: `删除 ${record.title}？`,
                       message: "这条观察记录删除后无法恢复。",
                       actions: [
                         {
@@ -95,14 +119,13 @@ export function Observations({
                           run: async () => {
                             await command({
                               op: "observationDelete",
-                              id: documentId,
-                              record: r.id,
+                              record: record.id,
                             });
                             setRecords((old) =>
-                              old.filter((x) => x.id !== r.id),
+                              old.filter((item) => item.id !== record.id),
                             );
                             setSelection((old) =>
-                              old.filter((id) => id !== r.id),
+                              old.filter((id) => id !== record.id),
                             );
                           },
                         },
@@ -120,52 +143,41 @@ export function Observations({
         </div>
         <div className="observation-viewer">
           {selected.length === 2 && <Comparison records={selected} />}
-          {selected.map((r) => {
-            const frame = r.frame as unknown as XmlNode;
-            const render = frame.children.find((n) => n.tag === "render"),
-              trace = frame.children.find((n) => n.tag === "trace");
-            return (
-              <article key={r.id}>
-                <h3>{r.title}</h3>
-                <p className="muted">
-                  {r.rootCircuit}
-                  {r.instancePath.length
-                    ? ` › ${r.circuit} (${r.instancePath.join(" / ")})`
-                    : ""}{" "}
-                  · 修订 {r.revision.slice(0, 8)}
-                </p>
-                {render?.text && (
-                  <img
-                    className="observation-image"
-                    src={`data:image/png;base64,${render.text}`}
-                    alt={`${r.circuit} 留存画面`}
-                  />
-                )}
-                {r.signals.length > 0 && (
-                  <table>
-                    <tbody>
-                      {r.signals.map((s) => (
-                        <tr key={s.key}>
-                          <th>{s.label}</th>
-                          <td>
-                            <code>{s.bits}</code>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                {trace && (
-                  <Waveform
-                    trace={trace}
-                    labels={Object.fromEntries(
-                      r.signals.map((s) => [s.key, s.label]),
-                    )}
-                  />
-                )}
-              </article>
-            );
-          })}
+          {selected.map((record) => (
+            <article key={record.id}>
+              <h3>{record.title}</h3>
+              <p className="muted">
+                {record.rootCircuit}
+                {record.instancePath.length
+                  ? ` › ${record.circuit} (${record.instancePath.join(" / ")})`
+                  : ""}{" "}
+                · 修订 {record.revision.slice(0, 8)}
+              </p>
+              <Picture record={record} />
+              {record.signals.length > 0 && (
+                <table>
+                  <tbody>
+                    {record.signals.map((signal) => (
+                      <tr key={signal.key}>
+                        <th>{signal.label}</th>
+                        <td>
+                          <code>{signal.bits}</code>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {record.trace && (
+                <Waveform
+                  trace={record.trace}
+                  labels={Object.fromEntries(
+                    record.signals.map((signal) => [signal.key, signal.label]),
+                  )}
+                />
+              )}
+            </article>
+          ))}
         </div>
       </div>
       <footer>
@@ -173,10 +185,10 @@ export function Observations({
           disabled={!selected.length}
           onClick={() => {
             onQuote(
-              selected.map((r) => ({
+              selected.map((record) => ({
                 kind: "observation",
-                documentId: r.documentId,
-                recordId: r.id,
+                documentId: record.documentId,
+                recordId: record.id,
               })),
             );
             onClose();
@@ -193,12 +205,18 @@ export function Observations({
           onSubmit={async (title) => {
             const result = await command<ObservationRecord>({
               op: "observationRename",
-              id: documentId,
               record: renaming.id,
               title,
             });
             setRecords((old) =>
-              old.map((r) => (r.id === result.id ? result : r)),
+              old.map((record) =>
+                record.id === result.id
+                  ? { ...record, title: result.title }
+                  : record,
+              ),
+            );
+            setShown((old) =>
+              old[result.id] ? { ...old, [result.id]: result } : old,
             );
           }}
         />
@@ -209,6 +227,29 @@ export function Observations({
     </dialog>
   );
 }
+
+/** The kept frame's picture, fetched once per record. */
+function Picture({ record }: { record: ObservationRecord }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    let live = true;
+    void command<string>({ op: "observationImage", record: record.id })
+      .then((data) => live && setUrl(data))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [record.id]);
+  if (!url) return null;
+  return (
+    <img
+      className="observation-image"
+      src={url}
+      alt={`${record.circuit} 留存画面`}
+    />
+  );
+}
+
 function Comparison({ records: [a, b] }: { records: ObservationRecord[] }) {
   const same =
     a.revision === b.revision &&
@@ -220,9 +261,9 @@ function Comparison({ records: [a, b] }: { records: ObservationRecord[] }) {
         电路版本或运行实例不同，分别显示原始记录。
       </p>
     );
-  const pairs = a.signals.flatMap((s) => {
-    const next = b.signals.find((n) => n.key === s.key);
-    return next ? [{ ...s, next: next.bits }] : [];
+  const pairs = a.signals.flatMap((signal) => {
+    const next = b.signals.find((other) => other.key === signal.key);
+    return next ? [{ ...signal, next: next.bits }] : [];
   });
   return (
     <table className="observation-comparison">
@@ -234,11 +275,14 @@ function Comparison({ records: [a, b] }: { records: ObservationRecord[] }) {
         </tr>
       </thead>
       <tbody>
-        {pairs.map((s) => (
-          <tr key={s.key} className={s.bits !== s.next ? "changed" : ""}>
-            <th>{s.label}</th>
-            <td>{s.bits}</td>
-            <td>{s.next}</td>
+        {pairs.map((signal) => (
+          <tr
+            key={signal.key}
+            className={signal.bits !== signal.next ? "changed" : ""}
+          >
+            <th>{signal.label}</th>
+            <td>{signal.bits}</td>
+            <td>{signal.next}</td>
           </tr>
         ))}
       </tbody>

@@ -63,6 +63,29 @@ async function open(name: string, xml: string) {
   await writeFile(file, xml);
   return command({ op: "open", path: file });
 }
+/** Starts or reuses a circuit's run; the released version's start did both. */
+async function start(doc: any, circuit = "main") {
+  const result = await command({
+    op: "simulationAct",
+    documentId: doc.id,
+    revision: doc.revision,
+    target: { kind: "definition", circuit },
+    command: { kind: "start" },
+  });
+  assert(result.sessionId && result.viewId, JSON.stringify(result));
+  return { sessionId: result.sessionId as string, viewId: result.viewId as string };
+}
+/** Drives the run's current view. */
+const drive = (doc: any, run: { sessionId: string; viewId: string }, request: any) =>
+  command({
+    op: "simulationAct",
+    documentId: doc.id,
+    revision: doc.revision,
+    target: { kind: "run", ...run },
+    command: request,
+  });
+const halt = (run: { sessionId: string }) =>
+  command({ op: "simulationStop", sessionId: run.sessionId });
 async function evaluate(doc: any, invert: boolean) {
   const result = await command({
     op: "simulate",
@@ -212,17 +235,16 @@ try {
     String(-Number(eastInput.attributes.x)),
     "Template preview ignored rotation attributes",
   );
-  await command({ op: "simulationStart", ...scope(local) });
+  const nestedRun = await start(local);
   const nested = await command({
-    op: "simulationView",
-    id: local.id,
-    revision: local.revision,
-    path: [
+    op: "simulationNavigate",
+    sessionId: nestedRun.sessionId,
+    instancePath: [
       local.circuits[0].components.find((c: any) => c.name === "inverter").id,
     ],
   });
   assert.equal(nested.circuit, "inverter", JSON.stringify(nested));
-  await command({ op: "simulationStop" });
+  await halt(nestedRun);
   assert.equal(
     await readFile(path.join(state, "custom.circ"), "utf8"),
     project(shell("inverter") + inverter("inverter")),
@@ -262,8 +284,7 @@ try {
   );
   await render(external);
   await evaluate(external, true);
-  await command({ op: "simulationStart", ...scope(external) });
-  await command({ op: "simulationStop" });
+  await halt(await start(external));
   const direct = await open(
     "direct.circ",
     project(
@@ -275,36 +296,50 @@ try {
   const directOutput = direct.circuits[0].components.find(
     (component: any) => component.attributes.label === "output",
   );
-  const outputValue = (simulation: any) =>
-    simulation.frame.children
-      .find((node: any) => node.attributes?.id === directOutput.id)
-      .children.find((node: any) => node.tag === "port").attributes.bits;
-  const originalSimulation = await command({
-    op: "simulationStart",
-    ...scope(direct),
-  });
-  const settledOutput = async (simulation: any) => {
-    await command({
-      op: "simulationCommand",
-      id: direct.id,
-      revision: direct.revision,
-      command: "input",
-      attributes: {
-        componentId: direct.circuits[0].components.find(
-          (c: any) => c.attributes.label === "input",
-        ).id,
-        bits: "0",
-      },
+  /** The output pin in the run's newest frame, or the first one after `after`. */
+  const outputValue = async (
+    run: { sessionId: string; viewId: string },
+    after = 0,
+  ) => {
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const snapshot = await command({
+        op: "simulationSnapshot",
+        sessionId: run.sessionId,
+        componentIds: [directOutput.id],
+        trace: false,
+        memory: false,
+      });
+      if (snapshot.frame.commandSequence >= after)
+        return {
+          frameSequence: snapshot.frame.frameSequence as number,
+          bits: snapshot.frame.components
+            .find((item: any) => item.id === directOutput.id)
+            .ports.find((port: any) => port.index === 0).bits as string,
+        };
+      await sleep(10);
+    }
+    throw new Error(`no frame after command ${after}`);
+  };
+  const originalSimulation = await start(direct);
+  /** Drives the input low and keeps the frame it settled in. */
+  const settledOutput = async (run: { sessionId: string; viewId: string }) => {
+    const acknowledged = await drive(direct, run, {
+      kind: "input",
+      componentId: direct.circuits[0].components.find(
+        (c: any) => c.attributes.label === "input",
+      ).id,
+      bits: "0",
     });
+    const output = await outputValue(run, acknowledged.commandSequence);
     const captured = await command({
       op: "observationCapture",
-      id: direct.id,
-      revision: direct.revision,
-      view_id: simulation.viewId,
+      sessionId: run.sessionId,
+      viewId: run.viewId,
+      frameSequence: output.frameSequence,
       title: "Synthetic library check",
     });
-    assert.equal(captured.viewId, simulation.viewId);
-    return outputValue(await command({ op: "simulationStatus" }));
+    assert.equal(captured.viewId, run.viewId);
+    return output.bits;
   };
   assert.equal(await settledOutput(originalSimulation), "1");
   const beforeLibraryChange = await command({
@@ -344,24 +379,32 @@ try {
     ),
   );
   await evaluate(direct, false);
-  const unchangedSimulation = await command({ op: "simulationStatus" });
+  const unchangedSimulation = (await command({ op: "simulationStatus" })).state;
   assert.equal(unchangedSimulation.viewId, originalSimulation.viewId);
   assert.equal(
-    outputValue(unchangedSimulation),
+    (await outputValue(originalSimulation)).bits,
     "1",
     "External checks reset the user's transient simulation",
   );
-  const restartedSimulation = await command({
-    op: "simulationStart",
-    ...scope(direct),
-  });
-  assert.notEqual(restartedSimulation.viewId, originalSimulation.viewId);
+  const reusedSimulation = await start(direct);
+  assert.equal(
+    reusedSimulation.viewId,
+    originalSimulation.viewId,
+    "A start reuses the run of the same circuit and revision",
+  );
+  assert.equal(
+    (await outputValue(reusedSimulation)).bits,
+    "1",
+    "Reusing a run keeps the library it started with",
+  );
+  await halt(reusedSimulation);
+  const restartedSimulation = await start(direct);
   assert.equal(
     await settledOutput(restartedSimulation),
     "0",
-    "Explicit simulation restart retained the old library",
+    "A new run must load the changed library",
   );
-  await command({ op: "simulationStop" });
+  await halt(restartedSimulation);
   await writeFile(
     path.join(state, "library", "leaf.circ"),
     project(inverter("inverter").replace('to="(170,100)"', 'to="(170,110)"')),
@@ -375,16 +418,18 @@ try {
     project(inverter("inverter")),
   );
   await evaluate(direct, true);
-  const stoppedAndStarted = await command({
-    op: "simulationStart",
-    ...scope(direct),
-  });
+  const stoppedAndStarted = await start(direct);
+  assert.notEqual(
+    stoppedAndStarted.viewId,
+    restartedSimulation.viewId,
+    "A start after a stop makes a new run",
+  );
   assert.equal(
     await settledOutput(stoppedAndStarted),
     "1",
     "Stop/start retained the previous library",
   );
-  await command({ op: "simulationStop" });
+  await halt(stoppedAndStarted);
   const originalPath = path.join(state, "direct.circ");
   const originalBytes = await readFile(originalPath);
   await mkdir(path.join(state, "exported", "nested"), { recursive: true });
@@ -449,24 +494,20 @@ try {
     );
   for (let i = 0; i < 5; i++)
     await measured("large_viewport_render_1200x800", () => render(large));
-  const run = await measured("large_simulation_start", () =>
-    command({ op: "simulationStart", ...scope(large) }),
-  );
+  const run = await measured("large_simulation_start", () => start(large));
   const input = large.circuits[0].components.find(
     (c: any) => c.attributes.label === "in_0",
   );
   for (let i = 0; i < 5; i++)
     await measured("large_input_ack", () =>
-      command({
-        op: "simulationCommand",
-        id: large.id,
-        revision: large.revision,
-        command: "input",
-        attributes: { componentId: input.id, bits: String(i % 2) },
+      drive(large, run, {
+        kind: "input",
+        componentId: input.id,
+        bits: String(i % 2),
       }),
     );
-  assert(run.frame);
-  await command({ op: "simulationStop" });
+  assert(run.sessionId);
+  await halt(run);
   console.log(
     JSON.stringify(
       {

@@ -1,6 +1,7 @@
 import { eventBinding } from "../lib/shortcuts";
 import type { Tool } from "../lib/types";
 import { canRotate } from "../lib/usePlacement";
+import type { RunAction } from "../actions/simulation";
 import type { Actions, Stores } from "./createWorkbench";
 import { currentView } from "./view";
 
@@ -59,11 +60,11 @@ export function handleShortcuts(stores: Stores, actions: Actions): () => void {
       else if (shortcut === "capture")
         void simulating.capture(view).catch(onError);
       else if (shortcut === "clock")
-        void simulating.simulate(view, "toggle-clock").catch(onError);
+        void simulating.run(view, "toggle-clock").catch(onError);
       else if (shortcut === "propagation")
-        void simulating.simulate(view, "toggle-propagation").catch(onError);
+        void simulating.run(view, "toggle-propagation").catch(onError);
       else if (["tick", "step", "reset"].includes(shortcut))
-        void simulating.simulate(view, shortcut).catch(onError);
+        void simulating.run(view, shortcut as RunAction).catch(onError);
       return;
     }
     if (key === "Mod+N") {

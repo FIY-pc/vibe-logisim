@@ -1,17 +1,15 @@
+import type { SimulationEvent } from "../generated/SimulationEvent";
 import { subscribeEvents } from "../lib/events";
-import { command } from "../lib/transport";
-import type { Simulation } from "../lib/types";
-import type { Stores } from "./createWorkbench";
+import type { Actions, Stores } from "./createWorkbench";
 import { reaction } from "./reaction";
 
 /** Applies host events: simulation frames, resynchronization after a
  * (re)connection, connection failures and warnings about changes that took
  * effect while something around them failed. Returns the stop. */
-export function routeEvents({
-  documents,
-  notices,
-  simulation,
-}: Stores): () => void {
+export function routeEvents(
+  { documents, notices }: Stores,
+  { simulation }: Actions,
+): () => void {
   let live = true;
   let version = 0;
   // The first resync only confirms the subscription; the workbench read the
@@ -21,7 +19,7 @@ export function routeEvents({
   const stop = subscribeEvents((event) => {
     if (event.topic === "simulation") {
       version++;
-      simulation.getState().setSim(event.data);
+      simulation.onEvent(event.data as SimulationEvent);
     }
     if (event.topic === "resync") {
       notices
@@ -30,9 +28,10 @@ export function routeEvents({
           previous === "连接中断，正在重新连接…" ? "" : previous,
         );
       const requested = ++version;
-      void command<Simulation | null>({ op: "simulationStatus" })
-        .then((next) => {
-          if (live && requested === version) simulation.getState().setSim(next);
+      void simulation
+        .refresh()
+        .then(() => {
+          if (!live || requested !== version) return;
         })
         .catch(notices.getState().onError);
       if (synced)

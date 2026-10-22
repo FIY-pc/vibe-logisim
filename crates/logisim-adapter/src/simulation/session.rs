@@ -5,8 +5,8 @@
 use super::{
     error::{Code, SimError},
     model::{
-        ComponentState, EndReason, EndedInfo, Frame, RunState, SessionInfo, TraceDelta, TraceMark,
-        TraceSample, TraceSignal,
+        ClockState, ComponentState, EndReason, EndedInfo, Frame, RunState, SessionInfo, TraceDelta,
+        TraceMark, TraceSample, TraceSignal,
     },
     protocol::{self, AckMeta, Line, RawFrame, RawTrace},
 };
@@ -191,6 +191,9 @@ struct State {
     views: VecDeque<View>,
     /// The view the runtime acknowledged last.
     current_view: View,
+    /// The clock of the newest acknowledgement, which may be ahead of the
+    /// newest frame: a reply reports the state its command left.
+    last_clock: Option<(u64, ClockState)>,
     sequence: u64,
     frames: VecDeque<Arc<Frame>>,
     images: VecDeque<(u64, Arc<Vec<u8>>)>,
@@ -207,6 +210,7 @@ impl State {
             last_frame_at: now,
             views: VecDeque::from([root.clone()]),
             current_view: root,
+            last_clock: None,
             sequence: 0,
             frames: VecDeque::new(),
             images: VecDeque::new(),
@@ -315,6 +319,8 @@ impl Session {
         let ended = Ended {
             info: EndedInfo {
                 session_id: self.info.session_id.clone(),
+                document_id: self.info.document_id.clone(),
+                root_circuit: self.info.root_circuit.clone(),
                 reason_code: reason,
                 message: reason.message().map(str::to_owned),
                 at: now_ms(),
@@ -415,11 +421,13 @@ impl Session {
             state.last_ack_at = Instant::now();
             // Acks leave the runtime in its command order, so the view of the
             // latest one is current; frames may still trail from the previous view.
-            if let Ok(meta) = &result
-                && state.current_view.id != meta.view_id
-                && let Some(view) = state.views.iter().find(|view| view.id == meta.view_id)
-            {
-                state.current_view = view.clone();
+            if let Ok(meta) = &result {
+                if state.current_view.id != meta.view_id
+                    && let Some(view) = state.views.iter().find(|view| view.id == meta.view_id)
+                {
+                    state.current_view = view.clone();
+                }
+                state.last_clock = Some((meta.command_sequence, meta.clock.clone()));
             }
             request_id.and_then(|id| state.pending.remove(&id))
         };
@@ -515,13 +523,21 @@ impl Session {
     pub(crate) fn run_state(&self) -> Option<RunState> {
         let state = self.lock();
         let frame = state.frames.back()?;
+        // An acknowledgement may be newer than the last frame; its clock is
+        // the state the latest command left.
+        let (command_sequence, clock) = match &state.last_clock {
+            Some((sequence, clock)) if *sequence > frame.command_sequence => {
+                (*sequence, clock.clone())
+            }
+            _ => (frame.command_sequence, frame.clock.clone()),
+        };
         Some(RunState {
             view_id: state.current_view.id.clone(),
             circuit: state.current_view.circuit.clone(),
             instance_path: state.current_view.instance_path.clone(),
             frame_sequence: frame.frame_sequence,
-            command_sequence: frame.command_sequence,
-            clock: frame.clock.clone(),
+            command_sequence,
+            clock,
         })
     }
 

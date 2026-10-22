@@ -86,7 +86,7 @@ impl Code {
 
 /// A simulation failure: a stable code, the text to show, and diagnostics
 /// that never reach the user interface.
-#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, ts_rs::TS)]
 pub struct SimError {
     pub code: Code,
     pub message: String,

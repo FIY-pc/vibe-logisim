@@ -48,12 +48,21 @@ pub enum ReviewRequest {
         circuit: String,
         verification: VerificationInput,
     },
+    /// Runs 1–256 input vectors through a circuit of the given revision in a
+    /// separate runtime, each from fresh state, and compares the output pins
+    /// named in `expected`. Isolated from the live run: it neither reads nor
+    /// changes what the user sees. The agent's vector tool uses it.
     Simulate {
         id: String,
         revision: String,
         circuit: String,
         vectors: Vec<TestVector>,
     },
+    /// Runs a circuit of the given revision for 1–256 clock ticks in a
+    /// separate runtime from fresh state, applying the input events at their
+    /// ticks and sampling 1–16 watched ports (`component` id and `port`)
+    /// after every tick. Isolated from the live run, like `simulate`. The
+    /// agent's trace tool uses it.
     Trace {
         id: String,
         revision: String,

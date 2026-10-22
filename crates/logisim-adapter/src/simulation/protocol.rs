@@ -4,7 +4,7 @@ use super::{
     error::{Code, SimError},
     model::{
         Bounds, ButtonValue, ClockState, Command, ComponentState, Control, FrameImage, MemoryPage,
-        PortState, Signal, Timing, TraceSample, TraceSignal,
+        MemoryStorage, PortState, Signal, Timing, TraceSample, TraceSignal,
     },
 };
 use quick_xml::{
@@ -307,6 +307,10 @@ fn frame(
                 address_bits: attrs.number("addressBits")?,
                 data_bits: attrs.number("dataBits")?,
                 length: attrs.number("length")?,
+                storage: match attrs.text("storage")? {
+                    "design" => MemoryStorage::Design,
+                    _ => MemoryStorage::Runtime,
+                },
                 words: Vec::new(),
             }),
             (Some(Open::Memory(page)), "word") => {

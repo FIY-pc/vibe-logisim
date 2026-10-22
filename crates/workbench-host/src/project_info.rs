@@ -146,12 +146,8 @@ impl Package {
                 uuid::Uuid::parse_str(&record.id).map_err(|_| "观察记录标识无效，未导出")?;
             // A simulator exception may contain a local runtime path. Keep the
             // failure visible without publishing its raw exception text.
-            if let Some(attributes) = record.frame["attributes"].as_object_mut() {
-                for key in ["failure", "error"] {
-                    if attributes.contains_key(key) {
-                        attributes.insert(key.into(), json!("仿真故障"));
-                    }
-                }
+            if let Some(failure) = &mut record.frame.clock.failure {
+                failure.message = "仿真故障".into();
             }
             self.add_json(format!("observations/{record_id}.json"), &record)?;
             observation_count += 1;
@@ -350,8 +346,7 @@ impl Host {
         doc.check(revision).map_err(|e| e.to_string())?;
         let mut package = Package::new(&doc)?;
         let records = self.verification_records(id, revision)?;
-        let observations = serde_json::from_value(self.observations(id).await?)
-            .map_err(|_| "观察记录无法读取，未导出")?;
+        let observations = self.observation_records(id).await?;
         package.evidence(id, revision, records, observations)?;
         let bytes = package.archive()?;
         // Bind publication to the exact draft reviewed when export was requested.
@@ -529,7 +524,7 @@ mod tests {
             .unwrap();
         let id = document["id"].as_str().unwrap();
         let revision = document["revision"].as_str().unwrap();
-        let observations = state.join("observations").join(id);
+        let observations = state.join("observations");
         let verification = state.join("verification-records").join(id);
         std::fs::create_dir_all(&observations).unwrap();
         std::fs::create_dir_all(&verification).unwrap();
@@ -549,10 +544,21 @@ mod tests {
             }
             let observation = json!({
                 "id":record_id,"documentId":document_id,"documentName":"main.circ",
-                "revision":record_revision,"circuit":"main","rootCircuit":"main",
-                "instancePath":[],"viewId":"fixture","createdAt":1.0,"title":"State",
+                "documentPath":null,"revision":record_revision,"circuit":"main",
+                "rootCircuit":"main","instancePath":[],"viewId":"fixture",
+                "frameSequence":1,"createdAt":1.0,"title":"State",
                 "signals":[{"key":"pin:0","label":"Q","bits":"1"}],
-                "frame":{"tag":"frame","attributes":{"ticks":"1","failure":source},"children":[]}
+                "frame":{
+                    "frameSequence":1,"commandSequence":1,"viewId":"fixture","circuit":"main",
+                    "instancePath":[],
+                    "clock":{"ticks":1,"running":false,"automatic":false,"pending":false,
+                        "frequency":1.0,"actualFrequency":1.0,"oscillating":false,
+                        "failure":{"code":"OSCILLATING","message":source}},
+                    "components":[],
+                    "image":{"width":1,"height":1,
+                        "bounds":{"x":0.0,"y":0.0,"width":1.0,"height":1.0},"scale":1.0},
+                    "timing":{"captureMs":0.0,"encodeMs":0.0},"at":1
+                }
             });
             std::fs::write(
                 observations.join(format!("{record_id}.json")),
@@ -607,7 +613,7 @@ mod tests {
         assert!(records[0].get("dependencies").is_none());
         let observed = read_json(&mut zip, &current_observation);
         assert_eq!(observed["signals"][0]["bits"], "1");
-        assert_eq!(observed["frame"]["attributes"]["failure"], "仿真故障");
+        assert_eq!(observed["frame"]["clock"]["failure"]["message"], "仿真故障");
         let mut packaged = Vec::new();
         zip.by_name("project/main.circ")
             .unwrap()

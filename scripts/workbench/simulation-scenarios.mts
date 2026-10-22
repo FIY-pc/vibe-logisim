@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
+import { simulationClient } from "./simulation-client.mts";
 type Command = (request: any) => Promise<any>;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function verifySimulation(command: Command, state: string) {
@@ -21,56 +22,49 @@ export async function verifySimulation(command: Command, state: string) {
     path: source,
   });
   const before = await readFile(source, "utf8");
-  let simulation = await command({
-    op: "simulationStart",
-    id: doc.id,
-    revision: doc.revision,
-    circuit: "main",
-  });
+  const client = simulationClient(command);
+  const run = await client.started(doc, "main");
   const root = doc.circuits.find((c) => c.name === "main")!;
   const clock = root.components.find((c) => c.name === "Clock")!,
     input = root.components.find((c) => c.name === "Pin")!;
-  const action = (op: string, attributes: Record<string, string> = {}) =>
-    command({
-      op: "simulationCommand",
-      id: doc.id,
-      revision: doc.revision,
-      command: op,
-      attributes,
-    });
-  const automatic = await command({
-    op: "observationCapture",
-    id: doc.id,
-    revision: doc.revision,
-    view_id: simulation.viewId,
-    title: "Named signals",
-  });
+  let current = run;
+  let last: Awaited<ReturnType<typeof client.run>> | null = null;
+  const send = async (request: Parameters<typeof client.run>[2]) =>
+    (last = await client.run(doc, current, request));
+  /** The frame the command settled in, with the waveform it left. */
+  const settled = async (
+    acknowledged: Awaited<ReturnType<typeof client.run>>,
+    options: Parameters<typeof client.settled>[2] = {},
+  ) => client.settled(current, acknowledged, { trace: true, ...options });
+  /** Keeps the shown frame once it shows the last command, as a user would. */
+  const capture = async (title: string) => {
+    if (last) await settled(last);
+    return client.keep(current, title);
+  };
+  const automatic = await capture("Named signals");
   assert.deepEqual(
-    automatic.signals.map((s: any) => s.key),
+    automatic.signals.map((signal) => signal.key),
     [`${input.id}:0`],
   );
-  assert(automatic.frame.children.some((n: any) => n.tag === "component"));
+  assert(automatic.frame.components.some((c) => c.id !== ""));
   assert.equal(
-    automatic.frame.children
-      .find((n: any) => n.tag === "trace")
-      ?.children.filter((n: any) => n.tag === "signal").length || 0,
+    automatic.trace?.signals.length || 0,
     0,
     "Capturing named signals must not change the live watch selection",
   );
-  await action("trace", { signals: `${clock.id}:0,${input.id}:0` });
-  for (let n = 0; n < 8; n++) {
-    await action("input", { componentId: input.id, bits: String(n % 2) });
-    await action("tick");
-  }
-  const captured = await command({
-    op: "observationCapture",
-    id: doc.id,
-    revision: doc.revision,
-    view_id: simulation.viewId,
-    title: "Clock and input",
+  await send({
+    kind: "trace",
+    signals: [
+      { componentId: clock.id, port: 0 },
+      { componentId: input.id, port: 0 },
+    ],
   });
-  let trace = captured.frame.children.find((n: any) => n.tag === "trace");
-  const samples = trace.children.filter((n: any) => n.tag === "sample");
+  for (let n = 0; n < 8; n++) {
+    await send({ kind: "input", componentId: input.id, bits: String(n % 2) });
+    await send({ kind: "tick" });
+  }
+  const captured = await capture("Clock and input");
+  const samples = captured.trace!.samples;
   assert.equal(
     samples.length,
     17,
@@ -81,10 +75,13 @@ export async function verifySimulation(command: Command, state: string) {
     2,
     "Only explicitly watched ports are retained",
   );
-  assert.equal(samples.at(-1).attributes.tick, "8");
+  assert.equal(samples.at(-1)!.tick, 8);
+  const pin = captured.trace!.signals.findIndex(
+    (signal) => signal.componentId === input.id,
+  );
   assert(
-    samples.some((n: any) => n.text.endsWith("|0")) &&
-      samples.some((n: any) => n.text.endsWith("|1")),
+    samples.some((sample) => sample.values[pin] === "0") &&
+      samples.some((sample) => sample.values[pin] === "1"),
   );
   const isolated = await command({
     op: "trace",
@@ -107,133 +104,103 @@ export async function verifySimulation(command: Command, state: string) {
   );
   assert.equal(isolated.samples[0].signals[`${input.id}:0`].value, 0);
   assert.equal(isolated.samples[2].signals[`${input.id}:0`].value, 1);
-  const afterCheck = await command({ op: "simulationStatus" });
-  assert.equal(afterCheck.viewId, simulation.viewId);
+  const afterCheck = await client.status();
+  assert.equal(afterCheck.state?.viewId, current.viewId);
   assert.equal(
-    afterCheck.frame.attributes.ticks,
-    "8",
+    afterCheck.state?.clock.ticks,
+    8,
     "Isolated trace advanced the user clock",
   );
-  await action("configure", { frequency: "4096" });
-  await action("play");
+  await send({ kind: "configure", frequency: 4096 });
+  await send({ kind: "play" });
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
-    const current = await command({ op: "simulationStatus" });
-    const window = current.frame.children.find((n: any) => n.tag === "trace");
-    if (Number(window?.attributes.dropped) > 0) break;
+    const now = await client.status();
+    if (now.state && now.state.clock.ticks > 512) break;
     await sleep(50);
   }
-  await action("pause");
-  const bounded = await command({
-    op: "observationCapture",
-    id: doc.id,
-    revision: doc.revision,
-    view_id: simulation.viewId,
-    title: "Bounded trace",
-  });
-  trace = bounded.frame.children.find((n: any) => n.tag === "trace");
+  await send({ kind: "pause" });
+  const bounded = await capture("Bounded trace");
   assert.equal(
-    trace.children.filter((n: any) => n.tag === "sample").length,
+    bounded.trace!.samples.length,
     512,
+    "The waveform keeps the bounded history",
   );
   assert(
-    Number(trace.attributes.dropped) > 0,
+    bounded.trace!.dropped > 0,
     "Evicted steps must be visible, not silently treated as complete history",
   );
-  await action("reset");
-  const reset = await command({
-    op: "observationCapture",
-    id: doc.id,
-    revision: doc.revision,
-    view_id: simulation.viewId,
-    title: "Reset",
-  });
-  const resetTrace = reset.frame.children.find((n: any) => n.tag === "trace");
-  assert.notEqual(resetTrace.attributes.id, trace.attributes.id);
-  assert.equal(
-    resetTrace.children.filter((n: any) => n.tag === "sample").length,
-    1,
-  );
+  await send({ kind: "reset" });
+  const reset = await capture("Reset");
+  assert.notEqual(reset.trace!.id, bounded.trace!.id);
+  assert.equal(reset.trace!.samples.length, 1);
   const instances = root.components.filter((c) => c.name === "bank");
   const ram = doc.circuits.find((c) => c.name === "bank")!.components[0];
-  const navigate = async (ids: string[]) =>
-    (simulation = await command({
-      op: "simulationView",
-      id: doc.id,
-      revision: doc.revision,
-      path: ids,
-    }));
+  const navigate = async (ids: string[]) => {
+    const view = await client.navigate(current, ids);
+    return { sessionId: current.sessionId, viewId: view.viewId };
+  };
   const memory = async () => {
-    await action("memory", {
-      viewId: simulation.viewId,
+    const opened = await client.run(doc, current, {
+      kind: "memory",
       componentId: ram.id,
-      offset: "0",
-      count: "16",
+      offset: 0,
+      count: 16,
     });
-    const record = await command({
-      op: "observationCapture",
-      id: doc.id,
-      revision: doc.revision,
-      view_id: simulation.viewId,
-      title: "RAM view",
-    });
+    const { frame } = await settled(opened, { memory: true });
+    const record = await client.keep(current, "RAM view");
     assert.equal(
       record.signals.length,
       0,
       "Moving into an instance must not reuse another view's watched IDs",
     );
-    const current = await command({ op: "simulationStatus" });
-    return current.frame.children.find((n: any) => n.tag === "memory");
+    return frame.memory!;
   };
-  await navigate([instances[1].id]);
+  current = await navigate([instances[1].id]);
   const second = await memory();
-  const secondOriginal = second.children[0].attributes.value;
-  await navigate([instances[0].id]);
+  const secondOriginal = second.words[0];
+  current = await navigate([instances[0].id]);
   const first = await memory();
-  const original = first.children[0].attributes.value;
-  const changed = (Number(original) ^ 255).toString(16);
-  await action("memory-write", {
-    viewId: simulation.viewId,
+  const original = first.words[0];
+  const changed = original ^ 255;
+  await client.run(doc, current, {
+    kind: "memory-write",
     componentId: ram.id,
-    offset: "0",
-    count: "16",
-    address: "0",
-    expected: Number(original).toString(16),
+    offset: 0,
+    count: 16,
+    address: 0,
+    expected: original,
     value: changed,
   });
-  assert.equal(
-    (await memory()).children[0].attributes.value,
-    String(parseInt(changed, 16)),
+  assert.equal((await memory()).words[0], changed);
+  await assert.rejects(() =>
+    client.run(doc, current, {
+      kind: "memory-write",
+      componentId: ram.id,
+      offset: 0,
+      count: 16,
+      address: 0,
+      expected: original,
+      value: 1,
+    }),
   );
-  await assert.rejects(
-    () =>
-      action("memory-write", {
-        componentId: ram.id,
-        offset: "0",
-        count: "16",
-        address: "0",
-        expected: Number(original).toString(16),
-        value: "1",
-      }),
-    /changed/,
-  );
-  const previousView = simulation.viewId;
-  await navigate([instances[1].id]);
+  const previous = current;
+  current = await navigate([instances[1].id]);
   assert.equal(
-    (await memory()).children[0].attributes.value,
+    (await memory()).words[0],
     secondOriginal,
     "RAM leaked across instances",
   );
   await assert.rejects(
     () =>
-      action("memory-write", {
-        viewId: previousView,
+      client.run(doc, previous, {
+        kind: "memory-write",
         componentId: ram.id,
-        offset: "0",
-        count: "16",
-        address: "0",
+        offset: 0,
+        count: 16,
+        address: 0,
         expected: secondOriginal,
-        value: "1",
+        value: 1,
       }),
     /视图/,
   );
@@ -246,19 +213,17 @@ export async function verifySimulation(command: Command, state: string) {
     before,
     "RAM/trace operations saved source",
   );
-  await navigate([]);
+  current = await navigate([]);
   const rom = root.components.find((c) => c.name === "ROM")!;
-  const page = (
-    await command({
-      op: "memory",
-      id: doc.id,
-      revision: doc.revision,
-      circuit: "main",
-      component: rom.id,
-      offset: 0,
-      count: 16,
-    })
-  ).children.find((n: any) => n.tag === "memory");
+  const page = await command({
+    op: "memory",
+    id: doc.id,
+    revision: doc.revision,
+    circuit: "main",
+    component: rom.id,
+    offset: 0,
+    count: 16,
+  });
   doc = await command({
     op: "memoryWrite",
     id: doc.id,
@@ -266,37 +231,32 @@ export async function verifySimulation(command: Command, state: string) {
     circuit: "main",
     component: rom.id,
     address: 0,
-    expected: Number(page.children[0].attributes.value).toString(16),
+    expected: page.words[0].toString(16),
     value: "a5",
   });
-  const edited = (
-    await command({
-      op: "memory",
-      id: doc.id,
-      revision: doc.revision,
-      circuit: "main",
-      component: rom.id,
-      offset: 0,
-      count: 16,
-    })
-  ).children.find((n: any) => n.tag === "memory");
-  assert.equal(edited.children[0].attributes.value, "165");
+  const edited = await command({
+    op: "memory",
+    id: doc.id,
+    revision: doc.revision,
+    circuit: "main",
+    component: rom.id,
+    offset: 0,
+    count: 16,
+  });
+  assert.equal(edited.words[0], 165);
   assert(doc.dirty);
   assert.equal(
     await readFile(source, "utf8"),
     before,
     "ROM edit must remain a draft until Save",
   );
-  await assert.rejects(
-    () =>
-      command({
-        op: "observationCapture",
-        id: doc.id,
-        revision: doc.revision,
-        view_id: simulation.viewId,
-        title: "stale",
-      }),
-    /视图/,
+  await assert.rejects(() =>
+    command({
+      op: "observationCapture",
+      sessionId: current.sessionId,
+      viewId: current.viewId,
+      title: "stale",
+    }),
   );
   doc = await command({ op: "undo", id: doc.id, revision: doc.revision });
   assert.equal(
@@ -304,26 +264,24 @@ export async function verifySimulation(command: Command, state: string) {
     captured.revision,
     "ROM editing must undo in one step",
   );
-  const records = await command({ op: "observations", id: doc.id });
+  const records = await client.observations(doc);
   assert(
     records.some(
-      (r: any) => r.id === captured.id && r.revision === captured.revision,
+      (record) => record.id === captured.id && record.title === "Clock and input",
     ),
   );
-  await command({ op: "simulationStop" });
-  await command({
-    op: "simulationAction",
-    id: doc.id,
-    revision: "stale-revision",
-    circuit: "main",
-    command: "button-release",
-    attributes: { componentId: clock.id },
+  await client.stop(current);
+  const late = await client.definition(doc, "main", {
+    kind: "button",
+    componentId: clock.id,
+    value: "0",
   });
   assert.equal(
-    await command({ op: "simulationStatus" }),
-    null,
+    late.started,
+    false,
     "A delayed release must never start a stopped circuit",
   );
+  assert.equal((await client.status()).session, null);
   console.log(
     "Verified: settled-step traces independent of rendering, bounded retention, reset epochs, exact watches, RAM instance isolation and conflict guards, ROM draft/undo, immutable observations.",
   );

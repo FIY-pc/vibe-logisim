@@ -144,6 +144,52 @@ impl std::fmt::Display for HostError {
 
 impl std::error::Error for HostError {}
 
+impl From<vibe_logisim_adapter::simulation::Code> for ErrorCode {
+    fn from(code: vibe_logisim_adapter::simulation::Code) -> Self {
+        use vibe_logisim_adapter::simulation::Code as C;
+        match code {
+            C::InputNotOperable => Self::InputNotOperable,
+            C::InputOutside => Self::InputOutside,
+            C::InputFormat => Self::InputFormat,
+            C::Oscillating => Self::Oscillating,
+            C::FrequencyRange => Self::FrequencyRange,
+            C::NotRam => Self::NotRam,
+            C::RamNeedsRun => Self::RamNeedsRun,
+            C::MemoryAddress => Self::MemoryAddress,
+            C::MemoryWidth => Self::MemoryWidth,
+            C::MemoryWordChanged => Self::MemoryWordChanged,
+            C::RomIsolate => Self::RomIsolate,
+            C::TracePort => Self::TracePort,
+            C::TraceLimit => Self::TraceLimit,
+            C::TraceChanged => Self::TraceChanged,
+            C::ViewportBudget => Self::ViewportBudget,
+            C::InstanceNotReady => Self::InstanceNotReady,
+            C::PathTooDeep => Self::PathTooDeep,
+            C::NotSubcircuit => Self::NotSubcircuit,
+            C::DuplicateId => Self::DuplicateId,
+            C::ComponentAmbiguous => Self::ComponentAmbiguous,
+            C::ComponentMissing => Self::ComponentMissing,
+            C::ParentInput => Self::ParentInput,
+            C::ViewChanged => Self::ViewChanged,
+            C::UnknownCircuit => Self::UnknownCircuit,
+            C::SessionEnded => Self::SessionEnded,
+            C::StartTimeout => Self::StartTimeout,
+            C::StartFailed => Self::StartFailed,
+            C::RuntimeUnavailable => Self::RuntimeUnavailable,
+            C::Unresponsive => Self::Unresponsive,
+            C::ClockFailure => Self::ClockFailure,
+            C::FrameEvicted => Self::FrameEvicted,
+            C::Internal => Self::Internal,
+        }
+    }
+}
+
+impl From<vibe_logisim_adapter::simulation::SimError> for HostError {
+    fn from(error: vibe_logisim_adapter::simulation::SimError) -> Self {
+        Self::new(error.code.into(), error.message)
+    }
+}
+
 impl From<vibe_workspace_core::Error> for HostError {
     fn from(error: vibe_workspace_core::Error) -> Self {
         use vibe_workspace_core::Error as E;

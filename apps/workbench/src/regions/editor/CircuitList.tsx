@@ -13,7 +13,6 @@ export function CircuitList({ doc: d }: { doc: Document }) {
   const { stores, actions } = useWorkbench();
   const view = useView();
   const { circuit } = view;
-  const sim = useSimulation((state) => state.sim);
   const circuitSearch = useEditor((state) => state.circuitSearch);
   const onError = useNotices((state) => state.onError);
   const { setRenameCircuit, setInterfaceTarget, setCircuitPrompt } =
@@ -29,7 +28,7 @@ export function CircuitList({ doc: d }: { doc: Document }) {
           <div className="circuit-row" key={c.name}>
             <button
               className={c.name === circuit?.name ? "active" : ""}
-              onClick={() => navigation.switchCircuit(view, sim, c.name)}
+              onClick={() => navigation.switchCircuit(view, c.name)}
               title={d.main === c.name ? "主电路" : undefined}
             >
               {c.name}
@@ -80,7 +79,7 @@ export function CircuitList({ doc: d }: { doc: Document }) {
                   </button>
                   <button
                     disabled={d.circuits.length === 1}
-                    onClick={() => navigation.requestDeleteCircuit(view, sim)}
+                    onClick={() => navigation.requestDeleteCircuit(view)}
                   >
                     删除电路
                   </button>

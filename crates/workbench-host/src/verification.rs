@@ -323,14 +323,15 @@ impl Host {
             .map(|v| input_nodes(&v.inputs).map(|inputs| xml("vector", &[], inputs)))
             .collect::<Result<Vec<_>>>()?;
         let result = self
-            .verifier
-            .lock()
-            .await
-            .evaluate(
+            .simulation
+            .verify(
                 &artifact,
                 xml("simulate", &[("circuit", circuit.into())], rows),
             )
-            .await?;
+            .await
+            // The runtime's own text names what the check rejected; the generic
+            // code text would lose it.
+            .map_err(|error| error.detail().unwrap_or(&error.message).to_owned())?;
         let returned: Vec<_> = children(&result).filter(|n| n.name == "vector").collect();
         if returned.len() != vectors.len() {
             return Err("原生仿真返回了不完整的向量结果".into());
@@ -538,10 +539,8 @@ impl Host {
             nodes.push(rom_node);
         }
         let result = self
-            .verifier
-            .lock()
-            .await
-            .evaluate(
+            .simulation
+            .verify(
                 &artifact,
                 xml(
                     "trace",
@@ -549,7 +548,10 @@ impl Host {
                     nodes,
                 ),
             )
-            .await?;
+            .await
+            // The runtime's own text names what the check rejected; the generic
+            // code text would lose it.
+            .map_err(|error| error.detail().unwrap_or(&error.message).to_owned())?;
         let samples: Vec<_> = children(&result).filter(|r| r.name == "sample").map(|row| json!({"tick":row.attributes.get("tick").and_then(|s| s.parse::<u32>().ok()),"oscillating":row.attributes.get("oscillating").is_some_and(|v|v=="true"),"signals":outputs(row)})).collect();
         let completed = samples.len() == ticks as usize + 1
             && !samples.iter().any(|r| r["oscillating"] == true);

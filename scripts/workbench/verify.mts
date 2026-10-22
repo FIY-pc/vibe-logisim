@@ -137,6 +137,7 @@ const model = http.createServer(async (req, res) => {
   ];
   const call = calls[requests - 1];
   if (call) {
+    const args = JSON.parse(JSON.stringify(call.args));
     send({
       role: "assistant",
       tool_calls: [
@@ -144,7 +145,7 @@ const model = http.createServer(async (req, res) => {
           index: 0,
           id: "tool-" + requests,
           type: "function",
-          function: { name: call.name, arguments: JSON.stringify(call.args) },
+          function: { name: call.name, arguments: JSON.stringify(args) },
         },
       ],
     });
@@ -332,31 +333,31 @@ try {
     (await command({ op: "read", id: doc.id })).revision,
     beforeInvalid,
   );
-  await command({
-    op: "simulationStart",
-    id: doc.id,
+  const started = await command({
+    op: "simulationAct",
+    documentId: doc.id,
     revision: doc.revision,
-    circuit: "main",
+    target: { kind: "definition", circuit: "main" },
+    command: { kind: "start" },
   });
+  const live = { sessionId: started.sessionId, viewId: started.viewId };
   await command({
-    op: "simulationCommand",
-    id: doc.id,
+    op: "simulationAct",
+    documentId: doc.id,
     revision: doc.revision,
-    command: "input",
-    attributes: { componentId: input.id, bits: "1" },
+    target: { kind: "run", ...live },
+    command: { kind: "input", componentId: input.id, bits: "1" },
   });
   const frame = (
     await stream!.wait(
       (e) =>
         e.topic === "simulation" &&
-        e.data?.documentId === doc.id &&
-        e.data.frame?.children?.some(
-          (c: any) =>
-            c.tag === "component" &&
-            c.attributes.id === output.id &&
-            c.children.some(
-              (p: any) => p.tag === "port" && p.attributes.bits === "0",
-            ),
+        e.data?.kind === "state" &&
+        e.data.sessionId === started.sessionId &&
+        e.data.components?.items?.some(
+          (item: any) =>
+            item.id === output.id &&
+            item.ports.some((port: any) => port.bits === "0"),
         ),
     )
   ).data;
@@ -387,25 +388,30 @@ try {
   );
   const stillLive = await command({ op: "simulationStatus" });
   assert.equal(
-    stillLive.viewId,
-    frame.viewId,
+    stillLive.state.viewId,
+    started.viewId,
     "Verification replaced the user live session",
   );
+  const kept = await command({
+    op: "simulationSnapshot",
+    sessionId: started.sessionId,
+    componentIds: [output.id],
+    trace: false,
+    memory: false,
+  });
+  const outputState = kept.frame.components.find(
+    (item: any) => item.id === output.id,
+  );
   assert(
-    stillLive.frame.children
-      .find((n: any) => n.attributes?.id === output.id)
-      .children.some((p: any) => p.tag === "port" && p.attributes.bits === "0"),
+    outputState?.ports.some((port: any) => port.bits === "0"),
     "Verification modified the user input state",
   );
   assert.equal(await readFile(source, "utf8"), saved);
-  const outputState = frame.frame.children.find(
-    (n: any) => n.tag === "component" && n.attributes.id === output.id,
-  );
   assert(
-    outputState?.children.some(
-      (p: any) => p.tag === "port" && p.attributes.bits === "0",
-    ),
-    JSON.stringify(outputState),
+    frame.components.items
+      .find((item: any) => item.id === output.id)
+      .ports.some((port: any) => port.bits === "0"),
+    JSON.stringify(frame.components),
   );
   assert.equal(
     (await command({ op: "read", id: doc.id })).revision,
@@ -519,7 +525,9 @@ try {
     }),
     /另一工作区/,
   );
-  assert.equal(requests, 16, JSON.stringify(status.messages));
+  // Every tool call plus the closing turn; a broken tool would retry and
+  // raise the count.
+  assert.equal(requests, 15, JSON.stringify(status.messages));
   for (const body of bodies)
     for (const m of body.messages.filter((m: any) => m.role === "tool")) {
       assert(!String(m.content).includes('"error"'), m.content);
@@ -531,17 +539,38 @@ try {
     1,
     "Scratch edits must remain a durable proposal",
   );
-  const reviewed = await command({
-    op: "proposalReview",
+  // The model's own checks are transient; a reviewer re-runs them on the exact
+  // candidate text, and only these runs are kept as evidence.
+  const proposal = {
     id: doc.id,
     revision: pendingProposals[0].revision,
     original: pendingProposals[0].original,
     xml: pendingProposals[0].xml,
-  });
+  };
+  for (const verification of [
+    {
+      kind: "vectors",
+      vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
+    },
+    {
+      kind: "trace",
+      ticks: 2,
+      inputs: { input: 0 },
+      events: [],
+      watches: [{ component: output.id, port: 0 }],
+    },
+  ])
+    await command({
+      op: "proposalVerify",
+      ...proposal,
+      circuit: "main",
+      verification,
+    });
+  const reviewed = await command({ op: "proposalReview", ...proposal });
   assert.equal(
     reviewed.evidence.length,
     2,
-    "Working-copy vector and trace results must be linked to the proposal",
+    "Candidate vector and trace runs must be linked to the proposal",
   );
   assert(
     reviewed.evidence.every((r: any) => r.revision === reviewed.after.revision),
@@ -570,6 +599,26 @@ try {
     (await command({ op: "read", id })).revision,
     restoredRevision,
     "Tools must leave the open document untouched",
+  );
+  const results = bodies
+    .at(-1)
+    .messages.filter((m: any) => m.role === "tool")
+    .flatMap((m: any) => {
+      try {
+        return [JSON.parse(m.content)];
+      } catch {
+        return [];
+      }
+    });
+  assert(
+    results.some((r: any) => r.isolated && r.passed === 2),
+    "Model must receive real vector comparisons",
+  );
+  assert(
+    results.some(
+      (r: any) => r.isolated && r.completed && r.samples?.length === 3,
+    ),
+    "Model must receive native tick samples",
   );
   const previous = status.conversationId;
   await agent("conversations", { action: "new" });
@@ -672,10 +721,11 @@ try {
     command({ op: "close", id, revision: reloaded.revision, discard: true }),
   );
   await command({
-    op: "simulationStart",
-    id,
+    op: "simulationAct",
+    documentId: id,
     revision: undoReload.revision,
-    circuit: "main",
+    target: { kind: "definition", circuit: "main" },
+    command: { kind: "start" },
   });
   await command({
     op: "close",
@@ -683,8 +733,10 @@ try {
     revision: undoReload.revision,
     discard: true,
   });
-  assert.equal(await command({ op: "simulationStatus" }), null);
-  await stream!.wait((e) => e.topic === "simulation" && e.data === null);
+  assert.equal((await command({ op: "simulationStatus" })).session, null);
+  await stream!.wait(
+    (e) => e.topic === "simulation" && e.data?.kind === "ended",
+  );
   assert.equal(
     (await command({ op: "read", id: reopened.id })).revision,
     reopened.revision,
@@ -725,7 +777,7 @@ try {
   await stop();
   await start();
   assert(
-    (await command({ op: "observations", id: retained.documentId })).some(
+    (await command({ op: "observationList", id: retained.documentId })).some(
       (r: any) => r.id === retained.recordId,
     ),
     "Observation did not survive restart",
