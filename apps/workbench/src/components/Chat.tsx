@@ -38,6 +38,11 @@ import {
   Pencil,
   GitBranch,
   MoreHorizontal,
+  ArrowUpRight,
+  BookOpen,
+  CircuitBoard,
+  ScanSearch,
+  Timer,
 } from "lucide-react";
 import { command } from "../lib/transport";
 import type { Document } from "../lib/types";
@@ -98,9 +103,70 @@ interface Props {
   selection: string[];
   quotation: Quotation | null;
   onQuoted: (id: string) => void;
+  /** A dragged file is over the conversation. */
+  referenceDrop?: boolean;
   composerAttachmentSlot?: ReactNode;
   renderMessageContext?: (message: Message) => ReactNode;
   onFollowReference?: (href: string, message: Message) => void;
+}
+// One-click first prompts. Build prompts adapt to what is open: an empty
+// circuit is built in place, otherwise a new file keeps existing work intact.
+const STARTER_HOW =
+  "优先用结构化的电路工具放置元件和连线，再用仿真核对真值表；用清晰的连线和布局表达电路。";
+function starterActions(
+  emptyOpen: boolean,
+  readable: boolean,
+  selected: boolean,
+) {
+  const adder = {
+    id: "build",
+    label: "构建一个全加器",
+    icon: CircuitBoard,
+    prompt:
+      (emptyOpen
+        ? "在当前打开的这个空电路里构建一个全加器，输入为 A、B、Cin，输出为 Sum、Cout。"
+        : "帮我在工作区中新建一份全加器电路，输入为 A、B、Cin，输出为 Sum、Cout。保留已有文件。") +
+      STARTER_HOW +
+      "最后简要说明原理和如何操作它。",
+  };
+  if (!readable)
+    return [
+      adder,
+      {
+        id: "explain",
+        label: "认识与门、或门和非门",
+        icon: BookOpen,
+        prompt:
+          "我是逻辑电路新手。用简单的输入输出例子，讲解与门、或门和非门分别做什么，以及怎样在画布上操作和观察它们。",
+      },
+      {
+        id: "check",
+        label: "构建一个计数器",
+        icon: Timer,
+        prompt:
+          (emptyOpen
+            ? "在当前打开的这个空电路里构建一个四位二进制计数器，带时钟和复位输入，能直观看到计数变化。"
+            : "帮我在工作区中新建一份四位二进制计数器电路，带时钟和复位输入，能直观看到计数变化。保留已有文件。") +
+          STARTER_HOW +
+          "最后简要说明怎么启动、单步和复位。",
+      },
+    ];
+  const target = selected ? "选中的部分" : "当前电路";
+  return [
+    adder,
+    {
+      id: "explain",
+      label: `讲解一下${target}`,
+      icon: BookOpen,
+      prompt: `请结合实际电路讲解${target}：它要完成什么功能，输入和输出是什么，信号怎样流动，各部分为什么这样连接。用初学者能理解的方式说明，先不要修改文件。`,
+    },
+    {
+      id: "check",
+      label: selected ? "检查选中部分的问题" : "检查电路中的问题",
+      icon: ScanSearch,
+      prompt: `帮我检查${target}中可能的问题，结合实际连线、元件属性和可用的运行反馈，指出具体位置和原因。不确定的地方请说明，先不要修改文件。`,
+    },
+  ];
 }
 const runtime = <T,>(method: string, args: unknown = {}) =>
   command<T>({ op: "agent", method, args: args as JsonValue });
@@ -113,6 +179,7 @@ export function Chat({
   folder,
   quotation,
   onQuoted,
+  referenceDrop,
   selection,
   composerAttachmentSlot,
   renderMessageContext,
@@ -408,16 +475,16 @@ export function Chat({
     connection,
   ]);
   const scroll = useConversationScroll(scroller, draftKey, visible, messages);
-  const send = async () => {
+  const send = async (text = draft) => {
     if (
       !doc ||
       !documentReady ||
-      !draft.trim() ||
+      !text.trim() ||
       actionPending.current ||
       references.pending
     )
       return;
-    const receipt = { key: draftKey, text: draft };
+    const receipt = { key: draftKey, text };
     const attachmentReceipt = references.receipt();
     actionPending.current = true;
     setPending(true);
@@ -434,7 +501,7 @@ export function Chat({
             workspaceKey,
           });
         await runtime("ask", {
-          question: draft,
+          question: text,
           references: attachmentReceipt.ids,
           documentId: doc.id,
           circuit,
@@ -623,7 +690,12 @@ export function Chat({
       effortLabels[state.effort] || state.effort,
     ]);
   return (
-    <div className="chat" style={visible ? undefined : { display: "none" }}>
+    <div
+      className="chat"
+      style={visible ? undefined : { display: "none" }}
+      // Files dragged from the tree or the desktop become references here.
+      data-reference-drop={workspaceReady ? "" : undefined}
+    >
       {renameConversation && (
         <TextPrompt
           title="重命名对话"
@@ -787,16 +859,67 @@ export function Chat({
                 {!doc ? (
                   "打开电路后开始对话"
                 ) : !state?.services?.length && state?.runtime !== "codex" ? (
-                  <button onClick={() => setConfigure(true)}>
-                    添加模型服务
-                  </button>
+                  <div className="proposal">
+                    <span>使用 API 密钥或 ChatGPT 账号。</span>
+                    <button
+                      className="primary"
+                      onClick={() => setConfigure(true)}
+                    >
+                      连接 AI
+                    </button>
+                  </div>
                 ) : state?.runtime === "codex" &&
                   state.status === "auth-required" ? (
-                  <button onClick={() => void login().catch(onError)}>
-                    使用 ChatGPT 登录
-                  </button>
-                ) : (
+                  <div className="proposal">
+                    <span>本机 Codex 需要登录 ChatGPT 账号。</span>
+                    <button
+                      className="primary"
+                      onClick={() => void login().catch(onError)}
+                    >
+                      登录 ChatGPT
+                    </button>
+                  </div>
+                ) : draft.trim() ? (
                   "描述要完成的电路，或选中元件后提问。"
+                ) : (
+                  <div className="conversation-starters">
+                    {(() => {
+                      const shown = doc.circuits.find(
+                        (c) => c.name === circuit,
+                      );
+                      const readable = Boolean(
+                        shown &&
+                        (shown.components.length || shown.wires.length),
+                      );
+                      return starterActions(
+                        Boolean(shown) && !readable,
+                        readable,
+                        selection.length > 0,
+                      );
+                    })().map((starter) => (
+                      <button
+                        key={starter.id}
+                        className="conversation-starter"
+                        title="立即发送"
+                        disabled={
+                          !documentReady ||
+                          pending ||
+                          references.pending ||
+                          !state?.available ||
+                          Boolean(state?.busy)
+                        }
+                        onClick={() => {
+                          // The ordinary send path keeps the prompt editable if it fails.
+                          changeDraft(starter.prompt);
+                          void send(starter.prompt);
+                        }}
+                      >
+                        <starter.icon size={16} />
+                        <span>{starter.label}</span>
+                        <ArrowUpRight size={14} />
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -983,7 +1106,9 @@ export function Chat({
           </div>
         </div>
         {!scroll.following && <FollowLatest onClick={scroll.latest} />}
-        <div className="composer">
+        <div
+          className={"composer" + (referenceDrop ? " is-reference-drop" : "")}
+        >
           {references.composer}
           {composerAttachmentSlot}
           <textarea

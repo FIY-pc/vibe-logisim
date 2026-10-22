@@ -160,3 +160,52 @@
 .activity-batch[data-status="failed"] > summary > small {
   color: var(--danger, #b42318);
 }
+.conversation-starters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.conversation-starter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 11px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--paper);
+  color: #20242b;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.conversation-starter span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.conversation-starter > svg:first-child {
+  color: #667b9c;
+  flex: none;
+}
+.conversation-starter > svg:last-child {
+  color: #99a5b7;
+  flex: none;
+}
+.conversation-starter:hover:not(:disabled) {
+  border-color: #bccbe3;
+  background: #f5f8fd;
+}
+.conversation-starter:active:not(:disabled) {
+  background: #eaf0fa;
+}
+.conversation-starter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
