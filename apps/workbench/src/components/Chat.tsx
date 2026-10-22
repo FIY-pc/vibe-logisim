@@ -129,6 +129,10 @@ export function Chat({
   const [connection, setConnection] = useState(0);
   const proposals = useProposals(doc?.id, connection, onError);
   const [reviewing, setReviewing] = useState<SourceProposal | null>(null);
+  // A proposal is only actionable on the exact revision it was written from.
+  const pendingProposals = proposals.proposals.filter(
+    (proposal) => proposal.revision === doc?.revision,
+  );
   useEffect(() => setReviewing(null), [doc?.id]);
   const discardProposal = (proposal: SourceProposal) => {
     void proposals.discard(proposal).then((discarded) => {
@@ -946,11 +950,11 @@ export function Chat({
                 <button type="submit">继续</button>
               </form>
             )}
-            {proposals.proposals.map((proposal) => (
+            {pendingProposals.map((proposal) => (
               <div className="proposal" key={proposal.id}>
                 <span>
                   待审阅改动
-                  {proposals.proposals.length > 1 && (
+                  {pendingProposals.length > 1 && (
                     <small>
                       {" "}
                       ·{" "}
