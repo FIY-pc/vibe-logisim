@@ -30,6 +30,7 @@ pub struct TraceProgramInput {
 
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "op", rename_all = "camelCase")]
+#[allow(clippy::enum_variant_names)]
 pub enum DraftRequest {
     /// Observe one circuit definition of the draft through the native runtime.
     DraftObserve {
@@ -148,7 +149,7 @@ impl Host {
         let _ = revision;
         Ok(draft)
     }
-    fn draft_component<'a>(draft: &'a Document, circuit: &str, id: &str) -> Result<Component> {
+    fn draft_component(draft: &Document, circuit: &str, id: &str) -> Result<Component> {
         let view = draft.view().map_err(|e| e.to_string())?;
         view.circuits
             .iter()

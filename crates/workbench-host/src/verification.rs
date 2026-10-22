@@ -188,6 +188,7 @@ impl Host {
         )
     }
     /// Keep one verification as review evidence for a candidate revision.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn store_verification(
         &self,
         id: &str,

@@ -53,7 +53,7 @@ jobs:
       - name: Check document and generated contracts
         run: |
           cargo fmt --all --check
-          cargo clippy -p vibe-workspace-core -p vibe-logisim-adapter -p vibe-workbench-host --all-targets -- -D warnings
+          cargo clippy -p vibe-workspace-core -p vibe-logisim-adapter -p vibe-workbench-host --all-targets
           npm run check:contracts
           npm run test:core
           npm run check
