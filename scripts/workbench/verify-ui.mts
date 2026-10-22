@@ -55,6 +55,10 @@ try {
           builder.onLoad({ filter: /\/components\/FilePreview\.tsx$/ }, () => ({
             contents: "export const FilePreview=()=>null;",
           }));
+          builder.onLoad({ filter: /\/lib\/pdf\.ts$/ }, () => ({
+            contents:
+              "export const openPdf=async()=>{throw new Error('PDF is not rendered under jsdom')};export const pageText=async()=>'';",
+          }));
         },
       },
     ],

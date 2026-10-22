@@ -77,7 +77,10 @@ impl WorkspaceRequest {
     ];
     pub(crate) fn meta(&self) -> Meta {
         match self {
-            Self::Status | Self::SourceStatus { .. } | Self::SaveTarget { .. } => Meta::new(Read),
+            // The runtime reads status to resolve the open folder and file facts.
+            Self::Status | Self::SourceStatus { .. } | Self::SaveTarget { .. } => {
+                Meta::new(Read).agent()
+            }
             Self::Read { .. } | Self::Source { .. } => Meta::new(Read).agent(),
             Self::Open { .. } | Self::Import { .. } => {
                 Meta::new(Write).stage(Stage::Open).history(Action::open())

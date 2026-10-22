@@ -410,9 +410,9 @@ try {
     const log = path.join(directory, "sidecar.jsonl");
     const preload = path.join(directory, "sidecar-app-server.mjs");
     const calls: [string, unknown][] = [
-      ["read_circuit", {}],
+      ["inspect_circuit", { circuit: "main" }],
       ["render_circuit", { circuit: "main" }],
-      ["observe_circuit", { circuit: "main" }],
+      ["edit_candidate", { circuit: "main" }],
       ["missing_tool", {}],
     ];
     await mkdir(path.join(state, "home"), { recursive: true });
@@ -540,7 +540,9 @@ try {
     const [thread] = sent(log, "thread/start");
     assert.deepEqual(
       thread.dynamicTools.map((tool: any) => tool.type),
-      Array(8).fill("function"),
+      Array(
+        MANIFEST.tools.filter((tool: any) => tool.exposure === "direct").length,
+      ).fill("function"),
     );
     const [start] = sent(log, "turn/start");
     assert.deepEqual(Object.keys(start.additionalContext).sort(), [
@@ -588,8 +590,7 @@ try {
       ["open_circuit", { path: "main.circ", circuit: "main" }],
       ["submit_circuit", {}],
       ["render_circuit", { circuit: "main" }],
-      ["arrange_candidate", { circuit: "main" }],
-      ["checkout_candidate", { candidateId: "candidate-1" }],
+      ["checkout_candidate", { candidateId: "candidate-0000000000000" }],
       ["inspect_circuit", { circuit: "missing" }],
       ["simulate_circuit", { circuit: "main" }],
       ["describe_component", { circuit: "main" }],
@@ -607,17 +608,6 @@ try {
         circuit: args.circuit,
         modelContentItems: [
           { type: "inputImage", mimeType: "image/png", imageData: PNG },
-        ],
-      }),
-      arrange_candidate: (args) => ({
-        id: "candidate-1",
-        title: "Arranged " + args.circuit,
-        changes: [
-          {
-            circuit: args.circuit,
-            diff: { counts: { moved: 2 } },
-            render: { image: "data:image/png;base64," + PNG },
-          },
         ],
       }),
       inspect_circuit: (args) => {
@@ -700,6 +690,25 @@ try {
             }),
             checkout: async () => session(),
             resolveFile: (relative) => path.join(folder, relative),
+            workingCopy: async () => ({
+              id: "document-a",
+              revision: "revision-a",
+              original: SOURCE,
+              xml: SOURCE,
+            }),
+            writeWorkingCopy: async (xml: string) => ({
+              candidateId: "candidate-0000000000000000",
+              artifactSha256: "0".repeat(64),
+              xml,
+            }),
+            call: async () => {
+              throw Object.assign(new Error("电路已改变"), {
+                code: "STALE_REVISION",
+                retryable: true,
+                hint: "重新读取电路后再验证。",
+              });
+            },
+            setTitle: () => undefined,
           };
           return {
             projectId: "document-a",
@@ -801,7 +810,11 @@ try {
       thread.dynamicTools.map((tool: any) => tool.name).sort(),
       [...visible].sort(),
     );
-    assert.equal(visible.size, 12, "the P0 catalog is closed");
+    assert.equal(
+      visible.size,
+      MANIFEST.tools.filter((tool: any) => tool.exposure === "direct").length,
+      "the visible catalog is the manifest's direct tools",
+    );
     assert.ok(
       backend.referencePath &&
         thread.developerInstructions.includes(backend.referencePath) &&
@@ -844,7 +857,7 @@ try {
     const result = (index: number) => results["tool-" + index];
     assert.deepEqual(
       calls.map((_, index) => result(index).success),
-      [true, true, true, true, true, false, false, false, false, false],
+      [true, true, true, true, false, false, false, false, false],
     );
     const opened = parsed(result(0));
     assert.equal(opened.schema, "vibe-logisim.circuit-action/v1");
@@ -854,9 +867,6 @@ try {
       result(2).contentItems[1].imageUrl,
       /^data:image\/png;base64,/,
     );
-    assert.deepEqual(parsed(result(3)).changes, [
-      { circuit: "main", difference: { moved: 2 } },
-    ]);
     assert.deepEqual(
       events.find((event) => event.type === "candidate-ready"),
       {
@@ -866,19 +876,19 @@ try {
         title: "Arranged main",
       },
     );
-    assert.equal(parsed(result(4)).candidateId, "candidate-1");
+    assert.equal(parsed(result(3)).candidateId, "candidate-1");
     const failure = (index: number) => parsed(result(index)).error;
-    assert.equal(failure(5).code, "CIRCUIT_NOT_FOUND");
-    assert.equal(failure(5).schema, ERROR_SCHEMA);
-    assert.equal(failure(5).context.invocation.callId, "call-5");
-    assert.equal(failure(5).context.invocation.revisionId, "revision-a");
+    assert.equal(failure(4).code, "CIRCUIT_NOT_FOUND");
+    assert.equal(failure(4).schema, ERROR_SCHEMA);
+    assert.equal(failure(4).context.invocation.callId, "call-4");
+    assert.equal(failure(4).context.invocation.revisionId, "revision-a");
     assert.deepEqual(
-      [failure(6).code, failure(6).retryable, failure(6).hint],
+      [failure(5).code, failure(5).retryable, failure(5).hint],
       ["STALE_REVISION", true, "重新读取电路后再验证。"],
     );
+    assert.equal(failure(6).code, "TOOL_FAILED");
     assert.equal(failure(7).code, "TOOL_FAILED");
-    assert.equal(failure(8).code, "INVALID_ARGUMENT");
-    assert.equal(failure(9).code, "CIRCUIT_TOOL_FAILED");
+    assert.equal(failure(8).code, "CIRCUIT_TOOL_FAILED");
     assert.equal(
       existsSync(path.join(directory, "plugin-profile/auth.json")),
       false,

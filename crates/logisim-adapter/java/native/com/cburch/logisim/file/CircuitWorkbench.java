@@ -105,7 +105,8 @@ public final class CircuitWorkbench {
         if (defaultAppearance && !before.equals(CircuitInterface.footprint(circuit)))
             throw new IllegalStateException("Generated module changes its external port footprint; candidate rejected");
     }
-    private static void simulate(LogisimFile file, Element request, Document result) {
+    // Batch entry points: {@link CircuitSession} runs both in its verify mode.
+    static void simulate(LogisimFile file, Element request, Document result) {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
         Map<String, Component> pins = new LinkedHashMap<>();
@@ -171,7 +172,7 @@ public final class CircuitWorkbench {
             this.value = value;
         }
     }
-    private static void trace(LogisimFile file, Element request, Document result) {
+    static void trace(LogisimFile file, Element request, Document result) {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
         int ticks = Integer.parseInt(request.getAttribute("ticks"));

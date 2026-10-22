@@ -6,11 +6,16 @@ export interface ConversationState {
   /** References queued for the conversation composer; it clears them once taken. */
   quotation: Quotation | null;
   setQuotation(quotation: Update<Quotation | null>): void;
+  /** A dragged file is over the conversation and would become a reference. */
+  referenceDrop: boolean;
+  setReferenceDrop(active: Update<boolean>): void;
 }
 
 export function createConversationStore() {
   return createStore<ConversationState>()((set) => ({
     quotation: null,
     setQuotation: field(set, "quotation"),
+    referenceDrop: false,
+    setReferenceDrop: field(set, "referenceDrop"),
   }));
 }

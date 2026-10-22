@@ -9,6 +9,8 @@ import com.cburch.logisim.std.wiring.Pin;
 import com.cburch.logisim.std.wiring.Clock;
 import com.cburch.logisim.std.memory.StudioMemory;
 import java.io.*;
+import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
@@ -306,6 +308,86 @@ public final class CircuitSession {
         frames.setDaemon(true); frames.start();
     }
 
+    /**
+     * The check mode: one circuit snapshot per request, without a run of its own.
+     *
+     * The class that serves a live run also answers bounded vector and trace
+     * checks, so one native entry point and one line protocol cover every
+     * simulation. Each request loads its own copy of its artifact: trace program
+     * stimuli mutate ROM contents, and no state may carry over to the next
+     * check. The reply is {@code ok<TAB>base64(result)} or
+     * {@code error<TAB>message}; a rejected circuit ends the process so nothing
+     * is served after a native failure.
+     */
+    private static void verifyLoop(Path runtime, String runtimeSha, DocumentBuilder parser, PrintStream protocol) throws Exception {
+        if (!digest(runtime).equals(runtimeSha)) {
+            reply(protocol, "error", "运行时已改变");
+            System.exit(2);
+        }
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
+        String line;
+        while ((line = in.readLine()) != null) {
+            try {
+                if (line.length() > 2_000_000) throw new IllegalArgumentException("请求过长");
+                Element request = parser.parse(new ByteArrayInputStream(Base64.getDecoder().decode(line))).getDocumentElement();
+                reply(protocol, "ok", verify(request, runtime, runtimeSha, parser));
+            } catch (Throwable error) {
+                error.printStackTrace(System.err);
+                String message = error.getMessage() == null ? error.toString() : error.getMessage();
+                reply(protocol, "error", message);
+                System.exit(2);
+            }
+        }
+        System.exit(0);
+    }
+
+    private static byte[] verify(Element request, Path runtime, String runtimeSha, DocumentBuilder parser) throws Exception {
+        String artifactText = request.getAttribute("artifact"), artifactSha = request.getAttribute("digest");
+        if (artifactText.isEmpty() || artifactSha.isEmpty()) throw new IllegalArgumentException("缺少电路快照身份");
+        Path artifact = Paths.get(artifactText).toAbsolutePath().normalize();
+        if (!digest(artifact).equals(artifactSha)) throw new IllegalArgumentException("电路快照已改变");
+        Element operation = null;
+        for (Node child = request.getFirstChild(); child != null; child = child.getNextSibling())
+            if (child instanceof Element) { operation = (Element) child; break; }
+        if (operation == null || !(operation.getTagName().equals("simulate") || operation.getTagName().equals("trace")))
+            throw new IllegalArgumentException("校验只接受 simulate 或 trace");
+        List<String> loaderMessages = new ArrayList<>();
+        LogisimFile file = NativeCircuitLoader.openChecked(artifact.toFile(), loaderMessages);
+        for (String message : loaderMessages) System.err.println("loader: " + message);
+        Document result = parser.newDocument();
+        Element root = result.createElement("result");
+        root.setAttribute("runtimeJarSha256", runtimeSha);
+        root.setAttribute("runtimeVersion", String.valueOf(com.cburch.logisim.Main.VERSION));
+        root.setAttribute("artifactSha256", artifactSha);
+        result.appendChild(root);
+        if (operation.getTagName().equals("simulate")) CircuitWorkbench.simulate(file, operation, result);
+        else CircuitWorkbench.trace(file, operation, result);
+        // The result names the snapshot it read, so a caller can tell it ran on the bytes it sent.
+        if (!digest(artifact).equals(artifactSha) || !digest(runtime).equals(runtimeSha))
+            throw new IllegalStateException("原生仿真输入在执行期间发生变化");
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result), new StreamResult(bytes));
+        return bytes.toByteArray();
+    }
+
+    private static void reply(PrintStream protocol, String status, String message) {
+        reply(protocol, status, message.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private static void reply(PrintStream protocol, String status, byte[] payload) {
+        synchronized (protocol) {
+            protocol.println(status + "\t" + Base64.getEncoder().encodeToString(payload));
+            protocol.flush();
+        }
+    }
+
+    private static String digest(Path path) throws Exception {
+        byte[] bytes = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
+        StringBuilder hex = new StringBuilder();
+        for (byte b : bytes) hex.append(String.format("%02x", b & 255));
+        return hex.toString();
+    }
+
     public static void main(String[] args) throws Exception {
         System.setProperty("java.awt.headless", "true");
         ImageIO.setUseCache(false);
@@ -314,6 +396,12 @@ public final class CircuitSession {
         f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
         DocumentBuilder parser = f.newDocumentBuilder();
+        // {artifact} {init}                   a live run
+        // --verify {runtime} {runtime digest} circuit checks
+        if (args.length == 3 && args[0].equals("--verify")) {
+            verifyLoop(Paths.get(args[1]).toAbsolutePath().normalize(), args[2], parser, protocol);
+            return;
+        }
         List<String> loaderMessages = new ArrayList<>();
         CircuitSession session;
         try {

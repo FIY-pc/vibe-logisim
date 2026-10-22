@@ -21,6 +21,7 @@ export function ChatRegion() {
   const selection = useSelection();
   const folder = useFiles((state) => state.folder);
   const quotation = useConversation((state) => state.quotation);
+  const referenceDrop = useConversation((state) => state.referenceDrop);
   const visible = useShell(
     (state) => state.right === "chat" && showRight(state),
   );
@@ -47,6 +48,7 @@ export function ChatRegion() {
       folder={folder}
       selection={selection}
       quotation={quotation}
+      referenceDrop={referenceDrop}
       onFollowReference={(href, message) =>
         followConversationReference(href, message.context)
       }

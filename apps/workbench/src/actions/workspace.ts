@@ -7,6 +7,14 @@ import type { Stores } from "../workbench/createWorkbench";
 import { reaction } from "../workbench/reaction";
 import type { View } from "../workbench/view";
 
+const comparable = (path: string) =>
+  path.replace(/^\\\\\?\\/, "").replaceAll("\\", "/");
+/** Windows paths compare without case; the host may add a verbatim prefix. */
+const samePath = (a: string, b: string) => {
+  const [x, y] = [comparable(a), comparable(b)];
+  return /^[a-z]:\//i.test(x) ? x.toLowerCase() === y.toLowerCase() : x === y;
+};
+
 /** Opening, saving, reloading and closing documents, and the project folder. */
 export function createWorkspaceActions(stores: Stores) {
   const { documents, editor, files, notices, shell } = stores;
@@ -35,11 +43,22 @@ export function createWorkspaceActions(stores: Stores) {
     }).catch(onError);
   };
 
-  /** Opens a circuit file from the project folder. */
-  const openDocument = (path: string) =>
-    void busy(() => command<Document>({ op: "open", path }))
-      .then(showDocument)
-      .catch(onError);
+  /** Opens a circuit file from the project folder; an open one is only shown. */
+  const openDocument = (path: string) => {
+    const { docs, active } = documents.getState();
+    const open = docs.find((d) => d.path && samePath(d.path, path));
+    if (!open)
+      return void busy(() => command<Document>({ op: "open", path }))
+        .then(showDocument)
+        .catch(onError);
+    // Reopening would reset the view to the main circuit after a slow parse.
+    if (open.id === active) return;
+    editor.getState().navigation.next();
+    documents.getState().setActive(open.id);
+    editor.getState().setPlace(null);
+    editor.getState().setCircuitName(open.main);
+    void command({ op: "activate", id: open.id }).catch(onError);
+  };
 
   /** Imports a circuit file chosen in the upload input. */
   const importFile = (file: File) =>

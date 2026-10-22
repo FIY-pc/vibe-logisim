@@ -12,17 +12,23 @@ use super::{
 use crate::{
     process::{StderrCapture, java_path},
     runtime::Launcher,
+    xml,
 };
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard, atomic::Ordering},
     time::Duration,
 };
-use tokio::sync::{
-    mpsc::{self, error::TryRecvError},
-    watch,
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
+    process::{Child, ChildStdin, ChildStdout},
+    sync::{
+        mpsc::{self, error::TryRecvError},
+        watch,
+    },
 };
-use vibe_workspace_core::DocumentView;
+use vibe_workspace_core::{DocumentView, digest};
+use xmltree::Element;
 
 /// The deepest subcircuit path a view may have.
 const MAX_DEPTH: usize = 64;
@@ -53,6 +59,18 @@ enum Lifecycle {
     Ended(EndedInfo),
 }
 
+/// The process that runs circuit checks: the same class and protocol as a run,
+/// started with `--verify` so it serves requests instead of holding a run.
+/// Checks never become the current run and never touch its clock.
+struct Check {
+    child: Child,
+    input: ChildStdin,
+    lines: Lines<BufReader<ChildStdout>>,
+    runtime: PathBuf,
+    /// Held so the pipe keeps draining; the tail goes to diagnostics.
+    _stderr: StderrCapture,
+}
+
 #[derive(Default)]
 struct Inner {
     current: Option<Arc<Session>>,
@@ -73,6 +91,8 @@ struct Shared {
     deadlines: Deadlines,
     /// Held by starts only: starts queue in order and nothing else waits on them.
     gate: tokio::sync::Mutex<()>,
+    /// Checks run one at a time on their own process.
+    checks: tokio::sync::Mutex<Option<Check>>,
     inner: Mutex<Inner>,
 }
 
@@ -246,6 +266,7 @@ impl SimulationRegistry {
             spawner,
             deadlines,
             gate: tokio::sync::Mutex::new(()),
+            checks: tokio::sync::Mutex::new(None),
             inner: Mutex::new(Inner::default()),
         }))
     }
@@ -578,8 +599,132 @@ impl SimulationRegistry {
         }
     }
 
+    /// Runs one bounded check on a circuit snapshot and returns its result
+    /// document. `operation` is a `simulate` or `trace` element exactly as the
+    /// batch checker reads it.
+    ///
+    /// The check process is separate from the current run: the check cannot
+    /// stall the run's clock or frames, and an interactive run is never
+    /// replaced or interrupted. Every check loads the artifact afresh inside
+    /// that process, because trace program stimuli mutate ROM contents.
+    pub async fn verify(&self, artifact: &Path, operation: Element) -> Result<Element, SimError> {
+        let source = tokio::fs::read(artifact)
+            .await
+            .map_err(|error| failed(format!("{}: {error}", artifact.display())))?;
+        let runtime = self
+            .0
+            .launcher
+            .facts()
+            .runtime_for(&source)
+            .map_err(|message| SimError::new(Code::RuntimeUnavailable).with_message(message))?
+            .0;
+        let runtime_hash = digest(&std::fs::read(&runtime).map_err(|error| {
+            SimError::new(Code::RuntimeUnavailable).with_detail(error.to_string())
+        })?);
+        let request = xml(
+            "request",
+            &[
+                ("artifact", java_path(artifact).to_string_lossy().into()),
+                ("digest", digest(&source)),
+            ],
+            vec![operation],
+        );
+        let mut bytes = Vec::new();
+        request
+            .write(&mut bytes)
+            .map_err(|error| SimError::new(Code::Internal).with_detail(error.to_string()))?;
+        let mut line = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+        line.push('\n');
+
+        let mut checks = self.0.checks.lock().await;
+        let stale = checks.as_mut().is_some_and(|check| {
+            check.runtime != runtime || check.child.try_wait().ok().flatten().is_some()
+        });
+        if stale {
+            *checks = None;
+        }
+        if checks.is_none() {
+            *checks = Some(self.start_check(&runtime, &runtime_hash).await?);
+        }
+        let check = checks.as_mut().expect("the check process was just started");
+        let reply = async {
+            check
+                .input
+                .write_all(line.as_bytes())
+                .await
+                .map_err(|error| failed(error.to_string()))?;
+            check
+                .input
+                .flush()
+                .await
+                .map_err(|error| failed(error.to_string()))?;
+            let line = tokio::time::timeout(Duration::from_secs(120), check.lines.next_line())
+                .await
+                .map_err(|_| SimError::new(Code::Unresponsive))?
+                .map_err(|error| failed(error.to_string()))?
+                .ok_or_else(|| failed("校验进程在处理请求时退出"))?;
+            let (status, payload) = line
+                .split_once('\t')
+                .ok_or_else(|| failed("无效的校验响应"))?;
+            let payload = base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                payload,
+            )
+            .map_err(|error| failed(error.to_string()))?;
+            if status != "ok" {
+                return Err(SimError::new(Code::Internal)
+                    .with_detail(String::from_utf8_lossy(&payload).into_owned()));
+            }
+            Element::parse(payload.as_slice()).map_err(|error| failed(error.to_string()))
+        }
+        .await;
+        if reply.is_err() {
+            // A rejected circuit leaves the process in an uncertain state; the
+            // next check starts a new one.
+            *checks = None;
+        }
+        reply
+    }
+
+    async fn start_check(
+        &self,
+        runtime: &Path,
+        runtime_hash: &str,
+    ) -> Result<Check, SimError> {
+        let mut command = self
+            .0
+            .launcher
+            .command("CircuitSession", runtime)
+            .await
+            .map_err(failed)?;
+        let mut child = command
+            .arg("--verify")
+            .arg(java_path(runtime))
+            .arg(runtime_hash)
+            .spawn()
+            .map_err(|error| {
+                SimError::new(Code::RuntimeUnavailable).with_detail(error.to_string())
+            })?;
+        let (Some(stdin), Some(stdout), Some(stderr)) = (
+            child.stdin.take(),
+            child.stdout.take(),
+            child.stderr.take(),
+        ) else {
+            return Err(failed("the check process has no standard streams"));
+        };
+        Ok(Check {
+            child,
+            input: stdin,
+            lines: BufReader::new(stdout).lines(),
+            runtime: runtime.to_owned(),
+            _stderr: StderrCapture::start(stderr),
+        })
+    }
+
     /// Stops the run and waits briefly for its process to go.
     pub async fn shutdown(&self) {
+        // The check process is killed with its handle, not kept alive by it.
+        self.0.checks.lock().await.take();
         let current = self.0.lock().current.clone();
         if let Some(session) = current {
             session.end(EndReason::Stopped, None, None);

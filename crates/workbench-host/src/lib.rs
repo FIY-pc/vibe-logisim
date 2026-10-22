@@ -38,9 +38,7 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 pub use verification::{InputEvent, TestVector, TraceWatch};
-use vibe_logisim_adapter::{
-    Launcher, Native, RuntimeFacts, Verifier, simulation::SimulationRegistry,
-};
+use vibe_logisim_adapter::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
 use vibe_workspace_core::{Document, DocumentView, Workspace};
 
 #[derive(Clone)]
@@ -48,10 +46,10 @@ pub struct Host {
     history_gate: Arc<Mutex<()>>,
     pub workspace: Arc<Mutex<Workspace>>,
     pub native: Arc<Mutex<Native>>,
-    /// The current run and its process. Commands, frames and the run's lifetime
-    /// never wait on editor or verifier work.
+    /// The current run and its process, and the separate process that answers
+    /// circuit checks. Commands, frames and the run's lifetime never wait on
+    /// editor or check work.
     pub simulation: SimulationRegistry,
-    verifier: Arc<Mutex<Verifier>>,
     feedback: Arc<Mutex<feedback::Feedback>>,
     failures: Arc<Mutex<diagnostics::FailureLog>>,
     interface_previews: Arc<Mutex<interfaces::Previews>>,
@@ -77,7 +75,6 @@ impl Host {
         }
         self.simulation.shutdown().await;
         self.native.lock().await.shutdown().await;
-        self.verifier.lock().await.shutdown().await;
     }
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Result<Self> {
         std::fs::create_dir_all(&state).map_err(|e| e.to_string())?;
@@ -116,11 +113,6 @@ impl Host {
             interface_previews: Arc::new(Mutex::new(interfaces::Previews::default())),
             folder: Arc::new(Mutex::new(folder)),
             workspace: Arc::new(Mutex::new(workspace)),
-            verifier: Arc::new(Mutex::new(Verifier::new(
-                root.clone(),
-                state.join("verification"),
-                runtime.clone(),
-            ))),
             native: Arc::new(Mutex::new(Native::with_launcher(launcher))),
             state,
             root,
@@ -246,6 +238,7 @@ impl Host {
             Request::Folder(r) => self.folder_request(r).await,
             Request::Project(r) => self.project_request(r).await,
             Request::Agent(r) => self.agent_request(r).await,
+            Request::Draft(r) => self.draft_request(r).await,
         };
         let Ok(document) = &mut result else {
             return result;

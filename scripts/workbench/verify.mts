@@ -20,7 +20,78 @@ let child: ChildProcess | undefined,
   requests = 0;
 const bodies: any[] = [];
 let stream: Awaited<ReturnType<typeof eventStream>> | undefined;
+/** The artifact hash a tool result reports about itself. */
+function latestArtifact() {
+  // Bodies repeat earlier messages; the last tool result in the newest body is
+  // the one the model just read.
+  const results = bodies
+    .at(-1)
+    .messages.filter((m: any) => m.role === "tool")
+    .map((m: any) => {
+      try {
+        return JSON.parse(String(m.content));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  const owner = results.filter((r: any) => typeof r.artifactSha256 === "string").at(-1);
+  if (owner) return owner.artifactSha256;
+  throw new Error("No tool result carried an artifactSha256");
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** One candidate edit, checked again, then a second candidate edit. */
+const addCandidateCalls = (calls: any[]) =>
+  calls.flatMap((call) =>
+    call.name !== "wire_candidate"
+      ? [call]
+      : [
+          call,
+          {
+            name: "inspect_circuit",
+            args: { circuit: "main", componentIds: [call.args.connections[1].to.component] },
+          },
+          {
+            name: "render_circuit",
+            args: {
+              circuit: "main",
+              viewport: { x: 0, y: 0, width: 400, height: 300, scale: 1 },
+            },
+          },
+          {
+            name: "simulate_circuit",
+            args: {
+              circuit: "main",
+              vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
+            },
+          },
+          {
+            name: "trace_circuit",
+            args: {
+              circuit: "main",
+              ticks: 2,
+              inputs: { input: 0 },
+              watches: [
+                { name: "output", component: call.args.connections[1].to.component, port: 0 },
+              ],
+            },
+          },
+          {
+            name: "edit_candidate",
+            args: {
+              title: "标出反相器",
+              circuit: "main",
+              artifactSha256: "$latest",
+              edits: [
+                {
+                  componentId: call.args.connections[1].from.component,
+                  attributes: { label: "inv" },
+                },
+              ],
+            },
+          },
+        ],
+  );
 const model = http.createServer(async (req, res) => {
   let text = "";
   for await (const chunk of req) text += chunk;
@@ -41,35 +112,50 @@ const model = http.createServer(async (req, res) => {
         "\n\n",
     );
   const toolMessages = body.messages.filter((m: any) => m.role === "tool");
-  const snapshot =
-    toolMessages.find((m: any) => m.name === "read_circuit") || toolMessages[0];
-  const revision = snapshot ? JSON.parse(snapshot.content).revision : null;
-  const calls = [
-    { name: "read_circuit", args: {} },
-    { name: "observe_circuit", args: { circuit: "main" } },
+  const parsed = toolMessages.map((m: any) => {
+    try {
+      return JSON.parse(m.content);
+    } catch {
+      return null;
+    }
+  });
+  // The project index names the file and its parts; later calls work on the
+  // exact text it reported.
+  const index = parsed.find((r: any) => r?.artifactSha256) || {};
+  const part = (name: string, factory: string) =>
+    index.components?.find(
+      (c: any) => c.factory === factory && c.label === name,
+    )?.componentId ?? "unused";
+  const inputId = part("input", "Pin");
+  const gateId = index.components?.find((c: any) => c.factory === "NOT Gate")
+    ?.componentId;
+  const outputId = part("output", "Pin");
+  const artifactSha256 = index.artifactSha256;
+  const calls = addCandidateCalls([
+    { name: "inspect_circuit", args: {} },
+    { name: "inspect_circuit", args: { circuit: "main" } },
     {
       name: "render_circuit",
-      args: { circuit: "main", x: 0, y: 0, width: 400, height: 300, scale: 1 },
-    },
-    {
-      name: "edit_circuit",
       args: {
-        revision,
         circuit: "main",
-        edit: {
-          kind: "wire",
-          points: [
-            { x: 50, y: 240 },
-            { x: 180, y: 240 },
-          ],
-        },
+        viewport: { x: 0, y: 0, width: 400, height: 300, scale: 1 },
       },
     },
-  ];
-  calls.push(
-    { name: "project_files", args: { path: "", read: false } } as any,
-    { name: "project_files", args: { path: "notes.txt", read: true } } as any,
-    { name: "kept_observations", args: {} },
+    {
+      name: "wire_candidate",
+      args: {
+        title: "连线",
+        circuit: "main",
+        artifactSha256: index.artifactSha256,
+        connections: [
+          { from: { component: part("input", "Pin"), port: 0 }, to: { component: gateId, port: 1 } },
+          { from: { component: gateId, port: 0 }, to: { component: part("output", "Pin"), port: 0 } },
+        ],
+      },
+    },
+    { name: "project_files", args: { path: "", read: false } },
+    { name: "project_files", args: { path: "notes.txt", read: true } },
+    { name: "inspect_circuit", args: { circuit: "main", includeWires: true } },
     {
       name: "simulate_circuit",
       args: {
@@ -79,100 +165,28 @@ const model = http.createServer(async (req, res) => {
           { inputs: { input: 1 }, expected: { output: 0 } },
         ],
       },
-    } as any,
+    },
     {
       name: "trace_circuit",
       args: {
         circuit: "main",
         ticks: 2,
         inputs: { input: 0 },
-        watches: [
-          {
-            component: snapshot
-              ? JSON.parse(snapshot.content).circuits[0].components.find(
-                  (c: any) => c.attributes.label === "output",
-                ).id
-              : "unused",
-            port: 0,
-          },
-        ],
-        events: [{ tick: 1, input: "input", value: 1 }],
+        watches: [{ name: "output", component: part("output", "Pin"), port: 0 }],
+        inputEvents: [{ tick: 1, name: "input", value: 1 }],
       },
-    } as any,
-  );
-  const workingSnapshot = toolMessages
-    .map((m: any) => {
-      try {
-        return JSON.parse(m.content);
-      } catch {
-        return null;
-      }
-    })
-    .find((m: any) => m?.target === "working-copy" && m?.circuits);
-  calls.splice(
-    3,
-    0,
-    ...([
-      {
-        name: "write_file",
-        args: {
-          path: "circuit.circ",
-          content: snapshot
-            ? JSON.parse(snapshot.content).xml.replace(
-                "</circuit>",
-                '<wire from="(40,280)" to="(90,280)"/></circuit>',
-              )
-            : "",
-        },
-      },
-      { name: "read_circuit", args: { target: "working-copy" } },
-      {
-        name: "observe_circuit",
-        args: { target: "working-copy", circuit: "main" },
-      },
-      {
-        name: "render_circuit",
-        args: {
-          target: "working-copy",
-          circuit: "main",
-          x: 0,
-          y: 0,
-          width: 400,
-          height: 300,
-          scale: 1,
-        },
-      },
-      {
-        name: "simulate_circuit",
-        args: {
-          target: "working-copy",
-          circuit: "main",
-          vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
-        },
-      },
-      {
-        name: "trace_circuit",
-        args: {
-          target: "working-copy",
-          circuit: "main",
-          ticks: 2,
-          inputs: { input: 0 },
-          watches: [
-            {
-              component:
-                workingSnapshot?.circuits[0].components.find(
-                  (c: any) => c.attributes.label === "output",
-                ).id || "unused",
-              port: 0,
-            },
-          ],
-          events: [],
-        },
-      },
-    ] as any[]),
-  );
+    },
+  ]);
   const call = calls[requests - 1];
   if (call) {
+    // `$latest` stands for the artifactSha256 the previous tool result reported,
+    // the way the model carries an identifier from one call to the next.
+    const text = JSON.stringify(call.args);
+    const args = JSON.parse(
+      text.includes('"$latest"')
+        ? text.replaceAll('"$latest"', JSON.stringify(latestArtifact()))
+        : text,
+    );
     send({
       role: "assistant",
       tool_calls: [
@@ -180,7 +194,7 @@ const model = http.createServer(async (req, res) => {
           index: 0,
           id: "tool-" + requests,
           type: "function",
-          function: { name: call.name, arguments: JSON.stringify(call.args) },
+          function: { name: call.name, arguments: JSON.stringify(args) },
         },
       ],
     });
@@ -253,7 +267,8 @@ async function stop() {
   child = undefined;
 }
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) => (result && result.view ? result.view : result);
+const documentOf = (result: any) =>
+  result && result.view ? result.view : result;
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
@@ -559,7 +574,9 @@ try {
     }),
     /另一工作区/,
   );
-  assert.equal(requests, 16, JSON.stringify(status.messages));
+  // Every tool call plus the closing turn; a broken tool would retry and
+  // raise the count.
+  assert.equal(requests, 15, JSON.stringify(status.messages));
   for (const body of bodies)
     for (const m of body.messages.filter((m: any) => m.role === "tool"))
       assert(!String(m.content).includes('"error"'), m.content);
@@ -569,17 +586,38 @@ try {
     1,
     "Scratch edits must remain a durable proposal",
   );
-  const reviewed = await command({
-    op: "proposalReview",
+  // The model's own checks are transient; a reviewer re-runs them on the exact
+  // candidate text, and only these runs are kept as evidence.
+  const proposal = {
     id: doc.id,
     revision: pendingProposals[0].revision,
     original: pendingProposals[0].original,
     xml: pendingProposals[0].xml,
-  });
+  };
+  for (const verification of [
+    {
+      kind: "vectors",
+      vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
+    },
+    {
+      kind: "trace",
+      ticks: 2,
+      inputs: { input: 0 },
+      events: [],
+      watches: [{ component: output.id, port: 0 }],
+    },
+  ])
+    await command({
+      op: "proposalVerify",
+      ...proposal,
+      circuit: "main",
+      verification,
+    });
+  const reviewed = await command({ op: "proposalReview", ...proposal });
   assert.equal(
     reviewed.evidence.length,
     2,
-    "Working-copy vector and trace results must be linked to the proposal",
+    "Candidate vector and trace runs must be linked to the proposal",
   );
   assert(
     reviewed.evidence.every((r: any) => r.revision === reviewed.after.revision),
@@ -599,15 +637,17 @@ try {
       (m: any) => m.type === "assistant" && m.text === "检查完成",
     ),
   );
+  // Candidate edits live in the working copy; the open file keeps its
+  // revision and the source keeps the text the history already saved.
   const after = await command({ op: "read", id });
-  assert.notEqual(after.revision, restoredRevision);
+  assert.equal(after.revision, restoredRevision);
   assert.equal(
     await readFile(source, "utf8"),
     (await command({ op: "source", id, revision: after.revision })).xml,
-    "Shared document edits in the project folder must be automatically saved",
+    "A candidate turn must not rewrite the saved source",
   );
   assert(
-    !(await readFile(source, "utf8")).includes('from="(40,280)"'),
+    !(await readFile(source, "utf8")).includes('label="inv"'),
     "Scratch candidate must not be applied by verification",
   );
   const results = bodies

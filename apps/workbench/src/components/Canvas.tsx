@@ -262,17 +262,23 @@ export function Canvas({
     void drainPlacements();
   };
   const observationScope = `${doc.id}:${doc.revision}:${circuit.name}`;
+  const pictureScope = `${doc.id}:${circuit.name}`;
   const [observation, setObservation] = useState<{
     scope: string;
+    picture: string;
     focus: ConnectionFocus | null;
-  }>({ scope: "", focus: null });
+  }>({ scope: "", picture: "", focus: null });
   const focus =
     observation.scope === observationScope ? observation.focus : null;
+  // Until the next revision is observed, the previous geometry keeps hit
+  // testing and port marks working; components match by location and factory.
+  const geometry =
+    observation.picture === pictureScope ? observation.focus : null;
   const [observationError, setObservationError] = useState("");
   useEffect(() => {
     onObservation?.({ scope: observationScope, focus });
   }, [onObservation, observationScope, focus]);
-  const observed = useMemo(() => focus?.components || [], [focus]);
+  const observed = useMemo(() => geometry?.components || [], [geometry]);
   const connections = useMemo(
     () => (focus ? connectionIndex(focus) : null),
     [focus],
@@ -317,6 +323,21 @@ export function Canvas({
   );
   // The preview answers with the routing difference, not a whole picture.
   const movedSegments = movePreview.wires?.addedWires ?? [];
+  type Overlay = {
+    kind: "move" | "wire" | "delete";
+    delta: Point;
+    /** Parts drawn at their new place, or covered when deleted. */
+    clip: Bounds[];
+    /** Wires drawn at their new place, or covered when deleted. */
+    lines: { from: Point; to: Point; dashed?: boolean }[];
+  };
+  // A committed move, wire or deletion stays drawn until the picture of its
+  // result arrives, so a large file does not show the old state in between.
+  const [settle, setSettle] = useState<
+    (Overlay & { key: number; from: string; resolved: boolean }) | null
+  >(null);
+  const settleKey = useRef(0);
+  const shownPicture = useRef("");
   const [loading, setLoading] = useState(false);
   const generation = useRef(0);
   const held = useRef<(() => void) | null>(null);
@@ -359,11 +380,15 @@ export function Canvas({
     setDrag(null);
     setDelta({ x: 0, y: 0 });
     releaseRef.current();
-    setObservation({ scope: "", focus: null });
     setObservationError("");
     setSignal(null);
     setSignalHistory([]);
-    setImage(null);
+    // Another revision of the same circuit keeps its picture until the new one arrives.
+    if (shownPicture.current !== pictureScope) {
+      shownPicture.current = pictureScope;
+      setImage(null);
+      setSettle(null);
+    }
     let live = true;
     command<{ focus: ConnectionFocus }>({
       op: "observe",
@@ -373,6 +398,7 @@ export function Canvas({
         if (live)
           setObservation({
             scope: observationScope,
+            picture: pictureScope,
             focus: {
               ...data.focus,
               wires: data.focus.wires || [],
@@ -445,7 +471,8 @@ export function Canvas({
           }
         );
       }
-      const w = circuit.wires.find((w) => w.id === id)!;
+      const w = circuit.wires.find((w) => w.id === id);
+      if (!w) return { x: 0, y: 0, width: 0, height: 0 };
       return {
         x: Math.min(w.from.x, w.to.x),
         y: Math.min(w.from.y, w.to.y),
@@ -455,6 +482,56 @@ export function Canvas({
     },
     [circuit, observed],
   );
+  const overlay: Overlay | null = moving
+    ? {
+        kind: "move",
+        delta,
+        clip: circuit.components
+          .filter((component) => drag.ids.includes(component.id))
+          .map((component) => boundsFor(component.id)),
+        lines: movedSegments.length
+          ? movedSegments
+          : circuit.wires
+              .filter((wire) => drag.ids.includes(wire.id))
+              .map((wire) => ({
+                from: { x: wire.from.x + delta.x, y: wire.from.y + delta.y },
+                to: { x: wire.to.x + delta.x, y: wire.to.y + delta.y },
+                dashed: true,
+              })),
+      }
+    : settle;
+  const commit = (change: Edit, overlay: Overlay) => {
+    const key = ++settleKey.current;
+    setSettle({ ...overlay, key, from: doc.revision, resolved: false });
+    edit(change)
+      .then(() =>
+        setSettle((s) => (s?.key === key ? { ...s, resolved: true } : s)),
+      )
+      .catch((e) => {
+        setSettle((s) => (s?.key === key ? null : s));
+        onError(e);
+      });
+  };
+  const wireOverlay = (points: Point[]): Overlay => ({
+    kind: "wire",
+    delta: { x: 0, y: 0 },
+    clip: [],
+    lines: points.slice(1).map((to, i) => ({ from: points[i], to })),
+  });
+  const deleteOverlay = (ids: string[]): Overlay => ({
+    kind: "delete",
+    delta: { x: 0, y: 0 },
+    clip: circuit.components
+      .filter((component) => ids.includes(component.id))
+      .map((component) => boundsFor(component.id)),
+    lines: circuit.wires.filter((wire) => ids.includes(wire.id)),
+  });
+  useEffect(() => {
+    if (!settle?.resolved) return;
+    // The result's picture arrived, or the edit changed nothing.
+    if (image?.revision === doc.revision || doc.revision === settle.from)
+      setSettle(null);
+  }, [settle, image, doc.revision]);
   const visitSignal = (peer: ConnectionPeer, previousSignal = signal) => {
     const component = documentComponent(circuit, peer.component);
     if (!component) return;
@@ -756,7 +833,7 @@ export function Canvas({
       cursor && wire.length
         ? [...wire, ...route(wire[wire.length - 1], cursor).slice(1)]
         : wire;
-    if (points.length > 1) void edit({ kind: "wire", points }).catch(onError);
+    if (points.length > 1) commit({ kind: "wire", points }, wireOverlay(points));
     setWire([]);
   };
   const hit = (p: Point) => {
@@ -830,7 +907,7 @@ export function Canvas({
         }
         if ((e.key === "Delete" || e.key === "Backspace") && selection.length) {
           e.preventDefault();
-          void edit({ kind: "delete", ids: selection }).catch(onError);
+          commit({ kind: "delete", ids: selection }, deleteOverlay(selection));
         }
       }}
       onPointerDown={(e) => {
@@ -946,12 +1023,12 @@ export function Canvas({
             ...route(wire[wire.length - 1], point(e)).slice(1),
           ];
           if (points.length > 1)
-            void edit({ kind: "wire", points }).catch(onError);
+            commit({ kind: "wire", points }, wireOverlay(points));
           setWire([]);
         }
         releaseHeld();
-        if (drag?.mode === "move" && (delta.x || delta.y))
-          void edit({ kind: "move", ids: drag.ids, delta }).catch(onError);
+        if (drag?.mode === "move" && overlay && (delta.x || delta.y))
+          commit({ kind: "move", ids: drag.ids, delta }, overlay);
         if (drag?.mode === "box") {
           const p = point(e);
           const box = {
@@ -1026,31 +1103,26 @@ export function Canvas({
             href={picture.src}
             {...picture.bounds}
             preserveAspectRatio="none"
-            opacity={moving ? 0.4 : 1}
+            opacity={overlay?.kind === "move" ? 0.4 : 1}
           />
         )}
-        {moving && picture && (
+        {overlay?.kind === "move" && picture && (
           <g
             className="move-preview"
             pointerEvents="none"
-            transform={`translate(${delta.x},${delta.y})`}
+            transform={`translate(${overlay.delta.x},${overlay.delta.y})`}
           >
             <defs>
               <clipPath id={moveClip} clipPathUnits="userSpaceOnUse">
-                {circuit.components
-                  .filter((component) => drag.ids.includes(component.id))
-                  .map((component) => {
-                    const bounds = boundsFor(component.id);
-                    return (
-                      <rect
-                        key={component.id}
-                        x={bounds.x - 3}
-                        y={bounds.y - 3}
-                        width={bounds.width + 6}
-                        height={bounds.height + 6}
-                      />
-                    );
-                  })}
+                {overlay.clip.map((bounds) => (
+                  <rect
+                    key={`${bounds.x},${bounds.y}`}
+                    x={bounds.x - 3}
+                    y={bounds.y - 3}
+                    width={bounds.width + 6}
+                    height={bounds.height + 6}
+                  />
+                ))}
               </clipPath>
             </defs>
             <image
@@ -1061,7 +1133,32 @@ export function Canvas({
             />
           </g>
         )}
-        {moving && (
+        {overlay?.kind === "delete" && (
+          <g className="delete-cover" pointerEvents="none" fill="var(--paper)">
+            {overlay.clip.map((b) => (
+              <rect
+                key={`${b.x},${b.y}`}
+                x={b.x - 3}
+                y={b.y - 3}
+                width={b.width + 6}
+                height={b.height + 6}
+              />
+            ))}
+            {overlay.lines.map((segment, i) => (
+              <line
+                key={i}
+                x1={segment.from.x}
+                y1={segment.from.y}
+                x2={segment.to.x}
+                y2={segment.to.y}
+                stroke="var(--paper)"
+                strokeWidth={9}
+                strokeLinecap="square"
+              />
+            ))}
+          </g>
+        )}
+        {overlay && overlay.kind !== "delete" && (
           <g
             className="move-wire-preview"
             pointerEvents="none"
@@ -1069,28 +1166,16 @@ export function Canvas({
             strokeWidth={2 / view.scale}
             fill="none"
           >
-            {movedSegments.map((segment) => (
+            {overlay.lines.map((segment, i) => (
               <line
-                key={`${segment.from.x},${segment.from.y}:${segment.to.x},${segment.to.y}`}
+                key={`${i}:${segment.from.x},${segment.from.y}:${segment.to.x},${segment.to.y}`}
                 x1={segment.from.x}
                 y1={segment.from.y}
                 x2={segment.to.x}
                 y2={segment.to.y}
+                strokeDasharray={segment.dashed ? "4 3" : undefined}
               />
             ))}
-            {!movedSegments.length &&
-              circuit.wires
-                .filter((wire) => drag.ids.includes(wire.id))
-                .map((wire) => (
-                  <line
-                    key={wire.id}
-                    x1={wire.from.x + delta.x}
-                    y1={wire.from.y + delta.y}
-                    x2={wire.to.x + delta.x}
-                    y2={wire.to.y + delta.y}
-                    strokeDasharray="4 3"
-                  />
-                ))}
           </g>
         )}
         {signal &&

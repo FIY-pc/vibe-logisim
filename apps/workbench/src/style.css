@@ -1488,3 +1488,7 @@ button.primary {
   align-self: center;
   padding: 7px 10px;
 }
+.composer.is-reference-drop {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}

@@ -265,7 +265,9 @@ await act(async () => {
   });
 });
 assert.equal(changed.at(-1).revision, "r2");
-await render(chat(doc("A")));
+// A proposal is actionable on the revision it was written from, so the chat
+// shows it once the document has moved to that revision.
+await render(chat({ ...doc("A"), revision: "r2" }));
 assert.ok(document.querySelector(".proposal"));
 console.log(
   "PASS: hidden conversation continues receiving document changes and proposals",

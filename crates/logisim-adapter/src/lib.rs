@@ -83,27 +83,9 @@ impl Worker {
         Ok(bytes)
     }
 }
-/// Isolated verification owns its process and queue independently of interactive controls.
-pub struct Verifier {
-    native: Native,
-}
-impl Verifier {
-    pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Self {
-        Self {
-            native: Native::new(root, state, runtime),
-        }
-    }
-    pub async fn evaluate(&mut self, artifact: &Path, operation: Element) -> Result<Element> {
-        self.native.evaluate(artifact, operation).await
-    }
-    pub async fn shutdown(&mut self) {
-        self.native.shutdown().await;
-    }
-}
 pub struct Native {
     launcher: Launcher,
     worker: Option<Worker>,
-    verification_worker: Option<Worker>,
     observed_version: Option<String>,
 }
 impl Native {
@@ -116,7 +98,6 @@ impl Native {
         Self {
             launcher,
             worker: None,
-            verification_worker: None,
             observed_version: None,
         }
     }
@@ -141,37 +122,17 @@ impl Native {
     pub fn status(&self) -> Value {
         self.facts().status()
     }
-    fn worker_slot(&mut self, verification: bool) -> &mut Option<Worker> {
-        if verification {
-            &mut self.verification_worker
-        } else {
-            &mut self.worker
-        }
-    }
-    async fn worker(&mut self, verification: bool, runtime: &Path) -> Result<&mut Worker> {
-        if self.worker_slot(verification).as_mut().is_some_and(|w| {
+    async fn worker(&mut self, runtime: &Path) -> Result<&mut Worker> {
+        if self.worker.as_mut().is_some_and(|w| {
             w.awaiting || w.child.try_wait().ok().flatten().is_some() || w.runtime != runtime
         }) {
-            *self.worker_slot(verification) = None;
+            self.worker = None;
         }
-        if self.worker_slot(verification).is_none() {
+        if self.worker.is_none() {
             let classes = self.launcher.classes(runtime).await?;
             let hash = digest(&std::fs::read(runtime).map_err(|e| e.to_string())?);
-            let mut command = self
-                .launcher
-                .command(
-                    if verification {
-                        "CircuitSimulationWorker"
-                    } else {
-                        "CircuitWorker"
-                    },
-                    runtime,
-                )
-                .await?;
-            command.arg(java_path(runtime)).arg(hash);
-            if !verification {
-                command.arg(java_path(&classes));
-            }
+            let mut command = self.launcher.command("CircuitWorker", runtime).await?;
+            command.arg(java_path(runtime)).arg(hash).arg(java_path(&classes));
             let mut child = command.spawn().map_err(|e| e.to_string())?;
             let input = child.stdin.take().ok_or("Logisim stdin 不可用")?;
             let stderr = StderrCapture::start(child.stderr.take().ok_or("Logisim stderr 不可用")?);
@@ -188,23 +149,11 @@ impl Native {
             if worker.receive(true).await? != b"ready" {
                 return Err("Logisim 未就绪".into());
             }
-            *self.worker_slot(verification) = Some(worker);
+            self.worker = Some(worker);
         }
-        Ok(self.worker_slot(verification).as_mut().unwrap())
+        Ok(self.worker.as_mut().unwrap())
     }
     pub async fn request(&mut self, artifact: &Path, operation: Element) -> Result<Vec<u8>> {
-        self.request_in(artifact, operation, false).await
-    }
-    pub async fn evaluate(&mut self, artifact: &Path, operation: Element) -> Result<Element> {
-        let bytes = self.request_in(artifact, operation, true).await?;
-        Element::parse(bytes.as_slice()).map_err(|e| e.to_string())
-    }
-    async fn request_in(
-        &mut self,
-        artifact: &Path,
-        operation: Element,
-        verification: bool,
-    ) -> Result<Vec<u8>> {
         let source = std::fs::read(artifact).map_err(|e| e.to_string())?;
         let (runtime, _) = self.facts().runtime_for(&source)?;
         let hash = digest(&source);
@@ -222,13 +171,13 @@ impl Native {
         // process when dependencies change, so geometry and verification cannot
         // disagree with a newly started interactive simulation.
         if self
-            .worker_slot(verification)
+            .worker
             .as_ref()
             .is_some_and(|worker| worker.dependencies != dependencies)
         {
-            *self.worker_slot(verification) = None;
+            self.worker = None;
         }
-        let worker = self.worker(verification, &runtime).await?;
+        let worker = self.worker(&runtime).await?;
         worker.dependencies = dependencies.clone();
         worker.awaiting = true;
         let mut result = async {
@@ -253,7 +202,7 @@ impl Native {
             self.record_version(bytes);
         }
         if result.is_err() {
-            *self.worker_slot(verification) = None;
+            self.worker = None;
         }
         result
     }
@@ -435,10 +384,7 @@ impl Native {
         Ok(format!("data:image/png;base64,{}", B64.encode(bytes)))
     }
     pub async fn shutdown(&mut self) {
-        for mut worker in [self.worker.take(), self.verification_worker.take()]
-            .into_iter()
-            .flatten()
-        {
+        if let Some(mut worker) = self.worker.take() {
             let _ = worker.child.kill().await;
         }
     }
@@ -457,14 +403,7 @@ pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String
             return Err("外部组件库数量超过限制".into());
         }
         let bytes = std::fs::read(&source).map_err(|e| e.to_string())?;
-        let tree = Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?;
-        for library in tree.children.iter().filter_map(XMLNode::as_element) {
-            if library.name != "lib" {
-                continue;
-            }
-            let Some(desc) = library.attributes.get("desc") else {
-                continue;
-            };
+        for desc in library_descriptors(&bytes)? {
             let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
                 (name, true)
             } else if let Some(name) = desc.strip_prefix("jar#") {
@@ -523,6 +462,48 @@ fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
             )
         })
         .collect())
+}
+
+/// The `desc` of each top-level `<lib>`. This runs twice per worker request on
+/// a file that can be megabytes, so UTF-8 text is scanned without building a tree.
+fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
+    use quick_xml::{XmlVersion, events::Event, reader::Reader};
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        let tree = Element::parse(bytes).map_err(|e| e.to_string())?;
+        return Ok(tree
+            .children
+            .iter()
+            .filter_map(XMLNode::as_element)
+            .filter(|e| e.name == "lib")
+            .filter_map(|e| e.attributes.get("desc").cloned())
+            .collect());
+    };
+    let mut reader = Reader::from_str(text);
+    let (mut depth, mut descriptors) = (0usize, Vec::new());
+    loop {
+        let (element, opens) = match reader.read_event().map_err(|e| e.to_string())? {
+            Event::Start(element) => (element, true),
+            Event::Empty(element) => (element, false),
+            Event::End(_) => {
+                depth = depth.saturating_sub(1);
+                continue;
+            }
+            Event::Eof => return Ok(descriptors),
+            _ => continue,
+        };
+        if depth == 1 && element.name().as_ref() == "lib" {
+            for attribute in element.attributes() {
+                let attribute = attribute.map_err(|e| e.to_string())?;
+                if attribute.key.as_ref() == "desc" {
+                    let value = attribute
+                        .normalized_value(XmlVersion::Implicit1_0)
+                        .map_err(|e| e.to_string())?;
+                    descriptors.push(value.into_owned());
+                }
+            }
+        }
+        depth += usize::from(opens);
+    }
 }
 
 #[cfg(test)]
