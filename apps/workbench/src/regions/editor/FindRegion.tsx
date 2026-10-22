@@ -7,7 +7,6 @@ export function FindRegion() {
   const { stores, actions } = useWorkbench();
   const view = useView();
   const { doc, circuit } = view;
-  const sim = useSimulation((state) => state.sim);
   const find = useEditor((state) => state.find);
   if (!find || !doc || !circuit) return null;
   const { navigation } = actions;
@@ -19,8 +18,8 @@ export function FindRegion() {
       onClose={() => stores.editor.getState().setFind(null)}
       onChoose={(name, id) =>
         id
-          ? navigation.focusObject(view, sim, name, id)
-          : navigation.switchCircuit(view, sim, name)
+          ? navigation.focusObject(view, name, id)
+          : navigation.switchCircuit(view, name)
       }
     />
   );

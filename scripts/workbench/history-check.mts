@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { simulationClient } from "./simulation-client.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-history-"));
 let child: ChildProcess | undefined,
@@ -85,11 +86,8 @@ try {
   assert.equal(list.entries[0].baseline, true);
   assert.equal(list.entries[0].saved, true);
   const baseline = list.entries[0].id;
-  const live = await command({
-    op: "simulationStart",
-    ...binding(),
-    circuit: "child",
-  });
+  const client = simulationClient(command);
+  const live = await client.started(doc, "child");
   const layout = source.replace(
     /\((\d+),100\)/g,
     (_, x) => `(${Number(x) + 200},100)`,
@@ -152,7 +150,7 @@ try {
   });
   assert.equal(originalRun.passed, 1);
   assert.equal((await command({ op: "read", id: doc.id })).revision, initial);
-  assert.equal((await command({ op: "simulationStatus" })).viewId, live.viewId);
+  assert.equal((await client.status()).state?.viewId, live.viewId);
   assert.equal(await readFile(file, "utf8"), source);
   const preview = await command({
     op: "proposalPreview",

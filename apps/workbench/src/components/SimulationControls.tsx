@@ -15,20 +15,17 @@ import {
   StepForward,
   X,
 } from "lucide-react";
-import type { Simulation, Tool } from "../lib/types";
+import type { Tool } from "../lib/types";
+import type { RunAction } from "../actions/simulation";
+import type { SimulationStatus } from "../stores/simulation";
 import "./editor-controls.css";
 
-type Simulate = (
-  op: string,
-  attributes?: Record<string, string>,
-) => Promise<void>;
 interface SimulationProps {
-  activeSim: Simulation | null;
-  busyAction: string | null;
+  /** What the controls show for the shown circuit, and whether each can act. */
+  status: SimulationStatus;
   disabled: boolean;
   shortcuts: Record<string, string>;
-  simulate: Simulate;
-  onError: (e: unknown) => void;
+  run: (action: RunAction) => void;
 }
 interface MenuProps extends SimulationProps {
   contextKey: string;
@@ -38,6 +35,7 @@ interface MenuProps extends SimulationProps {
   capture: () => Promise<void>;
   onObservations: () => void;
   onReturnToSimulation?: () => void;
+  onError: (error: unknown) => void;
 }
 const hint = (label: string, binding?: string) =>
   binding ? `${label}（${binding}）` : label;
@@ -55,11 +53,10 @@ const pendingLabel = (action: string, active: boolean) => {
 export function SimulationMenu({
   contextKey,
   circuitName,
-  activeSim,
-  busyAction,
+  status,
   disabled,
   shortcuts,
-  simulate,
+  run,
   capture,
   onObservations,
   onReturnToSimulation,
@@ -74,10 +71,10 @@ export function SimulationMenu({
   const panel = useRef<HTMLDivElement>(null);
   const focusLast = useRef(false);
   const menuId = useId();
-  const running = activeSim?.frame.attributes.running === "true";
-  const automatic = Boolean(
-    activeSim && activeSim.frame.attributes.automatic !== "false",
-  );
+  const active = status.current;
+  const running = status.running;
+  const automatic = status.automatic;
+  const rootCircuit = status.circuit ?? null;
   const close = (restoreFocus = true) => {
     setOpen(false);
     if (restoreFocus) button.current?.focus();
@@ -125,9 +122,9 @@ export function SimulationMenu({
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [open]);
-  const dispatch = (op: string) => {
+  const dispatch = (action: RunAction) => {
     close();
-    void simulate(op).catch(onError);
+    run(action);
   };
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const enabled = items();
@@ -155,30 +152,27 @@ export function SimulationMenu({
   };
   const action = (
     label: string,
-    op: string,
+    target: RunAction,
     shortcut?: string,
     unavailable = disabled,
   ) => (
     <button
       role="menuitem"
       tabIndex={-1}
-      disabled={unavailable}
-      onClick={() => dispatch(op)}
+      disabled={unavailable || status.viewBusy || (target === "stop" && !status.exists)}
+      onClick={() => dispatch(target)}
     >
       <span>{label}</span>
       {shortcut && <kbd>{shortcut}</kbd>}
     </button>
   );
-  const state = busyAction
-    ? pendingLabel(busyAction, Boolean(activeSim))
-    : !activeSim
+  const state = status.busy
+    ? pendingLabel(status.busyAction || "", active)
+    : !active
       ? "尚未开始"
-      : `${running ? "时钟运行" : "时钟暂停"}${automatic ? "" : " · 自动传播已暂停"} · ${activeSim.frame.attributes.ticks || "0"} tick`;
-  const owner = activeSim
-    ? [
-        activeSim.rootCircuit || activeSim.circuit,
-        ...activeSim.instancePath,
-      ].join(" / ")
+      : `${running ? "时钟运行" : "时钟暂停"}${automatic ? "" : " · 自动传播已暂停"} · ${status.ticks || 0} tick`;
+  const owner = active
+    ? rootCircuit || circuitName || "尚未打开电路"
     : circuitName || "尚未打开电路";
   return (
     <>
@@ -226,7 +220,7 @@ export function SimulationMenu({
               <button
                 role="menuitem"
                 tabIndex={-1}
-                disabled={Boolean(busyAction)}
+                disabled={status.viewBusy || status.busy}
                 onClick={() => {
                   close();
                   onReturnToSimulation();
@@ -235,31 +229,31 @@ export function SimulationMenu({
                 返回运行电路
               </button>
             )}
-            {!activeSim && action("启动仿真", "start")}
+            {!active && action("启动仿真", "start")}
             {action(
               running ? "暂停时钟" : "运行时钟",
               "toggle-clock",
               shortcuts.clock,
             )}
-            {action("时钟一步", "tick", shortcuts.tick, disabled || running)}
+            {action("时钟一步", "tick", shortcuts.tick, disabled || !active || running)}
             <hr role="separator" />
             <button
               role="menuitemcheckbox"
               tabIndex={-1}
               aria-checked={automatic}
-              disabled={disabled}
+              disabled={disabled || status.viewBusy || !active}
               onClick={() => dispatch("toggle-propagation")}
             >
               <span>自动传播</span>
               {shortcuts.propagation && <kbd>{shortcuts.propagation}</kbd>}
             </button>
-            {action("传播一步", "step", shortcuts.step)}
-            {action("复位仿真", "reset", shortcuts.reset)}
+            {action("传播一步", "step", shortcuts.step, disabled || !active)}
+            {action("复位仿真", "reset", shortcuts.reset, disabled || !active)}
             <hr role="separator" />
             <button
               role="menuitem"
               tabIndex={-1}
-              disabled={!activeSim || disabled}
+              disabled={!active || disabled}
               onClick={() => {
                 close();
                 void capture().catch(onError);
@@ -294,7 +288,7 @@ export function SimulationMenu({
             <button
               role="menuitem"
               tabIndex={-1}
-              disabled={!activeSim || disabled}
+              disabled={!active || disabled}
               title="清除本次运行的输入和状态，电路设计与留存观察会保留"
               onClick={() => dispatch("stop")}
             >
@@ -306,9 +300,7 @@ export function SimulationMenu({
       {settings &&
         createPortal(
           <SimulationSettings
-            frequency={Number(
-              activeSim?.frame.attributes.frequency || frequency,
-            )}
+            frequency={status.frequency || frequency}
             onApply={onFrequencyChange}
             onClose={() => {
               setSettings(false);
@@ -420,46 +412,44 @@ function SimulationSettings({
 }
 
 export function SimulationTransport({
-  activeSim,
-  busyAction,
+  status,
   disabled,
   shortcuts,
-  simulate,
-  onError,
+  run,
   tool,
-  stale,
-}: SimulationProps & { tool: Tool; stale: boolean }) {
-  if (!activeSim && !busyAction && !stale && tool !== "poke") return null;
-  const running = activeSim?.frame.attributes.running === "true";
-  const automatic = activeSim?.frame.attributes.automatic !== "false";
-  const status = busyAction
-    ? pendingLabel(busyAction, Boolean(activeSim))
-    : stale
+}: SimulationProps & { tool: Tool }) {
+  const active = status.current;
+  if (!active && !status.busy && !status.stale && tool !== "poke") return null;
+  const running = status.running;
+  const automatic = status.automatic;
+  const text = status.busy
+    ? pendingLabel(status.busyAction || "", active)
+    : status.stale
       ? "电路已改动"
-      : !activeSim
+      : !active
         ? "未仿真"
         : !automatic
           ? "传播已暂停"
           : running
             ? "时钟运行"
             : "交互中";
-  const dispatch = (op: string) => void simulate(op).catch(onError);
+  const dispatch = (action: RunAction) => run(action);
   return (
     <div
       className="runtime-transport"
       role="toolbar"
       aria-label="仿真控制"
-      aria-busy={Boolean(busyAction)}
+      aria-busy={status.busy}
       data-running={running}
     >
-      {busyAction && <span className="spinner" aria-hidden="true" />}
+      {status.busy && <span className="spinner" aria-hidden="true" />}
       <output role="status" aria-live="polite">
-        {status}
+        {text}
       </output>
-      {stale ? (
+      {status.stale ? (
         <button
           className="runtime-restart"
-          disabled={disabled}
+          disabled={disabled || status.viewBusy}
           onClick={() => dispatch("start")}
         >
           重新仿真
@@ -469,7 +459,7 @@ export function SimulationTransport({
           <button
             aria-label={running ? "暂停时钟" : "运行时钟"}
             title={hint(running ? "暂停时钟" : "运行时钟", shortcuts.clock)}
-            disabled={disabled}
+            disabled={disabled || status.viewBusy}
             onClick={() => dispatch("toggle-clock")}
           >
             {running ? <Pause size={15} /> : <Play size={15} />}
@@ -481,7 +471,7 @@ export function SimulationTransport({
                 ? "先暂停时钟，再逐步推进"
                 : hint("时钟一步", shortcuts.tick)
             }
-            disabled={disabled || running}
+            disabled={disabled || running || status.viewBusy || !active}
             onClick={() => dispatch("tick")}
           >
             <StepForward size={15} />
@@ -489,7 +479,7 @@ export function SimulationTransport({
           <button
             aria-label="复位仿真"
             title={hint("复位仿真", shortcuts.reset)}
-            disabled={disabled || !activeSim}
+            disabled={disabled || !active || status.viewBusy}
             onClick={() => dispatch("reset")}
           >
             <RotateCcw size={15} />

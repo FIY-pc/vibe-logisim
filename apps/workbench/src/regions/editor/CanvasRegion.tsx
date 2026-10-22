@@ -1,4 +1,5 @@
 import { Canvas } from "../../components/Canvas";
+import { liveRun } from "../../stores/simulation";
 import type { PlacementState } from "../../lib/usePlacement";
 import {
   useEditor,
@@ -15,15 +16,28 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
   const view = useView();
   const { doc, circuit } = view;
   const selection = useSelection();
-  const sim = useSimulation((state) => state.sim);
   const tool = useEditor((state) => state.tool);
   const place = useEditor((state) => state.place);
   const fitToken = useEditor((state) => state.fitToken);
   const zoomRequest = useEditor((state) => state.zoomRequest);
   const showGrid = useEditor((state) => state.showGrid);
   const focusTarget = useEditor((state) => state.focusTarget);
+  const session = useSimulation((state) => state.session);
+  const run = useSimulation((state) => state.view);
+  const displayed = useSimulation((state) => state.displayed);
+  const picture = useSimulation((state) => state.picture);
+  const pending = useSimulation((state) => state.pending);
+  const pressed = useSimulation((state) => state.pressed);
   const onError = useNotices((state) => state.onError);
   if (!doc || !circuit) return null;
+  const live =
+    session && run && displayed && displayed.sessionId === session.sessionId &&
+    displayed.viewId === run.viewId &&
+    session.documentId === doc.id &&
+    session.revision === doc.revision &&
+    run.circuit === circuit.name
+      ? run
+      : null;
   const { setZoom, setCanvasObservation, setPlace, setSignalView } =
     stores.editor.getState();
   const { editor: editing, simulation: simulating, navigation } = actions;
@@ -37,8 +51,25 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
       setSelection={(s) => editing.inspect(view, s)}
       place={place}
       edit={(change) => editing.edit(view, change)}
-      simulation={sim}
-      simulate={(op, attributes) => simulating.simulate(view, op, attributes)}
+      run={live}
+      picture={
+        live && session && picture?.sessionId === session.sessionId &&
+        picture.viewId === live.viewId
+          ? {
+              frameSequence: picture.frameSequence,
+              url: picture.url,
+              image: picture.image,
+            }
+          : null
+      }
+      pending={pending.map((item) => item.componentId)}
+      pressed={pressed?.componentId ?? null}
+      onPoke={(component, point) => void simulating.poke(view, component, point)}
+      onPress={(component) => simulating.press(view, component)}
+      onRelease={() => simulating.release()}
+      onViewport={(viewId, area) => {
+        if (live && session) simulating.viewport(session.sessionId, viewId, area);
+      }}
       onError={onError}
       fitToken={fitToken}
       zoomRequest={zoomRequest}
@@ -63,9 +94,7 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
         stores.shell.getState().setSide("review", true);
       }}
       onOpenMemory={(id) => simulating.openMemory(view, id)}
-      onEnterCircuit={(name, id) =>
-        navigation.enterCircuit(view, sim, name, id)
-      }
+      onEnterCircuit={(name, id) => navigation.enterCircuit(view, name, id)}
     />
   );
 }

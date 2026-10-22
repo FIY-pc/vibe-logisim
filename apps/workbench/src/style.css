@@ -1086,6 +1086,23 @@ button.primary {
     monospace;
   padding: 5px;
 }
+.memory-state {
+  margin-left: auto;
+}
+.memory-panel > header .memory-state + button {
+  margin-left: 0;
+}
+.memory-grid label[data-changed] input {
+  background: var(--selection-fill);
+  border-color: var(--accent);
+}
+.memory-empty {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px 12px;
+  color: var(--muted);
+}
 .waveform {
   padding: 4px 12px 10px;
 }

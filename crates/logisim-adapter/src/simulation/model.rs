@@ -84,7 +84,15 @@ pub struct ComponentState {
     pub ports: Vec<PortState>,
 }
 
-/// One page of a RAM in the viewed instance.
+/// Where a memory's contents live: the design's stored words, or the run's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum MemoryStorage {
+    Design,
+    Runtime,
+}
+
+/// One page of a memory.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MemoryPage {
@@ -93,7 +101,12 @@ pub struct MemoryPage {
     pub address_bits: u32,
     pub data_bits: u32,
     pub length: u32,
+    #[serde(default = "runtime_storage")]
+    pub storage: MemoryStorage,
     pub words: Vec<u32>,
+}
+fn runtime_storage() -> MemoryStorage {
+    MemoryStorage::Runtime
 }
 
 /// World coordinates of a picture.
@@ -284,6 +297,8 @@ impl EndReason {
 #[serde(rename_all = "camelCase")]
 pub struct EndedInfo {
     pub session_id: String,
+    pub document_id: String,
+    pub root_circuit: String,
     pub reason_code: EndReason,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -400,6 +415,7 @@ impl Command {
             self,
             Self::Start
                 | Self::ToggleClock
+                | Self::TogglePropagation
                 | Self::Play
                 | Self::Tick
                 | Self::Step

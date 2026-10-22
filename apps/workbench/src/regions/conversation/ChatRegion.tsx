@@ -19,7 +19,6 @@ export function ChatRegion() {
   const view = useView();
   const { doc, circuit } = view;
   const selection = useSelection();
-  const sim = useSimulation((state) => state.sim);
   const folder = useFiles((state) => state.folder);
   const quotation = useConversation((state) => state.quotation);
   const visible = useShell(
@@ -31,7 +30,7 @@ export function ChatRegion() {
   const followConversationReference = useConversationReferences({
     doc,
     folder,
-    onCircuit: (name, id) => navigation.focusObject(view, sim, name, id),
+    onCircuit: (name, id) => navigation.focusObject(view, name, id),
     onDocument: actions.workspace.showDocument,
     onPreview: stores.files.getState().setPreview,
     onNotice: setNotice,
@@ -39,7 +38,7 @@ export function ChatRegion() {
   });
   return (
     <Chat
-      onLocate={(change) => navigation.locateChange(view, sim, change)}
+      onLocate={(change) => navigation.locateChange(view, change)}
       visible={visible}
       doc={doc}
       circuit={circuit?.name || null}

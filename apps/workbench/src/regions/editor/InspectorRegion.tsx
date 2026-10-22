@@ -1,6 +1,7 @@
 import { Inspector } from "../../components/Inspector";
 import { PlacementInspector } from "../../components/PlacementInspector";
 import { documentComponent } from "../../lib/connections";
+import { liveRun, watchScope } from "../../stores/simulation";
 import type { PlacementState } from "../../lib/usePlacement";
 import {
   useEditor,
@@ -10,7 +11,6 @@ import {
   useView,
 } from "../../workbench/hooks";
 import { useWorkbench } from "../../workbench/provider";
-import { activeSimulation } from "../../workbench/view";
 
 /** The rail inspector: the component being placed, or the selection's
  * properties and connections. */
@@ -21,7 +21,11 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
   const selection = useSelection();
   const place = useEditor((state) => state.place);
   const canvasObservation = useEditor((state) => state.canvasObservation);
-  const sim = useSimulation((state) => state.sim);
+  const session = useSimulation((state) => state.session);
+  const run = useSimulation((state) => state.view);
+  const components = useSimulation((state) => state.components);
+  const displayed = useSimulation((state) => state.displayed);
+  const watches = useSimulation((state) => state.watches);
   const onError = useNotices((state) => state.onError);
   const { editor: editing, simulation: simulating } = actions;
   if (place)
@@ -39,6 +43,19 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
             documentComponent(circuit, component)?.id === selection[0],
         ) || null
       : null;
+  const live =
+    session && run && displayed
+      ? liveRun({ session, view: run, displayed }, doc, circuit.name)
+      : null;
+  const selected =
+    selection.length === 1
+      ? circuit.components.find((component) => component.id === selection[0]) ??
+        null
+      : null;
+  const nativeId = connectionComponent?.componentId || selection[0];
+  const watching = live
+    ? watches[watchScope(session!.sessionId, live.view.instancePath)] ?? []
+    : [];
   return (
     <Inspector
       doc={doc!}
@@ -47,8 +64,18 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
       connectionComponent={connectionComponent}
       onOpenMemory={(id) => simulating.openMemory(view, id)}
       edit={(change) => editing.edit(view, change)}
-      simulation={activeSimulation(sim, view)}
-      simulate={(op, attributes) => simulating.simulate(view, op, attributes)}
+      live={live ? components[nativeId] || null : null}
+      watched={watching}
+      onInput={async (bits) => {
+        if (selected) await simulating.setInput(view, selected, bits);
+      }}
+      onWatch={(key) => {
+        simulating.toggleWatch(view, key);
+      }}
+      onPress={() => {
+        if (selected) simulating.press(view, selected);
+      }}
+      onRelease={() => simulating.release()}
       onError={onError}
     />
   );

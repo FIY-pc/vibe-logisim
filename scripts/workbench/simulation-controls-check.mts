@@ -6,7 +6,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
-import type { Simulation } from "../../apps/workbench/src/lib/types.ts";
+import type { ComponentState } from "../../apps/workbench/src/generated/ComponentState.ts";
+import { simulationClient, type Run } from "./simulation-client.mts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const directory = await mkdtemp(
@@ -57,28 +58,28 @@ async function command<T>(request: Record<string, unknown>): Promise<T> {
   assert(response.ok, `Host returned HTTP ${response.status}`);
   return body.result;
 }
-const action = (
-  document: Document,
-  circuit: string,
-  operation: string,
-  attributes: Record<string, string> = {},
-) =>
-  command<Simulation>({
-    op: "simulationAction",
-    id: document.id,
-    revision: document.revision,
-    circuit,
-    command: operation,
-    attributes,
-  });
-const status = () => command<Simulation>({ op: "simulationStatus" });
-const owns = (simulation: Simulation, document: Document, circuit: string) => {
-  assert.equal(simulation.documentId, document.id);
-  assert.equal(simulation.revision, document.revision);
-  assert.equal(simulation.circuit, circuit);
-  assert.equal(simulation.rootCircuit, circuit);
-  assert.deepEqual(simulation.instancePath, []);
-  assert.equal(simulation.frame.tag, "frame");
+const client = simulationClient((request) => command(request));
+const status = () => client.status();
+/** Waits until a frame shows the commands sent so far. */
+const settled = async () => {
+  const acknowledged = await status();
+  const wanted = acknowledged.state?.commandSequence ?? 0;
+  for (let attempt = 0; attempt < 500; attempt++) {
+    const current = await status();
+    if ((current.state?.commandSequence ?? 0) >= wanted) return current;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`no frame after command ${wanted}`);
+};
+/** The run a definition command found or started, and its clock. */
+const owns = async (document: Document, circuit: string) => {
+  const current = await settled();
+  assert.equal(current.session?.documentId, document.id);
+  assert.equal(current.session?.revision, document.revision);
+  assert.equal(current.session?.rootCircuit, circuit);
+  assert.equal(current.state?.circuit, circuit);
+  assert.deepEqual(current.state?.instancePath, []);
+  return current;
 };
 
 try {
@@ -103,78 +104,70 @@ try {
     "Separate documents must retain identity",
   );
 
-  let simulation = await action(first, "main", "toggle-propagation", {
-    initialFrequency: "7.5",
-  });
-  owns(simulation, first, "main");
+  await client.definition(first, "main", { kind: "toggle-propagation" }, 7.5);
+  const cold = await owns(first, "main");
   assert.equal(
-    simulation.frame.attributes.automatic,
-    "true",
+    cold.state?.clock.automatic,
+    true,
     "Cold Ctrl+E must start propagation without immediately disabling it",
   );
-  assert.equal(Number(simulation.frame.attributes.frequency), 7.5);
-  assert.equal(simulation.frame.attributes.running, "false");
-  const mainView = simulation.viewId;
+  assert.equal(cold.state?.clock.frequency, 7.5);
+  assert.equal(cold.state?.clock.running, false);
+  const mainView = cold.state!.viewId;
 
-  simulation = await action(first, "main", "toggle-propagation", {
-    initialFrequency: "32",
-  });
-  assert.equal(simulation.frame.attributes.automatic, "false");
+  await client.definition(first, "main", { kind: "toggle-propagation" }, 32);
+  const toggled = await owns(first, "main");
+  assert.equal(toggled.state?.clock.automatic, false);
   assert.equal(
-    Number(simulation.frame.attributes.frequency),
+    toggled.state?.clock.frequency,
     7.5,
     "The cold-start preference must not reconfigure an existing simulation",
   );
-  simulation = await action(first, "main", "toggle-propagation");
-  assert.equal(simulation.frame.attributes.automatic, "true");
-  assert.equal(simulation.viewId, mainView);
+  await client.definition(first, "main", { kind: "toggle-propagation" });
+  const again = await owns(first, "main");
+  assert.equal(again.state?.clock.automatic, true);
+  assert.equal(again.state?.viewId, mainView);
 
   // No UI frame refresh or timing delay between acknowledged toggles.
-  simulation = await action(first, "main", "toggle-clock");
-  assert.equal(simulation.frame.attributes.running, "true");
-  simulation = await action(first, "main", "toggle-clock");
-  assert.equal(simulation.frame.attributes.running, "false");
-  assert.equal(simulation.viewId, mainView);
-  // Concurrent callers must also resolve the toggle under the native lock.
+  await client.definition(first, "main", { kind: "toggle-clock" });
+  assert.equal((await owns(first, "main")).state?.clock.running, true);
+  await client.definition(first, "main", { kind: "toggle-clock" });
+  const paused = await owns(first, "main");
+  assert.equal(paused.state?.clock.running, false);
+  assert.equal(paused.state?.viewId, mainView);
+  // Concurrent callers must also resolve the toggle under the run's own lock.
   await Promise.all([
-    action(first, "main", "toggle-clock"),
-    action(first, "main", "toggle-clock"),
+    client.definition(first, "main", { kind: "toggle-clock" }),
+    client.definition(first, "main", { kind: "toggle-clock" }),
   ]);
-  assert.equal((await status()).frame.attributes.running, "false");
+  assert.equal((await status()).state?.clock.running, false);
 
-  await action(first, "main", "toggle-clock");
-  simulation = await action(first, "bank", "toggle-clock", {
-    initialFrequency: "3.25",
-  });
-  owns(simulation, first, "bank");
-  assert.equal(simulation.frame.attributes.running, "true");
-  assert.equal(Number(simulation.frame.attributes.frequency), 3.25);
-  assert.notEqual(simulation.viewId, mainView);
-  assert.equal((await status()).viewId, simulation.viewId);
-  const bankView = simulation.viewId;
+  await client.definition(first, "main", { kind: "toggle-clock" });
+  await client.definition(first, "bank", { kind: "toggle-clock" }, 3.25);
+  const bank = await owns(first, "bank");
+  assert.equal(bank.state?.clock.running, true);
+  assert.equal(bank.state?.clock.frequency, 3.25);
+  assert.notEqual(bank.state?.viewId, mainView);
+  const bankView = bank.state!.viewId;
 
   // Invalid configuration of a different target must not tear down this run.
-  for (const initialFrequency of ["0", "4096.1", "NaN", "invalid"]) {
+  for (const initialFrequency of [0, 0.2, 4096.1]) {
     await assert.rejects(
-      action(second, "main", "toggle-clock", { initialFrequency }),
+      client.definition(second, "main", { kind: "toggle-clock" }, initialFrequency),
       /时钟频率/,
     );
-    const retained = await status();
-    owns(retained, first, "bank");
-    assert.equal(retained.viewId, bankView);
-    assert.equal(retained.frame.attributes.running, "true");
-    assert.equal(Number(retained.frame.attributes.frequency), 3.25);
+    const retained = await owns(first, "bank");
+    assert.equal(retained.state?.viewId, bankView);
+    assert.equal(retained.state?.clock.running, true);
+    assert.equal(retained.state?.clock.frequency, 3.25);
   }
 
-  simulation = await action(second, "main", "toggle-propagation", {
-    initialFrequency: "11.5",
-  });
-  owns(simulation, second, "main");
-  assert.equal(simulation.frame.attributes.automatic, "true");
-  assert.equal(simulation.frame.attributes.running, "false");
-  assert.equal(Number(simulation.frame.attributes.frequency), 11.5);
-  assert.notEqual(simulation.viewId, bankView);
-  assert.equal((await status()).viewId, simulation.viewId);
+  await client.definition(second, "main", { kind: "toggle-propagation" }, 11.5);
+  const other = await owns(second, "main");
+  assert.equal(other.state?.clock.automatic, true);
+  assert.equal(other.state?.clock.running, false);
+  assert.equal(other.state?.clock.frequency, 11.5);
+  assert.notEqual(other.state?.viewId, bankView);
 
   const instances = first.circuits
     .find((c) => c.name === "main")!
@@ -190,129 +183,180 @@ try {
     button && otherButton,
     "Native fixture must contain two momentary buttons",
   );
-  const navigate = (path: string[]) =>
-    command<Simulation>({
-      op: "simulationView",
-      id: first.id,
-      revision: first.revision,
-      path,
-    });
-  const sample = async () => {
-    const ack = await command<{ attributes: Record<string, string> }>({
-      op: "simulationCommand",
-      id: first.id,
-      revision: first.revision,
-      command: "sample",
-    });
-    for (let attempts = 0; attempts < 1000; attempts++) {
+  /** The sequence of the newest accepted command of the current run, so a
+   * frame can be waited for. A new run counts from zero, and a command a
+   * stopped run ignores raises nothing. */
+  let acknowledged = 0,
+    ackSession = "";
+  const act = async (
+    work: Promise<{ commandSequence?: number; sessionId?: string }>,
+  ) => {
+    const result = await work;
+    const session = result.sessionId ?? "";
+    // Without a session the run ignored the command; nothing to wait for.
+    if (!session) return result;
+    if (session !== ackSession) {
+      ackSession = session;
+      acknowledged = result.commandSequence ?? 0;
+    } else acknowledged = Math.max(acknowledged, result.commandSequence ?? 0);
+    return result;
+  };
+  const settle = async () => {
+    for (let attempt = 0; attempt < 500; attempt++) {
       const current = await status();
-      if (
-        Number(current.frame.attributes.commandSequence) >=
-        Number(ack.attributes.commandSequence)
-      )
-        return current;
+      const session = current.session?.sessionId ?? "";
+      if (session !== ackSession) {
+        ackSession = session;
+        acknowledged = 0;
+      }
+      const state = current.state;
+      if (state && state.commandSequence >= acknowledged) return;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error("Native sample acknowledgement did not reach a frame");
+    throw new Error(`no frame after command ${acknowledged}`);
   };
-  const buttonValue = (current: Simulation, componentId = button.id) =>
-    current.frame.children
-      .find(
-        (node) =>
-          node.tag === "component" && node.attributes.id === componentId,
-      )
-      ?.children.find(
-        (node) => node.tag === "port" && node.attributes.index === "0",
-      )?.attributes.value;
-  const press = (view: Simulation) =>
-    action(first, "bank", "button", {
-      componentId: button.id,
-      viewId: view.viewId,
-      value: "1",
-    });
-  await action(first, "main", "toggle-propagation");
-  let instance = await navigate([instances[0].id]);
-  assert.equal(buttonValue(instance), "0");
+  const live = async () => {
+    const current = await status();
+    assert(current.session, "the run must still be live");
+    return { sessionId: current.session.sessionId, viewId: current.state?.viewId };
+  };
+  /** Shows an instance of the run and waits for its frame. */
+  const view = async (instancePath: string[]): Promise<Run> => {
+    const current = await status();
+    assert(current.session, "the run must still be live");
+    const target = {
+      sessionId: current.session.sessionId,
+      viewId: current.state?.viewId ?? "",
+    };
+    const result = await client.navigate(target, instancePath);
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const state = (await status()).state;
+      if (state?.viewId === result.viewId)
+        return { sessionId: target.sessionId, viewId: result.viewId };
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`view ${result.viewId} never became the run's view`);
+  };
+  /** The buttons of the shown instance in the settled frame. */
+  const sample = async (): Promise<Record<string, ComponentState>> => {
+    await settle();
+    const run = await live();
+    const ids = [button.id, otherButton.id];
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const { frame } = await client.snapshot(
+        { sessionId: run.sessionId, viewId: run.viewId ?? "" },
+        { componentIds: ids, limit: ids.length, offset: 0 },
+      );
+      const show = frame.viewId === run.viewId;
+      const applied = frame.commandSequence >= acknowledged;
+      const complete = ids.every((id) =>
+        frame.components.some((component) => component.id === id),
+      );
+      if (show && applied && complete)
+        return Object.fromEntries(frame.components.map((c) => [c.id, c]));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("the shown instance never produced its frame");
+  };
+  const buttonValue = (
+    state: Record<string, ComponentState>,
+    componentId = button.id,
+  ) => state[componentId]?.ports.find((port) => port.index === 0)?.bits;
+  const press = (target: Run) =>
+    act(
+      client.run(first, target, {
+        kind: "button",
+        componentId: button.id,
+        value: "1",
+      }),
+    );
+  const release = (target: Run) =>
+    act(
+      client.run(first, target, {
+        kind: "button",
+        componentId: button.id,
+        value: "0",
+      }),
+    );
+  await client.definition(first, "main", { kind: "toggle-propagation" });
+  let instance = await view([instances[0].id]);
+  assert.equal(buttonValue(await sample()), "0");
   await press(instance);
   assert.equal(buttonValue(await sample()), "1");
-  await action(first, "bank", "button", {
-    componentId: otherButton.id,
-    viewId: instance.viewId,
-    value: "1",
-  });
-  assert.equal(buttonValue(await sample(), otherButton.id), "1");
-  await assert.rejects(
-    action(first, "bank", "button", {
-      componentId: "missing-button",
-      viewId: instance.viewId,
+  await act(
+    client.run(first, instance, {
+      kind: "button",
+      componentId: otherButton.id,
       value: "1",
     }),
-    /Unknown input/,
   );
-  await assert.rejects(navigate(["missing-instance"]), /子电路实例/);
+  assert.equal(buttonValue(await sample(), otherButton.id), "1");
+  await assert.rejects(
+    client.run(first, instance, {
+      kind: "button",
+      componentId: "missing-button",
+      value: "1",
+    }),
+    /Unknown input|可操作输入/,
+  );
+  await assert.rejects(view(["missing-instance"]), /子电路实例/);
   assert.equal(
     buttonValue(await sample()),
     "1",
     "Reject an invalid target before releasing the current button",
   );
-  const oldViewId = instance.viewId;
-  await navigate([]);
-  instance = await navigate([instances[0].id]);
+  const oldView = instance;
+  await view([]);
+  instance = await view([instances[0].id]);
   assert.equal(
-    buttonValue(instance),
+    buttonValue(await sample()),
     "0",
     "Leaving a pressed child instance must release the momentary button before changing view",
   );
   assert.equal(
-    buttonValue(instance, otherButton.id),
+    buttonValue(await sample(), otherButton.id),
     "0",
     "All acknowledged button presses must be released",
   );
-  await navigate([]);
-  instance = await navigate([instances[1].id]);
+  await view([]);
+  instance = await view([instances[1].id]);
   assert.equal(
-    buttonValue(instance),
+    buttonValue(await sample()),
     "0",
     "A sibling instance must not inherit a pressed button",
   );
   await press(instance);
-  await action(first, "bank", "button-release", {
-    componentId: button.id,
-    viewId: oldViewId,
-  });
+  await release(oldView);
   assert.equal(
     buttonValue(await sample()),
     "1",
     "A late release from another view must not release this instance's button",
   );
-  await navigate([]);
-  instance = await navigate([instances[1].id]);
-  assert.equal(buttonValue(instance), "0");
+  await view([]);
+  instance = await view([instances[1].id]);
+  assert.equal(buttonValue(await sample()), "0");
   await press(instance);
-  await action(first, "bank", "reset");
+  await act(client.run(first, instance, { kind: "reset" }));
   assert.equal(
     buttonValue(await sample()),
     "0",
     "Reset clears held stimuli and their release bookkeeping",
   );
-  await navigate([]);
-  instance = await navigate([instances[1].id]);
-  assert.equal(buttonValue(instance), "0");
+  await view([]);
+  instance = await view([instances[1].id]);
+  assert.equal(buttonValue(await sample()), "0");
   await press(instance);
-  await command({ op: "simulationStop" });
-  await action(first, "bank", "button-release", {
-    componentId: button.id,
-    viewId: instance.viewId,
-  });
+  await client.stop(instance);
+  await release(instance);
   assert.equal(
-    await status(),
+    (await status()).session,
     null,
     "A late release must never resurrect a stopped simulation",
   );
-  await action(first, "main", "toggle-propagation");
-  instance = await navigate([instances[1].id]);
+  await client.definition(first, "main", { kind: "toggle-propagation" });
+  instance = await view([instances[1].id]);
   assert.equal(
-    buttonValue(instance),
+    buttonValue(await sample()),
     "0",
     "A new run must not inherit held stimuli",
   );
@@ -330,7 +374,8 @@ try {
   );
 } finally {
   if (url && child.exitCode === null) {
-    await command({ op: "simulationStop" }).catch(() => {});
+    const run = await client.status().catch(() => null);
+    if (run?.session) await client.stop(run.session.sessionId).catch(() => {});
   }
   if (child.pid && child.exitCode === null) {
     const exited = once(child, "exit");

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { simulationClient } from "./simulation-client.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
 const documentOf = (result: any) => (result && result.view ? result.view : result);
 /** Frozen candidate review, using only synthetic source and native rendering. */
 export async function verifyProposals(command: Command) {
+  const client = simulationClient(command);
   const original =
     '<?xml version="1.0"?><project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main"><a name="circuit" val="main"/><comp lib="0" name="Pin" loc="(100,100)"><a name="label" val="input"/></comp></circuit></project>';
   const doc = await command({
@@ -48,12 +50,7 @@ export async function verifyProposals(command: Command) {
   await assert.rejects(
     command({ op: "proposalReview", ...binding, xml: "<broken>" }),
   );
-  const live = await command({
-    op: "simulationStart",
-    id: doc.id,
-    revision: doc.revision,
-    circuit: "main",
-  });
+  const live = await client.started(doc, "main");
   for (const candidate of [false, true]) {
     const preview = await command({
       op: "proposalPreview",
@@ -68,8 +65,9 @@ export async function verifyProposals(command: Command) {
         .equals(Buffer.from("PNG")),
     );
     assert.equal(
-      (await command({ op: "simulationStatus" })).viewId,
+      (await client.status()).state?.viewId,
       live.viewId,
+      "Candidate previews must not replace the live simulation",
     );
     assert.equal(
       (await command({ op: "read", id: doc.id })).revision,

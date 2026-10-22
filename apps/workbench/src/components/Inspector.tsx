@@ -1,17 +1,13 @@
 import { Eye } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type {
-  Circuit,
-  Document,
-  Edit,
-  Simulation,
-  XmlNode,
-} from "../lib/types";
+import type { ComponentState } from "../generated/ComponentState";
+import type { Circuit, Document, Edit, XmlNode } from "../lib/types";
 import type { ConnectionComponent } from "../lib/connections";
 import { portName } from "../lib/connections";
 import { componentLabels, isAppearanceProperty } from "../lib/componentLabels";
 import { command } from "../lib/transport";
 import { inputBits, inputDisplay } from "../lib/simulationInputs";
+import { formatSignal } from "../lib/simulation";
 import { PropertyField } from "./PropertyField";
 import "./inspector.css";
 
@@ -20,8 +16,17 @@ interface Props {
   circuit: Circuit;
   selection: string[];
   edit: (e: Edit) => Promise<void>;
-  simulation: Simulation | null;
-  simulate: (op: string, attrs?: Record<string, string>) => Promise<void>;
+  /** The selected component in the run, when the canvas shows its view. */
+  live: ComponentState | null;
+  /** Watched ports of the run, as `componentId:port`. */
+  watched: string[];
+  /** Sets the run's input for the selected component to the bits given. */
+  onInput: (bits: string) => Promise<void>;
+  /** Watches or stops watching a port of the run. */
+  onWatch: (key: string) => void;
+  /** Holds the selected button of the run down, or lets it go. */
+  onPress: () => void;
+  onRelease: () => void;
   onError: (e: unknown) => void;
   onOpenMemory: (id: string) => void;
   connectionComponent?: ConnectionComponent | null;
@@ -78,8 +83,12 @@ function SelectedInspector({
   circuit,
   selected,
   edit,
-  simulation,
-  simulate,
+  live: component,
+  watched,
+  onInput,
+  onWatch,
+  onPress,
+  onRelease,
   onError,
   onOpenMemory,
   connectionComponent,
@@ -120,39 +129,10 @@ function SelectedInspector({
       live = false;
     };
   }, [doc.id, doc.revision, circuit.name, selected.id, retry]);
-  const live = simulation?.frame.children.find(
-    (n) =>
-      n.tag === "component" &&
-      [selected.id, connectionComponent?.componentId].includes(n.attributes.id),
-  );
-  const input = live?.children.find((n) => n.tag === "input");
-  const ports = live?.children.filter((n) => n.tag === "port") || [];
-  const trace = simulation?.frame.children.find((n) => n.tag === "trace");
-  const watched =
-    trace?.children
-      .filter((n) => n.tag === "signal")
-      .map((n) => n.attributes.key) || [];
-  const [watchPending, setWatchPending] = useState(false);
-  const nativeId =
-    live?.attributes.id || connectionComponent?.componentId || selected.id;
-  const toggleWatch = async (port: string) => {
-    if (!simulation || watchPending) return;
-    const key = `${nativeId}:${port}`;
-    setWatchPending(true);
-    try {
-      await simulate("trace", {
-        viewId: simulation.viewId,
-        signals: (watched.includes(key)
-          ? watched.filter((k) => k !== key)
-          : [...watched, key]
-        ).join(","),
-      });
-    } catch (error) {
-      onError(error);
-    } finally {
-      setWatchPending(false);
-    }
-  };
+  const live = component;
+  const input = component?.input;
+  const ports = component?.ports || [];
+  const nativeId = component?.id || selected.id;
   const attributes = fields
     .filter((f) => f.attributes.name !== "contents")
     .sort(
@@ -178,7 +158,7 @@ function SelectedInspector({
     isAppearanceProperty(f.attributes.name),
   );
   const isInput =
-    live?.attributes.control === "input" ||
+    live?.control === "input" ||
     (!live && selected.name === "Pin" && selected.attributes.output !== "true");
   const title =
     selected.attributes.label ||
@@ -210,45 +190,35 @@ function SelectedInspector({
               attributes: {
                 name: "inputValue",
                 label: "输入值",
-                value: inputDisplay(
-                  input?.attributes.bits || ports[0]?.attributes.bits,
-                ),
+                value: inputDisplay(input?.bits || ports[0]?.bits),
                 editable: "true",
               },
             }}
             placeholder="未运行"
             title="输入运行值并按 Enter；未运行时自动启动仿真"
             onCommit={(value) =>
-              simulate("input", {
-                componentId: selected.id,
-                bits: inputBits(
+              onInput(
+                inputBits(
                   value,
-                  Number(
-                    input?.attributes.width ||
-                      ports[0]?.attributes.width ||
-                      valueOf("width") ||
-                      1,
-                  ),
+                  Number(ports[0]?.width || valueOf("width") || 1),
                   valueOf("tristate") === "true",
                 ),
-                ...(simulation ? { viewId: simulation.viewId } : {}),
-              })
+              )
             }
           />
         )}
-        {live?.attributes.control === "parent-input" && (
+        {live?.control === "parent-input" && (
           <p className="inspector-description">
             此输入由父电路驱动，可返回父图调整。
           </p>
         )}
-        {live?.attributes.control === "pulse" && simulation && (
+        {live?.control === "pulse" && component && (
           <div className="input-action">
             <span>按钮</span>
             <HeldButton
-              simulate={simulate}
               componentId={selected.id}
-              viewId={simulation.viewId}
-              onError={onError}
+              onPress={onPress}
+              onRelease={onRelease}
             />
           </div>
         )}
@@ -288,7 +258,7 @@ function SelectedInspector({
               <tr>
                 <th>接口</th>
                 <th>位宽</th>
-                {simulation && (
+                {component && (
                   <>
                     <th>运行值</th>
                     <th />
@@ -298,19 +268,17 @@ function SelectedInspector({
             </thead>
             <tbody>
               {ends.map((end) => {
-                const value = ports.find(
-                  (p) => p.attributes.index === String(end.index),
-                );
+                const value = ports.find((p) => p.index === end.index);
                 return (
                   <tr key={end.index}>
                     <td title={end.runtimeTooltip || undefined}>
                       {portName(connectionComponent!, end)}
                     </td>
                     <td>{end.width ?? "?"}</td>
-                    {simulation && (
+                    {component && (
                       <>
                         <td>
-                          <code>{value?.attributes.bits || "—"}</code>
+                          <code>{formatSignal(value)}</code>
                         </td>
                         <td>
                           <button
@@ -319,8 +287,8 @@ function SelectedInspector({
                             aria-pressed={watched.includes(
                               `${nativeId}:${end.index}`,
                             )}
-                            disabled={watchPending || !value}
-                            onClick={() => void toggleWatch(String(end.index))}
+                            disabled={!value}
+                            onClick={() => onWatch(`${nativeId}:${end.index}`)}
                           >
                             <Eye size={13} />
                           </button>
@@ -349,15 +317,13 @@ function SelectedInspector({
 }
 
 function HeldButton({
-  simulate,
   componentId,
-  viewId,
-  onError,
+  onPress,
+  onRelease,
 }: {
-  simulate: Props["simulate"];
   componentId: string;
-  viewId: string;
-  onError: Props["onError"];
+  onPress: Props["onPress"];
+  onRelease: Props["onRelease"];
 }) {
   const down = useRef(false),
     [pressed, setPressed] = useState(false);
@@ -365,18 +331,13 @@ function HeldButton({
     if (!down.current) return;
     down.current = false;
     setPressed(false);
-    void simulate("button-release", { componentId, viewId, value: "0" }).catch(
-      onError,
-    );
+    onRelease();
   };
   const press = () => {
     if (down.current) return;
     down.current = true;
     setPressed(true);
-    void simulate("button", { componentId, viewId, value: "1" }).catch((e) => {
-      release();
-      onError(e);
-    });
+    onPress();
   };
   useEffect(() => {
     window.addEventListener("blur", release);
@@ -384,7 +345,7 @@ function HeldButton({
       window.removeEventListener("blur", release);
       release();
     };
-  }, [componentId, viewId]);
+  }, [componentId]);
   return (
     <button
       aria-pressed={pressed}

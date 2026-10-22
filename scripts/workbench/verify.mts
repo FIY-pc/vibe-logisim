@@ -367,31 +367,31 @@ try {
     (await command({ op: "read", id: doc.id })).revision,
     beforeInvalid,
   );
-  await command({
-    op: "simulationStart",
-    id: doc.id,
+  const started = await command({
+    op: "simulationAct",
+    documentId: doc.id,
     revision: doc.revision,
-    circuit: "main",
+    target: { kind: "definition", circuit: "main" },
+    command: { kind: "start" },
   });
+  const live = { sessionId: started.sessionId, viewId: started.viewId };
   await command({
-    op: "simulationCommand",
-    id: doc.id,
+    op: "simulationAct",
+    documentId: doc.id,
     revision: doc.revision,
-    command: "input",
-    attributes: { componentId: input.id, bits: "1" },
+    target: { kind: "run", ...live },
+    command: { kind: "input", componentId: input.id, bits: "1" },
   });
   const frame = (
     await stream!.wait(
       (e) =>
         e.topic === "simulation" &&
-        e.data?.documentId === doc.id &&
-        e.data.frame?.children?.some(
-          (c: any) =>
-            c.tag === "component" &&
-            c.attributes.id === output.id &&
-            c.children.some(
-              (p: any) => p.tag === "port" && p.attributes.bits === "0",
-            ),
+        e.data?.kind === "state" &&
+        e.data.sessionId === started.sessionId &&
+        e.data.components?.items?.some(
+          (item: any) =>
+            item.id === output.id &&
+            item.ports.some((port: any) => port.bits === "0"),
         ),
     )
   ).data;
@@ -422,25 +422,30 @@ try {
   );
   const stillLive = await command({ op: "simulationStatus" });
   assert.equal(
-    stillLive.viewId,
-    frame.viewId,
+    stillLive.state.viewId,
+    started.viewId,
     "Verification replaced the user live session",
   );
+  const kept = await command({
+    op: "simulationSnapshot",
+    sessionId: started.sessionId,
+    componentIds: [output.id],
+    trace: false,
+    memory: false,
+  });
+  const outputState = kept.frame.components.find(
+    (item: any) => item.id === output.id,
+  );
   assert(
-    stillLive.frame.children
-      .find((n: any) => n.attributes?.id === output.id)
-      .children.some((p: any) => p.tag === "port" && p.attributes.bits === "0"),
+    outputState?.ports.some((port: any) => port.bits === "0"),
     "Verification modified the user input state",
   );
   assert.equal(await readFile(source, "utf8"), saved);
-  const outputState = frame.frame.children.find(
-    (n: any) => n.tag === "component" && n.attributes.id === output.id,
-  );
   assert(
-    outputState?.children.some(
-      (p: any) => p.tag === "port" && p.attributes.bits === "0",
-    ),
-    JSON.stringify(outputState),
+    frame.components.items
+      .find((item: any) => item.id === output.id)
+      .ports.some((port: any) => port.bits === "0"),
+    JSON.stringify(frame.components),
   );
   assert.equal(
     (await command({ op: "read", id: doc.id })).revision,
@@ -703,10 +708,11 @@ try {
     command({ op: "close", id, revision: reloaded.revision, discard: true }),
   );
   await command({
-    op: "simulationStart",
-    id,
+    op: "simulationAct",
+    documentId: id,
     revision: undoReload.revision,
-    circuit: "main",
+    target: { kind: "definition", circuit: "main" },
+    command: { kind: "start" },
   });
   await command({
     op: "close",
@@ -714,8 +720,10 @@ try {
     revision: undoReload.revision,
     discard: true,
   });
-  assert.equal(await command({ op: "simulationStatus" }), null);
-  await stream!.wait((e) => e.topic === "simulation" && e.data === null);
+  assert.equal((await command({ op: "simulationStatus" })).session, null);
+  await stream!.wait(
+    (e) => e.topic === "simulation" && e.data?.kind === "ended",
+  );
   assert.equal(
     (await command({ op: "read", id: reopened.id })).revision,
     reopened.revision,
@@ -756,7 +764,7 @@ try {
   await stop();
   await start();
   assert(
-    (await command({ op: "observations", id: retained.documentId })).some(
+    (await command({ op: "observationList", id: retained.documentId })).some(
       (r: any) => r.id === retained.recordId,
     ),
     "Observation did not survive restart",

@@ -315,14 +315,32 @@ const toolHost = {
       return request.arguments.read ? result : { entries: result };
     }
     if (request.tool === "kept_observations") {
-      const records = await host({ op: "observations", id });
-      return {
-        observations: records.map(({ frame, ...record }: any) => ({
-          ...record,
-          state: frame.attributes,
-          trace: frame.children.find((n: any) => n.tag === "trace"),
-        })),
-      };
+      // The list names what was kept; each record's frame and waveform are
+      // read on demand, so a list of many keeps stays small.
+      const records = await host({ op: "observationList", id });
+      const kept = await Promise.all(
+        records.map(async (row: any) => {
+          if (row.damaged) return { ...row };
+          const record = await host({
+            op: "observationGet",
+            id,
+            record: row.id,
+            limit: 0,
+          });
+          const { frame, trace, ...rest } = record;
+          return {
+            ...rest,
+            state: {
+              circuit: frame.circuit,
+              instancePath: frame.instancePath,
+              clock: frame.clock,
+              frameSequence: frame.frameSequence,
+            },
+            trace,
+          };
+        }),
+      );
+      return { observations: kept };
     }
     if (request.arguments.target === "working-copy") {
       const copy = await proposals.workingCopy(id);

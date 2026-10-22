@@ -2,4 +2,20 @@
 import type { Command } from "./Command";
 import type { TargetRequest } from "./TargetRequest";
 
-export type SimulationRequest = { "op": "simulationAct", document_id: string, revision: string, target: TargetRequest, command: Command, initial_frequency?: number, } | { "op": "simulationNavigate", session_id: string, instance_path: Array<string>, } | { "op": "simulationViewport", session_id: string, view_id: string, x: number, y: number, width: number, height: number, scale: number, } | { "op": "simulationStop", session_id: string, } | { "op": "simulationStatus" } | { "op": "simulationSnapshot", session_id: string, frame_sequence?: bigint, component_ids?: Array<string>, offset?: number, limit?: number, trace: boolean, memory: boolean, } | { "op": "simulationFrameImage", session_id: string, frame_sequence: bigint, } | { "op": "memory", id: string, revision: string, circuit: string, component: string, offset: number, count: number, } | { "op": "memoryWrite", id: string, revision: string, circuit: string, component: string, address: number, expected: string, value: string, } | { "op": "observationList", id: string, } | { "op": "observationGet", id: string, record: string, component_ids?: Array<string>, offset?: number, limit?: number, } | { "op": "observationImage", record: string, } | { "op": "observationCapture", session_id: string, view_id: string, frame_sequence?: bigint, title: string, } | { "op": "observationRename", record: string, title: string, } | { "op": "observationDelete", record: string, };
+/**
+ * The live run and the frames kept from it.
+ *
+ * There is at most one run at a time. The window drives it with
+ * `simulationAct`, follows it through `simulation` events (`session`, then
+ * `state` deltas, then `ended`) and fetches pictures with
+ * `simulationFrameImage`. None of these requests changes a document: stimulus
+ * never makes a revision and never saves. Only `memoryWrite`, which edits a
+ * ROM's stored contents, does.
+ *
+ * The agent reads, never drives: `simulationStatus`, `simulationSnapshot` and
+ * `simulationFrameImage` for the run the user is looking at, and
+ * `observationList`, `observationGet` and `observationImage` for frames the
+ * user kept. The isolated test runs behind its vector and trace tools are the
+ * `simulate` and `trace` review requests, which never touch the live run.
+ */
+export type SimulationRequest = { "op": "simulationAct", documentId: string, revision: string, target: TargetRequest, command: Command, initialFrequency?: number, } | { "op": "simulationNavigate", sessionId: string, instancePath: Array<string>, } | { "op": "simulationViewport", sessionId: string, viewId: string, x: number, y: number, width: number, height: number, scale: number, } | { "op": "simulationStop", sessionId: string, } | { "op": "simulationStatus" } | { "op": "simulationSnapshot", sessionId: string, frameSequence?: number, componentIds?: Array<string>, offset?: number, limit?: number, trace: boolean, memory: boolean, } | { "op": "simulationFrameImage", sessionId: string, frameSequence: number, } | { "op": "memory", id: string, revision: string, circuit: string, component: string, offset: number, count: number, } | { "op": "memoryWrite", id: string, revision: string, circuit: string, component: string, address: number, expected: string, value: string, } | { "op": "observationList", id: string, } | { "op": "observationGet", id: string, record: string, componentIds?: Array<string>, offset?: number, limit?: number, } | { "op": "observationImage", record: string, } | { "op": "observationCapture", sessionId: string, viewId: string, frameSequence?: number, title: string, } | { "op": "observationRename", record: string, title: string, } | { "op": "observationDelete", record: string, };

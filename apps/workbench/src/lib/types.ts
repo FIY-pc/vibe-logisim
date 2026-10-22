@@ -16,26 +16,6 @@ export interface XmlNode {
   children: XmlNode[];
   exited?: boolean;
 }
-export interface Simulation {
-  documentId: string;
-  revision: string;
-  circuit: string;
-  viewId: string;
-  rootCircuit: string;
-  instancePath: string[];
-  frame: XmlNode;
-}
-export interface ObservedComponent {
-  componentId: string;
-  factoryName: string;
-  location: Point;
-  bounds: Bounds;
-  ends: { location: Point; width: number; direction: string; index: number }[];
-}
-export interface Observation {
-  components?: ObservedComponent[];
-  [key: string]: unknown;
-}
 export interface CatalogTool {
   name: string;
   label: string;

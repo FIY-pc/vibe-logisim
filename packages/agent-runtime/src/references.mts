@@ -68,22 +68,33 @@ export async function storeReference(
   } else if (input?.kind === "observation") {
     if (input.documentId !== documentId)
       throw new Error("观察属于另一电路文档，请切换后引用");
-    const records = await host({ op: "observations", id: documentId });
-    const record = records.find((r: any) => r.id === input.recordId);
+    const render = await host({
+      op: "observationImage",
+      record: input.recordId,
+    }).catch(() => undefined);
+    const record = await host({
+      op: "observationGet",
+      id: documentId,
+      record: input.recordId,
+      limit: 0,
+    }).catch(() => undefined);
     if (!record) throw new Error("这条观察已删除，请重新选择");
-    const render = record.frame?.children?.find(
-      (n: any) => n.tag === "render",
-    )?.text;
     const { frame, ...evidence } = record;
-    const trace = frame?.children?.find((n: any) => n.tag === "trace");
     fields = {
       kind: "observation",
       label: record.title,
       revision: record.revision,
-      text: JSON.stringify({ ...evidence, trace, historical: true }),
-      image: checkedImage(
-        render ? `data:image/png;base64,${render}` : undefined,
-      ),
+      text: JSON.stringify({
+        ...evidence,
+        state: {
+          circuit: frame.circuit,
+          instancePath: frame.instancePath,
+          clock: frame.clock,
+          frameSequence: frame.frameSequence,
+        },
+        historical: true,
+      }),
+      image: checkedImage(render),
     };
   } else throw new Error("不支持的引用");
   const record: StoredReference = {

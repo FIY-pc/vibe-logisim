@@ -1,15 +1,15 @@
 import { SimulationMenu } from "../../components/SimulationControls";
-import { pendingOperation } from "../../stores/simulation";
+import { simulationStatus } from "../../stores/simulation";
 import {
   useDocuments,
   useNotices,
   useSettings,
   useShell,
   useSimulation,
+  useSimulationState,
   useView,
 } from "../../workbench/hooks";
 import { useWorkbench } from "../../workbench/provider";
-import { activeSimulation } from "../../workbench/view";
 
 /** The titlebar's simulation menu for the shown circuit. */
 export function SimulationMenuRegion() {
@@ -17,39 +17,43 @@ export function SimulationMenuRegion() {
   const view = useView();
   const { doc, circuit, scope } = view;
   const docs = useDocuments((state) => state.docs);
-  const sim = useSimulation((state) => state.sim);
-  const frequency = useSimulation((state) => state.frequency);
-  const busyAction = useSimulation((state) => pendingOperation(state, scope));
-  const pending = useShell((state) => state.pending);
-  const shortcuts = useSettings((state) => state.labels);
-  const onError = useNotices((state) => state.onError);
+  const state = useSimulationState();
+  const frequency = useSimulation((simulation) => simulation.frequency);
+  const pending = useShell((shell) => shell.pending);
+  const shortcuts = useSettings((settings) => settings.labels);
+  const onError = useNotices((notices) => notices.onError);
   if (!doc || !circuit) return null;
-  const activeSim = activeSimulation(sim, view);
-  const { simulation: simulating, navigation } = actions;
+  const status = simulationStatus(state, doc, circuit.name);
+  const session = state.session;
+  const { simulation, navigation } = actions;
   return (
     <SimulationMenu
       contextKey={scope}
       circuitName={circuit.name}
-      activeSim={activeSim}
-      busyAction={busyAction}
-      disabled={Boolean(pending)}
+      status={status}
+      frequency={status.frequency ?? frequency}
       shortcuts={shortcuts}
-      simulate={(op, attributes) => simulating.simulate(view, op, attributes)}
-      capture={() => simulating.capture(view)}
+      disabled={Boolean(pending)}
+      run={(action) => void simulation.run(view, action).catch(onError)}
+      capture={async () => {
+        await simulation.capture(view);
+      }}
       onError={onError}
       onObservations={() =>
         stores.simulation.getState().setObservations({ documentId: doc.id })
       }
-      frequency={Number(activeSim?.frame.attributes.frequency) || frequency}
-      onFrequencyChange={(value) => simulating.changeFrequency(view, value)}
+      onFrequencyChange={async (value) => {
+        await simulation.changeFrequency(view, value);
+      }}
       onReturnToSimulation={
-        sim &&
-        !activeSim &&
+        session &&
+        !status.visible &&
         docs.some(
           (item) =>
-            item.id === sim.documentId && item.revision === sim.revision,
+            item.id === session.documentId &&
+            item.revision === session.revision,
         )
-          ? () => navigation.returnToSimulation(view, sim)
+          ? () => navigation.returnToSimulation(view, session)
           : undefined
       }
     />

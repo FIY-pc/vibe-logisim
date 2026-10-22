@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { simulationClient } from "./simulation-client.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-interface-"));
 let child: ChildProcess | undefined;
@@ -95,11 +96,8 @@ try {
   };
   await simulate("main", { inA: 0, inB: 3 }, { outA: 15, outB: 12 });
   await simulate("rotated", { inR: 5 }, { outR: 10 });
-  const running = await command({
-    op: "simulationStart",
-    ...scope(),
-    circuit: "main",
-  });
+  const client = simulationClient(command);
+  const running = await client.started(doc, "main");
   const noop = draft();
   const nochange = await preview(noop);
   assert.equal(nochange.changed, false);
@@ -146,8 +144,9 @@ try {
   );
   await unchanged();
   assert.equal(
-    (await command({ op: "simulationStatus" })).viewId,
+    (await client.status()).state?.viewId,
     running.viewId,
+    "Interface previews must not replace the live simulation",
   );
   const image = await command({
     op: "interfaceRender",

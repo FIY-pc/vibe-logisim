@@ -4,7 +4,9 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use vibe_logisim_adapter::simulation::{ActResult, Command, RunDocument, Snapshot, Target};
+use vibe_logisim_adapter::simulation::{
+    ActResult, Command, MemoryPage, MemoryStorage, RunDocument, Snapshot, Target,
+};
 use vibe_workspace_core::Edit;
 
 /// What a command addresses, as the request carries it: the view of a run, or
@@ -20,10 +22,31 @@ pub enum TargetRequest {
     Definition { circuit: String },
 }
 
+/// The live run and the frames kept from it.
+///
+/// There is at most one run at a time. The window drives it with
+/// `simulationAct`, follows it through `simulation` events (`session`, then
+/// `state` deltas, then `ended`) and fetches pictures with
+/// `simulationFrameImage`. None of these requests changes a document: stimulus
+/// never makes a revision and never saves. Only `memoryWrite`, which edits a
+/// ROM's stored contents, does.
+///
+/// The agent reads, never drives: `simulationStatus`, `simulationSnapshot` and
+/// `simulationFrameImage` for the run the user is looking at, and
+/// `observationList`, `observationGet` and `observationImage` for frames the
+/// user kept. The isolated test runs behind its vector and trace tools are the
+/// `simulate` and `trace` review requests, which never touch the live run.
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SimulationRequest {
-    /// Starts, drives or configures the run the target names.
+    /// Starts, drives or configures a run. With a `definition` target, a
+    /// command that starts runs (start, clock, tick, step, poke, input, pulse,
+    /// button press, propagation toggle) starts a run of that circuit, or
+    /// reuses the current run when it is of the same circuit and revision;
+    /// other commands do nothing. With a `run` target, the command goes to that
+    /// view of the run; a run that ended or is of another revision refuses
+    /// commands that start runs and ignores the rest. `initialFrequency`
+    /// applies when this command starts the run. Returns an `ActResult`.
     SimulationAct {
         document_id: String,
         revision: String,
@@ -33,11 +56,16 @@ pub enum SimulationRequest {
         #[ts(optional)]
         initial_frequency: Option<f64>,
     },
-    /// Shows a subcircuit instance of the run; an empty path returns to the root.
+    /// Shows a subcircuit instance of the run, keeping its state: the path
+    /// holds component ids from the root circuit, and an empty path returns
+    /// to the root. Every call makes a new view, which releases held buttons,
+    /// clears the waveform and the shown memory page, and renders the default
+    /// viewport until the window sends its own.
     SimulationNavigate {
         session_id: String,
         instance_path: Vec<String>,
     },
+    /// The world rectangle and scale the run renders for a view.
     SimulationViewport {
         session_id: String,
         view_id: String,
@@ -47,15 +75,22 @@ pub enum SimulationRequest {
         height: u32,
         scale: f64,
     },
+    /// Ends the run. Returns `{"stopped": false}` when it already ended.
     SimulationStop {
         session_id: String,
     },
+    /// The current run, its current view and clock, and how the last run
+    /// ended (`Status`). Answered from memory.
     SimulationStatus,
-    /// A kept frame of the run, paged to the components asked for.
+    /// A kept frame of the run (the newest unless `frameSequence` names one),
+    /// with component states paged by `componentIds`, `offset` and `limit`
+    /// (at most 4096), the waveform when `trace` is set and the shown memory
+    /// page when `memory` is set. Returns a `Snapshot`.
     SimulationSnapshot {
         session_id: String,
         #[serde(default)]
         #[ts(optional)]
+        #[ts(type = "number")]
         frame_sequence: Option<u64>,
         #[serde(default)]
         #[ts(optional)]
@@ -71,12 +106,16 @@ pub enum SimulationRequest {
         #[serde(default)]
         memory: bool,
     },
-    /// The PNG of a kept frame, as a data URL over JSON transports.
+    /// The PNG of a kept frame, as a data URL. The newest two frames are
+    /// always kept.
     SimulationFrameImage {
         session_id: String,
+        #[ts(type = "number")]
         frame_sequence: u64,
     },
-    /// ROM content, read through the editor worker; RAM content is in the run.
+    /// A page of a ROM's stored contents (`MemoryPage` with `design`
+    /// storage), read through the editor worker. A RAM's contents belong to a
+    /// run: send the run a `memory` command and read the page from its frames.
     Memory {
         id: String,
         revision: String,
@@ -85,7 +124,9 @@ pub enum SimulationRequest {
         offset: u32,
         count: u32,
     },
-    /// A ROM word: a document edit that ends the run like any other.
+    /// Writes one ROM word if it still holds `expected` (both hex). It is a
+    /// document edit, saved like any other, so it ends a run of the old
+    /// revision. Returns the document view.
     MemoryWrite {
         id: String,
         revision: String,
@@ -95,12 +136,15 @@ pub enum SimulationRequest {
         expected: String,
         value: String,
     },
-    /// Kept frames of a document, newest first; the records themselves follow.
+    /// The frames kept for a document, newest first, as `ObservationSummary`
+    /// rows. A file that cannot be read is a row with `damaged` set, which can
+    /// only be deleted.
     ObservationList {
         id: String,
     },
-    /// One kept frame, cut to the components asked for like a snapshot. The
-    /// document is the one the record was kept under.
+    /// One kept frame of the document (`ObservationRecord`): its revision,
+    /// root circuit, instance path, watched signals, waveform and component
+    /// states, paged like a snapshot.
     ObservationGet {
         id: String,
         record: String,
@@ -114,16 +158,19 @@ pub enum SimulationRequest {
         #[ts(optional)]
         limit: Option<usize>,
     },
-    /// The PNG of a kept frame, as a data URL over JSON transports.
+    /// The PNG of a kept frame, as a data URL.
     ObservationImage {
         record: String,
     },
-    /// Freezes the frame the user saw; reads the run's rings, never the runtime.
+    /// Keeps the frame the user saw (the newest unless `frameSequence` names
+    /// one) with its waveform, read from what the run already delivered, never
+    /// from the runtime. Fails when the run moved to another view meanwhile.
     ObservationCapture {
         session_id: String,
         view_id: String,
         #[serde(default)]
         #[ts(optional)]
+        #[ts(type = "number")]
         frame_sequence: Option<u64>,
         #[serde(default)]
         title: String,
@@ -137,8 +184,8 @@ pub enum SimulationRequest {
     },
 }
 
-/// Components one snapshot returns at most.
-const PAGE: usize = 64;
+/// Components one snapshot returns at most unless the caller asks for fewer.
+const PAGE: usize = 4096;
 
 /// A kept frame cut to the components asked for; unchanged components stay
 /// shared, so paging costs one filter per request.
@@ -348,13 +395,16 @@ impl Host {
             }
             SimulationRequest::ObservationList { id } => self.observations(&id).await,
             SimulationRequest::ObservationGet {
+                id,
                 record,
                 component_ids,
                 offset,
                 limit,
-                ..
             } => {
                 let mut record = self.observation_record(&record).await?;
+                if record.document_id != id {
+                    return Err("这条观察不属于当前文档".into());
+                }
                 page_frame(&mut record.frame, component_ids, offset, limit);
                 value(record)
             }
@@ -394,7 +444,7 @@ impl Host {
                     .find(|c| c.id == component && c.name == "ROM")
             })
             .ok_or("请选择 ROM；RAM 内容需要在运行实例中读取")?;
-        Ok(self
+        let page = self
             .native
             .lock()
             .await
@@ -408,7 +458,8 @@ impl Host {
                 ]),
                 false,
             )
-            .await?)
+            .await?;
+        value(design_page(&page))
     }
     #[allow(clippy::too_many_arguments)]
     async fn rom_write(
@@ -460,5 +511,46 @@ impl Host {
             },
         )?;
         value(document.view()?)
+    }
+}
+
+/// The worker's page of a ROM as the typed page the run's RAM uses. The
+/// worker answers with its reply element holding one `<memory>` page.
+fn design_page(reply: &Value) -> MemoryPage {
+    let page = if reply["tag"] == "memory" {
+        reply
+    } else {
+        reply["children"]
+            .as_array()
+            .and_then(|children| children.iter().find(|child| child["tag"] == "memory"))
+            .unwrap_or(reply)
+    };
+    let words = page["children"]
+        .as_array()
+        .map(|children| {
+            children
+                .iter()
+                .filter(|word| word["tag"] == "word")
+                .filter_map(|word| word["attributes"]["value"].as_str()?.parse().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let number = |name: &str| {
+        page["attributes"][name]
+            .as_str()
+            .and_then(|text| text.parse().ok())
+            .unwrap_or_default()
+    };
+    MemoryPage {
+        component_id: page["attributes"]["componentId"]
+            .as_str()
+            .unwrap_or_default()
+            .into(),
+        offset: number("offset"),
+        address_bits: number("addressBits"),
+        data_bits: number("dataBits"),
+        length: number("length"),
+        storage: MemoryStorage::Design,
+        words,
     }
 }

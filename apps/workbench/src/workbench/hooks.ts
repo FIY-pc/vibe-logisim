@@ -64,6 +64,22 @@ export const useEditor = <T>(selector: (state: EditorState) => T): T =>
 export const useSimulation = <T>(selector: (state: SimulationState) => T): T =>
   useSelected(useWorkbench().stores.simulation, selector);
 
+/** The store fields the status of the shown circuit is read from, as this
+ * render sees them. */
+export function useSimulationState(): Pick<
+  SimulationState,
+  "session" | "view" | "displayed" | "lastEnded" | "busy" | "viewBusy" | "frame"
+> {
+  const session = useSimulation((state) => state.session);
+  const view = useSimulation((state) => state.view);
+  const displayed = useSimulation((state) => state.displayed);
+  const lastEnded = useSimulation((state) => state.lastEnded);
+  const busy = useSimulation((state) => state.busy);
+  const viewBusy = useSimulation((state) => state.viewBusy);
+  const frame = useSimulation((state) => state.frame);
+  return { session, view, displayed, lastEnded, busy, viewBusy, frame };
+}
+
 /** The view as of this render. */
 export function useView(): View {
   const docs = useDocuments((state) => state.docs);

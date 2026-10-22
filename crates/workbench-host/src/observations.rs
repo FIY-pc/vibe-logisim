@@ -28,7 +28,7 @@ pub struct ObservationRecord {
     #[ts(type = "number")]
     pub created_at: f64,
     pub title: String,
-    pub signals: Vec<Signal>,
+    pub signals: Vec<ObservedSignal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub trace: Option<TraceDelta>,
@@ -55,8 +55,9 @@ pub struct ObservationSummary {
     pub damaged: Option<String>,
 }
 
+/// A port value frozen with a kept frame.
 #[derive(Serialize, Deserialize, ts_rs::TS)]
-pub struct Signal {
+pub struct ObservedSignal {
     /// `componentId:port`.
     pub key: String,
     pub label: String,
@@ -84,7 +85,7 @@ fn signals(
     circuit: &str,
     frame: &Frame,
     trace: Option<&TraceDelta>,
-) -> Vec<Signal> {
+) -> Vec<ObservedSignal> {
     let named = |id: &str| {
         view.circuits
             .iter()
@@ -128,7 +129,7 @@ fn signals(
         .filter_map(|(id, port)| {
             let component = named(&id)?;
             let state = frame.components.iter().find(|state| state.id == id)?;
-            Some(Signal {
+            Some(ObservedSignal {
                 key: format!("{id}:{port}"),
                 label: format!(
                     "{} [{}]",

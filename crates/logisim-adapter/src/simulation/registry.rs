@@ -184,6 +184,53 @@ async fn apply(session: &Session, view_id: &str, command: &Command) -> Result<Ac
     })
 }
 
+/// Switches the run to a new view of the instance at `instance_path`.
+async fn show(session: &Session, instance_path: Vec<String>) -> Result<NavigateResult, SimError> {
+    if instance_path.len() > MAX_DEPTH {
+        return Err(Code::PathTooDeep.into());
+    }
+    let circuits = session.circuits();
+    let definition = |name: &str| circuits.iter().find(|circuit| circuit.name == name);
+    let mut circuit = definition(&session.root.circuit).ok_or(Code::UnknownCircuit)?;
+    let mut instances = Vec::with_capacity(instance_path.len());
+    for id in &instance_path {
+        let instance = circuit
+            .components
+            .iter()
+            .find(|component| component.id == *id)
+            .ok_or_else(|| {
+                SimError::new(Code::ComponentMissing).with_message("找不到子电路实例")
+            })?;
+        circuit = definition(&instance.name)
+            .filter(|_| instance.library.is_none())
+            .ok_or(Code::NotSubcircuit)?;
+        instances.push(instance);
+    }
+    let view = View {
+        id: uuid::Uuid::new_v4().to_string(),
+        circuit: circuit.name.clone(),
+        instance_path,
+    };
+    // Known before the runtime acknowledges it, so its frames resolve.
+    session.register(view.clone());
+    session
+        .send(|request_id| {
+            protocol::view_line(
+                request_id,
+                &view.circuit,
+                &view.id,
+                &instances,
+                &circuit.components,
+            )
+        })
+        .await?;
+    Ok(NavigateResult {
+        view_id: view.id,
+        circuit: view.circuit,
+        instance_path: view.instance_path,
+    })
+}
+
 /// Owns the current run. Clones share it.
 #[derive(Clone)]
 pub struct SimulationRegistry(Arc<Shared>);
@@ -216,8 +263,8 @@ impl SimulationRegistry {
 
     /// Applies a command. Sent for a definition, a command that starts runs
     /// first starts a run of it, or uses the current run when that one is of
-    /// the same circuit and revision and shows its root; other commands for a
-    /// definition do nothing. A run that is gone or of another revision
+    /// the same circuit and revision (back at its root view); other commands
+    /// for a definition do nothing. A run that is gone or of another revision
     /// refuses commands that start runs and ignores the others.
     pub async fn act(
         &self,
@@ -294,7 +341,10 @@ impl SimulationRegistry {
                     };
                     result = Some(apply(&session, &view_id, &configure).await?);
                 }
-                if command != Command::Start {
+                // Propagation is on from the start, so a cold toggle would turn it off.
+                if command != Command::Start
+                    && !(started && command == Command::TogglePropagation)
+                {
                     result = Some(apply(&session, &view_id, &command).await?);
                 }
                 let mut result = result.unwrap_or_else(|| current_result(&session));
@@ -305,7 +355,9 @@ impl SimulationRegistry {
     }
 
     /// The run a definition command goes to, the root view to address and
-    /// whether the run was started for it.
+    /// whether the run was started for it. A run of the same circuit and
+    /// revision that shows a subcircuit instance returns to its root with its
+    /// state kept, as the circuit on screen is that root.
     async fn run_of(
         &self,
         document: RunDocument,
@@ -320,6 +372,12 @@ impl SimulationRegistry {
             let view = session.current_view();
             if view.instance_path.is_empty() {
                 return Ok((session, view.id, false));
+            }
+            match show(&session, Vec::new()).await {
+                Ok(root) => return Ok((session, root.view_id, false)),
+                // It ended meanwhile: start a new one below.
+                Err(error) if error.code == Code::SessionEnded => {}
+                Err(error) => return Err(error),
             }
         }
         let session = self.start(document, circuit).await?;
@@ -427,56 +485,16 @@ impl SimulationRegistry {
     }
 
     /// Shows a subcircuit instance of the run: `instance_path` holds component
-    /// ids from the root circuit; an empty path returns to the root.
+    /// ids from the root circuit; an empty path returns to the root. Every call
+    /// makes a new view: the runtime releases held buttons, clears the
+    /// waveform and the shown memory page, and renders the default viewport.
     pub async fn navigate(
         &self,
         session_id: &str,
         instance_path: Vec<String>,
     ) -> Result<NavigateResult, SimError> {
         let session = self.live(session_id).ok_or(Code::SessionEnded)?;
-        if instance_path.len() > MAX_DEPTH {
-            return Err(Code::PathTooDeep.into());
-        }
-        let circuits = session.circuits();
-        let definition = |name: &str| circuits.iter().find(|circuit| circuit.name == name);
-        let mut circuit = definition(&session.root.circuit).ok_or(Code::UnknownCircuit)?;
-        let mut instances = Vec::with_capacity(instance_path.len());
-        for id in &instance_path {
-            let instance = circuit
-                .components
-                .iter()
-                .find(|component| component.id == *id)
-                .ok_or_else(|| {
-                    SimError::new(Code::ComponentMissing).with_message("找不到子电路实例")
-                })?;
-            circuit = definition(&instance.name)
-                .filter(|_| instance.library.is_none())
-                .ok_or(Code::NotSubcircuit)?;
-            instances.push(instance);
-        }
-        let view = View {
-            id: uuid::Uuid::new_v4().to_string(),
-            circuit: circuit.name.clone(),
-            instance_path,
-        };
-        // Known before the runtime acknowledges it, so its frames resolve.
-        session.register(view.clone());
-        session
-            .send(|request_id| {
-                protocol::view_line(
-                    request_id,
-                    &view.circuit,
-                    &view.id,
-                    &instances,
-                    &circuit.components,
-                )
-            })
-            .await?;
-        Ok(NavigateResult {
-            view_id: view.id,
-            circuit: view.circuit,
-            instance_path: view.instance_path,
-        })
+        show(&session, instance_path).await
     }
 
     /// Ends the run because the user stopped it. False when it already ended.
@@ -1193,6 +1211,31 @@ mod tests {
         );
         let image = h.registry.frame_image(&session_id, 3).unwrap();
         assert!(!image.is_empty());
+
+        // A command for the root circuit's definition returns the run to its
+        // root instead of starting a new one, so its state is kept.
+        let act = h.act(h.definition("main"), Command::Tick, None);
+        let line = a.fake.command().await;
+        assert!(
+            line.starts_with(r#"<view circuit="main" viewId=""#),
+            "{line}"
+        );
+        let root = attribute(&line, "viewId");
+        assert_ne!(Some(&root), first.view_id.as_ref());
+        assert!(a.fake.line(&ack(request_id(&line), &root, 4)).await);
+        let tick = a.fake.command().await;
+        assert!(
+            tick.starts_with("<tick ") && tick.contains(&format!(r#" viewId="{root}""#)),
+            "{tick}"
+        );
+        assert!(a.fake.line(&ack(request_id(&tick), &root, 5)).await);
+        let result = timeout(WAIT, act).await.unwrap().unwrap().unwrap();
+        assert_eq!(
+            (result.session_id.as_deref(), result.view_id.as_deref()),
+            (Some(session_id.as_str()), Some(root.as_str()))
+        );
+        assert!(result.applied && !result.started);
+        assert!(h.spawned.try_recv().is_err());
 
         h.registry.shutdown().await;
         timeout(WAIT, &mut a.fake.killed).await.unwrap().unwrap();

@@ -33,6 +33,24 @@ fn generate(root: &Path) -> Result<()> {
     vibe_workbench_host::ObservationRecord::export_all(
         &ts_rs::Config::default().with_out_dir(&directory),
     )?;
+    vibe_workbench_host::ObservationSummary::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_logisim_adapter::simulation::SimulationEvent::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_logisim_adapter::simulation::Status::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_logisim_adapter::simulation::ActResult::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_logisim_adapter::simulation::Snapshot::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
+    vibe_logisim_adapter::simulation::NavigateResult::export_all(
+        &ts_rs::Config::default().with_out_dir(&directory),
+    )?;
     vibe_workbench_host::ProposalReview::export_all(
         &ts_rs::Config::default().with_out_dir(&directory),
     )?;

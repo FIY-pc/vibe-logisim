@@ -1,36 +1,53 @@
 import { MemoryPanel } from "../../components/MemoryPanel";
-import { useDocuments, useSimulation, useView } from "../../workbench/hooks";
+import { liveRun, simulationStatus } from "../../stores/simulation";
+import {
+  useDocuments,
+  useSimulation,
+  useSimulationState,
+  useView,
+} from "../../workbench/hooks";
 import { useWorkbench } from "../../workbench/provider";
-import { activeSimulation } from "../../workbench/view";
 
 /** The open memory component's contents editor. */
 export function MemoryRegion() {
   const { stores, actions } = useWorkbench();
   const view = useView();
   const { doc, circuit } = view;
-  const sim = useSimulation((state) => state.sim);
-  const memory = useSimulation((state) => state.memory);
-  const mergeDocument = useDocuments((state) => state.mergeDocument);
+  const state = useSimulationState();
+  const memory = useSimulation((store) => store.memory);
+  const page = useSimulation((store) => store.page);
+  const mergeDocument = useDocuments((store) => store.mergeDocument);
   if (!doc || !circuit) return null;
-  const memoryComponent =
+  const component =
     memory && memory.documentId === doc.id && memory.circuit === circuit.name
-      ? circuit.components.find(
-          (c) =>
-            c.name === memory.name &&
-            c.location.x === memory.x &&
-            c.location.y === memory.y,
-        )
-      : null;
-  if (!memoryComponent) return null;
+      ? circuit.components.find((item) => item.id === memory.id)
+      : undefined;
+  if (!component) return null;
+  // A RAM belongs to the run: the panel reads it only while this circuit is
+  // the run's shown view, the same condition that lets the canvas take input.
+  const live = liveRun(state, doc, circuit.name);
+  const simulating = actions.simulation;
   return (
     <MemoryPanel
-      key={`${doc.id}:${circuit.name}:${memoryComponent.location.x}:${memoryComponent.location.y}`}
+      key={`${doc.id}:${doc.revision}:${circuit.name}:${component.id}`}
       doc={doc}
       circuit={circuit.name}
-      component={memoryComponent}
-      simulation={activeSimulation(sim, view)}
-      simulate={(op, attributes) =>
-        actions.simulation.simulate(view, op, attributes)
+      component={component}
+      live={Boolean(live)}
+      page={page?.componentId === component.id ? page : null}
+      state={
+        simulationStatus(state, doc, circuit.name).running ? "运行中" : "已暂停"
+      }
+      ticks={state.view?.clock.ticks}
+      designSaved={!doc.dirty}
+      start={() => simulating.run(view, "start")}
+      readPage={(offset) => simulating.readMemory(view, { component, offset, count: 64 })}
+      writePage={(request) =>
+        simulating.writeMemory(view, {
+          ...request,
+          component,
+          count: 64,
+        })
       }
       onDocument={mergeDocument}
       onClose={() => stores.simulation.getState().setMemory(null)}
