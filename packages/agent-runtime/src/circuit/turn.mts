@@ -137,18 +137,31 @@ export class Turn {
   async writeWorkingCopy(xml: string) {
     await this.proposals.workingCopy(this.binding().id);
     await writeFile(path.join(this.workDir, "circuit.circ"), xml);
-    return { candidateId: candidateId(xml), artifactSha256: artifactSha256(xml) };
+    return {
+      candidateId: candidateId(xml),
+      artifactSha256: artifactSha256(xml),
+    };
   }
   /**
    * Move a candidate into the open file. In review mode the working copy is
    * already the candidate the turn will offer, so this only re-reads it.
    */
-  async checkout(id: string) {
+  async checkout(id: string, circuit: string) {
     if (!CANDIDATE.test(id)) throw new Error("候选标识无效");
     const copy = await this.workingCopy();
     if (candidateId(copy.xml) !== id)
-      throw new Error("候选已被后续修改取代；用最新的 artifactSha256 重新检查。");
-    return this.session();
+      throw new Error(
+        "候选已被后续修改取代；用最新的 artifactSha256 重新检查。",
+      );
+    // Review mode keeps the candidate as the turn's proposal until the user
+    // applies it, so this only confirms which candidate the turn will offer.
+    return {
+      candidateId: id,
+      artifactSha256: artifactSha256(copy.xml),
+      circuit,
+      status: "pending-review",
+      note: "候选是本次回合的提议，审阅并应用后才写入打开的文件。",
+    };
   }
   resolveFile(relative: string) {
     return relative;

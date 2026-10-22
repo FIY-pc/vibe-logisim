@@ -177,11 +177,32 @@ impl Host {
         if vibe_logisim_adapter::artifact_dependencies(&artifact)? != dependencies {
             return Err("验证期间组件库已改变，结果未留存".into());
         }
+        self.store_verification(
+            id,
+            &candidate.revision(),
+            revision,
+            circuit,
+            kind,
+            dependencies,
+            &result,
+        )
+    }
+    /// Keep one verification as review evidence for a candidate revision.
+    pub(crate) fn store_verification(
+        &self,
+        id: &str,
+        revision: &str,
+        base_revision: &str,
+        circuit: &str,
+        kind: &str,
+        dependencies: BTreeMap<std::path::PathBuf, String>,
+        result: &Value,
+    ) -> Result<Value> {
         let record = VerificationRecord {
             id: uuid::Uuid::new_v4().to_string(),
             document_id: id.into(),
-            revision: candidate.revision(),
-            base_revision: revision.into(),
+            revision: revision.into(),
+            base_revision: base_revision.into(),
             circuit: circuit.into(),
             created_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -190,7 +211,7 @@ impl Host {
             kind: kind.into(),
             runtime: result["runtime"].clone(),
             dependencies_verified: true,
-            result,
+            result: result.clone(),
         };
         let directory = self.verification_directory(id)?;
         std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
@@ -484,7 +505,10 @@ impl Host {
                     ("x", component.location.x.to_string()),
                     ("y", component.location.y.to_string()),
                     ("tick", button.tick.to_string()),
-                    ("pressed", if button.pressed { "true" } else { "false" }.into()),
+                    (
+                        "pressed",
+                        if button.pressed { "true" } else { "false" }.into(),
+                    ),
                 ],
                 vec![],
             ));
@@ -509,9 +533,7 @@ impl Host {
             );
             rom_node.children = words
                 .iter()
-                .map(|word| {
-                    XMLNode::Element(xml("word", &[("value", word.to_string())], vec![]))
-                })
+                .map(|word| XMLNode::Element(xml("word", &[("value", word.to_string())], vec![])))
                 .collect();
             nodes.push(rom_node);
         }

@@ -4,7 +4,14 @@
  * verification of the exact text under review.
  */
 import { readFile } from "node:fs/promises";
+import {
+  organizationContext,
+  resolveUnknownWidths,
+  verifyArrangement,
+} from "@vibe-logisim/arranger";
+import { arrangeInWorker } from "../arrange.mts";
 import { CircuitToolError } from "./errors.mts";
+import { layoutReview, reviewOptions } from "./layout-review.mts";
 import {
   componentDirectory,
   componentDetails,
@@ -84,6 +91,63 @@ const identityFor = (
 
 const inspection: ToolHandler = async (args, context) => {
   const { copy, circuit } = await target(context, args);
+  if (args.layoutContext !== undefined) {
+    if (
+      Object.keys(args).some((k) =>
+        [
+          "componentIds",
+          "componentDirectory",
+          "portConnections",
+          "includeWires",
+          "wireOffset",
+          "wireLimit",
+          "includeNets",
+          "netFormat",
+          "layoutReview",
+        ].includes(k),
+      )
+    )
+      throw new CircuitToolError(
+        "INVALID_ARGUMENT",
+        "layoutContext 与其他明细筛选冲突。",
+        {
+          hint: "查看布局时只保留 circuit、layoutContext 和可选 candidateId；不要同时请求 componentIds、portConnections、includeWires 等。",
+        },
+      );
+    const { document } = await observe(context, circuit);
+    const layoutContext = organizationContext(
+      copy.xml,
+      circuit,
+      document.focus,
+      args.layoutContext || {},
+    );
+    return {
+      ...identityFor(context, circuit, copy, candidateId(copy.xml)),
+      authority: "exact-runtime",
+      layoutContext,
+    };
+  }
+  const review = reviewOptions(args);
+  if (review) {
+    if (review.artifactSha256 && review.artifactSha256 !== sha(copy.xml))
+      throw new CircuitToolError(
+        "STALE_ARTIFACT",
+        "图面已改变，不能续接旧版布局问题；重新从 layoutReview:{} 开始。",
+        { retryable: true },
+      );
+    const { document } = await observe(context, circuit);
+    const children = new Set<string>(
+      (document.focus.components || [])
+        .map((c: any) => c.subcircuit)
+        .filter((name: unknown) => typeof name === "string"),
+    );
+    return {
+      ...identityFor(context, circuit, copy, candidateId(copy.xml)),
+      authority: "exact-runtime",
+      childDefinitions: [...children].sort(),
+      layoutReview: layoutReview(document.focus, review.issueOffset),
+    };
+  }
   const { view } = await observe(context, circuit);
   return inspectView(
     view,
@@ -130,6 +194,7 @@ const describe: ToolHandler = async (args, context) => {
     op: "draftTemplate",
     id: copy.id,
     revision: copy.revision,
+    xml: copy.xml,
     circuit,
     library: args.library ?? null,
     name: args.tool,
@@ -141,8 +206,7 @@ const describe: ToolHandler = async (args, context) => {
     tool: args.tool,
     library: args.library ?? null,
     attributes,
-    note:
-      "这些是原生运行时给出的默认值和可选值；放入电路时只需要写出要改的属性，其余按默认值补全。",
+    note: "这些是原生运行时给出的默认值和可选值；放入电路时只需要写出要改的属性，其余按默认值补全。",
   };
 };
 
@@ -205,8 +269,7 @@ async function commit(
     ...written,
     target: "working-copy",
     changeCount: edits.length,
-    note:
-      "改动已写入工作副本，形成候选；用户审阅并应用之前，打开的文件不变。继续用这个 candidateId 检查、渲染或验证，也可以用 checkout_candidate 让候选进入打开的文件。",
+    note: "改动已写入工作副本，形成候选；用户审阅并应用之前，打开的文件不变。继续用这个 candidateId 检查、渲染或验证，也可以用 checkout_candidate 让候选进入打开的文件。",
   };
 }
 
@@ -252,9 +315,12 @@ const wireCandidate: ToolHandler = async (args, context) => {
     });
   const ports = new Map<string, any>();
   for (const c of view.circuit.components)
-    for (const end of c.ends) ports.set(`${c.componentId}:${end.index}`, { c, end });
+    for (const end of c.ends)
+      ports.set(`${c.componentId}:${end.index}`, { c, end });
   for (const connection of args.connections || []) {
-    const from = ports.get(`${connection.from.component}:${connection.from.port}`);
+    const from = ports.get(
+      `${connection.from.component}:${connection.from.port}`,
+    );
     const to = ports.get(`${connection.to.component}:${connection.to.port}`);
     if (!from || !to)
       throw new CircuitToolError(
@@ -280,20 +346,14 @@ const wireCandidate: ToolHandler = async (args, context) => {
     throw new CircuitToolError("INVALID_ARGUMENT", "没有要执行的连线操作", {
       hint: "给出 connections、additions 或 removeWireIds。",
     });
-  return commit(
-    context,
-    args,
-    circuit,
-    copy,
-    edits,
-    args.title || "改动连线",
-  );
+  return commit(context, args, circuit, copy, edits, args.title || "改动连线");
 };
 
 /** `w3` on a loaded segment, translated to file-order line ids. */
 function fileWireId(id: string) {
   const match = /^w(\d+)$/.exec(id);
-  if (!match) throw new CircuitToolError("INVALID_ARGUMENT", "无效的导线编号：" + id);
+  if (!match)
+    throw new CircuitToolError("INVALID_ARGUMENT", "无效的导线编号：" + id);
   const index = Number(match[1]);
   if (index >= 512)
     throw new CircuitToolError("INVALID_ARGUMENT", "导线编号超出范围：" + id);
@@ -316,10 +376,11 @@ function route(view: any, from: any, to: any) {
         blocked.add(key(x, y));
   }
   for (const wire of view.circuit.wires) {
-    const steps = Math.max(
-      Math.abs(wire.to.x - wire.from.x),
-      Math.abs(wire.to.y - wire.from.y),
-    ) / GRID;
+    const steps =
+      Math.max(
+        Math.abs(wire.to.x - wire.from.x),
+        Math.abs(wire.to.y - wire.from.y),
+      ) / GRID;
     for (let i = 0; i <= steps; i += 1)
       blocked.add(
         key(
@@ -378,9 +439,7 @@ function pointsOf(start: { x: number; y: number }, path: any[]) {
     const previous = path[i - 1];
     const current = path[i];
     const next = path[i + 1];
-    const turn =
-      next &&
-      (previous.x === current.x) !== (next.x === current.x);
+    const turn = next && (previous.x === current.x) !== (next.x === current.x);
     if (turn) points.push({ x: current.x, y: current.y });
   }
   points.push({ x: path[path.length - 1].x, y: path[path.length - 1].y });
@@ -427,14 +486,7 @@ const moveCandidate: ToolHandler = async (args, context) => {
       "移动需要 positions，或者 componentIds 与 delta。",
     );
   }
-  return commit(
-    context,
-    args,
-    circuit,
-    copy,
-    edits,
-    args.title || "移动元件",
-  );
+  return commit(context, args, circuit, copy, edits, args.title || "移动元件");
 };
 
 const reroute: ToolHandler = async (args, context) => {
@@ -448,6 +500,91 @@ const reroute: ToolHandler = async (args, context) => {
     args.title || "重画导线",
   );
 };
+
+const arrangeCandidate: ToolHandler = async (args, context) => {
+  const { copy, circuit } = await target(context, args);
+  if (args.organization && !args.artifactSha256)
+    throw new CircuitToolError(
+      "INVALID_ARGUMENT",
+      "分组引用元件 ID，需要同时提供 artifactSha256。",
+      {
+        hint: "用 inspect_circuit({circuit,layoutContext:{}}) 获取当前对象与摘要。",
+      },
+    );
+  const { document } = await observe(context, circuit);
+  // The arranger reads a present key as given, so absent options stay absent.
+  const options = Object.fromEntries(
+    ARRANGE_OPTIONS.filter(
+      (k) => args[k] !== undefined && args[k] !== null,
+    ).map((k) => [k, args[k]]),
+  );
+  const outcome = await arrangeInWorker(
+    { xml: copy.xml, circuit, focus: document.focus, options },
+    60_000,
+  );
+  const after = await context.turn.call({
+    op: "draftObserve",
+    id: copy.id,
+    revision: copy.revision,
+    xml: outcome.xml,
+    circuit,
+  });
+  if (!after?.focus)
+    throw new CircuitToolError("EXACT_OBSERVER_FAILED", "整理结果无法载入", {
+      retryable: true,
+      hint: "重新整理；若仍失败，检查原电路能否在 Logisim 中打开。",
+    });
+  // The worker resolved widths on its own copy of the observation.
+  resolveUnknownWidths(document.focus);
+  const checks = verifyArrangement(
+    {
+      circuit,
+      source: copy.xml,
+      focus: document.focus,
+      xml: outcome.xml,
+      report: outcome.report,
+      placement: new Map(outcome.placement),
+      keptWires: outcome.keptWires as any,
+      panelBelowY: outcome.panelBelowY,
+      fixedComponentIds: new Set(outcome.fixedComponentIds),
+    },
+    after.focus,
+  );
+  const title = args.title || "整理布局与连线";
+  const written = await context.turn.writeWorkingCopy(outcome.xml);
+  context.turn.setTitle(title);
+  return {
+    circuit,
+    title,
+    ...written,
+    target: "working-copy",
+    arrangement: outcome.report,
+    readability: {
+      before: outcome.readabilityBefore,
+      after: outcome.readabilityAfter,
+    },
+    netlist: {
+      equivalent: true,
+      groupsCompared: checks.netGroupsCompared,
+      invalidBundles: 0,
+    },
+    note:
+      "连通性已按网表逐端口组核对（含探针等位宽随网络而定的端口，不是仿真）；作为子电路的引脚排列不变；" +
+      "文件里其他电路一个字节都没改。可用 render_circuit 看图，可调整 organization 的功能分组与阅读行序或连线参数后重新整理；" +
+      "用户审阅并应用之前，打开的文件不变。",
+  };
+};
+
+const ARRANGE_OPTIONS = [
+  "organization",
+  "pinnedComponentIds",
+  "keepTunnels",
+  "localiseConstants",
+  "panelBelowY",
+  "columnGap",
+  "maxLayerSpan",
+  "tunnelSpan",
+];
 
 const simulate: ToolHandler = async (args, context) => {
   const { copy, circuit } = await target(context, args);
@@ -488,7 +625,10 @@ function stimulus(args: Record<string, any>) {
   const clocks = args.inputClocks || [];
   const names = new Set<string>();
   for (const clock of clocks) {
-    if (names.has(clock.name) || args.inputEvents?.some((e: any) => e.name === clock.name))
+    if (
+      names.has(clock.name) ||
+      args.inputEvents?.some((e: any) => e.name === clock.name)
+    )
       throw new CircuitToolError(
         "INVALID_ARGUMENT",
         "时钟与输入事件不能同时驱动同一个引脚：" + clock.name,
@@ -505,11 +645,11 @@ function stimulus(args: Record<string, any>) {
         const phase = (tick - first) % (high + low);
         value = phase < high ? 1 : 0;
       }
-      events.push({ tick, name: clock.name, value });
+      events.push({ tick, input: clock.name, value });
     }
   }
   for (const event of args.inputEvents || [])
-    events.push({ tick: event.tick, name: event.name, value: event.value });
+    events.push({ tick: event.tick, input: event.name, value: event.value });
   events.sort((a, b) => a.tick - b.tick);
   return events;
 }
@@ -629,8 +769,7 @@ const compare: ToolHandler = async (args, context) => {
       revision: args.referenceRevisionId,
       observation: observationView(document),
     },
-    note:
-      "reference 是历史版本；改动后的功能是否一致，需要按 current.samples 与 reference 的连接和输出自行判断。",
+    note: "reference 是历史版本；改动后的功能是否一致，需要按 current.samples 与 reference 的连接和输出自行判断。",
   };
 };
 
@@ -657,20 +796,77 @@ const loadability: ToolHandler = async (args, context) => {
     circuit,
   });
   const view = observationView(document);
+  const conflicts = widthConflicts(document.focus);
+  // A geometry failure must not turn a successful load into a failure.
+  let review: Record<string, unknown>;
+  try {
+    review = {
+      ...layoutReview(document.focus),
+      circuit,
+      artifactSha256: sha(copy.xml),
+    };
+  } catch (error: any) {
+    review = {
+      status: "unavailable",
+      circuit,
+      message: error?.message || "原生图面观察不可用",
+    };
+  }
   return {
     status: "loadable",
+    authority: "native-loader",
     circuit,
     artifactSha256: sha(copy.xml),
     components: view.circuit.components.length,
     wires: view.circuit.wires.length,
-    widthIncompatibilities: view.circuit.widthIncompatibilities,
     unknowns: view.unknowns,
-    note:
-      view.circuit.widthIncompatibilities.length > 0
-        ? "原生 Logisim 已加载，但有线束把不同位宽接在一起，仿真会得到 X。"
-        : "原生 Logisim 已加载当前内容；这不是功能正确性结论。",
+    layoutReview: review,
+    ...(conflicts
+      ? {
+          electrical: {
+            status: "width-conflict",
+            ...conflicts,
+            hint: "同一线束接了不同位宽的端口，仿真会输出 X。检查列出的 Tunnel 标签是否被不同位宽的信号复用，或导线端点是否落在别的端口上。",
+          },
+        }
+      : {}),
   };
 };
+
+/** Width-incompatible bundles with the ports they touch, for the receipt. */
+function widthConflicts(focus: any) {
+  const bad = (focus.wireBundles || []).filter((b: any) => b.valid === false);
+  if (!bad.length) return null;
+  const portsAt = new Map<string, any[]>();
+  for (const c of focus.components || [])
+    for (const end of c.ends || []) {
+      const at = `${end.location.x},${end.location.y}`;
+      const label = (c.attributes || []).find((a: any) => a?.name === "label");
+      (portsAt.get(at) || portsAt.set(at, []).get(at)!).push({
+        component: c.componentId,
+        factory: c.factoryName,
+        label: label ? (label.value ?? label.standard ?? null) : null,
+        port: end.index,
+        width: end.width,
+      });
+    }
+  return {
+    count: bad.length,
+    bundles: bad.slice(0, 6).map((b: any) => {
+      const touching = (b.points || []).flatMap(
+        (p: any) => portsAt.get(`${p.x},${p.y}`) || [],
+      );
+      return {
+        bundleId: b.bundleId,
+        portWidths: [
+          ...new Set(touching.map((q: any) => q.width).filter(Boolean)),
+        ].sort((x: any, y: any) => x - y),
+        ports: touching.slice(0, 12),
+        points: (b.points || []).slice(0, 8),
+      };
+    }),
+  };
+}
 
 const projectFiles: ToolHandler = async (args, context) => {
   const folderId = context.session.folderId;
@@ -690,6 +886,7 @@ export const handlers: Record<string, ToolHandler> = {
   render_circuit: render,
   describe_component: describe,
   edit_candidate: editCandidate,
+  arrange_candidate: arrangeCandidate,
   wire_candidate: wireCandidate,
   move_candidate: moveCandidate,
   reroute_candidate: reroute,

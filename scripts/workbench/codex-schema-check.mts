@@ -412,9 +412,29 @@ try {
     const calls: [string, unknown][] = [
       ["inspect_circuit", { circuit: "main" }],
       ["render_circuit", { circuit: "main" }],
-      ["edit_candidate", { circuit: "main" }],
+      ["edit_candidate", { circuit: "main", artifactSha256: "0".repeat(64) }],
       ["missing_tool", {}],
     ];
+    // The observer reply the tools read: one definition of the fixture graph.
+    const focus = {
+      circuit: "main",
+      bounds: { x: 0, y: 0, width: 100, height: 100 },
+      components: graph.components.map((component) => ({
+        componentId: component.id,
+        factoryName: component.name,
+        location: component.location,
+        bounds: { ...component.location, width: 20, height: 20 },
+        attributes: Object.entries(component.attributes).map(
+          ([name, value]) => ({ name, standard: value }),
+        ),
+        ends: [],
+      })),
+      wires: graph.wires,
+      bitNets: [],
+      wireBundles: [],
+      tunnels: [],
+      stateElements: [],
+    };
     await mkdir(path.join(state, "home"), { recursive: true });
     await writeFile(preload, fakeAppServer(log, calls));
     const child = spawn(
@@ -470,15 +490,42 @@ try {
             ? { result: view }
             : op === "source"
               ? { result: { xml: SOURCE } }
-              : op === "render"
-                ? { result: { image: "data:image/png;base64," + PNG } }
-                : {
-                    error: {
-                      message: "电路已改变",
-                      code: op === "observe" ? "STALE_REVISION" : "UNKNOWN_OP",
-                      retryable: op === "observe",
+              : op === "status"
+                ? {
+                    result: {
+                      folder: { id: "folder-1", path: state },
+                      documents: [view],
                     },
-                  };
+                  }
+                : op === "render"
+                  ? { result: { image: "data:image/png;base64," + PNG } }
+                  : op === "draftObserve"
+                    ? {
+                        result: { focus, project: { circuits: view.circuits } },
+                      }
+                    : op === "draftRender"
+                      ? {
+                          result: {
+                            image: "data:image/png;base64," + PNG,
+                            viewport: {
+                              x: 0,
+                              y: 0,
+                              width: 100,
+                              height: 100,
+                              scale: 1,
+                            },
+                          },
+                        }
+                      : {
+                          error: {
+                            message: "电路已改变",
+                            code:
+                              op === "observe"
+                                ? "STALE_REVISION"
+                                : "UNKNOWN_OP",
+                            retryable: op === "observe",
+                          },
+                        };
         child.stdin.write(
           JSON.stringify({ kind: "hostResult", id: message.id, ...reply }) +
             "\n",
@@ -577,6 +624,7 @@ try {
     assert.deepEqual(
       calls.map((_, index) => results["tool-" + index].success),
       [true, true, false, false],
+      JSON.stringify(results, null, 1).slice(0, 2500),
     );
     assert.equal(results["tool-1"].contentItems[1].type, "inputImage");
     assert.equal(existsSync(path.join(state, "profile/auth.json")), false);
@@ -596,6 +644,7 @@ try {
       ["describe_component", { circuit: "main" }],
       ["edit_candidate", { circuit: "main" }],
       ["reroute_candidate", { circuit: "main" }],
+      ["arrange_candidate", { circuit: "main" }],
     ];
     await writeFile(preload, fakeAppServer(log, calls));
     await import(pathToFileURL(preload).href);
@@ -629,6 +678,22 @@ try {
       edit_candidate: stub,
       trace_circuit: stub,
       evaluate_circuit: stub,
+      reroute_candidate: stub,
+      move_candidate: stub,
+      wire_candidate: stub,
+      arrange_candidate: (args) => ({
+        id: "candidate-1",
+        title: "Arranged " + args.circuit,
+        changes: [
+          {
+            circuit: args.circuit,
+            diff: { counts: { moved: 2 } },
+            render: { image: "data:image/png;base64," + PNG },
+          },
+        ],
+      }),
+      compare_circuit: stub,
+      project_files: stub,
     };
     const plugin = new CircuitPlugin({ handlers });
     const visible = new Set(plugin.tools.map((tool) => tool.name));
@@ -688,7 +753,13 @@ try {
               status: "shown",
               circuit: circuit ?? "main",
             }),
-            checkout: async () => session(),
+            checkout: async (id: string, circuit: string) => ({
+              candidateId: id,
+              artifactSha256: "0".repeat(64),
+              circuit,
+              status: "pending-review",
+              note: "候选是本次回合的提议。",
+            }),
             resolveFile: (relative) => path.join(folder, relative),
             workingCopy: async () => ({
               id: "document-a",
@@ -857,7 +928,7 @@ try {
     const result = (index: number) => results["tool-" + index];
     assert.deepEqual(
       calls.map((_, index) => result(index).success),
-      [true, true, true, true, false, false, false, false, false],
+      [true, true, true, true, false, false, false, false, false, true],
     );
     const opened = parsed(result(0));
     assert.equal(opened.schema, "vibe-logisim.circuit-action/v1");
@@ -876,7 +947,16 @@ try {
         title: "Arranged main",
       },
     );
-    assert.equal(parsed(result(3)).candidateId, "candidate-1");
+    // Checkout echoes the candidate the request names; the turn summary is
+    // what review mode reports, and the .circ only changes when the user
+    // applies the proposal.
+    assert.equal(parsed(result(3)).candidateId, "candidate-0000000000000");
+    const arranged = parsed(result(9));
+    assert.equal(arranged.id, "candidate-1");
+    assert.equal(arranged.title, "Arranged main");
+    assert.deepEqual(arranged.changes, [
+      { circuit: "main", difference: { moved: 2 } },
+    ]);
     const failure = (index: number) => parsed(result(index)).error;
     assert.equal(failure(4).code, "CIRCUIT_NOT_FOUND");
     assert.equal(failure(4).schema, ERROR_SCHEMA);
@@ -887,8 +967,16 @@ try {
       ["STALE_REVISION", true, "重新读取电路后再验证。"],
     );
     assert.equal(failure(6).code, "TOOL_FAILED");
-    assert.equal(failure(7).code, "TOOL_FAILED");
-    assert.equal(failure(8).code, "CIRCUIT_TOOL_FAILED");
+    // Candidate edits carry the artifact they were computed against; the
+    // refusal names the missing fields instead of running the handler.
+    assert.deepEqual(
+      [failure(7).code, failure(7).context.required],
+      ["INVALID_ARGUMENT", ["artifactSha256", "edits"]],
+    );
+    assert.deepEqual(
+      [failure(8).code, failure(8).context.required],
+      ["INVALID_ARGUMENT", ["artifactSha256", "wireIds"]],
+    );
     assert.equal(
       existsSync(path.join(directory, "plugin-profile/auth.json")),
       false,

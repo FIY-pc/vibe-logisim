@@ -255,8 +255,23 @@ impl Host {
                     return Err("请提供 1–256 组测试向量".into());
                 }
                 let draft = self.draft_document(&id, &revision, &xml).await?;
-                self.verify_vectors_document(&draft, &circuit, vectors)
-                    .await
+                let (artifact, _) = self.materialize(&draft)?;
+                let dependencies = vibe_logisim_adapter::artifact_dependencies(&artifact)?;
+                let result = self
+                    .verify_vectors_document(&draft, &circuit, vectors)
+                    .await?;
+                // Keeping the result as evidence is what lets the review show
+                // why the candidate is believed correct.
+                self.store_verification(
+                    &id,
+                    &draft.revision(),
+                    &revision,
+                    &circuit,
+                    "vectors",
+                    dependencies,
+                    &result,
+                )?;
+                Ok(result)
             }
             DraftRequest::DraftTrace {
                 id,
@@ -272,27 +287,40 @@ impl Host {
                 watches,
             } => {
                 let draft = self.draft_document(&id, &revision, &xml).await?;
-                self.trace_document(
-                    &draft,
+                let (artifact, _) = self.materialize(&draft)?;
+                let dependencies = vibe_logisim_adapter::artifact_dependencies(&artifact)?;
+                let result = self
+                    .trace_document(
+                        &draft,
+                        &circuit,
+                        crate::verification::TracePlan {
+                            ticks,
+                            inputs,
+                            watches,
+                            events,
+                            buttons: buttons
+                                .into_iter()
+                                .map(|b| crate::verification::ButtonEvent {
+                                    component: b.component,
+                                    tick: b.tick,
+                                    pressed: b.pressed,
+                                })
+                                .collect(),
+                            reset,
+                            program: program.map(|p| (p.component, p.words)),
+                        },
+                    )
+                    .await?;
+                self.store_verification(
+                    &id,
+                    &draft.revision(),
+                    &revision,
                     &circuit,
-                    crate::verification::TracePlan {
-                        ticks,
-                        inputs,
-                        watches,
-                        events,
-                        buttons: buttons
-                            .into_iter()
-                            .map(|b| crate::verification::ButtonEvent {
-                                component: b.component,
-                                tick: b.tick,
-                                pressed: b.pressed,
-                            })
-                            .collect(),
-                        reset,
-                        program: program.map(|p| (p.component, p.words)),
-                    },
-                )
-                .await
+                    "trace",
+                    dependencies,
+                    &result,
+                )?;
+                Ok(result)
             }
         }
     }
@@ -363,7 +391,10 @@ impl Host {
                     if changed.is_empty() {
                         continue;
                     }
-                    Edit::Attributes { id, values: changed }
+                    Edit::Attributes {
+                        id,
+                        values: changed,
+                    }
                 }
                 Edit::Move { ids, delta } => {
                     self.draft_move(&mut draft, circuit, &ids, delta).await?;

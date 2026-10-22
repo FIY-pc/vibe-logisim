@@ -41,9 +41,6 @@ const model = http.createServer(async (req, res) => {
         "\n\n",
     );
   const toolMessages = body.messages.filter((m: any) => m.role === "tool");
-  const snapshot =
-    toolMessages.find((m: any) => m.name === "read_circuit") || toolMessages[0];
-  const revision = snapshot ? JSON.parse(snapshot.content).revision : null;
   const parsed = toolMessages.map((m: any) => {
     try {
       return JSON.parse(m.content);
@@ -51,38 +48,72 @@ const model = http.createServer(async (req, res) => {
       return null;
     }
   });
-  // Component IDs come from the bounded observation pages, not the document summary.
-  const outputId = (target?: string) =>
-    parsed
-      .find((r: any) => r?.components && r.target === target)
-      ?.components.find((c: any) => c.label === "output")?.componentId ||
+  // Key each call on what the model has already received: ids and hashes come
+  // from the latest tool result that carries them.
+  const latest = (...keys: string[]) =>
+    [...parsed].reverse().find((r: any) => r && keys.every((k) => k in r)) ||
+    {};
+  const directory: any[] = latest("components").components || [];
+  const named = (label: string) =>
+    directory.find((c: any) => c.label === label)?.componentId || "unused";
+  const inputId = named("input"),
+    outputId = named("output");
+  const gateId =
+    directory.find((c: any) => c.factory === "NOT Gate")?.componentId ||
     "unused";
+  const digest = latest("artifactSha256").artifactSha256 || "unused";
   const calls = [
-    { name: "read_circuit", args: {} },
-    { name: "observe_circuit", args: { circuit: "main" } },
+    { name: "inspect_circuit", args: { circuit: "main" } },
+    {
+      name: "inspect_circuit",
+      args: { circuit: "main", componentIds: [inputId, gateId, outputId] },
+    },
     {
       name: "render_circuit",
-      args: { circuit: "main", x: 0, y: 0, width: 400, height: 300, scale: 1 },
-    },
-    {
-      name: "edit_circuit",
       args: {
-        revision,
         circuit: "main",
-        edit: {
-          kind: "wire",
-          points: [
-            { x: 50, y: 240 },
-            { x: 180, y: 240 },
-          ],
-        },
+        viewport: { x: 0, y: 0, width: 400, height: 300, scale: 1 },
       },
     },
-  ];
-  calls.push(
-    { name: "project_files", args: { path: "", read: false } } as any,
-    { name: "project_files", args: { path: "notes.txt", read: true } } as any,
-    { name: "kept_observations", args: {} },
+    {
+      name: "describe_component",
+      args: { circuit: "main", library: "1", tool: "NOT Gate" },
+    },
+    {
+      name: "edit_candidate",
+      args: {
+        circuit: "main",
+        artifactSha256: digest,
+        title: "标记反相器",
+        edits: [{ componentId: gateId, attributes: { label: "inv" } }],
+      },
+    },
+    {
+      name: "wire_candidate",
+      args: {
+        circuit: "main",
+        title: "标注辅助网络",
+        additions: [
+          {
+            id: "tunnel-1",
+            factory: "Tunnel",
+            library: "0",
+            location: { x: 60, y: 200 },
+            attributes: { label: "aux" },
+          },
+        ],
+      },
+    },
+    { name: "inspect_circuit", args: { circuit: "main", includeWires: true } },
+    { name: "inspect_circuit", args: { circuit: "main", layoutReview: {} } },
+    { name: "render_circuit", args: { circuit: "main" } },
+    { name: "check_native_loadability", args: { circuit: "main" } },
+    { name: "project_files", args: { path: "", read: false } },
+    { name: "project_files", args: { path: "notes.txt", read: true } },
+    {
+      name: "checkout_candidate",
+      args: { candidateId: latest("candidateId").candidateId || "unused" },
+    },
     {
       name: "simulate_circuit",
       args: {
@@ -92,76 +123,18 @@ const model = http.createServer(async (req, res) => {
           { inputs: { input: 1 }, expected: { output: 0 } },
         ],
       },
-    } as any,
+    },
     {
       name: "trace_circuit",
       args: {
         circuit: "main",
         ticks: 2,
         inputs: { input: 0 },
-        watches: [{ component: outputId(), port: 0 }],
-        events: [{ tick: 1, input: "input", value: 1 }],
+        watches: [{ name: "out", component: outputId, port: 0 }],
+        inputEvents: [{ tick: 1, name: "input", value: 1 }],
       },
-    } as any,
-  );
-  // The model sees the scratch copy prepared for this turn as circuit.circ.
-  const scratch = path.join(state, "agent-workspace", "circuit.circ");
-  const scratchXml =
-    requests === 4 && existsSync(scratch)
-      ? await readFile(scratch, "utf8")
-      : "";
-  calls.splice(
-    3,
-    0,
-    ...([
-      {
-        name: "write_file",
-        args: {
-          path: "circuit.circ",
-          content: scratchXml.replace(
-            "</circuit>",
-            '<wire from="(40,280)" to="(90,280)"/></circuit>',
-          ),
-        },
-      },
-      { name: "read_circuit", args: { target: "working-copy" } },
-      {
-        name: "observe_circuit",
-        args: { target: "working-copy", circuit: "main" },
-      },
-      {
-        name: "render_circuit",
-        args: {
-          target: "working-copy",
-          circuit: "main",
-          x: 0,
-          y: 0,
-          width: 400,
-          height: 300,
-          scale: 1,
-        },
-      },
-      {
-        name: "simulate_circuit",
-        args: {
-          target: "working-copy",
-          circuit: "main",
-          vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
-        },
-      },
-      {
-        name: "trace_circuit",
-        args: {
-          target: "working-copy",
-          circuit: "main",
-          ticks: 2,
-          inputs: { input: 0 },
-          watches: [{ component: outputId("working-copy"), port: 0 }],
-          events: [],
-        },
-      },
-    ] as any[]),
-  );
+    },
+  ];
   const call = calls[requests - 1];
   if (call) {
     send({
@@ -548,8 +521,10 @@ try {
   );
   assert.equal(requests, 16, JSON.stringify(status.messages));
   for (const body of bodies)
-    for (const m of body.messages.filter((m: any) => m.role === "tool"))
+    for (const m of body.messages.filter((m: any) => m.role === "tool")) {
       assert(!String(m.content).includes('"error"'), m.content);
+      assert(!String(m.content).includes("Validation failed"), m.content);
+    }
   const pendingProposals = await agent("proposals", { documentId: doc.id });
   assert.equal(
     pendingProposals.length,
@@ -586,36 +561,15 @@ try {
       (m: any) => m.type === "assistant" && m.text === "检查完成",
     ),
   );
-  const after = await command({ op: "read", id });
-  assert.notEqual(after.revision, restoredRevision);
   assert.equal(
     await readFile(source, "utf8"),
-    (await command({ op: "source", id, revision: after.revision })).xml,
-    "Shared document edits in the project folder must be automatically saved",
+    automaticallySaved,
+    "A candidate must not reach the source before the user applies it",
   );
-  assert(
-    !(await readFile(source, "utf8")).includes('from="(40,280)"'),
-    "Scratch candidate must not be applied by verification",
-  );
-  const results = bodies
-    .at(-1)
-    .messages.filter((m: any) => m.role === "tool")
-    .flatMap((m: any) => {
-      try {
-        return [JSON.parse(m.content)];
-      } catch {
-        return [];
-      }
-    });
-  assert(
-    results.some((r: any) => r.isolated && r.passed === 2),
-    "Model must receive real vector comparisons",
-  );
-  assert(
-    results.some(
-      (r: any) => r.isolated && r.completed && r.samples?.length === 3,
-    ),
-    "Model must receive native tick samples",
+  assert.equal(
+    (await command({ op: "read", id })).revision,
+    restoredRevision,
+    "Tools must leave the open document untouched",
   );
   const previous = status.conversationId;
   await agent("conversations", { action: "new" });
@@ -655,6 +609,29 @@ try {
     1,
   );
   assert(revised.messages.some((m: any) => m.text === "Recheck the output"));
+  // The review dialog applies a candidate with one replace edit. This comes
+  // after the message-checkpoint checks: restoring an older checkpoint into a
+  // changed document is refused on purpose.
+  const applied = documentOf(
+    await command({
+      op: "edit",
+      id,
+      revision: restoredRevision,
+      circuit: "main",
+      edit: { kind: "replace", xml: pendingProposals[0].xml },
+    }),
+  );
+  assert.equal(applied.revision, reviewed.after.revision);
+  assert.notEqual(applied.revision, restoredRevision);
+  assert.equal(
+    await readFile(source, "utf8"),
+    (await command({ op: "source", id, revision: applied.revision })).xml,
+    "Shared document edits in the project folder must be automatically saved",
+  );
+  const written = await readFile(source, "utf8");
+  assert(written.includes('val="inv"'), "Candidate attribute edit was lost");
+  assert(written.includes('val="aux"'), "Candidate placement was lost");
+  const after = applied;
   // Save As must not alias the old path to the open copy, including after restart.
   const copyPath = path.join(state, "copy.circ");
   const copied = await command({

@@ -27,6 +27,18 @@ import type { WorkspaceIndex } from "./workspace-index.mts";
 
 export const MANIFEST = manifestSource as Manifest;
 
+/**
+ * What checkout_candidate confirms. Review mode never writes the open file,
+ * so the receipt names the candidate hash rather than a new document state.
+ */
+export interface CheckoutReceipt {
+  candidateId: string;
+  artifactSha256: string;
+  circuit: string | null;
+  status: string;
+  note: string;
+}
+
 /** Host operations available to the tools of one AI turn. */
 export interface CircuitTurn {
   /** The cwd the model sees; the only absolute path a result may carry. */
@@ -36,8 +48,11 @@ export interface CircuitTurn {
   sync(request: { path?: string; navigate?: boolean }): Promise<AgentSession>;
   /** Show a definition of the active document; null shows its main circuit. */
   navigate(circuit: string | null): Promise<AgentSession["canvas"]>;
-  /** Write a candidate into the active file and refresh it. */
-  checkout(candidateId: string): Promise<AgentSession>;
+  /** Confirm which candidate this turn will offer the user. */
+  checkout(
+    candidateId: string,
+    circuit: string | null,
+  ): Promise<CheckoutReceipt>;
   /** Host path of a workspace-relative file, for runtime inputs only. */
   resolveFile(relative: string): string;
   /** The scratch copy the model edits and the revision it came from. */
@@ -169,7 +184,10 @@ export class CircuitPlugin {
   queue: Promise<unknown> = Promise.resolve();
   hostExecutors: Record<
     string,
-    (args: Record<string, any>, context: ToolContext) => Promise<AgentSession>
+    (
+      args: Record<string, any>,
+      context: ToolContext,
+    ) => Promise<AgentSession | CheckoutReceipt>
   >;
   constructor({
     handlers = {},
@@ -207,7 +225,9 @@ export class CircuitPlugin {
             "NO_CIRCUIT_OPEN",
             "先用 open_circuit 选择电路文件",
           );
-        const result = await turn.checkout(args.candidateId);
+        const circuit =
+          session.canvas?.circuit || session.activeCircuit || null;
+        const result = await turn.checkout(args.candidateId, circuit);
         assertCurrent();
         return result;
       },
@@ -433,7 +453,9 @@ export class CircuitPlugin {
           ...result,
           vectorsFile: { ...result.vectorsFile, path: args.vectorsFile },
         };
-      if (tool.owner === "host") {
+      // Host tools answer with the session they left, except checkout, which
+      // confirms a candidate without changing the document.
+      if (tool.owner === "host" && "documentId" in result) {
         scope.updateBinding(bindingOf(result as AgentSession));
         result = circuitActionResult(result as AgentSession, args);
       }
