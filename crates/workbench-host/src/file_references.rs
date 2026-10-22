@@ -382,14 +382,17 @@ mod autosave_tests {
     use serde_json::Value;
     use vibe_workspace_core::{EMPTY_CIRCUIT, Edit};
     async fn rename(host: &Host, doc: &Value, name: &str) -> Value {
-        host.dispatch(EditingRequest::Edit {
-            id: doc["id"].as_str().unwrap().into(),
-            revision: doc["revision"].as_str().unwrap().into(),
-            circuit: doc["main"].as_str().unwrap().into(),
-            edit: Edit::RenameCircuit { name: name.into() },
-        })
-        .await
-        .unwrap()
+        let result = host
+            .dispatch(EditingRequest::Edit {
+                id: doc["id"].as_str().unwrap().into(),
+                revision: doc["revision"].as_str().unwrap().into(),
+                circuit: doc["main"].as_str().unwrap().into(),
+                edit: Edit::RenameCircuit { name: name.into() },
+            })
+            .await
+            .unwrap();
+        // Edits answer with what changed plus the resulting view.
+        result.get("view").cloned().unwrap_or(result)
     }
     #[tokio::test]
     async fn structural_edits_save_only_project_sources_and_conflicts_keep_drafts() {
@@ -440,6 +443,7 @@ mod autosave_tests {
             })
             .await
             .unwrap();
+        let undone = undone.get("view").cloned().unwrap_or(undone);
         assert_eq!(undone["dirty"], false);
         assert_eq!(undone["main"], original["main"]);
         let prior = std::fs::read(&source).unwrap();
