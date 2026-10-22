@@ -6,11 +6,19 @@ use crate::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 use vibe_workspace_core::{
     Document, Edit, SourceStatus,
     history::{DocumentHistory, HistoricalSnapshot, HistoryEntry},
 };
+
+/// Library digests by path, valid while the file's length and modification
+/// time stay the same.
+pub(crate) type Digests = HashMap<PathBuf, (u64, SystemTime, String)>;
 
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -88,19 +96,70 @@ impl Action {
     }
 }
 impl Host {
-    pub(crate) fn history_store(&self) -> DocumentHistory {
-        DocumentHistory::new(self.state.join("document-history"))
+    pub(crate) fn history_store(&self) -> &DocumentHistory {
+        &self.history
     }
     pub(crate) fn history_snapshot(&self, doc: &Document) -> Result<HistoricalSnapshot> {
-        let view = doc.view().map_err(|e| e.to_string())?;
-        let (artifact, _) = self.materialize(doc)?;
         Ok(HistoricalSnapshot {
-            name: view.name,
+            name: doc.name().to_string(),
             path: doc.path.clone(),
-            xml: String::from_utf8_lossy(doc.bytes()).into_owned(),
             revision: doc.revision(),
-            dependencies: vibe_logisim_adapter::artifact_dependencies(&artifact).ok(),
+            dependencies: self.dependencies(doc).ok(),
+            bytes: doc.bytes().into(),
         })
+    }
+    /// The library files a document loads, with the digest of each, resolved
+    /// the way the native loader does: relative to the document's folder, or
+    /// by file name in that folder. A circuit library brings its own
+    /// libraries. A file that cannot be found is recorded as `missing`.
+    pub(crate) fn dependencies(&self, doc: &Document) -> Result<BTreeMap<PathBuf, String>> {
+        let directory = doc.path.as_deref().and_then(Path::parent);
+        let mut dependencies = BTreeMap::new();
+        for desc in doc.library_descriptors() {
+            let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
+                (name, true)
+            } else if let Some(name) = desc.strip_prefix("jar#") {
+                (name.split_once('#').map_or(name, |(file, _)| file), false)
+            } else {
+                continue;
+            };
+            let mut path = match directory {
+                Some(directory) => directory.join(name),
+                None => PathBuf::from(name),
+            };
+            if let Some(directory) = directory
+                && !path.is_file()
+            {
+                path = directory.join(name.replace('\\', "/").rsplit('/').next().unwrap_or(name));
+            }
+            // An untitled document has no folder to resolve a relative path in.
+            if !path.is_absolute() || !path.is_file() {
+                dependencies.insert(path, "missing".into());
+                continue;
+            }
+            let path = path.canonicalize().map_err(|e| e.to_string())?;
+            dependencies.insert(path.clone(), self.file_digest(&path)?);
+            if circuit {
+                dependencies.extend(vibe_logisim_adapter::artifact_dependencies(&path)?);
+            }
+        }
+        Ok(dependencies)
+    }
+    fn file_digest(&self, path: &Path) -> Result<String> {
+        let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        let stamp = metadata.modified().ok().map(|time| (metadata.len(), time));
+        let mut digests = self.digests.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((len, time)) = stamp
+            && let Some((known_len, known_time, digest)) = digests.get(path)
+            && (*known_len, *known_time) == (len, time)
+        {
+            return Ok(digest.clone());
+        }
+        let digest = vibe_workspace_core::digest(&std::fs::read(path).map_err(|e| e.to_string())?);
+        if let Some((len, time)) = stamp {
+            digests.insert(path.to_path_buf(), (len, time, digest.clone()));
+        }
+        Ok(digest)
     }
     pub(crate) async fn history_before(
         &self,
@@ -225,8 +284,7 @@ impl Host {
             .dependencies
             .as_ref()
             .ok_or("这个历史版本没有冻结的组件库身份，无法精确重放；源码仍可查看和恢复")?;
-        let (artifact, _) = self.materialize(&doc)?;
-        if &vibe_logisim_adapter::artifact_dependencies(&artifact)? != expected {
+        if &self.dependencies(&doc)? != expected {
             return Err("此版本引用的组件库已改变，不能用当前库冒充历史运行结果".into());
         }
         Ok(doc)
@@ -250,8 +308,8 @@ impl Host {
             mode: mode.into(),
             evidence: review.evidence.clone(),
             review,
-            original: before.xml,
-            xml: after.xml,
+            original: before.xml(),
+            xml: after.xml(),
         })
     }
     pub(crate) async fn history_preview(

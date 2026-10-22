@@ -289,6 +289,7 @@ impl References {
 }
 impl Host {
     /// A successful structural edit remains a success even if writing its source fails.
+    /// `result` is the document's view; saving in place changes only `dirty`.
     pub(crate) async fn auto_save_edit(&self, result: &mut Value) {
         let (Some(id), Some(revision)) = (result["id"].as_str(), result["revision"].as_str())
         else {
@@ -321,16 +322,14 @@ impl Host {
         });
         let saved = check.and_then(|relative| {
             workspace
-                .save_checked(&id, &revision, None, None)
-                .map(|saved| (relative, saved))
+                .save_in_place(&id, &revision)
+                .map(|()| relative)
                 .map_err(HostError::from)
         });
         drop(workspace);
         match saved {
-            Ok((relative, saved)) => {
-                if let Ok(value) = serde_json::to_value(saved) {
-                    *result = value;
-                }
+            Ok(relative) => {
+                result["dirty"] = json!(false);
                 if let Err(error) = References::open(&self.state, folder)
                     .and_then(|mut references| references.refresh_known(folder, &relative))
                 {
@@ -419,7 +418,7 @@ mod autosave_tests {
             .await
             .unwrap();
         let saved = rename(&host, &original, "changed").await;
-        assert_eq!(saved["dirty"], false);
+        assert_eq!(saved["view"]["dirty"], false);
         assert!(saved["saveError"].is_null());
         assert!(
             std::fs::read_to_string(&source)
@@ -435,21 +434,23 @@ mod autosave_tests {
         .unwrap();
         let undone = host
             .dispatch(EditingRequest::Undo {
-                id: saved["id"].as_str().unwrap().into(),
+                id: saved["view"]["id"].as_str().unwrap().into(),
                 revision: saved["revision"].as_str().unwrap().into(),
             })
             .await
             .unwrap();
+        let undone = &undone["view"];
         assert_eq!(undone["dirty"], false);
         assert_eq!(undone["main"], original["main"]);
         let prior = std::fs::read(&source).unwrap();
         std::fs::write(&source, b"external user content").unwrap();
-        let draft = rename(&host, &undone, "preserved").await;
-        assert_eq!(draft["dirty"], true);
+        let draft = rename(&host, undone, "preserved").await;
         assert!(draft["saveError"].is_string());
+        let draft = &draft["view"];
+        assert_eq!(draft["dirty"], true);
         assert_eq!(draft["main"], "preserved");
         assert_eq!(std::fs::read(&source).unwrap(), b"external user content");
-        assert!(host.state.join("workspace.json").exists());
+        assert!(host.state.join("session").join("index.json").exists());
         std::fs::write(&source, prior).unwrap();
         let retry = host
             .dispatch(WorkspaceRequest::Save {
@@ -470,7 +471,7 @@ mod autosave_tests {
             .await
             .unwrap();
         let external = rename(&host, &external, "outsideDraft").await;
-        assert_eq!(external["dirty"], true);
+        assert_eq!(external["view"]["dirty"], true);
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), EMPTY_CIRCUIT);
         let untitled = host
             .dispatch(WorkspaceRequest::New {
@@ -479,7 +480,7 @@ mod autosave_tests {
             .await
             .unwrap();
         let untitled = rename(&host, &untitled, "untitledDraft").await;
-        assert_eq!(untitled["dirty"], true);
+        assert_eq!(untitled["view"]["dirty"], true);
         assert!(untitled["saveError"].is_null());
         let report = host.diagnostics().await;
         assert!(

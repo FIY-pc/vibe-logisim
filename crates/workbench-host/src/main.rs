@@ -33,7 +33,13 @@ async fn dispatch(
         Err(error) => Err(error),
     };
     match result {
-        Ok(result) => (StatusCode::OK, Json(json!({"result":result}))),
+        // Moved into the envelope: `json!` would copy a large result value by value.
+        Ok(result) => (
+            StatusCode::OK,
+            Json(Value::Object(
+                [("result".to_string(), result)].into_iter().collect(),
+            )),
+        ),
         Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))),
     }
 }

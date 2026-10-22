@@ -2,11 +2,15 @@
 mod document;
 mod editing;
 pub mod history;
+mod journal;
 mod junction;
+mod patch;
+mod session;
 mod splice;
 pub mod symbol;
 mod workspace;
 pub use document::*;
+pub use journal::flush as flush_journals;
 use serde::Serialize;
 pub use symbol::{SymbolDraft, SymbolPort, SymbolShape};
 pub use workspace::*;
