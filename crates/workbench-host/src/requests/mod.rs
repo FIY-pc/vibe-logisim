@@ -3,6 +3,7 @@
 //! history entry it records, its diagnostics stage and whether the AI runtime
 //! may call it; dispatch applies those rules for every op alike.
 mod agent;
+pub(crate) mod draft;
 pub(crate) mod editing;
 mod folder;
 mod interface;
@@ -11,6 +12,7 @@ mod review;
 mod simulation;
 mod workspace;
 pub use agent::AgentRequest;
+pub use draft::DraftRequest;
 pub use editing::EditingRequest;
 pub use folder::FolderRequest;
 pub use interface::InterfaceRequest;
@@ -38,6 +40,7 @@ pub enum Request {
     Folder(FolderRequest),
     Project(ProjectRequest),
     Agent(AgentRequest),
+    Draft(DraftRequest),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +93,7 @@ impl Request {
             Self::Folder(r) => r.meta(),
             Self::Project(r) => r.meta(),
             Self::Agent(r) => r.meta(),
+            Self::Draft(r) => r.meta(),
         }
     }
     /// Parses a request from any transport; failures use the shared error shape.
@@ -124,6 +128,8 @@ impl<'de> Deserialize<'de> for Request {
             ProjectRequest::deserialize(value).map(Self::Project)
         } else if AgentRequest::OPS.contains(&op) {
             AgentRequest::deserialize(value).map(Self::Agent)
+        } else if DraftRequest::OPS.contains(&op) {
+            DraftRequest::deserialize(value).map(Self::Draft)
         } else {
             return Err(D::Error::custom(format!("unknown op `{op}`")));
         };
@@ -148,7 +154,8 @@ domain_from!(
     Review(ReviewRequest),
     Folder(FolderRequest),
     Project(ProjectRequest),
-    Agent(AgentRequest)
+    Agent(AgentRequest),
+    Draft(DraftRequest)
 );
 
 #[cfg(test)]
@@ -189,6 +196,7 @@ mod tests {
             (declared::<FolderRequest>(), listed(FolderRequest::OPS)),
             (declared::<ProjectRequest>(), listed(ProjectRequest::OPS)),
             (declared::<AgentRequest>(), listed(AgentRequest::OPS)),
+            (declared::<DraftRequest>(), listed(DraftRequest::OPS)),
         ];
         let mut all = BTreeSet::new();
         for (declared, listed) in domains {

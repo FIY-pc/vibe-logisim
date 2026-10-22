@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     response::{
         IntoResponse, Sse,
@@ -82,7 +82,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| root.join(".workbench-state"));
     let host = Host::new(root, state, None)?;
     let app = Router::new()
-        .route("/api/command", post(dispatch))
+        // Review requests carry the original and the candidate source together.
+        .route(
+            "/api/command",
+            post(dispatch).layer(DefaultBodyLimit::max(128 * 1024 * 1024)),
+        )
         .route("/api/events", get(events))
         .route(
             "/api/health",

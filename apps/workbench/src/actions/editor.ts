@@ -32,24 +32,32 @@ export function createEditorActions(stores: Stores) {
     );
     const next = result.view;
     documents.getState().mergeDocument(next, doc.revision);
-    // A field commit keeps its object selected. Preserve the revision guard for
-    // other edits, late responses and selections the user changed meanwhile.
+    // A field commit keeps its object selected and moved objects stay selected
+    // under their new ids, as in Logisim. Late responses and selections the
+    // user changed meanwhile are left alone.
+    const kept =
+      change.kind === "attributes"
+        ? originSelection.ids.includes(change.id) &&
+          next.circuits
+            .find((item) => item.name === circuit.name)
+            ?.components.some((item) => item.id === change.id)
+          ? [change.id]
+          : []
+        : change.kind === "move"
+          ? [...result.selection.components, ...result.selection.wires]
+          : [];
     if (
-      change.kind === "attributes" &&
+      kept.length &&
       editor.getState().selected === originSelection &&
       documents.getState().active === doc.id &&
       navigation.current === originNavigation &&
       documents.getState().docs.find((item) => item.id === doc.id)?.revision ===
         result.revision &&
-      originSelection.scope === scope &&
-      originSelection.ids.includes(change.id) &&
-      next.circuits
-        .find((item) => item.name === circuit.name)
-        ?.components.some((item) => item.id === change.id)
+      originSelection.scope === scope
     ) {
       editor.getState().setSelected({
         scope: `${doc.id}:${next.revision}:${circuit.name}`,
-        ids: [change.id],
+        ids: kept,
       });
     }
   };

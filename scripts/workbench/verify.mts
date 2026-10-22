@@ -44,6 +44,19 @@ const model = http.createServer(async (req, res) => {
   const snapshot =
     toolMessages.find((m: any) => m.name === "read_circuit") || toolMessages[0];
   const revision = snapshot ? JSON.parse(snapshot.content).revision : null;
+  const parsed = toolMessages.map((m: any) => {
+    try {
+      return JSON.parse(m.content);
+    } catch {
+      return null;
+    }
+  });
+  // Component IDs come from the bounded observation pages, not the document summary.
+  const outputId = (target?: string) =>
+    parsed
+      .find((r: any) => r?.components && r.target === target)
+      ?.components.find((c: any) => c.label === "output")?.componentId ||
+    "unused";
   const calls = [
     { name: "read_circuit", args: {} },
     { name: "observe_circuit", args: { circuit: "main" } },
@@ -86,29 +99,17 @@ const model = http.createServer(async (req, res) => {
         circuit: "main",
         ticks: 2,
         inputs: { input: 0 },
-        watches: [
-          {
-            component: snapshot
-              ? JSON.parse(snapshot.content).circuits[0].components.find(
-                  (c: any) => c.attributes.label === "output",
-                ).id
-              : "unused",
-            port: 0,
-          },
-        ],
+        watches: [{ component: outputId(), port: 0 }],
         events: [{ tick: 1, input: "input", value: 1 }],
       },
     } as any,
   );
-  const workingSnapshot = toolMessages
-    .map((m: any) => {
-      try {
-        return JSON.parse(m.content);
-      } catch {
-        return null;
-      }
-    })
-    .find((m: any) => m?.target === "working-copy" && m?.circuits);
+  // The model sees the scratch copy prepared for this turn as circuit.circ.
+  const scratch = path.join(state, "agent-workspace", "circuit.circ");
+  const scratchXml =
+    requests === 4 && existsSync(scratch)
+      ? await readFile(scratch, "utf8")
+      : "";
   calls.splice(
     3,
     0,
@@ -117,12 +118,10 @@ const model = http.createServer(async (req, res) => {
         name: "write_file",
         args: {
           path: "circuit.circ",
-          content: snapshot
-            ? JSON.parse(snapshot.content).xml.replace(
-                "</circuit>",
-                '<wire from="(40,280)" to="(90,280)"/></circuit>',
-              )
-            : "",
+          content: scratchXml.replace(
+            "</circuit>",
+            '<wire from="(40,280)" to="(90,280)"/></circuit>',
+          ),
         },
       },
       { name: "read_circuit", args: { target: "working-copy" } },
@@ -157,15 +156,7 @@ const model = http.createServer(async (req, res) => {
           circuit: "main",
           ticks: 2,
           inputs: { input: 0 },
-          watches: [
-            {
-              component:
-                workingSnapshot?.circuits[0].components.find(
-                  (c: any) => c.attributes.label === "output",
-                ).id || "unused",
-              port: 0,
-            },
-          ],
+          watches: [{ component: outputId("working-copy"), port: 0 }],
           events: [],
         },
       },
@@ -253,7 +244,8 @@ async function stop() {
   child = undefined;
 }
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) => (result && result.view ? result.view : result);
+const documentOf = (result: any) =>
+  result && result.view ? result.view : result;
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",

@@ -270,60 +270,53 @@ export function WorkspaceRail({
           className="rail-section-content"
           hidden={hasCircuit && layout.layout.filesCollapsed}
         >
-          {hasCircuit && (
-            <div className="resource-tabs" role="tablist" aria-label="项目资源">
-              {(
-                [
-                  ["files", "文件"],
-                  ["components", "元件"],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  role="tab"
-                  aria-selected={resourceTab === id}
-                  onClick={() => onResourceTab(id)}
-                  onKeyDown={(e) => {
-                    if (
-                      !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                        e.key,
-                      )
-                    )
-                      return;
-                    e.preventDefault();
-                    const next =
-                      e.key === "Home"
-                        ? "files"
-                        : e.key === "End"
+          {/* Always shown, so opening the first circuit does not shift the file list under the pointer. */}
+          <div className="resource-tabs" role="tablist" aria-label="项目资源">
+            {(
+              [
+                ["files", "文件"],
+                ["components", "元件"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={resourceTab === id}
+                onClick={() => onResourceTab(id)}
+                onKeyDown={(e) => {
+                  if (
+                    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)
+                  )
+                    return;
+                  e.preventDefault();
+                  const next =
+                    e.key === "Home"
+                      ? "files"
+                      : e.key === "End"
+                        ? "components"
+                        : id === "files"
                           ? "components"
-                          : id === "files"
-                            ? "components"
-                            : "files";
-                    onResourceTab(next);
-                    e.currentTarget.parentElement
-                      ?.querySelectorAll<HTMLButtonElement>("button")
-                      [next === "files" ? 0 : 1]?.focus();
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-          <div
-            className="resource-pane"
-            hidden={hasCircuit && resourceTab !== "files"}
-          >
+                          : "files";
+                  onResourceTab(next);
+                  e.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>("button")
+                    [next === "files" ? 0 : 1]?.focus();
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="resource-pane" hidden={resourceTab !== "files"}>
             {files}
           </div>
-          {hasCircuit && (
-            <div
-              className="resource-pane"
-              hidden={resourceTab !== "components"}
-            >
-              {palette}
-            </div>
-          )}
+          <div className="resource-pane" hidden={resourceTab !== "components"}>
+            {hasCircuit ? (
+              palette
+            ) : (
+              <div className="quiet-empty">打开电路后可以放置元件</div>
+            )}
+          </div>
         </div>
       </section>
       {hasCircuit && (
