@@ -19,7 +19,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
         aria-expanded={showExplorer}
         onClick={() => setShowExplorer((shown) => !shown)}
       >
-        <PanelLeft size={18} />
+        <PanelLeft size={16} />
       </button>
       <div className="brand">
         <svg aria-hidden="true" viewBox="0 0 38 38">
@@ -43,7 +43,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
           aria-expanded={showRight}
           onClick={() => setShowRight((shown) => !shown)}
         >
-          <PanelRight size={18} />
+          <PanelRight size={16} />
         </button>
       </div>
     </header>

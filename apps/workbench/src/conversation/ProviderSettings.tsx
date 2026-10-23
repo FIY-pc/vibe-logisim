@@ -442,7 +442,7 @@ export function ProviderSettings(props: SettingsProps) {
               disabled={working || formWorking}
               onClick={() => navigate("services")}
             >
-              <ArrowLeft size={17} />
+              <ArrowLeft size={15} />
             </button>
           )}
           <h3 ref={heading} tabIndex={-1}>

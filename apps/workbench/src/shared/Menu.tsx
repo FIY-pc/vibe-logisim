@@ -89,7 +89,7 @@ export function Menu({
         disabled={disabled}
         tabIndex={tabIndex}
       >
-        {trigger ?? <Ellipsis size={16} aria-hidden="true" />}
+        {trigger ?? <Ellipsis size={15} aria-hidden="true" />}
       </Dropdown.Trigger>
       <Dropdown.Portal container={container}>
         <Dropdown.Content

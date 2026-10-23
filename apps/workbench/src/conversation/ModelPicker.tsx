@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronUp, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, RefreshCw } from "lucide-react";
 import { DialogClose } from "../shared/Dialog";
 import "./ai-settings.css";
 
@@ -75,7 +75,7 @@ export function ModelPicker({
         }}
       >
         <span>{name || model || "选择模型"}</span>
-        <ChevronUp size={12} />
+        <ChevronDown size={12} aria-hidden="true" />
       </button>
       {open && (
         <ModelDialog

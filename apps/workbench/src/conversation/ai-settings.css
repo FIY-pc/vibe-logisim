@@ -187,6 +187,7 @@
 }
 .ai-model-trigger svg {
   flex: none;
+  color: var(--muted);
 }
 .ai-model-dialog {
   width: min(380px, calc(100vw - 24px));

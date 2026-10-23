@@ -63,6 +63,9 @@ button {
 button:hover {
   background: #eceff4;
 }
+button > svg {
+  flex-shrink: 0;
+}
 button:disabled {
   opacity: 0.38;
   cursor: default;
@@ -524,23 +527,41 @@ button.primary {
   color: var(--accent);
   font-weight: 600;
 }
-.palette-search {
+/* Search fields with a leading icon and a trailing shortcut hint. */
+.palette-search,
+.circuit-search {
   display: flex;
   align-items: center;
   margin: 7px 12px 12px;
   padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: white;
-  gap: 5px;
+  background: var(--paper);
+  gap: 6px;
   color: var(--muted);
 }
-.palette-search input {
+.palette-search:focus-within,
+.circuit-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.palette-search:focus-within kbd,
+.circuit-search:focus-within kbd {
+  visibility: hidden;
+}
+.palette-search > svg,
+.circuit-search > svg {
+  flex: none;
+}
+.palette-search input,
+.circuit-search input {
+  flex: 1;
   border: none;
   width: 100%;
   background: transparent;
+  color: var(--text);
   font-size: 12px;
-  padding: 8px 0;
+  padding: 7px 0;
   outline: none;
 }
 .palette {
@@ -628,13 +649,18 @@ button.primary {
   font-weight: 500;
   color: #555e6c;
 }
+.breadcrumbs strong,
 .breadcrumbs .muted {
-  margin-left: auto;
-  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.breadcrumbs-spacer {
+  flex: 1;
 }
 .circuit-actions {
   display: flex;
-  margin-left: auto;
   flex-shrink: 0;
   gap: 2px;
 }
@@ -710,8 +736,13 @@ button.primary {
   padding: 5px 3px;
   color: var(--muted);
 }
+.panel-tabs button:hover,
+.resource-tabs > button:hover {
+  background: transparent;
+  color: var(--text);
+}
 .panel-tabs button.active {
-  color: #3c4555;
+  color: var(--text);
 }
 .panel-tabs button.active:after {
   content: "";
@@ -900,10 +931,18 @@ button.primary {
   white-space: pre-wrap;
 }
 .message.user {
+  position: relative;
   margin-left: 26px;
+  margin-bottom: 42px;
   background: #eff2f7;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 12px 12px 3px 12px;
+}
+/* A question's copy and edit commands sit under its bubble, not inside it. */
+.message.user > .message-actions {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
 }
 .message.reasoning {
   font-size: 11px;
@@ -944,12 +983,11 @@ button.primary {
   padding: 5px 7px;
 }
 .composer footer .composer-effort {
-  padding: 3px 5px;
-  font-size: 11px;
   max-width: 125px;
+  margin-right: auto;
 }
-.composer footer button:last-child {
-  margin-left: auto;
+.composer-stop svg {
+  fill: currentColor;
 }
 .chat-card {
   display: flex;
@@ -1215,9 +1253,24 @@ button.primary {
   padding: 4px;
   color: var(--muted);
 }
+.circuit-row > button > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .main-marker {
+  display: flex;
+  flex: none;
   margin-left: auto;
-  opacity: 0.5;
+  color: var(--muted);
+}
+.quiet-button {
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.quiet-button:hover {
+  color: var(--text);
 }
 .frequency-setting {
   display: flex;

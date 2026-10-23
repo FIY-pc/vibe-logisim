@@ -257,7 +257,7 @@ function SimulationSettings({
               disabled={pending}
               value={value}
               onChange={(event) => setValue(event.target.value)}
-            />{" "}
+            />
             tick/s
           </span>
         </label>

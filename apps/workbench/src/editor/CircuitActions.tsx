@@ -13,13 +13,13 @@ export function CircuitActions() {
       <button
         onClick={() => setInterfaceTarget({ doc, circuit: circuit.name })}
       >
-        封装与接口
+        封装与接口…
       </button>
       <button
         onClick={() => setFind("component")}
         title={`查找元件（${shortcuts.find}）`}
       >
-        查找元件
+        查找元件…
       </button>
     </div>
   );

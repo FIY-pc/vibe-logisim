@@ -949,14 +949,16 @@ export function Chat({
           )}
           {busy ? (
             <button
+              className="primary composer-stop"
               aria-label="停止回答"
+              title="停止回答"
               onClick={() =>
                 void runtime("stop")
                   .then(() => refresh())
                   .catch(onError)
               }
             >
-              <Square size={15} />
+              <Square size={12} />
             </button>
           ) : (
             <button

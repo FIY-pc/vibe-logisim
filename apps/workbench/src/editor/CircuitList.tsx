@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { House, Plus } from "lucide-react";
 import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import type { Document } from "../shared/types";
 import { useEditor, useNotices, useView } from "../app/hooks";
@@ -25,12 +25,17 @@ export function CircuitList({ doc: d }: { doc: Document }) {
             <button
               className={c.name === circuit?.name ? "active" : ""}
               onClick={() => navigation.switchCircuit(view, c.name)}
-              title={d.main === c.name ? "主电路" : undefined}
+              title={c.name}
             >
-              {c.name}
+              <span>{c.name}</span>
               {d.main === c.name && (
-                <span className="main-marker" aria-label="主电路">
-                  ⌂
+                <span
+                  className="main-marker"
+                  role="img"
+                  aria-label="主电路"
+                  title="主电路"
+                >
+                  <House size={12} aria-hidden="true" />
                 </span>
               )}
             </button>

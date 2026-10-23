@@ -146,6 +146,9 @@
   font-size: 13px;
 }
 .simulation-frequency span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
