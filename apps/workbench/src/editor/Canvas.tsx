@@ -384,12 +384,13 @@ export function Canvas({
     ro.observe(container.current);
     return () => ro.disconnect();
   }, []);
-  // A new revision of the circuit on screen is drawn at once, and this
-  // effect precedes the observation's so its request reaches the runtime
-  // first; the commit overlay covers the wait. Panning, zooming and another
-  // circuit wait for the view to settle, and a newly shown circuit is
-  // observed first because fitting it needs its bounds.
+  // A new revision of the circuit on screen is drawn at once and observed
+  // after its picture arrives, so the runtime works on the picture first; the
+  // commit overlay covers the wait. Panning, zooming and another circuit wait
+  // for the view to settle, and a newly shown circuit is observed first
+  // because fitting it needs its bounds.
   const drawn = useRef({ picture: "", revision: "" });
+  const drawing = useRef<{ scope: string; done: Promise<void> } | null>(null);
   useEffect(() => {
     if (live || !size.width || !size.height) {
       setLoading(false);
@@ -413,7 +414,7 @@ export function Canvas({
         8,
         Math.sqrt(7_000_000 / (region.width * region.height)),
       );
-      command<{ image: string }>({
+      const done = command<{ image: string }>({
         op: "render",
         ...bindings,
         ...region,
@@ -433,6 +434,7 @@ export function Canvas({
         .finally(() => {
           if (ticket === generation.current) setLoading(false);
         });
+      drawing.current = { scope: observationScope, done };
     };
     const timer = revised ? undefined : setTimeout(draw, 80);
     if (revised) draw();
@@ -467,12 +469,19 @@ export function Canvas({
       setSettle(null);
     }
     let live = true;
-    command<{ focus: ConnectionFocus }>({
-      op: "observe",
-      ...bindings,
-    })
+    // The render effect ran first: a new revision's picture is on its way.
+    const picture =
+      drawing.current?.scope === observationScope
+        ? drawing.current.done
+        : Promise.resolve();
+    picture
+      .then(() =>
+        live
+          ? command<{ focus: ConnectionFocus }>({ op: "observe", ...bindings })
+          : null,
+      )
       .then((data) => {
-        if (live)
+        if (live && data)
           setObservation({
             scope: observationScope,
             picture: pictureScope,
