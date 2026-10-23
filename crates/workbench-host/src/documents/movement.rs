@@ -4,7 +4,8 @@ use crate::{
     api::document::{EditResult, ErrorDetail, MovePreview, edit_result_for_move},
     timing,
 };
-use vibe_circuit_document::{Circuit, Document, Point};
+use std::collections::HashSet;
+use vibe_circuit_document::{Circuit, Document, Point, Wire};
 
 struct MovePlan {
     candidate: Document,
@@ -86,28 +87,19 @@ impl Host {
                 // The preview is geometry only. Release still validates native bit
                 // connectivity before committing; no preview writes a checkpoint
                 // or an undo entry.
-                let key = |from: Point, to: Point| {
-                    if (from.x, from.y) <= (to.x, to.y) {
-                        format!("{},{}:{},{}", from.x, from.y, to.x, to.y)
-                    } else {
-                        format!("{},{}:{},{}", to.x, to.y, from.x, from.y)
-                    }
-                };
-                let after: std::collections::BTreeSet<String> =
-                    graph.wires.iter().map(|w| key(w.from, w.to)).collect();
-                let before: std::collections::BTreeSet<String> =
-                    plan.graph.wires.iter().map(|w| key(w.from, w.to)).collect();
+                let after: HashSet<_> = graph.wires.iter().map(segment).collect();
+                let before: HashSet<_> = plan.graph.wires.iter().map(segment).collect();
                 let removed: Vec<String> = plan
                     .graph
                     .wires
                     .iter()
-                    .filter(|w| !after.contains(&key(w.from, w.to)))
+                    .filter(|w| !after.contains(&segment(w)))
                     .map(|w| w.id.clone())
                     .collect();
                 let added = graph
                     .wires
                     .iter()
-                    .filter(|w| !before.contains(&key(w.from, w.to)))
+                    .filter(|w| !before.contains(&segment(w)))
                     .cloned()
                     .collect();
                 Ok(MovePreview {
@@ -190,23 +182,31 @@ impl Host {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        // Wires keep their ids by file order, so a move's changed wires are the
-        // ones whose geometry differs plus any the move added.
         let wires = shown
-            .map(|c| {
-                c.wires
-                    .iter()
-                    .filter(|w| {
-                        let index = w.id[1..].parse::<usize>().ok();
-                        index
-                            .and_then(|k| plan.graph.wires.get(k))
-                            .is_none_or(|old| old.from != w.from || old.to != w.to)
-                    })
-                    .map(|w| w.id.clone())
-                    .collect::<Vec<_>>()
-            })
+            .map(|c| new_wires(&plan.graph.wires, &c.wires))
             .unwrap_or_default();
         Ok(edit_result_for_move(circuit, components, wires, view))
+    }
+}
+
+/// The ids of the wires in `after` that `before` does not have: the segments
+/// a move made. Wire ids follow file order, which shifts behind any wire a
+/// reroute splits, so the wires are compared by geometry.
+fn new_wires(before: &[Wire], after: &[Wire]) -> Vec<String> {
+    let before: HashSet<_> = before.iter().map(segment).collect();
+    after
+        .iter()
+        .filter(|w| !before.contains(&segment(w)))
+        .map(|w| w.id.clone())
+        .collect()
+}
+
+/// A wire's segment, whichever way the file writes it.
+fn segment(wire: &Wire) -> (Point, Point) {
+    if (wire.from.x, wire.from.y) <= (wire.to.x, wire.to.y) {
+        (wire.from, wire.to)
+    } else {
+        (wire.to, wire.from)
     }
 }
 
@@ -220,5 +220,36 @@ fn preview_failure(code: ErrorCode, message: &str) -> MovePreview {
             code,
             message: message.to_string(),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wire(k: usize, from: (i32, i32), to: (i32, i32)) -> Wire {
+        let point = |(x, y)| Point { x, y };
+        Wire {
+            id: format!("w{k}"),
+            from: point(from),
+            to: point(to),
+        }
+    }
+
+    #[test]
+    fn a_split_wire_selects_its_pieces_only() {
+        let before = [
+            wire(0, (0, 0), (100, 0)),
+            wire(1, (0, 50), (100, 50)),
+            wire(2, (0, 90), (100, 90)),
+        ];
+        // The first wire gets a bend, which shifts the ids of the others.
+        let after = [
+            wire(0, (0, 0), (60, 0)),
+            wire(1, (60, 10), (60, 0)),
+            wire(2, (0, 50), (100, 50)),
+            wire(3, (100, 90), (0, 90)),
+        ];
+        assert_eq!(new_wires(&before, &after), ["w0", "w1"]);
     }
 }
