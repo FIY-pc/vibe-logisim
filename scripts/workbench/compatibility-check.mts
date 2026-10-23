@@ -217,6 +217,38 @@ try {
     true,
     "Switching back to a 2.16 file must restart on the 2.16 runtime",
   );
+  // Loading splits a wire where another wire ends or a port sits on it, on
+  // both runtimes; a '+' crossing stays two separate signals.
+  const junctions = `<circuit name="main">${pin(100, 100, "a")}${pin(400, 100, "y", true)}${pin(500, 120, "b", true)}${wire(100, 100, 400, 100)}${wire(200, 100, 200, 160)}${wire(300, 40, 300, 200)}${wire(500, 40, 500, 200)}</circuit>`;
+  for (const source of ["2.7.1", "2.15.0.2.exe"]) {
+    const doc = await open(
+      `junctions-${source}.circ`,
+      project(junctions).replace('source="2.7.1"', `source="${source}"`),
+    );
+    const { focus } = await command({ op: "observe", ...scope(doc) });
+    const key = (w: any) => `${w.from.x},${w.from.y}-${w.to.x},${w.to.y}`;
+    assert.deepEqual(
+      focus.wires.map(key).sort(),
+      [
+        "100,100-200,100",
+        "200,100-200,160",
+        "200,100-400,100",
+        "300,40-300,200",
+        "500,120-500,200",
+        "500,40-500,120",
+      ],
+      source,
+    );
+    const bundle = (k: string) =>
+      focus.wires.find((w: any) => key(w) === k).bundleId;
+    assert.equal(bundle("200,100-200,160"), bundle("100,100-200,100"), source);
+    assert.equal(bundle("500,40-500,120"), bundle("500,120-500,200"), source);
+    assert.notEqual(
+      bundle("300,40-300,200"),
+      bundle("100,100-200,100"),
+      source,
+    );
+  }
   const unrotated = await command({
     op: "template",
     ...scope(local),
