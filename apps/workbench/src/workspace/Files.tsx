@@ -14,6 +14,7 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  History,
   Plus,
   LocateFixed,
 } from "lucide-react";
@@ -1249,7 +1250,7 @@ function HistoryDialog({
   onChanged: () => Promise<void>;
 }) {
   const dialog = useModal(),
-    [entries, setEntries] = useState<FileChange[]>([]),
+    [entries, setEntries] = useState<FileChange[] | null>(null),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const [selection, setSelection] = useState<{
@@ -1262,9 +1263,17 @@ function HistoryDialog({
     } | null>(null);
   const [confirm, setConfirm] = useState<FileChange | null>(null);
   const load = async () => {
-    setEntries(
-      await command<FileChange[]>({ op: "folderHistory", folder_id: folderId }),
-    );
+    const loaded = await command<FileChange[]>({
+      op: "folderHistory",
+      folder_id: folderId,
+    });
+    setEntries(loaded);
+    // Open on the newest change, as change lists in version control tools do.
+    const newest = loaded[0];
+    if (newest?.files.length)
+      setSelection(
+        (current) => current ?? { id: newest.id, path: newest.files[0].path },
+      );
   };
   useEffect(() => {
     void load().catch((e) => setError(message(e)));
@@ -1326,75 +1335,87 @@ function HistoryDialog({
           {error}
         </p>
       )}
-      <div className="file-history-body">
-        <aside>
-          {!entries.length && <p>暂无文件改动</p>}
-          {entries.map((entry) => (
-            <section key={entry.id}>
-              <div className="file-history-entry">
-                <span>
-                  {entry.title}
-                  <time>{new Date(entry.at).toLocaleString()}</time>
-                </span>
-                <button
-                  disabled={pending || !entry.undoable}
-                  data-tip={
-                    !entry.undoable ? "包含未保留内容的大文件" : undefined
-                  }
-                  onClick={() => setConfirm(entry)}
-                >
-                  撤销
-                </button>
-              </div>
-              {entry.files.map((file) => (
-                <button
-                  key={file.path}
-                  className={
-                    selection?.id === entry.id && selection.path === file.path
-                      ? "selected"
-                      : ""
-                  }
-                  onClick={() =>
-                    setSelection({ id: entry.id, path: file.path })
-                  }
-                >
-                  <span className={`file-change-${file.kind}`}>
-                    {
-                      { added: "新增", deleted: "删除", modified: "修改" }[
-                        file.kind
-                      ]
-                    }
-                  </span>
-                  <span>{file.path}</span>
-                </button>
-              ))}
-            </section>
-          ))}
-        </aside>
-        <div className="file-history-detail">
-          {selection ? (
-            <>
-              <h3>{selection.path}</h3>
-              {detail ? (
-                <div className="file-history-comparison">
-                  <section>
-                    <h4>改动前</h4>
-                    {side(detail.before)}
-                  </section>
-                  <section>
-                    <h4>改动后</h4>
-                    {side(detail.after)}
-                  </section>
-                </div>
-              ) : (
-                <p role="status">正在读取…</p>
-              )}
-            </>
-          ) : (
-            <p>选择文件查看改动</p>
-          )}
+      {entries?.length === 0 ? (
+        <div className="file-history-empty">
+          <History size={28} aria-hidden="true" />
+          <p>还没有文件改动</p>
+          <p className="muted">
+            移动、导入、移入回收站的文件和 AI 改过的文件会列在这里。
+            <br />
+            选中一项可以对照改动前后的内容，也可以撤销。
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="file-history-body">
+          <aside>
+            {!entries && !error && <p role="status">正在读取…</p>}
+            {entries?.map((entry) => (
+              <section key={entry.id}>
+                <div className="file-history-entry">
+                  <span>
+                    {entry.title}
+                    <time>{new Date(entry.at).toLocaleString()}</time>
+                  </span>
+                  <button
+                    disabled={pending || !entry.undoable}
+                    data-tip={
+                      !entry.undoable ? "包含未保留内容的大文件" : undefined
+                    }
+                    onClick={() => setConfirm(entry)}
+                  >
+                    撤销
+                  </button>
+                </div>
+                {entry.files.map((file) => (
+                  <button
+                    key={file.path}
+                    className={
+                      selection?.id === entry.id && selection.path === file.path
+                        ? "selected"
+                        : ""
+                    }
+                    onClick={() =>
+                      setSelection({ id: entry.id, path: file.path })
+                    }
+                  >
+                    <span className={`file-change-${file.kind}`}>
+                      {
+                        { added: "新增", deleted: "删除", modified: "修改" }[
+                          file.kind
+                        ]
+                      }
+                    </span>
+                    <span>{file.path}</span>
+                  </button>
+                ))}
+              </section>
+            ))}
+          </aside>
+          <div className="file-history-detail">
+            {selection ? (
+              <>
+                <h3>{selection.path}</h3>
+                {detail ? (
+                  <div className="file-history-comparison">
+                    <section>
+                      <h4>改动前</h4>
+                      {side(detail.before)}
+                    </section>
+                    <section>
+                      <h4>改动后</h4>
+                      {side(detail.after)}
+                    </section>
+                  </div>
+                ) : (
+                  <p role="status">正在读取…</p>
+                )}
+              </>
+            ) : (
+              entries && <p>选择文件查看改动</p>
+            )}
+          </div>
+        </div>
+      )}
       {confirm && (
         <DecisionDialog
           decision={{
