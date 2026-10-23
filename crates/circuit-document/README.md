@@ -35,7 +35,7 @@ impl Document {
     fn revision(&self) -> String;  fn dirty(&self) -> bool;  fn check(&self, expected) -> Result<()>;
     fn source_status(&self) -> SourceStatus;                       // in sync / changed on disk / missing
     fn bytes(&self) -> &[u8];  fn bytes_with_absolute_libraries(&self) -> Result<Cow<[u8]>>;
-    fn move_connected(..);                                         // selection move keeping attached wires; one undo step "移动 N 个对象"
+    fn move_connected(..);                                         // selection move keeping attached wires; one undo step "移动 N 个对象". A wire with one end on a moved port follows it with the first shape that touches no other port or wire: a bend at its fixed end, a bend at its moved end, else a jog at the first free column or row; the host's connectivity check refuses what still joins nets
     fn relocate(&mut self, from: &Path, to: &Path);
 }
 pub struct Workspace;           // insert, open(path) (reuses an open doc with the same path or identity), get, get_mut, save, save_checked, save_in_place, close, restore(dir), persist(dir), relocate

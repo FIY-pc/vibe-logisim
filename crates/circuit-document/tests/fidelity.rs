@@ -510,6 +510,50 @@ fn rerouted_wire_keeps_the_junction_at_its_other_end() {
 }
 
 #[test]
+fn wires_into_neighbouring_ports_fan_out_when_their_part_moves() {
+    // Two stacked inputs: one bend at either end would fold both wires onto
+    // one column and join them.
+    let gate = r##"<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <main name="main"/>
+  <circuit name="main">
+    <wire from="(100,90)" to="(170,90)"/>
+    <wire from="(100,110)" to="(170,110)"/>
+    <comp lib="0" loc="(100,90)" name="Pin"/>
+    <comp lib="0" loc="(100,110)" name="Pin"/>
+    <comp lib="1" loc="(200,100)" name="AND Gate"/>
+  </circuit>
+</project>
+"##;
+    let mut d = open(gate);
+    d.move_connected(
+        &d.revision(),
+        "main",
+        vec!["c200_100".into()],
+        p(0, 40),
+        vec![p(200, 100), p(170, 90), p(170, 110)],
+        vec![p(100, 90), p(100, 110)],
+    )
+    .unwrap();
+    let wires: Vec<String> = text(&d)
+        .lines()
+        .filter(|l| l.contains("<wire"))
+        .map(|l| l.trim().to_owned())
+        .collect();
+    assert_eq!(
+        wires,
+        [
+            r#"<wire from="(100,90)" to="(160,90)"/>"#,
+            r#"<wire from="(160,90)" to="(160,130)"/>"#,
+            r#"<wire from="(160,130)" to="(170,130)"/>"#,
+            r#"<wire from="(100,110)" to="(100,150)"/>"#,
+            r#"<wire from="(100,150)" to="(170,150)"/>"#,
+        ]
+    );
+}
+
+#[test]
 fn d1_deleting_a_pin_removes_its_appearance_port() {
     let mut d = open(CLASSIC);
     edit(

@@ -196,11 +196,68 @@ pub fn preserved(
     after: &Connectivity,
     moved: &[String],
     delta: Point,
-) -> Result<()> {
+) -> crate::Result<()> {
     let before = partition(graph, before, &[], Point { x: 0, y: 0 })?;
     let after = partition(graph, after, moved, delta)?;
-    if before != after {
-        return Err("这个位置会改变端口连接，移动未应用。请换一个位置。".into());
+    if before == after {
+        return Ok(());
     }
-    Ok(())
+    // A part as a person finds it on the canvas: factory, label, place before the move.
+    let port = |(id, end, _): &Contact| match graph.components.iter().find(|c| &c.id == id) {
+        Some(c) => {
+            let label = c
+                .attributes
+                .get("label")
+                .filter(|l| !l.is_empty())
+                .map(|l| format!(" “{l}”"))
+                .unwrap_or_default();
+            format!(
+                "{}{label} ({},{}) 的端口 {end}",
+                c.name, c.location.x, c.location.y
+            )
+        }
+        None => format!("{id} 的端口 {end}"),
+    };
+    let error = |message: String| {
+        crate::HostError::new(crate::ErrorCode::ConnectionsChanged, message)
+            .with_hint("换一个位置；或先删掉这些导线，移动后再重新连接。括号里是元件移动前的位置。")
+    };
+    Err(match difference(&before, &after) {
+        Some((joined, a, b)) => error(if joined {
+            format!("这个位置会把 {} 和 {} 接到一起，移动未应用。", port(&a), port(&b))
+        } else {
+            format!("这个位置会断开 {} 和 {}，移动未应用。", port(&a), port(&b))
+        })
+        .with_context(serde_json::json!({
+            "joined": joined,
+            "ports": [[a.0, a.1], [b.0, b.1]],
+        })),
+        None => error("这个位置会改变端口连接，移动未应用。".into()),
+    })
+}
+
+/// The first two ports a changed partition joins (true) or separates (false).
+fn difference(before: &Partition, after: &Partition) -> Option<(bool, Contact, Contact)> {
+    let index = |partition: &Partition| {
+        let mut net = HashMap::new();
+        for (i, contacts) in partition.iter().enumerate() {
+            for c in contacts {
+                net.insert(c.clone(), i);
+            }
+        }
+        net
+    };
+    let (was, now) = (index(before), index(after));
+    for (joined, nets, other) in [(true, after, &was), (false, before, &now)] {
+        for contacts in nets {
+            let first = &contacts[0];
+            if let Some(c) = contacts
+                .iter()
+                .find(|c| other.get(*c) != other.get(first))
+            {
+                return Some((joined, first.clone(), c.clone()));
+            }
+        }
+    }
+    None
 }
