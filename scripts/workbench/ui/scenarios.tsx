@@ -1,6 +1,7 @@
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
 import { verifyAISettings } from "./ai-settings";
 import { verifyConversationSummaries } from "./conversation-summaries";
+import { verifyConversationTurns } from "./conversation-turns";
 import { verifyProjectInfoUI } from "./project-info";
 import { verifyDocumentHistory } from "./history";
 import { verifyReferenceLinks } from "./reference-links";
@@ -1316,6 +1317,7 @@ await verifyReferenceLinks();
 await verifyDocumentHistory();
 await verifyProjectInfoUI();
 await verifyConversationSummaries();
+await verifyConversationTurns();
 await verifyAISettings();
 await verifyEditorRequestLifetimes();
 console.log("All focused UI lifecycle checks passed");
