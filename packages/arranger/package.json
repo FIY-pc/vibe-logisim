@@ -1,0 +1,16 @@
+{
+  "name": "@vibe-logisim/arranger",
+  "version": "0.6.0-dev",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.mts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mts"
+  },
+  "dependencies": {
+    "elkjs": "0.12.0"
+  }
+}

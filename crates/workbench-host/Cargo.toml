@@ -1,0 +1,28 @@
+[package]
+name = "vibe-workbench-host"
+default-run = "vibe-workbench-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+vibe-circuit-document = { path = "../circuit-document" }
+vibe-logisim-runtime = { path = "../logisim-runtime" }
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+xmltree.workspace = true
+uuid.workspace = true
+axum = "0.8"
+futures-util = "0.3"
+zip = { version = "=9.0.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+ts-rs.workspace = true
+tempfile.workspace = true
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "system-proxy", "socks"] }
+
+[target.'cfg(not(windows))'.dependencies]
+trash = "=5.2.9"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_UI_Shell", "Win32_Storage_FileSystem"] }

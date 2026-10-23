@@ -1,271 +1,29 @@
-# 开发与验证
+# 开发
 
-> 文中形如「记录 0NN」或「实验 0NN」的编号指开发过程中的内部实验记录，不随本仓库发布；正文已保留其结论。
-
-## 环境
-
-桌面开发版在 Linux 上开发和验收；Windows 通过打包版本支持（见分发说明），源码直接运行未在 Windows 上验收。需要 Node.js 22+、npm、Python 3.11+（服务使用标准库）、JDK 17+ 的 `java` 和 `javac`。前端 npm 依赖版本由锁文件固定。
-
-开发启动的内置运行时直接使用 npm 安装的 Pi SDK 和用户配置的 API。选择 Codex 运行时才需要 `codex`、`codex-code-mode-host` 在 PATH 中，已有可用的本地 Codex 登录或服务商配置，以及可用的 `systemd-run --user` 隔离环境。独立应用包内置 Pi、Python、Java、Logisim，Codex 在首次使用时下载，并提供应用内登录；见 [分发与验收](distribution.md)。PDF 预览使用内置 PDF.js，不再依赖 Poppler。
-
-## Logisim 运行文件
-
-桥接层依赖特定版本的 Logisim 内部接口。当前仍使用以下本地路径；运行文件与课程库未在此仓库分发，需从自己可用的 Logisim / 课程安装包准备，不能随意替换为其他版本。
-
-| 文件 | 仓库内安装路径 | SHA-256 |
-| --- | --- | --- |
-| Logisim-ITA 2.16.2.2 | `apps/desktop/circuit-lens/native/Logisim-ITA.jar` | `9eb1aae5e87cf0c6e4af845dde00624338c6dce25d945b6482cad017aa6cbb34` |
-| HUST 20200118 课程运行文件 | `workspaces/hust-riscv/original/course-package/logisim-ita-cn-20200118.exe` | `b2400702fb9e8e4c71c512d7e09678a788039f402be55164209cde4cee8fc996` |
-
-请准备两个运行文件：基础环境检查使用前者，新建电路及 `source="2.15.*"` 的课程电路使用后者。课程 `.exe` 含 Java 运行类，由 Java 加载，不通过 Wine 启动。它们都是被 Git 忽略的本地依赖。
-
-前者可从 [Logisim-Ita/Logisim 的 v2.16.2.2 发布页](https://github.com/Logisim-Ita/Logisim/releases/tag/v2.16.2.2) 下载 `Logisim-ITA.jar`（`scripts/distribution/runtime-lock.json` 记录的是同一地址），放到上表路径、核对 SHA-256 即可；后者来自课程发布的安装包，本仓库不提供。
-
-课程组件库 `cs3410.jar`、`riscv-probe.jar` 与引用它们的 `.circ` 放在同一目录。当前只加载已支持摘要的课程库；任意外部库和不同 Logisim 分支尚不保证兼容。详见 `studio/project/package.py`。
+应用入口为 `apps/workbench`，使用 Rust、Tauri 2、React 和 TypeScript。
 
 ## 启动
 
-从仓库根目录运行：
+安装 Node.js 24、rustup 和 JDK 17+，以及 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。Rust 版本由 `rust-toolchain.toml` 固定。
 
 ```sh
-npm --prefix apps/desktop ci
-apps/desktop/run
+npm ci
+npm run setup
+npm run desktop
 ```
 
-安装会将锁定版本的前端依赖生成到 `web/vendor/`；需要联网下载 npm/Electron 依赖。桌面打开本地文件夹后，可从文件树选择或新建电路。AI 使用同一工作目录，资料直接放入文件夹。
+浏览器开发运行 `npm run dev`。它同时启动 React 开发服务器和本机 Rust 宿主。桌面使用 Tauri IPC；浏览器使用回环地址 HTTP/SSE，两者调用同一应用宿主。
 
-可选环境变量：
+## 修改与验证
 
-| 变量 | 用途 |
-| --- | --- |
-| `VIBE_LOGISIM_PYTHON` | Python 可执行文件 |
-| `VIBE_LOGISIM_CODEX` | Codex 可执行文件 |
-| `VIBE_LOGISIM_STATE_DIR` | 独立的本地电路服务状态目录 |
-| `VIBE_LOGISIM_MODEL` / `VIBE_LOGISIM_EFFORT` | 模型与思考深度初始值 |
+- 界面与交互：`apps/workbench/src`。
+- 文档、保存和恢复：`crates/circuit-document`。
+- 应用命令、会话归属：`crates/workbench-host`。
+- 原生元件、连接和仿真：`crates/logisim-runtime`。
+- 模型连接、工具与会话：`packages/agent-runtime`。
 
-会话、认证与运行状态不属于源码。保持原生 Codex 的认证来源，不复制轮换凭据到多个独立活跃配置。
+命令类型在 Rust 中定义；修改后执行 `npm run contracts`，生成 TypeScript 与模型编辑 schema。`npm run check:contracts` 检查生成文件是否一致。
 
-## 有针对性的验证
+`npm run check` 检查 TypeScript，`npm run test:core` 检查文档边界，`npm run test:native` 使用临时电路和真实 Java 运行时检查跨进程行为。`npm run test:ui` 验证 React 的交互状态与异步边界，`npm run test:compatibility` 检查外部库、自定义外观与合成大电路。代理网络、资料引用和内置运行时指令检查使用 `npm run test:runtime`。这些命令不调用远端模型。
 
-原生运行身份和模型参考入口（不调用模型）：
-
-```sh
-python3 -m unittest apps/desktop/test/runtime-execution.py
-node apps/desktop/test/agent-reference-mount.cjs
-```
-
-前者用两个支持的运行文件检查组合输入、时序事件、历史环境绑定、摘要不匹配拒绝与源文件不变；同时从发布给模型的 Markdown 中提取 Java 示例，实际编译、运行并核对成功/失败退出。后者使用生产 systemd 隔离启动 Python，检查参考可读、不可写，用户工作区仍可写且没有被塞入参考文件。它不启动 Codex 或窗口。
-
-局部重新布线的原生验收（内联夹具，不依赖课程材料，不调用模型）：
-
-```sh
-python3 -m unittest apps/desktop/test/rerouting.py
-python3 apps/desktop/test/routing-clearance.py -v
-node apps/desktop/test/rerouting-workspace.cjs
-```
-
-覆盖交叉的 4 位总线、保留未选导线与分支、组合候选、过期导线 ID 拒绝和失败不发布。除原生全部端口位关系检查外，交叉总线另外运行全部 256 组输入；故意注入错误的布线路径，确认原生检查会拒绝短接。
-
-后一个脚本还经过生产 Electron 宿主模块、文件夹、插件和 Studio：生成候选、写入真实工作文件、仿真、渲染、保存文件历史并撤销；检查其他文件未变。它不启动模型或窗口，不应标记为鼠标/UI 验收。
-
-`routing-clearance.py` 用两种原生运行文件检查四方向引脚、绕无关器件、窄通道与直连；默认不需要真实课设样本。历史真实产物的前后图、连接与行为证明及性能范围见 007 间隙报告。
-
-整理电路（`arrange_candidate`）只能改变画法的原生验收（内联夹具，不依赖课程材料，不调用模型）：
-
-```sh
-python3 -m unittest apps/desktop/test/arrange-fidelity.py apps/desktop/test/schematic-panel-detection.py
-```
-
-经生产工作台整理后重新观察，逐项核对：
-- 面板探针接进主体的连线不丢。探针的位宽随所接网络而定，观察器不报它的网络位，整理和等价检查都按它所在的导线补齐。
-- 带自定义外观的子电路，端口引用跟随引脚移动，使用它的电路里实例端口不变。
-- 默认外观的子电路，同一朝向的引脚保持原有顺序。另有对照用例证明运行时确实按引脚位置排列端口。
-- 载入时被合并成一根的共线导线不会被当作旧线删掉。
-- 目标电路之外的字节不变。
-
-原生仿真反馈到评测记录的完整链路可用 `node apps/desktop/test/simulation-evidence.cjs /absolute/new-evidence-directory` 验证。两个 JAR 的生产插件调用覆盖明确预期、空预期、未知、振荡、行采样/分页与候选身份，检查文件与结构历史不变；不启动模型。它只证明实际执行结果正确进入事件，独立任务 oracle 仍另行判断任务成功，见 008 反馈报告。
-
-其结果可交给 `node apps/desktop/test/e2e-simulation-feedback.cjs /absolute/native-evidence-directory /absolute/new-ui-evidence`：在真实 Electron 回放已保存的原生事件，并以明确夹具补上工具完成事件，鼠标展开工作过程，核对完成不覆盖未知/反例、另一批通过不抹掉前一批反例、无断言只显示观察。它没有模型调用，证据来源与 UI 回放范围见 截图。
-
-仿真批量调用的启动成本调查见 记录 021。`measure.py` 和 `thread_lifetime.py` 只做有限的两 JAR 测量，不修改生产路径、不启动模型；它们证明的是每次 JVM 的成本和直接复用已加载 Logisim 图的污染/资源边界。不要把调查结果当作 warm worker 已经存在，或把它替代 UI/任务闭环验收。
-
-模型视觉观察的像素与原生协议验收：
-
-```sh
-python3 -m unittest apps/desktop/test/agent-render.py
-node apps/desktop/test/native-tool-images.cjs
-```
-
-前者使用真实 Logisim 与内联小电路，检查白底、导线坐标、缓存复用和过期图拒绝；Pillow 仅用于测试像素。后者启动本机 Codex，使用独立临时配置及 localhost Responses 回放，检查 Code Mode 结果是否进入下一次模型请求的图像内容。它不使用真实服务商和认证，不消耗模型额度，不代表实际模型能完成电路任务。
-
-渲染性能和清晰度基准（真实 Electron、临时工作区、不启动 Codex）：
-
-```sh
-node scripts/bench/rendering.cjs /path/to/circuit.circ "电路名"
-```
-
-静态细节瓦片的端到端验收（真实 Electron、长课程电路、不启动 Codex）：
-
-```sh
-node apps/desktop/test/e2e-render-tiles.cjs
-```
-
-高 DPI、窄视口、瓦片复用和连续缩放基线（真实 Electron、不启动 Codex）：
-
-```sh
-node apps/desktop/test/e2e-render-density.cjs
-```
-
-测量解释和后续渲染架构见 [画布渲染方向](rendering.md)。
-
-不消耗模型额度、也不需要课程电路的文件夹行为验证：
-
-```sh
-node --test apps/desktop/electron/folder-workspace.test.cjs apps/desktop/electron/folder-import.test.cjs apps/desktop/electron/folder-operations.test.cjs
-```
-
-日志脱敏、诊断包（zip 写入与回读、报告只含路径特征、摘要不含路径、兜底检查）、失败工具调用的缓冲和版本检查（本地假发布源，含超时、403、缓存与开关）：
-
-```sh
-node --test apps/desktop/electron/diagnostics-log.test.cjs apps/desktop/electron/diagnostics-bundle.test.cjs apps/desktop/electron/agent-tool-host.test.cjs apps/desktop/electron/update-check.test.cjs
-```
-
-同一套功能在开发版 Electron 里的完整路径（假发布源触发新版本横幅、忽略此版本、「…」菜单关闭自动检查后重启不再请求、反馈对话框预览与保存、解开诊断包检查路径和姓名学号、预填的反馈页链接与 issue 表单字段一致），不需要样本和模型额度：
-
-```sh
-node apps/desktop/test/e2e-feedback.cjs
-```
-
-开发版可用 `VIBE_LOGISIM_UPDATE_URL` 把版本检查指向本地发布源（打包版忽略）；`VIBE_LOGISIM_NO_UPDATE_CHECK=1` 关闭全部版本检查请求，打包冒烟测试就是这样运行的。
-
-`apps/desktop/test/` 保存桌面和原生运行验证脚本。许多历史脚本依赖本地 `exports/`、`archive/`、`experiments/` 下的样本电路或课程运行文件；它们没有随仓库分发。缺少样本时这些脚本会打印 `SKIP: sample files not in the repository …` 并以 0 退出，unittest 模块则只跳过依赖样本的用例（守卫见 `apps/desktop/test/support/samples.py` 与 `samples.cjs`）；这既不是通过也不是回归。现有 `npm run test:e2e` 也是需要样本的浏览器服务验证，不覆盖完整 Electron 体验。
-
-安装两种 Logisim 运行文件后，可用自包含寄存器电路验证时序输入与采样，无需课程材料或模型额度：
-
-```sh
-python3 -m unittest -v apps/desktop/test/trace-events.py
-```
-
-它区分原生 Clock、Pin 时钟和 Button 时钟，检查输入事件与按钮事件顺序、保持、使能、复位、分页重跑，以及仿真不写回源文件或结构历史。真实模型的通用跨模块对照另见 双实例寄存器场景，必须显式启用，不属于常规测试。
-
-原生元件查询与人工放置的共享契约可用 `python3 -m unittest -v apps/desktop/test/describe-component.py` 检查：将模型查询返回的 XML 插入新文件，再由原生观察器核对实际端口、位宽、方向和属性；覆盖库 ID、库工具默认值、子电路、不同逻辑门配置、寄存器、非法属性、只读查询及人工输入格式兼容。不调用模型，不需要个人电路。
-
-`python3 apps/desktop/test/component-attributes.py -v` 进一步检查两种原生运行文件的拆线器位分组：模型模板、直接 XML 加载、按真实端口接线后的输出、人工编辑/撤销及独立 observer 编译。共享属性适配器属于 worker、native、observer 的编译和缓存依赖；新增 Java 源也须随独立包分发。证据与责任判断见 记录 013。
-
-`node apps/desktop/test/native-tool-constraints.cjs /tmp/new-tool-constraints-capture` 使用真实 Codex app-server 与本地合成 Responses，核对模型实际收到的界限、旧线程恢复/分支限制；不读认证、不调用远端模型。纯投影与执行校验另用 `node --test apps/desktop/electron/schema-constraints-projection.test.cjs` 和 `python3 apps/desktop/test/tool-constraints.py`，见 记录 012。
-
-该协议探针也核对实际 Code Mode 返回 string、普通 JSON 解析及 Unicode/null 字段保真；结果中的 passed 是明确夹具，不冒充电路仿真。可选组件目录的完整条目/字节预算/过期游标由 `python3 apps/desktop/test/inspection-discovery.py -v` 验证；真实保存的大电路观察及原生传输见 记录 018。候选应用前预览可用 `python3 apps/desktop/test/candidate-render.py -v` 检查两种 JAR 的真实生成候选、白底图像、文件不变与过期拒绝；图片传输及复现路径见 记录 019。这些入口均不调用远端模型。
-
-从空白接口构建组合算术电路的真实 base/full 回合、独立 oracle 与鼠标操作见 记录 011。真实模型仅显式 `--run-model` 才启动；UI 脚本接受产物绝对路径，在临时副本操作 Pin，不启动模型。校准电路与模型产物结果必须分别报告。 默认结果目录为 `$XDG_STATE_HOME/vibe-logisim-experiments`（未设置则 `~/.local/state/vibe-logisim-experiments`）；`--output-root` 可指定其他持久目录，`--timeout-minutes` 明确实验预算。长回合及并行工作树不要放易随重启清空的 `/tmp`，遗失产物不能计入成功或功能失败。
-
-`python3 -m unittest -v apps/desktop/test/evaluation-integrity.py` 用两种真实运行文件检查空断言、悬空输出和反馈振荡：只有已稳定且确定的比较才能通过或构成反例，观察不写源文件或结构历史。`node apps/desktop/test/agent-instructions.cjs` 使用隔离配置和 localhost Responses 回放，检查协作指令、上下文、恢复/分支和文件边界；不调用真实模型。它验证完整线程契约匹配时才 resume，developer 指令变化时使用当前说明启动新线程，并验证显式分支保留原生历史；不能仅凭 resume/fork 参数接受成功就声称旧线程已更新。
-
-`node apps/desktop/test/e2e-delivery-links.cjs [可选电路路径]` 在真实 Electron 用鼠标点击合成聊天引用，确认工作区资料预览、模型原生路径打开画布、移动映射、跨文件夹和历史歧义处理。文件和状态均使用临时副本，不启动模型；使用真实模型产物的记录区分模型任务结果与这个界面回放。
-
-交互改动优先在独立临时文件夹和独立状态目录启动真实 Electron，通过鼠标/键盘走用户流程，核对保存文件、原生行为与重开结果。AI 状态可用明确标注的回放验证；真实模型回合单独考虑额度和必要性。
-
-已经安装上述两个 Logisim 运行文件时，可验证 AI 缺失不影响人工工作：
-
-```sh
-node apps/desktop/test/e2e-without-agent.cjs
-```
-
-此脚本在独立临时目录启动真实 Electron，故意指定不存在的 Codex 路径，经界面新建电路、放置元件、保存并重开，也检查无效目录不会覆盖当前文件。只替换系统文件选择器的返回路径，不模拟文件服务或电路引擎；不需要个人课设文件，不发送模型请求。它验证的是文件与人工编辑路径，不包含 AI 协作或仿真正确性的验收。
-
-Linux 独立包、Windows 安装器及打包程序的鼠标/键盘验收入口，见 [分发与验收](distribution.md)。CI 分别构建和检查两种平台，发布由版本标签触发。
-
-输入操作不再要求手工先启动仿真。针对本地全加器（含 `FullAdder`、`A/B/Cin/Sum/Cout`）的实际界面验收：
-
-```sh
-node apps/desktop/test/e2e-simulation-inputs.cjs /path/to/full_adder.circ
-```
-
-原文件会复制到临时工作区。脚本直接点输入，核对八种组合，检查启动中快速点击、未运行时填值、总线、按钮松开、启动失败重试及切换文件后的旧点击隔离。可追加独立包可执行文件路径，改为验收打包版本。
-
-仿真输入反馈与布线手势可用 `node --test apps/desktop/test/simulation-input-feedback.mjs` 检查：冷启动期间按下/松开、已接收但尚未显示的操作、失败与切图隔离，以及正交路径的换向。`python3 apps/desktop/test/simulation-edit-recovery.py -v` 使用独立示例和真实原生运行时，检查编辑后结束旧状态、重新仿真、异常退出分类及撤销/源文件边界，以及含子电路的接线身份一致性。
-
-界面验收应另外操作输入按钮（包含按住、松开、键盘、窗口失焦和慢启动）、连续时钟单步/暂停/复位、运行中编辑后重新仿真，以及端口拖接、逐点拐弯、Shift 换向、Esc 取消、导线分支和撤销。等待反馈只代表输入请求尚未出现在原生观察中，不预测电平。结构修改后的 `revision-changed` 是可恢复状态；其他运行错误仍需显示。小窗口中还应确认“适合窗口”避开浮动工具栏。
-
-布线支持分段完成：拖动端口或线端后松手，即可在空白处落线；`2` 进入布线模式，可从空白起笔，选择模式也可按住 `Alt` 从空白或导线中间起笔。点击可逐段固定拐点，`Enter` 在当前位置完成，`Esc` 仅取消当前未提交路径。已落下的半截线、独立折线和闭环均使用标准 `.circ` 导线，按普通编辑保存和撤销；它们仍有电气含义，不能当成不导电的标注框。
-
-`python3 apps/desktop/test/free-wiring.py -v` 使用独立夹具和原生运行时检查分段续接、保存重开、撤销、未知位宽接入、探针引线、位宽冲突和整理保护。整理保留独立导线、未完成与闭环导线的原位几何，并固定相连元件；其他部分仍可整理，但跳过会移动这些导线的全图压缩。候选须通过原生连接与保留几何检查，避免丢线或把独立画线接到元件上。此规则不推断线框中的元件属于同一分组。
-
-放置时的图面连续性可用同一份全加器验证：
-
-```sh
-node apps/desktop/test/e2e-placement-rendering.cjs /path/to/full_adder.circ
-```
-
-通过真实鼠标在放大和普通视野放置，延迟真实高清图响应，检查等待期间原图和新组件持续存在、后续点击保留、视野稳定、切换文件后丢弃旧图。记录逐帧状态与 Chromium 实际绘制的 PNG，便于检查局部闪烁；不替换原生电路结果，不消耗模型额度。
-
-放置与删除的即时反馈和失败恢复可用临时全加器及空电路验证：
-
-```sh
-node apps/desktop/test/e2e-place-delete-latency.cjs
-node apps/desktop/test/e2e-delete-recovery.cjs
-```
-
-两者都用真实 Electron 鼠标和键盘操作，不启动 Codex。前者记录单次放置、连续放置和 Backspace 删除从输入到画面可见的时间，并确认后台仍写入临时文件；后者让第一次删除故意失败，确认元件和画面覆盖层恢复、文件内容不变。它们测量的是本地即时反馈与恢复边界，不把后台写入耗时冒充用户已经看到结果的时间。
-
-对话管理与草稿归属的验收：
-
-```sh
-node --test apps/desktop/electron/conversations.test.cjs apps/desktop/electron/conversation-drafts.test.cjs
-node apps/desktop/test/e2e-conversations.cjs
-node --test apps/desktop/electron/conversation-edit.test.cjs
-node apps/desktop/test/e2e-conversation-edit.cjs
-```
-
-窗口脚本在临时文件夹打开真实 Electron，经鼠标和键盘新建、搜索、重命名、归档和恢复，核对不同会话的文字与引用、跨文件夹隔离、切电路保留会话、重开恢复和电路文件未改变；历史消息使用明确标注的本地夹具，回答中状态也为回放。单元验证另覆盖旧索引备份迁移、延迟草稿保存、损坏记录保留，以及协议回放下不同会话续接各自原生线程。两者均不调用模型，不证明真实模型回答质量。
-
-“分支到新聊天”额外使用真实 Codex 原生协议验收，需要本机 Codex 可以启动：
-
-```sh
-node --test apps/desktop/electron/conversation-fork.test.cjs
-node apps/desktop/test/e2e-conversation-fork.cjs
-node apps/desktop/test/e2e-conversation-fork.cjs --legacy
-```
-
-脚本只向隔离的测试配置写入合成历史，不复制个人会话或认证；在真实窗口点击早期回复的分支按钮，核对新线程的上下文只到所选位置、保留此前工具结果、原聊天和草稿不变、重开续接新线程。默认覆盖原生分页会话格式，`--legacy` 覆盖旧格式；不发送模型回合。单元回放另检查下一次发送使用子线程，以及失败、错误终点和过期响应不会替换原对话。
-
-文件保存状态与顶栏文件名放在一起：未保存圆点、保存中指示和异常图标；成功后回到普通文件名，不常驻成功文案。点击文件名查看文件信息与导出；“更多 → 保存”或保存快捷键直接保存当前绑定文件，不再重复确认。错误保留改动并提供重试，外部文件变更继续阻止覆盖；正常保存不会刷新电路或中断仿真。文件夹工作区原有自动写入边界不变。
-
-`node --test apps/desktop/test/document-save.mjs` 检查保存等待、失败重试、重复按键和过期响应隔离。界面另需检查真实保存、等待反馈、失败后重试、外部修改保护以及窗口收窄。
-
-快捷键使用统一命令表，工具默认 `1–4`，`A` 打开元件库。“更多 → 快捷键”（`Ctrl+,`；macOS 为 `⌘+,`）提供按键录入、冲突检查、清除与恢复默认；按钮提示和仿真菜单同步使用当前键位。桌面偏好单独保存在应用用户目录，不依赖运行服务端口，不写入工程。浏览器预览使用当前站点的本地存储。确认、取消、删除、临时平移和文字编辑等基础操作保留固定键位。
-
-`node --test apps/desktop/test/shortcuts.mjs apps/desktop/electron/shortcut-preferences.test.cjs` 检查冲突、清除、跨平台组合键、IME 隔离和偏好持久化。界面另需验证数字键与 A、输入框防误触、修改后提示与响应一致、重新打开、清除 / 恢复以及仿真操作。
-
-画布网格的鼠标、快捷键、缩放与重开验证：
-
-```sh
-node apps/desktop/test/e2e-grid.cjs
-```
-
-脚本在临时工作区使用真实 Electron 和原生电路图，核对网格显示、导线像素、平移缩放对齐、超长画布覆盖、输入点击及重启后的显示偏好。视图操作不改变电路文件或结构历史；不启动 Codex、不消耗模型额度。
-
-### 文件拖动、删除和引用
-
-```sh
-node apps/desktop/test/e2e-file-operations.cjs
-```
-
-在真实 Electron 中用鼠标拖动文件/文件夹与右栏引用，悬停展开目录，拒绝向自身子目录移动和覆盖同名文件；经界面放置元件、移动当前电路、继续编辑和撤销移动，核对原文档身份、编辑历史及新保存位置。右键和 Backspace 删除调用真实系统回收站，核对回收站内容及历史恢复；引用经移动、对话切换和重开继续可用。系统文件拖入使用 Chromium 的原生文件拖动协议，走真实复制与引用服务。
-
-夹具保存在 `~/.cache/vibe-logisim-e2e/file-operations-*`，使用独立配置、状态和 XDG 回收站；某些 Linux 系统拒绝对 `/tmp` 的内部挂载执行回收站操作，因此不把删除验收放在 `/tmp`。不启动 Codex，不消耗模型额度。该验证覆盖文件操作与引用传递，不代表模型已阅读这些资料并完成电路任务。
-
-### 内置运行时验证（不调用远端模型）
-
-```sh
-node --test apps/desktop/electron/builtin-backend.test.cjs apps/desktop/electron/model-catalog.test.cjs apps/desktop/test/agent-output-projection.mjs
-node apps/desktop/test/builtin-runtime-native.cjs
-env -u ELECTRON_RUN_AS_NODE apps/desktop/node_modules/.bin/electron apps/desktop/test/builtin-runtime-electron.cjs
-```
-
-第一条使用本地 HTTP 流验证协议、工具回合、停止、恢复和运行时归属，并检查完整工具目录在 Responses 出站请求中保留原始可选字段、显式发送 `strict:false`。原生脚本分别走 Chat Completions 和 Responses，只传必要参数读取项目、组件目录、元件详情及端口连接，再检查仿真与图片结果。Electron 脚本检查真实 `session.fetch` 传输。它们不证明真实模型能完成用户任务，也不消耗远端模型额度。
-
-### 模型目录维护
-
-`node scripts/ui/update-model-catalog.cjs` 显式下载并精简 Models.dev 资料；也可传入已下载的 JSON 文件路径。更新后检查 `model-catalog.snapshot.json` 的差异并运行上述目录测试。快照及 MIT 许可证随独立包分发，构建不下载模型资料。
-
-目录测试检查资料与服务列表的边界、离线缓存、凭据隔离、请求超时及思考档位；打包测试 `e2e-runtime-packaged.cjs` 使用本地服务检查实际选择器、列表刷新失败后的可用性，以及选择保存和重开。CI 对 Linux 和 Windows 均执行打包测试，不调用远端模型。
+开发状态、外部运行时和分发资源不进入 Git。详细配置、持久化边界、分发命令和验证范围见 [工作台开发参考](native-workbench.md)，模块划分见 [架构](architecture.md)，每个模块目录下的 README 写明它的接口、不变量和待办。

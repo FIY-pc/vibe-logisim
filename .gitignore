@@ -1,16 +1,8 @@
 # Dependencies and generated files
 node_modules/
-__pycache__/
-*.py[cod]
 *.class
-.venv/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
 build/
 dist/
-wheels/
-*.egg-info/
 tmp/
 .DS_Store
 
@@ -18,8 +10,6 @@ tmp/
 .env
 .env.*
 !.env.example
-.codex/
-auth.json
 *.pem
 *.key
 
@@ -37,7 +27,16 @@ auth.json
 /examples/
 /experiments/
 /docs/recovery/
-/apps/desktop/workspaces/
-/apps/desktop/docs/
 **/evidence/
 .probe/
+
+# Rust and workbench artifacts
+/target/
+/apps/workbench/src-tauri/gen/
+*.tsbuildinfo
+/.workbench-state/
+/.workbench-cache/
+
+# bun writes its own lock file; package-lock.json is the one in use
+bun.lock
+bun.lockb

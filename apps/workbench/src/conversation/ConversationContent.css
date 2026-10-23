@@ -1,0 +1,211 @@
+.conversation-picker {
+  flex: 1;
+  min-width: 0;
+}
+.conversation-picker > summary {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 6px 8px;
+}
+.conversation-picker .menu-content {
+  left: 0;
+  right: auto;
+  width: min(340px, 80vw);
+  max-height: min(520px, 70vh);
+  padding: 8px;
+  gap: 6px;
+}
+.conversation-picker input[type="search"] {
+  width: 100%;
+}
+.conversation-archive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.conversation-archive input {
+  width: auto;
+}
+.conversation-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+.conversation-list > button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+}
+.conversation-list > button[aria-current="true"] {
+  background: var(--selection-fill);
+}
+.conversation-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.messages-content {
+  min-width: 0;
+}
+.activity summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.activity summary > span {
+  flex: 1;
+  min-width: 0;
+}
+.activity summary > small {
+  flex: none;
+  color: var(--muted);
+}
+.activity[data-result-status="unknown"] summary > small,
+.activity[data-status="warning"] summary > small {
+  color: var(--warning, #a16207);
+}
+.activity[data-result-status="failed"] summary > small,
+.activity[data-status="failed"] summary > small {
+  color: var(--danger, #b42318);
+}
+.tool-output {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}
+.tool-output > code {
+  overflow-wrap: anywhere;
+}
+.tool-output small {
+  color: var(--muted);
+}
+.chat-code {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  margin: 8px 0;
+}
+.chat-code pre {
+  position: relative;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+}
+.chat-code-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  color: var(--muted);
+  font: 11px var(--font, sans-serif);
+}
+.chat-code-actions button {
+  display: inline-flex;
+  padding: 3px;
+}
+.chat-table {
+  overflow-x: auto;
+}
+.follow-latest {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: -32px 0 6px;
+  z-index: 1;
+  padding: 4px 10px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px #0001;
+}
+.activity-batch {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.activity-batch > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  padding: 5px 0;
+}
+.activity-batch > summary::before {
+  content: "›";
+}
+.activity-batch[open] > summary::before {
+  transform: rotate(90deg);
+}
+.activity-batch > summary > span {
+  flex: 1;
+}
+.activity-batch > div {
+  border-left: 1px solid var(--border);
+  padding-left: 9px;
+}
+.activity-batch[data-status="warning"] > summary > small {
+  color: var(--warning, #a16207);
+}
+.activity-batch[data-status="failed"] > summary > small {
+  color: var(--danger, #b42318);
+}
+.conversation-starters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.conversation-starter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 11px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--paper);
+  color: #20242b;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.conversation-starter span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.conversation-starter > svg:first-child {
+  color: #667b9c;
+  flex: none;
+}
+.conversation-starter > svg:last-child {
+  color: #99a5b7;
+  flex: none;
+}
+.conversation-starter:hover:not(:disabled) {
+  border-color: #bccbe3;
+  background: #f5f8fd;
+}
+.conversation-starter:active:not(:disabled) {
+  background: #eaf0fa;
+}
+.conversation-starter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

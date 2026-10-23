@@ -1,100 +1,51 @@
-# 架构与状态归属
+# 架构
 
-产品有两部分：人和 AI 共享的电路工作区，以及让 AI 获得电路反馈、执行修改的可选工具。它们共同服务实际设计工作，不规定先构建还是先验证。
+一句话：Rust 宿主拥有工作区，窗口和 AI 进程都只是它的客户端，走同一套请求。每个模块目录下有一份 README，写明职责、接口、不变量、状态和待办；本文只给地图。
 
 ## 模块
 
-| 模块 | 负责的状态与行为 |
-| --- | --- |
-| Electron 文件夹服务 | 文件树、预览、复制导入、移动与回收站删除、文件变化和改动历史 |
-| Electron AI 服务 | 模型连接、会话、草稿、工作目录与工具入口 |
-| Electron 诊断与更新 | 脱敏的滚动日志（`userData/logs`）、一键诊断包、最近失败的工具调用、启动时查询新版本 |
-| Web features | 按文件、画布、放置、连线、属性、仿真、对话拆分的交互控制器 |
-| Studio application | 用户动作的组合与接口，避免在传输层堆业务逻辑 |
-| Studio project | 电路文档、依赖、结构改动、源文件保存与恢复 |
-| Studio runtime | 原生加载、常驻 worker、渲染、连接观察和仿真实例 |
-| Studio domain / infrastructure | 领域值与几何；文件操作和状态目录归属锁 |
-| Native / observer Java | 对匹配 Logisim 的元件、连接、封装、渲染与运行进行桥接 |
-| Distribution / runtime paths | 固定包内工具、可移动资源路径；开发环境与独立应用的数据边界 |
+| 模块                                                            | 语言                     | 职责                                                                            |
+| --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------- |
+| [crates/circuit-document](../crates/circuit-document/README.md) | Rust                     | `.circ` 文件本身：解析与原样回写、对象 ID、修订、编辑、撤销、保存、历史、文件夹 |
+| [crates/logisim-runtime](../crates/logisim-runtime/README.md)   | Rust + Java              | 真实 Logisim 运行时：观察连通、元件目录、属性、渲染、仿真会话                   |
+| [crates/workbench-host](../crates/workbench-host/README.md)     | Rust                     | 唯一拥有工作区的进程：请求词汇与规则、状态目录、事件、AI 进程的生命周期         |
+| [apps/workbench](../apps/workbench/README.md)                   | TypeScript、React、Tauri | 窗口：按领域分文件夹的界面状态与交互，不含任何业务规则                          |
+| [packages/agent-runtime](../packages/agent-runtime/README.md)   | TypeScript、Node         | AI 回合：模型服务、按文件夹的对话、工具；每个工具调用都是一次宿主请求           |
+| [packages/arranger](../packages/arranger/README.md)             | TypeScript               | 纯函数布局：放置、布线、等价检查，不做 I/O                                      |
+| [scripts/workbench](../scripts/workbench/README.md)             | TypeScript               | 开发、验证、打包脚本                                                            |
 
-依赖方向为 `transport → application → project/runtime/collaboration → infrastructure`，共享领域契约位于 `domain`。`core/composition.js` 组合前端控制器；Electron IPC 与服务 HTTP 是传输边界。
+依赖只向下：`circuit-document` ← `logisim-runtime` ← `workbench-host` ← Tauri 壳；窗口和 AI 进程通过传输层调用宿主；AI 进程和窗口各自在 worker 里调用 `arranger`。没有模块依赖窗口或 AI 进程。
 
-面向模型的 Harness 与电路插件边界见 [Harness 与电路插件](harness.md)。Codex 负责代理生命周期和通用工作区能力；`AgentToolHost`、`AgentContextHost` 和 `AgentWorkspaceHost` 只负责把领域工具、上下文与工作区生命周期接入动态回合；能力报告通过 `dynamicToolHost` 描述当前领域适配器，Circuit Plugin 与 `CircuitContextProvider` 负责电路工具、上下文投影、宿主绑定以及原生运行实现。工作区索引只提供文件身份和轻量目录导航，电路运行反馈通过显式工具返回，不在回合之间自动聚合成状态，也不规定模型必须遵循的工作流。
+## 四条数据流
 
-长期协作语义由 `electron/agent-instructions.cjs` 拥有，工具参数由 Studio 的插件目录拥有；领域观察的模型返回视图由 `electron/model-result-projection.cjs` 拥有，文件操作回执由 `electron/circuit-action-result.cjs` 拥有，二者不能改变 UI/历史的原始对象。原生执行与期望比较分开，组合和时序的稳定/未知/反例语义共享 `studio/domain/evaluation.py`。工作区收束后的领域事件由 workspace adapter 的 `finishEvent()` 产生，Codex backend 不再判断候选字段。这些边界允许各自演进，避免在 Codex backend 里同时维护提示词、领域判断和数据压缩规则。
+1. **人编辑。** 窗口动作构造 `{op, …}` → `Host::dispatch` → `Document::edit`（带调用方读到的修订）→ 自动保存到源文件 → 记录历史 → 返回 `view`/`selection` → 窗口替换对应 store → 画布向宿主请求新的 PNG。窗口不做乐观更新。
+2. **观察。** 宿主为每个修订落一份不可变 artifact → `Native::observe` 交给 Java 读取端口、位网、边界 → JSON 按 artifact 摘要缓存。连通、命中、追踪都来自这份观察，不从像素推断。
+3. **AI 回合。** 窗口 `agent{method:"ask"}` → 宿主 → sidecar 标准输入 → `TurnRunner` 流式调用模型 → 工具以 `{kind:"host"}` 发宿主请求，走和人编辑完全相同的 `dispatch` → 事件以 `{kind:"event"}` 回到宿主 → 窗口 `agent` 主题。每回合开始和结束各记一次文件夹检查点，窗口收到 `files-changed`，用户可整回合撤销。
+4. **仿真。** 窗口 `simulationAct` → `SimulationRegistry` → 一个 Java 会话 → 帧通过订阅流回 `Event::Simulation` → 窗口 store。每次请求后宿主 `reconcile`：文档关闭或修订变化即结束运行。
 
-`electron/canvas-navigation.cjs` 桥接模型的可选子电路导航与 renderer 的实际图面状态。文件夹/工程/修订绑定随请求传递，显示结果由 `features/project.js` 确认；旧选区和文件的 main 属性不是显示证据。导航是瞬时状态，不创建选区、修订或保存。人工后续导航使旧请求失效，renderer 重载/关闭清除确认状态；无界面或未确认显示会显式返回，文件加载仍有独立结果。
+## 全局规则，各在一处实现
 
-`project/attribute_edits.py` 负责批量属性候选、源版本绑定、差异写入和端口/接口反馈；`CircuitObjects` 只操作原生属性 clone，与 `CircuitPalette` 共用 setter 与序列化。它不调用推进当前 revision 的人工编辑事务，也不复制组件属性白名单或启动另一个模型循环。
+- 对象 ID 是位置：元件 `c<x>_<y>`（负号写 `m`，同锚点第二个加 `_2`），导线 `w<n>` 按文件顺序。由 `circuit-document` 定义，窗口、AI 和脚本都照此寻址。
+- 每个修改请求带调用方读到的修订，不匹配整条拒绝（`StaleRevision`），没有部分生效。`circuit-document` 检查，宿主透传。
+- 写操作串行、成功后自动保存（源文件在打开的文件夹内时）、记录文档历史、落恢复记录；全在 `Host::dispatch`。
+- 仿真寿命绑定修订：`Host::reconcile`。
+- AI 能调用哪些操作：`api/*.rs` 里每个 op 的 `Meta::agent()`，其余一律 `NotAllowed`。
+- 对话的作用域是文件夹 ID：sidecar 从宿主 `status.folder` 取。
+- Rust 类型是契约源：`npm run contracts` 生成窗口和 sidecar 的 TypeScript 与编辑 schema，`npm run check:contracts` 校验。
+- 错误文案在错误产生处定义，面向用户、中文：宿主 `ErrorCode`、Java 桥接的字符串、AI 工具的 `CircuitToolError`。上层只展示，不翻译、不包装。
 
-模型工具声明经 `electron/schema-constraints-projection.cjs` 从同一 schema 补充原生 Code Mode 遗失的参数界限，契约签名包含实际发送的声明；不维护第二份规则。原生编辑器选项与保存属性值的转换由 `NativeAttributeAdapter.java` 统一处理，模板查询、人工放置/属性编辑与观察器共用，通过原生 setter 规范化选项，不推断本地化标签或另写元件属性规则。
+## 改东西去哪里
 
-`electron/model-tool-output.cjs` 负责实际输出适配及 Code Mode 的字符串/图片返回说明。`domain/component_directory.py` 在已有静态观察上构造有字节预算的可选目录，不另建查询语言或游标服务。`application/candidate_render.py` 组合候选归属、原生边界观察与既有白底 renderer，允许应用前看图；候选访问和渲染身份继续由各自模块拥有，不改变文件编辑流程。
+- 新的宿主操作：在 `crates/workbench-host/src/api/<领域>.rs` 加一个变体并声明 `Meta`，实现放进对应领域目录，跑 `npm run contracts`，再在窗口或 sidecar 使用。
+- 新的 AI 工具：`packages/agent-runtime/src/tools/schemas.mts` 加 schema 和中文标签，handler 放进对应 `tools/<领域>.mts`，在 `tools/index.mts` 注册；工具只能调用宿主操作。
+- 新的界面：放进 `apps/workbench/src/<领域>/`，状态进该领域的 store，跨领域只经过 `app/` 或 `shared/`。
+- Logisim 行为问题：先看 `crates/logisim-runtime/java/native`；Rust 和 TypeScript 不复制 Logisim 语义。
 
-## 需要保持的边界
+## 待办
 
-- 文件夹拥有多条会话、上次选中的会话及资料；每条会话拥有自己的输入草稿和引用。电路文档拥有自己的结构状态和历史。切电路不切会话。
-- 人工结构编辑可以自动写回文件；外部变化需要核对磁盘基线，不能静默覆盖。
-- AI 直接编辑工作目录，文件变化进入共享界面并可查看、撤销。候选比较仍是可选能力。
-- 临时放置对象先进入前端场景；后端排队校验、提交及显示刷新要保持顺序，并隔离过期响应和失败对象。
-- 时钟、输入、寄存器和内存运行值属于仿真实例，不是结构修订。
-- 仿真命令绑定发起时的工程、修订和当前电路导航位置。浏览其他定义保留已有运行；在另一个定义上明确启动、步进或操作输入时，直接替换为该电路的临时运行。进入运行中的子电路实例沿用原根运行，返回原根图恢复其视图与状态。菜单、快捷键、输入控件和 RAM 启动共用目标选择规则，已留存观察不随运行替换而丢失。
-- 图像缩放使用按视野请求的原生重绘；连接与运行语义由真实 Logisim 给出。
-- 编辑后的静态图先由 rendering 解码整图及所需高清图，project 确认仍属于当前导航后，canvas 同帧交接图面和组件。旧图与临时组件持续显示到替换就绪；静态图资源由 rendering 释放，过期导航的预备图不得进入当前画布。
-- 草稿、历史、资料与恢复记录各自持久化，不用某一个当前电路版本代替所有身份。
+每个模块 README 末尾的「Remaining tasks」是当前的待办。跨模块的优先次序：
 
-当前模块已经分开，但还有历史兼容入口及实现耦合。分目录本身不证明架构或交互成熟；以后按具体用户阻碍选择需要继续收敛的边界。
-
-## 对话归属与恢复
-
-`conversation-store.cjs` 持久化文件夹内的会话目录、标题、原生线程标识和消息缓存；`codex-backend.cjs` 负责当前线程的连接、续接和运行状态。新建本地会话不创建模型回合，发送时才创建或续接对应线程。原线程不可用时保留记录并报错，不拿新线程替代旧对话。当前每个窗口只有一条运行中的会话，切换前必须停止回答。
-
-`conversation-ipc.cjs` 校验文件夹及预期当前会话，切换与发送共用工作区代次检查。前端 `features/conversations.js` 负责标题入口、查找和管理，`features/draft.js` 与 `conversation-drafts.cjs` 按文件夹和会话组合标识保存文字、资料引用、留存观察和选区。切换前已经发出的保存仍写回原会话，不能落到新会话；仿真实例和电路内容不随对话切换。
-
-旧版每文件夹一条线程的索引迁移为该文件夹的 `legacy` 会话，保留线程标识、消息引用和原草稿路径；首次写入前备份旧索引。归档只隐藏目录项，恢复后仍可继续原会话。索引或草稿读取失败时保留原文件，不自动覆盖成空记录。
-
-`conversation-fork.cjs` 从原生历史定位所选回复的回合，调用 `thread/fork(lastTurnId)` 并核对返回历史的结束位置。分支继承原生上下文（包括工具结果），不把可见文本拼成新提问；确认成功后 `conversation-store.cjs` 才保存独立会话及来源关系。失败、过期或运行时忽略终点时保留原选择。只支持已结束回合的最后一条回复；原对话的草稿不复制，新分支仍在同一文件夹工作，电路与仿真不会倒退。
-
-用户消息的“编辑此问题”由 `conversation-view.js` 和 `conversation-edit.cjs` 共同实现原生编辑语义：前端在原消息的位置展开编辑器，底部草稿保持独立；用户发送时后端调用 `thread/revert(beforeTurnId)` 回到该用户回合之前，再以修改后的文字开始新回合。回退只修改 Codex 持久化对话历史，不回退工作区文件；回退完成后重新读取原生线程并同步消息上下文，失败或运行时没有准确保留前缀时不覆盖本地记录。取消编辑不会改变对话。
-
-运行中的补充意见复用同一输入上下文和原生 `turn/steer`，由 `codex-backend.cjs` 持有唯一待确认发送及其工作区/回合归属；不创建第二个模型循环。前端在准备选区之前捕获 `expectedTurnId`，IPC 传递该约束，过期不提升为新回合。原生响应或对应 userMessage 任一确认后只记一次消息，失败保留原草稿。历史中的补充消息由 native turn 内的位置标记为 continuation，避免按回合回退时误删原问题。
-
-独立包的目录与进程约定见 [分发说明](distribution.md)。`runtime-paths.cjs` 选择包内环境，`agent-process.cjs` 提供外部隔离，PDF 预览在独立受限渲染进程运行。应用资源不承担用户工作区或可写状态的职责。
-
-## 文件操作与引用
-
-`file-tree.js` 负责行选择和拖动源；`file-drop.js` 负责左栏移动/复制目标；`reference-drop.js` 负责右栏引用目标。三者共享专用拖动类型，普通文字拖动不被接管。移动/删除的宿主入口经过工作区切换边界和文件操作队列；AI 正在回答时拒绝这些操作，避免移动其正在使用的路径。
-
-`folder-operations.cjs` 协调真实文件与工作区记录；Studio 的 `project/relocation.py` 在引擎锁下执行不覆盖目标的移动，并迁移该路径下已打开电路的文档记录。文档身份、结构版本、编辑历史保持原值，保存位置随路径变化。文件夹的会话身份不变。移动记录带有独立撤销动作，只反向移动当前内容，不用旧文件快照覆盖移动之后的编辑；目标已占用时拒绝。
-
-删除只调用系统回收站，不回退到永久删除。操作中的未保存当前电路先要求保存。系统不支持回收站（例如某些临时挂载）时保留文件并报错；普通已留存文件也可以从文件改动历史恢复，大文件和空目录通过系统回收站恢复。
-
-工作区记录保存应用内移动的路径映射，引用携带路径版本，供草稿、历史消息、预览和发送时解析。旧路径被新文件复用时，新引用不会跟到先前已移走的文件。该映射不推断外部程序的重命名。右栏直接引用工作区文件；从系统拖来的文件先按现有无覆盖规则复制入工作区，然后绑定发起拖动时的对话，完成前切换对话不会把引用挂到另一条对话。
-
-助手回复的文件链接由 `core/conversation-reference.js` 解析。`ConversationView` 固定消息的工作区和可用路径版本，`materials` 分派引用，`files` 复用原文件服务进行移动解析、预览或选择电路；不能拿用户后来切换的文件夹补齐旧消息归属。原生挂载路径是工作区引用，不作为宿主绝对路径直接打开。缺少版本的历史路径发生移动歧义时拒绝猜测。
-
-## AI 运行时
-
-`AgentRuntime` 是 Electron 的运行时入口；`BuiltinBackend` 使用随应用分发的 Pi Agent Core 和协议适配器，`CodexBackend` 保留原生 Codex 会话。会话记录显式保存 `runtime`，没有该字段的既有原生线程按 Codex 恢复。切换运行时不改写原对话的线程身份。
-
-内置运行时复用 `AgentToolHost`、`AgentWorkspaceHost` 和 `AgentContextHost`。工具执行串行化，每次调用都核对当前回合与停止信号；流式文字、工具调用和错误来自实际事件。模型协议记录与显示消息分别持久化，异常退出留下的未完成工具调用以结果未知恢复，不自动重放。编辑问题和分支通过协议记录检查点截取上下文。
-
-Responses 的函数工具显式发送 `strict:false`，保留领域 schema 中可选字段的省略语义；省略 strict 会让服务端尝试按严格模式规范化参数，可能改变互斥观察选项的含义。Pi 的 `supportsStrictMode` 兼容开关只用于让适配器传递该显式值，不将工具改为严格生成。宿主和领域层继续校验参数；验证覆盖实际 HTTP 请求里的全部工具 schema，以及续接和打包后的同一行为。
-
-API 配置与密钥保存在主进程的本地 0600 文件中，界面仅获得掩码。不同地址不会自动复用已保存的密钥。Linux 命令通过独立 systemd 沙箱执行，仅工作区可写、参考文件只读且不携带模型密钥；Windows 暂不提供内置命令执行。文件工具检查路径及符号链接归属。
-
-内置运行时将模型服务保存为有稳定 ID 的独立记录，并单独保存新对话默认服务。会话引用服务 ID，保存不含密钥的地址、协议、模型和推理配置；输入区换模型只影响该会话。新增服务或修改默认服务不影响旧会话。编辑地址或协议创建新服务，保留原记录；更新原服务密钥则无需改会话。移除服务后关联历史仍可读，但禁止发送，直到用户明确选择新服务。单服务旧配置按确定 ID 迁移；仅地址绑定的历史只在唯一匹配时迁移，没有归属的历史要求显式选择。跨服务继续前显示目标地址和历史发送影响。
-
-运行时默认值仅影响新对话，修改它不会启动或切换当前后端。“用另一运行时新建对话”是独立动作，不修改默认值。恢复旧会话始终启动它自己的运行时。
-
-显示历史包含真实工具参数和结果、模型已输出文字及回合状态，与协议记录在同一次原子写入中保存。重开会话将未结束的回合标为中断、未结束工具标为结果未知，不自动重放。流式文字每隔至多一次更新周期（500ms 节流）保存一次，消息与工具结束时立即保存；进程崩溃可能丢失最后尚未落盘的文字片段。界面按已保存的回合结果和耗时恢复，不启动历史计时器。
-
-内置运行时尚未实现自动上下文压缩；达到配置预算时明确停止，保留记录并提示新建对话携带工作笔记。切换协议不会自动验证模型的工具、推理和图片能力。
-
-`electron/model-catalog.cjs` 分别缓存服务的模型 ID 列表和公共模型资料，合并后供同一个选择器使用。选择器先读取配置、缓存和随包资料；公共资料来自 Models.dev，按声明的接口地址与模型 ID 精确匹配。后台资料刷新有 6 小时缓存和失败退避；手动刷新另外读取当前服务的 `/models`。服务列表缓存按服务 ID、地址、协议及密钥版本隔离，刷新失败保留已有列表，空列表不删除用户明确配置的模型。公开资料只补充名称、能力及推理档位，不改连接参数、凭据或会话选择，也不代表实际调用验证。未知自定义模型保留原 ID 和用户配置，不猜测提供方；目录缺少思考档位时保留运行时已有的手动选项，不将未知视为不支持，也不将这些选项写成已确认的模型能力。内置运行时的默认档位不指定思考强度，不保证服务关闭推理。目录随包快照通过 `node scripts/ui/update-model-catalog.cjs` 显式更新，打包不联网；来源许可随快照分发。
-
-思考深度的手动选项为默认、轻度、中、高、极高（`xhigh`）、最高（`max`）；已匹配的目录按明确支持的档位缩小范围。配置保存与会话恢复保留原值，未知档位明确报错，不静默替换。内置 SDK 显式映射扩展档位，避免自动降为 `high`；Anthropic 的扩展档位使用 adaptive thinking，目录明确提供 effort 且不使用 token 预算的模型也使用该模式。已知仅支持 token 预算的 Anthropic 模型保留原有预算档位。连接检测和正式请求都传递用户所选档位；接口拒绝时显示失败，不自动降档重试。v1 资料缓存因丢弃了扩展档位而失效，更新后先使用完整的随包目录。
-
-工作区布局由 `features/layout.js` 按无文件夹、已打开文件夹、已打开电路三种状态派生：空白页提供打开入口，文件夹阶段呈现文件与会话，电路阶段启用画布、元件及检查工具。阶段变化不改写用户保存的面板宽度和折叠偏好；加载失败保留重试入口，有电路会话时保留导航。设置表单的字段、错误和操作位于同一可滚动区域，模型列表数量只在展开列表时显示。
-
-会话工具调用保留稳定身份和所属分组。折叠摘要直接投影当前调用、异常和结果未知；旧调用的后续事件更新原分组，迟到的运行事件不覆盖完成状态。内置运行时接受工具增量输出，将命令退出码与工具执行状态分开判断，文件内容中的同名字段不作为调用错误。文件、命令的目标与输出在原有两级展开内显示，输出截断明确标记。补充消息记录等待加入、已加入上下文和待下次继续三个状态；已加入只表示进入模型上下文，不表示模型采纳或任务完成。
+1. 通过新的 `agent-runtime` 跑一次真实模型回合，修掉断点（`packages/agent-runtime/README.md`）。
+2. 宿主加 `observeXml`，`arrange_circuit` 改为先验证再应用（`crates/workbench-host/README.md`、`packages/agent-runtime/README.md`）。
+3. 课程大小文件的编辑延迟：减少每次编辑的 Java↔Rust↔Node 往返（`crates/workbench-host/README.md`）。
+4. 补回 sidecar 回合的脚本场景（`scripts/workbench/README.md`）。

@@ -1,0 +1,29 @@
+[workspace]
+members = ["crates/circuit-document", "crates/logisim-runtime", "crates/workbench-host", "apps/workbench/src-tauri"]
+default-members = ["crates/circuit-document", "crates/logisim-runtime", "crates/workbench-host"]
+resolver = "2"
+
+[workspace.package]
+version = "0.6.0-dev"
+edition = "2024"
+license = "GPL-3.0-only"
+rust-version = "1.99"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+xmltree = "0.11"
+quick-xml = "0.42"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+base64 = "0.22"
+
+ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

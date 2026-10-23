@@ -1,0 +1,14 @@
+[package]
+name = "vibe-logisim-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde_json.workspace = true
+vibe-workbench-host = { path = "../../../crates/workbench-host" }
+tauri-plugin-opener = "2"
+tokio.workspace = true

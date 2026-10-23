@@ -1,0 +1,53 @@
+.document-history {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.document-history > nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.document-history > nav > :last-child {
+  margin-left: auto;
+}
+.document-history-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+}
+.history-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 7px;
+  text-align: left;
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  white-space: normal;
+}
+.history-entry-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.6;
+}
+.history-entry-title small {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.history-entry time {
+  font-size: 11px;
+  color: var(--muted);
+}

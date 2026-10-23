@@ -1,0 +1,656 @@
+{
+  "circuit": "main",
+  "components": [
+    {
+      "componentId": "c380_60",
+      "factoryName": "Text",
+      "displayName": "Label",
+      "location": { "x": 380, "y": 60 },
+      "bounds": { "x": 348, "y": 43, "width": 64, "height": 25 },
+      "visualBounds": { "x": 348, "y": 43, "width": 64, "height": 25 },
+      "attributes": [
+        { "name": "text", "standard": "full adder" },
+        { "name": "font", "standard": "Dialog plain 12" },
+        { "name": "color", "standard": "#000000" },
+        { "name": "halign", "standard": "center" },
+        { "name": "valign", "standard": "base" }
+      ],
+      "ends": []
+    },
+    {
+      "componentId": "c100_100",
+      "factoryName": "Pin",
+      "displayName": "Pin",
+      "location": { "x": 100, "y": 100 },
+      "bounds": { "x": 75, "y": 90, "width": 25, "height": 20 },
+      "visualBounds": { "x": 75, "y": 71, "width": 25, "height": 39 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "output", "standard": "false" },
+        { "name": "width", "standard": "1" },
+        { "name": "tristate", "standard": "true" },
+        { "name": "pull", "standard": "none" },
+        { "name": "label", "standard": "A" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 100, "y": 100 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:63fb59b0c53044d7" }],
+          "direction": "output",
+          "runtimeTooltip": "Add an input pin",
+          "exclusive": true
+        }
+      ]
+    },
+    {
+      "componentId": "c300_150",
+      "factoryName": "half",
+      "displayName": "half",
+      "location": { "x": 300, "y": 150 },
+      "bounds": { "x": 269, "y": 139, "width": 32, "height": 32 },
+      "visualBounds": { "x": 269, "y": 124, "width": 32, "height": 47 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "label", "standard": "" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" },
+        { "name": "circuit", "standard": "half" },
+        { "name": "clabel", "standard": "" },
+        { "name": "clabelup", "standard": "east" },
+        { "name": "clabelfont", "standard": "Dialog plain 12" },
+        { "name": "clabelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 270, "y": 150 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:63fb59b0c53044d7" }],
+          "direction": "input",
+          "runtimeTooltip": "A",
+          "exclusive": false
+        },
+        {
+          "index": 1,
+          "location": { "x": 270, "y": 160 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:095406a4b386b8ab" }],
+          "direction": "input",
+          "runtimeTooltip": "B",
+          "exclusive": false
+        },
+        {
+          "index": 2,
+          "location": { "x": 300, "y": 150 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:2b05d7d47eb349cb" }],
+          "direction": "output",
+          "runtimeTooltip": "S",
+          "exclusive": true
+        },
+        {
+          "index": 3,
+          "location": { "x": 300, "y": 160 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:87c2dab0c925ad8a" }],
+          "direction": "output",
+          "runtimeTooltip": "C",
+          "exclusive": true
+        }
+      ]
+    },
+    {
+      "componentId": "c380_150",
+      "factoryName": "Probe",
+      "displayName": "Probe",
+      "location": { "x": 380, "y": 150 },
+      "bounds": { "x": 360, "y": 140, "width": 20, "height": 20 },
+      "visualBounds": { "x": 360, "y": 121, "width": 20, "height": 39 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "radix", "standard": "2" },
+        { "name": "label", "standard": "" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 380, "y": 150 },
+          "width": null,
+          "netBits": [],
+          "direction": "input",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c270_160",
+      "factoryName": "Tunnel",
+      "displayName": "Tunnel",
+      "location": { "x": 270, "y": 160 },
+      "bounds": { "x": 252, "y": 149, "width": 19, "height": 23 },
+      "visualBounds": { "x": 252, "y": 149, "width": 19, "height": 23 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "width", "standard": "1" },
+        { "name": "label", "standard": "B" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "selectedMode", "standard": "NormalMode" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 270, "y": 160 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:095406a4b386b8ab" }],
+          "direction": "inout",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c300_160",
+      "factoryName": "Tunnel",
+      "displayName": "Tunnel",
+      "location": { "x": 300, "y": 160 },
+      "bounds": { "x": 300, "y": 149, "width": 23, "height": 23 },
+      "visualBounds": { "x": 300, "y": 149, "width": 23, "height": 23 },
+      "attributes": [
+        { "name": "facing", "standard": "west" },
+        { "name": "width", "standard": "1" },
+        { "name": "label", "standard": "C1" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "selectedMode", "standard": "NormalMode" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 300, "y": 160 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:87c2dab0c925ad8a" }],
+          "direction": "inout",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c100_180",
+      "factoryName": "Pin",
+      "displayName": "Pin",
+      "location": { "x": 100, "y": 180 },
+      "bounds": { "x": 75, "y": 170, "width": 25, "height": 20 },
+      "visualBounds": { "x": 75, "y": 151, "width": 25, "height": 39 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "output", "standard": "false" },
+        { "name": "width", "standard": "1" },
+        { "name": "tristate", "standard": "true" },
+        { "name": "pull", "standard": "none" },
+        { "name": "label", "standard": "B" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 100, "y": 180 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:095406a4b386b8ab" }],
+          "direction": "output",
+          "runtimeTooltip": "Add an input pin",
+          "exclusive": true
+        }
+      ]
+    },
+    {
+      "componentId": "c100_180_2",
+      "factoryName": "Tunnel",
+      "displayName": "Tunnel",
+      "location": { "x": 100, "y": 180 },
+      "bounds": { "x": 100, "y": 169, "width": 18, "height": 23 },
+      "visualBounds": { "x": 100, "y": 169, "width": 18, "height": 23 },
+      "attributes": [
+        { "name": "facing", "standard": "west" },
+        { "name": "width", "standard": "1" },
+        { "name": "label", "standard": "B" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "selectedMode", "standard": "NormalMode" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 100, "y": 180 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:095406a4b386b8ab" }],
+          "direction": "inout",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c460_250",
+      "factoryName": "half",
+      "displayName": "half",
+      "location": { "x": 460, "y": 250 },
+      "bounds": { "x": 429, "y": 239, "width": 32, "height": 32 },
+      "visualBounds": { "x": 429, "y": 224, "width": 32, "height": 47 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "label", "standard": "" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" },
+        { "name": "circuit", "standard": "half" },
+        { "name": "clabel", "standard": "" },
+        { "name": "clabelup", "standard": "east" },
+        { "name": "clabelfont", "standard": "Dialog plain 12" },
+        { "name": "clabelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 430, "y": 250 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:2b05d7d47eb349cb" }],
+          "direction": "input",
+          "runtimeTooltip": "A",
+          "exclusive": false
+        },
+        {
+          "index": 1,
+          "location": { "x": 430, "y": 260 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:47aaf6adebde06bf" }],
+          "direction": "input",
+          "runtimeTooltip": "B",
+          "exclusive": false
+        },
+        {
+          "index": 2,
+          "location": { "x": 460, "y": 250 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:044fac94a948d4a6" }],
+          "direction": "output",
+          "runtimeTooltip": "S",
+          "exclusive": true
+        },
+        {
+          "index": 3,
+          "location": { "x": 460, "y": 260 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:d63eb4296f818e0d" }],
+          "direction": "output",
+          "runtimeTooltip": "C",
+          "exclusive": true
+        }
+      ]
+    },
+    {
+      "componentId": "c700_250",
+      "factoryName": "Pin",
+      "displayName": "Pin",
+      "location": { "x": 700, "y": 250 },
+      "bounds": { "x": 700, "y": 240, "width": 25, "height": 20 },
+      "visualBounds": { "x": 700, "y": 221, "width": 25, "height": 39 },
+      "attributes": [
+        { "name": "facing", "standard": "west" },
+        { "name": "output", "standard": "true" },
+        { "name": "width", "standard": "1" },
+        { "name": "tristate", "standard": "true" },
+        { "name": "pull", "standard": "none" },
+        { "name": "label", "standard": "S" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 700, "y": 250 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:044fac94a948d4a6" }],
+          "direction": "input",
+          "runtimeTooltip": "Add an output pin",
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c430_260",
+      "factoryName": "Tunnel",
+      "displayName": "Tunnel",
+      "location": { "x": 430, "y": 260 },
+      "bounds": { "x": 404, "y": 249, "width": 27, "height": 23 },
+      "visualBounds": { "x": 404, "y": 249, "width": 27, "height": 23 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "width", "standard": "1" },
+        { "name": "label", "standard": "Cin" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "selectedMode", "standard": "NormalMode" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 430, "y": 260 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:47aaf6adebde06bf" }],
+          "direction": "inout",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c100_300",
+      "factoryName": "Pin",
+      "displayName": "Pin",
+      "location": { "x": 100, "y": 300 },
+      "bounds": { "x": 75, "y": 290, "width": 25, "height": 20 },
+      "visualBounds": { "x": 75, "y": 271, "width": 25, "height": 39 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "output", "standard": "false" },
+        { "name": "width", "standard": "1" },
+        { "name": "tristate", "standard": "true" },
+        { "name": "pull", "standard": "none" },
+        { "name": "label", "standard": "Cin" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 100, "y": 300 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:47aaf6adebde06bf" }],
+          "direction": "output",
+          "runtimeTooltip": "Add an input pin",
+          "exclusive": true
+        }
+      ]
+    },
+    {
+      "componentId": "c100_300_2",
+      "factoryName": "Tunnel",
+      "displayName": "Tunnel",
+      "location": { "x": 100, "y": 300 },
+      "bounds": { "x": 100, "y": 289, "width": 26, "height": 23 },
+      "visualBounds": { "x": 100, "y": 289, "width": 26, "height": 23 },
+      "attributes": [
+        { "name": "facing", "standard": "west" },
+        { "name": "width", "standard": "1" },
+        { "name": "label", "standard": "Cin" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "selectedMode", "standard": "NormalMode" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 100, "y": 300 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:47aaf6adebde06bf" }],
+          "direction": "inout",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c570_320",
+      "factoryName": "Tunnel",
+      "displayName": "Tunnel",
+      "location": { "x": 570, "y": 320 },
+      "bounds": { "x": 547, "y": 309, "width": 24, "height": 23 },
+      "visualBounds": { "x": 547, "y": 309, "width": 24, "height": 23 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "width", "standard": "1" },
+        { "name": "label", "standard": "C1" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "selectedMode", "standard": "NormalMode" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 570, "y": 320 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:87c2dab0c925ad8a" }],
+          "direction": "inout",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c600_330",
+      "factoryName": "OR Gate",
+      "displayName": "OR Gate",
+      "location": { "x": 600, "y": 330 },
+      "bounds": { "x": 570, "y": 315, "width": 30, "height": 30 },
+      "visualBounds": { "x": 570, "y": 315, "width": 30, "height": 30 },
+      "attributes": [
+        { "name": "facing", "standard": "east" },
+        { "name": "width", "standard": "1" },
+        { "name": "size", "standard": "30" },
+        { "name": "inputs", "standard": "2" },
+        { "name": "out", "standard": "01" },
+        { "name": "label", "standard": "" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" },
+        { "name": "negate0", "standard": "false" },
+        { "name": "negate1", "standard": "false" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 600, "y": 330 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:f4bc473c44981320" }],
+          "direction": "output",
+          "runtimeTooltip": null,
+          "exclusive": true
+        },
+        {
+          "index": 1,
+          "location": { "x": 570, "y": 320 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:87c2dab0c925ad8a" }],
+          "direction": "input",
+          "runtimeTooltip": null,
+          "exclusive": false
+        },
+        {
+          "index": 2,
+          "location": { "x": 570, "y": 340 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:d63eb4296f818e0d" }],
+          "direction": "input",
+          "runtimeTooltip": null,
+          "exclusive": false
+        }
+      ]
+    },
+    {
+      "componentId": "c700_330",
+      "factoryName": "Pin",
+      "displayName": "Pin",
+      "location": { "x": 700, "y": 330 },
+      "bounds": { "x": 700, "y": 320, "width": 25, "height": 20 },
+      "visualBounds": { "x": 700, "y": 301, "width": 25, "height": 39 },
+      "attributes": [
+        { "name": "facing", "standard": "west" },
+        { "name": "output", "standard": "true" },
+        { "name": "width", "standard": "1" },
+        { "name": "tristate", "standard": "true" },
+        { "name": "pull", "standard": "none" },
+        { "name": "label", "standard": "Cout" },
+        { "name": "labelloc", "standard": "north" },
+        { "name": "labelfont", "standard": "Dialog plain 12" },
+        { "name": "labelcolor", "standard": "#000000" }
+      ],
+      "ends": [
+        {
+          "index": 0,
+          "location": { "x": 700, "y": 330 },
+          "width": 1,
+          "netBits": [{ "bit": 0, "netId": "n:f4bc473c44981320" }],
+          "direction": "input",
+          "runtimeTooltip": "Add an output pin",
+          "exclusive": false
+        }
+      ]
+    }
+  ],
+  "wires": [
+    {
+      "from": { "x": 100, "y": 100 },
+      "to": { "x": 220, "y": 100 },
+      "bundleId": "b:e9610e10c1033225"
+    },
+    {
+      "from": { "x": 220, "y": 100 },
+      "to": { "x": 220, "y": 150 },
+      "bundleId": "b:e9610e10c1033225"
+    },
+    {
+      "from": { "x": 220, "y": 150 },
+      "to": { "x": 270, "y": 150 },
+      "bundleId": "b:e9610e10c1033225"
+    },
+    {
+      "from": { "x": 300, "y": 150 },
+      "to": { "x": 380, "y": 150 },
+      "bundleId": "b:30acfe169fc5de9b"
+    },
+    {
+      "from": { "x": 380, "y": 150 },
+      "to": { "x": 380, "y": 250 },
+      "bundleId": "b:30acfe169fc5de9b"
+    },
+    {
+      "from": { "x": 380, "y": 250 },
+      "to": { "x": 430, "y": 250 },
+      "bundleId": "b:30acfe169fc5de9b"
+    },
+    {
+      "from": { "x": 460, "y": 250 },
+      "to": { "x": 700, "y": 250 },
+      "bundleId": "b:7b764d8f86d3ae45"
+    },
+    {
+      "from": { "x": 460, "y": 260 },
+      "to": { "x": 520, "y": 260 },
+      "bundleId": "b:6987f0fcaf59296d"
+    },
+    {
+      "from": { "x": 520, "y": 260 },
+      "to": { "x": 520, "y": 340 },
+      "bundleId": "b:6987f0fcaf59296d"
+    },
+    {
+      "from": { "x": 600, "y": 330 },
+      "to": { "x": 700, "y": 330 },
+      "bundleId": "b:d08278391c8f18d9"
+    },
+    {
+      "from": { "x": 520, "y": 340 },
+      "to": { "x": 570, "y": 340 },
+      "bundleId": "b:6987f0fcaf59296d"
+    }
+  ],
+  "wireBundles": [
+    {
+      "bundleId": "b:0c0cb4a4be1487b2",
+      "valid": true,
+      "points": [
+        { "x": 300, "y": 160 },
+        { "x": 570, "y": 320 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:87c2dab0c925ad8a" }]
+    },
+    {
+      "bundleId": "b:1ec11e69944b2ce1",
+      "valid": true,
+      "points": [
+        { "x": 430, "y": 260 },
+        { "x": 100, "y": 300 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:47aaf6adebde06bf" }]
+    },
+    {
+      "bundleId": "b:30acfe169fc5de9b",
+      "valid": true,
+      "points": [
+        { "x": 300, "y": 150 },
+        { "x": 380, "y": 150 },
+        { "x": 380, "y": 250 },
+        { "x": 430, "y": 250 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:2b05d7d47eb349cb" }]
+    },
+    {
+      "bundleId": "b:6987f0fcaf59296d",
+      "valid": true,
+      "points": [
+        { "x": 460, "y": 260 },
+        { "x": 520, "y": 260 },
+        { "x": 520, "y": 340 },
+        { "x": 570, "y": 340 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:d63eb4296f818e0d" }]
+    },
+    {
+      "bundleId": "b:7b764d8f86d3ae45",
+      "valid": true,
+      "points": [
+        { "x": 460, "y": 250 },
+        { "x": 700, "y": 250 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:044fac94a948d4a6" }]
+    },
+    {
+      "bundleId": "b:9b2c228efb474fcb",
+      "valid": true,
+      "points": [
+        { "x": 270, "y": 160 },
+        { "x": 100, "y": 180 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:095406a4b386b8ab" }]
+    },
+    {
+      "bundleId": "b:d08278391c8f18d9",
+      "valid": true,
+      "points": [
+        { "x": 600, "y": 330 },
+        { "x": 700, "y": 330 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:f4bc473c44981320" }]
+    },
+    {
+      "bundleId": "b:e9610e10c1033225",
+      "valid": true,
+      "points": [
+        { "x": 100, "y": 100 },
+        { "x": 220, "y": 100 },
+        { "x": 220, "y": 150 },
+        { "x": 270, "y": 150 }
+      ],
+      "bitNets": [{ "bit": 0, "netId": "n:63fb59b0c53044d7" }]
+    }
+  ]
+}

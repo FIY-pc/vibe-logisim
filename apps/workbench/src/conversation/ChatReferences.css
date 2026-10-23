@@ -1,0 +1,50 @@
+.reference-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0;
+}
+.reference-chips > span {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.reference-chips button {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  min-width: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.reference-preview {
+  width: min(850px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.reference-preview::backdrop {
+  background: #20263450;
+}
+.reference-preview header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.reference-preview img {
+  display: block;
+  max-width: 100%;
+  margin: 12px auto;
+}
+.reference-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
