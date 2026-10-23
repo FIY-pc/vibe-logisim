@@ -1,7 +1,6 @@
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
 import { useEffect, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
 import type { ObservationRecord } from "../generated/ObservationRecord";
 import type { ObservationSummary } from "../generated/ObservationSummary";
 import type { ReferenceInput } from "../conversation/references";
@@ -9,6 +8,8 @@ import { command } from "../shared/transport";
 import { busValue, Waveform } from "./Waveform";
 import { Checkbox } from "../shared/Checkbox";
 import { DialogClose, useModal } from "../shared/Dialog";
+import { Menu, MenuItem } from "../shared/Menu";
+import { fullText } from "../shared/Tooltips";
 
 /**
  * The observations a document kept, with one or two shown side by side. The
@@ -108,7 +109,12 @@ export function Observations({
                     }
                   />
                   <span>
-                    {record.title}
+                    <span
+                      className="observation-title"
+                      {...fullText(record.title)}
+                    >
+                      {record.title}
+                    </span>
                     <small>
                       {record.damaged
                         ? record.damaged
@@ -116,41 +122,42 @@ export function Observations({
                     </small>
                   </span>
                 </label>
-                <button
-                  aria-label={`重命名观察 ${record.title}`}
-                  disabled={Boolean(record.damaged)}
-                  onClick={() => setRenaming(record)}
-                >
-                  <Pencil size={13} />
-                </button>
-                <button
-                  aria-label={`删除观察 ${record.title}`}
-                  onClick={() =>
-                    setDecision({
-                      title: `删除 ${record.title}？`,
-                      message: "这条观察记录删除后无法恢复。",
-                      actions: [
-                        {
-                          label: "删除",
-                          run: async () => {
-                            await command({
-                              op: "observationDelete",
-                              record: record.id,
-                            });
-                            setRecords((old) =>
-                              old.filter((item) => item.id !== record.id),
-                            );
-                            setSelection((old) =>
-                              old.filter((id) => id !== record.id),
-                            );
+                <Menu label={`${record.title} 的操作`}>
+                  <MenuItem
+                    disabled={Boolean(record.damaged)}
+                    onSelect={() => setRenaming(record)}
+                  >
+                    重命名…
+                  </MenuItem>
+                  <MenuItem
+                    danger
+                    onSelect={() =>
+                      setDecision({
+                        title: `删除 ${record.title}？`,
+                        message: "这条观察记录删除后无法恢复。",
+                        actions: [
+                          {
+                            label: "删除",
+                            run: async () => {
+                              await command({
+                                op: "observationDelete",
+                                record: record.id,
+                              });
+                              setRecords((old) =>
+                                old.filter((item) => item.id !== record.id),
+                              );
+                              setSelection((old) =>
+                                old.filter((id) => id !== record.id),
+                              );
+                            },
                           },
-                        },
-                      ],
-                    })
-                  }
-                >
-                  <Trash2 size={13} />
-                </button>
+                        ],
+                      })
+                    }
+                  >
+                    删除…
+                  </MenuItem>
+                </Menu>
               </div>
             ))
           ) : (
@@ -203,6 +210,7 @@ export function Observations({
       </div>
       <footer>
         <button
+          className="primary"
           disabled={!selected.length}
           onClick={() => {
             onQuote(

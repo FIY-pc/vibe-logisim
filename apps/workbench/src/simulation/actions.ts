@@ -456,6 +456,14 @@ export function createSimulationActions(stores: Stores) {
     return next.includes(key);
   };
 
+  /** Stops watching every port of the shown run, which closes the waveform. */
+  const clearWatches = (view: View) => {
+    const live = liveRun(state(), view.doc, view.circuit?.name);
+    if (!live) return;
+    setWatches(watchesAt(live.session, live.view.instancePath).key, []);
+    void sendTrace(view).catch(() => {});
+  };
+
   /** Stops recording the waveform, keeping the samples on screen. */
   const stopTrace = async (view: View) => {
     const result = await act(view, { kind: "trace-stop" }, { silent: true });
@@ -1127,6 +1135,7 @@ export function createSimulationActions(stores: Stores) {
     release,
     setInput,
     toggleWatch,
+    clearWatches,
     stopTrace,
     startTrace,
     readMemory,

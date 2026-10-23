@@ -1384,6 +1384,9 @@ button.primary:active:where(:not(:disabled)) {
 .simulation-dock > header button {
   margin-left: auto;
 }
+.simulation-dock > header button + button {
+  margin-left: 0;
+}
 .memory-navigation {
   display: flex;
   align-items: center;
@@ -1434,7 +1437,11 @@ button.primary:active:where(:not(:disabled)) {
   padding: 8px 12px 12px;
   color: var(--muted);
 }
+/* Signal names take a share of the panel's width, so wide panels show
+ * longer names before cutting them short. */
 .waveform {
+  container-type: inline-size;
+  --waveform-label: clamp(160px, 24cqw, 280px);
   padding: 4px 12px 10px;
 }
 .waveform-caption {
@@ -1454,11 +1461,14 @@ button.primary:active:where(:not(:disabled)) {
   align-items: stretch;
   border-bottom: 1px solid #f0f2f5;
 }
+.waveform-sheet {
+  min-width: calc(var(--waveform-width) + var(--waveform-label));
+}
 .waveform-label {
   position: sticky;
   left: 0;
   z-index: 1;
-  width: 160px;
+  width: var(--waveform-label);
   flex: none;
   display: flex;
   align-items: center;
@@ -1509,35 +1519,48 @@ button.primary:active:where(:not(:disabled)) {
 }
 .waveform-scroll input[type="range"] {
   display: block;
-  width: calc(100% - 160px);
-  margin: 6px 0 0 160px;
+  width: calc(100% - var(--waveform-label));
+  margin: 6px 0 0 var(--waveform-label);
 }
 .observations-dialog {
   width: min(1100px, 94vw);
   height: min(780px, 88vh);
   padding: 0;
 }
+/* Header and footer keep their height; the list and viewer scroll between. */
+.observations-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
 .observations-dialog > header {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
 }
+.observations-dialog > footer {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
 .observations-body {
   display: flex;
-  height: calc(100% - 52px);
+  flex: 1;
   min-height: 0;
 }
 .observation-list {
-  width: 230px;
+  width: 240px;
   flex: none;
   overflow: auto;
   border-right: 1px solid var(--border);
 }
 .observation-list > div {
   display: flex;
-  padding: 10px;
+  padding: 8px 6px 8px 10px;
   align-items: center;
   gap: 4px;
 }
@@ -1549,17 +1572,34 @@ button.primary:active:where(:not(:disabled)) {
   flex: 1;
 }
 .observation-list label .checkbox {
-  margin-top: 4px;
+  margin-top: 2px;
 }
-.observation-list label span {
+.observation-list label > span {
+  min-width: 0;
+}
+.observation-title {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .observation-list small {
   display: block;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 11px;
+}
+/* A row's menu button shows on hover, on focus and while its menu is open. */
+.observation-list .menu-trigger {
+  flex: none;
+  padding: 4px;
+  color: var(--muted);
+  opacity: 0;
+}
+.observation-list > div:hover .menu-trigger,
+.observation-list > div:focus-within .menu-trigger,
+.observation-list .menu-trigger[data-state="open"] {
+  opacity: 1;
 }
 .observation-viewer {
   overflow: auto;
@@ -1570,6 +1610,15 @@ button.primary:active:where(:not(:disabled)) {
 .observation-viewer article {
   border-bottom: 1px solid var(--border);
   padding-bottom: 14px;
+}
+.observation-viewer h3 {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.observation-viewer article > .muted {
+  margin: 0 0 10px;
+  font-size: 12px;
 }
 .observation-viewer table {
   width: 100%;

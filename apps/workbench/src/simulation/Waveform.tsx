@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { TraceDelta } from "../generated/TraceDelta";
 import { fullText } from "../shared/Tooltips";
 
@@ -127,7 +127,9 @@ export function Waveform({
   const chosen = samples.find((s) => s.sample === cursor) || samples.at(-1);
   if (!samples.length || !signals.length) return null;
   const at = Math.max(0, samples.indexOf(chosen!));
-  const width = Math.max(280, samples.length * CELL);
+  // A short trace sits at the start; the sheet scrolls only once it is wider
+  // than the panel.
+  const width = samples.length * CELL;
   return (
     <div className="waveform">
       <div className="waveform-caption">
@@ -148,7 +150,10 @@ export function Waveform({
               40;
         }}
       >
-        <div className="waveform-sheet" style={{ minWidth: width + 160 }}>
+        <div
+          className="waveform-sheet"
+          style={{ "--waveform-width": `${width}px` } as CSSProperties}
+        >
           {signals.map((signal, row) => {
             const name = labels[signal.id] || signal.id;
             const value = chosen?.values[row];
