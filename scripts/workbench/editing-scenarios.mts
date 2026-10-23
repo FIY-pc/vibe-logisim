@@ -226,9 +226,11 @@ export function latencyTable(rows: [string, Sample[]][], columns: string[]) {
     const values = samples.map((s) =>
       column === "total"
         ? Object.values(s).reduce((a, b) => a + b, 0)
-        : s[column],
+        : column === "drawn"
+          ? s.edit + s.render
+          : s[column],
     );
-    return values.some((v) => v === undefined)
+    return values.some((v) => v === undefined || Number.isNaN(v))
       ? "-"
       : `${Math.round(percentile(values, 50))}/${Math.round(percentile(values, 95))}`;
   };
@@ -250,8 +252,9 @@ export function latencyTable(rows: [string, Sample[]][], columns: string[]) {
 /**
  * Course-size editing latency, as the window sees it. Opens the synthetic
  * 1 MB project from a folder (so each edit also saves the file) and repeats
- * every edit the way the canvas issues it: the edit, then observe and render
- * of the new revision. Prints p50/p95 per request in milliseconds.
+ * every edit the way the canvas issues it: the edit, then render and observe
+ * of the new revision. Prints p50/p95 per request in milliseconds; `drawn` is
+ * the edit plus the render, when the canvas shows the new picture.
  */
 export async function measureEditing(command: Command, rounds = 5) {
   const folder = await mkdtemp(path.join(tmpdir(), "vibe-latency-"));
@@ -290,13 +293,13 @@ export async function measureEditing(command: Command, rounds = 5) {
           c.location.x === at.x &&
           c.location.y === at.y,
       )!.id;
-  /** Applies an edit, then observes and renders the new revision like the canvas. */
+  /** Applies an edit, then renders and observes the new revision like the canvas. */
   const edit = async (change: any, sample: Sample) => {
     const [result, ms] = await timed({ op: "edit", ...scope(), edit: change });
     doc = documentOf(result);
     sample.edit = ms;
-    sample.observe = (await timed({ op: "observe", ...scope() }))[1];
     sample.render = (await timed({ op: "render", ...scope(), ...viewport }))[1];
+    sample.observe = (await timed({ op: "observe", ...scope() }))[1];
     return result;
   };
   const rows: Record<string, Sample[]> = {
@@ -367,8 +370,9 @@ export async function measureEditing(command: Command, rounds = 5) {
     latencyTable(Object.entries(rows), [
       "preview",
       "edit",
-      "observe",
       "render",
+      "drawn",
+      "observe",
       "total",
     ]),
   );

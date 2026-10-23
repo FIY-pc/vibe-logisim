@@ -38,7 +38,7 @@ Builds, type-checks, 29 UI scenarios pass (`npm run test:ui`, jsdom with a scrip
 
 1. Done: the toolbar delete button posts `deleteRequest` on the editor store and the canvas commits it with the same mask as the Delete key (`editor/EditorToolbarRegion.tsx`, `editor/Canvas.tsx`).
 2. Conversation panel polish after the first real turn: streaming text must stay visible while running and collapse into the activity summary when the turn completes (`conversation/ConversationContent.tsx`); check against the Codex app's behaviour, not v0.5.0.
-3. Editing latency is a host matter, but the window must not add to it: `useMovePreview` should send one `movePreview` per animation frame at most. Verify with the 1 MB course file.
+3. Done: the window adds no waiting of its own to an edit. `useMovePreview` sends at most one `movePreview` per animation frame, one at a time, and the latest position when the one in flight returns. The canvas draws a new revision of the circuit on screen at once and before observing it (the render effect is declared ahead of the observe effect so its request reaches the worker first); the commit overlay covers the gap, and the previous observation keeps hit testing until the new one arrives. Panning, zooming and opening another circuit still wait 80 ms for the view to settle, and a newly shown circuit is observed first because fitting needs its bounds.
 4. Old UI for reference only: `git show HEAD:apps/workbench/src/components/Canvas.tsx` etc. (132 files under `components/ regions/ stores/ lib/ actions/ workbench/` at `HEAD`). Do not port features back without a user asking.
 
 ## Verify
