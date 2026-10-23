@@ -22,6 +22,7 @@ import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
 import { Select } from "../shared/Select";
+import { useModal } from "../shared/dialog";
 export interface ProjectFolder {
   historyWarning?: string;
   id: string;
@@ -1054,16 +1055,14 @@ function ImportDialog({
   /** The imported files, and the existing ones kept instead of a copy. */
   onImported?: (paths: string[]) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
+  const dialog = useModal(),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const [choices, setChoices] = useState<Record<number, ImportAction>>(() =>
     Object.fromEntries(plan.items.map((item) => [item.index, "keepBoth"])),
   );
   useEffect(() => {
-    dialog.current?.showModal();
     return () => {
-      dialog.current?.close();
       void command({
         op: "folderImportCancel",
         folder_id: folderId,
@@ -1182,7 +1181,7 @@ function HistoryDialog({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
+  const dialog = useModal(),
     [entries, setEntries] = useState<FileChange[]>([]),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
@@ -1201,9 +1200,7 @@ function HistoryDialog({
     );
   };
   useEffect(() => {
-    dialog.current?.showModal();
     void load().catch((e) => setError(message(e)));
-    return () => dialog.current?.close();
   }, [folderId]);
   useEffect(() => {
     setDetail(null);

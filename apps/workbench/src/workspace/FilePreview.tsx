@@ -3,6 +3,7 @@ import type { ReferenceInput } from "../conversation/references";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { openPdf, pageText } from "./pdf";
+import { useModal } from "../shared/dialog";
 export interface PreviewFile {
   name: string;
   text?: string;
@@ -23,7 +24,7 @@ export function FilePreview({
   onClose: () => void;
   onQuote: (reference: ReferenceInput) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
+  const dialog = useModal(),
     canvas = useRef<HTMLCanvasElement>(null),
     textArea = useRef<HTMLTextAreaElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null),
@@ -31,10 +32,6 @@ export function FilePreview({
     [text, setText] = useState(file.text || ""),
     [error, setError] = useState(""),
     [pending, setPending] = useState(false);
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   useEffect(() => {
     if (file.mime !== "application/pdf" || !file.data) return;
     let live = true,

@@ -19,6 +19,7 @@ import type { Tool } from "../shared/types";
 import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
 import "../editor/editor-controls.css";
+import { useModal } from "../shared/dialog";
 
 interface SimulationProps {
   /** What the controls show for the shown circuit, and whether each can act. */
@@ -204,7 +205,7 @@ function SimulationSettings({
   onApply: (value: number) => Promise<void>;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const [value, setValue] = useState(String(frequency));
@@ -212,12 +213,9 @@ function SimulationSettings({
   const [error, setError] = useState("");
   useEffect(() => {
     alive.current = true;
-    const node = dialog.current;
-    node?.showModal();
     input.current?.focus();
     return () => {
       alive.current = false;
-      node?.close();
     };
   }, []);
   return (

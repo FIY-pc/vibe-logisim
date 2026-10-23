@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { useModal } from "./dialog";
 export function TextPrompt({
   title,
   initial = "",
@@ -11,14 +12,12 @@ export function TextPrompt({
   onSubmit: (value: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
+  const dialog = useModal(),
     [value, setValue] = useState(initial),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
-    dialog.current?.showModal();
     dialog.current?.querySelector("input")?.focus();
-    return () => dialog.current?.close();
   }, []);
   return (
     <dialog

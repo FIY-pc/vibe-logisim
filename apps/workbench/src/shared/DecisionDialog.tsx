@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useModal } from "./dialog";
 
 export interface Decision {
   title: string;
@@ -17,14 +18,11 @@ export function DecisionDialog({
   decision: Decision;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
-    const node = dialog.current;
-    node?.showModal();
-    node?.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
-    return () => node?.close();
+    dialog.current?.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
   }, []);
   return (
     <dialog

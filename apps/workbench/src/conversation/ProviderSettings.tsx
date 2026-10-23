@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, RefreshCw, X } from "lucide-react";
 import "./ai-settings.css";
 import { Select } from "../shared/Select";
+import { useModal } from "../shared/dialog";
 export interface ProviderConfiguration {
   id?: string;
   name: string;
@@ -349,7 +350,7 @@ interface SettingsProps {
  * use, and adding, editing or removing one. */
 export function ProviderSettings(props: SettingsProps) {
   const { services, provider, request, onSaved, onClose } = props;
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const heading = useRef<HTMLHeadingElement>(null);
   const [page, setPage] = useState<"services" | "edit" | "confirm">("services");
   const [editing, setEditing] = useState<Partial<ProviderConfiguration> | null>(
@@ -364,15 +365,6 @@ export function ProviderSettings(props: SettingsProps) {
   const [formWorking, setFormWorking] = useState(false);
   const [error, setError] = useState("");
   const locked = props.busy || working || formWorking;
-  useEffect(() => {
-    const node = dialog.current;
-    const previous = document.activeElement as HTMLElement | null;
-    node?.showModal();
-    return () => {
-      node?.close();
-      if (previous?.isConnected) previous.focus();
-    };
-  }, []);
   useEffect(() => {
     heading.current?.focus();
   }, [page]);

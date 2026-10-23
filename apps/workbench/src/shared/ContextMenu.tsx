@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import { useRef, type ReactElement, type ReactNode } from "react";
 import * as Context from "@radix-ui/react-context-menu";
 import { MenuScope } from "./Menu";
 import { keepKeys, keepMovedFocus, usePortalContainer } from "./layer";
@@ -21,8 +21,17 @@ export function ContextMenu({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [anchor, container] = usePortalContainer<HTMLElement>();
+  const opener = useRef<HTMLElement | null>(null);
   return (
-    <Context.Root onOpenChange={onOpenChange}>
+    <Context.Root
+      onOpenChange={(open) => {
+        if (open) {
+          const focused = document.activeElement;
+          opener.current = focused instanceof HTMLElement ? focused : null;
+        }
+        onOpenChange?.(open);
+      }}
+    >
       <Context.Trigger ref={anchor} asChild disabled={disabled}>
         {children}
       </Context.Trigger>
@@ -31,7 +40,7 @@ export function ContextMenu({
           className="menu-content"
           collisionPadding={8}
           loop
-          onCloseAutoFocus={keepMovedFocus}
+          onCloseAutoFocus={(event) => keepMovedFocus(event, opener.current)}
           onKeyDown={keepKeys}
         >
           <MenuScope kind="context" container={container}>

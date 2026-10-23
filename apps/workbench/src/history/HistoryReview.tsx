@@ -7,6 +7,7 @@ import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./HistoryReview.css";
 import { Select } from "../shared/Select";
+import { useModal } from "../shared/dialog";
 
 interface Preview {
   image: string | null;
@@ -33,7 +34,7 @@ export function HistoryReview({
   onClose: () => void;
   onDocument: (doc: Document, expectedBaseRevision?: string) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const initial = useRef({ id: doc.id, revision: doc.revision }).current;
   const [mode, setMode] = useState<"change" | "current">(
     entry.beforeRevision ? "change" : "current",
@@ -64,10 +65,6 @@ export function HistoryReview({
         ]),
       ]
     : [selected];
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   useEffect(() => {
     let live = true;
     setReview(null);

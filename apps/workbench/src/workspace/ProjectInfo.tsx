@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, Download, X } from "lucide-react";
 import { command, desktop } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./ProjectInfo.css";
+import { useModal } from "../shared/dialog";
 interface Info {
   documentId: string;
   revision: string;
@@ -31,7 +32,7 @@ export function ProjectInfo({
   doc: Document;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [info, setInfo] = useState<Info | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -40,10 +41,6 @@ export function ProjectInfo({
     path: string;
     revision: string;
   } | null>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   useEffect(() => {
     let live = true;
     setInfo(null);

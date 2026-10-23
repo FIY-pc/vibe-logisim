@@ -1,12 +1,13 @@
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 import type { ObservationRecord } from "../generated/ObservationRecord";
 import type { ObservationSummary } from "../generated/ObservationSummary";
 import type { ReferenceInput } from "../conversation/references";
 import { command } from "../shared/transport";
 import { Waveform } from "./Waveform";
+import { useModal } from "../shared/dialog";
 
 /**
  * The observations a document kept, with one or two shown side by side. The
@@ -24,7 +25,7 @@ export function Observations({
   initial?: string;
   onQuote: (references: ReferenceInput[]) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [renaming, setRenaming] = useState<ObservationSummary | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [records, setRecords] = useState<ObservationSummary[]>([]),
@@ -32,14 +33,12 @@ export function Observations({
     [shown, setShown] = useState<Record<string, ObservationRecord>>({}),
     [error, setError] = useState("");
   useEffect(() => {
-    dialog.current?.showModal();
     void command<ObservationSummary[]>({
       op: "observationList",
       id: documentId,
     })
       .then(setRecords)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-    return () => dialog.current?.close();
   }, [documentId]);
   useEffect(() => {
     for (const id of selection.slice(-2))

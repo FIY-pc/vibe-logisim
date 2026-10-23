@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
 import "./feedback.css";
+import { useModal } from "../shared/dialog";
 
 const RELEASES = "https://github.com/FIY-pc/vibe-logisim/releases";
 const ISSUES =
@@ -204,7 +205,7 @@ export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
   );
 }
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -215,7 +216,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   } | null>(null);
   useEffect(() => {
     let live = true;
-    dialog.current?.showModal();
     void command<DiagnosticReport>({ op: "diagnostics" })
       .then((value) => {
         if (live) setReport(value);
@@ -225,7 +225,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
       });
     return () => {
       live = false;
-      dialog.current?.close();
     };
   }, []);
   const text = report ? JSON.stringify(report, null, 2) + "\n" : "";

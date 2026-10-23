@@ -1,6 +1,7 @@
 /* Helpers shared by the floating layers drawn by the app: menus, lists,
  * popovers and tooltips. */
 import { useEffect, useRef, useState } from "react";
+import { returnFocusTo } from "./dialog";
 
 /** Where a floating layer opened from an element must mount: inside the
  * nearest `<dialog>` when the element is in one (anything portaled to
@@ -18,10 +19,14 @@ export function usePortalContainer<T extends HTMLElement>() {
 }
 
 /** A command that opened a dialog or moved focus on purpose keeps it there;
- * otherwise focus goes back to where the layer was opened from. */
-export function keepMovedFocus(event: Event) {
+ * otherwise focus goes back to where the layer was opened from. A dialog
+ * opened this way returns focus to `opener` when it closes. */
+export function keepMovedFocus(event: Event, opener: HTMLElement | null) {
   const active = document.activeElement;
-  if (active && active !== document.body) event.preventDefault();
+  if (!active || active === document.body) return;
+  event.preventDefault();
+  const dialog = active.closest("dialog");
+  if (dialog && opener) returnFocusTo(dialog, opener);
 }
 
 /** Keys pressed in a floating layer belong to it: they must not reach the

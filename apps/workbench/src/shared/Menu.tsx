@@ -98,7 +98,7 @@ export function Menu({
           sideOffset={4}
           collisionPadding={8}
           loop
-          onCloseAutoFocus={keepMovedFocus}
+          onCloseAutoFocus={(event) => keepMovedFocus(event, anchor.current)}
           onKeyDown={keepKeys}
         >
           <MenuScope kind="dropdown" container={container}>

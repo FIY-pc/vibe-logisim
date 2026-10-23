@@ -12,6 +12,7 @@ import {
 } from "./symbol-geometry";
 import "./InterfaceEditor.css";
 import { Select } from "../shared/Select";
+import { useModal } from "../shared/dialog";
 interface Definition extends SymbolDraft {
   uses: { circuit: string }[];
   newPinLocation: { x: number; y: number };
@@ -41,7 +42,7 @@ export function InterfaceEditor({
   onDocument: (doc: Document, expectedBaseRevision?: string) => void;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
+  const dialog = useModal(),
     svg = useRef<SVGSVGElement>(null),
     artwork = useRef<SVGGElement>(null);
   const [base, setBase] = useState<Definition | null>(null),
@@ -79,7 +80,6 @@ export function InterfaceEditor({
       );
   };
   useEffect(() => {
-    dialog.current?.showModal();
     let live = true;
     void command<Definition>({ op: "interfaceRead", ...ref })
       .then((result) => {
@@ -96,7 +96,6 @@ export function InterfaceEditor({
       });
     return () => {
       live = false;
-      dialog.current?.close();
     };
   }, []);
   useEffect(() => {

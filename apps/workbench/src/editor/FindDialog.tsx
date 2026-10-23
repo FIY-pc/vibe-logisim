@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { X } from "lucide-react";
 import type { Circuit, Document } from "../shared/types";
+import { useModal } from "../shared/dialog";
 const names: Record<string, string> = {
   Register: "寄存器",
   Tunnel: "隧道",
@@ -30,14 +31,10 @@ export function FindDialog({
   onChoose: (circuit: string, component?: string) => void;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const listId = useId();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   const items =
     mode === "circuit"
       ? doc.circuits.map((c) => ({

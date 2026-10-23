@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 import {
   bindingLabel,
@@ -9,6 +9,7 @@ import {
   type Bindings,
   type ShortcutId,
 } from "../shared/shortcuts";
+import { useModal } from "../shared/dialog";
 export function ShortcutSettings({
   bindings,
   onChange,
@@ -18,13 +19,9 @@ export function ShortcutSettings({
   onChange: (value: Bindings) => void;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   const change = (id: ShortcutId, value: string | null) => {
     const problem = bindingProblem(id, value, bindings);
     if (problem) {

@@ -8,6 +8,7 @@ import type {
   StoredReference,
 } from "./references";
 import "./ChatReferences.css";
+import { useModal } from "../shared/dialog";
 
 interface Receipt {
   key: string;
@@ -172,11 +173,7 @@ function ReferencePreview({
   reference: StoredReference;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
+  const dialog = useModal();
   return (
     <dialog
       className="reference-preview"
