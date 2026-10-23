@@ -3,17 +3,10 @@
   height: min(760px, 90dvh);
   max-width: none;
   padding: 0;
-  color: inherit;
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 10px;
 }
 .history-review[open] {
   display: flex;
   flex-direction: column;
-}
-.history-review::backdrop {
-  background: #161c2d66;
 }
 .history-review > header,
 .history-review > footer,
@@ -26,10 +19,6 @@
 }
 .history-review > header {
   justify-content: space-between;
-}
-.history-review h2 {
-  font-size: 15px;
-  margin: 0;
 }
 .history-review h2 small {
   font-size: 12px;

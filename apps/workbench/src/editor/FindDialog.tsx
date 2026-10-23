@@ -1,7 +1,6 @@
 import { useEffect, useId, useState } from "react";
-import { X } from "lucide-react";
 import type { Circuit, Document } from "../shared/types";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 const names: Record<string, string> = {
   Register: "寄存器",
   Tunnel: "隧道",
@@ -97,13 +96,11 @@ export function FindDialog({
       onCancel={onClose}
     >
       <header>
-        {mode === "circuit" ? "查找电路" : "查找元件"}
-        <button aria-label="关闭" onClick={onClose}>
-          <X size={16} />
-        </button>
+        <h2>{mode === "circuit" ? "查找电路" : "查找元件"}</h2>
+        <DialogClose onClick={onClose} />
       </header>
       <input
-        autoFocus
+        data-autofocus
         role="combobox"
         aria-expanded="true"
         aria-controls={listId}

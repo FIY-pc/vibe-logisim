@@ -23,11 +23,6 @@
   align-items: center;
   justify-content: space-between;
 }
-.feedback-dialog header button {
-  border: 0;
-  background: transparent;
-  display: inline-flex;
-}
 .feedback-dialog > p {
   margin: 12px 16px;
   font-size: 13px;

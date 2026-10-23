@@ -131,24 +131,12 @@
 .simulation-settings {
   width: min(380px, calc(100vw - 32px));
   padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--paper);
-  color: inherit;
-  box-shadow: 0 16px 56px #20242b22;
-}
-.simulation-settings::backdrop {
-  background: #20242b30;
 }
 .simulation-settings header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24px;
-}
-.simulation-settings h2 {
-  margin: 0;
-  font-size: 16px;
 }
 .simulation-frequency {
   display: flex;

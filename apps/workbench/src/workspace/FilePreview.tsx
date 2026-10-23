@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReferenceInput } from "../conversation/references";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { openPdf, pageText } from "./pdf";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 export interface PreviewFile {
   name: string;
   text?: string;
@@ -120,7 +120,7 @@ export function FilePreview({
       }}
     >
       <header>
-        <strong>{file.name}</strong>
+        <h2>{file.name}</h2>
         {pdf && (
           <>
             <button
@@ -154,13 +154,7 @@ export function FilePreview({
             </button>
           </>
         )}
-        <button
-          className="preview-close"
-          aria-label="关闭资料"
-          onClick={onClose}
-        >
-          <X size={17} />
-        </button>
+        <DialogClose label="关闭资料" onClick={onClose} />
       </header>
       {pending && <p role="status">正在读取…</p>}
       {error && (

@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
 import "./feedback.css";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 const RELEASES = "https://github.com/FIY-pc/vibe-logisim/releases";
 const ISSUES =
@@ -301,10 +301,8 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
       }}
     >
       <header>
-        <strong>反馈问题</strong>
-        <button disabled={busy} aria-label="关闭反馈" onClick={onClose}>
-          <X size={17} />
-        </button>
+        <h2>反馈问题</h2>
+        <DialogClose label="关闭反馈" disabled={busy} onClick={onClose} />
       </header>
       <p>诊断文件只包含下方内容。</p>
       <textarea

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
 import type { HistoryEntry } from "../generated/HistoryEntry";
 import type { HistoryReview as Review } from "../generated/HistoryReview";
 import { sourceDiff } from "./sourceDiff";
@@ -7,7 +6,7 @@ import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./HistoryReview.css";
 import { Select } from "../shared/Select";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 interface Preview {
   image: string | null;
@@ -159,9 +158,7 @@ export function HistoryReview({
             {doc.name} · {new Date(entry.createdAt).toLocaleString()}
           </small>
         </h2>
-        <button aria-label="关闭" disabled={pending} onClick={onClose}>
-          <X size={18} />
-        </button>
+        <DialogClose disabled={pending} onClick={onClose} />
       </header>
       <nav aria-label="对照方式">
         <Select

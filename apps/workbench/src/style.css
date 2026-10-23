@@ -19,6 +19,9 @@
   /* Menus, lists, popovers and tooltips: one shadow, one fade. */
   --layer-shadow: 0 8px 28px #2026341a, 0 1px 3px #20263412;
   --layer-fade: 140ms;
+  /* Dialogs: one surface over one backdrop. */
+  --dialog-shadow: 0 16px 48px #1a22331f, 0 2px 6px #1a223314;
+  --backdrop: #1a223338;
   color-scheme: light;
 }
 @keyframes layer-in {
@@ -70,6 +73,53 @@ select:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* Every dialog shares one surface, backdrop and fade; each dialog sets its
+ * own size and layout. Titles are `h2`. */
+dialog {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--dialog-shadow);
+}
+dialog[open],
+dialog[open]::backdrop {
+  animation: layer-in var(--layer-fade) ease-out;
+}
+dialog::backdrop {
+  background: var(--backdrop);
+}
+dialog:focus-visible {
+  outline: none;
+}
+dialog h2 {
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Dialogs whose content grows and shrinks (search results, pages) hang
+ * from a fixed top instead of re-centring on every change. */
+.find-dialog,
+.shortcut-settings,
+.ai-settings-dialog {
+  margin-top: min(12vh, 96px);
+  margin-bottom: auto;
+}
+.dialog-close {
+  flex: none;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--muted);
+}
+.dialog-close:hover {
+  color: var(--text);
 }
 input,
 textarea,
@@ -688,42 +738,22 @@ button.primary {
     transform: rotate(360deg);
   }
 }
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: #202b4340;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-}
-.source-dialog,
-.settings-dialog {
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 70px #15203524;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .source-dialog {
   width: min(950px, 90vw);
   height: 80vh;
+  padding: 0;
+  overflow: hidden;
 }
-.source-dialog header,
-.settings-dialog header {
+.source-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.source-dialog header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 8px;
+  padding: 10px 12px 10px 16px;
   border-bottom: 1px solid var(--border);
-  font-weight: 500;
-}
-.source-dialog header button,
-.settings-dialog header button {
-  margin-left: auto;
 }
 .source-dialog textarea {
   flex: 1;
@@ -736,26 +766,12 @@ button.primary {
   padding: 18px;
   outline: none;
 }
-.source-dialog footer,
-.settings-dialog footer {
+.source-dialog footer {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
-}
-.settings-dialog {
-  width: 400px;
-}
-.settings-dialog label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 20px;
-}
-.settings-dialog label input {
-  width: 70px;
-  text-align: center;
 }
 .chat {
   display: flex;
@@ -972,15 +988,8 @@ button.primary {
   text-overflow: ellipsis;
 }
 .text-prompt {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 20px 90px #1e293b35;
   width: 360px;
   padding: 20px;
-  color: inherit;
-}
-.text-prompt::backdrop {
-  background: #10172540;
 }
 .text-prompt header,
 .text-prompt footer {
@@ -990,7 +999,6 @@ button.primary {
   gap: 12px;
 }
 .text-prompt header {
-  font-weight: 600;
   margin-bottom: 18px;
 }
 .text-prompt input {
@@ -1272,11 +1280,6 @@ button.primary {
   width: min(1100px, 94vw);
   height: min(780px, 88vh);
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.observations-dialog::backdrop {
-  background: #20263450;
 }
 .observations-dialog > header {
   display: flex;
@@ -1284,10 +1287,6 @@ button.primary {
   justify-content: space-between;
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
-}
-.observations-dialog h2 {
-  font-size: 15px;
-  margin: 0;
 }
 .observations-body {
   display: flex;
@@ -1395,11 +1394,6 @@ button.primary {
   width: min(1000px, 94vw);
   height: min(850px, 90vh);
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.file-preview::backdrop {
-  background: #20263450;
 }
 .file-preview header {
   display: flex;
@@ -1408,14 +1402,11 @@ button.primary {
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
-.file-preview header strong {
+.file-preview header h2 {
   margin-right: auto;
 }
 .file-preview header input {
   width: 64px;
-}
-.file-preview .preview-close {
-  margin-left: auto;
 }
 .file-preview-body {
   height: calc(100% - 110px);
@@ -1482,36 +1473,70 @@ button.primary {
 .shortcut-settings {
   width: min(600px, calc(100vw - 40px));
   max-height: calc(100vh - 80px);
-  border: 1px solid var(--border);
+  padding: 0;
+}
+.shortcut-settings[open] {
+  display: flex;
+  flex-direction: column;
+}
+.shortcut-settings > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 8px 20px;
 }
 .shortcut-settings > input {
-  width: 100%;
-  margin-bottom: 12px;
+  margin: 0 20px 4px;
 }
 .shortcut-list {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  max-height: 55vh;
+  padding: 0 20px 12px;
 }
 .shortcut-list h3 {
   font-size: 12px;
+  font-weight: 600;
   color: var(--muted);
-  margin: 16px 0 10px;
+  margin: 14px 0 4px;
 }
 .shortcut-list label {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  padding: 3px 0;
 }
 .shortcut-list label span {
   flex: 1;
 }
 .shortcut-list label input {
   width: 145px;
+  padding: 4px 8px;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.shortcut-list label button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--muted);
+}
+.shortcut-list .quiet-empty {
+  padding: 24px 0;
+}
+.shortcut-settings > .dialog-error {
+  margin: 0 20px 8px;
+}
+.shortcut-settings > footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
 }
 .find-dialog {
   width: min(500px, calc(100vw - 40px));
   padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  color: inherit;
 }
 .find-dialog header {
   display: flex;

@@ -10,8 +10,6 @@ import {
   FolderOpen,
   Plus,
   LocateFixed,
-  History,
-  X,
 } from "lucide-react";
 import { command, desktop } from "../shared/transport";
 import { subscribeEvents } from "../shared/events";
@@ -22,7 +20,7 @@ import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
 import { Select } from "../shared/Select";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 export interface ProjectFolder {
   historyWarning?: string;
   id: string;
@@ -1088,7 +1086,9 @@ function ImportDialog({
         if (!pending) void close().catch((e) => setError(message(e)));
       }}
     >
-      <header>导入文件</header>
+      <header>
+        <h2>导入文件</h2>
+      </header>
       <div className="file-import-items">
         {plan.items.map((item) => (
           <div key={item.index}>
@@ -1251,13 +1251,8 @@ function HistoryDialog({
       }}
     >
       <header>
-        <span>
-          <History size={16} />
-          文件改动
-        </span>
-        <button aria-label="关闭" disabled={pending} onClick={onClose}>
-          <X size={16} />
-        </button>
+        <h2>文件改动</h2>
+        <DialogClose disabled={pending} onClick={onClose} />
       </header>
       {error && (
         <p role="alert" className="dialog-error">

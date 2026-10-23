@@ -26,11 +26,6 @@
   max-height: 88vh;
   overflow: auto;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.reference-preview::backdrop {
-  background: #20263450;
 }
 .reference-preview header {
   display: flex;

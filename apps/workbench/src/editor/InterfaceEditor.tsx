@@ -12,7 +12,7 @@ import {
 } from "./symbol-geometry";
 import "./InterfaceEditor.css";
 import { Select } from "../shared/Select";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 interface Definition extends SymbolDraft {
   uses: { circuit: string }[];
   newPinLocation: { x: number; y: number };
@@ -204,13 +204,7 @@ export function InterfaceEditor({
     >
       <header>
         <h2>{circuit} · 封装与接口</h2>
-        <button
-          aria-label="关闭封装编辑器"
-          disabled={applying}
-          onClick={onClose}
-        >
-          <X size={17} />
-        </button>
+        <DialogClose label="关闭封装编辑器" disabled={applying} onClick={onClose} />
       </header>
       {!active && (
         <p role="alert" className="dialog-error">

@@ -8,7 +8,7 @@ import type {
   StoredReference,
 } from "./references";
 import "./ChatReferences.css";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 interface Receipt {
   key: string;
@@ -185,13 +185,11 @@ function ReferencePreview({
       }}
     >
       <header>
-        <strong>
+        <h2>
           {reference.label}
           {reference.page ? ` · 第 ${reference.page} 页` : ""}
-        </strong>
-        <button aria-label="关闭引用" onClick={onClose}>
-          <X size={16} />
-        </button>
+        </h2>
+        <DialogClose label="关闭引用" onClick={onClose} />
       </header>
       {reference.image && <img src={reference.image} alt={reference.label} />}
       {reference.text && <pre>{reference.text}</pre>}

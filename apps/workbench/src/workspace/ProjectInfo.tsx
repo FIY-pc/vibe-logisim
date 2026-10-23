@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Copy, Download, X } from "lucide-react";
+import { Copy, Download } from "lucide-react";
 import { command, desktop } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./ProjectInfo.css";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 interface Info {
   documentId: string;
   revision: string;
@@ -132,10 +132,8 @@ export function ProjectInfo({
       }}
     >
       <header>
-        <strong>{doc.name}</strong>
-        <button aria-label="关闭文件信息" disabled={busy} onClick={onClose}>
-          <X size={17} />
-        </button>
+        <h2>{doc.name}</h2>
+        <DialogClose label="关闭文件信息" disabled={busy} onClick={onClose} />
       </header>
       {info && (
         <>

@@ -1,15 +1,6 @@
 .ai-settings-dialog,
 .ai-model-dialog {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--paper);
-  color: inherit;
   padding: 0;
-  box-shadow: 0 18px 60px #14213d24;
-}
-.ai-settings-dialog::backdrop,
-.ai-model-dialog::backdrop {
-  background: #1823382e;
 }
 .ai-settings-dialog {
   width: min(760px, calc(100vw - 32px));
@@ -31,9 +22,6 @@
 }
 .ai-settings-dialog h2,
 .ai-model-dialog h2 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
   flex: 1;
 }
 .ai-settings-content {
@@ -51,7 +39,7 @@
   margin-bottom: 18px;
 }
 .ai-settings-heading h3 {
-  font-size: 15px;
+  font-size: 13px;
   margin: 0;
   flex: 1;
   font-weight: 600;
@@ -215,9 +203,6 @@
 }
 .ai-model-dialog > header {
   padding: 12px 14px;
-}
-.ai-model-dialog h2 {
-  font-size: 13px;
 }
 .ai-model-search {
   margin: 12px;

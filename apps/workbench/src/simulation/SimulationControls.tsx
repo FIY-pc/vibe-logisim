@@ -1,13 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  ChevronDown,
-  Pause,
-  Play,
-  RotateCcw,
-  StepForward,
-  X,
-} from "lucide-react";
+import { ChevronDown, Pause, Play, RotateCcw, StepForward } from "lucide-react";
 import {
   Menu,
   MenuCheckboxItem,
@@ -19,7 +12,7 @@ import type { Tool } from "../shared/types";
 import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
 import "../editor/editor-controls.css";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 interface SimulationProps {
   /** What the controls show for the shown circuit, and whether each can act. */
@@ -206,14 +199,12 @@ function SimulationSettings({
   onClose: () => void;
 }) {
   const dialog = useModal();
-  const input = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const [value, setValue] = useState(String(frequency));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     alive.current = true;
-    input.current?.focus();
     return () => {
       alive.current = false;
     };
@@ -230,9 +221,7 @@ function SimulationSettings({
     >
       <header>
         <h2>仿真设置</h2>
-        <button aria-label="关闭仿真设置" disabled={pending} onClick={onClose}>
-          <X size={17} />
-        </button>
+        <DialogClose label="关闭仿真设置" disabled={pending} onClick={onClose} />
       </header>
       <form
         onSubmit={(event) => {
@@ -259,7 +248,7 @@ function SimulationSettings({
           时钟频率{" "}
           <span>
             <input
-              ref={input}
+              data-autofocus
               type="number"
               min="0.25"
               max="4096"

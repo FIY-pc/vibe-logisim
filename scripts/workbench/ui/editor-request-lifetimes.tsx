@@ -282,7 +282,7 @@ export async function verifyEditorRequestLifetimes() {
     await settle();
     sourceGate = null;
     assert.equal(
-      container.querySelector('[role="dialog"][aria-label="编辑源文件"]'),
+      container.querySelector('dialog[aria-label="编辑源文件"]'),
       null,
     );
     assert.match(
@@ -292,7 +292,7 @@ export async function verifyEditorRequestLifetimes() {
     assert.equal(container.querySelector(".error-bar"), null);
     await fromMenu("编辑源文件…");
     const dialog = container.querySelector(
-      '[role="dialog"][aria-label="编辑源文件"]',
+      'dialog[aria-label="编辑源文件"]',
     )!;
     assert.ok(dialog);
     assert.match(dialog.querySelector("header")!.textContent!, /B.circ/);
@@ -313,7 +313,7 @@ export async function verifyEditorRequestLifetimes() {
     await settle();
     sourceGate = null;
     assert.equal(
-      container.querySelector('[role="dialog"][aria-label="编辑源文件"]'),
+      container.querySelector('dialog[aria-label="编辑源文件"]'),
       null,
     );
     assert.equal(

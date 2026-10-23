@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, RefreshCw } from "lucide-react";
 import "./ai-settings.css";
 import { Select } from "../shared/Select";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 export interface ProviderConfiguration {
   id?: string;
   name: string;
@@ -432,13 +432,7 @@ export function ProviderSettings(props: SettingsProps) {
     >
       <header>
         <h2 id="ai-settings-title">AI 设置</h2>
-        <button
-          aria-label="关闭 AI 设置"
-          disabled={working || formWorking}
-          onClick={onClose}
-        >
-          <X size={18} />
-        </button>
+        <DialogClose label="关闭 AI 设置" disabled={working || formWorking} onClick={onClose} />
       </header>
       <div className="ai-settings-content">
         <div className="ai-settings-heading">

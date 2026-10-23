@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
-import { useModal } from "./dialog";
+import { DialogClose, useModal } from "./Dialog";
 export function TextPrompt({
   title,
   initial = "",
@@ -17,7 +16,12 @@ export function TextPrompt({
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
-    dialog.current?.querySelector("input")?.focus();
+    // A file name starts with its stem selected, as file managers do.
+    const extension = /\.[\w-]{1,8}$/.exec(initial);
+    if (extension?.index)
+      dialog.current
+        ?.querySelector("input")
+        ?.setSelectionRange(0, extension.index);
   }, []);
   return (
     <dialog
@@ -42,18 +46,11 @@ export function TextPrompt({
         }}
       >
         <header>
-          {title}
-          <button
-            type="button"
-            aria-label="关闭"
-            disabled={pending}
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
+          <h2>{title}</h2>
+          <DialogClose disabled={pending} onClick={onClose} />
         </header>
         <input
-          autoFocus
+          data-autofocus
           required
           aria-label={title}
           value={value}

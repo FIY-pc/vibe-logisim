@@ -9,7 +9,7 @@ import {
   type Bindings,
   type ShortcutId,
 } from "../shared/shortcuts";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 export function ShortcutSettings({
   bindings,
   onChange,
@@ -22,6 +22,22 @@ export function ShortcutSettings({
   const dialog = useModal();
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const needle = query.trim().toLowerCase();
+  const groups = [...new Set(shortcutCommands.map((c) => c.group))]
+    .map(
+      (group) =>
+        [
+          group,
+          shortcutCommands.filter(
+            (c) =>
+              c.group === group &&
+              (c.label + bindingLabel(bindings[c.id]))
+                .toLowerCase()
+                .includes(needle),
+          ),
+        ] as const,
+    )
+    .filter(([, commands]) => commands.length);
   const change = (id: ShortcutId, value: string | null) => {
     const problem = bindingProblem(id, value, bindings);
     if (problem) {
@@ -43,31 +59,21 @@ export function ShortcutSettings({
       onCancel={onClose}
     >
       <header>
-        快捷键
-        <button aria-label="关闭" onClick={onClose}>
-          <X size={18} />
-        </button>
+        <h2>快捷键</h2>
+        <DialogClose onClick={onClose} />
       </header>
       <input
-        autoFocus
+        data-autofocus
         aria-label="查找快捷键"
         placeholder="查找命令或快捷键"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="shortcut-list">
-        {[...new Set(shortcutCommands.map((c) => c.group))].map((group) => (
+        {groups.map(([group, commands]) => (
           <section key={group}>
             <h3>{group}</h3>
-            {shortcutCommands
-              .filter(
-                (c) =>
-                  c.group === group &&
-                  (c.label + bindingLabel(bindings[c.id]))
-                    .toLowerCase()
-                    .includes(query.toLowerCase()),
-              )
-              .map((c) => (
+            {commands.map((c) => (
                 <label key={c.id}>
                   <span>{c.label}</span>
                   <input
@@ -92,6 +98,7 @@ export function ShortcutSettings({
               ))}
           </section>
         ))}
+        {!groups.length && <p className="quiet-empty">没有匹配的命令</p>}
       </div>
       {error && (
         <p className="dialog-error" role="alert">

@@ -1,5 +1,6 @@
 /* Modal dialogs drawn with the platform `<dialog>` element. */
 import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
 
 const openers = new WeakMap<HTMLDialogElement, HTMLElement>();
 
@@ -11,8 +12,11 @@ export function returnFocusTo(dialog: HTMLDialogElement, opener: HTMLElement) {
 }
 
 /** Shows the dialog on the returned ref as a modal while the component is
- * mounted. When it unmounts, focus goes back to the control it was opened
- * from, unless something else has taken focus meanwhile. */
+ * mounted. Focus starts on the element marked `data-autofocus` (an input's
+ * text is selected), otherwise on the dialog itself: the platform would pick
+ * the first control, usually the close button. When the component unmounts,
+ * focus goes back to the control the dialog was opened from, unless
+ * something else has taken focus meanwhile. */
 export function useModal() {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -24,6 +28,14 @@ export function useModal() {
         ? focused
         : null;
     node.showModal();
+    const start = node.querySelector<HTMLElement>("[data-autofocus]");
+    if (start) {
+      start.focus();
+      if (start instanceof HTMLInputElement) start.select();
+    } else {
+      node.tabIndex = -1;
+      node.focus();
+    }
     return () => {
       const target = openers.get(node) ?? opener;
       node.close();
@@ -36,4 +48,27 @@ export function useModal() {
     };
   }, []);
   return dialog;
+}
+
+/** The close button at the end of a dialog's header. */
+export function DialogClose({
+  label = "关闭",
+  disabled = false,
+  onClick,
+}: {
+  label?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="dialog-close"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <X size={16} aria-hidden="true" />
+    </button>
+  );
 }

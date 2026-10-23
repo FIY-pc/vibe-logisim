@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useModal } from "./dialog";
+import { useState } from "react";
+import { useModal } from "./Dialog";
 
 export interface Decision {
   title: string;
@@ -21,9 +21,6 @@ export function DecisionDialog({
   const dialog = useModal();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    dialog.current?.querySelector<HTMLButtonElement>("[data-cancel]")?.focus();
-  }, []);
   return (
     <dialog
       ref={dialog}
@@ -34,7 +31,9 @@ export function DecisionDialog({
         if (!pending) onClose();
       }}
     >
-      <header>{decision.title}</header>
+      <header>
+        <h2>{decision.title}</h2>
+      </header>
       <p>{decision.message}</p>
       {error && (
         <p className="dialog-error" role="alert">
@@ -42,7 +41,7 @@ export function DecisionDialog({
         </p>
       )}
       <footer>
-        <button data-cancel disabled={pending} onClick={onClose}>
+        <button data-autofocus disabled={pending} onClick={onClose}>
           取消
         </button>
         {decision.actions.map((action) => (

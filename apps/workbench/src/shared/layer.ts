@@ -1,7 +1,7 @@
 /* Helpers shared by the floating layers drawn by the app: menus, lists,
  * popovers and tooltips. */
 import { useEffect, useRef, useState } from "react";
-import { returnFocusTo } from "./dialog";
+import { returnFocusTo } from "./Dialog";
 
 /** Where a floating layer opened from an element must mount: inside the
  * nearest `<dialog>` when the element is in one (anything portaled to

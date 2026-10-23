@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronUp, RefreshCw, X } from "lucide-react";
+import { Check, ChevronUp, RefreshCw } from "lucide-react";
+import { DialogClose } from "../shared/Dialog";
 import "./ai-settings.css";
 
 export interface ModelOption {
@@ -256,9 +257,7 @@ function ModelDialog({
     >
       <header>
         <h2 id="ai-model-title">选择模型</h2>
-        <button aria-label="关闭模型设置" disabled={saving} onClick={onClose}>
-          <X size={16} />
-        </button>
+        <DialogClose label="关闭模型设置" disabled={saving} onClick={onClose} />
       </header>
       <input
         ref={search}

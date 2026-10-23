@@ -1,13 +1,13 @@
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
 import { useEffect, useState } from "react";
-import { Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { ObservationRecord } from "../generated/ObservationRecord";
 import type { ObservationSummary } from "../generated/ObservationSummary";
 import type { ReferenceInput } from "../conversation/references";
 import { command } from "../shared/transport";
 import { Waveform } from "./Waveform";
-import { useModal } from "../shared/dialog";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 /**
  * The observations a document kept, with one or two shown side by side. The
@@ -68,9 +68,7 @@ export function Observations({
     >
       <header>
         <h2>留存观察</h2>
-        <button aria-label="关闭留存观察" onClick={onClose}>
-          <X size={17} />
-        </button>
+        <DialogClose label="关闭留存观察" onClick={onClose} />
       </header>
       {error && (
         <p role="alert" className="dialog-error">
