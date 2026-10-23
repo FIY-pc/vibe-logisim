@@ -2,7 +2,6 @@ import type { PreviewFile } from "./FilePreview";
 import { TextPrompt } from "../shared/TextPrompt";
 import { DecisionDialog } from "../shared/DecisionDialog";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   ChevronDown,
   ChevronRight,
@@ -10,14 +9,15 @@ import {
   Folder,
   FolderOpen,
   Plus,
-  Ellipsis,
   LocateFixed,
   History,
   X,
 } from "lucide-react";
 import { command, desktop } from "../shared/transport";
 import { subscribeEvents } from "../shared/events";
-import { eventBinding } from "../shared/shortcuts";
+import { bindingLabel, eventBinding } from "../shared/shortcuts";
+import { ContextMenu } from "../shared/ContextMenu";
+import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
@@ -118,11 +118,8 @@ export function Files({
   const [renaming, setRenaming] = useState<Entry | null>(null),
     [moving, setMoving] = useState<Entry | null>(null),
     [removing, setRemoving] = useState<Entry | null>(null);
-  const [menu, setMenu] = useState<{
-    entry: Entry | null;
-    x: number;
-    y: number;
-  } | null>(null);
+  /** The entry the context menu was opened on; null for the folder. */
+  const [contextEntry, setContextEntry] = useState<Entry | null>(null);
   const [pending, setPending] = useState(false),
     [selected, setSelectedState] = useState<string | null>(null);
   const previewRequest = useRef(0);
@@ -139,8 +136,7 @@ export function Files({
     [dropTarget, setDropTarget] = useState<string | null>(null);
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null),
     [history, setHistory] = useState(false);
-  const filesRef = useRef<HTMLDivElement>(null),
-    menuRef = useRef<HTMLDivElement>(null);
+  const filesRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const currentFolder = useRef(folder?.id);
   if (currentFolder.current !== folder?.id) previewRequest.current++;
@@ -346,16 +342,6 @@ export function Files({
       if (current()) onError(error);
     }
   };
-  const showMenu = (entry: Entry | null, x: number, y: number) => {
-    if (!pending) {
-      if (entry) setSelected(entry.path);
-      setMenu({
-        entry,
-        x: Math.max(8, Math.min(x, window.innerWidth - 230)),
-        y: Math.max(8, Math.min(y, window.innerHeight - 370)),
-      });
-    }
-  };
   const importSources = async (
     sources: string[],
     destination: string,
@@ -418,7 +404,6 @@ export function Files({
     }
   };
   const chooseImport = async (directory: boolean, destination: string) => {
-    setMenu(null);
     const { open } = await import("@tauri-apps/plugin-dialog");
     const paths = await open({
       directory,
@@ -451,7 +436,6 @@ export function Files({
       )
         return;
       event.preventDefault();
-      setMenu(null);
       setCreate({ kind: "folder", parent: selectedParent });
     };
     window.addEventListener("keydown", listener);
@@ -461,7 +445,7 @@ export function Files({
     setEntries({});
     setExpanded(new Set([""]));
     setSelected(null);
-    setMenu(null);
+    setContextEntry(null);
     setCreate(null);
     setRenaming(null);
     setMoving(null);
@@ -473,26 +457,6 @@ export function Files({
     pointer.current = null;
     if (folder) void list().catch(onError);
   }, [folder?.id]);
-  useEffect(() => {
-    if (!menu) return;
-    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    const outside = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setMenu(null);
-        if (selected) rowRefs.current.get(selected)?.focus();
-      }
-    };
-    document.addEventListener("mousedown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("mousedown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [menu, selected]);
   // Pointer dragging remains available when Tauri's native file-drop hook is on
   // (Windows' native hook intentionally disables HTML5 drag events).
   useEffect(() => {
@@ -634,7 +598,12 @@ export function Files({
     rowRefs.current.get(entry.path)?.scrollIntoView({ block: "nearest" });
   };
   const keyboard = (event: React.KeyboardEvent) => {
-    if (pending || document.querySelector("dialog[open]")) return;
+    if (
+      pending ||
+      document.querySelector("dialog[open]") ||
+      !event.currentTarget.contains(event.target as Node)
+    )
+      return;
     const entry = visible.find((e) => e.path === selected) ?? visible[0],
       at = visible.indexOf(entry);
     const handled =
@@ -689,8 +658,18 @@ export function Files({
         (event.key === "F10" && event.shiftKey)) &&
       entry
     ) {
-      const rect = rowRefs.current.get(entry.path)?.getBoundingClientRect();
-      if (rect) showMenu(entry, rect.left + 20, rect.bottom);
+      // Opens the tree's context menu below the row, as a right-click would.
+      const row = rowRefs.current.get(entry.path);
+      const rect = row?.getBoundingClientRect();
+      if (row && rect)
+        row.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + 20,
+            clientY: rect.bottom,
+          }),
+        );
     } else if (
       event.key.toLowerCase() === "c" &&
       (event.ctrlKey || event.metaKey) &&
@@ -739,10 +718,7 @@ export function Files({
               : "")
           }
           data-file-target={entry.directory ? entry.path : parentOf(entry.path)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            showMenu(entry, event.clientX, event.clientY);
-          }}
+          data-file-path={entry.path}
         >
           <button
             ref={(node) => {
@@ -798,173 +774,108 @@ export function Files({
             {entry.directory ? <Folder size={14} /> : <FileText size={14} />}
             <span>{entry.name}</span>
           </button>
-          <button
-            className="file-rename"
-            tabIndex={-1}
-            aria-label={`${entry.name} 的操作`}
+          <Menu
+            label={`${entry.name} 的操作`}
             title="更多操作"
-            aria-haspopup="menu"
+            tabIndex={-1}
             disabled={pending}
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              showMenu(entry, rect.right, rect.bottom);
-            }}
           >
-            <Ellipsis size={13} />
-          </button>
+            {actions(entry)}
+          </Menu>
         </div>
         {entry.directory && expanded.has(entry.path) && (
           <div role="group">{tree(entry.path, depth + 1)}</div>
         )}
       </div>
     ));
-  const menuParent = menu?.entry
-    ? menu.entry.directory
-      ? menu.entry.path
-      : parentOf(menu.entry.path)
-    : "";
+  /** The commands for an entry, or for the folder itself when null. */
+  const actions = (entry: Entry | null) => {
+    const parent = entry
+      ? entry.directory
+        ? entry.path
+        : parentOf(entry.path)
+      : "";
+    const path = () => absolute(entry?.path || "");
+    return (
+      <>
+        <MenuItem onSelect={() => setCreate({ kind: "file", parent })}>
+          新建文件…
+        </MenuItem>
+        <MenuItem
+          shortcut={bindingLabel("Mod+Shift+N")}
+          onSelect={() => setCreate({ kind: "folder", parent })}
+        >
+          新建文件夹…
+        </MenuItem>
+        {desktop() && (
+          <>
+            <MenuItem
+              onSelect={() => void chooseImport(false, parent).catch(onError)}
+            >
+              导入文件…
+            </MenuItem>
+            <MenuItem
+              onSelect={() => void chooseImport(true, parent).catch(onError)}
+            >
+              导入文件夹…
+            </MenuItem>
+          </>
+        )}
+        <MenuSeparator />
+        {desktop() && (
+          <MenuItem
+            onSelect={() =>
+              void import("@tauri-apps/plugin-opener")
+                .then(({ revealItemInDir }) => revealItemInDir(path()))
+                .catch(onError)
+            }
+          >
+            在文件管理器中显示
+          </MenuItem>
+        )}
+        <MenuItem
+          onSelect={() =>
+            void navigator.clipboard.writeText(path()).catch(onError)
+          }
+        >
+          复制路径
+        </MenuItem>
+        {entry && (
+          <>
+            <MenuSeparator />
+            <MenuItem shortcut="F2" onSelect={() => setRenaming(entry)}>
+              重命名…
+            </MenuItem>
+            <MenuItem onSelect={() => setMoving(entry)}>移动…</MenuItem>
+            <MenuItem
+              danger
+              shortcut="Delete"
+              onSelect={() => setRemoving(entry)}
+            >
+              移入回收站…
+            </MenuItem>
+          </>
+        )}
+        <MenuSeparator />
+        <MenuItem shortcut="F5" onSelect={() => void refresh().catch(onError)}>
+          刷新文件夹
+        </MenuItem>
+        <MenuItem onSelect={() => setHistory(true)}>文件改动…</MenuItem>
+      </>
+    );
+  };
+  /** The entry under a right-click in the tree, or null for empty space. */
+  const entryAt = (target: EventTarget) => {
+    const path = (target as HTMLElement).closest<HTMLElement>(
+      "[data-file-path]",
+    )?.dataset.filePath;
+    return path === undefined
+      ? null
+      : (entries[parentOf(path)]?.find((e) => e.path === path) ?? null);
+  };
   return (
     <div className="files" ref={filesRef}>
       {folderDialog}
-      {menu &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="menu"
-            aria-label="文件操作"
-            className="menu-content file-context-menu"
-            style={{ left: menu.x, top: menu.y }}
-            onKeyDown={(event) => {
-              if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-              event.preventDefault();
-              const buttons = [
-                  ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                    "button:not(:disabled)",
-                  ),
-                ],
-                at = buttons.indexOf(
-                  document.activeElement as HTMLButtonElement,
-                );
-              buttons[
-                (at + (event.key === "ArrowDown" ? 1 : buttons.length - 1)) %
-                  buttons.length
-              ]?.focus();
-            }}
-          >
-            <button
-              role="menuitem"
-              onClick={() => {
-                setCreate({ kind: "file", parent: menuParent });
-                setMenu(null);
-              }}
-            >
-              新建文件…
-            </button>
-            <button
-              role="menuitem"
-              onClick={() => {
-                setCreate({ kind: "folder", parent: menuParent });
-                setMenu(null);
-              }}
-            >
-              新建文件夹…
-            </button>
-            {desktop() && (
-              <>
-                <button
-                  role="menuitem"
-                  onClick={() =>
-                    void chooseImport(false, menuParent).catch(onError)
-                  }
-                >
-                  导入文件…
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() =>
-                    void chooseImport(true, menuParent).catch(onError)
-                  }
-                >
-                  导入文件夹…
-                </button>
-                <hr />
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    const path = absolute(menu.entry?.path || "");
-                    setMenu(null);
-                    void import("@tauri-apps/plugin-opener")
-                      .then(({ revealItemInDir }) => revealItemInDir(path))
-                      .catch(onError);
-                  }}
-                >
-                  在文件管理器中显示
-                </button>
-              </>
-            )}
-            <button
-              role="menuitem"
-              onClick={() => {
-                const path = absolute(menu.entry?.path || "");
-                setMenu(null);
-                void navigator.clipboard.writeText(path).catch(onError);
-              }}
-            >
-              复制路径
-            </button>
-            {menu.entry && (
-              <>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setRenaming(menu.entry);
-                    setMenu(null);
-                  }}
-                >
-                  重命名… <kbd>F2</kbd>
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMoving(menu.entry);
-                    setMenu(null);
-                  }}
-                >
-                  移动…
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setRemoving(menu.entry);
-                    setMenu(null);
-                  }}
-                >
-                  移入回收站…
-                </button>
-              </>
-            )}
-            <hr />
-            <button
-              role="menuitem"
-              onClick={() => {
-                setMenu(null);
-                void refresh().catch(onError);
-              }}
-            >
-              刷新文件夹
-            </button>
-            <button
-              role="menuitem"
-              onClick={() => {
-                setHistory(true);
-                setMenu(null);
-              }}
-            >
-              文件改动…
-            </button>
-          </div>,
-          document.body,
-        )}
       {removing && (
         <DecisionDialog
           decision={{
@@ -1052,80 +963,71 @@ export function Files({
           onChanged={afterChange}
         />
       )}
-      <div
-        className={
-          "panel-heading" + (dropTarget === "" ? " file-drop-target" : "")
-        }
-        data-file-target=""
-        onContextMenu={(event) => {
-          if (folder) {
-            event.preventDefault();
-            showMenu(null, event.clientX, event.clientY);
-          }
-        }}
-      >
-        <span>{folder?.name || "文件夹"}</span>
-        <div>
-          {folder && (
-            <>
-              <button
-                aria-label="新建文件"
-                title="新建文件"
-                disabled={pending}
-                onClick={() =>
-                  setCreate({ kind: "file", parent: selectedParent })
-                }
-              >
-                <Plus size={13} />
-              </button>
-              <button
-                aria-label="定位当前文件"
-                title="定位当前文件"
-                disabled={!activeRelative || pending}
-                onClick={() =>
-                  activeRelative && void reveal(activeRelative).catch(onError)
-                }
-              >
-                <LocateFixed size={13} />
-              </button>
-              <button
-                aria-label="文件夹操作"
-                title="更多操作"
-                aria-haspopup="menu"
-                disabled={pending}
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  showMenu(null, rect.left, rect.bottom);
-                }}
-              >
-                <Ellipsis size={13} />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-      {folder ? (
+      <ContextMenu content={actions(null)} disabled={!folder || pending}>
         <div
-          className={"file-tree" + (dropTarget === "" ? " file-drop-root" : "")}
-          role="tree"
-          aria-label={folder.name}
-          aria-busy={pending}
+          className={
+            "panel-heading" + (dropTarget === "" ? " file-drop-target" : "")
+          }
           data-file-target=""
-          onKeyDown={keyboard}
-          onContextMenu={(event) => {
-            if (!(event.target as HTMLElement).closest(".file-row")) {
-              event.preventDefault();
-              showMenu(null, event.clientX, event.clientY);
-            }
-          }}
+          onContextMenu={() => setContextEntry(null)}
         >
-          {tree("", 0)}
-          {pending && (
-            <div className="file-working" role="status">
-              正在处理…
-            </div>
-          )}
+          <span>{folder?.name || "文件夹"}</span>
+          <div>
+            {folder && (
+              <>
+                <button
+                  aria-label="新建文件"
+                  title="新建文件"
+                  disabled={pending}
+                  onClick={() =>
+                    setCreate({ kind: "file", parent: selectedParent })
+                  }
+                >
+                  <Plus size={13} />
+                </button>
+                <button
+                  aria-label="定位当前文件"
+                  title="定位当前文件"
+                  disabled={!activeRelative || pending}
+                  onClick={() =>
+                    activeRelative && void reveal(activeRelative).catch(onError)
+                  }
+                >
+                  <LocateFixed size={13} />
+                </button>
+                <Menu label="文件夹操作" title="更多操作" disabled={pending}>
+                  {actions(null)}
+                </Menu>
+              </>
+            )}
+          </div>
         </div>
+      </ContextMenu>
+      {folder ? (
+        <ContextMenu content={actions(contextEntry)} disabled={pending}>
+          <div
+            className={
+              "file-tree" + (dropTarget === "" ? " file-drop-root" : "")
+            }
+            role="tree"
+            aria-label={folder.name}
+            aria-busy={pending}
+            data-file-target=""
+            onKeyDown={keyboard}
+            onContextMenu={(event) => {
+              const entry = entryAt(event.target);
+              if (entry) setSelected(entry.path);
+              setContextEntry(entry);
+            }}
+          >
+            {tree("", 0)}
+            {pending && (
+              <div className="file-working" role="status">
+                正在处理…
+              </div>
+            )}
+          </div>
+        </ContextMenu>
       ) : (
         <button
           className="open-folder"

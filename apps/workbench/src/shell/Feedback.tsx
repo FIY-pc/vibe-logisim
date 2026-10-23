@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { command, desktop } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 import {
-  Check,
   Download,
   ExternalLink,
   MessageSquare,
   RefreshCw,
   X,
 } from "lucide-react";
+import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
 import "./feedback.css";
 
 const RELEASES = "https://github.com/FIY-pc/vibe-logisim/releases";
@@ -150,36 +150,39 @@ export function useFeedback(
   };
 }
 export type FeedbackController = ReturnType<typeof useFeedback>;
+/** The help and update commands, as items of the app menu. */
 export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
   const { status } = feedback;
   return (
     <>
-      <button onClick={() => feedback.setDialogOpen(true)}>
-        <MessageSquare size={15} />
+      <MenuItem
+        icon={<MessageSquare size={14} />}
+        onSelect={() => feedback.setDialogOpen(true)}
+      >
         反馈问题…
-      </button>
-      <button
-        role="menuitemcheckbox"
-        aria-checked={Boolean(status?.enabled && !status.forcedOff)}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuCheckboxItem
+        checked={Boolean(status?.enabled && !status.forcedOff)}
         disabled={!status || status.forcedOff}
-        onClick={() => void feedback.setAutomatic(!status?.enabled)}
+        onCheckedChange={(enabled) => void feedback.setAutomatic(enabled)}
       >
-        <span className="feedback-menu-check">
-          {status?.enabled && !status.forcedOff && <Check size={15} />}
-        </span>
         自动检查更新
-      </button>
-      <button
+      </MenuCheckboxItem>
+      <MenuItem
+        icon={<RefreshCw size={14} />}
         disabled={feedback.checking || status?.forcedOff}
-        onClick={() => void feedback.checkNow()}
+        onSelect={() => void feedback.checkNow()}
       >
-        <RefreshCw size={15} />
         {feedback.checking ? "正在检查…" : "立即检查更新"}
-      </button>
-      <button onClick={() => void feedback.openRelease()}>
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        trailing={<ExternalLink size={13} aria-hidden="true" />}
+        onSelect={() => void feedback.openRelease()}
+      >
         关于 Vibe Logisim {status?.current || ""}
-        <ExternalLink size={14} />
-      </button>
+      </MenuItem>
     </>
   );
 }

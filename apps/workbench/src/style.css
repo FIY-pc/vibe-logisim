@@ -6,12 +6,30 @@
   background: #f4f5f7;
   font-synthesis: none;
   --paper: #fff;
+  --text: #20242b;
   --border: #e3e6ec;
   --muted: #737c8a;
   --accent: #315efb;
+  --accent-soft: #eef1ff;
+  --hover: #eceff4;
+  --danger: #b42318;
+  --warning: #a16207;
   --selection-fill: #315efb18;
   --grid: #d3d8e1;
+  /* Menus, lists, popovers and tooltips: one shadow, one fade. */
+  --layer-shadow: 0 8px 28px #2026341a, 0 1px 3px #20263412;
+  --layer-fade: 140ms;
   color-scheme: light;
+}
+@keyframes layer-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --layer-fade: 0s;
+  }
 }
 * {
   box-sizing: border-box;
@@ -105,17 +123,25 @@ select {
 .select-trigger.select-plain:hover {
   background: #eceff4;
 }
-.select-content {
+/* Floating layers drawn by the app share one surface, shadow and fade. */
+.menu-content,
+.select-content,
+.conversation-popover {
   z-index: 200;
-  min-width: var(--radix-select-trigger-width);
-  max-height: var(--radix-select-content-available-height);
-  overflow: hidden;
   background: var(--paper);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 8px 32px #22334d16;
+  box-shadow: var(--layer-shadow);
+  color: var(--text);
   font-size: 12px;
+  outline: none;
+  animation: layer-in var(--layer-fade) ease-out;
+}
+.select-content {
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height);
+  overflow: hidden;
+  padding: 4px;
 }
 .select-item {
   display: flex;
@@ -140,11 +166,35 @@ select {
 .select-item > svg {
   flex: none;
 }
+/* shared/Checkbox.tsx */
+.checkbox {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid #b4bcc8;
+  border-radius: 4px;
+  background: var(--paper);
+  color: white;
+}
+.checkbox:hover {
+  background: var(--paper);
+  border-color: #8f99a8;
+}
+.checkbox[data-state="checked"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox-mark {
+  display: flex;
+}
+/* Key labels are set in the app's font, quieter than the text they follow. */
 kbd {
-  font:
-    10px ui-monospace,
-    monospace;
-  opacity: 0.5;
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 button.primary {
   background: var(--accent);
@@ -309,14 +359,15 @@ button.primary {
 .circuit-list {
   padding: 4px 0 3px 21px;
 }
-.circuit-list button {
+.circuit-list > button,
+.circuit-row > button:first-child {
   display: flex;
   width: 100%;
   justify-content: start;
   padding: 6px 12px;
   font-size: 12px;
 }
-.circuit-list button.active {
+.circuit-row > button.active {
   color: var(--accent);
   font-weight: 600;
 }
@@ -605,38 +656,6 @@ button.primary {
 }
 .muted {
   color: var(--muted);
-}
-.menu {
-  position: relative;
-}
-.menu summary {
-  list-style: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px;
-  border-radius: 5px;
-  font-size: 12px;
-}
-.menu-content {
-  position: absolute;
-  right: 0;
-  top: 36px;
-  z-index: 20;
-  min-width: 230px;
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px;
-  box-shadow: 0 8px 32px #22334d16;
-}
-.menu-content button {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  font-size: 12px;
-  padding: 9px;
 }
 .error-bar {
   flex: none;
@@ -1084,8 +1103,10 @@ button.primary {
   flex: 1;
   min-width: 0;
 }
-.circuit-row .menu summary {
-  padding: 3px 6px;
+.circuit-row > .menu-trigger {
+  flex: none;
+  padding: 4px;
+  color: var(--muted);
 }
 .main-marker {
   margin-left: auto;
@@ -1358,12 +1379,16 @@ button.primary {
   flex: 1;
   min-width: 0;
 }
-.file-rename {
+/* A row's menu button shows on hover, on focus and while its menu is open. */
+.file-row > .menu-trigger {
+  flex: none;
+  padding: 4px;
+  color: var(--muted);
   opacity: 0;
-  padding: 5px;
 }
-.file-row:hover .file-rename,
-.file-row:focus-within .file-rename {
+.file-row:hover > .menu-trigger,
+.file-row:focus-within > .menu-trigger,
+.file-row > .menu-trigger[data-state="open"] {
   opacity: 1;
 }
 .file-preview {

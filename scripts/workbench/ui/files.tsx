@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Files } from "../../../apps/workbench/src/workspace/Files";
-import { pickOption } from "./workbench";
+import { clickMenuItem, openMenu, pickOption } from "./workbench";
 
 export async function verifyFilesUI() {
   const node = document.createElement("div");
@@ -275,8 +275,8 @@ export async function verifyFilesUI() {
     );
     conflict = false;
     g.__pickedFiles = ["/outside/picked-folder"];
-    await click("文件夹操作");
-    await click("导入文件夹…");
+    await openMenu("文件夹操作", node);
+    await clickMenuItem("导入文件夹…");
     await flush();
     assert(
       calls.some(
@@ -290,8 +290,8 @@ export async function verifyFilesUI() {
     assert.equal(previews.at(-1).revision, "immutable-digest");
     assert.equal(previews.at(-1).path, "readme.txt");
     assert.equal(previews.at(-1).folderId, folder.id);
-    await click("文件夹操作");
-    await click("文件改动…");
+    await openMenu("文件夹操作", node);
+    await clickMenuItem("文件改动…");
     await click("修改dir/new.circ");
     assert(
       document

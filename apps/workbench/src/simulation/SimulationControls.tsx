@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
@@ -15,6 +8,13 @@ import {
   StepForward,
   X,
 } from "lucide-react";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+} from "../shared/Menu";
 import type { Tool } from "../shared/types";
 import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
@@ -66,107 +66,30 @@ export function SimulationMenu({
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState(false);
-  const [position, setPosition] = useState({ left: 8, top: 8 });
-  const button = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  const focusLast = useRef(false);
-  const menuId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
   const active = status.current;
   const running = status.running;
   const automatic = status.automatic;
   const rootCircuit = status.circuit ?? null;
-  const close = (restoreFocus = true) => {
-    setOpen(false);
-    if (restoreFocus) button.current?.focus();
-  };
-  const items = () =>
-    Array.from(
-      panel.current?.querySelectorAll<HTMLButtonElement>(
-        "button:not(:disabled)",
-      ) || [],
-    );
   useEffect(() => {
     setOpen(false);
     setSettings(false);
   }, [contextKey]);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const positionPanel = () => {
-      const anchor = button.current?.getBoundingClientRect();
-      const rect = panel.current?.getBoundingClientRect();
-      if (!anchor || !rect) return;
-      setPosition({
-        left: Math.max(
-          8,
-          Math.min(anchor.left, window.innerWidth - rect.width - 8),
-        ),
-        top: Math.max(
-          8,
-          Math.min(anchor.bottom + 6, window.innerHeight - rect.height - 8),
-        ),
-      });
-    };
-    positionPanel();
-    const enabled = items();
-    (focusLast.current ? enabled.at(-1) : enabled[0])?.focus();
-    window.addEventListener("resize", positionPanel);
-    return () => window.removeEventListener("resize", positionPanel);
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const dismiss = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!button.current?.contains(target) && !panel.current?.contains(target))
-        setOpen(false);
-    };
-    document.addEventListener("pointerdown", dismiss);
-    return () => document.removeEventListener("pointerdown", dismiss);
-  }, [open]);
-  const dispatch = (action: RunAction) => {
-    close();
-    run(action);
-  };
-  const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const enabled = items();
-    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault();
-      event.stopPropagation();
-      const index = enabled.indexOf(
-        document.activeElement as HTMLButtonElement,
-      );
-      const next =
-        event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? enabled.length - 1
-            : (index + (event.key === "ArrowDown" ? 1 : -1) + enabled.length) %
-              enabled.length;
-      enabled[next]?.focus();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-    } else if (event.key === "Tab") {
-      close();
-    }
-  };
   const action = (
     label: string,
     target: RunAction,
     shortcut?: string,
     unavailable = disabled,
   ) => (
-    <button
-      role="menuitem"
-      tabIndex={-1}
+    <MenuItem
+      shortcut={shortcut}
       disabled={
         unavailable || status.viewBusy || (target === "stop" && !status.exists)
       }
-      onClick={() => dispatch(target)}
+      onSelect={() => run(target)}
     >
-      <span>{label}</span>
-      {shortcut && <kbd>{shortcut}</kbd>}
-    </button>
+      {label}
+    </MenuItem>
   );
   const state = status.busy
     ? pendingLabel(status.busyAction || "", active)
@@ -178,132 +101,84 @@ export function SimulationMenu({
     : circuitName || "尚未打开电路";
   return (
     <>
-      <button
-        ref={button}
-        className="simulation-menu-trigger"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        data-running={running}
-        onClick={() => {
-          focusLast.current = false;
-          setOpen(!open);
-        }}
-        onKeyDown={(event) => {
-          if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-          event.preventDefault();
-          event.stopPropagation();
-          focusLast.current = event.key === "ArrowUp";
-          setOpen(true);
-          if (open) {
-            const enabled = items();
-            (focusLast.current ? enabled.at(-1) : enabled[0])?.focus();
-          }
-        }}
+      <Menu
+        label="仿真"
+        className={
+          running
+            ? "simulation-menu-trigger running"
+            : "simulation-menu-trigger"
+        }
+        align="start"
+        triggerRef={trigger}
+        open={open}
+        onOpenChange={setOpen}
+        trigger={
+          <>
+            仿真 <ChevronDown size={14} aria-hidden="true" />
+          </>
+        }
       >
-        仿真 <ChevronDown size={13} aria-hidden="true" />
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={panel}
-            id={menuId}
-            className="runtime-menu"
-            role="menu"
-            aria-label="仿真"
-            style={position}
-            onKeyDown={keyDown}
+        <MenuLabel>
+          <strong>{owner}</strong>
+          <span>{state}</span>
+        </MenuLabel>
+        {onReturnToSimulation && (
+          <MenuItem
+            disabled={status.viewBusy || status.busy}
+            onSelect={onReturnToSimulation}
           >
-            <div className="runtime-menu-heading" role="presentation">
-              <strong>{owner}</strong>
-              <span>{state}</span>
-            </div>
-            {onReturnToSimulation && (
-              <button
-                role="menuitem"
-                tabIndex={-1}
-                disabled={status.viewBusy || status.busy}
-                onClick={() => {
-                  close();
-                  onReturnToSimulation();
-                }}
-              >
-                返回运行电路
-              </button>
-            )}
-            {!active && action("启动仿真", "start")}
-            {action(
-              running ? "暂停时钟" : "运行时钟",
-              "toggle-clock",
-              shortcuts.clock,
-            )}
-            {action(
-              "时钟一步",
-              "tick",
-              shortcuts.tick,
-              disabled || !active || running,
-            )}
-            <hr role="separator" />
-            <button
-              role="menuitemcheckbox"
-              tabIndex={-1}
-              aria-checked={automatic}
-              disabled={disabled || status.viewBusy || !active}
-              onClick={() => dispatch("toggle-propagation")}
-            >
-              <span>自动传播</span>
-              {shortcuts.propagation && <kbd>{shortcuts.propagation}</kbd>}
-            </button>
-            {action("传播一步", "step", shortcuts.step, disabled || !active)}
-            {action("复位仿真", "reset", shortcuts.reset, disabled || !active)}
-            <hr role="separator" />
-            <button
-              role="menuitem"
-              tabIndex={-1}
-              disabled={!active || disabled}
-              onClick={() => {
-                close();
-                void capture().catch(onError);
-              }}
-            >
-              <span>留存此刻</span>
-              {shortcuts.capture && <kbd>{shortcuts.capture}</kbd>}
-            </button>
-            <button
-              role="menuitem"
-              tabIndex={-1}
-              disabled={!circuitName}
-              onClick={() => {
-                close();
-                onObservations();
-              }}
-            >
-              留存观察
-            </button>
-            <hr role="separator" />
-            <button
-              role="menuitem"
-              tabIndex={-1}
-              disabled={!circuitName || disabled}
-              onClick={() => {
-                close(false);
-                setSettings(true);
-              }}
-            >
-              仿真设置…
-            </button>
-            <button
-              role="menuitem"
-              tabIndex={-1}
-              disabled={!active || disabled}
-              title="清除本次运行的输入和状态，电路设计与留存观察会保留"
-              onClick={() => dispatch("stop")}
-            >
-              结束本次仿真
-            </button>
-          </div>,
-          document.body,
+            返回运行电路
+          </MenuItem>
         )}
+        {!active && action("启动仿真", "start")}
+        {action(
+          running ? "暂停时钟" : "运行时钟",
+          "toggle-clock",
+          shortcuts.clock,
+        )}
+        {action(
+          "时钟一步",
+          "tick",
+          shortcuts.tick,
+          disabled || !active || running,
+        )}
+        <MenuSeparator />
+        <MenuCheckboxItem
+          checked={automatic}
+          shortcut={shortcuts.propagation}
+          disabled={disabled || status.viewBusy || !active}
+          onCheckedChange={() => run("toggle-propagation")}
+        >
+          自动传播
+        </MenuCheckboxItem>
+        {action("传播一步", "step", shortcuts.step, disabled || !active)}
+        {action("复位仿真", "reset", shortcuts.reset, disabled || !active)}
+        <MenuSeparator />
+        <MenuItem
+          shortcut={shortcuts.capture}
+          disabled={!active || disabled}
+          onSelect={() => void capture().catch(onError)}
+        >
+          留存此刻
+        </MenuItem>
+        <MenuItem disabled={!circuitName} onSelect={onObservations}>
+          留存观察…
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          disabled={!circuitName || disabled}
+          onSelect={() => setSettings(true)}
+        >
+          仿真设置…
+        </MenuItem>
+        <MenuItem
+          disabled={!active || disabled || status.viewBusy || !status.exists}
+          title="清除本次运行的输入和状态，电路设计与留存观察会保留"
+          onSelect={() => run("stop")}
+        >
+          结束本次仿真
+        </MenuItem>
+      </Menu>
       {settings &&
         createPortal(
           <SimulationSettings
@@ -311,7 +186,7 @@ export function SimulationMenu({
             onApply={onFrequencyChange}
             onClose={() => {
               setSettings(false);
-              button.current?.focus();
+              trigger.current?.focus();
             }}
           />,
           document.body,

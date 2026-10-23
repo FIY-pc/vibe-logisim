@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
-import { Workbench } from "./workbench";
+import { clickMenuItem, openMenu, Workbench } from "./workbench";
 
 export async function verifyConversationSummaries() {
   const container = document.createElement("div");
@@ -109,7 +109,7 @@ export async function verifyConversationSummaries() {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
   const title = () =>
-    container.querySelector('summary[aria-label="会话"]')?.textContent;
+    container.querySelector(".conversation-picker > span")?.textContent;
   const input = (
     element: HTMLInputElement | HTMLTextAreaElement,
     value: string,
@@ -145,11 +145,8 @@ export async function verifyConversationSummaries() {
       "The first ask refreshes the persisted summary without switching documents or restarting",
     );
 
-    await act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "重命名…")!
-        .click(),
-    );
+    await openMenu("对话操作", container);
+    await clickMenuItem("重命名…");
     await input(
       container.querySelector('input[aria-label="重命名对话"]')!,
       "我命名的对话",

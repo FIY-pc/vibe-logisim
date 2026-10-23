@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   BookOpen,
   CircuitBoard,
-  MoreHorizontal,
   Pencil,
   Plus,
   ScanSearch,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 import { subscribeEvents } from "../shared/events";
+import { Menu, MenuItem } from "../shared/Menu";
 import type { Quotation } from "./references";
 import { eventBinding } from "../shared/shortcuts";
 import { command } from "../shared/transport";
@@ -633,30 +633,22 @@ export function Chat({
         >
           <Plus size={15} />
         </button>
-        <details className="menu">
-          <summary aria-label="对话操作" title="对话操作">
-            <MoreHorizontal size={16} />
-          </summary>
-          <div className="menu-content">
-            <button
-              disabled={locked || !state?.conversationId}
-              onClick={() => setRenameConversation(true)}
-            >
-              重命名…
-            </button>
-            <button
-              disabled={locked || !state?.conversationId}
-              onClick={() =>
-                switchConversation(
-                  "archive",
-                  state?.conversationId || undefined,
-                )
-              }
-            >
-              归档
-            </button>
-          </div>
-        </details>
+        <Menu label="对话操作">
+          <MenuItem
+            disabled={locked || !state?.conversationId}
+            onSelect={() => setRenameConversation(true)}
+          >
+            重命名…
+          </MenuItem>
+          <MenuItem
+            disabled={locked || !state?.conversationId}
+            onSelect={() =>
+              switchConversation("archive", state?.conversationId || undefined)
+            }
+          >
+            归档
+          </MenuItem>
+        </Menu>
         <button
           title="AI 设置"
           aria-label="AI 设置"

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../apps/workbench/src/App";
+import { clickMenuItem, openMenu } from "./workbench";
 
 /** A field commit and source read retain the document/object identity they started with. */
 export async function verifyEditorRequestLifetimes() {
@@ -168,12 +169,12 @@ export async function verifyEditorRequestLifetimes() {
     });
     await settle();
   };
-  const menuButton = (text: string) =>
-    Array.from(container.querySelectorAll(".menu-content button")).find(
-      (button) => button.textContent?.startsWith(text),
-    );
+  const fromMenu = async (text: string) => {
+    await openMenu("更多", container);
+    await clickMenuItem(text);
+  };
   const selectObject = async (label: string) => {
-    await click(menuButton("查找元件"));
+    await fromMenu("查找元件…");
     await click(
       Array.from(
         container.querySelectorAll('.find-dialog [role="option"]'),
@@ -271,7 +272,7 @@ export async function verifyEditorRequestLifetimes() {
     );
 
     sourceGate = deferred();
-    await click(menuButton("编辑源文件"));
+    await fromMenu("编辑源文件…");
     assert.equal(calls.filter((call) => call.op === "source").at(-1).id, "A");
     await selectDocument("B");
     await act(async () => {
@@ -289,7 +290,7 @@ export async function verifyEditorRequestLifetimes() {
       /B.circ/,
     );
     assert.equal(container.querySelector(".error-bar"), null);
-    await click(menuButton("编辑源文件"));
+    await fromMenu("编辑源文件…");
     const dialog = container.querySelector(
       '[role="dialog"][aria-label="编辑源文件"]',
     )!;
@@ -303,7 +304,7 @@ export async function verifyEditorRequestLifetimes() {
 
     await selectDocument("A");
     sourceGate = deferred();
-    await click(menuButton("编辑源文件"));
+    await fromMenu("编辑源文件…");
     await selectDocument("B");
     await act(async () => {
       sourceGate!.reject(new Error("stale A read failure"));

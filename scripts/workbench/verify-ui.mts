@@ -73,6 +73,8 @@ Object.assign(globalThis,{window:dom.window,document:dom.window.document,localSt
 if(!dom.window.PointerEvent){dom.window.PointerEvent=class PointerEvent extends dom.window.MouseEvent{constructor(type,init={}){super(type,init);this.pointerType=init.pointerType??'mouse';this.pointerId=init.pointerId??1}}}
 globalThis.PointerEvent=dom.window.PointerEvent;
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
+// A context menu anchors to a rectangle at the pointer.
+globalThis.DOMRect=dom.window.DOMRect;
 globalThis.ResizeObserver=class{constructor(fn){this.fn=fn}observe(){this.fn([{contentRect:{width:600,height:400}}])}disconnect(){}};
 HTMLElement.prototype.scrollIntoView=()=>{};HTMLElement.prototype.setPointerCapture=()=>{};HTMLElement.prototype.releasePointerCapture=()=>{};HTMLElement.prototype.hasPointerCapture=()=>false;
 HTMLDialogElement.prototype.showModal=function(){this.open=true};HTMLDialogElement.prototype.close=function(){this.open=false};
