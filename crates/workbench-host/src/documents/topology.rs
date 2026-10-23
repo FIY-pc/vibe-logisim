@@ -1,5 +1,5 @@
 //! Compare native bit-net partitions using source component identity, never
-//! coordinates as nets. Reads only the parts of an observation it compares.
+//! coordinates as nets. Reads the worker's `connectivity` reply.
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use vibe_circuit_document::{Circuit, Point};
@@ -8,7 +8,7 @@ type Result<T> = std::result::Result<T, String>;
 type Contact = (String, u64, u64);
 type Partition = BTreeSet<Vec<Contact>>;
 
-/// The connectivity facts of one native observation of a circuit.
+/// The native connectivity of one circuit.
 #[derive(Deserialize)]
 pub struct Connectivity {
     focus: Focus,

@@ -216,12 +216,24 @@ impl Native {
         }
         result
     }
-    /// The observation of one circuit as the JSON the worker wrote, for
-    /// callers that read only part of it.
-    pub async fn observe_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
+    /// The observation of one circuit as the JSON the worker wrote.
+    async fn observe_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
         self.request(
             artifact,
             xml("observe", &[("circuit", circuit.into())], vec![]),
+        )
+        .await
+    }
+    /// The native connectivity of one circuit as the JSON the worker wrote:
+    /// `{schema, focus: {circuit, components: [{location, factoryName,
+    /// ends: [{index, location, width, netBits: [{bit, netId}]}]}],
+    /// wireBundles: [{bundleId, valid, width, widthDeterminant, points,
+    /// bitNets}]}}`, the fields of an observation a connection check compares,
+    /// at a fraction of its cost.
+    pub async fn connectivity_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
+        self.request(
+            artifact,
+            xml("connectivity", &[("circuit", circuit.into())], vec![]),
         )
         .await
     }

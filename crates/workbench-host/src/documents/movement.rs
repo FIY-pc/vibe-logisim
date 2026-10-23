@@ -32,12 +32,12 @@ impl Host {
             (self.materialize(doc)?, graph, doc.clone())
         };
         let before = {
-            let _observe = timing::span("move.observe.before");
+            let _observe = timing::span("move.connectivity.before");
             let bytes = self
                 .native
                 .lock()
                 .await
-                .observe_bytes(&path, circuit)
+                .connectivity_bytes(&path, circuit)
                 .await?;
             Connectivity::parse(&bytes)?
         };
@@ -134,12 +134,12 @@ impl Host {
         let plan = self.plan_move(id, revision, circuit, ids, delta).await?;
         let path = self.materialize(&plan.candidate)?;
         let after = {
-            let _observe = timing::span("move.observe.after");
+            let _observe = timing::span("move.connectivity.after");
             let bytes = self
                 .native
                 .lock()
                 .await
-                .observe_bytes(&path, circuit)
+                .connectivity_bytes(&path, circuit)
                 .await?;
             Connectivity::parse(&bytes)?
         };

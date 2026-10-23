@@ -18,11 +18,15 @@ public final class CircuitWorker {
         final LogisimFile file;
         final String stdout;
         final List<Object> messages = new ArrayList<>();
-        // Static observations are immutable for this artifact/dependency set.
-        // Bound retained results independently of the loaded-file cache.
-        final Map<String,byte[]> observations = new LinkedHashMap<String,byte[]>(2,.75f,true) {
-            protected boolean removeEldestEntry(Map.Entry<String,byte[]> entry) { return size()>2; }
+        // Observations and connectivity are immutable for this artifact and
+        // dependency set: keep the latest few, keyed by kind and circuit.
+        final Map<String,byte[]> results = new LinkedHashMap<String,byte[]>(4,.75f,true) {
+            protected boolean removeEldestEntry(Map.Entry<String,byte[]> entry) { return size()>4; }
         };
+        byte[] remember(String key,byte[] value) {
+            if(value.length<=16_000_000)results.put(key,value);
+            return value;
+        }
         Loaded(File path) throws Exception {
             // Coverage-checked load: non-fatal runtime reports (attribute values
             // this runtime defaults, e.g. 2.7.1 trigger=high) become messages in
@@ -86,18 +90,14 @@ public final class CircuitWorker {
                     if(operation==null)throw new IllegalArgumentException("缺少原生操作");
                     Loaded loaded=worker.load(request.getAttribute("artifact"),request.getAttribute("digest"));
                     String kind=operation.getTagName();byte[] response;
-                    if(kind.equals("observe")) {
-                        String circuit=operation.getAttribute("circuit");
-                        boolean cacheable=request.getAttribute("output").isEmpty();
-                        response=cacheable?loaded.observations.get(circuit):null;
-                        if(response==null) {
-                            String value=ExactRuntimeObserver.observeLoaded(loaded.file,Paths.get(request.getAttribute("artifact")),
-                                circuit,runtime,args[1],bundle,loaded.stdout,loaded.messages,
-                                request.getAttribute("output"));
-                            response=value.getBytes(StandardCharsets.UTF_8);
-                            if(cacheable&&response.length<=16_000_000)loaded.observations.put(circuit,response);
-                        }
-                        WorkerTiming.mark("observe");
+                    if(kind.equals("observe")||kind.equals("connectivity")) {
+                        String circuit=operation.getAttribute("circuit"),key=kind+"\0"+circuit;
+                        response=loaded.results.get(key);
+                        if(response==null)response=loaded.remember(key,(kind.equals("observe")
+                            ?ExactRuntimeObserver.observeLoaded(loaded.file,Paths.get(request.getAttribute("artifact")),
+                                circuit,runtime,args[1],bundle,loaded.stdout,loaded.messages)
+                            :ExactRuntimeObserver.connectivityLoaded(loaded.file,circuit)).getBytes(StandardCharsets.UTF_8));
+                        WorkerTiming.mark(kind);
                     } else if(kind.equals("render")) {
                         com.cburch.logisim.circuit.Circuit circuit=loaded.file.getCircuit(operation.getAttribute("circuit"));
                         if(circuit==null)throw new IllegalArgumentException("Unknown circuit");

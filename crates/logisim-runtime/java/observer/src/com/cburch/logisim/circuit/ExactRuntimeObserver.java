@@ -66,6 +66,7 @@ import java.util.stream.Stream;
 public final class ExactRuntimeObserver {
     private static final String SCHEMA =
         "vibe-logisim.experiment-001.runtime-observation/v0";
+    private static final String CONNECTIVITY_SCHEMA = "vibe-logisim.runtime-connectivity/v0";
     private static final String OBSERVER_VERSION = "spike-1";
     private static final String EXPECTED_RUNTIME_SHA256 =
         "9eb1aae5e87cf0c6e4af845dde00624338c6dce25d945b6482cad017aa6cbb34";
@@ -192,7 +193,7 @@ public final class ExactRuntimeObserver {
     /** Same observation contract for the desktop's resident read-only runtime. */
     public static String observeLoaded(LogisimFile file, Path artifact, String name,
             Path runtime, String runtimeDigest, Path bundle, String stdout,
-            List<Object> messages, String renderPath) throws Exception {
+            List<Object> messages) throws Exception {
         courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
         if (!courseRuntime && !EXPECTED_RUNTIME_SHA256.equals(runtimeDigest))
             throw new IllegalArgumentException("Unsupported runtime digest");
@@ -202,9 +203,55 @@ public final class ExactRuntimeObserver {
         observer.retainedLoaderMessages=messages;
         phase("ids");
         Map<String,Object> document=observer.observe(artifact,runtime,runtimeDigest,null,bundle,stdout);
-        if(renderPath!=null&&!renderPath.isEmpty())document.put("render",render(file,focus,new File(renderPath)));
         StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);
         phase("json");
+        return out.toString();
+    }
+
+    /**
+     * The native connectivity of one circuit, the part of an observation a
+     * connection check compares: every component with its ends and the bit
+     * nets each end joins, and every wire bundle with its points and bit nets.
+     * Nothing is drawn or described, so it costs a fraction of an observation.
+     */
+    public static String connectivityLoaded(LogisimFile file, String name) {
+        Circuit focus = file.getCircuit(name);
+        if (focus == null) throw new IllegalArgumentException("Unknown circuit: " + name);
+        NetIndex nets = new NetIndex(
+            focus, assignComponentIds(focus), new Coverage(), new ArrayList<Object>(), false
+        );
+        nets.compute();
+        com.cburch.logisim.file.WorkerTiming.mark("connectivity.nets");
+        List<Object> components = new ArrayList<Object>();
+        for (Component component : sortedComponents(focus)) {
+            List<Object> ends = new ArrayList<Object>();
+            for (int index = 0; index < component.getEnds().size(); index++) {
+                EndData end = component.getEnd(index);
+                int width = width(end.getWidth());
+                ends.add(obj(
+                    "index", index,
+                    "location", location(end.getLocation()),
+                    "width", width < 0 ? null : width,
+                    "netBits", nets.netBits(component, index, end)
+                ));
+            }
+            components.add(obj(
+                "location", location(component.getLocation()),
+                "factoryName", component.getFactory().getName(),
+                "ends", ends
+            ));
+        }
+        Map<String, Object> document = obj(
+            "schema", CONNECTIVITY_SCHEMA,
+            "focus", obj(
+                "circuit", focus.getName(),
+                "components", components,
+                "wireBundles", nets.bundlesJson(false)
+            )
+        );
+        StringBuilder out = new StringBuilder(64 * 1024);
+        Json.writeCompact(document, out);
+        com.cburch.logisim.file.WorkerTiming.mark("connectivity.json");
         return out.toString();
     }
 
@@ -250,7 +297,7 @@ public final class ExactRuntimeObserver {
     ) throws Exception {
         measureGeometry();
         phase("geometry");
-        NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns);
+        NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns, true);
         nets.compute();
         phase("nets");
 
@@ -334,7 +381,7 @@ public final class ExactRuntimeObserver {
             "instancePaths", paths,
             "components", components,
             "wires", nets.wiresJson(),
-            "wireBundles", nets.bundlesJson(),
+            "wireBundles", nets.bundlesJson(true),
             "bitNets", nets.netsJson(),
             "stateElements", states,
             "tunnels", tunnels,
@@ -1703,15 +1750,18 @@ public final class ExactRuntimeObserver {
         final Map<String, String> endBitNet = new HashMap<String, String>();
         final List<Wire> wires;
         final Map<Wire, String> wireIds = new IdentityHashMap<Wire, String>();
+        /** Whether each net lists the component ends it joins. */
+        final boolean contacts;
 
         NetIndex(
             Circuit circuit, Map<Component, String> componentIds,
-            Coverage coverage, List<Object> unknowns
+            Coverage coverage, List<Object> unknowns, boolean contacts
         ) {
             this.circuit = circuit;
             this.componentIds = componentIds;
             this.coverage = coverage;
             this.unknowns = unknowns;
+            this.contacts = contacts;
             // Loaded files may repeat the same interned native Wire. One
             // selectable object must have one ID and one geometry record.
             this.wires = new ArrayList<Wire>(new java.util.LinkedHashSet<Wire>(circuit.getWires()));
@@ -1761,7 +1811,7 @@ public final class ExactRuntimeObserver {
                 for (int endIndex = 0; endIndex < component.getEnds().size(); endIndex++) {
                     EndData end = component.getEnd(endIndex);
                     Map<String, Object> direction = new LinkedHashMap<String, Object>();
-                    NativePortSemantics.putDirection(direction, component, endIndex);
+                    if (contacts) NativePortSemantics.putDirection(direction, component, endIndex);
                     int width = width(end.getWidth());
                     if (width < 0) continue;
                     WireBundle bundle = circuit.wires.getWireBundle(end.getLocation());
@@ -1789,6 +1839,7 @@ public final class ExactRuntimeObserver {
                         if (net == null) continue;
                         String key = endKey(componentId, endIndex, bit);
                         endBitNet.put(key, net.id);
+                        if (!contacts) continue;
                         Map<String, Object> contact = obj(
                             "componentId", componentId,
                             "endIndex", endIndex,
@@ -1846,7 +1897,8 @@ public final class ExactRuntimeObserver {
             return result;
         }
 
-        List<Object> bundlesJson() {
+        /** The bundles, with the wires each one joins when `withWires`. */
+        List<Object> bundlesJson(boolean withWires) {
             List<BundleRecord> ordered = new ArrayList<BundleRecord>(bundles.values());
             Collections.sort(ordered, Comparator.comparing(record -> record.id));
             List<Object> result = new ArrayList<Object>();
@@ -1864,16 +1916,17 @@ public final class ExactRuntimeObserver {
                         bitNets.add(obj("bit", bit, "netId", net == null ? null : net.id));
                     }
                 }
-                result.add(obj(
+                Map<String, Object> json = obj(
                     "bundleId", record.id,
                     "valid", bundle.isValid(),
                     "width", width(bundle.getWidth()),
                     "widthDeterminant", bundle.getWidthDeterminant() == null
                         ? null : location(bundle.getWidthDeterminant()),
-                    "points", points,
-                    "wireIds", record.wireIds,
-                    "bitNets", bitNets
-                ));
+                    "points", points
+                );
+                if (withWires) json.put("wireIds", record.wireIds);
+                json.put("bitNets", bitNets);
+                result.add(json);
             }
             return result;
         }
