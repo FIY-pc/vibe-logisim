@@ -25,7 +25,7 @@ let observedFocus: any = null;
 let templateHandler: ((request: any) => any) | null = null;
 import { usePlacement } from "../../../apps/workbench/src/editor/usePlacement";
 import { PlacementInspector } from "../../../apps/workbench/src/editor/PlacementInspector";
-import { Workbench } from "./workbench";
+import { pickOption, Workbench } from "./workbench";
 const noPlacement = {
   tool: null,
   template: null,
@@ -1251,13 +1251,7 @@ await click(
     (n) => n.textContent === "添加服务",
   )!,
 );
-await act(async () => {
-  const preset = document.querySelector<HTMLSelectElement>(
-    'select[aria-label="服务类型"]',
-  )!;
-  preset.value = "custom";
-  preset.dispatchEvent(new Event("change", { bubbles: true }));
-});
+await pickOption("服务类型", "自定义接口");
 const field = (text: string) =>
   [...document.querySelectorAll("label")]
     .find((n) => n.firstChild?.textContent === text)!

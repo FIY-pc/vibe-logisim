@@ -42,6 +42,7 @@ import {
   type ProviderConfiguration,
 } from "./ProviderSettings";
 import { TextPrompt } from "../shared/TextPrompt";
+import { Select } from "../shared/Select";
 export type { Message } from "./ConversationContent";
 
 /** The sidecar's `status` snapshot; the host adds `eventCursor`. */
@@ -921,25 +922,20 @@ export function Chat({
               await refresh();
             }}
           />
-          <select
-            aria-label="思考深度"
+          <Select
+            label="思考深度"
+            size="small"
+            variant="plain"
+            className="composer-effort"
             value={state?.effort || "none"}
             disabled={locked || !state?.model}
-            onChange={(e) =>
-              void runtime("selectModel", {
-                model: state?.model,
-                effort: e.target.value,
-              })
+            options={effortOptions.map(([value, label]) => ({ value, label }))}
+            onChange={(effort) =>
+              void runtime("selectModel", { model: state?.model, effort })
                 .then(() => refresh())
                 .catch(onError)
             }
-          >
-            {effortOptions.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          />
           {busy && draft.trim() && (
             <button
               aria-label="追加意见"

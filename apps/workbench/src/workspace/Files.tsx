@@ -21,6 +21,7 @@ import { eventBinding } from "../shared/shortcuts";
 import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
+import { Select } from "../shared/Select";
 export interface ProjectFolder {
   historyWarning?: string;
   id: string;
@@ -1195,23 +1196,25 @@ function ImportDialog({
               {item.path}
             </span>
             {item.conflict ? (
-              <select
-                aria-label={`${item.name} 的重名处理`}
+              <Select
+                label={`${item.name} 的重名处理`}
+                size="small"
                 value={choices[item.index]}
                 disabled={pending}
-                onChange={(event) =>
+                options={[
+                  { value: "keepBoth", label: "保留两者" },
+                  ...(item.replaceable
+                    ? [{ value: "replace", label: "覆盖现有文件" }]
+                    : []),
+                  { value: "skip", label: "跳过" },
+                ]}
+                onChange={(value) =>
                   setChoices((previous) => ({
                     ...previous,
-                    [item.index]: event.target.value as ImportAction,
+                    [item.index]: value as ImportAction,
                   }))
                 }
-              >
-                <option value="keepBoth">保留两者</option>
-                {item.replaceable && (
-                  <option value="replace">覆盖现有文件</option>
-                )}
-                <option value="skip">跳过</option>
-              </select>
+              />
             ) : (
               <span>新增</span>
             )}

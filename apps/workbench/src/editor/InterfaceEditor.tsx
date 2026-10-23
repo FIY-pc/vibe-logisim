@@ -11,6 +11,7 @@ import {
   translateShape,
 } from "./symbol-geometry";
 import "./InterfaceEditor.css";
+import { Select } from "../shared/Select";
 interface Definition extends SymbolDraft {
   uses: { circuit: string }[];
   newPinLocation: { x: number; y: number };
@@ -424,20 +425,22 @@ export function InterfaceEditor({
                   />
                   <label>
                     内外接线
-                    <select
-                      aria-label="内外接线"
+                    <Select
+                      label="内外接线"
+                      size="small"
                       value={selectedPort.disconnect ? "detach" : "keep"}
-                      onChange={(e) =>
+                      options={[
+                        { value: "keep", label: "保持接线" },
+                        { value: "detach", label: "断开接线" },
+                      ]}
+                      onChange={(value) =>
                         edit((d) =>
                           movePort(d, selectedPort.id, {
-                            disconnect: e.target.value === "detach",
+                            disconnect: value === "detach",
                           }),
                         )
                       }
-                    >
-                      <option value="keep">保持接线</option>
-                      <option value="detach">断开接线</option>
-                    </select>
+                    />
                   </label>
                   {selectedPort.id.startsWith("new-") && (
                     <>
@@ -602,16 +605,18 @@ export function InterfaceEditor({
                 value={p.label}
                 onChange={(v) => edit((d) => movePort(d, p.id, { label: v }))}
               />
-              <select
-                aria-label={`${p.label} 方向`}
+              <Select
+                label={`${p.label} 方向`}
+                size="small"
                 value={p.direction}
-                onChange={(e) =>
-                  edit((d) => movePort(d, p.id, { direction: e.target.value }))
+                options={[
+                  { value: "input", label: "输入" },
+                  { value: "output", label: "输出" },
+                ]}
+                onChange={(direction) =>
+                  edit((d) => movePort(d, p.id, { direction }))
                 }
-              >
-                <option value="input">输入</option>
-                <option value="output">输出</option>
-              </select>
+              />
               <Field
                 label={`${p.label} 位宽`}
                 numeric

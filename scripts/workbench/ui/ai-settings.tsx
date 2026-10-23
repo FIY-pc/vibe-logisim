@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
 import { ModelPicker } from "../../../apps/workbench/src/conversation/ModelPicker";
+import { pickOption } from "./workbench";
 
 export async function verifyAISettings() {
   const container = document.createElement("div");
@@ -66,10 +67,7 @@ export async function verifyAISettings() {
     };
     await act(async () => root.render(<ProviderSettings {...props} />));
     assert.equal(container.querySelector("dialog")?.open, true);
-    await change(
-      container.querySelector('select[aria-label="新对话默认服务"]')!,
-      "second",
-    );
+    await pickOption("新对话默认服务", "second");
     assert.deepEqual(calls.at(-1), {
       method: "defaultProvider",
       args: { id: "second" },

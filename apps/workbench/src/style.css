@@ -62,6 +62,84 @@ select {
   padding: 7px;
   min-width: 0;
 }
+/* shared/Select.tsx: the trigger is sized like an input; the list is the app's own. */
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  border-radius: 5px;
+  padding: 7px 8px;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  font: inherit;
+  color: inherit;
+}
+.select-trigger:hover {
+  background: var(--paper);
+  border-color: #c9cfd9;
+}
+.select-trigger[data-placeholder] {
+  color: var(--muted);
+}
+.select-trigger > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.select-trigger > svg {
+  flex: none;
+  color: var(--muted);
+}
+.select-trigger.select-small {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.select-trigger.select-plain,
+.select-trigger.select-plain:hover {
+  border-color: transparent;
+  background: transparent;
+}
+.select-trigger.select-plain:hover {
+  background: #eceff4;
+}
+.select-content {
+  z-index: 200;
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height);
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 32px #22334d16;
+  font-size: 12px;
+}
+.select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  cursor: default;
+  user-select: none;
+  outline: none;
+}
+.select-item[data-highlighted] {
+  background: #eceff4;
+}
+.select-item[data-state="checked"] {
+  color: var(--accent);
+}
+.select-item[data-disabled] {
+  opacity: 0.38;
+}
+.select-item > svg {
+  flex: none;
+}
 kbd {
   font:
     10px ui-monospace,
@@ -136,6 +214,10 @@ button.primary {
   gap: 5px;
   margin-left: auto;
   flex-shrink: 0;
+}
+/* Every title bar control sits on one 32 px line whatever its text size. */
+.titlebar :is(button, summary) {
+  min-height: 32px;
 }
 .app[data-workspace="empty"]
   :is(.workspace-rail, .project-toggle, .open-folder),
@@ -457,7 +539,7 @@ button.primary {
   overflow-wrap: anywhere;
 }
 .inspector input,
-.inspector select {
+.inspector .select-trigger {
   width: 54%;
   font-size: 11px;
   padding: 6px;
@@ -668,12 +750,6 @@ button.primary {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
-.chat-header select {
-  flex: 1;
-  width: 0;
-  border: 0;
-  font-size: 12px;
-}
 .messages {
   flex: 1;
   overflow: auto;
@@ -732,12 +808,10 @@ button.primary {
   gap: 5px;
   padding: 5px 7px;
 }
-.composer footer select {
-  border: 0;
-  padding: 3px;
+.composer footer .composer-effort {
+  padding: 3px 5px;
   font-size: 10px;
   max-width: 125px;
-  background: transparent;
 }
 .composer footer button:last-child {
   margin-left: auto;
@@ -864,7 +938,8 @@ button.primary {
   width: 12px;
   flex: none;
 }
-.open-folder {
+/* The file tree's open-folder button; the title bar's keeps the control size. */
+.files > .open-folder {
   font-size: 11px;
   justify-content: start;
   margin: 0 8px 8px;

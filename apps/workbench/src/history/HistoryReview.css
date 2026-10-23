@@ -41,7 +41,7 @@
   border-bottom: 1px solid var(--border);
   padding-top: 0;
 }
-.history-review > nav select {
+.history-review > nav .select-trigger {
   max-width: 200px;
 }
 .history-review button[aria-pressed="true"] {

@@ -148,7 +148,7 @@
   display: none;
 }
 .symbol-port-row input,
-.symbol-port-row select {
+.symbol-port-row .select-trigger {
   width: 100%;
   min-width: 0;
   padding: 6px;

@@ -10,7 +10,7 @@
   display: none;
 }
 .inspector .property-field input,
-.inspector .property-field select {
+.inspector .property-field .select-trigger {
   min-width: 0;
 }
 .inspector .property-field [aria-invalid="true"] {

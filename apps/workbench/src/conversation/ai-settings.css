@@ -117,7 +117,7 @@
   color: var(--muted);
   margin: 20px 0;
 }
-.ai-settings-field select {
+.ai-settings-field .select-trigger {
   width: 100%;
   padding: 10px 12px;
   color: inherit;
@@ -132,7 +132,7 @@
   margin-bottom: 14px;
 }
 .ai-settings-content .provider-form input:not([type="checkbox"]),
-.ai-settings-content .provider-form select {
+.ai-settings-content .provider-form .select-trigger {
   padding: 10px 12px;
 }
 .ai-settings-content .provider-form button {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, RefreshCw, X } from "lucide-react";
 import "./ai-settings.css";
+import { Select } from "../shared/Select";
 export interface ProviderConfiguration {
   id?: string;
   name: string;
@@ -169,12 +170,17 @@ function ProviderForm({
     >
       <label>
         服务
-        <select
-          aria-label="服务类型"
+        <Select
+          label="服务类型"
           value={preset}
           disabled={locked}
-          onChange={(event) => {
-            const key = event.target.value as keyof typeof presets;
+          placeholder="选择服务"
+          options={Object.entries(presets).map(([key, value]) => ({
+            value: key,
+            label: value.name,
+          }))}
+          onChange={(value) => {
+            const key = value as keyof typeof presets;
             setPreset(key);
             const selected = presets[key];
             update({
@@ -182,16 +188,7 @@ function ProviderForm({
               api: selected.api,
             });
           }}
-        >
-          <option value="" disabled>
-            选择服务
-          </option>
-          {Object.entries(presets).map(([key, value]) => (
-            <option key={key} value={key}>
-              {value.name}
-            </option>
-          ))}
-        </select>
+        />
       </label>
       <div hidden={!preset}>
         <label>
@@ -206,15 +203,17 @@ function ProviderForm({
         </label>
         <label>
           协议
-          <select
+          <Select
+            label="协议"
             disabled={locked}
             value={form.api}
-            onChange={(e) => update({ api: e.target.value })}
-          >
-            <option value="openai-completions">Chat Completions</option>
-            <option value="openai-responses">Responses</option>
-            <option value="anthropic-messages">Anthropic Messages</option>
-          </select>
+            options={[
+              { value: "openai-completions", label: "Chat Completions" },
+              { value: "openai-responses", label: "Responses" },
+              { value: "anthropic-messages", label: "Anthropic Messages" },
+            ]}
+            onChange={(api) => update({ api })}
+          />
         </label>
         <label>
           API 密钥
@@ -305,25 +304,20 @@ function ProviderForm({
           </label>
           <label>
             默认思考深度
-            <select
-              aria-label="服务默认思考深度"
+            <Select
+              label="服务默认思考深度"
               disabled={locked}
               value={form.effort}
-              onChange={(e) => update({ effort: e.target.value })}
-            >
-              {[
+              options={[
                 ["none", "默认"],
                 ["low", "轻度"],
                 ["medium", "中"],
                 ["high", "高"],
                 ["xhigh", "极高"],
                 ["max", "最高"],
-              ].map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              ].map(([value, label]) => ({ value, label }))}
+              onChange={(effort) => update({ effort })}
+            />
           </label>
         </details>
       </div>
@@ -522,27 +516,21 @@ export function ProviderSettings(props: SettingsProps) {
             {services.length > 0 && (
               <label className="ai-settings-field">
                 新对话默认服务
-                <select
-                  aria-label="新对话默认服务"
+                <Select
+                  label="新对话默认服务"
                   disabled={locked}
                   value={props.defaultServiceId || ""}
-                  onChange={(event) =>
-                    void action(() =>
-                      request("defaultProvider", { id: event.target.value }),
-                    )
+                  placeholder="选择服务"
+                  options={services
+                    .filter((service) => service.id)
+                    .map((service) => ({
+                      value: service.id!,
+                      label: service.name || service.baseUrl,
+                    }))}
+                  onChange={(id) =>
+                    void action(() => request("defaultProvider", { id }))
                   }
-                >
-                  {!props.defaultServiceId && (
-                    <option value="" disabled>
-                      选择服务
-                    </option>
-                  )}
-                  {services.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name || service.baseUrl}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             )}
           </>

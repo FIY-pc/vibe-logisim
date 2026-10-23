@@ -68,9 +68,8 @@
   gap: 6px;
   overflow-wrap: anywhere;
 }
-.file-import-items select {
+.file-import-items .select-trigger {
   flex-shrink: 0;
-  padding: 5px;
 }
 .file-history-dialog {
   width: min(1100px, 94vw);

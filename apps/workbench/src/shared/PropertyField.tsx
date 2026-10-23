@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { optionLabels, propertyLabels } from "../editor/componentLabels";
 import type { XmlNode } from "./types";
 import "../editor/inspector.css";
+import { Select } from "./Select";
 
 interface Props {
   field: XmlNode;
@@ -102,24 +103,23 @@ export function PropertyField({
       <label>
         <span>{label}</span>
         {options.length ? (
-          <select
-            {...common}
-            onChange={(e) => {
-              setValue(e.target.value);
-              void submit(e.target.value);
+          <Select
+            label={label}
+            title={common.title}
+            disabled={common.disabled}
+            value={value}
+            options={options.map((option) => ({
+              value: option.attributes.value,
+              label:
+                optionLabels[option.attributes.label] ||
+                option.attributes.label ||
+                option.attributes.value,
+            }))}
+            onChange={(next) => {
+              setValue(next);
+              void submit(next);
             }}
-          >
-            {options.map((option) => (
-              <option
-                key={option.attributes.value}
-                value={option.attributes.value}
-              >
-                {optionLabels[option.attributes.label] ||
-                  option.attributes.label ||
-                  option.attributes.value}
-              </option>
-            ))}
-          </select>
+          />
         ) : multiline ? (
           <textarea
             {...common}

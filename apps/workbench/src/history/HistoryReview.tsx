@@ -6,6 +6,7 @@ import { sourceDiff } from "./sourceDiff";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./HistoryReview.css";
+import { Select } from "../shared/Select";
 
 interface Preview {
   image: string | null;
@@ -166,27 +167,27 @@ export function HistoryReview({
         </button>
       </header>
       <nav aria-label="对照方式">
-        <select
-          aria-label="对照方式"
+        <Select
+          label="对照方式"
+          size="small"
           value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
-        >
-          <option value="change" disabled={!entry.beforeRevision}>
-            这次修改
-          </option>
-          <option value="current">与当前工程比较</option>
-        </select>
-        <select
-          aria-label="电路"
+          options={[
+            {
+              value: "change",
+              label: "这次修改",
+              disabled: !entry.beforeRevision,
+            },
+            { value: "current", label: "与当前工程比较" },
+          ]}
+          onChange={(value) => setMode(value as typeof mode)}
+        />
+        <Select
+          label="电路"
+          size="small"
           value={selected}
-          onChange={(e) => setSelected(e.target.value)}
-        >
-          {names.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+          options={names.map((name) => ({ value: name, label: name }))}
+          onChange={setSelected}
+        />
         <button aria-pressed={!after} onClick={() => setAfter(false)}>
           {beforeLabel}
         </button>

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Files } from "../../../apps/workbench/src/workspace/Files";
+import { pickOption } from "./workbench";
 
 export async function verifyFilesUI() {
   const node = document.createElement("div");
@@ -240,19 +241,16 @@ export async function verifyFilesUI() {
     const prepare = calls.find((c) => c.op === "folderImportPrepare");
     assert.equal(prepare.destination, "dir");
     assert.deepEqual(prepare.sources, ["/outside/new.circ"]);
-    const select = document.querySelector<HTMLSelectElement>(
-      'select[aria-label="new.circ 的重名处理"]',
+    const select = document.querySelector<HTMLButtonElement>(
+      '[role="combobox"][aria-label="new.circ 的重名处理"]',
     );
     assert(select);
-    assert.equal(select.value, "keepBoth");
+    assert.equal(select.textContent?.trim(), "保留两者");
     assert(
       !calls.some((c) => c.op === "folderImportApply"),
       "Conflicts must wait for explicit choice",
     );
-    await act(async () => {
-      select.value = "replace";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await pickOption("new.circ 的重名处理", "覆盖现有文件");
     await click("导入");
     await flush();
     assert.equal(
