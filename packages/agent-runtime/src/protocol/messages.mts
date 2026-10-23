@@ -27,6 +27,7 @@ export type RuntimeMethod =
   | "bind"
   | "ask"
   | "stop"
+  | "markUndone"
   | "reconnect"
   | "conversations"
   | "models"

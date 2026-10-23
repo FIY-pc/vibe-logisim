@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ProtocolObject } from "../protocol/types.mts";
 import type { ServiceSelection } from "../models/types.mts";
+import type { FolderChange } from "../protocol/host.mts";
 
 /** One entry of the conversation the UI shows: user, assistant, reasoning, activity or turn. */
 export interface RuntimeMessage {
@@ -22,6 +23,8 @@ export interface RuntimeMessage {
   detail?: string | null;
   resultStatus?: string;
   canEdit?: boolean;
+  /** On a turn record: the files the turn changed; `undone` once the user undid them. */
+  change?: FolderChange & { undone?: boolean };
 }
 export interface ConversationRecord {
   id: string;

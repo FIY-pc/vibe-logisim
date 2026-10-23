@@ -237,6 +237,38 @@ export function retryingStream(
   return out;
 }
 
+/** SDK and transport failures arrive in English. Say what went wrong in
+ * Chinese and keep the original text after it for diagnosis. */
+const FAILURES: [RegExp, string][] = [
+  [
+    /\b401\b|unauthori[sz]ed|invalid.*(api[ _-]?key|token)|incorrect api key|authentication/i,
+    "模型服务拒绝了 API 密钥",
+  ],
+  [/\b403\b|forbidden|permission denied/i, "模型服务拒绝了这次请求"],
+  [
+    /\b404\b|does not exist|not found|no such model|unknown model/i,
+    "模型服务找不到这个模型或接口",
+  ],
+  [
+    /\b429\b|rate limit|too many requests|quota|insufficient/i,
+    "模型服务限流或额度不足",
+  ],
+  [
+    /overloaded|\b5\d\d\b|service unavailable|bad gateway|server error/i,
+    "模型服务暂时不可用",
+  ],
+  [/timed? ?out|timeout|ETIMEDOUT/i, "模型服务响应超时"],
+  [
+    /terminated|socket|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed|network|connection/i,
+    "与模型服务的连接中断",
+  ],
+];
+function failureText(message: string) {
+  if (/[\u4e00-\u9fff]/.test(message)) return message;
+  const known = FAILURES.find(([pattern]) => pattern.test(message));
+  return known ? `${known[1]}（${message}）` : message;
+}
+
 export class TurnRunner extends EventEmitter {
   readonly services: ServiceStore;
   readonly conversations: ConversationStore;
@@ -255,6 +287,7 @@ export class TurnRunner extends EventEmitter {
   queued: AgentMessage[] = [];
   checkpoints: Record<string, { raw: number; history: number }> = {};
   selection: ServiceSelection | null = null;
+  /** The stream retry notice while the model service is busy; null otherwise. */
   transmission: { phase: string; message: string | null } | null = null;
   network: Record<string, unknown> | null = null;
   private agent: Agent | undefined;
@@ -526,14 +559,7 @@ export class TurnRunner extends EventEmitter {
     this.conversationId = saved.id;
     this.selection = saved.selection || null;
     this.history = recoverHistory(saved.messages || []);
-    const lastTurn = this.history.findLast((m) => m.type === "turn");
-    this.transmission =
-      lastTurn && lastTurn.status !== "completed"
-        ? {
-            phase: lastTurn.status === "interrupted" ? "interrupted" : "failed",
-            message: lastTurn.error || "上次回答没有完成",
-          }
-        : null;
+    this.transmission = null;
     this.transcript = recoverTranscript([
       ...(saved.transcript || []),
       ...(saved.queued || []),
@@ -556,6 +582,17 @@ export class TurnRunner extends EventEmitter {
     this.conversations.change(key, action, request);
     await this.resume(key);
     return this.conversationState(key);
+  }
+  /** The window undid a turn's file change in the folder history. */
+  markUndone(changeId: string) {
+    const turn = this.history.find(
+      (m) => m.type === "turn" && m.change?.id === changeId,
+    );
+    if (!turn?.change) throw new Error("这次改动不在当前对话里");
+    turn.change = { ...turn.change, undone: true };
+    this.persist();
+    this.emitStatus();
+    return { undone: true };
   }
   persist() {
     if (!this.workspaceKey) return;
@@ -1082,8 +1119,9 @@ export class TurnRunner extends EventEmitter {
         this.agent.signal?.aborted || this.cancelStarting
           ? "interrupted"
           : "failed";
-      error = e.message;
+      error = status === "interrupted" ? "已停止" : failureText(e.message);
     } finally {
+      let change: FolderChange | null = null;
       try {
         this.transcript = [...this.agent.state.messages];
         for (const [id, message] of this.steers) {
@@ -1097,17 +1135,18 @@ export class TurnRunner extends EventEmitter {
         this.steers.clear();
         this.persist();
         // Everything the turn changed on disk becomes one undoable entry.
-        const change = await this.host.call<{ change: FolderChange | null }>({
+        const recorded = await this.host.call<{ change: FolderChange | null }>({
           op: "folderCheckpoint",
           folder_id: pending.folder.id,
           title: question.replace(/\s+/g, " ").trim().slice(0, 40) || "AI 修改",
         });
-        if (change?.change)
+        change = recorded?.change ?? null;
+        if (change)
           this.emitEvent({
             type: "files-changed",
             folderId: pending.folder.id,
             conversationId: pending.conversationId,
-            change: change.change,
+            change,
           });
       } catch (e: any) {
         status = "failed";
@@ -1122,11 +1161,14 @@ export class TurnRunner extends EventEmitter {
       const turn = this.history.find(
         (m) => m.type === "turn" && m.id === pending.turnId,
       );
+      // The record says how the turn ended, how long it took and which
+      // files it changed, so a reloaded window shows what the live one did.
       if (turn)
         Object.assign(turn, {
           status,
           error,
           elapsedMs: Date.now() - (turn.startedAt || Date.now()),
+          ...(change ? { change } : {}),
         });
       for (const m of this.history)
         if (
@@ -1147,11 +1189,7 @@ export class TurnRunner extends EventEmitter {
         status = "failed";
         error = "会话保存失败：" + e.message;
       }
-      if (error)
-        this.transmission = {
-          phase: status === "interrupted" ? "interrupted" : "failed",
-          message: error,
-        };
+      this.transmission = null;
       this.emitStatus();
       this.emitEvent({
         type: "turn-completed",
