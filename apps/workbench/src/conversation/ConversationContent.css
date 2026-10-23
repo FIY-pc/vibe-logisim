@@ -56,39 +56,6 @@
 .messages-content {
   min-width: 0;
 }
-.activity summary {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.activity summary > span {
-  flex: 1;
-  min-width: 0;
-}
-.activity summary > small {
-  flex: none;
-  color: var(--muted);
-}
-.activity[data-result-status="unknown"] summary > small,
-.activity[data-status="warning"] summary > small {
-  color: var(--warning, #a16207);
-}
-.activity[data-result-status="failed"] summary > small,
-.activity[data-status="failed"] summary > small {
-  color: var(--danger, #b42318);
-}
-.tool-output {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 0;
-}
-.tool-output > code {
-  overflow-wrap: anywhere;
-}
-.tool-output small {
-  color: var(--muted);
-}
 .chat-code {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -128,37 +95,6 @@
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: 0 2px 8px #0001;
-}
-.activity-batch {
-  margin: 8px 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-.activity-batch > summary {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  cursor: pointer;
-  padding: 5px 0;
-}
-.activity-batch > summary::before {
-  content: "›";
-}
-.activity-batch[open] > summary::before {
-  transform: rotate(90deg);
-}
-.activity-batch > summary > span {
-  flex: 1;
-}
-.activity-batch > div {
-  border-left: 1px solid var(--border);
-  padding-left: 9px;
-}
-.activity-batch[data-status="warning"] > summary > small {
-  color: var(--warning, #a16207);
-}
-.activity-batch[data-status="failed"] > summary > small {
-  color: var(--danger, #b42318);
 }
 .conversation-starters {
   display: flex;

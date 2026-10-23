@@ -199,20 +199,6 @@ export async function verifyRestoredInteractions() {
       label: "检查输出",
       status: "completed",
     });
-    assert.equal(
-      container.querySelector('.activity[data-result-status="failed"] small')
-        ?.textContent,
-      "不匹配",
-    );
-    assert.match(
-      container.querySelector('.activity[data-result-status="failed"]')!
-        .textContent!,
-      /expected 1, observed 0/,
-    );
-    assert.match(
-      container.querySelector(".tool-output")!.textContent!,
-      /退出码 3.*输出已截断/,
-    );
     await emit({
       id: "unknown",
       type: "activity",
@@ -221,12 +207,33 @@ export async function verifyRestoredInteractions() {
       resultStatus: "unknown",
       detail: "没有观测值",
     });
+    // The finished steps fold into one summary line; each opens to its output.
+    assert.equal(container.querySelectorAll(".turn-summary").length, 1);
+    await click(".turn-summary");
+    await click('.turn-tool[data-state="failed"] > summary');
     assert.equal(
-      container.querySelector('.activity[data-result-status="unknown"] small')
+      container.querySelector('.turn-tool[data-state="failed"] summary small')
+        ?.textContent,
+      "失败",
+    );
+    assert.match(
+      container.querySelector(
+        '.turn-tool[data-state="failed"] .turn-tool-detail',
+      )!.textContent!,
+      /expected 1, observed 0.*退出码 3.*输出已截断/,
+    );
+    await click('.turn-tool[data-state="unknown"] > summary');
+    assert.equal(
+      container.querySelector('.turn-tool[data-state="unknown"] summary small')
         ?.textContent,
       "结果未知",
     );
-    assert.equal(container.querySelectorAll(".activity-batch").length, 1);
+    assert.match(
+      container.querySelector(
+        '.turn-tool[data-state="unknown"] .turn-tool-detail',
+      )!.textContent!,
+      /没有观测值/,
+    );
     await click(".conversation-picker > summary");
     await input('[aria-label="查找会话"]', "门电路");
     assert.equal(

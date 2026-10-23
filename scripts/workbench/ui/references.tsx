@@ -144,11 +144,6 @@ async function verifyDocumentReferenceBinding() {
   globals.__command = async (request: any) => {
     if (request.method === "conversations") return { conversations: [] };
     if (request.method === "bind") {
-      assert.equal(
-        busy,
-        false,
-        "An active turn cannot be rebound to another circuit document",
-      );
       binds.push(request.args.documentId);
       if (request.args.documentId === "B")
         await new Promise<void>((resolve) => {
@@ -252,24 +247,25 @@ async function verifyDocumentReferenceBinding() {
     await settle();
     assert.deepEqual(binds, ["A", "B"]);
     assert.deepEqual(staged, ["B"]);
+    // A running turn keeps its conversation; another document of the same
+    // folder binds meanwhile, and its references wait for the next question.
     busy = true;
     await emit();
     await render("C", true);
     await settle();
-    assert.deepEqual(binds, ["A", "B"]);
-    assert.deepEqual(staged, ["B"]);
+    assert.deepEqual(binds, ["A", "B", "C"]);
+    assert.deepEqual(staged, ["B", "C"]);
     busy = false;
     await emit();
     await settle();
     assert.deepEqual(binds, ["A", "B", "C"]);
-    assert.deepEqual(staged, ["B", "C"]);
     assert.equal(
       container.querySelector<HTMLTextAreaElement>("textarea")?.value,
       "keep this shared conversation draft",
     );
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: same-workspace document changes retain conversation drafts, defer references until binding is ready, and never rebind an active turn",
+      "PASS: same-workspace document changes retain conversation drafts, defer references until binding is ready, and bind beside a running turn",
     );
   } finally {
     await act(async () => root.unmount());
