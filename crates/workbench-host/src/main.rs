@@ -10,7 +10,7 @@ use axum::{
 };
 use serde_json::{Value, json};
 use std::path::PathBuf;
-use vibe_workbench_host::{ErrorCode, Host, HostError, Request};
+use vibe_workbench_host::{ErrorCode, Host, HostError, Request, timing, timing_label};
 // The Vite dev server is the only browser page allowed to call the loopback host.
 fn dev_origin(origin: &str) -> bool {
     let port = std::env::var("VIBE_WORKBENCH_DEV_PORT").unwrap_or_else(|_| "5173".into());
@@ -20,28 +20,34 @@ async fn dispatch(
     State(host): State<Host>,
     headers: HeaderMap,
     Json(request): Json<Value>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     // Dev-only loopback transport. Production uses Tauri's scoped IPC.
     if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())
         && !dev_origin(origin)
     {
         let error = HostError::new(ErrorCode::NotAllowed, "Origin rejected");
-        return (StatusCode::FORBIDDEN, Json(json!({"error":error})));
+        return (StatusCode::FORBIDDEN, Json(json!({"error":error}))).into_response();
     }
-    let result = match Request::from_value(request) {
-        Ok(request) => host.dispatch(request).await,
-        Err(error) => Err(error),
-    };
-    match result {
-        // Moved into the envelope: `json!` would copy a large result value by value.
-        Ok(result) => (
-            StatusCode::OK,
-            Json(Value::Object(
-                [("result".to_string(), result)].into_iter().collect(),
-            )),
-        ),
-        Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))),
-    }
+    let label = timing_label(&request);
+    timing::scope(&label, async {
+        let result = match Request::from_value(request) {
+            Ok(request) => host.dispatch(request).await,
+            Err(error) => Err(error),
+        };
+        let _encode = timing::span("encode");
+        match result {
+            // Moved into the envelope: `json!` would copy a large result value by value.
+            Ok(result) => (
+                StatusCode::OK,
+                Json(Value::Object(
+                    [("result".to_string(), result)].into_iter().collect(),
+                )),
+            )
+                .into_response(),
+            Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))).into_response(),
+        }
+    })
+    .await
 }
 async fn events(State(host): State<Host>, headers: HeaderMap) -> axum::response::Response {
     if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())

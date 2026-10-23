@@ -25,7 +25,18 @@ pub use simulation::{ObservationRecord, ObservationSummary};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 use vibe_circuit_document::{Document, DocumentView, Workspace, history::DocumentHistory};
+pub use vibe_logisim_runtime::timing;
 use vibe_logisim_runtime::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
+
+/// What a request's timing line is called: its op, and for an edit also the
+/// kind (`edit.move`).
+pub fn timing_label(request: &Value) -> String {
+    let op = request["op"].as_str().unwrap_or_default();
+    match request["edit"]["kind"].as_str() {
+        Some(kind) if op == "edit" => format!("{op}.{kind}"),
+        _ => op.to_owned(),
+    }
+}
 
 #[derive(Clone)]
 pub struct Host {
@@ -195,6 +206,7 @@ impl Host {
             None
         };
         let history_before = if let Some(action) = &meta.history {
+            let _history = timing::span("history.before");
             self.history_before(action).await?
         } else {
             BTreeMap::new()
@@ -225,6 +237,7 @@ impl Host {
         // An edit result nests the document view so it can also carry the
         // selection and title; other auto-saving ops return the view itself.
         if meta.effect == Effect::AutoSave {
+            let _save = timing::span("save");
             if let Some(view) = document.get_mut("view") {
                 self.auto_save_edit(view).await;
                 let reported =
@@ -244,11 +257,13 @@ impl Host {
                 Some(title) => action.clone().entitled(title),
                 None => action.clone(),
             };
+            let _history = timing::span("history.after");
             if let Err(error) = self.history_after(&action, history_before).await {
                 document["historyWarning"] =
                     json!(format!("修改已保留，但工程历史未能记录：{error}"));
             }
         }
+        let _persist = timing::span("persist");
         self.persist(&mut *self.workspace.lock().await).await;
         result
     }

@@ -2,6 +2,7 @@
 mod process;
 mod runtime;
 pub mod simulation;
+pub mod timing;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
@@ -76,6 +77,10 @@ impl Worker {
             return Err("Logisim 响应超过限制".into());
         }
         let (status, payload) = line.split_once('\t').ok_or("无效的 Logisim 响应")?;
+        // A worker started with timing enabled appends its phases as a third field.
+        let (payload, phases) = payload.split_once('\t').unwrap_or((payload, ""));
+        timing::record_java(phases);
+        let _decode = timing::span("native.decode");
         let bytes = B64.decode(payload).map_err(|e| e.to_string())?;
         if status != "ok" {
             return Err(String::from_utf8_lossy(&bytes).into_owned());
@@ -157,9 +162,11 @@ impl Native {
         Ok(self.worker.as_mut().unwrap())
     }
     pub async fn request(&mut self, artifact: &Path, operation: Element) -> Result<Vec<u8>> {
+        let read = timing::span("native.read");
         let source = std::fs::read(artifact).map_err(|e| e.to_string())?;
         let (runtime, _) = self.facts().runtime_for(&source)?;
         let hash = digest(&source);
+        drop(read);
         let request = xml(
             "request",
             &[
@@ -169,7 +176,9 @@ impl Native {
             vec![operation],
         );
         let line = B64.encode(encode_xml(&request)?) + "\n";
+        let scan = timing::span("native.dependencies");
         let dependencies = artifact_dependencies(artifact)?;
+        drop(scan);
         // Logisim's LibraryManager also caches external files globally. Drop the
         // process when dependencies change, so geometry and verification cannot
         // disagree with a newly started interactive simulation.
@@ -183,6 +192,7 @@ impl Native {
         let worker = self.worker(&runtime).await?;
         worker.dependencies = dependencies.clone();
         worker.awaiting = true;
+        let roundtrip = timing::span("native.roundtrip");
         let mut result = async {
             worker
                 .input
@@ -193,8 +203,10 @@ impl Native {
             worker.receive(false).await
         }
         .await;
+        drop(roundtrip);
         worker.awaiting = false;
         if result.is_ok() && !dependencies.is_empty() {
+            let _scan = timing::span("native.dependencies");
             match artifact_dependencies(artifact) {
                 Ok(after) if after == dependencies => {}
                 Ok(_) => result = Err("操作期间组件库已改变，请重试".into()),
@@ -216,6 +228,7 @@ impl Native {
                 xml("observe", &[("circuit", circuit.into())], vec![]),
             )
             .await?;
+        let _parse = timing::span("native.json");
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())
     }
     pub async fn catalog(

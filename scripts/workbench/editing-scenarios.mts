@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
+import { courseSizeProject } from "./fixtures/course-size.mts";
 import { simulationClient } from "./simulation-client.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
@@ -206,4 +210,167 @@ export async function verifyEditing(command: Command) {
   console.log(
     "Verified native routing: multi-bit fanout and T junction; shared port; moving a wire; independent crossings; short rejection; one-step undo.",
   );
+}
+
+/** Milliseconds per request of one repetition, by request. */
+type Sample = Record<string, number>;
+const percentile = (values: number[], p: number) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[
+    Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))
+  ];
+};
+/** `p50/p95` of each column, one row per operation. */
+export function latencyTable(rows: [string, Sample[]][], columns: string[]) {
+  const cell = (samples: Sample[], column: string) => {
+    const values = samples.map((s) =>
+      column === "total"
+        ? Object.values(s).reduce((a, b) => a + b, 0)
+        : s[column],
+    );
+    return values.some((v) => v === undefined)
+      ? "-"
+      : `${Math.round(percentile(values, 50))}/${Math.round(percentile(values, 95))}`;
+  };
+  const table = [
+    ["operation", ...columns],
+    ...rows.map(([name, samples]) => [
+      name,
+      ...columns.map((c) => cell(samples, c)),
+    ]),
+  ];
+  const widths = table[0].map((_, i) =>
+    Math.max(...table.map((row) => row[i].length)),
+  );
+  return table
+    .map((row) => row.map((v, i) => v.padEnd(widths[i])).join("  "))
+    .join("\n");
+}
+
+/**
+ * Course-size editing latency, as the window sees it. Opens the synthetic
+ * 1 MB project from a folder (so each edit also saves the file) and repeats
+ * every edit the way the canvas issues it: the edit, then observe and render
+ * of the new revision. Prints p50/p95 per request in milliseconds.
+ */
+export async function measureEditing(command: Command, rounds = 5) {
+  const folder = await mkdtemp(path.join(tmpdir(), "vibe-latency-"));
+  const file = path.join(folder, "course-size.circ");
+  await writeFile(file, courseSizeProject().xml);
+  const timed = async (request: any) => {
+    const start = performance.now();
+    const result = await command(request);
+    return [result, performance.now() - start] as const;
+  };
+  const circuit = "main";
+  await command({ op: "folderOpen", path: folder });
+  const [opened, open] = await timed({ op: "open", path: file });
+  let doc: Document = opened;
+  const scope = () => ({ id: doc.id, revision: doc.revision, circuit });
+  const [first, firstObserve] = await timed({ op: "observe", ...scope() });
+  const page = doc.circuits.find((c) => c.name === circuit)!;
+  const bounds = first.focus.bounds;
+  const free = { x: bounds.x + bounds.width + 100, y: bounds.y + 40 };
+  const viewport = {
+    x: bounds.x,
+    y: bounds.y,
+    width: 1400,
+    height: 900,
+    scale: 1,
+  };
+  const gates = page.components.filter((c) => c.name === "AND Gate");
+  let moving = gates[0].location;
+  const labelled = gates[1].location;
+  const find = (at: { x: number; y: number }) =>
+    doc.circuits
+      .find((c) => c.name === circuit)!
+      .components.find(
+        (c) =>
+          c.name === "AND Gate" &&
+          c.location.x === at.x &&
+          c.location.y === at.y,
+      )!.id;
+  /** Applies an edit, then observes and renders the new revision like the canvas. */
+  const edit = async (change: any, sample: Sample) => {
+    const [result, ms] = await timed({ op: "edit", ...scope(), edit: change });
+    doc = documentOf(result);
+    sample.edit = ms;
+    sample.observe = (await timed({ op: "observe", ...scope() }))[1];
+    sample.render = (await timed({ op: "render", ...scope(), ...viewport }))[1];
+    return result;
+  };
+  const rows: Record<string, Sample[]> = {
+    observe: [],
+    move: [],
+    wire: [],
+    place: [],
+    delete: [],
+    attributes: [],
+  };
+  for (let round = 0; round < rounds; round++) {
+    rows.observe.push({
+      observe: (await timed({ op: "observe", ...scope() }))[1],
+    });
+    const delta = { x: round % 2 ? -10 : 10, y: 0 };
+    const move: Sample = {};
+    move.preview = (
+      await timed({ op: "movePreview", ...scope(), ids: [find(moving)], delta })
+    )[1];
+    await edit({ kind: "move", ids: [find(moving)], delta }, move);
+    moving = { x: moving.x + delta.x, y: moving.y + delta.y };
+    rows.move.push(move);
+    const y = free.y + 40 * round;
+    const wire: Sample = {};
+    await edit(
+      {
+        kind: "wire",
+        points: [
+          { x: free.x, y },
+          { x: free.x + 40, y },
+        ],
+      },
+      wire,
+    );
+    rows.wire.push(wire);
+    const place: Sample = {};
+    const placed = await edit(
+      {
+        kind: "place",
+        name: "AND Gate",
+        library: "1",
+        location: { x: free.x + 200, y },
+        attributes: {},
+      },
+      place,
+    );
+    rows.place.push(place);
+    const remove: Sample = {};
+    await edit({ kind: "delete", ids: placed.selection.components }, remove);
+    rows.delete.push(remove);
+    const attributes: Sample = {};
+    await edit(
+      {
+        kind: "attributes",
+        id: find(labelled),
+        values: { label: `g${round}` },
+      },
+      attributes,
+    );
+    rows.attributes.push(attributes);
+  }
+  console.log(
+    `Course-size editing: ${(await command({ op: "source", id: doc.id, revision: doc.revision })).xml.length} bytes, ` +
+      `"${circuit}" ${page.components.length} components and ${page.wires.length} wires; ` +
+      `open ${Math.round(open)} ms, first observe ${Math.round(firstObserve)} ms; ${rounds} rounds, ms p50/p95:`,
+  );
+  console.log(
+    latencyTable(Object.entries(rows), [
+      "preview",
+      "edit",
+      "observe",
+      "render",
+      "total",
+    ]),
+  );
+  return { rows, folder };
 }

@@ -12,6 +12,7 @@
     ]
   },
   "include": [
-    "*.mts"
+    "*.mts",
+    "fixtures/*.mts"
   ]
 }

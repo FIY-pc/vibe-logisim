@@ -42,7 +42,7 @@ Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulat
 
 Transports: dev `POST /api/command`, `GET /api/events` (SSE), origin restricted to the Vite port; production Tauri `invoke("command")` and the `workbench-event` window event (`apps/workbench/src-tauri/src/main.rs`).
 
-Environment: `VIBE_WORKBENCH_RESOURCES` (resources root; default: beside the executable), `VIBE_WORKBENCH_STATE` (state dir), `VIBE_WORKBENCH_PORT`, `VIBE_WORKBENCH_DEV_PORT`; sidecar: `VIBE_LOGISIM_AGENT_ROOT`, `VIBE_LOGISIM_NODE`.
+Environment: `VIBE_WORKBENCH_RESOURCES` (resources root; default: beside the executable), `VIBE_WORKBENCH_STATE` (state dir), `VIBE_WORKBENCH_PORT`, `VIBE_WORKBENCH_DEV_PORT`, `VIBE_WORKBENCH_TIMING=1` (one stderr line per window or AI request with its stages, see `vibe_logisim_runtime::timing`; `timing_label` names a request `op` or `edit.<kind>`); sidecar: `VIBE_LOGISIM_AGENT_ROOT`, `VIBE_LOGISIM_NODE`.
 
 State directory: `instance.lock`, `session/` (open documents and journals), `folder.json`, `document-history/`, `snapshots/`, `observations/`, `file-imports/`, `file-references/`, `feedback.json`, `index.json`; the sidecar keeps `profile/` and `conversations.json` in the same directory.
 

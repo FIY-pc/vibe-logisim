@@ -50,12 +50,17 @@ public final class CircuitWorker {
         Loaded cached=files.get(key);
         if(cached==null) {
             if(!digest(source.toPath()).equals(expected))throw new IllegalArgumentException("电路快照已改变");
+            WorkerTiming.mark("digest");
             cached=new Loaded(source);files.put(key,cached);
+            WorkerTiming.mark("load");
         }
         return cached;
     }
     private static void reply(PrintStream protocol,String status,byte[] bytes) {
-        protocol.println(status+"\t"+Base64.getEncoder().encodeToString(bytes));
+        String payload=Base64.getEncoder().encodeToString(bytes);
+        WorkerTiming.mark("encode");
+        String phases=WorkerTiming.take();
+        protocol.println(status+"\t"+payload+(phases.isEmpty()?"":"\t"+phases));
     }
     public static void main(String[] args) throws Exception {
         PrintStream protocol=System.out;System.setOut(System.err);
@@ -72,8 +77,10 @@ public final class CircuitWorker {
             String line;
             while((line=reader.readLine())!=null) {
                 try {
+                    WorkerTiming.begin();
                     if(line.length()>2_000_000)throw new IllegalArgumentException("请求过长");
                     Element request=factory.newDocumentBuilder().parse(new ByteArrayInputStream(Base64.getDecoder().decode(line))).getDocumentElement();
+                    WorkerTiming.mark("request");
                     Element operation=null;
                     for(Node n=request.getFirstChild();n!=null;n=n.getNextSibling())if(n instanceof Element){operation=(Element)n;break;}
                     if(operation==null)throw new IllegalArgumentException("缺少原生操作");
@@ -90,12 +97,14 @@ public final class CircuitWorker {
                             response=value.getBytes(StandardCharsets.UTF_8);
                             if(cacheable&&response.length<=16_000_000)loaded.observations.put(circuit,response);
                         }
+                        WorkerTiming.mark("observe");
                     } else if(kind.equals("render")) {
                         com.cburch.logisim.circuit.Circuit circuit=loaded.file.getCircuit(operation.getAttribute("circuit"));
                         if(circuit==null)throw new IllegalArgumentException("Unknown circuit");
                         response=CircuitRenderer.draw(loaded.file,circuit,Integer.parseInt(operation.getAttribute("x")),
                             Integer.parseInt(operation.getAttribute("y")),Integer.parseInt(operation.getAttribute("width")),
                             Integer.parseInt(operation.getAttribute("height")),Double.parseDouble(operation.getAttribute("scale")));
+                        WorkerTiming.mark("render");
                     } else {
                         Document result=factory.newDocumentBuilder().newDocument();result.appendChild(result.createElement("result"));
                         if(kind.equals("component-catalog"))CircuitPalette.catalog(loaded.file,operation,result);
@@ -106,6 +115,7 @@ public final class CircuitWorker {
                         else throw new IllegalArgumentException("不支持的只读操作");
                         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
                         TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result),new StreamResult(bytes));response=bytes.toByteArray();
+                        WorkerTiming.mark(kind);
                     }
                     reply(protocol,"ok",response);
                 } catch(Exception error) { reply(protocol,"error",String.valueOf(error.getMessage()).getBytes(StandardCharsets.UTF_8)); }

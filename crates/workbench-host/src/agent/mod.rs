@@ -1,4 +1,4 @@
-use crate::{ErrorCode, Event, Host, HostError, Request};
+use crate::{ErrorCode, Event, Host, HostError, Request, timing, timing_label};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
@@ -121,8 +121,11 @@ impl Agent {
                         let output = output.clone();
                         tokio::spawn(async move {
                             const OUTSIDE: &str = "AI 请求不在电路能力范围内";
+                            let label = format!("agent.{}", timing_label(&message["request"]));
                             let result = match Request::from_value(message["request"].clone()) {
-                                Ok(request) if request.meta().agent => host.dispatch(request).await,
+                                Ok(request) if request.meta().agent => {
+                                    timing::scope(&label, host.dispatch(request)).await
+                                }
                                 Ok(_) => Err(HostError::new(ErrorCode::NotAllowed, OUTSIDE)),
                                 Err(error) => Err(HostError::new(ErrorCode::InvalidInput, OUTSIDE)
                                     .with_context(json!({"detail": error.message}))),
