@@ -2,8 +2,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Machine-readable failure classes. Append only: the UI, the AI runtime and
-/// model tool results branch on these names.
+/// Machine-readable failure classes. Every variant is produced somewhere in the
+/// host; add one together with the code that raises it. The window and the AI
+/// runtime receive them as `SCREAMING_SNAKE_CASE` strings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, ts_rs::TS)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCode {
@@ -14,47 +15,6 @@ pub enum ErrorCode {
     ExternalChange,
     Io,
     DocumentNotFound,
-    // Editing
-    StaleObject,
-    AmbiguousObject,
-    InvalidPath,
-    OutOfBounds,
-    Overlap,
-    Obstructed,
-    ShortCircuit,
-    ConnectionChanged,
-    WidthMismatch,
-    InterfaceChanged,
-    NativeUnavailable,
-    NativeRejected,
-    InvalidValue,
-    CircuitRule,
-    TooLarge,
-    AmbiguousCrossing,
-    // Folders and files
-    NoFolder,
-    FolderChanged,
-    FileNotFound,
-    NotCircuit,
-    NameInvalid,
-    NameExists,
-    NoPermission,
-    SourceRedirected,
-    AiTurnActive,
-    StaleWorkspace,
-    TurnActive,
-    TurnNotActive,
-    ConfirmRequired,
-    // AI runtime
-    AgentOpUnknown,
-    StaleWorkspaceContext,
-    WorkspaceNotOpen,
-    LoadFailed,
-    ContextTooLarge,
-    ToolRejected,
-    ToolFailed,
-    CircuitToolFailed,
-    NoCircuitOpen,
     // Simulation
     InputNotOperable,
     InputOutside,
@@ -94,7 +54,6 @@ pub enum ErrorCode {
     ProcessExit,
     Timeout,
     DependencyChanged,
-    Unavailable,
     Internal,
     Unknown,
 }
@@ -254,8 +213,8 @@ mod tests {
             serde_json::json!({"code":"STALE_REVISION","message":"电路已改变，请重新读取后再修改","retryable":false})
         );
         assert_eq!(
-            serde_json::to_value(ErrorCode::AiTurnActive).unwrap(),
-            "AI_TURN_ACTIVE"
+            serde_json::to_value(ErrorCode::DocumentNotFound).unwrap(),
+            "DOCUMENT_NOT_FOUND"
         );
         assert_eq!(serde_json::to_value(ErrorCode::Io).unwrap(), "IO");
     }

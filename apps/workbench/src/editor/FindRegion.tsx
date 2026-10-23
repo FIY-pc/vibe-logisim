@@ -1,5 +1,5 @@
 import { FindDialog } from "./FindDialog";
-import { useEditor, useSimulation, useView } from "../app/hooks";
+import { useEditor, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 
 /** Finds a component or circuit of the active document and shows it. */

@@ -49,17 +49,7 @@ pub(crate) struct History {
 }
 
 fn ignored(name: &str) -> bool {
-    [
-        ".git",
-        "node_modules",
-        "target",
-        ".workbench-state",
-        ".codex",
-        ".ssh",
-        "codex-home",
-        "circuit-agent",
-    ]
-    .contains(&name)
+    [".git", "node_modules", "target", ".workbench-state", ".ssh"].contains(&name)
         || name.starts_with(".vibe-file-")
 }
 pub(crate) fn version(path: &Path) -> Result<Option<Version>> {

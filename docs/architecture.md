@@ -29,7 +29,7 @@
 - 每个修改请求带调用方读到的修订，不匹配整条拒绝（`StaleRevision`），没有部分生效。`circuit-document` 检查，宿主透传。
 - 写操作串行、成功后自动保存（源文件在打开的文件夹内时）、记录文档历史、落恢复记录；全在 `Host::dispatch`。
 - 仿真寿命绑定修订：`Host::reconcile`。
-- AI 能调用哪些操作：`api/*.rs` 里每个 op 的 `Meta::agent()`，其余一律 `AgentOpUnknown`。
+- AI 能调用哪些操作：`api/*.rs` 里每个 op 的 `Meta::agent()`，其余一律 `NotAllowed`。
 - 对话的作用域是文件夹 ID：sidecar 从宿主 `status.folder` 取。
 - Rust 类型是契约源：`npm run contracts` 生成窗口和 sidecar 的 TypeScript 与编辑 schema，`npm run check:contracts` 校验。
 - 错误文案在错误产生处定义，面向用户、中文：宿主 `ErrorCode`、Java 桥接的字符串、AI 工具的 `CircuitToolError`。上层只展示，不翻译、不包装。

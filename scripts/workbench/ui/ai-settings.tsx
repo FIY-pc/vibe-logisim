@@ -97,7 +97,6 @@ export async function verifyAISettings() {
         conversationId: "history-A",
       },
     });
-    assert.doesNotMatch(container.textContent!, /导入|旧版|Codex/);
     await click(container.querySelector('button[aria-label="编辑 first"]')!);
     const key = container.querySelector<HTMLInputElement>(
       'input[type="password"]',

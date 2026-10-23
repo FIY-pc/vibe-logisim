@@ -1,5 +1,4 @@
 import { Canvas } from "./Canvas";
-import { liveRun } from "../simulation/store";
 import type { PlacementState } from "./usePlacement";
 import {
   useEditor,

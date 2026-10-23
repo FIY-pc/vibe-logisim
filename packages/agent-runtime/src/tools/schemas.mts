@@ -553,5 +553,3 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     }),
   },
 };
-
-export const TOOL_NAMES = Object.keys(TOOL_SPECS) as ToolName[];

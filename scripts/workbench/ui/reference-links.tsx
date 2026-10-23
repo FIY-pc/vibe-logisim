@@ -204,6 +204,8 @@ export async function verifyReferenceLinks() {
           quotation={null}
           onQuoted={() => {}}
           onDocument={() => {}}
+          onOpened={() => {}}
+          onFilesChanged={async () => {}}
           onError={(error) => errors.push(error)}
           onFollowReference={(href, message) =>
             visits.push({ href, context: message.context })
@@ -235,6 +237,8 @@ export async function verifyReferenceLinks() {
           quotation={null}
           onQuoted={() => {}}
           onDocument={() => {}}
+          onOpened={() => {}}
+          onFilesChanged={async () => {}}
           onError={(error) => errors.push(error)}
         />
       </Workbench>,
@@ -244,7 +248,7 @@ export async function verifyReferenceLinks() {
       node.querySelector(".error-bar button")?.textContent,
       "选择模型服务",
     );
-    assert.doesNotMatch(node.textContent!, /重新连接|旧版|导入/);
+    assert.doesNotMatch(node.textContent!, /重新连接/);
     runtimeExtra = {};
 
     let follow: ReturnType<typeof useConversationReferences>;

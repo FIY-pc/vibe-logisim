@@ -9,14 +9,12 @@ import {
   organizationContext,
   verifyArrangement,
 } from "../src/index.mts";
-import type { CircuitToolError as ToolError, Focus } from "../src/index.mts";
+import type { CircuitToolError as ToolError } from "../src/index.mts";
 
 const here = new URL("./fixtures/", import.meta.url).pathname;
 const file = (name: string): string => readFileSync(here + name, "utf8");
-const observation = (name: string): Focus => JSON.parse(file(name));
 
 const XML = file("adder.circ");
-const MAIN = observation("adder-main.focus.json");
 
 // Source Text is listed apart; Pins, placed parts and the probe are members.
 const ORGANIZATION = {

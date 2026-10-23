@@ -1,16 +1,5 @@
-// Resolve environment and operating-system proxy settings for both model
-// requests and optional runtime processes. Credentials stay in process memory.
-const PROXY_ENV_KEYS = [
-  "HTTPS_PROXY",
-  "https_proxy",
-  "HTTP_PROXY",
-  "http_proxy",
-  "ALL_PROXY",
-  "all_proxy",
-  "NO_PROXY",
-  "no_proxy",
-];
-const LOOPBACK_BYPASS = ["localhost", "127.0.0.1", "::1"];
+// Resolve environment and operating-system proxy settings for model
+// requests. Credentials stay in process memory.
 const SUPPORTED_SCHEMES = new Set(["http", "https"]);
 const DEFAULT_RESOLVE_TIMEOUT_MS = 3000;
 
@@ -263,24 +252,6 @@ async function resolveSystemProxy({
   return result(base);
 }
 
-// Env block for a child process. reqwest-style clients read all of these; setting the
-// three to the same value covers every code path. Loopback is always
-// bypassed (local model servers, the app's own service) so the child's
-// behaviour matches Chromium's implicit loopback bypass in the probe.
-function childEnvironment(network: any) {
-  if (!network?.proxyUrl) return {};
-  const noProxy = [
-    ...new Set([...LOOPBACK_BYPASS, ...(network.noProxy || [])]),
-  ].join(",");
-  return {
-    HTTPS_PROXY: network.proxyUrl,
-    HTTP_PROXY: network.proxyUrl,
-    ALL_PROXY: network.proxyUrl,
-    NO_PROXY: noProxy,
-    no_proxy: noProxy,
-  };
-}
-
 // {kind:"proxy"|"direct"|"unsupported", label, sentence}
 function describe(network: any) {
   if (network?.error)
@@ -319,15 +290,4 @@ function describe(network: any) {
   };
 }
 
-export {
-  resolveSystemProxy,
-  childEnvironment,
-  describe,
-  parseProxyUrl,
-  parseChromiumList,
-  parseNoProxy,
-  bypasses,
-  PROXY_ENV_KEYS,
-  LOOPBACK_BYPASS,
-  DEFAULT_RESOLVE_TIMEOUT_MS,
-};
+export { resolveSystemProxy };

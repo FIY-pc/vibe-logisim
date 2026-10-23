@@ -1,4 +1,3 @@
-import { resolveSystemProxy } from "./system-proxy.mts";
 import { BlockList, isIP } from "node:net";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -192,12 +191,3 @@ export async function closeNetwork() {
   await Promise.all([...dispatchers.values()].map((d) => d.destroy()));
   dispatchers.clear();
 }
-
-export const runtimeFetch: typeof globalThis.fetch = async (input, init) => {
-  const targetUrl = input instanceof Request ? input.url : String(input);
-  const network = await resolveSystemProxy({
-    targetUrl,
-    resolver: systemProxy,
-  });
-  return networkFetch(network)(input, init);
-};

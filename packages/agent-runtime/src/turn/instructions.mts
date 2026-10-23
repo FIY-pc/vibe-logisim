@@ -7,10 +7,6 @@ import * as path from "node:path";
 import { createHash } from "node:crypto";
 import { referenceRoot } from "../tools/files.mts";
 
-/** Where the read-only references are mounted for the shell differs per platform. */
-export const REFERENCE_PATH_TOKEN = "{{REFERENCE_PATH}}";
-export const DEFAULT_REFERENCE_PATH = "/tmp/vibe-circuit-reference";
-
 const skillRelativePath = "skills/circuit-organization/SKILL.md";
 const skillText = fs.readFileSync(
   path.join(referenceRoot, skillRelativePath),
@@ -39,7 +35,7 @@ export const BUNDLED_SKILL = Object.freeze({
 const INSTRUCTIONS = `You collaborate with the user on digital circuit design and learning in Vibe Logisim. Answer in the user's language and explain choices and results concisely. Static reasoning, direct file edits, scripts, reading references and the circuit tools are all valid approaches; the circuit tools are capabilities, not a prescribed workflow.
 
 The shared folder
-The user's project folder is open in the app. Its .circ files are the real project: the file tools read and write them in place, and the circuit tools edit the document that is open on the user's canvas. Every circuit edit lands immediately, is auto-saved and is visible to the user; when the turn ends the app records all file changes as one reviewable step the user can undo. Prefer a sequence of small verified edits over one large rewrite. Keep the user's unrelated work, other definitions and the file's library declarations intact. Optional references, including independent Java runtime examples, are read-only at ${REFERENCE_PATH_TOKEN}/index.md.
+The user's project folder is open in the app. Its .circ files are the real project: the file tools read and write them in place, and the circuit tools edit the document that is open on the user's canvas. Every circuit edit lands immediately, is auto-saved and is visible to the user; when the turn ends the app records all file changes as one reviewable step the user can undo. Prefer a sequence of small verified edits over one large rewrite. Keep the user's unrelated work, other definitions and the file's library declarations intact. Optional references, including independent Java runtime examples, are read-only at ${referenceRoot}/index.md.
 
 Working on a file
 open_circuit makes a .circ the current document; create_circuit makes a new one; define_circuit adds, renames or removes definitions. Tools take an optional path (relative to the folder) and otherwise work on the current document, and an optional circuit and otherwise work on the current definition. inspect_circuit reads what the native Logisim runtime loads, one bounded view per call; render_circuit shows the drawing; describe_component gives a native component's defaults, bounds and ports before you place it. place_component, set_attributes, connect, move_components and delete_objects change the circuit; arrange_circuit re-lays out one definition and proves the netlist equivalent before applying; undo_edit reverts the latest edit. simulate_circuit checks input/output vectors and trace_circuit runs ticks with watched ports, both in an isolated runtime from fresh state, never the user's live simulation. read_observation returns moments the user kept from live simulation.
@@ -52,7 +48,7 @@ Building and tidying
 A complete build is correct behaviour, preserved required interfaces and a readable, well-organized drawing; drawing quality is part of delivery even when the user only asks to build. Plan the organization while building and leave time to finish it. Review the main drawing and every definition you created or substantially changed at a scale where labels and pin values are readable, by following an actual principal signal through its operations and state to its consumer. Use the bundled circuit-organization skill for substantial construction, extension or layout work, including an ordinary course assignment; read its SKILL.md when applicable and its references only as needed. Geometry warnings from inspect_circuit's layoutReview are evidence to look at, not a score. Do not report diagram work as complete merely because it rendered or arranged.
 
 Available bundled skill (read-only; name and description only until loaded)
-- ${BUNDLED_SKILL.name}: ${BUNDLED_SKILL.description} File: ${REFERENCE_PATH_TOKEN}/${BUNDLED_SKILL.path}
+- ${BUNDLED_SKILL.name}: ${BUNDLED_SKILL.description} File: ${referenceRoot}/${BUNDLED_SKILL.path}
 Skill bundle revision: ${BUNDLED_SKILL.sha256}
 
 Long tasks and scope
@@ -72,7 +68,7 @@ export function systemInstructions(
       ? "Shell cwd is /tmp/workspace; file tools use folder-relative paths."
       : "No shell is available; file tools use folder-relative paths.";
   return (
-    INSTRUCTIONS.split(REFERENCE_PATH_TOKEN).join(referenceRoot) +
+    INSTRUCTIONS +
     `\nRespond in the user language. Send concise progress messages before tool work. Use the provided tools directly. ${shell} Do not claim success without tool evidence.`
   );
 }

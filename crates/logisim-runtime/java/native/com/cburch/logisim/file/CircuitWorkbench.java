@@ -1,33 +1,18 @@
 package com.cburch.logisim.file;
 
-import com.cburch.logisim.analyze.model.*;
 import com.cburch.logisim.circuit.*;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.*;
 import com.cburch.logisim.instance.*;
 import com.cburch.logisim.proj.Project;
-import com.cburch.logisim.std.gates.CircuitBuilder;
 import com.cburch.logisim.std.wiring.Pin;
 import com.cburch.logisim.std.memory.Rom;
 import com.cburch.hex.HexModel;
-import java.io.*;
-import java.nio.file.*;
-import java.security.MessageDigest;
 import java.util.*;
-import javax.xml.parsers.*;
-import javax.xml.transform.*;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 import org.w3c.dom.*;
 
-/** Native combinational synthesis and pin-vector execution. No arbitrary code protocol. */
+/** Pin-vector execution and tick traces on a fresh state; {@link CircuitSession} runs both in its verify mode. */
 public final class CircuitWorkbench {
-    private static String digest(Path path) throws Exception {
-        byte[] bytes = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path));
-        StringBuilder hex = new StringBuilder();
-        for (byte b : bytes) hex.append(String.format("%02x", b & 255));
-        return hex.toString();
-    }
     private static List<Component> pins(Circuit circuit) {
         List<Component> result = new ArrayList<>();
         for (Component c : circuit.getNonWires()) if (c.getFactory() instanceof Pin) result.add(c);
@@ -55,57 +40,6 @@ public final class CircuitWorkbench {
         if (number < 0 || number > maximum) throw inputRangeError(pin, raw, context, bits, maximum);
         return Value.createKnown(width, (int) number);
     }
-    private static void build(LogisimFile file, Element request) throws Exception {
-        Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
-        if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
-        if (!circuit.getWires().isEmpty() || circuit.getNonWires().size() != pins(circuit).size())
-            throw new IllegalArgumentException("Only a pin-only empty combinational module can be filled");
-        boolean defaultAppearance = circuit.getAppearance().isDefaultAppearance();
-        Map<String, String> before = CircuitInterface.footprint(circuit);
-        Map<String, Component> original = new LinkedHashMap<>();
-        List<String> inputs = new ArrayList<>(), outputs = new ArrayList<>();
-        for (Component pin : pins(circuit)) {
-            String name = label(pin);
-            if (name.isEmpty() || original.put(name, pin) != null)
-                throw new IllegalArgumentException("Pins must have unique nonempty labels");
-            if (pin.getAttributeSet().getValue(StdAttr.WIDTH).getWidth() != 1)
-                throw new IllegalArgumentException("Synthesis currently supports one-bit pins");
-            (input(pin) ? inputs : outputs).add(name);
-        }
-        if (inputs.size() > 12 || outputs.size() > 16) throw new IllegalArgumentException("Module too large");
-        AnalyzerModel model = new AnalyzerModel();
-        model.setVariables(inputs, outputs);
-        Set<String> supplied = new HashSet<>();
-        NodeList expressions = request.getElementsByTagName("expression");
-        for (int i = 0; i < expressions.getLength(); i++) {
-            Element item = (Element) expressions.item(i);
-            String output = item.getAttribute("output");
-            if (!outputs.contains(output) || !supplied.add(output)) throw new IllegalArgumentException("Invalid output " + output);
-            String expression = item.getTextContent();
-            model.getOutputExpressions().setExpression(output, Parser.parse(expression, model), expression);
-        }
-        if (!supplied.equals(new HashSet<>(outputs))) throw new IllegalArgumentException("Every output needs an expression");
-        // The model owns a fully specified truth table; minimization must not introduce
-        // don't-cares. Keep the original expressions in candidate metadata for review.
-        for (String output : outputs) {
-            Expression minimal = model.getOutputExpressions().getMinimalExpression(output);
-            model.getOutputExpressions().setExpression(output, minimal);
-        }
-        Project project = new Project(file);
-        CircuitBuilder.build(circuit, model, false, false).execute(project);
-        // Keep the original pin attributes and model ordering; let the native builder lay out wires.
-        CircuitMutation restore = new CircuitMutation(circuit);
-        for (Component pin : pins(circuit)) {
-            Component source = original.get(label(pin));
-            restore.replace(pin, Pin.FACTORY.createComponent(pin.getLocation(), (AttributeSet) source.getAttributeSet().clone()));
-        }
-        restore.execute(project);
-        // Custom appearance pin references are preserved/remapped by the host XML splice,
-        // then checked by a second native load through check-interface below.
-        if (defaultAppearance && !before.equals(CircuitInterface.footprint(circuit)))
-            throw new IllegalStateException("Generated module changes its external port footprint; candidate rejected");
-    }
-    // Batch entry points: {@link CircuitSession} runs both in its verify mode.
     static void simulate(LogisimFile file, Element request, Document result) {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("Unknown circuit");
@@ -282,71 +216,6 @@ public final class CircuitWorkbench {
             }
         } finally {
             project.getSimulator().shutDown();
-        }
-    }
-    public static void main(String[] args) {
-        System.setProperty("java.awt.headless", "true");
-        PrintStream protocol = System.out;
-        System.setOut(System.err);
-        try {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            Document request = factory.newDocumentBuilder().parse(new File(args[1]));
-            // Identify the runtime that actually supplied Pin, not a version
-            // guessed from the selected filename or host configuration.
-            Path runtime = Paths.get(Pin.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            String runtimeSha = digest(runtime), artifactSha = digest(Paths.get(args[0]));
-            List<String> loaderMessages = new ArrayList<>();
-            LogisimFile file = NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages);
-            Document result = factory.newDocumentBuilder().newDocument();
-            result.appendChild(result.createElement("result"));
-            result.getDocumentElement().setAttribute("runtimeJarSha256", runtimeSha);
-            result.getDocumentElement().setAttribute("runtimeVersion", String.valueOf(com.cburch.logisim.Main.VERSION));
-            result.getDocumentElement().setAttribute("artifactSha256", artifactSha);
-            if (request.getDocumentElement().getTagName().equals("component-catalog")) {
-                CircuitPalette.catalog(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("component-templates")) {
-                CircuitPalette.templates(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("component-template") || request.getDocumentElement().getTagName().equals("place-component")) {
-                CircuitPalette.describe(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("check-existing-ports")) {
-                CircuitPalette.preserveExistingPorts(file, NativeCircuitLoader.openChecked(new File(args[2]), loaderMessages), request.getDocumentElement().getAttribute("circuit"));
-            } else if (request.getDocumentElement().getTagName().equals("build")) {
-                build(file, request.getDocumentElement());
-                // Writing stays strict: a report during save means the artifact
-                // on disk would not round-trip, unlike the tolerated load-time
-                // tool defaults that openChecked verifies coverage for.
-                Loader writeLoader = new Loader(null) {
-                    @Override public void showError(String description) { throw new IllegalStateException(description); }
-                };
-                try (OutputStream out = new FileOutputStream(args[2])) { file.write(out, writeLoader); }
-            } else if (request.getDocumentElement().getTagName().equals("interface")) {
-                CircuitInterface.describe(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("check-interface")) {
-                LogisimFile other = NativeCircuitLoader.openChecked(new File(args[2]), loaderMessages);
-                String name = request.getDocumentElement().getAttribute("circuit");
-                CircuitInterface.check(file, other, name);
-            } else if (request.getDocumentElement().getTagName().equals("simulate")) {
-                simulate(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("trace")) {
-                trace(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("edit-components")) {
-                CircuitObjects.editComponents(file, request.getDocumentElement(), result);
-            } else if (request.getDocumentElement().getTagName().equals("property") || request.getDocumentElement().getTagName().equals("memory")) {
-                CircuitObjects.describe(file, request.getDocumentElement(), result);
-            } else throw new IllegalArgumentException("Unknown operation");
-            if (!artifactSha.equals(digest(Paths.get(args[0]))) || !runtimeSha.equals(digest(runtime)))
-                throw new IllegalStateException("Native execution inputs changed during operation");
-            if (!loaderMessages.isEmpty()) {
-                for (String message : loaderMessages) System.err.println("loader: " + message);
-                result.getDocumentElement().setAttribute("loaderMessages", String.join("；", loaderMessages));
-            }
-            TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result), new StreamResult(protocol));
-            System.exit(0);
-        } catch (Throwable error) {
-            error.printStackTrace(System.err);
-            System.exit(1);
         }
     }
 }

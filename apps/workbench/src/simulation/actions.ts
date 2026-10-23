@@ -48,8 +48,6 @@ const DEFAULT_FREQUENCY = 2;
 const PICTURES = 32;
 /** How long a RAM page may take to appear in a frame. */
 const PAGE_TIMEOUT = 10_000;
-/** The words a memory page shows, as the released version showed them. */
-export const MEMORY_PAGE = 64;
 
 /** A page of a memory component of the shown circuit. */
 export interface MemoryRequest {

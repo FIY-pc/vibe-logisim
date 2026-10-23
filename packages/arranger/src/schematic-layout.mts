@@ -45,7 +45,7 @@
 //   order, which is what the default appearance is built from
 //   (interfaceSignature). Only this definition is rewritten in the file.
 import { compactX } from "./compaction.mts";
-import type { CompactPart, CompactWire, KeepOrder } from "./compaction.mts";
+import type { CompactWire, KeepOrder } from "./compaction.mts";
 import { fixedCopper } from "./fixed-geometry.mts";
 import { looseWireGeometry } from "./loose-wires.mts";
 import {
@@ -83,7 +83,7 @@ import {
 import type { Point } from "./py.mts";
 import { sharedRail } from "./control-routing.mts";
 import type { Corridor } from "./control-routing.mts";
-import { Partition, Router, busKey, pk, pkX, pkY } from "./routing.mts";
+import { Partition, Router, busKey, pk } from "./routing.mts";
 import type {
   Bounds,
   Component,

@@ -10,8 +10,6 @@ tmp/
 .env
 .env.*
 !.env.example
-.codex/
-auth.json
 *.pem
 *.key
 

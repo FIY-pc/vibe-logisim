@@ -24,12 +24,3 @@ export interface ServiceSelection extends Omit<
 > {
   serviceId: string;
 }
-/** One row of the model picker. */
-export interface ModelRow {
-  model: string;
-  name: string;
-  description: string;
-  isDefault: boolean;
-  defaultEffort: string | null;
-  efforts: { value: string; description: string }[];
-}

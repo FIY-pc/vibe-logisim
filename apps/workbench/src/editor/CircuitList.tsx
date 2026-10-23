@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import type { Document } from "../shared/types";
-import { useEditor, useNotices, useSimulation, useView } from "../app/hooks";
+import { useEditor, useNotices, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 
 /** The circuits of the active document, with the shown circuit's commands. */

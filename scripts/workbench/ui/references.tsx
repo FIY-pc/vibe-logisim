@@ -27,7 +27,6 @@ export async function verifyReferencesUI() {
   }) {
     api = useChatReferences({
       draftKey,
-      workspaceKey: "folder",
       documentId: "doc",
       quotation,
       onQuoted: (id) => {
@@ -214,6 +213,8 @@ async function verifyDocumentReferenceBinding() {
             quotation={quote ? quotation(id) : null}
             onQuoted={() => {}}
             onDocument={() => {}}
+            onOpened={() => {}}
+            onFilesChanged={async () => {}}
             onError={(e) => errors.push(e)}
           />
         </Workbench>,

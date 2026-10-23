@@ -186,8 +186,8 @@ fn copy_source(
         return Err("导入内容指向所选文件夹之外".into());
     }
     let name = source.file_name().unwrap_or_default().to_string_lossy();
-    if [".codex", ".ssh", "codex-home", "circuit-agent"].contains(&name.as_ref()) {
-        return Err("不能导入运行时或身份配置目录".into());
+    if name == ".ssh" {
+        return Err("不能导入身份配置目录".into());
     }
     *count += 1;
     if *count > 20_000 {

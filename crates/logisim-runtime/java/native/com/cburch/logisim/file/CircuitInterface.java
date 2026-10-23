@@ -12,7 +12,6 @@ import com.cburch.logisim.instance.Instance;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.std.wiring.Pin;
 import java.util.Map;
-import java.util.TreeMap;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -23,23 +22,6 @@ final class CircuitInterface {
         out.setAttribute("y", Integer.toString(p.getY()));
     }
     private static String key(Location p) { return p.getX() + "," + p.getY(); }
-
-    static Map<String, String> footprint(Circuit c) {
-        Map<String, String> result = new TreeMap<>();
-        for (Map.Entry<Location, Instance> p : c.getAppearance().getPortOffsets(Direction.EAST).entrySet()) {
-            Instance pin = p.getValue();
-            result.put(pin.getAttributeValue(StdAttr.LABEL), p.getKey().toString() + ":"
-                + pin.getAttributeValue(StdAttr.WIDTH) + ":" + Pin.FACTORY.isInputPin(pin));
-        }
-        result.put("$bounds", c.getAppearance().getOffsetBounds().toString());
-        return result;
-    }
-    static void check(LogisimFile before, LogisimFile after, String name) {
-        Circuit a = before.getCircuit(name), b = after.getCircuit(name);
-        if (a == null || b == null) throw new IllegalArgumentException("Unknown circuit");
-        if (!footprint(a).equals(footprint(b)))
-            throw new IllegalStateException("Reloaded candidate changes external pin mapping: " + name);
-    }
 
     static void describe(LogisimFile file, Element request, Document result) {
         Circuit target = file.getCircuit(request.getAttribute("circuit"));

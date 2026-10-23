@@ -1,5 +1,5 @@
 import { TextPrompt } from "../shared/TextPrompt";
-import { useEditor, useSimulation, useView } from "../app/hooks";
+import { useEditor, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 
 /** The prompts that rename the shown circuit and add a circuit. */

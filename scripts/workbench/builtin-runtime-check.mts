@@ -16,8 +16,6 @@ const linux = systemInstructions(null, "linux");
 const windows = systemInstructions(null, "win32");
 for (const text of [linux, windows]) {
   assert.ok(text.includes(referenceRoot), "the reference directory is named");
-  assert.ok(!text.includes("{{REFERENCE_PATH}}"));
-  assert.ok(!text.includes("Tool result transport"), "no Code Mode wrapper");
 }
 assert.match(linux, /Shell cwd is \/tmp\/workspace/);
 assert.match(windows, /No shell is available/);

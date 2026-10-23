@@ -8,7 +8,7 @@ The Java side of the product, driven from Rust: the real Logisim runtime loads t
 - `process.rs`: child process plumbing, UTF-8 on Windows, bounded stderr capture for diagnostics.
 - `lib.rs` (`Native`): the long-lived read-only worker and its request protocol. One request = one XML element in, XML bytes out, translated to JSON with `xml_json(node) = {tag, attributes, text, children}`.
 - `simulation/`: the interactive run. `registry.rs` owns the single current run and a separate verification worker; `session.rs` is one JVM session; `protocol.rs` the wire format; `model.rs` the typed events (`Frame`, `Command`, `Status`, `Snapshot`, …, all `ts_rs` exported for the UI); `error.rs` the stable error codes.
-- `java/native/com/cburch/logisim/file/*.java`: the bridge compiled against whatever jar the project needs (`CircuitWorker` request loop, `NativeCircuitLoader`, `CircuitPalette` catalog/template, `CircuitRenderer`, `CircuitSession*` simulation, `CircuitTrace`, `CircuitInterface` symbol checks).
+- `java/native/com/cburch/logisim/file/*.java`: the bridge compiled against whatever jar the project needs (`CircuitWorker` request loop, `NativeCircuitLoader`, `CircuitPalette` catalog/template/placement, `CircuitObjects` attribute reads, `CircuitInterface` pin description, `CircuitRenderer`, `CircuitSession*` simulation, `CircuitTrace`, `CircuitWorkbench` pin-vector and trace batches for the verification worker). The worker answers exactly the request kinds `lib.rs` sends; a new kind is added on both sides at once.
 - `java/observer/`: `ExactRuntimeObserver` reads nets, ports and hierarchy from Logisim's own data structures (see its README; it has its own CLI for debugging).
 
 ## Does not own

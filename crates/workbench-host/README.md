@@ -36,7 +36,7 @@ Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{err
 | agent | agent `{method, args}` → forwarded to the sidecar (see `packages/agent-runtime/README.md`) |
 | app | feedbackStatus feedbackCheck feedbackPreference feedbackDismiss diagnostics diagnosticsExport |
 
-Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folderCreate folderCheckpoint status read source sourceStatus saveTarget open new save edit undo redo observe template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply historyList observationList observationGet observationImage. Anything else from the sidecar fails with `AgentOpUnknown`.
+Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folderCreate folderCheckpoint status read source sourceStatus saveTarget open new save edit undo redo observe template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply historyList observationList observationGet observationImage. Anything else from the sidecar fails with `NotAllowed`.
 
 Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulation` (session, frames, end); `resync` (snapshots may be stale, read again); `warning {message}` (a change took effect, something around it failed).
 

@@ -169,6 +169,8 @@ export async function verifyRestoredInteractions() {
           quotation={null}
           onQuoted={() => {}}
           onDocument={() => {}}
+          onOpened={() => {}}
+          onFilesChanged={async () => {}}
           onError={(error) => errors.push(error)}
         />
       </Workbench>,
@@ -293,6 +295,8 @@ export async function verifyRestoredInteractions() {
             palette={<div>元件内容</div>}
             navigation={<div>当前图</div>}
             inspector={<div>属性内容</div>}
+            navigatorActions={null}
+            inspectorActions={null}
           />
           <aside
             className="right-panel"
@@ -415,8 +419,14 @@ export async function verifyRestoredInteractions() {
           edit={async (edit) => {
             edits.push(edit);
           }}
-          simulation={null}
-          simulate={async () => {}}
+          run={null}
+          picture={null}
+          pending={[]}
+          pressed={null}
+          onPoke={() => {}}
+          onPress={() => {}}
+          onRelease={() => {}}
+          onViewport={() => {}}
           onError={(error) => errors.push(error)}
           fitToken={0}
           onOpenMemory={() => {}}

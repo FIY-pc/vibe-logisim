@@ -1,13 +1,2 @@
-// Hosts may provide the SDK installed beside their own entry. The shared
-// runtime keeps its normal bundled/development entry as the default.
-let loader = () => import("./sdk.mts");
-function setSdkLoader(next: () => Promise<typeof import("./sdk.mts")>) {
-  if (typeof next !== "function")
-    throw new TypeError("SDK loader must be a function");
-  loader = next;
-}
-function loadSdk() {
-  return loader();
-}
-
-export { loadSdk, setSdkLoader };
+// The pi SDK entry, loaded on first use so the sidecar starts before the SDK is needed.
+export const loadSdk = () => import("./sdk.mts");

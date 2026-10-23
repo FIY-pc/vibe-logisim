@@ -217,6 +217,8 @@ const chat = (d: any, visible = true) => (
       quotation={null}
       onQuoted={() => {}}
       onDocument={(d: any) => changed.push(d)}
+      onOpened={() => {}}
+      onFilesChanged={async () => {}}
       onError={(e: any) => errors.push(e)}
     />
   </Workbench>
@@ -1234,13 +1236,10 @@ const providerRequest = async (method: string, args: any) => {
 };
 await render(
   <ProviderSettings
-    runtime="builtin"
     services={[]}
     provider={null}
     busy={false}
     request={providerRequest as any}
-    onRuntime={async () => {}}
-    onLogin={() => {}}
     onSaved={async () => {
       saved = true;
     }}

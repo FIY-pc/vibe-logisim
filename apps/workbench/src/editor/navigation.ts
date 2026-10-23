@@ -3,7 +3,7 @@ import { command } from "../shared/transport";
 import type { SessionInfo } from "../generated/SessionInfo";
 import type { Document } from "../shared/types";
 import type { Actions, Stores } from "../app/createWorkbench";
-import { currentView, type View } from "../app/view";
+import type { View } from "../app/view";
 import type { EditorActions } from "./actions";
 
 /**
