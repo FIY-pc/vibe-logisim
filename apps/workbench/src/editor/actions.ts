@@ -180,6 +180,7 @@ export function createEditorActions(stores: Stores) {
       if (stillCurrent())
         editor.getState().setSource({
           xml: result.xml,
+          original: result.xml,
           id: doc.id,
           name: doc.name,
           revision: doc.revision,
