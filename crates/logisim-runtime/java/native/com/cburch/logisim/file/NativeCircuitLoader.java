@@ -8,8 +8,12 @@ import javax.swing.filechooser.FileFilter;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+import org.xml.sax.Attributes;
+import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.helpers.DefaultHandler;
 
@@ -47,48 +51,121 @@ public final class NativeCircuitLoader {
     }
 
     /**
-     * Checks every circuit definition in this XML file, then delegates unchanged.
-     * The caller must keep the file stable between preflight and native loading.
-     * Referenced external circuit libraries are outside this file's preflight.
+     * Streams the file once (the runtime then parses it into its own tree):
+     * every wire of a circuit definition must be horizontal or vertical, and
+     * memory contents must not carry both a val attribute and text.
      */
-    public static LogisimFile open(Loader loader, File file) throws Exception {
-        validateProject(file);
-        return loader.openLogisimFile(file);
+    private static void validateProject(File file) throws Exception {
+        SAXParserFactory factory = SAXParserFactory.newInstance();
+        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        factory.setXIncludeAware(false);
+        SAXParser parser = factory.newSAXParser();
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        try {
+            parser.parse(file, new Preflight());
+        } catch (Rejected rejected) {
+            throw new IllegalArgumentException(rejected.getMessage());
+        }
     }
 
-    private static void validateProject(File file) throws Exception {
-        Element project = parseProject(file);
-        // Match native direct-child definitions, including uninstantiated children.
-        for (Node node = project.getFirstChild(); node != null; node = node.getNextSibling()) {
-            if (!(node instanceof Element) || !node.getNodeName().equals("circuit")) continue;
-            Element circuit = (Element) node;
-            int wireNumber = 0;
-            for (Node child = circuit.getFirstChild(); child != null; child = child.getNextSibling()) {
-                if (child instanceof Element && child.getNodeName().equals("comp")) {
-                    validateMemoryContents((Element) child, circuit.getAttribute("name"));
+    /** A preflight finding; stops the parse. */
+    private static final class Rejected extends SAXException {
+        Rejected(String message) { super(message); }
+    }
+
+    /** The checks of validateProject over one pass of parse events. */
+    private static final class Preflight extends DefaultHandler {
+        private int depth;
+        /** The definition being read (direct children of the project only). */
+        private String circuit;
+        private int wireNumber;
+        /** A ROM or RAM directly in that definition, while inside it. */
+        private String memory, memoryLocation;
+        private int memoryDepth;
+        /** Text of its contents attribute when that also has val. */
+        private StringBuilder contents;
+        private int contentsDepth;
+
+        private static String value(Attributes attributes, String name) {
+            String value = attributes.getValue(name);
+            return value == null ? "" : value;
+        }
+
+        @Override public void startElement(String uri, String local, String name, Attributes attributes)
+                throws SAXException {
+            depth++;
+            if (depth == 2) {
+                if (name.equals("circuit")) {
+                    circuit = value(attributes, "name");
+                    wireNumber = 0;
                 }
-                if (!(child instanceof Element) || !child.getNodeName().equals("wire")) continue;
-                Element wire = (Element) child;
-                String from = wire.getAttribute("from"), to = wire.getAttribute("to");
-                String context = "电路 \"" + circuit.getAttribute("name") + "\" 的 wire #" + (++wireNumber)
-                    + "（from=\"" + from + "\", to=\"" + to + "\"）";
-                Location start, end;
-                try {
-                    start = Location.parse(from);
-                    end = Location.parse(to);
-                } catch (NumberFormatException | IndexOutOfBoundsException error) {
-                    // Preserve native handling of missing/malformed coordinates;
-                    // this preflight only adds a geometric rejection boundary.
-                    continue;
+            } else if (depth == 3 && circuit != null) {
+                if (name.equals("comp")) {
+                    String factory = value(attributes, "name");
+                    if (factory.equals("ROM") || factory.equals("RAM")) {
+                        memory = factory;
+                        memoryLocation = value(attributes, "loc");
+                        memoryDepth = depth;
+                    }
+                } else if (name.equals("wire")) {
+                    wire(value(attributes, "from"), value(attributes, "to"));
                 }
-                // Do not add grid, sign, direction or nonzero-length restrictions.
-                if (start.getX() != end.getX() && start.getY() != end.getY()) {
-                    throw new IllegalArgumentException(context
-                        + "：导线必须水平或垂直；斜线可能使原生加载无法结束并耗尽内存。"
-                        + "请按预期连接改为水平/垂直线段，并检查拐点及沿途连接。");
-                }
+            } else if (memory != null && contents == null && name.equals("a")
+                    && value(attributes, "name").equals("contents") && attributes.getValue("val") != null) {
+                contents = new StringBuilder();
+                contentsDepth = depth;
             }
         }
+
+        private void wire(String from, String to) throws SAXException {
+            String context = "电路 \"" + circuit + "\" 的 wire #" + (++wireNumber)
+                + "（from=\"" + from + "\", to=\"" + to + "\"）";
+            Location start, end;
+            try {
+                start = Location.parse(from);
+                end = Location.parse(to);
+            } catch (NumberFormatException | IndexOutOfBoundsException error) {
+                // Preserve native handling of missing/malformed coordinates;
+                // this preflight only adds a geometric rejection boundary.
+                return;
+            }
+            // Do not add grid, sign, direction or nonzero-length restrictions.
+            if (start.getX() != end.getX() && start.getY() != end.getY()) {
+                throw new Rejected(context
+                    + "：导线必须水平或垂直；斜线可能使原生加载无法结束并耗尽内存。"
+                    + "请按预期连接改为水平/垂直线段，并检查拐点及沿途连接。");
+            }
+        }
+
+        @Override public void characters(char[] text, int start, int length) {
+            if (contents != null) contents.append(text, start, length);
+        }
+
+        @Override public void endElement(String uri, String local, String name) throws SAXException {
+            if (contents != null && depth == contentsDepth) {
+                // Logisim memory contents are serialized as the text of the
+                // contents attribute. A generated file that adds val="" while
+                // retaining that text looks like XML, but the native attribute
+                // parser creates no MemContents. Report the source location
+                // before the runtime emits a null dereference.
+                if (!contents.toString().trim().isEmpty()) {
+                    throw new Rejected("电路 \"" + circuit + "\" 的 " + memory + " @ " + memoryLocation
+                        + " 的 contents 同时包含 val 属性和文本；原生格式应删除 val 属性并保留文本内容。");
+                }
+                contents = null;
+            }
+            if (memory != null && depth == memoryDepth) memory = null;
+            if (depth == 2) circuit = null;
+            depth--;
+        }
+
+        @Override public void error(SAXParseException error) throws SAXParseException { throw error; }
+        @Override public void fatalError(SAXParseException error) throws SAXParseException { throw error; }
     }
 
     /**
@@ -116,10 +193,13 @@ public final class NativeCircuitLoader {
                     // Checking just the root can miss silently dropped gates in
                     // a library whose parent instance itself remains present.
                     validateProject(source);
+                    WorkerTiming.mark("validate");
                     LogisimFile loaded = super.loadLogisimFile(source);
+                    WorkerTiming.mark("logisim");
                     if (reported.size() > before) {
                         String loss = coverageLoss(loaded, source);
                         if (loss != null) throw new LoadFailedException(loss);
+                        WorkerTiming.mark("coverage");
                     }
                     return loaded;
                 } catch (LoadFailedException error) {
@@ -163,7 +243,8 @@ public final class NativeCircuitLoader {
         };
         LogisimFile loaded;
         try {
-            loaded = open(loader, file);
+            // The loader's loadLogisimFile preflights each file it reads, this one included.
+            loaded = loader.openLogisimFile(file);
         } catch (Exception error) {
             if (reported.isEmpty()) throw error;
             throw new IllegalStateException("Logisim 无法载入这个文件：" + String.join("；", reported), error);
@@ -218,28 +299,5 @@ public final class NativeCircuitLoader {
                 .append("，wire ").append(loadedWires).append("/").append(wires);
         }
         return loss.length() == 0 ? null : loss.toString();
-    }
-
-    /**
-     * Logisim memory contents are serialized as the text of the contents
-     * attribute. A generated file that adds val="" while retaining that text
-     * looks like XML, but the native attribute parser creates no MemContents.
-     * Report the source location before the runtime emits a null dereference.
-     */
-    private static void validateMemoryContents(Element component, String circuitName) {
-        String factory = component.getAttribute("name");
-        if (!factory.equals("ROM") && !factory.equals("RAM")) return;
-        org.w3c.dom.NodeList attributes = component.getElementsByTagName("a");
-        for (int index = 0; index < attributes.getLength(); index++) {
-            Element attribute = (Element) attributes.item(index);
-            if (!attribute.getAttribute("name").equals("contents")) continue;
-            String text = attribute.getTextContent();
-            if (attribute.hasAttribute("val") && text != null && !text.trim().isEmpty()) {
-                throw new IllegalArgumentException(
-                    "电路 \"" + circuitName + "\" 的 " + factory + " @ " + component.getAttribute("loc")
-                    + " 的 contents 同时包含 val 属性和文本；原生格式应删除 val 属性并保留文本内容。"
-                );
-            }
-        }
     }
 }
