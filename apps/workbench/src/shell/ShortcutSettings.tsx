@@ -90,6 +90,7 @@ export function ShortcutSettings({
                 />
                 <button
                   aria-label={`清除 ${c.label} 快捷键`}
+                  data-tip="清除快捷键"
                   onClick={() => change(c.id, null)}
                 >
                   <X size={12} />

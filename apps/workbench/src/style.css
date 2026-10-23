@@ -75,6 +75,11 @@ button:disabled {
   opacity: 0.38;
   cursor: default;
 }
+/* Small print uses the smallest size of the scale rather than the browser's
+ * "smaller", which lands between sizes and shrinks again when nested. */
+:where(small) {
+  font-size: 11px;
+}
 /* One focus ring for everything focusable; text fields draw it on their
  * border, scrolling regions inside their edge. It has no specificity, so
  * items that show focus as a highlight instead (menu and list items) turn

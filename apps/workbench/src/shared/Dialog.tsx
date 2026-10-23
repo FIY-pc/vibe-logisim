@@ -65,6 +65,8 @@ export function DialogClose({
       type="button"
       className="dialog-close"
       aria-label={label}
+      data-tip="关闭"
+      data-tip-key="Esc"
       disabled={disabled}
       onClick={onClick}
     >

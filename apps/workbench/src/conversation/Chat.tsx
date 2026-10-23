@@ -985,6 +985,8 @@ export function Chat({
             <button
               className="primary"
               aria-label="发送"
+              data-tip="发送"
+              data-tip-key="Enter"
               disabled={
                 !ready ||
                 !draft.trim() ||

@@ -624,6 +624,7 @@ export function InterfaceEditor({
               />
               <button
                 aria-label={`删除端口 ${p.label}`}
+                data-tip="删除端口"
                 onClick={() =>
                   edit((d) => {
                     removePort(d, p.id);
