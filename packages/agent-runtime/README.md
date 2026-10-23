@@ -54,7 +54,7 @@ Compiles and type-checks; the JSONL protocol, status/bind/conversations/models a
 
 1. Done: a real turn on the course project (rename one pin label in a subcircuit) edits the file, shows the checkpoint and undoes cleanly. What broke was a gateway that answers HTTP 200 and then an error event inside the stream; `retryingStream` in `turn/runner.mts` restarts such requests with backoff. Next real turns should be larger edits (place + connect, arrange) to find the next break.
 2. `tools/arrange.mts` `TODO(arrange)`: when the host gains `observeXml`, verify the arranged XML before `edit replace` and drop the apply→verify→undo path.
-3. Re-add the sidecar turn scenario in `scripts/workbench/verify.mts` (`TODO(agent-runtime)`): a scripted provider that returns one tool call, asserting the `document-changed` and `files-changed` events and the folder checkpoint.
+3. Done: `npm run test:native` ends with a scripted AI turn through this runner (`scripts/workbench/agent-scenarios.mts`); `scripts/workbench/scripted-model.mts` and `scripts/workbench/turns/` drive longer turns on a preview host without a model.
 4. Unify `isHostError` (`tools/errors.mts` checks plain objects, `protocol/host.mts` Error instances); keep the `protocol` one.
 5. Old features not carried over, pick up only when a user asks: conversation fork (`git show HEAD:packages/agent-runtime/core/conversation-fork.mts`), context transfer between conversations (`core/context-transfer.mts`), Codex CLI backend (`core/codex-backend.mts`).
 

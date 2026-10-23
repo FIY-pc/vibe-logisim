@@ -181,7 +181,8 @@ export async function verifyEditing(command: Command) {
   );
   await assert.rejects(
     () => move(short, [component(short, "outA")], -50, 40),
-    /改变端口连接/,
+    (e: any) =>
+      e.code === "CONNECTIONS_CHANGED" && /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
   );
   const unchanged = await command({ op: "read", id: short.id });
   assert.equal(unchanged.revision, short.revision);
