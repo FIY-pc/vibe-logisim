@@ -7,3 +7,8 @@ export {
 export { streamSimple as responses } from "@earendil-works/pi-ai/api/openai-responses";
 export { streamSimple as completions } from "@earendil-works/pi-ai/api/openai-completions";
 export { streamSimple as anthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
+export { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+export {
+  isRetryableAssistantError,
+  retryDelayMs,
+} from "@earendil-works/pi-ai/utils/retry";

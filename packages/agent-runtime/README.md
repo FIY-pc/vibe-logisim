@@ -19,19 +19,19 @@ Rendering, document identity, saving, history (host); layout algorithms (`packag
 
 ## Public interface (methods over the host's `agent` op)
 
-| method | args | returns |
-| --- | --- | --- |
-| status | | snapshot: status, available, busy, canSteer, conversationId, turnId, model, effort, services, defaultServiceId, messages, network, modelConfigurationError, modelCatalog |
-| bind | `{documentId}` | resumes the conversation of the host's current folder, remembers the document for the next ask |
-| ask | `{question, references, documentId, circuit, selection, expectedTurnId?, editMessageId?}` | starts a turn (or steers the running one when `expectedTurnId` matches) |
-| stop | | interrupts the turn |
-| reconnect | | restarts the model stream after a network failure |
-| conversations | `{action?: "new" \| "select" \| "rename" \| "archive" \| "restore", id?, title?}` | the folder's conversation list and the active one |
-| models | `{refresh}` | models per service |
-| selectModel | `{model, effort}` | |
-| configure / removeProvider / defaultProvider / bindProvider | service management | |
-| discover / probe | `{id}` | reachability and model list of a service |
-| stageReferences / readReferences | `{documentId, references}` / `{ids}` | attachments for the next question |
+| method                                                      | args                                                                                      | returns                                                                                                                                                                  |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| status                                                      |                                                                                           | snapshot: status, available, busy, canSteer, conversationId, turnId, model, effort, services, defaultServiceId, messages, network, modelConfigurationError, modelCatalog |
+| bind                                                        | `{documentId}`                                                                            | resumes the conversation of the host's current folder, remembers the document for the next ask                                                                           |
+| ask                                                         | `{question, references, documentId, circuit, selection, expectedTurnId?, editMessageId?}` | starts a turn (or steers the running one when `expectedTurnId` matches)                                                                                                  |
+| stop                                                        |                                                                                           | interrupts the turn                                                                                                                                                      |
+| reconnect                                                   |                                                                                           | restarts the model stream after a network failure                                                                                                                        |
+| conversations                                               | `{action?: "new" \| "select" \| "rename" \| "archive" \| "restore", id?, title?}`         | the folder's conversation list and the active one                                                                                                                        |
+| models                                                      | `{refresh}`                                                                               | models per service                                                                                                                                                       |
+| selectModel                                                 | `{model, effort}`                                                                         |                                                                                                                                                                          |
+| configure / removeProvider / defaultProvider / bindProvider | service management                                                                        |                                                                                                                                                                          |
+| discover / probe                                            | `{id}`                                                                                    | reachability and model list of a service                                                                                                                                 |
+| stageReferences / readReferences                            | `{documentId, references}` / `{ids}`                                                      | attachments for the next question                                                                                                                                        |
 
 Events reach the window as host events on topic `agent`, in order, with a sequence number; the window replays missed ones from `status`.
 
@@ -51,7 +51,7 @@ Compiles and type-checks; the JSONL protocol, status/bind/conversations/models a
 
 ## Remaining tasks
 
-1. Run a real turn: `npm run dev`, add a model service in AI 设置, open a folder with a course `.circ`, ask for a small change; confirm the edit lands in the editor, the checkpoint appears in the files panel and undo works. Fix whatever breaks in `turn/runner.mts` first. The old runner is at `git show HEAD:packages/agent-runtime/core/builtin-backend.mts` and `core/builtin-session.mts` for comparison of event ordering.
+1. Done: a real turn on the course project (rename one pin label in a subcircuit) edits the file, shows the checkpoint and undoes cleanly. What broke was a gateway that answers HTTP 200 and then an error event inside the stream; `retryingStream` in `turn/runner.mts` restarts such requests with backoff. Next real turns should be larger edits (place + connect, arrange) to find the next break.
 2. `tools/arrange.mts` `TODO(arrange)`: when the host gains `observeXml`, verify the arranged XML before `edit replace` and drop the apply→verify→undo path.
 3. Re-add the sidecar turn scenario in `scripts/workbench/verify.mts` (`TODO(agent-runtime)`): a scripted provider that returns one tool call, asserting the `document-changed` and `files-changed` events and the folder checkpoint.
 4. Unify `isHostError` (`tools/errors.mts` checks plain objects, `protocol/host.mts` Error instances); keep the `protocol` one.

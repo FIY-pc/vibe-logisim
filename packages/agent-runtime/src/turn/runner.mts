@@ -132,6 +132,111 @@ export function retryableFetch(
   };
 }
 
+type Sdk = Awaited<ReturnType<typeof loadSdk>>;
+const STREAM_RETRY = {
+  enabled: true,
+  maxRetries: 6,
+  baseDelayMs: 2000,
+  maxAgentDelayMs: 30_000,
+};
+
+/** A gateway that loses its upstream answers HTTP 200 and then an error event
+ * inside the stream, which no HTTP-level retry sees and the Agent reports as
+ * a failed turn. Restart the request with backoff while nothing but the
+ * opening event has reached the UI; an error after visible text is passed
+ * through as before, so no text is shown twice. */
+export function retryingStream(
+  produce: () => AsyncIterable<any> | Promise<AsyncIterable<any>>,
+  sdk: Pick<
+    Sdk,
+    "AssistantMessageEventStream" | "isRetryableAssistantError" | "retryDelayMs"
+  >,
+  signal: AbortSignal | undefined,
+  report: {
+    scheduled(attempt: number, max: number, delayMs: number): void;
+    started(): void;
+  },
+) {
+  const out = new sdk.AssistantMessageEventStream();
+  (async () => {
+    let started = false;
+    for (let attempt = 0; ; attempt++) {
+      let visible = false;
+      let final: any = null;
+      try {
+        for await (const event of await produce()) {
+          if (event.type === "start") {
+            if (!started) {
+              started = true;
+              out.push(event);
+            }
+            continue;
+          }
+          if (event.type === "done" || event.type === "error") {
+            final = event;
+            break;
+          }
+          visible = true;
+          out.push(event);
+        }
+      } catch (e: any) {
+        final = {
+          type: "error",
+          reason: "error",
+          error: {
+            role: "assistant",
+            content: [],
+            stopReason: "error",
+            errorMessage: e?.message || String(e),
+            timestamp: Date.now(),
+          },
+        };
+      }
+      if (!final) {
+        out.end();
+        return;
+      }
+      const message = final.type === "done" ? final.message : final.error;
+      if (
+        final.type !== "error" ||
+        visible ||
+        signal?.aborted ||
+        attempt >= STREAM_RETRY.maxRetries ||
+        !sdk.isRetryableAssistantError(message)
+      ) {
+        out.push(final);
+        out.end();
+        return;
+      }
+      const delayMs = sdk.retryDelayMs(STREAM_RETRY, attempt + 1);
+      report.scheduled(attempt + 1, STREAM_RETRY.maxRetries, delayMs);
+      const aborted = await new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), delayMs);
+        signal?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve(true);
+          },
+          { once: true },
+        );
+      });
+      report.started();
+      if (aborted) {
+        const { errorMessage: _e, ...rest } = message;
+        out.push({
+          type: "error",
+          reason: "aborted",
+          error: { ...rest, stopReason: "aborted" },
+        });
+        out.end();
+        return;
+      }
+    }
+  })();
+  return out;
+}
+
 export class TurnRunner extends EventEmitter {
   readonly services: ServiceStore;
   readonly conversations: ConversationStore;
@@ -560,8 +665,8 @@ export class TurnRunner extends EventEmitter {
     this.cancelStarting = false;
     this.emitStatus();
     try {
-      const { Agent, createInitialSystemMessage, toToolDeclaration } =
-        await loadSdk();
+      const sdk = await loadSdk();
+      const { Agent, createInitialSystemMessage, toToolDeclaration } = sdk;
       const api = await transport(config.api);
       const fetch = retryableFetch(await this.requestFetch(config));
       if (this.cancelStarting) throw new Error("已停止");
@@ -670,13 +775,31 @@ export class TurnRunner extends EventEmitter {
         toolExecution: "sequential",
         maxRetryDelayMs: 30_000,
         streamFn: (model: any, ctx: any, opts: any) =>
-          api.streamSimple(model, ctx, {
-            ...opts,
-            apiKey: config.apiKey,
-            fetch,
-            maxTokens: 8192,
-            maxRetries: 8,
-          }),
+          retryingStream(
+            () =>
+              api.streamSimple(model, ctx, {
+                ...opts,
+                apiKey: config.apiKey,
+                fetch,
+                maxTokens: 8192,
+                maxRetries: 8,
+              }),
+            sdk,
+            opts?.signal,
+            {
+              scheduled: (attempt, max, delayMs) => {
+                this.transmission = {
+                  phase: "retrying",
+                  message: `模型服务繁忙，${Math.ceil(delayMs / 1000)} 秒后重试（${attempt}/${max}）`,
+                };
+                this.emitStatus();
+              },
+              started: () => {
+                this.transmission = null;
+                this.emitStatus();
+              },
+            },
+          ),
         prepareRequest: ({ context: requestContext }: any) => {
           if (JSON.stringify(requestContext).length > config.contextWindow * 3)
             throw new Error(
