@@ -183,8 +183,8 @@ export function Tooltips() {
       const target = event.target;
       if (!(target instanceof Element) || typing(target)) return;
       if (performance.now() - navigated > 300) return;
-      const owner = anchorOf(target);
-      if (owner) schedule(owner);
+      const hinted = anchorOf(target);
+      if (hinted) schedule(hinted);
     };
     const scroll = (event: Event) => {
       const moved = event.target;

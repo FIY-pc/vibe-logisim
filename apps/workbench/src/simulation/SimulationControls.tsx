@@ -89,7 +89,7 @@ export function SimulationMenu({
     : !active
       ? "尚未开始"
       : `${running ? "时钟运行" : "时钟暂停"}${automatic ? "" : " · 自动传播已暂停"} · ${status.ticks || 0} tick`;
-  const owner = active
+  const runCircuit = active
     ? rootCircuit || circuitName || "尚未打开电路"
     : circuitName || "尚未打开电路";
   return (
@@ -112,7 +112,7 @@ export function SimulationMenu({
         }
       >
         <MenuLabel>
-          <strong>{owner}</strong>
+          <strong>{runCircuit}</strong>
           <span>{state}</span>
         </MenuLabel>
         {onReturnToSimulation && (
