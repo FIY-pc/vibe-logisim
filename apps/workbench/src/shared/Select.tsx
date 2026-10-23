@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Radix from "@radix-ui/react-select";
 import { Check, ChevronDown } from "lucide-react";
 
@@ -40,9 +40,14 @@ export function Select({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   // A list portaled to <body> is inert while a modal <dialog> is open, so it is
-  // mounted inside the nearest open dialog instead.
-  const container = () =>
-    trigger.current?.closest<HTMLElement>("dialog[open]") ?? document.body;
+  // mounted inside the nearest open dialog. The dialog is known once the
+  // trigger has mounted.
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setContainer(
+      trigger.current?.closest<HTMLElement>("dialog") ?? document.body,
+    );
+  }, []);
   const classes = [
     "select-trigger",
     size && `select-${size}`,
@@ -68,9 +73,7 @@ export function Select({
           <ChevronDown size={size === "small" ? 12 : 14} aria-hidden="true" />
         </Radix.Icon>
       </Radix.Trigger>
-      <Radix.Portal
-        container={typeof document === "undefined" ? undefined : container()}
-      >
+      <Radix.Portal container={container ?? undefined}>
         <Radix.Content
           className="select-content"
           position="popper"
