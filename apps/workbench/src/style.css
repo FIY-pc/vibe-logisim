@@ -71,8 +71,10 @@ button:disabled {
   cursor: default;
 }
 /* One focus ring for everything focusable; text fields draw it on their
- * border, scrolling regions inside their edge. */
-:focus-visible {
+ * border, scrolling regions inside their edge. It has no specificity, so
+ * items that show focus as a highlight instead (menu and list items) turn
+ * it off whatever order the style sheets load in. */
+:where(:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
