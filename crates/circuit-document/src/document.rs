@@ -540,6 +540,24 @@ impl Document {
     /// not touch stay as they are. `Replace` keeps the current bytes of every
     /// top-level element (circuit, library, …) whose content it leaves equal.
     /// Returns what changed, for the host's edit result and history title.
+    /// The document `edit` would make of this revision, leaving this one as it
+    /// is: same id and path, so it loads with the same libraries, and no
+    /// history. For checking what an edit does before applying it; applying
+    /// the same edit afterwards gives the same revision.
+    pub fn preview(&self, expected: &str, circuit: &str, edit: Edit) -> Result<Document> {
+        let mut preview = Document {
+            id: self.id.clone(),
+            path: self.path.clone(),
+            name: self.name.clone(),
+            source: self.source.clone(),
+            saved_digest: self.saved_digest.clone(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            pending: None,
+        };
+        preview.edit(expected, circuit, edit)?;
+        Ok(preview)
+    }
     pub fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<EditOutcome> {
         self.check(expected)?;
         let outcome = EditOutcome {

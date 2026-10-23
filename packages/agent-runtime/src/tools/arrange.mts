@@ -1,7 +1,8 @@
 /**
  * arrange_circuit: re-lay out one definition with @vibe-logisim/arranger in a
- * worker thread, re-observe the result through the native runtime, prove
- * the netlist equivalent and only then replace the document's XML.
+ * worker thread, observe the result through the native runtime without
+ * applying it (host `observeXml`), prove the netlist equivalent and only
+ * then replace the document's XML. A rejected layout never touches the file.
  */
 import {
   resolveUnknownWidths,
@@ -44,61 +45,43 @@ export async function arrangeCircuit(
     60_000,
   );
   context.assertCurrent();
-  // TODO(arrange): the host has no "observe this XML without applying it"
-  // request any more. Until it does, apply the replacement, observe the new
-  // revision and undo when verification fails. Add `{"op":"observeXml"}` to
-  // the host (crates/workbench-host/src/api/document.rs, agent-callable) and
-  // verify before applying; then drop the undo path below.
-  const applied = await context.edit(document, circuit, [
-    { kind: "replace", xml: outcome.xml },
-  ]);
-  const after = await context.observe(applied.result.view, circuit);
-  if (!after.raw?.focus) {
-    await context.host.call({
-      op: "undo",
-      id: document.id,
-      revision: applied.result.revision,
-    });
+  // What the arranged file loads as, observed before anything is applied.
+  const after = await context.host.call<any>({
+    op: "observeXml",
+    id: document.id,
+    revision: document.revision,
+    circuit,
+    xml: outcome.xml,
+  });
+  context.assertCurrent();
+  if (!after?.focus)
     throw new CircuitToolError(
       "EXACT_OBSERVER_FAILED",
-      "整理结果无法载入，已撤销",
+      "整理结果无法载入，没有应用。",
       {
         retryable: true,
         hint: "重新整理；若仍失败，检查原电路能否在 Logisim 中打开。",
       },
     );
-  }
   // The worker resolved widths on its own copy of the observation.
   resolveUnknownWidths(before.raw.focus);
-  let checks;
-  try {
-    checks = verifyArrangement(
-      {
-        circuit,
-        source: source.xml,
-        focus: before.raw.focus,
-        xml: outcome.xml,
-        report: outcome.report,
-        placement: new Map(outcome.placement),
-        keptWires: outcome.keptWires as any,
-        panelBelowY: outcome.panelBelowY,
-        fixedComponentIds: new Set(outcome.fixedComponentIds),
-      },
-      after.raw.focus,
-    );
-  } catch (error) {
-    const undone = await context.host.call<any>({
-      op: "undo",
-      id: document.id,
-      revision: applied.result.revision,
-    });
-    context.emit({
-      type: "document-changed",
-      document: undone.view,
-      expectedBaseRevision: applied.result.revision,
-    });
-    throw error;
-  }
+  const checks = verifyArrangement(
+    {
+      circuit,
+      source: source.xml,
+      focus: before.raw.focus,
+      xml: outcome.xml,
+      report: outcome.report,
+      placement: new Map(outcome.placement),
+      keptWires: outcome.keptWires as any,
+      panelBelowY: outcome.panelBelowY,
+      fixedComponentIds: new Set(outcome.fixedComponentIds),
+    },
+    after.focus,
+  );
+  const applied = await context.edit(document, circuit, [
+    { kind: "replace", xml: outcome.xml },
+  ]);
   return {
     ...context.identity(applied.result.view, circuit),
     title: applied.result.title,

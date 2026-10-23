@@ -82,10 +82,20 @@ function index(values: readonly number[], i: number): number {
   return values[i];
 }
 
+// The definitions of the two files read last, parsed once: checking an
+// arrangement reads the file before and after it many times. Shared, so
+// readers must not change them.
+const parsed = new Map<string, Map<string | null, XmlElement>>();
 function circuitElement(xml: string, circuit: string): XmlElement {
-  const element = parseXml(xml)
-    .findall("circuit")
-    .find((c) => c.get("name") === circuit);
+  let circuits = parsed.get(xml);
+  if (!circuits) {
+    circuits = new Map();
+    for (const c of parseXml(xml).findall("circuit"))
+      if (!circuits.has(c.get("name"))) circuits.set(c.get("name"), c);
+    parsed.set(xml, circuits);
+    if (parsed.size > 2) parsed.delete(parsed.keys().next().value!);
+  }
+  const element = circuits.get(circuit);
   if (element === undefined) throw new StopIteration();
   return element;
 }
@@ -314,12 +324,13 @@ export function protectedNodes(
     [...fixed].map(([factory, at]) => `${factory}\u0000${at}`),
   );
   const nodes: string[] = [];
-  for (const node of circuitElement(xml, circuit).findall("comp")) {
+  for (const shared of circuitElement(xml, circuit).findall("comp")) {
     if (
-      node.get("name") === null ||
-      !keys.has(`${node.get("name")}\u0000${node.get("loc")}`)
+      shared.get("name") === null ||
+      !keys.has(`${shared.get("name")}\u0000${shared.get("loc")}`)
     )
       continue;
+    const node = shared.clone();
     for (const child of node.iter()) {
       child.tail = null;
       if (child.text !== null && !strip(child.text)) child.text = null;

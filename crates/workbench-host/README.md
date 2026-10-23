@@ -27,17 +27,17 @@ host.events().await -> Events;  events.next().await -> Option<Event>   // first 
 host.shutdown().await;
 ```
 
-Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{error: HostError{code, message, retryable, detail?}}`. `Reply` is a value, or for `observe` the worker's JSON text (`Reply::Text`), which the transports (dev HTTP, Tauri IPC, the sidecar's `hostResult`) write out as is: a course page's observation is megabytes and nothing in the host reads it. Ops by domain:
+Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{error: HostError{code, message, retryable, detail?}}`. `Reply` is a value, or for `observe` and `observeXml` the worker's JSON text (`Reply::Text`), which the transports (dev HTTP, Tauri IPC, the sidecar's `hostResult`) write out as is: a course page's observation is megabytes and nothing in the host reads it. `observeXml` is `observe` of a proposed whole-file change: `{id, revision, circuit, xml}`, nothing applied. Ops by domain:
 
 | domain | ops |
 | --- | --- |
-| document | status open new import read activate source sourceStatus reload close save saveTarget edit movePreview undo redo observe template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply interfaceRender projectInfo projectExport projectExportTarget historyList historyReview historyPreview historyRestore |
+| document | status open new import read activate source sourceStatus reload close save saveTarget edit movePreview undo redo observe observeXml template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply interfaceRender projectInfo projectExport projectExportTarget historyList historyReview historyPreview historyRestore |
 | folder | folderOpen folderList folderRead folderPreview folderResolve folderCreate folderRename folderTrash folderImportPrepare folderImportApply folderImportCancel folderCheckpoint folderHistory folderHistoryDetail folderHistoryUndo |
 | simulation | simulationAct simulationNavigate simulationViewport simulationStop simulationStatus simulationSnapshot simulationFrameImage memory memoryWrite observationList observationGet observationImage observationCapture observationRename observationDelete |
 | agent | agent `{method, args}` → forwarded to the sidecar (see `packages/agent-runtime/README.md`) |
 | app | feedbackStatus feedbackCheck feedbackPreference feedbackDismiss diagnostics diagnosticsExport |
 
-Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folderCreate folderCheckpoint status read source sourceStatus saveTarget open new save edit undo redo observe template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply historyList observationList observationGet observationImage. Anything else from the sidecar fails with `NotAllowed`.
+Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folderCreate folderCheckpoint status read source sourceStatus saveTarget open new save edit undo redo observe observeXml template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply historyList observationList observationGet observationImage. Anything else from the sidecar fails with `NotAllowed`.
 
 Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulation` (session, frames, end); `resync` (snapshots may be stale, read again); `warning {message}` (a change took effect, something around it failed).
 
@@ -65,7 +65,7 @@ Done and exercised end to end on the course project (open, edit, AI turn, apply,
 
 ## Remaining tasks
 
-1. `observeXml` op (agent-callable, Read): take `{documentId, circuit, xml}`, write a scratch artifact, run `Native::observe` on it, return the same shape as `observe`. Needed so the AI arranger can verify a layout before applying it instead of apply-verify-undo. See `packages/agent-runtime/src/tools/arrange.mts` `TODO(arrange)`. Reuse `documents/topology.rs::ports` for the comparison.
+1. Done: `observeXml {id, revision, circuit, xml}` (agent-callable, Read) observes what `edit replace` with that whole-file XML would make of the revision (`Document::preview`), without applying it, and answers like `observe`. The file is written where the applied revision's file would go, so applying the same XML afterwards loads nothing new (on a 700-component page: 155 ms for the proposal, then 45 ms for the replace and 24 ms for the next observe). The AI arranger verifies with it before applying.
 2. Edit latency, what is left (release numbers above; measure with `scripts/workbench/editing-latency.mts`). Every edit's first Java request loads the whole new revision: the connectivity check of a move (50 of its 90 ms: preflight 7, Logisim load 29, connectivity 5) and the render after any other edit (35 of its 65 ms); on a 700-component page the load is 45–90 ms. Loading only the edited circuit into a copy of the previous revision's loaded file would remove most of it; it needs a partial reader that compiles against both runtimes and keeps `openChecked`'s coverage check. Every edit answers with the whole document view, built as a `Value`, then written as text (`edit.view`, `edit.value`, `encode`: 14 ms); answering with the edited circuit only would cut it. After a move the window's observe is computed afresh (the move asked only for connectivity): 30 ms on a 350-component page, 75 ms on a 700-component one, after the picture is up.
 3. Replace the remaining `.map_err(|e| e.to_string())?` with `?` where the function already returns `Result<_, HostError>` (`grep -rn 'map_err(|e| e.to_string())' crates/workbench-host/src`).
 

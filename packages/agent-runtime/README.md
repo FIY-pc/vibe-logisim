@@ -36,7 +36,7 @@ Rendering, document identity, saving, history (host); layout algorithms (`packag
 
 Events reach the window as host events on topic `agent`, in order, with a sequence number; the window replays missed ones from `status`.
 
-Host ops the tools use: status read source open new edit undo observe template catalog render simulate trace folderCreate folderCheckpoint observationList observationGet observationImage. Each turn starts with `folderCheckpoint {title: "文件改动"}` and ends with another titled after the question, so the user's file history shows one undoable entry per turn (`files-changed` event).
+Host ops the tools use: status read source open new edit undo observe observeXml template catalog render simulate trace folderCreate folderCheckpoint observationList observationGet observationImage. Each turn starts with `folderCheckpoint {title: "文件改动"}` and ends with another titled after the question, so the user's file history shows one undoable entry per turn (`files-changed` event).
 
 ## Invariants
 
@@ -53,7 +53,7 @@ Compiles and type-checks; the JSONL protocol, status/bind/conversations/models a
 ## Remaining tasks
 
 1. Done: a real turn on the course project (rename one pin label in a subcircuit) edits the file, shows the checkpoint and undoes cleanly. What broke was a gateway that answers HTTP 200 and then an error event inside the stream; `retryingStream` in `turn/runner.mts` restarts such requests with backoff. Next real turns should be larger edits (place + connect, arrange) to find the next break.
-2. `tools/arrange.mts` `TODO(arrange)`: when the host gains `observeXml`, verify the arranged XML before `edit replace` and drop the apply→verify→undo path.
+2. Done: `arrange_circuit` verifies the arranged XML through the host's `observeXml` before its `edit replace`; the apply→verify→undo path is gone.
 3. Done: `npm run test:native` ends with a scripted AI turn through this runner (`scripts/workbench/agent-scenarios.mts`); `scripts/workbench/scripted-model.mts` and `scripts/workbench/turns/` drive longer turns on a preview host without a model.
 4. Unify `isHostError` (`tools/errors.mts` checks plain objects, `protocol/host.mts` Error instances); keep the `protocol` one.
 5. Old features not carried over, pick up only when a user asks: conversation fork (`git show HEAD:packages/agent-runtime/core/conversation-fork.mts`), context transfer between conversations (`core/context-transfer.mts`), Codex CLI backend (`core/codex-backend.mts`).

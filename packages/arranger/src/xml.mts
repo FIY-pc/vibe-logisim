@@ -52,6 +52,14 @@ export class XmlElement {
     this.children.push(child);
   }
 
+  clone(): XmlElement {
+    const copy = new XmlElement(this.tag, this.attrib);
+    copy.text = this.text;
+    copy.tail = this.tail;
+    copy.children = this.children.map((c) => c.clone());
+    return copy;
+  }
+
   remove(child: XmlElement): void {
     const index = this.children.indexOf(child);
     if (index < 0) throw new Error("list.remove(x): x not in list");

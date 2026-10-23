@@ -28,6 +28,7 @@ impl Document {
     fn view(&self) -> Result<DocumentView>;                       // id, name, path, revision, circuits (components, wires), libraries, dirty, canUndo/canRedo, main
     fn circuit_view(&self, name: &str) -> Result<Option<Circuit>>; // one circuit of `view`, without building the others (a 1 MB file has 20+)
     fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<EditOutcome>;
+    fn preview(&self, expected: &str, circuit: &str, edit: Edit) -> Result<Document>;  // what `edit` would make of this revision, this one unchanged; no history
     fn undo(&mut self, expected: &str) -> Result<EditOutcome>;
     fn redo(&mut self, expected: &str) -> Result<EditOutcome>;
     fn save(&mut self, expected: &str, target: Option<&Path>) -> Result<()>;
@@ -68,7 +69,6 @@ Done and stable. 17 unit tests plus `tests/{document,fidelity,folder}.rs` (`carg
 
 None required for the rewrite. Candidates when the host needs them:
 
-- An `observe this XML without applying it` entry point does not belong here; it is a host op (see `crates/workbench-host/README.md`).
 - `Edit::Replace { xml }` re-parses the whole file; if the AI arranger's replace of a 1 MB file shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
 
 ## Verify

@@ -149,6 +149,14 @@ pub enum DocumentRequest {
         revision: String,
         circuit: String,
     },
+    /// Observes what `edit replace` with this whole-file XML would make of
+    /// the revision, without applying it; same reply as `observe`.
+    ObserveXml {
+        id: String,
+        revision: String,
+        circuit: String,
+        xml: String,
+    },
     Template {
         id: String,
         revision: String,
@@ -311,6 +319,7 @@ impl DocumentRequest {
         "undo",
         "redo",
         "observe",
+        "observeXml",
         "template",
         "properties",
         "catalog",
@@ -364,7 +373,9 @@ impl DocumentRequest {
                 .stage(Stage::Edit)
                 .history(Action::document("redo", "重做修改", id))
                 .agent(),
-            Self::Observe { .. } => Meta::new(Read).stage(Stage::Observe).agent(),
+            Self::Observe { .. } | Self::ObserveXml { .. } => {
+                Meta::new(Read).stage(Stage::Observe).agent()
+            }
             Self::Template { .. } | Self::Properties { .. } | Self::Catalog { .. } => {
                 Meta::new(Read).stage(Stage::Library).agent()
             }
@@ -709,6 +720,23 @@ impl Host {
                 circuit,
             } => {
                 let p = self.snapshot(&id, &revision).await?;
+                let _observe = timing::span("observe");
+                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::ObserveXml {
+                id,
+                revision,
+                circuit,
+                xml,
+            } => {
+                // Written where the applied revision's file would go, so
+                // applying the same XML afterwards loads nothing new.
+                let p = {
+                    let w = self.workspace.lock().await;
+                    let proposed = w.get(&id)?.preview(&revision, &circuit, Edit::Replace { xml })?;
+                    self.materialize(&proposed)?
+                };
                 let _observe = timing::span("observe");
                 let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
                 return Ok(Reply::Text(text));
