@@ -49,6 +49,17 @@ export function App() {
   );
 }
 
+/** Short-lived messages: over the canvas just above its toolbar, or at the
+ * bottom of the start page. */
+function Toasts() {
+  return (
+    <div className="toasts">
+      <Notice />
+      <CaptureNotice />
+    </div>
+  );
+}
+
 /** Right-clicking where the app has no menu of its own shows nothing, as in
  * other desktop apps, rather than the web view's back/reload/inspect menu.
  * Text fields and selected text keep the platform's copy and paste menu. */
@@ -110,7 +121,10 @@ function Shell() {
               <SourceNotices />
               <Breadcrumbs placement={placement} />
               <div className="canvas-surface">
-                <EditorToolbarRegion />
+                <div className="canvas-bottom">
+                  <Toasts />
+                  <EditorToolbarRegion />
+                </div>
                 <SimulationTransportRegion />
                 <CanvasRegion placement={placement} />
               </div>
@@ -119,13 +133,14 @@ function Shell() {
               <MemoryRegion />
             </>
           ) : (
-            <Welcome />
+            <>
+              <Welcome />
+              <Toasts />
+            </>
           )}
         </main>
         <Aside />
       </div>
-      <Notice />
-      <CaptureNotice />
       <ErrorBar />
       <FeedbackDialogRegion feedback={feedback} />
       <DecisionRegion />

@@ -38,8 +38,26 @@ interface Shown {
   container: Element;
 }
 
+const NAVIGATION = new Set([
+  "Tab",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+]);
 const anchorOf = (target: EventTarget | null) =>
   target instanceof Element ? target.closest("[data-tip]") : null;
+const within = (element: Element, event: PointerEvent) => {
+  const box = element.getBoundingClientRect();
+  return (
+    event.clientX >= box.left &&
+    event.clientX <= box.right &&
+    event.clientY >= box.top &&
+    event.clientY <= box.bottom
+  );
+};
 const typing = (node: Element) =>
   node.matches(
     "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
@@ -59,7 +77,8 @@ export function Tooltips() {
       cooled = 0,
       pressed: Element | null = null,
       watcher: MutationObserver | null = null,
-      described: Element | null = null;
+      described: Element | null = null,
+      navigated = 0;
     const read = (target: Element): Shown | null => {
       const text = target.getAttribute("data-tip");
       if (target.hasAttribute("data-tip-overflow") && !clipped(target))
@@ -137,7 +156,10 @@ export function Tooltips() {
     const over = (event: PointerEvent) => {
       if (event.pointerType === "touch") return;
       const target = anchorOf(event.target);
-      if (target !== pressed) pressed = null;
+      // A pressed element keeps its hint hidden until the pointer really
+      // leaves it; a menu opening over it only redirects the events.
+      if (pressed && target !== pressed && !within(pressed, event))
+        pressed = null;
       if (event.buttons || !target || target === pressed) {
         if (anchor && target !== anchor) hide();
         return;
@@ -151,10 +173,16 @@ export function Tooltips() {
       pressed = anchor;
       hide();
     };
+    const key = (event: KeyboardEvent) => {
+      navigated = NAVIGATION.has(event.key) ? performance.now() : 0;
+      hide();
+    };
+    // Only focus the user moved shows a hint, not focus handed back by a
+    // closing menu or dialog.
     const focus = (event: FocusEvent) => {
       const target = event.target;
       if (!(target instanceof Element) || typing(target)) return;
-      if (!target.matches(":focus-visible")) return;
+      if (performance.now() - navigated > 300) return;
       const owner = anchorOf(target);
       if (owner) schedule(owner);
     };
@@ -179,7 +207,7 @@ export function Tooltips() {
     document.addEventListener("pointerover", over, options);
     document.addEventListener("pointerout", out, options);
     document.addEventListener("pointerdown", press, options);
-    document.addEventListener("keydown", hide, options);
+    document.addEventListener("keydown", key, options);
     document.addEventListener("wheel", hide, options);
     document.addEventListener("scroll", scroll, options);
     document.addEventListener("focusin", focus, options);
@@ -190,7 +218,7 @@ export function Tooltips() {
       document.removeEventListener("pointerover", over, options);
       document.removeEventListener("pointerout", out, options);
       document.removeEventListener("pointerdown", press, options);
-      document.removeEventListener("keydown", hide, options);
+      document.removeEventListener("keydown", key, options);
       document.removeEventListener("wheel", hide, options);
       document.removeEventListener("scroll", scroll, options);
       document.removeEventListener("focusin", focus, options);

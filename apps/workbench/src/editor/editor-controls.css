@@ -6,18 +6,31 @@
   min-height: 0;
   container-type: inline-size;
 }
-.editor-toolbar.canvas-tools {
+/* The toolbar floats at the bottom of the canvas, with toasts stacked above
+ * it however many rows it wraps to. */
+.canvas-bottom {
   position: absolute;
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 4;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+.canvas-bottom > * {
+  pointer-events: auto;
+}
+.editor-toolbar.canvas-tools {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3px 12px;
-  width: max-content;
-  max-width: calc(100% - 24px);
+  max-width: 100%;
   min-height: 39px;
   padding: 4px;
   border: 1px solid var(--border);

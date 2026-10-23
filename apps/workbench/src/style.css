@@ -1156,8 +1156,12 @@ button.primary {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.text-prompt {
+/* The plain dialog: title, body, buttons. Dialogs built on it set their own
+ * width, which wins whatever order the style sheets load in. */
+:where(.text-prompt) {
   width: 360px;
+}
+.text-prompt {
   padding: 20px;
 }
 .text-prompt header,
@@ -1572,17 +1576,39 @@ button.primary {
     width: 160px;
   }
 }
-.capture-notice {
+/* Toasts sit over the canvas just above its toolbar (editor-controls.css),
+ * so they cover neither the toolbar nor the error bar; on the start page, at
+ * its bottom. */
+.toasts {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+.toasts:empty {
+  display: none;
+}
+.editor {
+  position: relative;
+}
+.editor > .toasts {
   position: absolute;
-  bottom: 12px;
   left: 50%;
+  bottom: 16px;
+  z-index: 9;
+  width: max-content;
+  max-width: calc(100% - 32px);
   transform: translateX(-50%);
+}
+.capture-notice {
+  display: flex;
+  max-width: 100%;
   background: var(--paper);
   border: 1px solid var(--border);
-  box-shadow: 0 3px 20px #20263412;
-  border-radius: 7px;
-  display: flex;
-  z-index: 9;
+  box-shadow: var(--layer-shadow);
+  border-radius: 8px;
+  pointer-events: auto;
+  animation: layer-in var(--layer-fade) ease-out;
 }
 .file-row {
   display: flex;
