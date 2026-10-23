@@ -47,27 +47,15 @@ fn source_version(bytes: &[u8]) -> Option<String> {
     String::from_utf8(value[..end].to_vec()).ok()
 }
 
-/// The runtime version a worker reply reports, when it is a plain version string.
-pub(crate) fn reported_version(bytes: &[u8]) -> Option<String> {
-    xmltree::Element::parse(bytes)
-        .ok()
-        .and_then(|root| root.attributes.get("runtimeVersion").cloned())
-        .or_else(|| {
-            serde_json::from_slice::<Value>(bytes)
-                .ok()
-                .and_then(|value| {
-                    value["runtime"]["reportedVersion"]
-                        .as_str()
-                        .map(str::to_owned)
-                })
-        })
-        .filter(|version| {
-            !version.is_empty()
-                && version.len() <= 64
-                && version
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
-        })
+/// A runtime version as the worker reports it, when it is a plain version string.
+pub(crate) fn plain_version(text: &str) -> Option<String> {
+    let version = text.trim();
+    (!version.is_empty()
+        && version.len() <= 64
+        && version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b)))
+    .then(|| version.to_owned())
 }
 
 struct Facts {

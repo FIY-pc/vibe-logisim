@@ -577,7 +577,7 @@ impl Document {
         let mut outcome = self.change(text.into_bytes(), outcome)?;
         outcome.changed_circuits = changed_circuits(&previous.tree, &self.source.tree);
         if selecting {
-            let after = self.circuit(circuit)?;
+            let after = self.circuit_view(circuit)?;
             match edit {
                 Edit::Wire { .. } => {
                     let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
@@ -616,12 +616,12 @@ impl Document {
     }
     fn circuit_wire_count(&self, circuit: &str) -> Result<usize> {
         let circuit = self
-            .circuit(circuit)?
+            .circuit_view(circuit)?
             .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))?;
         Ok(circuit.wires.len())
     }
     /// One circuit's view, without building the others.
-    fn circuit(&self, name: &str) -> Result<Option<Circuit>> {
+    pub fn circuit_view(&self, name: &str) -> Result<Option<Circuit>> {
         let tree = &self.source.tree;
         tree.named(tree.root(), "circuit")
             .find(|&c| tree.get(c, "name") == name)
@@ -834,9 +834,19 @@ impl Document {
         fixed_ports: Vec<Point>,
     ) -> Result<()> {
         self.check(expected)?;
+        let title = format!("移动 {} 个对象", ids.len());
         match editing::move_connected(&self.source.tree, circuit, &ids, delta, ports, &fixed_ports)?
         {
-            Some(text) => self.replace(text.into_bytes()),
+            Some(text) => self
+                .change(
+                    text.into_bytes(),
+                    EditOutcome {
+                        title,
+                        circuit: circuit.to_string(),
+                        ..EditOutcome::default()
+                    },
+                )
+                .map(|_| ()),
             None => Ok(()),
         }
     }
@@ -913,7 +923,7 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
 
 impl Document {
     fn circuit_component(&self, circuit: &str, id: &str) -> Option<Component> {
-        self.circuit(circuit)
+        self.circuit_view(circuit)
             .ok()??
             .components
             .into_iter()

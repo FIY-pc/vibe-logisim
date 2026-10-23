@@ -317,10 +317,14 @@ impl Host {
     /// historical version. Static observation and rendering use the circuit
     /// worker, independently of the live simulation.
     async fn preview_document(&self, doc: &Document, circuit: &str) -> Result<Value> {
-        let (path, view) = self.materialize(doc)?;
-        if !view.circuits.iter().any(|c| c.name == circuit) {
+        if doc
+            .circuit_view(circuit)
+            .map_err(|e| e.to_string())?
+            .is_none()
+        {
             return Ok(json!({"image":null,"missing":true,"warnings":[]}));
         }
+        let path = self.materialize(doc)?;
         let mut native = self.native.lock().await;
         let observed = native.observe(&path, circuit).await?;
         let viewport = fitted_viewport(&observed);

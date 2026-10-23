@@ -1,15 +1,15 @@
-use super::topology;
+use super::topology::{self, Connectivity};
 use crate::{
     ErrorCode, Host, Result,
     api::document::{EditResult, ErrorDetail, MovePreview, edit_result_for_move},
+    timing,
 };
-use serde_json::Value;
-use vibe_circuit_document::{Circuit, Document, Edit, Point};
+use vibe_circuit_document::{Circuit, Document, Point};
 
 struct MovePlan {
     candidate: Document,
     graph: Circuit,
-    before: Value,
+    before: Connectivity,
 }
 impl Host {
     async fn plan_move(
@@ -20,20 +20,31 @@ impl Host {
         ids: &[String],
         delta: Point,
     ) -> Result<MovePlan> {
-        let mut candidate = {
+        let (path, graph, mut candidate) = {
             let workspace = self.workspace.lock().await;
             let doc = workspace.get(id).map_err(|e| e.to_string())?;
             doc.check(revision).map_err(|e| e.to_string())?;
-            doc.clone()
+            let graph = doc
+                .circuit_view(circuit)
+                .map_err(|e| e.to_string())?
+                .ok_or("找不到电路")?;
+            (self.materialize(doc)?, graph, doc.clone())
         };
-        let (path, view) = self.materialize(&candidate)?;
-        let graph = view
-            .circuits
-            .into_iter()
-            .find(|c| c.name == circuit)
-            .ok_or("找不到电路")?;
-        let before = self.native.lock().await.observe(&path, circuit).await?;
-        let (ports, fixed_ports) = topology::ports(&graph, &before, ids)?;
+        let before = {
+            let _observe = timing::span("move.observe.before");
+            let bytes = self
+                .native
+                .lock()
+                .await
+                .observe_bytes(&path, circuit)
+                .await?;
+            Connectivity::parse(&bytes)?
+        };
+        let (ports, fixed_ports) = {
+            let _ports = timing::span("move.ports");
+            topology::ports(&graph, &before, ids)?
+        };
+        let _route = timing::span("move.route");
         candidate
             .move_connected(revision, circuit, ids.to_vec(), delta, ports, fixed_ports)
             .map_err(|e| e.to_string())?;
@@ -66,11 +77,11 @@ impl Host {
                     ));
                 }
                 drop(workspace);
-                let view = plan.candidate.view().map_err(|e| e.to_string())?;
-                let graph = view
-                    .circuits
-                    .iter()
-                    .find(|c| c.name == circuit)
+                let _diff = timing::span("move.preview.diff");
+                let graph = plan
+                    .candidate
+                    .circuit_view(circuit)
+                    .map_err(|e| e.to_string())?
                     .ok_or("找不到电路")?;
                 // The preview is geometry only. Release still validates native bit
                 // connectivity before committing; no preview writes a checkpoint
@@ -129,26 +140,36 @@ impl Host {
         delta: Point,
     ) -> Result<EditResult> {
         let plan = self.plan_move(id, revision, circuit, ids, delta).await?;
-        let (path, _) = self.materialize(&plan.candidate)?;
-        let after = self.native.lock().await.observe(&path, circuit).await?;
-        topology::preserved(&plan.graph, &plan.before, &after, ids, delta)?;
+        let path = self.materialize(&plan.candidate)?;
+        let after = {
+            let _observe = timing::span("move.observe.after");
+            let bytes = self
+                .native
+                .lock()
+                .await
+                .observe_bytes(&path, circuit)
+                .await?;
+            Connectivity::parse(&bytes)?
+        };
+        {
+            let _check = timing::span("move.check");
+            topology::preserved(&plan.graph, &plan.before, &after, ids, delta)?;
+        }
         let mut workspace = self.workspace.lock().await;
         let current = workspace.get_mut(id).map_err(|e| e.to_string())?;
         current.check(revision).map_err(|e| e.to_string())?;
         if current.path != plan.candidate.path {
             return Err("文档位置已改变，请重新移动".into());
         }
-        current
-            .edit(
-                revision,
-                circuit,
-                Edit::Replace {
-                    xml: String::from_utf8(plan.candidate.bytes().to_vec())
-                        .map_err(|e| e.to_string())?,
-                },
-            )
-            .map_err(|e| e.to_string())?;
-        let view = current.view().map_err(|e| e.to_string())?;
+        // Edits wait for each other, so the document is still the one the plan
+        // cloned: the candidate, with the move as its newest undo step, is its
+        // next state.
+        *current = plan.candidate;
+        let view = {
+            let _view = timing::span("move.view");
+            current.view().map_err(|e| e.to_string())?
+        };
+        let _selection = timing::span("move.selection");
         let shown = view.circuits.iter().find(|c| c.name == circuit);
         // Component ids name their location, so the moved ones are found again
         // at the old place plus the delta.

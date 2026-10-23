@@ -72,7 +72,7 @@ public final class CircuitWorker {
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);
             factory.setFeature("http://xml.org/sax/features/external-general-entities",false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities",false);
-            reply(protocol,"ok","ready".getBytes(StandardCharsets.UTF_8));
+            reply(protocol,"ok",("ready "+com.cburch.logisim.Main.VERSION).getBytes(StandardCharsets.UTF_8));
             BufferedReader reader=new BufferedReader(new InputStreamReader(System.in,StandardCharsets.UTF_8));
             String line;
             while((line=reader.readLine())!=null) {

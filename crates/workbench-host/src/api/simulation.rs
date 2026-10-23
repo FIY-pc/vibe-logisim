@@ -285,7 +285,8 @@ impl Host {
                     TargetRequest::Definition { circuit } => {
                         // A command that cannot start a run applies to nothing.
                         if command.starts_run() {
-                            let (artifact, view) = self.snapshot(&document_id, &revision).await?;
+                            let (artifact, view) =
+                                self.snapshot_view(&document_id, &revision).await?;
                             Target::Definition {
                                 document: RunDocument { artifact, view },
                                 circuit,
@@ -433,7 +434,7 @@ impl Host {
         offset: u32,
         count: u32,
     ) -> Result<Value> {
-        let (path, view) = self.snapshot(&id, &revision).await?;
+        let (path, view) = self.snapshot_view(&id, &revision).await?;
         let selected = view
             .circuits
             .iter()
@@ -472,7 +473,7 @@ impl Host {
         expected: &str,
         word: &str,
     ) -> Result<Value> {
-        let (path, view) = self.snapshot(&id, &revision).await?;
+        let (path, view) = self.snapshot_view(&id, &revision).await?;
         let selected = view
             .circuits
             .iter()

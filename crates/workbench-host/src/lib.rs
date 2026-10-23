@@ -129,22 +129,52 @@ impl Host {
             stopping: tokio::sync::watch::channel(false).0,
         })
     }
-    async fn snapshot(&self, id: &str, revision: &str) -> Result<(PathBuf, DocumentView)> {
+    /// The native artifact of a revision; see `materialize`.
+    async fn snapshot(&self, id: &str, revision: &str) -> Result<PathBuf> {
         let workspace = self.workspace.lock().await;
         let doc = workspace.get(id).map_err(|e| e.to_string())?;
         doc.check(revision).map_err(|e| e.to_string())?;
         self.materialize(doc)
     }
+    /// The artifact and the view of a revision, for requests that need the
+    /// whole document.
+    async fn snapshot_view(&self, id: &str, revision: &str) -> Result<(PathBuf, DocumentView)> {
+        let workspace = self.workspace.lock().await;
+        let doc = workspace.get(id).map_err(|e| e.to_string())?;
+        doc.check(revision).map_err(|e| e.to_string())?;
+        Ok((
+            self.materialize(doc)?,
+            doc.view().map_err(|e| e.to_string())?,
+        ))
+    }
+    /// The artifact and one component of a revision, for requests about that part.
+    async fn snapshot_component(
+        &self,
+        id: &str,
+        revision: &str,
+        circuit: &str,
+        component: &str,
+    ) -> Result<(PathBuf, vibe_circuit_document::Component)> {
+        let workspace = self.workspace.lock().await;
+        let doc = workspace.get(id).map_err(|e| e.to_string())?;
+        doc.check(revision).map_err(|e| e.to_string())?;
+        let found = doc
+            .circuit_view(circuit)
+            .map_err(|e| e.to_string())?
+            .and_then(|c| c.components.into_iter().find(|c| c.id == component))
+            .ok_or("请选择元件")?;
+        Ok((self.materialize(doc)?, found))
+    }
     /// Writes the document where the native runtime can load it: one file per
     /// revision and source location, written once. Only the newest revisions
     /// of each document are kept; an older one is written again when needed.
-    fn materialize(&self, doc: &Document) -> Result<(PathBuf, DocumentView)> {
-        let view = doc.view().map_err(|e| e.to_string())?;
+    fn materialize(&self, doc: &Document) -> Result<PathBuf> {
+        let revision = doc.revision();
         let documents = self.state.join("snapshots").join(&doc.id);
         let directory = documents
-            .join(&view.revision)
+            .join(&revision)
             .join(vibe_circuit_document::digest(
-                view.path
+                doc.path
                     .as_ref()
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default()
@@ -154,8 +184,9 @@ impl Host {
         // Pruning deletes by write time, so a file written for this revision
         // is the one it needs; an older revision is written again.
         if path.is_file() {
-            return Ok((path, view));
+            return Ok(path);
         }
+        let _write = timing::span("materialize.write");
         std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
         // A snapshot must resolve external libraries beside the source, not beside the cache.
         let bytes = doc
@@ -165,8 +196,8 @@ impl Host {
         let mut temp = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
         temp.write_all(&bytes).map_err(|e| e.to_string())?;
         temp.persist(&path).map_err(|e| e.to_string())?;
-        snapshots::prune(&documents, &view.revision);
-        Ok((path, view))
+        snapshots::prune(&documents, &revision);
+        Ok(path)
     }
     pub fn dispatch(
         &self,

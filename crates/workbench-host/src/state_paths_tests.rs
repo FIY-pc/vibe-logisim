@@ -39,13 +39,13 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     assert!(created["historyWarning"].is_null(), "{created}");
     let id = created["id"].as_str().unwrap();
     let revision = created["revision"].as_str().unwrap();
-    let (snapshot, _) = host.snapshot(id, revision).await.unwrap();
+    let snapshot = host.snapshot(id, revision).await.unwrap();
     assert!(snapshot.to_string_lossy().encode_utf16().count() > 260);
     #[cfg(windows)]
     assert!(snapshot.to_string_lossy().starts_with(r"\\?\"));
     let bytes = std::fs::read(&snapshot).unwrap();
     Document::from_bytes("snapshot.circ".into(), None, bytes.clone(), false).unwrap();
-    assert_eq!(host.snapshot(id, revision).await.unwrap().0, snapshot);
+    assert_eq!(host.snapshot(id, revision).await.unwrap(), snapshot);
     assert_eq!(std::fs::read(&snapshot).unwrap(), bytes);
     let history = host
         .dispatch(DocumentRequest::HistoryList { id: id.into() })
@@ -55,7 +55,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     drop(host);
 
     let restored = Host::new(temporary.path().into(), state, None).unwrap();
-    assert_eq!(restored.snapshot(id, revision).await.unwrap().0, snapshot);
+    assert_eq!(restored.snapshot(id, revision).await.unwrap(), snapshot);
     let reloaded = restored
         .dispatch(DocumentRequest::HistoryList { id: id.into() })
         .await

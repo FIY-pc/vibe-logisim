@@ -266,7 +266,7 @@ impl Host {
             return Err("仿真视图已改变，请重新留存".into());
         }
         let (_, view) = self
-            .snapshot(&snapshot.session.document_id, &snapshot.session.revision)
+            .snapshot_view(&snapshot.session.document_id, &snapshot.session.revision)
             .await?;
         let image = self
             .simulation
