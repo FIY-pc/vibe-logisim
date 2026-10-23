@@ -631,7 +631,7 @@ export function Chat({
           onRestore={(id) => switchConversation("restore", id)}
         />
         <button
-          title="新建对话"
+          data-tip="新建对话"
           aria-label="新建对话"
           disabled={locked}
           onClick={() => switchConversation("new")}
@@ -655,7 +655,7 @@ export function Chat({
           </MenuItem>
         </Menu>
         <button
-          title="AI 设置"
+          data-tip="AI 设置"
           aria-label="AI 设置"
           onClick={() => setConfigure(!configure)}
         >
@@ -732,7 +732,7 @@ export function Chat({
                     <button
                       key={starter.id}
                       className="conversation-starter"
-                      title="立即发送"
+                      data-tip="立即发送"
                       disabled={
                         locked || references.pending || !state.available
                       }
@@ -826,7 +826,7 @@ export function Chat({
                     <CopyButton text={m.text || ""} onError={onError} />
                     {!busy && m.canEdit && (
                       <button
-                        title="编辑并重新发送"
+                        data-tip="编辑并重新发送"
                         aria-label="编辑并重新发送"
                         disabled={pending}
                         onClick={() => {
@@ -864,7 +864,7 @@ export function Chat({
                 ) : (
                   <button
                     disabled={pending || busy || !item.change.undoable}
-                    title={
+                    data-tip={
                       item.change.undoable
                         ? undefined
                         : "包含未保留内容的大文件"
@@ -938,7 +938,7 @@ export function Chat({
           {busy && draft.trim() && (
             <button
               aria-label="追加意见"
-              title="追加意见"
+              data-tip="追加意见"
               disabled={
                 !ready || pending || references.pending || !state?.canSteer
               }
@@ -951,7 +951,7 @@ export function Chat({
             <button
               className="primary composer-stop"
               aria-label="停止回答"
-              title="停止回答"
+              data-tip="停止回答"
               onClick={() =>
                 void runtime("stop")
                   .then(() => refresh())

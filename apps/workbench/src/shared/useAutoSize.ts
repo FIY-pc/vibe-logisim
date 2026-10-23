@@ -11,7 +11,10 @@ export function useAutoSize(
   );
   useLayoutEffect(() => {
     const node = ref.current;
-    if (!node || (sized.current?.node === node && sized.current.value === value))
+    if (
+      !node ||
+      (sized.current?.node === node && sized.current.value === value)
+    )
       return;
     sized.current = { node, value };
     node.style.height = "auto";

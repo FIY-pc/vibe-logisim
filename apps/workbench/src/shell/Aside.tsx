@@ -37,7 +37,11 @@ export function Aside() {
             onClick={() => setRight(id)}
             onKeyDown={(event) => {
               const step =
-                event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                event.key === "ArrowRight"
+                  ? 1
+                  : event.key === "ArrowLeft"
+                    ? -1
+                    : 0;
               const next =
                 event.key === "Home"
                   ? 0
@@ -51,8 +55,7 @@ export function Aside() {
               setRight(tabs[next][0]);
               (
                 event.currentTarget.parentElement?.children[next] as
-                  | HTMLElement
-                  | undefined
+                  HTMLElement | undefined
               )?.focus();
             }}
           >

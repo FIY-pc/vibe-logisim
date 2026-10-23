@@ -173,7 +173,7 @@ function SelectedInspector({
     <>
       <div
         className="panel-heading"
-        title={`${circuit.name} › ${selected.name} · (${selected.location.x}, ${selected.location.y})`}
+        data-tip={`${circuit.name} › ${selected.name} · (${selected.location.x}, ${selected.location.y})`}
       >
         {title}
       </div>
@@ -271,7 +271,7 @@ function SelectedInspector({
                 const value = ports.find((p) => p.index === end.index);
                 return (
                   <tr key={end.index}>
-                    <td title={end.runtimeTooltip || undefined}>
+                    <td data-tip={end.runtimeTooltip || undefined}>
                       {portName(connectionComponent!, end)}
                     </td>
                     <td>{end.width ?? "?"}</td>
@@ -283,7 +283,7 @@ function SelectedInspector({
                         <td>
                           <button
                             aria-label={`观察端口 ${end.index}`}
-                            title="观察信号"
+                            data-tip="观察信号"
                             aria-pressed={watched.includes(
                               `${nativeId}:${end.index}`,
                             )}

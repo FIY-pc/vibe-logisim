@@ -291,9 +291,7 @@ export async function verifyEditorRequestLifetimes() {
     );
     assert.equal(container.querySelector(".error-bar"), null);
     await fromMenu("编辑源文件…");
-    const dialog = container.querySelector(
-      'dialog[aria-label="编辑源文件"]',
-    )!;
+    const dialog = container.querySelector('dialog[aria-label="编辑源文件"]')!;
     assert.ok(dialog);
     assert.match(dialog.querySelector("header")!.textContent!, /B.circ/);
     assert.equal(

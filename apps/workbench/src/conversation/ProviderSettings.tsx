@@ -432,7 +432,11 @@ export function ProviderSettings(props: SettingsProps) {
     >
       <header>
         <h2 id="ai-settings-title">AI 设置</h2>
-        <DialogClose label="关闭 AI 设置" disabled={working || formWorking} onClick={onClose} />
+        <DialogClose
+          label="关闭 AI 设置"
+          disabled={working || formWorking}
+          onClick={onClose}
+        />
       </header>
       <div className="ai-settings-content">
         <div className="ai-settings-heading">

@@ -57,7 +57,7 @@ export function Select({
         ref={trigger}
         className={classes}
         aria-label={label}
-        title={title}
+        data-tip={title}
       >
         <Radix.Value placeholder={placeholder} />
         <Radix.Icon asChild>

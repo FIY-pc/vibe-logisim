@@ -1,5 +1,6 @@
 import { useSettings, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
+import { tip } from "../shared/Tooltips";
 
 /** The shown circuit's interface editor and component search. */
 export function CircuitActions() {
@@ -17,7 +18,7 @@ export function CircuitActions() {
       </button>
       <button
         onClick={() => setFind("component")}
-        title={`查找元件（${shortcuts.find}）`}
+        {...tip("查找元件", shortcuts.find)}
       >
         查找元件…
       </button>

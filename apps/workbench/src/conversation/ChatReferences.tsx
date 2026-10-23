@@ -112,7 +112,7 @@ export function useChatReferences({
       {refs.map((ref) => (
         <span key={ref.id}>
           <button
-            title={ref.path || ref.label}
+            data-tip={ref.path || ref.label}
             onClick={() => void open(ref.id)}
           >
             <Paperclip size={13} />

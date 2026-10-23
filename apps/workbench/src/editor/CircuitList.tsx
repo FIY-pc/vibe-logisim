@@ -3,6 +3,7 @@ import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import type { Document } from "../shared/types";
 import { useEditor, useNotices, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
+import { fullText } from "../shared/Tooltips";
 
 /** The circuits of the active document, with the shown circuit's commands. */
 export function CircuitList({ doc: d }: { doc: Document }) {
@@ -25,7 +26,7 @@ export function CircuitList({ doc: d }: { doc: Document }) {
             <button
               className={c.name === circuit?.name ? "active" : ""}
               onClick={() => navigation.switchCircuit(view, c.name)}
-              title={c.name}
+              {...fullText(c.name)}
             >
               <span>{c.name}</span>
               {d.main === c.name && (
@@ -33,7 +34,7 @@ export function CircuitList({ doc: d }: { doc: Document }) {
                   className="main-marker"
                   role="img"
                   aria-label="主电路"
-                  title="主电路"
+                  data-tip="主电路"
                 >
                   <House size={12} aria-hidden="true" />
                 </span>

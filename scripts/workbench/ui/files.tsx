@@ -111,7 +111,7 @@ export async function verifyFilesUI() {
   const row = (path: string) => {
     const found = [
       ...node.querySelectorAll<HTMLButtonElement>('[role="treeitem"]'),
-    ].find((b) => b.title === path);
+    ].find((b) => b.dataset.tip === path);
     assert(found, "tree row " + path);
     return found;
   };
@@ -144,7 +144,7 @@ export async function verifyFilesUI() {
     await key("ArrowRight");
     await key("ArrowDown");
     assert.equal(
-      (document.activeElement as HTMLElement).title,
+      (document.activeElement as HTMLElement).dataset.tip,
       "dir/child.circ",
     );
     assert.equal(
@@ -155,7 +155,7 @@ export async function verifyFilesUI() {
     await key("Enter");
     assert.deepEqual(opened, ["/fixture/project/dir/child.circ"]);
     await key("ArrowLeft");
-    assert.equal((document.activeElement as HTMLElement).title, "dir");
+    assert.equal((document.activeElement as HTMLElement).dataset.tip, "dir");
     await key("F2");
     assert(
       document
@@ -165,7 +165,10 @@ export async function verifyFilesUI() {
     await click("取消");
     await click("定位当前文件");
     await flush();
-    assert.equal((document.activeElement as HTMLElement).title, "main.circ");
+    assert.equal(
+      (document.activeElement as HTMLElement).dataset.tip,
+      "main.circ",
+    );
     assert.equal(row("main.circ").getAttribute("aria-current"), "page");
     await key("Delete");
     assert(document.querySelector('dialog[aria-label="移入回收站"]'));

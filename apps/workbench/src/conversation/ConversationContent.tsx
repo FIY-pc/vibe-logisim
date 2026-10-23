@@ -19,6 +19,7 @@ import { desktop } from "../shared/transport";
 import { Checkbox } from "../shared/Checkbox";
 import { keepKeys, usePortalContainer } from "../shared/layer";
 import "./ConversationContent.css";
+import { fullText } from "../shared/Tooltips";
 
 export interface Message {
   id: string;
@@ -79,7 +80,7 @@ export function CopyButton({
     <button
       type="button"
       aria-label={copied ? "已复制" : label}
-      title={copied ? "已复制" : label}
+      data-tip={copied ? "已复制" : label}
       onClick={() => {
         void navigator.clipboard
           .writeText(text)
@@ -362,7 +363,7 @@ export function ConversationPicker({
         ref={anchor}
         className="conversation-picker"
         aria-label={title ? `会话：${title}` : "会话"}
-        title={title}
+        {...fullText(title)}
       >
         <span>{title || "新对话"}</span>
         <ChevronDown size={14} aria-hidden="true" />

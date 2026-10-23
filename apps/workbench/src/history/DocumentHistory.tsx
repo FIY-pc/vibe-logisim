@@ -68,7 +68,7 @@ export function DocumentHistory({
       <nav>
         <span>修改历史</span>
         <button
-          title="刷新"
+          data-tip="刷新"
           aria-label="刷新修改历史"
           onClick={() => setConnection((v) => v + 1)}
         >

@@ -302,7 +302,7 @@ function ModelDialog({
               aria-selected={entry.model === chosen}
               disabled={busy || saving}
               onClick={() => void choose(entry)}
-              title={[
+              data-tip={[
                 entry.model,
                 info?.source ? `资料来源：${info.source}` : null,
                 info?.toolCall === false ? "目录标记不支持工具调用" : null,

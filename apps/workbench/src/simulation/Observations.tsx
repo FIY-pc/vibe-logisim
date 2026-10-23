@@ -180,7 +180,9 @@ export function Observations({
                       <tr key={signal.key}>
                         <th>{signal.label}</th>
                         <td>
-                          <code title={signal.bits}>{busValue(signal.bits)}</code>
+                          <code data-tip={signal.bits}>
+                            {busValue(signal.bits)}
+                          </code>
                         </td>
                       </tr>
                     ))}

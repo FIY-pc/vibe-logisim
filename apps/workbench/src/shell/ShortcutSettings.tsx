@@ -74,28 +74,28 @@ export function ShortcutSettings({
           <section key={group}>
             <h3>{group}</h3>
             {commands.map((c) => (
-                <label key={c.id}>
-                  <span>{c.label}</span>
-                  <input
-                    readOnly
-                    aria-label={c.label + " 快捷键"}
-                    value={bindingLabel(bindings[c.id])}
-                    onKeyDown={(e) => {
-                      if (["Tab", "Escape"].includes(e.key)) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const binding = eventBinding(e.nativeEvent);
-                      if (binding) change(c.id, binding);
-                    }}
-                  />
-                  <button
-                    aria-label={`清除 ${c.label} 快捷键`}
-                    onClick={() => change(c.id, null)}
-                  >
-                    <X size={12} />
-                  </button>
-                </label>
-              ))}
+              <label key={c.id}>
+                <span>{c.label}</span>
+                <input
+                  readOnly
+                  aria-label={c.label + " 快捷键"}
+                  value={bindingLabel(bindings[c.id])}
+                  onKeyDown={(e) => {
+                    if (["Tab", "Escape"].includes(e.key)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const binding = eventBinding(e.nativeEvent);
+                    if (binding) change(c.id, binding);
+                  }}
+                />
+                <button
+                  aria-label={`清除 ${c.label} 快捷键`}
+                  onClick={() => change(c.id, null)}
+                >
+                  <X size={12} />
+                </button>
+              </label>
+            ))}
           </section>
         ))}
         {!groups.length && <p className="quiet-empty">没有匹配的命令</p>}

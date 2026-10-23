@@ -29,6 +29,7 @@ import { ProjectInfoRegion } from "./workspace/ProjectInfoRegion";
 import { SourceNotices } from "./workspace/SourceNotices";
 import { UploadInput } from "./workspace/UploadInput";
 import { Welcome } from "./workspace/Welcome";
+import { Tooltips } from "./shared/Tooltips";
 import { useEditor, useFiles, useView } from "./app/hooks";
 import {
   useOwnWorkbench,
@@ -39,11 +40,34 @@ import {
 export function App() {
   const workbench = useOwnWorkbench();
   useEffect(() => workbench.start(), [workbench]);
+  useEffect(withoutPageMenu, []);
   return (
     <WorkbenchProvider value={workbench}>
       <Shell />
+      <Tooltips />
     </WorkbenchProvider>
   );
+}
+
+/** Right-clicking where the app has no menu of its own shows nothing, as in
+ * other desktop apps, rather than the web view's back/reload/inspect menu.
+ * Text fields and selected text keep the platform's copy and paste menu. */
+function withoutPageMenu() {
+  const suppress = (event: MouseEvent) => {
+    if (event.defaultPrevented) return;
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(
+        "input, textarea, [contenteditable]:not([contenteditable='false'])",
+      )
+    )
+      return;
+    if (!window.getSelection()?.isCollapsed) return;
+    event.preventDefault();
+  };
+  window.addEventListener("contextmenu", suppress);
+  return () => window.removeEventListener("contextmenu", suppress);
 }
 
 /** The workbench frame and its regions, in document order. The placement

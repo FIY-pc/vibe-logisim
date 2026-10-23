@@ -85,7 +85,7 @@ export function Menu({
           .filter(Boolean)
           .join(" ")}
         aria-label={label}
-        title={title ?? (trigger === undefined ? label : undefined)}
+        data-tip={title ?? (trigger === undefined ? label : undefined)}
         disabled={disabled}
         tabIndex={tabIndex}
       >
@@ -144,7 +144,7 @@ export function MenuItem({
     <Item
       className={danger ? "menu-item menu-danger" : "menu-item"}
       disabled={disabled}
-      title={title}
+      data-tip={title}
       textValue={textOf(children)}
       onSelect={onSelect}
     >
@@ -187,7 +187,7 @@ export function MenuCheckboxItem({
       checked={checked}
       onCheckedChange={onCheckedChange}
       disabled={disabled}
-      title={title}
+      data-tip={title}
       textValue={textOf(children)}
     >
       <span className="menu-icon menu-check" aria-hidden="true">

@@ -204,7 +204,11 @@ export function InterfaceEditor({
     >
       <header>
         <h2>{circuit} · 封装与接口</h2>
-        <DialogClose label="关闭封装编辑器" disabled={applying} onClick={onClose} />
+        <DialogClose
+          label="关闭封装编辑器"
+          disabled={applying}
+          onClick={onClose}
+        />
       </header>
       {!active && (
         <p role="alert" className="dialog-error">
@@ -269,11 +273,11 @@ export function InterfaceEditor({
             >
               文字
             </button>
-            <button title="适应封装" aria-label="适应封装" onClick={fit}>
+            <button data-tip="适应封装" aria-label="适应封装" onClick={fit}>
               <Maximize size={15} />
             </button>
             <button
-              title="撤销封装修改"
+              data-tip="撤销封装修改"
               aria-label="撤销封装修改"
               disabled={busy || !undo.length}
               onClick={restore}

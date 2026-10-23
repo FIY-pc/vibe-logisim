@@ -356,6 +356,37 @@ button.primary {
   background: var(--accent);
   color: white;
 }
+/* The one tooltip (shared/Tooltips.tsx): dark, small, under its element. */
+.app-tooltip {
+  position: fixed;
+  z-index: 2147483000;
+  visibility: hidden;
+  max-width: min(320px, calc(100vw - 12px));
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #23272f;
+  color: #f4f5f7;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 4px 14px #1a22332e;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  animation: layer-in var(--layer-fade) ease-out;
+}
+.app-tooltip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.app-tooltip kbd {
+  margin-left: auto;
+  color: #a9b0bc;
+}
+.app-tooltip-detail {
+  margin-top: 2px;
+  color: #c4c9d2;
+  white-space: pre-line;
+}
 .app {
   height: 100dvh;
   display: flex;

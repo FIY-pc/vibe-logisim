@@ -141,7 +141,7 @@ export function ProjectInfo({
             <span>{info.path || "未命名文件"}</span>
             {info.path && (
               <button
-                title="复制路径"
+                data-tip="复制路径"
                 aria-label="复制源文件路径"
                 onClick={() =>
                   void navigator.clipboard

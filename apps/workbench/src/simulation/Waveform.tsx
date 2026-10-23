@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TraceDelta } from "../generated/TraceDelta";
+import { fullText } from "../shared/Tooltips";
 
 const CELL = 28,
   ROW = 32,
@@ -56,7 +57,13 @@ function Trace({ values, wide }: { values: string[]; wide: boolean }) {
           const level = bits === "1" ? HIGH : bits === "0" ? LOW : MIDDLE;
           const before = stretches[index - 1]?.bits;
           const from =
-            before === "1" ? HIGH : before === "0" ? LOW : before ? MIDDLE : level;
+            before === "1"
+              ? HIGH
+              : before === "0"
+                ? LOW
+                : before
+                  ? MIDDLE
+                  : level;
           return (
             <path
               key={start}
@@ -147,7 +154,7 @@ export function Waveform({
             const value = chosen?.values[row];
             return (
               <div className="waveform-row" key={signal.id}>
-                <span className="waveform-label" title={name}>
+                <span className="waveform-label" {...fullText(name)}>
                   <span>{name}</span>
                   <code>{value === undefined ? "—" : busValue(value)}</code>
                 </span>
@@ -157,7 +164,8 @@ export function Waveform({
                   role="img"
                   aria-label={`${name} 波形`}
                   onClick={(event) => {
-                    const left = event.currentTarget.getBoundingClientRect().left;
+                    const left =
+                      event.currentTarget.getBoundingClientRect().left;
                     const index = Math.floor((event.clientX - left) / CELL);
                     if (samples[index]) setCursor(samples[index].sample);
                   }}

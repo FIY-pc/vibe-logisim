@@ -5,6 +5,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { openPdf, pageText } from "./pdf";
 import { DialogClose, useModal } from "../shared/Dialog";
 import { desktop } from "../shared/transport";
+import { fullText } from "../shared/Tooltips";
 export interface PreviewFile {
   name: string;
   text?: string;
@@ -126,7 +127,7 @@ export function FilePreview({
         }}
       >
         <header>
-          <h2 title={file.name}>{file.name}</h2>
+          <h2 {...fullText(file.name)}>{file.name}</h2>
           <DialogClose label="关闭资料" onClick={onClose} />
         </header>
         <div className="file-preview-reason">

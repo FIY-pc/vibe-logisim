@@ -27,6 +27,7 @@ import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
 import { Select } from "../shared/Select";
 import { DialogClose, useModal } from "../shared/Dialog";
+import { fullText } from "../shared/Tooltips";
 export interface ProjectFolder {
   historyWarning?: string;
   id: string;
@@ -102,16 +103,16 @@ function EntryIcon({
             ? FileArchive
             : /^(xlsx?|ods)$/.test(extension)
               ? FileSpreadsheet
-              : /^(v|sv|vhdl?|asm|s|c|h|py|js|ts|json|xml|hex|coe|mif)$/.test(extension)
+              : /^(v|sv|vhdl?|asm|s|c|h|py|js|ts|json|xml|hex|coe|mif)$/.test(
+                    extension,
+                  )
                 ? FileCode
                 : PlainFile;
   return <Icon size={size} />;
 }
 const unreadable = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  return /UTF-8/.test(message)
-    ? "应用内只能查看文本、PDF 和图片。"
-    : message;
+  return /UTF-8/.test(message) ? "应用内只能查看文本、PDF 和图片。" : message;
 };
 export const absolutePath = (folderPath: string, relative: string) => {
   const base = folderPath
@@ -800,7 +801,7 @@ export function Files({
                 : -1
             }
             style={{ paddingLeft: 10 + depth * 13 }}
-            title={entry.path}
+            data-tip={entry.path}
             onFocus={() => setSelected(entry.path)}
             onPointerDown={(event) => {
               if (event.button === 0 && !pending) {
@@ -1038,7 +1039,7 @@ export function Files({
               <>
                 <button
                   aria-label="新建文件"
-                  title="新建文件"
+                  data-tip="新建文件"
                   disabled={pending}
                   onClick={() =>
                     setCreate({ kind: "file", parent: selectedParent })
@@ -1048,7 +1049,7 @@ export function Files({
                 </button>
                 <button
                   aria-label="定位当前文件"
-                  title="定位当前文件"
+                  data-tip="定位当前文件"
                   disabled={!activeRelative || pending}
                   onClick={() =>
                     activeRelative && void reveal(activeRelative).catch(onError)
@@ -1154,7 +1155,7 @@ function ImportDialog({
       <div className="file-import-items">
         {plan.items.map((item) => (
           <div key={item.index}>
-            <span title={item.path}>
+            <span {...fullText(item.path)}>
               <EntryIcon
                 name={item.path}
                 directory={item.directory}
@@ -1337,7 +1338,9 @@ function HistoryDialog({
                 </span>
                 <button
                   disabled={pending || !entry.undoable}
-                  title={!entry.undoable ? "包含未保留内容的大文件" : undefined}
+                  data-tip={
+                    !entry.undoable ? "包含未保留内容的大文件" : undefined
+                  }
                   onClick={() => setConfirm(entry)}
                 >
                   撤销

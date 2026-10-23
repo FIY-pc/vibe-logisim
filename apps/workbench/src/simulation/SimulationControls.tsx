@@ -13,6 +13,7 @@ import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
 import "../editor/editor-controls.css";
 import { DialogClose, useModal } from "../shared/Dialog";
+import { tip } from "../shared/Tooltips";
 
 interface SimulationProps {
   /** What the controls show for the shown circuit, and whether each can act. */
@@ -31,8 +32,6 @@ interface MenuProps extends SimulationProps {
   onReturnToSimulation?: () => void;
   onError: (error: unknown) => void;
 }
-const hint = (label: string, binding?: string) =>
-  binding ? `${label}（${binding}）` : label;
 const pendingLabel = (action: string, active: boolean) => {
   if (action === "stop") return "结束中…";
   if (!active || action === "start") return "启动中…";
@@ -221,7 +220,11 @@ function SimulationSettings({
     >
       <header>
         <h2>仿真设置</h2>
-        <DialogClose label="关闭仿真设置" disabled={pending} onClick={onClose} />
+        <DialogClose
+          label="关闭仿真设置"
+          disabled={pending}
+          onClick={onClose}
+        />
       </header>
       <form
         onSubmit={(event) => {
@@ -327,7 +330,7 @@ export function SimulationTransport({
         <>
           <button
             aria-label={running ? "暂停时钟" : "运行时钟"}
-            title={hint(running ? "暂停时钟" : "运行时钟", shortcuts.clock)}
+            {...tip(running ? "暂停时钟" : "运行时钟", shortcuts.clock)}
             disabled={disabled || status.viewBusy}
             onClick={() => dispatch("toggle-clock")}
           >
@@ -335,11 +338,9 @@ export function SimulationTransport({
           </button>
           <button
             aria-label="时钟一步"
-            title={
-              running
-                ? "先暂停时钟，再逐步推进"
-                : hint("时钟一步", shortcuts.tick)
-            }
+            {...(running
+              ? tip("先暂停时钟，再逐步推进")
+              : tip("时钟一步", shortcuts.tick))}
             disabled={disabled || running || status.viewBusy || !active}
             onClick={() => dispatch("tick")}
           >
@@ -347,7 +348,7 @@ export function SimulationTransport({
           </button>
           <button
             aria-label="复位仿真"
-            title={hint("复位仿真", shortcuts.reset)}
+            {...tip("复位仿真", shortcuts.reset)}
             disabled={disabled || !active || status.viewBusy}
             onClick={() => dispatch("reset")}
           >

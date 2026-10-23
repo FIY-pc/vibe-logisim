@@ -196,7 +196,7 @@ export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
       <button onClick={() => void feedback.dismiss()}>忽略此版本</button>
       <button
         onClick={feedback.closeNotice}
-        title="关闭"
+        data-tip="关闭"
         aria-label="关闭更新提示"
       >
         <X size={14} />
@@ -346,7 +346,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
           <button
             className="primary"
             disabled={!saved || busy}
-            title={saved ? undefined : "先检查并保存诊断文件"}
+            data-tip={saved ? undefined : "先检查并保存诊断文件"}
             onClick={() =>
               void openFeedbackLink(ISSUES).catch((error) =>
                 setError(String(error)),

@@ -17,7 +17,8 @@ export function PlacementControls({
   return (
     <>
       <IconButton
-        title={`旋转 90° (${shortcuts.rotate})`}
+        title="旋转 90°"
+        shortcut={shortcuts.rotate}
         icon={<RotateCw size={14} />}
         onClick={() => placement.rotate()}
         disabled={!canRotate(placement)}
