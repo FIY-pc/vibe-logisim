@@ -36,7 +36,7 @@ Builds, type-checks, 29 UI scenarios pass (`npm run test:ui`, jsdom with a scrip
 
 ## Remaining tasks
 
-1. Toolbar delete has no delete cursor/affordance while the keyboard Delete works (`editor/EditorToolbar.tsx`, `editor/actions.ts`): make the button call the same action as the key.
+1. Done: the toolbar delete button posts `deleteRequest` on the editor store and the canvas commits it with the same mask as the Delete key (`editor/EditorToolbarRegion.tsx`, `editor/Canvas.tsx`).
 2. Conversation panel polish after the first real turn: streaming text must stay visible while running and collapse into the activity summary when the turn completes (`conversation/ConversationContent.tsx`); check against the Codex app's behaviour, not v0.5.0.
 3. Editing latency is a host matter, but the window must not add to it: `useMovePreview` should send one `movePreview` per animation frame at most. Verify with the 1 MB course file.
 4. Old UI for reference only: `git show HEAD:apps/workbench/src/components/Canvas.tsx` etc. (132 files under `components/ regions/ stores/ lib/ actions/ workbench/` at `HEAD`). Do not port features back without a user asking.

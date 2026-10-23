@@ -122,9 +122,15 @@ async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), Stri
     }
     report["nativeSimulation"] = json!(true);
     report["stage"] = json!("runtime");
+    // The sidecar answers `status` once its runner is up; without a model
+    // service it reports `auth-required`, which still proves the bundled
+    // Node started.
     let agent = request(host, json!({"op":"agent","method":"status"})).await?;
-    if agent["runtime"] != "builtin" {
-        return Err("The bundled Node runtime did not start".to_owned());
+    if !matches!(agent["status"].as_str(), Some("ready" | "auth-required")) {
+        return Err(format!(
+            "The bundled Node runtime did not start: {}",
+            agent["status"]
+        ));
     }
     report["builtinRuntime"] = json!(true);
     report["stage"] = json!("complete");

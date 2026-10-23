@@ -71,6 +71,9 @@ interface Props {
   onError: (e: unknown) => void;
   fitToken: number;
   zoomRequest?: { token: number; factor: number };
+  /** A deletion asked for outside the canvas (the toolbar); committed here so
+   * it gets the same mask as the Delete key. */
+  deleteRequest?: { token: number; ids: string[] };
   onZoomChange?: (zoom: number) => void;
   onObservation?: (observation: {
     scope: string;
@@ -110,6 +113,7 @@ export function Canvas({
   onError,
   fitToken,
   zoomRequest,
+  deleteRequest,
   onZoomChange,
   onObservation,
   showGrid = true,
@@ -532,6 +536,13 @@ export function Canvas({
       .map((component) => boundsFor(component.id)),
     lines: circuit.wires.filter((wire) => ids.includes(wire.id)),
   });
+  const lastDelete = useRef(deleteRequest?.token);
+  useEffect(() => {
+    if (!deleteRequest || lastDelete.current === deleteRequest.token) return;
+    lastDelete.current = deleteRequest.token;
+    const { ids } = deleteRequest;
+    if (ids.length) commit({ kind: "delete", ids }, deleteOverlay(ids));
+  }, [deleteRequest]);
   useEffect(() => {
     if (!settle?.resolved) return;
     // The result's picture arrived, or the edit changed nothing.

@@ -19,6 +19,7 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
   const place = useEditor((state) => state.place);
   const fitToken = useEditor((state) => state.fitToken);
   const zoomRequest = useEditor((state) => state.zoomRequest);
+  const deleteRequest = useEditor((state) => state.deleteRequest);
   const showGrid = useEditor((state) => state.showGrid);
   const focusTarget = useEditor((state) => state.focusTarget);
   const session = useSimulation((state) => state.session);
@@ -80,6 +81,7 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
       onError={onError}
       fitToken={fitToken}
       zoomRequest={zoomRequest}
+      deleteRequest={deleteRequest}
       onZoomChange={setZoom}
       onObservation={setCanvasObservation}
       showGrid={showGrid}

@@ -53,6 +53,8 @@ export interface EditorState {
   zoom: number;
   /** Zoom steps requested from the toolbar. */
   zoomRequest: { token: number; factor: number };
+  /** Deletions requested from the toolbar; the canvas commits them with its mask. */
+  deleteRequest: { token: number; ids: string[] };
   /** The canvas's connection focus, by view scope. */
   canvasObservation: { scope: string; focus: ConnectionFocus | null };
   source: SourceDraft | null;
@@ -92,6 +94,7 @@ export interface EditorState {
   requestFit(): void;
   setZoom(zoom: Update<number>): void;
   requestZoom(factor: number): void;
+  requestDelete(ids: string[]): void;
   setCanvasObservation(
     observation: Update<EditorState["canvasObservation"]>,
   ): void;
@@ -118,6 +121,7 @@ export function createEditorStore() {
     fitToken: 0,
     zoom: 1,
     zoomRequest: { token: 0, factor: 1 },
+    deleteRequest: { token: 0, ids: [] },
     canvasObservation: { scope: "", focus: null },
     source: null,
     signalView: null,
@@ -145,6 +149,10 @@ export function createEditorStore() {
     requestZoom: (factor) =>
       set((state) => ({
         zoomRequest: { token: state.zoomRequest.token + 1, factor },
+      })),
+    requestDelete: (ids) =>
+      set((state) => ({
+        deleteRequest: { token: state.deleteRequest.token + 1, ids },
       })),
     setCanvasObservation: field(set, "canvasObservation"),
     setSource: field(set, "source"),

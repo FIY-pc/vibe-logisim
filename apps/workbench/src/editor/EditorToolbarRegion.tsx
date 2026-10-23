@@ -1,7 +1,6 @@
 import { EditorToolbar } from "./EditorToolbar";
 import {
   useEditor,
-  useNotices,
   useSelection,
   useSettings,
   useShell,
@@ -22,10 +21,15 @@ export function EditorToolbarRegion() {
   const arranging = useEditor((state) => state.arranging);
   const pending = useShell((state) => state.pending);
   const shortcuts = useSettings((state) => state.labels);
-  const onError = useNotices((state) => state.onError);
   if (!doc) return null;
-  const { setTool, setPlace, requestFit, requestZoom, setShowGrid } =
-    stores.editor.getState();
+  const {
+    setTool,
+    setPlace,
+    requestFit,
+    requestZoom,
+    requestDelete,
+    setShowGrid,
+  } = stores.editor.getState();
   const editing = actions.editor;
   return (
     <EditorToolbar
@@ -39,11 +43,7 @@ export function EditorToolbarRegion() {
       onTool={setTool}
       onCancelPlace={() => setPlace(null)}
       onHistory={(op) => editing.history(view, op)}
-      onDelete={() =>
-        void editing
-          .edit(view, { kind: "delete", ids: selection })
-          .catch(onError)
-      }
+      onDelete={() => requestDelete(selection)}
       onFit={requestFit}
       zoom={zoom}
       onZoom={requestZoom}
