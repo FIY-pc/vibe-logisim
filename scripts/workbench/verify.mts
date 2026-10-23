@@ -381,8 +381,10 @@ try {
         revision: legacy.revision,
         circuit: "main",
       })
-    ).focus.components.some((c: any) => c.factoryName === "D Flip-Flop"),
-    "2.15 flip-flop missing",
+    ).focus.components.some(
+      (c: any) => c.factoryName === "D Flip-Flop" && c.storage === "delay",
+    ),
+    "2.15 flip-flop missing or not read as storage",
   );
   if (process.env.VIBE_WORKBENCH_RESOURCES)
     assert(

@@ -11,22 +11,31 @@ Deterministic placement and routing of one Logisim circuit definition, plus the 
 
 ## Does not own
 
-Deciding *when* to arrange, applying results, verifying against the real runtime (host `observe` after apply), user interaction.
+Deciding _when_ to arrange, applying results, verifying against the real runtime (host `observe` after apply), user interaction.
 
 ## Public interface
 
 ```ts
-import { arrange, verifyArrangement, readability, organizationContext, solveGroups,
-         resolveUnknownWidths, assertFloatingIsolation, CircuitToolError, ERROR_SCHEMA } from "@vibe-logisim/arranger";
+import {
+  arrange,
+  verifyArrangement,
+  readability,
+  organizationContext,
+  solveGroups,
+  resolveUnknownWidths,
+  assertFloatingIsolation,
+  CircuitToolError,
+  ERROR_SCHEMA,
+} from "@vibe-logisim/arranger";
 const result = await arrange({ xml, circuit, focus, options, solve });
 // xml: the whole .circ file; circuit: the definition to arrange; focus: the host's observe result for it;
 // options (Report): organization, pinnedComponentIds, keepTunnels, localiseConstants, panelBelowY, columnGap, maxLayerSpan, tunnelSpan;
 // solve: group solver, default solveGroups.
-result.xml                // the whole file with this definition rearranged, every other byte unchanged → host edit {kind:"replace"}
-result.placement          // componentId -> [dx, dy] for every part the engine moved
-result.fixedComponentIds  // pinned parts, loose-wire anchors and the panel, kept in place
-verifyArrangement(result, observedAfter)   // netlist signature, interface, protected nodes; throws CircuitToolError
-readability(focus)                          // crossings, label overlaps, flag wires, stagger, aligned runs
+result.xml; // the whole file with this definition rearranged, every other byte unchanged → host edit {kind:"replace"}
+result.placement; // componentId -> [dx, dy] for every part the engine moved
+result.fixedComponentIds; // pinned parts, loose-wire anchors and the panel, kept in place
+verifyArrangement(result, observedAfter); // netlist signature, interface, protected nodes; throws CircuitToolError
+readability(focus); // crossings, label overlaps, flag wires, stagger, aligned runs
 ```
 
 ELK runs in a worker (`elk-worker.mts`); callers wanting isolation use `packages/agent-runtime/src/tools/layout.mts` (`arrangeInWorker`, Node `worker_threads`) or `apps/workbench/src/editor/arrange.ts` (browser module worker).
@@ -35,6 +44,7 @@ ELK runs in a worker (`elk-worker.mts`); callers wanting isolation use `packages
 
 - The netlist signature of the output equals the input's (`netlistSignature`); `verifyArrangement` throws otherwise and the caller must not keep the result.
 - Protected nodes (interface pins, nodes the request names) keep their coordinates.
+- Storage and stage boundaries come from the observation alone: `storage` on a component (`delay` for registers, flip-flops and subcircuits whose every input only reaches storage inside; `state` for counters, random sources and storage that feeds itself) and `registered` on the input ends of subcircuit instances. Component and circuit names never influence the layout. A sheet is laid out stage by stage only when at least two register-to-register stages each hold max(3, 10 %) of its parts; otherwise registers are ordinary nodes of the flow.
 - Emitted wires are split at every junction so a `+` crossing is never produced (Logisim's WireRepair would merge it).
 - Bodies may graze by 1–8 px on neighbouring grid cells; collision means at least 10 px overlap both ways.
 - Spans longer than `options.tunnelSpan` become tunnel pairs instead of wires, matching how course circuits are drawn by hand.

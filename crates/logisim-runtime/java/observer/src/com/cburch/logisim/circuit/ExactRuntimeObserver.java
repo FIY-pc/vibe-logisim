@@ -49,7 +49,10 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -57,6 +60,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.SortedMap;
 import java.util.stream.Stream;
 
 public final class ExactRuntimeObserver {
@@ -449,7 +453,7 @@ public final class ExactRuntimeObserver {
                     "relevantNetBits", keptBits,
                     "omittedNetBitCount", omitted
                 );
-                for (String key : new String[] { "nativeDirection", "directionSource" }) {
+                for (String key : new String[] { "nativeDirection", "directionSource", "registered" }) {
                     if (end.containsKey(key)) compactEnd.put(key, end.get(key));
                 }
                 compactEnds.add(compactEnd);
@@ -467,7 +471,8 @@ public final class ExactRuntimeObserver {
                 "inRegion", component.get("inRegion"),
                 "attributes", compactAttributes,
                 "ends", compactEnds,
-                "subcircuit", component.get("subcircuit")
+                "subcircuit", component.get("subcircuit"),
+                "storage", component.get("storage")
             ));
         }
 
@@ -736,6 +741,8 @@ public final class ExactRuntimeObserver {
                     "localOccupants", focus.getComponents(end.getLocation()).size()
                 );
                 NativePortSemantics.putDirection(observedEnd, component, index);
+                Boolean registered = registeredInput(component, index);
+                if (registered != null) observedEnd.put("registered", registered);
                 ends.add(observedEnd);
             }
 
@@ -764,7 +771,8 @@ public final class ExactRuntimeObserver {
                 "ends", ends,
                 "subcircuit", component.getFactory() instanceof SubcircuitFactory
                     ? ((SubcircuitFactory) component.getFactory()).getSubcircuit().getName()
-                    : null
+                    : null,
+                "storage", storageKind(component)
             ));
         }
         } finally {
@@ -1049,6 +1057,173 @@ public final class ExactRuntimeObserver {
      * can address it without another discovery page. Parts sharing one anchor
      * are disambiguated by a "_2", "_3", ... suffix in COMPONENT_ORDER.
      */
+    // ---- storage shape --------------------------------------------------------
+    //
+    // What a component does with time, read from the runtime's nets and not
+    // from any name: a built-in register or flip-flop holds its inputs for a
+    // cycle ("delay"); a counter or random source changes on its own
+    // ("state"); a subcircuit is storage when every one of its inputs only
+    // reaches storage inside it, and "state" when that storage feeds logic of
+    // its own (a program counter with its adder, a state machine) rather than
+    // just the output pins (a pipeline register). Nested instances are
+    // classified recursively. The layout engine lays out stage boundaries from
+    // this; a register file (write port registered, read port combinational)
+    // is not storage, but its registered inputs are reported per end.
+
+    private static final Set<String> DELAY_FACTORIES = new HashSet<String>(Arrays.asList(
+        "Register", "Shift Register", "D Flip-Flop", "T Flip-Flop", "J-K Flip-Flop", "S-R Flip-Flop"));
+    private static final Set<String> STATE_FACTORIES = new HashSet<String>(Arrays.asList(
+        "Counter", "Random"));
+
+    private static final class Shape {
+        String storage;
+        final Map<Component, Boolean> registeredInputs = new IdentityHashMap<Component, Boolean>();
+    }
+
+    private final Map<Circuit, Shape> shapes = new IdentityHashMap<Circuit, Shape>();
+
+    private String storageKind(Component component) {
+        ComponentFactory factory = component.getFactory();
+        if (factory instanceof SubcircuitFactory) {
+            return shape(((SubcircuitFactory) factory).getSubcircuit()).storage;
+        }
+        String name = factory.getName();
+        if (DELAY_FACTORIES.contains(name)) return "delay";
+        if (STATE_FACTORIES.contains(name)) return "state";
+        return null;
+    }
+
+    /** For an input end of a subcircuit instance: does the signal only reach storage inside? */
+    private Boolean registeredInput(Component instance, int endIndex) {
+        if (!(instance.getFactory() instanceof SubcircuitFactory)) return null;
+        EndData end = instance.getEnd(endIndex);
+        if (!end.isInput() || end.isOutput()) return null;
+        Component pin = pinOfEnd(instance, endIndex);
+        if (pin == null) return null;
+        Circuit target = ((SubcircuitFactory) instance.getFactory()).getSubcircuit();
+        return shape(target).registeredInputs.get(pin);
+    }
+
+    /** The definition's Pin behind end {@code index} of an instance (the order computePorts used). */
+    private static Component pinOfEnd(Component instance, int index) {
+        SubcircuitFactory factory = (SubcircuitFactory) instance.getFactory();
+        Circuit target = factory.getSubcircuit();
+        Instance[] pins = null;
+        AttributeSet attributes = instance.getAttributeSet();
+        if (attributes instanceof CircuitAttributes) {
+            pins = ((CircuitAttributes) attributes).getPinInstances();
+        }
+        if (pins == null) {
+            Direction facing = attributes.getValue(StdAttr.FACING);
+            SortedMap<Location, Instance> offsets =
+                target.getAppearance().getPortOffsets(facing == null ? Direction.EAST : facing);
+            pins = offsets.values().toArray(new Instance[0]);
+        }
+        if (index < 0 || index >= pins.length) return null;
+        for (Component candidate : target.getNonWires()) {
+            if (candidate.getFactory() == Pin.FACTORY && instanceOrNull(candidate) == pins[index]) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private Shape shape(Circuit circuit) {
+        Shape shape = shapes.get(circuit);
+        if (shape != null) return shape;
+        shape = new Shape();
+        shapes.put(circuit, shape); // registered first: a definition reached again through itself is combinational
+        Map<Component, String> ids = idsByCircuit.get(circuit);
+        if (ids == null) ids = assignComponentIds(circuit);
+        NetIndex nets = new NetIndex(circuit, ids, new Coverage(), new ArrayList<Object>());
+        nets.compute();
+
+        // bit net -> components reading it; component -> bit nets it drives
+        Map<String, List<Component>> readers = new HashMap<String, List<Component>>();
+        Map<Component, Set<String>> drives = new IdentityHashMap<Component, Set<String>>();
+        List<Component> inputs = new ArrayList<Component>();
+        Set<Component> outputs = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
+        Set<Component> storage = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
+        Set<Component> logic = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
+        boolean stateInside = false;
+        for (Component component : sortedComponents(circuit)) {
+            String kind = storageKind(component);
+            if (kind != null) {
+                storage.add(component);
+                if (kind.equals("state")) stateInside = true;
+            }
+            boolean pin = component.getFactory() == Pin.FACTORY;
+            boolean passive = pin || component.getFactory() instanceof Tunnel
+                || "Splitter".equals(component.getFactory().getName());
+            boolean drivesSomething = false;
+            for (int i = 0; i < component.getEnds().size(); i++) {
+                EndData end = component.getEnd(i);
+                Map<String, Object> direction = new LinkedHashMap<String, Object>();
+                NativePortSemantics.putDirection(direction, component, i);
+                String d = String.valueOf(direction.get("direction"));
+                boolean in = d.equals("input") || d.equals("inout");
+                boolean out = d.equals("output") || d.equals("inout");
+                if (pin) {
+                    // A Pin's single end faces the circuit: it drives the net
+                    // when the pin is an input of the definition.
+                    if (out) inputs.add(component);
+                    if (in) outputs.add(component);
+                }
+                for (Object bitValue : nets.netBits(component, i, end)) {
+                    String netId = String.valueOf(asObject(bitValue).get("netId"));
+                    if (in) readers.computeIfAbsent(netId, k -> new ArrayList<Component>()).add(component);
+                    if (out) {
+                        drives.computeIfAbsent(component, k -> new HashSet<String>()).add(netId);
+                        drivesSomething = true;
+                    }
+                }
+            }
+            if (!pin && !passive && kind == null && drivesSomething) logic.add(component);
+        }
+
+        boolean allRegistered = !storage.isEmpty() && !inputs.isEmpty();
+        for (Component input : inputs) {
+            Set<Component> reached = reach(input, readers, drives, storage);
+            boolean combinational = false;
+            for (Component c : reached) {
+                if (outputs.contains(c) && c != input) { combinational = true; break; }
+            }
+            shape.registeredInputs.put(input, !combinational);
+            if (combinational) allRegistered = false;
+        }
+        if (allRegistered) {
+            boolean stateful = stateInside;
+            for (Component s : storage) {
+                if (stateful) break;
+                for (Component c : reach(s, readers, drives, storage)) {
+                    if (logic.contains(c)) { stateful = true; break; }
+                }
+            }
+            shape.storage = stateful ? "state" : "delay";
+        }
+        return shape;
+    }
+
+    /** Components a signal leaving {@code from} reaches through combinational parts; storage stops it. */
+    private static Set<Component> reach(
+        Component from, Map<String, List<Component>> readers,
+        Map<Component, Set<String>> drives, Set<Component> storage
+    ) {
+        Set<Component> seen = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
+        Deque<Component> queue = new ArrayDeque<Component>();
+        queue.add(from);
+        while (!queue.isEmpty()) {
+            Component current = queue.remove();
+            for (String net : drives.getOrDefault(current, Collections.<String>emptySet())) {
+                for (Component next : readers.getOrDefault(net, Collections.<Component>emptyList())) {
+                    if (next == from || !seen.add(next)) continue;
+                    if (!storage.contains(next)) queue.add(next);
+                }
+            }
+        }
+        return seen;
+    }
+
     private static Map<Component, String> assignComponentIds(Circuit circuit) {
         Map<Component, String> result = new IdentityHashMap<Component, String>();
         Map<String, Integer> occupants = new HashMap<String, Integer>();

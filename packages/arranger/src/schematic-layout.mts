@@ -146,40 +146,13 @@ const STACK_SLACK = 1.4; // ... and by this factor of its compact height
 const CHANNEL_MIN = 60; // narrowest routing channel between two columns
 const CHANNEL_PER_WIRE = 8; // extra channel width per wire that passes through it
 const SUBCOLUMN_GAP = 120; // between sub-columns of one layer
-const PIPELINE_STAGES = ["IF", "ID", "EX", "EXE", "MEM", "MA", "WB"]; // canonical stage prefixes (upper-cased)
 const TARGET_ASPECT = 1.5; // width/height the column packing aims at (hand-drawn sheets: about 1.5-1.8)
 const COLUMN_HEIGHT_MIN = 200; // a packed column is never shorter than this
 const STAGGER = 30; // x step between successive depths packed into one column
 const ROW_SNAP = 20; // a part moves at most this far to share a top with a part in another column
 const LEVEL_REACH = 100; // ... and this far to put a port level with the port it is wired to (a straight wire)
-const STORAGE = new Set([
-  "Register",
-  "Counter",
-  "D Flip-Flop",
-  "J-K Flip-Flop",
-  "S-R Flip-Flop",
-  "T Flip-Flop",
-  "Random",
-]);
-
-// A pipeline register is often a subcircuit named after the stages it
-// separates: IF/ID, ID-EX, a bubble EX/MEM, a marked MEM/WB ... Such an
-// instance is a stage boundary and belongs to the stage it feeds (the second
-// name). Matching ignores case the way the stage names are written, letters
-// with dotted and dotless i included.
-const WS = `[${PY_WHITESPACE}]`;
-const caseless = (word: string): string =>
-  [...word]
-    .map((ch) =>
-      ch === "I" ? "[Ii\\u0130\\u0131]" : `[${ch}${ch.toLowerCase()}]`,
-    )
-    .join("");
-const STAGE = `(${PIPELINE_STAGES.map(caseless).join("|")})`;
-export const PIPELINE_REGISTER_RE = new RegExp(
-  `^[◇◆●★☆${PY_WHITESPACE}]*(?:气泡)?(?:${STAGE}${WS}*[/_\\-→>—–]${WS}*${STAGE}` +
-    `|流水${WS}*${STAGE}|${STAGE}${WS}*(?:级)?(?:流水)?寄存器)(?![A-Za-z\\u0130\\u0131\\u017f\\u212a])`,
-  "u",
-);
+const STAGE_MIN_PARTS = 3; // a pipeline stage holds at least this many parts ...
+const STAGE_MIN_SHARE = 0.1; // ... and this share of the body before the sheet is laid out stage by stage
 const COMPACT_GAP = 60; // air right of a part after compaction (the usual gap to the right neighbour)
 const LAYER_SPLIT = 2.5; // a layer this many times taller than the column budget becomes side-by-side columns
 const LEAD_MAX = 8; // a Tunnel's lead grows up to this many grid steps to clear the flags beside it
@@ -267,7 +240,7 @@ const LABELLED_IO = new Set([
   "Button",
 ]);
 const PORT_WORD_RE = new RegExp(
-  `^${WS}*([\\p{L}\\p{Nl}\\p{No}][\\p{L}\\p{N}_]*)`,
+  `^[${PY_WHITESPACE}]*([\\p{L}\\p{Nl}\\p{No}][\\p{L}\\p{N}_]*)`,
   "u",
 );
 
@@ -860,7 +833,6 @@ export class SchematicLayout {
   declare piecePort: KeyMap<Port, Port>;
   // placement
   declare looseConstants: Set<string>;
-  declare stageOf: Map<string, number>;
   declare shelf: string[];
   declare pinRank: Map<string, [string, number]>;
   declare pinoutLayers: boolean;
@@ -1098,27 +1070,32 @@ export class SchematicLayout {
     return false;
   }
 
+  // A clocked state element, as the observer read it from the netlist: a
+  // built-in register or flip-flop, a counter, or a subcircuit whose every
+  // input only reaches storage inside (a pipeline register, a program counter
+  // with its incrementer). Names play no part. ROM/RAM read asynchronously
+  // and are lookups, not storage.
   isStorage(cid: string): boolean {
-    const c = item(this.byId, cid);
-    return (
-      STORAGE.has(c.factoryName) ||
-      PIPELINE_REGISTER_RE.test(c.factoryName || "")
-    );
+    return item(this.byId, cid).storage != null;
   }
 
-  // The pipeline stage a register belongs to: the 'EX' of a label 'EX.PC', or
-  // the second stage in a pipeline-register subcircuit's name ('ID/EX' starts
-  // EX). null when the register carries neither.
-  stagePrefix(cid: string): string | null {
+  // Storage that changes on its own or feeds itself through logic (a counter,
+  // a PC with its +4 adder, a state machine's register): where a machine
+  // starts its cycle, so the natural roots of the flow.
+  isStateful(cid: string, outEdges: Map<string, Set<string>>): boolean {
     const c = item(this.byId, cid);
-    const label = attr(c, "label") || "";
-    if (label.includes(".")) {
-      const head = label.slice(0, label.indexOf("."));
-      if (/^\p{L}+$/u.test(head)) return head.toUpperCase();
+    if (c.storage === "state") return true;
+    if (c.storage == null) return false;
+    const seen = new Set<string>();
+    const stack = [...(outEdges.get(cid) ?? [])];
+    while (stack.length) {
+      const v = stack.pop() as string;
+      if (v === cid) return true;
+      if (seen.has(v) || this.isStorage(v)) continue;
+      seen.add(v);
+      stack.push(...(outEdges.get(v) ?? []));
     }
-    const m = PIPELINE_REGISTER_RE.exec(c.factoryName || "");
-    if (m === null) return null;
-    return (m[2] || m[3] || m[4]).toUpperCase();
+    return false;
   }
 
   plan(): Map<NetKey, string> {
@@ -1865,12 +1842,19 @@ export class SchematicLayout {
   // are still skipped because they do not define data-flow order. Splitter
   // ports are 'inout': a splitter is a pass-through node, so an edge is added
   // from every driver on its nets to it and from it to every consumer on its
-  // nets.
+  // nets. An input the observer marked registered on a part that is not
+  // storage as a whole (the write port of a register file) takes its value
+  // for the next cycle: it does not order the part after its driver, so no
+  // edge is added for it and the write-back net runs backwards.
   graph(allNets = false): Map<string, Set<string>> {
     const bodyIds = this.bodyIds;
     const outEdges = new Map<string, Set<string>>();
     const direction = ([cid, idx]: Port) =>
       item(this.byId, cid).ends[idx].direction;
+    const registered = ([cid, idx]: Port): boolean => {
+      const c = item(this.byId, cid);
+      return c.storage == null && c.ends[idx].registered === true;
+    };
     for (const [key, cls] of this.classes) {
       if (cls === "constant") continue;
       if (!allNets && cls !== "wire") continue;
@@ -1883,7 +1867,7 @@ export class SchematicLayout {
         .filter((p) => direction(p) === "output")
         .map(([cid]) => cid);
       const dsts = ports
-        .filter((p) => direction(p) === "input")
+        .filter((p) => direction(p) === "input" && !registered(p))
         .map(([cid]) => cid);
       const passThrough = ports
         .filter((p) => direction(p) !== "output" && direction(p) !== "input")
@@ -1902,10 +1886,9 @@ export class SchematicLayout {
   //
   // Longest path from sources over the body graph (all nets, splitters as
   // pass-through, back-edges cut by DFS) gives every part a depth. Registers
-  // are stage boundaries: stage(r) = longest register-to-register path; when
-  // registers carry stage prefixes (EX.*, MEM.*) the groups are ordered by
-  // median depth so bypass/feedback paths do not spread one stage over many
-  // columns. Layers:
+  // are stage boundaries: stage(r) = longest register-to-register path, and a
+  // combinational part belongs to the earliest stage that drives it. Layers,
+  // when the registers really split the sheet into stages (see below):
   //     pre-register logic .......... its depth (0..K)
   //     register of stage s ......... K+1 + 2s
   //     logic driven by stage s ..... K+1 + 2s + 1
@@ -1936,11 +1919,9 @@ export class SchematicLayout {
     // asynchronously (address in, data out in the same cycle), so they are
     // combinational lookups inside a stage, not boundaries.
     const storage = new Set(ids.filter((cid) => this.isStorage(cid)));
-    const prefixOf = new Map<string, string>();
-    for (const r of storage) {
-      const pfx = this.stagePrefix(r);
-      if (pfx) prefixOf.set(r, pfx);
-    }
+    const stateful = new Set(
+      [...storage].filter((cid) => this.isStateful(cid, outEdges)),
+    );
     const indeg = new Map(ids.map((u) => [u, 0]));
     for (const vs of outEdges.values())
       for (const v of vs)
@@ -1972,20 +1953,17 @@ export class SchematicLayout {
         }
       }
     };
-    // Registers first, and among them the earliest pipeline stage first (IF
-    // before ID before EX ...), so that the cycle IF -> ... -> WB -> IF is cut
-    // on the write-back edge and not wherever component ids happen to start
-    // the walk.
-    const canon = new Map(PIPELINE_STAGES.map((name, i) => [name, i]));
-    const rootKey = (u: string): unknown[] => {
-      const pfx = storage.has(u) ? this.stagePrefix(u) : null;
-      return [
-        !storage.has(u),
-        (pfx !== null ? canon.get(pfx) : undefined) ?? canon.size,
-        indeg.get(u),
-        u,
-      ];
-    };
+    // Registers first, and among them the ones that drive themselves (the PC
+    // with its incrementer, a counter): the walk then enters the datapath
+    // where the machine starts a cycle, so the cycles IF -> ... -> WB -> IF
+    // and write-back -> register file are cut on their closing edges and not
+    // wherever component ids happen to start the walk.
+    const rootKey = (u: string): unknown[] => [
+      !storage.has(u),
+      !stateful.has(u),
+      indeg.get(u),
+      u,
+    ];
     for (const u of sortBy(ids, rootKey)) if (!state.has(u)) dfs(u);
     const depth = new Map(ids.map((u) => [u, 0]));
     const reversedOrder = [...order].reverse();
@@ -1995,19 +1973,6 @@ export class SchematicLayout {
           v,
           Math.max(depth.get(v) as number, (depth.get(u) as number) + 1),
         );
-    if (new Set(prefixOf.values()).size < 2) {
-      // No stage annotation (a single-cycle CPU, a counter, a datapath of
-      // plain Registers): registers are ordinary nodes of the flow and stand
-      // where their producers and consumers are -- chaining them as
-      // register-to-register "stages" strings a single-cycle CPU's PC,
-      // interrupt and status registers into a column each (15 columns for 141
-      // parts where the author used 6). The DFS above still cut the cycles at
-      // registers, so write-back paths run right to left and keep their
-      // labels (see demote).
-      this.stageOf = new Map();
-      this.balanceLayers(depth, forward);
-      return SchematicLayout.compact(depth);
-    }
     // register stages: longest register->register path over the cut DAG
     const reach = new Map<string, Set<string>>();
     for (const r of storage) {
@@ -2029,30 +1994,6 @@ export class SchematicLayout {
             v,
             Math.max(stage.get(v) as number, (stage.get(u) as number) + 1),
           );
-    const groups = new Map<string, number[]>();
-    for (const [r, pfx] of prefixOf)
-      getOr(groups, pfx, () => []).push(stage.get(r) as number);
-    // Classic pipeline stage names order themselves (the write-back edges
-    // into ID would otherwise put ID after WB); other prefixes by median
-    // depth.
-    const median = (p: string): number => {
-      const values = sorted(groups.get(p) as number[]);
-      return values[floorDiv(values.length, 2)];
-    };
-    const ordered = [...groups.keys()].every((p) => canon.has(p))
-      ? sortBy(groups.keys(), (p) => canon.get(p))
-      : sortBy(groups.keys(), median);
-    const rank = new Map(ordered.map((p, i) => [p, i]));
-    const medians = ordered.map(median);
-    for (const r of storage) {
-      const pfx = prefixOf.get(r);
-      stage.set(
-        r,
-        pfx !== undefined
-          ? (rank.get(pfx) as number)
-          : count(medians, (m) => m < (stage.get(r) as number)),
-      );
-    }
     // Every combinational node belongs to the earliest register stage that
     // drives it; inside the stage it keeps its longest-path depth from that
     // stage's registers (a single-cycle datapath is one stage with a deep
@@ -2085,6 +2026,24 @@ export class SchematicLayout {
           );
       localDepth.set(u, d);
     }
+    // A sheet is laid out stage by stage only when its registers really split
+    // it into stages: at least two stages each hold a real share of the parts.
+    // Otherwise (a single-cycle CPU, whose PC, interrupt and status registers
+    // would string into a column each -- 15 columns for 141 parts where the
+    // author used 6 -- a counter, a datapath of plain Registers) registers are
+    // ordinary nodes of the flow and stand where their producers and consumers
+    // are. The DFS above still cut the cycles at registers, so write-back
+    // paths run right to left and keep their labels (see demote).
+    const members = new Map<number, number>();
+    for (const s of stageOf.values()) members.set(s, (members.get(s) ?? 0) + 1);
+    const stageMin = Math.max(
+      STAGE_MIN_PARTS,
+      Math.ceil(STAGE_MIN_SHARE * ids.length),
+    );
+    if (count(members.values(), (n) => n >= stageMin) < 2) {
+      this.balanceLayers(depth, forward);
+      return SchematicLayout.compact(depth);
+    }
     const pre = ids.filter((u) => !stageOf.has(u));
     const K = maxOf(
       pre.map((u) => depth.get(u) as number),
@@ -2112,7 +2071,6 @@ export class SchematicLayout {
           : (depth.get(u) as number),
       );
     }
-    this.stageOf = stage;
     return SchematicLayout.compact(layer);
   }
 

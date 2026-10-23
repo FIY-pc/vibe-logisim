@@ -12,4 +12,6 @@ crates/logisim-runtime/java/observer/run.sh --compact /absolute/path/to/design.c
 
 `run-precompiled.sh` 用于已准备好的 classes 与运行文件，路径由 `VIBE_OBSERVER_CLASSES` 和 `VIBE_OBSERVER_RUNTIME_JAR` 指定。
 
+除端口和位网络外，每个元件带 `storage`（`delay`：寄存器、触发器，以及所有输入都只到达内部存储的子电路；`state`：计数器、随机源、输出经自身逻辑回到自己的存储；没有这个字段就是组合逻辑，ROM/RAM 也算组合查表），子电路实例的输入端带 `registered`（该信号在内部只到达存储）。这两个字段按定义电路自己的网络递归算出，和元件名、电路名无关；布局器靠它们划分流水级。
+
 返回的对象 ID 属于观察时的电路版本。静态连接不证明时序行为、整机功能或外部评测结果；动态运行由服务内独立的仿真模块负责。

@@ -31,6 +31,8 @@ export interface End {
   width?: number | null;
   netBits?: NetBit[] | null;
   direction?: string | null;
+  /** An input of a subcircuit instance whose signal only reaches storage inside (next-cycle data). */
+  registered?: boolean;
   exclusive?: boolean;
   runtimeTooltip?: string | null;
   [key: string]: unknown;
@@ -45,6 +47,8 @@ export interface Component {
   attributes: Attribute[];
   ends: End[];
   subcircuit?: unknown;
+  /** Clocked state as the observer read it from the netlist: "delay" holds its inputs a cycle, "state" changes on its own or feeds itself. */
+  storage?: "delay" | "state" | null;
   [key: string]: unknown;
 }
 
