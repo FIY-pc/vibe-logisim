@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Chat } from "../../../apps/workbench/src/components/Chat";
-import { Canvas } from "../../../apps/workbench/src/components/Canvas";
+import { Chat } from "../../../apps/workbench/src/conversation/Chat";
+import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
 import {
   WorkspaceRail,
   PanelResize,
   useWorkspaceLayout,
-} from "../../../apps/workbench/src/components/WorkspaceLayout";
+} from "../../../apps/workbench/src/shell/WorkspaceLayout";
 import { Workbench } from "./workbench";
 
 export async function verifyRestoredInteractions() {
@@ -72,7 +72,6 @@ export async function verifyRestoredInteractions() {
   (globalThis as any).__command = async (request: any) => {
     calls.push(request);
     if (request.op === "agent") {
-      if (request.method === "proposals") return [];
       if (request.method === "conversations") return { conversations };
       return {
         eventCursor: sequence,

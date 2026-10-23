@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { Files } from "../../../apps/workbench/src/components/Files";
+import { Files } from "../../../apps/workbench/src/workspace/Files";
 
 export async function verifyFilesUI() {
   const node = document.createElement("div");

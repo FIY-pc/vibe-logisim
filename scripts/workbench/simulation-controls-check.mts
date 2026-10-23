@@ -153,7 +153,12 @@ try {
   // Invalid configuration of a different target must not tear down this run.
   for (const initialFrequency of [0, 0.2, 4096.1]) {
     await assert.rejects(
-      client.definition(second, "main", { kind: "toggle-clock" }, initialFrequency),
+      client.definition(
+        second,
+        "main",
+        { kind: "toggle-clock" },
+        initialFrequency,
+      ),
       /时钟频率/,
     );
     const retained = await owns(first, "bank");
@@ -218,7 +223,10 @@ try {
   const live = async () => {
     const current = await status();
     assert(current.session, "the run must still be live");
-    return { sessionId: current.session.sessionId, viewId: current.state?.viewId };
+    return {
+      sessionId: current.session.sessionId,
+      viewId: current.state?.viewId,
+    };
   };
   /** Shows an instance of the run and waits for its frame. */
   const view = async (instancePath: string[]): Promise<Run> => {

@@ -9,5 +9,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.mts", "core/**/*.mts"]
+  "include": ["src/**/*.mts"]
 }

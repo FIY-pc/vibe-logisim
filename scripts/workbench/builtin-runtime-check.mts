@@ -6,14 +6,14 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { builtinInstructions } from "../../packages/agent-runtime/core/builtin-backend.mts";
+import { systemInstructions } from "../../packages/agent-runtime/src/turn/instructions.mts";
 import {
   readText,
   referenceRoot,
-} from "../../packages/agent-runtime/core/builtin-tools.mts";
+} from "../../packages/agent-runtime/src/tools/files.mts";
 
-const linux = builtinInstructions(null, "linux");
-const windows = builtinInstructions(null, "win32");
+const linux = systemInstructions(null, "linux");
+const windows = systemInstructions(null, "win32");
 for (const text of [linux, windows]) {
   assert.ok(text.includes(referenceRoot), "the reference directory is named");
   assert.ok(!text.includes("{{REFERENCE_PATH}}"));
@@ -23,7 +23,7 @@ assert.match(linux, /Shell cwd is \/tmp\/workspace/);
 assert.match(windows, /No shell is available/);
 assert.doesNotMatch(windows, /Shell cwd/);
 assert.equal(
-  builtinInstructions("Custom instructions.", "win32"),
+  systemInstructions("Custom instructions.", "win32"),
   "Custom instructions.",
 );
 

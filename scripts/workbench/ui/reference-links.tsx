@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { Chat } from "../../../apps/workbench/src/components/Chat";
-import { useProposals } from "../../../apps/workbench/src/lib/useProposals";
+import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import {
   locateCircuitReference,
   parseConversationReference,
   useConversationReferences,
-} from "../../../apps/workbench/src/lib/conversationReferences";
+} from "../../../apps/workbench/src/conversation/conversationReferences";
 import { Workbench } from "./workbench";
-export async function verifyReferenceLinksAndCandidates() {
+export async function verifyReferenceLinks() {
   const node = document.createElement("div");
   document.body.append(node);
   const root = createRoot(node),
@@ -59,18 +58,6 @@ export async function verifyReferenceLinksAndCandidates() {
   let gate: ((value: any) => void) | null = null,
     delayed = false;
   let runtimeExtra: Record<string, unknown> = {};
-  const proposal = (id: string, documentId = doc.id) => ({
-    id,
-    documentId,
-    createdAt: id.charCodeAt(0),
-    revision: "r1",
-    original: "<project/>",
-    xml: "<project><circuit name='main'/></project>",
-  });
-  let persisted: any[] = [proposal("a")],
-    listDelay = false,
-    listResolve: ((value: any) => void) | null = null,
-    rejectDiscard = false;
   globals.__subscribe = () => () => {};
   globals.__command = async (request: any) => {
     calls.push(request);
@@ -103,19 +90,6 @@ export async function verifyReferenceLinksAndCandidates() {
         pathVersion: 1,
       };
     if (request.op === "agent") {
-      if (request.method === "proposals")
-        return listDelay
-          ? new Promise((resolve) => {
-              listResolve = resolve;
-            })
-          : persisted.filter(
-              (item) => item.documentId === request.args.documentId,
-            );
-      if (request.method === "discardProposal") {
-        if (rejectDiscard) throw new Error("discard failed");
-        persisted = persisted.filter((item) => item.id !== request.args.id);
-        return {};
-      }
       if (request.method === "conversations")
         return {
           conversations: [{ id: "chat", title: "chat", archived: false }],
@@ -249,7 +223,6 @@ export async function verifyReferenceLinksAndCandidates() {
 
     runtimeExtra = {
       modelConfigurationError: { message: "请选择可用的模型服务" },
-      contextTransfer: { pending: true, truncated: true },
     };
     await render(
       <Workbench key="configuration">
@@ -272,10 +245,6 @@ export async function verifyReferenceLinksAndCandidates() {
       "选择模型服务",
     );
     assert.doesNotMatch(node.textContent!, /重新连接|旧版|导入/);
-    assert.match(
-      node.querySelector('.runtime-progress[role="status"]')!.textContent!,
-      /携带最近的对话/,
-    );
     runtimeExtra = {};
 
     let follow: ReturnType<typeof useConversationReferences>;
@@ -335,76 +304,11 @@ export async function verifyReferenceLinksAndCandidates() {
       "A late file result cannot open in a different workspace",
     );
     await act(async () => follow!("notes.txt", context));
-    assert.match(String(errors.pop()), /另一工作区/);
+    assert.match(String(errors.pop()), /另一个工程文件夹/);
 
-    let candidates: ReturnType<typeof useProposals>;
-    function CandidateHarness({
-      id = doc.id,
-      connection = 0,
-    }: {
-      id?: string;
-      connection?: number;
-    }) {
-      candidates = useProposals(id, connection, (error) => errors.push(error));
-      return (
-        <div>
-          {candidates.proposals.map((item) => (
-            <span key={item.id}>{item.id}</span>
-          ))}
-        </div>
-      );
-    }
-    listDelay = true;
-    await render(
-      <Workbench>
-        <CandidateHarness />
-      </Workbench>,
-    );
-    const firstList = listResolve!;
-    await act(async () => {
-      persisted.push(proposal("b"));
-      candidates!.receive(proposal("b"));
-    });
-    listDelay = false;
-    await act(async () => firstList([proposal("a")]));
-    assert.deepEqual(
-      candidates!.proposals.map((item) => item.id),
-      ["a", "b"],
-      "A delayed snapshot cannot erase the candidate received after it began",
-    );
-    rejectDiscard = true;
-    await act(async () => candidates!.discard(proposal("a")));
-    assert.equal(candidates!.proposals.length, 2);
-    assert.match(String(errors.pop()), /discard failed/);
-    rejectDiscard = false;
-    await act(async () => candidates!.discard(proposal("a")));
-    assert.deepEqual(
-      candidates!.proposals.map((item) => item.id),
-      ["b"],
-    );
-    listDelay = true;
-    await render(
-      <Workbench>
-        <CandidateHarness connection={1} />
-      </Workbench>,
-    );
-    const staleList = listResolve!;
-    await render(
-      <Workbench>
-        <CandidateHarness id="another-document" />
-      </Workbench>,
-    );
-    const currentList = listResolve!;
-    await act(async () => staleList([proposal("a")]));
-    await act(async () => currentList([]));
-    assert.equal(
-      candidates!.proposals.length,
-      0,
-      "Document changes cannot show an older document's candidate list",
-    );
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: message links keep turn scope, resolve native geometry and moved file identity, reject ambiguous/stale/cross-workspace targets; durable candidates survive delayed lists and discard failures",
+      "PASS: message links keep turn scope, resolve native geometry and moved file identity, reject ambiguous/stale/cross-workspace targets",
     );
   } finally {
     await act(async () => root.unmount());

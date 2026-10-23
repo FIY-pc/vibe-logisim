@@ -3,7 +3,8 @@ import type { DocumentView as Document } from "../../apps/workbench/src/generate
 import { simulationClient } from "./simulation-client.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) => (result && result.view ? result.view : result);
+const documentOf = (result: any) =>
+  result && result.view ? result.view : result;
 
 // Independently constructed circuits. Expected behavior is checked through real native stimuli.
 export async function verifyEditing(command: Command) {

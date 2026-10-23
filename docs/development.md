@@ -17,13 +17,13 @@ npm run desktop
 ## 修改与验证
 
 - 界面与交互：`apps/workbench/src`。
-- 文档、保存和恢复：`crates/workspace-core`。
+- 文档、保存和恢复：`crates/circuit-document`。
 - 应用命令、会话归属：`crates/workbench-host`。
-- 原生元件、连接和仿真：`crates/logisim-adapter`。
+- 原生元件、连接和仿真：`crates/logisim-runtime`。
 - 模型连接、工具与会话：`packages/agent-runtime`。
 
 命令类型在 Rust 中定义；修改后执行 `npm run contracts`，生成 TypeScript 与模型编辑 schema。`npm run check:contracts` 检查生成文件是否一致。
 
-`npm run check` 检查 TypeScript，`npm run test:core` 检查文档边界，`npm run test:native` 使用临时电路、真实 Java 运行时和本地模型夹具检查跨进程行为。`npm run test:ui` 验证 React 的交互状态与异步边界，`npm run test:compatibility` 检查外部库、自定义外观与合成大电路。对话准备、取消、网络和安装器检查使用 `npm run test:runtime`。这些命令不调用远端模型。
+`npm run check` 检查 TypeScript，`npm run test:core` 检查文档边界，`npm run test:native` 使用临时电路和真实 Java 运行时检查跨进程行为。`npm run test:ui` 验证 React 的交互状态与异步边界，`npm run test:compatibility` 检查外部库、自定义外观与合成大电路。代理网络、资料引用和内置运行时指令检查使用 `npm run test:runtime`。这些命令不调用远端模型。
 
-开发状态、外部运行时和分发资源不进入 Git。详细配置、持久化边界、分发命令和验证范围见 [工作台开发参考](native-workbench.md)，模块职责见 [架构](architecture.md)。
+开发状态、外部运行时和分发资源不进入 Git。详细配置、持久化边界、分发命令和验证范围见 [工作台开发参考](native-workbench.md)，模块划分见 [架构](architecture.md)，每个模块目录下的 README 写明它的接口、不变量和待办。

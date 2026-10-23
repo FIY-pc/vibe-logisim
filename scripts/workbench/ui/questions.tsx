@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { Chat } from "../../../apps/workbench/src/components/Chat";
+import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { Workbench } from "./workbench";
 const { backend, nativeWrites, dispatch, notify } = (globalThis as any)
   .__questionFixture;

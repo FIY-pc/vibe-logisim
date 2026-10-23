@@ -11,7 +11,7 @@ use tauri::{
     webview::{PageLoadEvent, PageLoadPayload},
 };
 use tokio::sync::Notify;
-use vibe_workbench_host::{Host, Request, WorkspaceRequest};
+use vibe_workbench_host::{DocumentRequest, Host, Request};
 
 #[derive(Clone)]
 pub struct Check {
@@ -82,7 +82,7 @@ async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), Stri
     report["frontend"] = json!(true);
     report["stage"] = json!("recovery");
     let status = host
-        .dispatch(WorkspaceRequest::Status)
+        .dispatch(DocumentRequest::Status)
         .await
         .map_err(|error| error.to_string())?;
     if !status["recoveryError"].is_null() {

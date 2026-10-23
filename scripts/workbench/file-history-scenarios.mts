@@ -9,7 +9,8 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) => (result && result.view ? result.view : result);
+const documentOf = (result: any) =>
+  result && result.view ? result.view : result;
 export async function verifyFileHistory(
   command: (request: Record<string, unknown>) => Promise<any>,
   directory: string,

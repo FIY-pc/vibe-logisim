@@ -1,10 +1,6 @@
 {
   "schema": 2,
   "artifacts": {
-    "codex-LICENSE": {
-      "url": "https://raw.githubusercontent.com/openai/codex/rust-v0.154.0/LICENSE",
-      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc"
-    },
     "logisim.jar": {
       "version": "Logisim ITA 2.16.2.2",
       "url": "https://github.com/Logisim-Ita/Logisim/releases/download/v2.16.2.2/Logisim-ITA.jar",
@@ -27,11 +23,6 @@
           "version": "Temurin 21.0.12.1+1",
           "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12.1_1.tar.gz",
           "sha256": "ce79869e1307ed8ee1e2baa86a412b1eb5b75d10a01006d788a6f968bcfaee94"
-        },
-        "codex": {
-          "version": "Codex 0.154.0 (official Linux musl package)",
-          "url": "https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
-          "sha256": "fc6e3e3b85f2cf7d664520ee5c66a7fe4aa12bae7d46834f47e2f165fd0d6f78"
         }
       }
     },
@@ -41,11 +32,6 @@
           "version": "Temurin 21.0.12.1+1",
           "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip",
           "sha256": "f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e"
-        },
-        "codex": {
-          "version": "Codex 0.154.0 (official Windows MSVC package)",
-          "url": "https://github.com/openai/codex/releases/download/rust-v0.154.0/codex-package-x86_64-pc-windows-msvc.tar.gz",
-          "sha256": "94cc5b3632769504c809f6c0364b693c0dfddc5c30c8361095d2263a07ac45a4"
         }
       }
     }

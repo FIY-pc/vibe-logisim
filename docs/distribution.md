@@ -1,6 +1,6 @@
 # 分发构建
 
-Windows x64 提供当前用户 NSIS 安装程序与便携 zip；Linux x64 提供 Debian 安装包与便携 tar.gz。包内包含 Node.js、裁剪 Java、Logisim-ITA、已编译桥接和内置 AI 运行时。Codex 首次使用时下载。人工编辑和仿真不需要模型服务。
+Windows x64 提供当前用户 NSIS 安装程序与便携 zip；Linux x64 提供 Debian 安装包与便携 tar.gz。包内包含 Node.js、裁剪 Java、Logisim-ITA、已编译桥接和内置 AI 运行时。人工编辑和仿真不需要模型服务。
 
 ## 构建与产物
 
@@ -13,7 +13,7 @@ npm run test:product
 npm run test:desktop
 ```
 
-构建脚本下载并校验锁定输入，使用 `jlink` 裁剪 Java，编译桥接，打包 TypeScript 运行时并构建 Tauri。构建只复制明确的产品资源，不包含账户、会话、个人工程或开发机配置。`config/runtime-lock.json` 固定 Java、Logisim 和可选 Codex；`scripts/workbench/runtime-lock.json` 固定 Node.js。
+构建脚本下载并校验锁定输入，使用 `jlink` 裁剪 Java，编译桥接，打包 TypeScript 运行时并构建 Tauri。构建只复制明确的产品资源，不包含账户、会话、个人工程或开发机配置。`config/runtime-lock.json` 固定 Java 和 Logisim；`scripts/workbench/runtime-lock.json` 固定 Node.js。
 
 | 平台    | `.workbench-cache/release/` 中的产物      | 启动                       |
 | ------- | ----------------------------------------- | -------------------------- |
@@ -31,7 +31,7 @@ Windows 安装程序可安装 WebView2；便携包需要系统已安装 WebView2
 | `workbench/` 资源目录内    | 内容                                   |
 | -------------------------- | -------------------------------------- |
 | `packages/agent-runtime/`  | 打包的 AI 进程、模型资料和电路参考知识 |
-| `config/runtime-lock.json` | 可选运行时下载清单                     |
+| `config/runtime-lock.json` | Java 与 Logisim 的版本锁定清单         |
 | `runtimes/node/`           | Node.js 与许可证                       |
 | `runtimes/java/`           | 裁剪 Java 与原有法律声明               |
 | `native/`                  | Logisim、桥接源码与预编译类            |
@@ -40,11 +40,11 @@ Windows 安装程序可安装 WebView2；便携包需要系统已安装 WebView2
 
 资源整体可移动，缺失时明确失败。应用状态使用 Tauri 应用数据目录，工程源文件属于用户选择的文件夹。`VIBE_WORKBENCH_STATE` 可指定独立状态目录；`VIBE_WORKBENCH_RESOURCES` 可指定完整资源目录。它们都支持含空格和非 ASCII 字符的路径。
 
-可选 Codex 下载经 SHA-256 校验后才安装，支持取消和重试。失败不会阻塞编辑和仿真。账户和模型服务配置存于用户状态目录，不写入分发资源。应用更新只提示，不自动下载安装。
+模型服务配置存于用户状态目录，不写入分发资源。应用更新只提示，不自动下载安装。
 
 ## 检查
 
-`test:product` 将资源与宿主复制到仓库外的临时目录，清除子进程 `PATH` 中的系统运行时，检查包内 Node、Java、编辑、仿真和本地模型协议。
+`test:product` 将资源与宿主复制到仓库外的临时目录，清除子进程 `PATH` 中的系统运行时，检查包内 Node、Java、编辑和仿真。
 
 `test:desktop` 解压便携包到含空格与非 ASCII 字符的路径，在独立状态中启动实际 Tauri 窗口。它检查前端挂载、IPC、原生逻辑门测试、内置运行时启动和关闭重开后的草稿身份。Linux 需要显示服务，CI 使用 Xvfb。这些检查不发送远端模型请求，也不代替交互体验检查。
 

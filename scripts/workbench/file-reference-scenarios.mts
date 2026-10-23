@@ -99,12 +99,8 @@ export async function verifyFileReferences(
     op: "open",
     path: path.join(project, "history.circ"),
   });
-  const toolRead = await call({
-    op: "projectFiles",
-    id: document.id,
-    path: "history.circ",
-    read: true,
-  });
+  // What the AI runtime's read_file sees: the folder-bound reference of the file.
+  const toolRead = await call({ op: "folderRead", path: "history.circ" });
   assert.equal(toolRead.folderId, folderId);
   assert.match(toolRead.url, /^workspace:\/\/history\.circ\?pathVersion=\d+$/);
   document = await call({

@@ -5,8 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 [dependencies]
-vibe-workspace-core = { path = "../workspace-core" }
-vibe-logisim-adapter = { path = "../logisim-adapter" }
+vibe-circuit-document = { path = "../circuit-document" }
+vibe-logisim-runtime = { path = "../logisim-runtime" }
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true

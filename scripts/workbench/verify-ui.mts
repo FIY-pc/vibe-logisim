@@ -33,7 +33,7 @@ try {
           builder.onLoad({ filter: /.*/, namespace: "worker-url" }, () => ({
             contents: 'export default "arrange-worker.js";',
           }));
-          builder.onLoad({ filter: /\/lib\/transport\.ts$/ }, () => ({
+          builder.onLoad({ filter: /\/shared\/transport\.ts$/ }, () => ({
             contents:
               "export const command=(v)=>globalThis.__command(v);export const desktop=()=>globalThis.__desktop??false;export const openPath=async()=>null;export const savePath=async()=>null;",
           }));
@@ -48,14 +48,14 @@ try {
             contents:
               "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{globalThis.__fileDropHandler=handler;return ()=>{if(globalThis.__fileDropHandler===handler)delete globalThis.__fileDropHandler}}});",
           }));
-          builder.onLoad({ filter: /\/lib\/events\.ts$/ }, () => ({
+          builder.onLoad({ filter: /\/shared\/events\.ts$/ }, () => ({
             contents:
               "export const subscribeEvents=(fn)=>globalThis.__subscribe(fn);",
           }));
-          builder.onLoad({ filter: /\/components\/FilePreview\.tsx$/ }, () => ({
+          builder.onLoad({ filter: /\/workspace\/FilePreview\.tsx$/ }, () => ({
             contents: "export const FilePreview=()=>null;",
           }));
-          builder.onLoad({ filter: /\/lib\/pdf\.ts$/ }, () => ({
+          builder.onLoad({ filter: /\/workspace\/pdf\.ts$/ }, () => ({
             contents:
               "export const openPdf=async()=>{throw new Error('PDF is not rendered under jsdom')};export const pageText=async()=>'';",
           }));

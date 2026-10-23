@@ -1,161 +1,22 @@
-/** Real Rust -> Java and Pi -> Rust paths, with an entirely local model fixture. */
+/** Real Rust -> Java document, simulation and folder paths against the native host; no model service. */
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { once } from "node:events";
 import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
-import { verifyProposals } from "./proposal-scenarios.mts";
 import { verifySimulationViewport } from "./viewport-scenarios.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 let child: ChildProcess | undefined,
   url = "",
-  logs = "",
-  requests = 0;
-const bodies: any[] = [];
+  logs = "";
 let stream: Awaited<ReturnType<typeof eventStream>> | undefined;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const model = http.createServer(async (req, res) => {
-  let text = "";
-  for await (const chunk of req) text += chunk;
-  const body = JSON.parse(text);
-  bodies.push(body);
-  requests++;
-  res.writeHead(200, { "content-type": "text/event-stream" });
-  const send = (delta: unknown, finish_reason: string | null = null) =>
-    res.write(
-      "data: " +
-        JSON.stringify({
-          id: "fixture",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "fixture",
-          choices: [{ index: 0, delta, finish_reason }],
-        }) +
-        "\n\n",
-    );
-  const toolMessages = body.messages.filter((m: any) => m.role === "tool");
-  const parsed = toolMessages.map((m: any) => {
-    try {
-      return JSON.parse(m.content);
-    } catch {
-      return null;
-    }
-  });
-  // Key each call on what the model has already received: ids and hashes come
-  // from the latest tool result that carries them.
-  const latest = (...keys: string[]) =>
-    [...parsed].reverse().find((r: any) => r && keys.every((k) => k in r)) ||
-    {};
-  const directory: any[] = latest("components").components || [];
-  const named = (label: string) =>
-    directory.find((c: any) => c.label === label)?.componentId || "unused";
-  const inputId = named("input"),
-    outputId = named("output");
-  const gateId =
-    directory.find((c: any) => c.factory === "NOT Gate")?.componentId ||
-    "unused";
-  const digest = latest("artifactSha256").artifactSha256 || "unused";
-  const calls = [
-    { name: "inspect_circuit", args: { circuit: "main" } },
-    {
-      name: "inspect_circuit",
-      args: { circuit: "main", componentIds: [inputId, gateId, outputId] },
-    },
-    {
-      name: "render_circuit",
-      args: {
-        circuit: "main",
-        viewport: { x: 0, y: 0, width: 400, height: 300, scale: 1 },
-      },
-    },
-    {
-      name: "describe_component",
-      args: { circuit: "main", library: "1", tool: "NOT Gate" },
-    },
-    {
-      name: "edit_candidate",
-      args: {
-        circuit: "main",
-        artifactSha256: digest,
-        title: "标记反相器",
-        edits: [{ componentId: gateId, attributes: { label: "inv" } }],
-      },
-    },
-    {
-      name: "wire_candidate",
-      args: {
-        circuit: "main",
-        title: "标注辅助网络",
-        additions: [
-          {
-            id: "tunnel-1",
-            factory: "Tunnel",
-            library: "0",
-            location: { x: 60, y: 200 },
-            attributes: { label: "aux" },
-          },
-        ],
-      },
-    },
-    { name: "inspect_circuit", args: { circuit: "main", includeWires: true } },
-    { name: "inspect_circuit", args: { circuit: "main", layoutReview: {} } },
-    { name: "render_circuit", args: { circuit: "main" } },
-    { name: "check_native_loadability", args: { circuit: "main" } },
-    { name: "project_files", args: { path: "", read: false } },
-    { name: "project_files", args: { path: "notes.txt", read: true } },
-    {
-      name: "checkout_candidate",
-      args: { candidateId: latest("candidateId").candidateId || "unused" },
-    },
-    {
-      name: "simulate_circuit",
-      args: {
-        circuit: "main",
-        vectors: [
-          { inputs: { input: 0 }, expected: { output: 1 } },
-          { inputs: { input: 1 }, expected: { output: 0 } },
-        ],
-      },
-    },
-    {
-      name: "trace_circuit",
-      args: {
-        circuit: "main",
-        ticks: 2,
-        inputs: { input: 0 },
-        watches: [{ name: "out", component: outputId, port: 0 }],
-        inputEvents: [{ tick: 1, name: "input", value: 1 }],
-      },
-    },
-  ];
-  const call = calls[requests - 1];
-  if (call) {
-    const args = JSON.parse(JSON.stringify(call.args));
-    send({
-      role: "assistant",
-      tool_calls: [
-        {
-          index: 0,
-          id: "tool-" + requests,
-          type: "function",
-          function: { name: call.name, arguments: JSON.stringify(args) },
-        },
-      ],
-    });
-    send({}, "tool_calls");
-  } else {
-    send({ role: "assistant", content: "检查完成" });
-    send({}, "stop");
-  }
-  res.end("data: [DONE]\n\n");
-});
 async function start() {
   const executable =
     process.env.VIBE_VERIFY_HOST ||
@@ -231,8 +92,6 @@ async function command(request: any) {
     throw Object.assign(new Error(body.error.message), body.error);
   return documentOf(body.result);
 }
-const agent = (method: string, args: unknown = {}) =>
-  command({ op: "agent", method, args });
 try {
   await start();
   let doc = await command({ op: "new", name: "example.circ" });
@@ -294,10 +153,6 @@ try {
   });
   const project = path.join(state, "project");
   await mkdir(project);
-  await writeFile(
-    path.join(project, "notes.txt"),
-    "Observe the output after each input change.",
-  );
   await command({ op: "folderOpen", path: project });
   const source = path.join(project, "example.circ");
   doc = await command({
@@ -444,249 +299,13 @@ try {
     automaticallySaved,
     "Recovery changed the source",
   );
-  await new Promise<void>((r) => model.listen(0, "127.0.0.1", r));
-  const port = (model.address() as any).port;
-  await agent("bind", {
-    id: doc.id,
-    revision: doc.revision,
-    circuit: "main",
-    workspaceKey: "test:independent-circuit",
-  });
-  await agent("configure", {
-    baseUrl: `http://127.0.0.1:${port}/v1`,
-    apiKey: "local-fixture",
-    model: "fixture",
-    api: "openai-completions",
-    effort: "none",
-    vision: true,
-  });
-  const references = await agent("stageReferences", {
-    workspaceKey: (await agent("conversations")).workspaceKey,
-    documentId: doc.id,
-    references: [
-      {
-        kind: "material",
-        label: "diagram.png",
-        path: "diagram.png",
-        text: "Independent reference fixture",
-        image:
-          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-      },
-    ],
-  });
-  await agent("ask", {
-    question: "检查这个电路并画一段导线",
-    references: references.map((r: any) => r.id),
-  });
-  let status: any;
-  for (let n = 0; n < 500; n++) {
-    status = await agent("status");
-    if (!status.busy) break;
-    await sleep(50);
-  }
-  assert.equal(status.busy, false);
-  const completed = await stream!.wait(
-    (e) =>
-      e.topic === "agent" &&
-      e.data.event.type === "assistant-completed" &&
-      e.data.event.text === "检查完成",
-  );
-  assert(
-    status.eventCursor >= completed.data.sequence,
-    "Snapshot cursor must cover already applied sidecar events",
-  );
-  const sequences = stream!.events
-    .filter((e) => e.topic === "agent")
-    .map((e) => e.data.sequence);
-  assert.equal(
-    new Set(sequences).size,
-    sequences.length,
-    "Event stream duplicated an agent event",
-  );
-  assert.equal(status.transmission, null, JSON.stringify(status.transmission));
-  assert.deepEqual(
-    status.messages.find((m: any) => m.type === "user").context.references,
-    references,
-  );
-  assert(
-    bodies[0].messages.some(
-      (m: any) =>
-        m.role === "user" &&
-        Array.isArray(m.content) &&
-        m.content.some((c: any) => c.type === "image_url"),
-    ),
-    "Quoted image must reach the first user prompt, not just a later tool result",
-  );
-  assert(JSON.stringify(bodies[0]).includes("Independent reference fixture"));
-  await assert.rejects(
-    agent("readReferences", {
-      workspaceKey: "another-folder",
-      ids: references.map((r: any) => r.id),
-    }),
-    /另一工作区/,
-  );
-  // Every tool call plus the closing turn; a broken tool would retry and
-  // raise the count.
-  assert.equal(requests, 15, JSON.stringify(status.messages));
-  for (const body of bodies)
-    for (const m of body.messages.filter((m: any) => m.role === "tool")) {
-      assert(!String(m.content).includes('"error"'), m.content);
-      assert(!String(m.content).includes("Validation failed"), m.content);
-    }
-  const pendingProposals = await agent("proposals", { documentId: doc.id });
-  assert.equal(
-    pendingProposals.length,
-    1,
-    "Scratch edits must remain a durable proposal",
-  );
-  // The model's own checks are transient; a reviewer re-runs them on the exact
-  // candidate text, and only these runs are kept as evidence.
-  const proposal = {
-    id: doc.id,
-    revision: pendingProposals[0].revision,
-    original: pendingProposals[0].original,
-    xml: pendingProposals[0].xml,
-  };
-  for (const verification of [
-    {
-      kind: "vectors",
-      vectors: [{ inputs: { input: 0 }, expected: { output: 1 } }],
-    },
-    {
-      kind: "trace",
-      ticks: 2,
-      inputs: { input: 0 },
-      events: [],
-      watches: [{ component: output.id, port: 0 }],
-    },
-  ])
-    await command({
-      op: "proposalVerify",
-      ...proposal,
-      circuit: "main",
-      verification,
-    });
-  const reviewed = await command({ op: "proposalReview", ...proposal });
-  assert.equal(
-    reviewed.evidence.length,
-    2,
-    "Candidate vector and trace runs must be linked to the proposal",
-  );
-  assert(
-    reviewed.evidence.every((r: any) => r.revision === reviewed.after.revision),
-  );
-  assert(
-    bodies.some((b) =>
-      b.messages.some(
-        (m: any) =>
-          Array.isArray(m.content) &&
-          m.content.some((c: any) => c.type === "image_url"),
-      ),
-    ),
-    "Native image missing from model input",
-  );
-  assert(
-    status.messages.some(
-      (m: any) => m.type === "assistant" && m.text === "检查完成",
-    ),
-  );
-  assert.equal(
-    await readFile(source, "utf8"),
-    automaticallySaved,
-    "A candidate must not reach the source before the user applies it",
-  );
-  assert.equal(
-    (await command({ op: "read", id })).revision,
-    restoredRevision,
-    "Tools must leave the open document untouched",
-  );
-  const results = bodies
-    .at(-1)
-    .messages.filter((m: any) => m.role === "tool")
-    .flatMap((m: any) => {
-      try {
-        return [JSON.parse(m.content)];
-      } catch {
-        return [];
-      }
-    });
-  assert(
-    results.some((r: any) => r.isolated && r.passed === 2),
-    "Model must receive real vector comparisons",
-  );
-  assert(
-    results.some(
-      (r: any) => r.isolated && r.completed && r.samples?.length === 3,
-    ),
-    "Model must receive native tick samples",
-  );
-  const previous = status.conversationId;
-  await agent("conversations", { action: "new" });
-  await agent("conversations", { action: "select", id: previous });
-  assert(
-    (await agent("status")).messages.some((m: any) => m.text === "检查完成"),
-  );
-  const reply = (await agent("status")).messages.find(
-    (m: any) => m.type === "assistant" && m.canFork,
-  );
-  assert(reply, "Completed reply must expose a valid fork boundary");
-  await agent("conversations", {
-    action: "rename",
-    id: previous,
-    title: "Inspection",
-  });
-  const forked = await agent("conversations", {
-    action: "fork",
-    messageId: reply.id,
-  });
-  assert.notEqual(forked.activeId, previous);
-  await agent("conversations", { action: "archive", id: forked.activeId });
-  await agent("conversations", { action: "restore", id: forked.activeId });
-  await agent("conversations", { action: "select", id: previous });
-  const editable = (await agent("status")).messages.find(
-    (m: any) => m.type === "user" && m.canEdit,
-  );
-  assert(editable, "Editable message must retain its native checkpoint");
-  await agent("ask", {
-    question: "Recheck the output",
-    editMessageId: editable.id,
-  });
-  for (let n = 0; n < 200 && (await agent("status")).busy; n++) await sleep(25);
-  const revised = await agent("status");
-  assert.equal(
-    revised.messages.filter((m: any) => m.type === "user").length,
-    1,
-  );
-  assert(revised.messages.some((m: any) => m.text === "Recheck the output"));
-  // The review dialog applies a candidate with one replace edit. This comes
-  // after the message-checkpoint checks: restoring an older checkpoint into a
-  // changed document is refused on purpose.
-  const applied = documentOf(
-    await command({
-      op: "edit",
-      id,
-      revision: restoredRevision,
-      circuit: "main",
-      edit: { kind: "replace", xml: pendingProposals[0].xml },
-    }),
-  );
-  assert.equal(applied.revision, reviewed.after.revision);
-  assert.notEqual(applied.revision, restoredRevision);
-  assert.equal(
-    await readFile(source, "utf8"),
-    (await command({ op: "source", id, revision: applied.revision })).xml,
-    "Shared document edits in the project folder must be automatically saved",
-  );
-  const written = await readFile(source, "utf8");
-  assert(written.includes('val="inv"'), "Candidate attribute edit was lost");
-  assert(written.includes('val="aux"'), "Candidate placement was lost");
-  const after = applied;
+  // TODO(agent-runtime): the sidecar turn scenario is re-added once packages/agent-runtime/src/worker.mts is implemented; see packages/agent-runtime/README.md.
   // Save As must not alias the old path to the open copy, including after restart.
   const copyPath = path.join(state, "copy.circ");
   const copied = await command({
     op: "save",
     id,
-    revision: after.revision,
+    revision: doc.revision,
     path: copyPath,
   });
   const reopened = await command({ op: "open", path: source });
@@ -745,7 +364,6 @@ try {
   await start();
   assert.equal((await command({ op: "open", path: copyPath })).id, id);
   await verifySimulationViewport(command);
-  await verifyProposals(command);
   await verifyEditing(command);
   // Files saved by 2.15 builds load on the bundled 2.15 runtime. A relocated
   // product must serve both runtimes from its precompiled bridge classes.
@@ -783,11 +401,9 @@ try {
     "Observation did not survive restart",
   );
   console.log(
-    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; Pi tool/image roundtrip and candidate verification; conversation selection; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup.",
+    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup.",
   );
 } finally {
   await stop();
-  model.closeAllConnections();
-  model.close();
   await rm(state, { recursive: true, force: true });
 }

@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| root.join(".workbench-state"));
     let host = Host::new(root, state, None)?;
     let app = Router::new()
-        // Review requests carry the original and the candidate source together.
+        // Imports and replacements carry whole circuit sources in the body.
         .route(
             "/api/command",
             post(dispatch).layer(DefaultBodyLimit::max(128 * 1024 * 1024)),

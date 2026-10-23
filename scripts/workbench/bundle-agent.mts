@@ -33,15 +33,17 @@ for (const file of [
 ])
   await copy("packages/agent-runtime/circuit-knowledge/" + file);
 await copy("config/runtime-lock.json");
-await copy("packages/agent-runtime/core/model-catalog.LICENSE");
+await copy("packages/agent-runtime/src/models/catalog.LICENSE");
 // The runtime starts its arrange thread by the bundled file name beside it.
 const entries = [
   [
     "packages/agent-runtime/src/worker.mts",
     "packages/agent-runtime/src/worker.mjs",
   ],
+  // tools/layout.mts resolves ./arrange-worker.mjs next to the bundled
+  // worker, so the thread bundle lands beside worker.mjs.
   [
-    "packages/agent-runtime/src/arrange-worker.mts",
+    "packages/agent-runtime/src/tools/arrange-worker.mts",
     "packages/agent-runtime/src/arrange-worker.mjs",
   ],
 ];

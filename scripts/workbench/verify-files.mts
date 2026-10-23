@@ -48,7 +48,8 @@ child.stderr.on("data", (chunk) => {
   url = logs.match(/Rust host: (http:\/\/127\.0\.0\.1:\d+)/)?.[1] || "";
 });
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) => (result && result.view ? result.view : result);
+const documentOf = (result: any) =>
+  result && result.view ? result.view : result;
 async function command(value: Record<string, unknown>): Promise<any> {
   if (
     ["folderCreate", "folderRename", "folderTrash"].includes(String(value.op))

@@ -5,7 +5,7 @@ import path from "node:path";
 import {
   storeReference,
   readReferences,
-} from "../../packages/agent-runtime/src/references.mts";
+} from "../../packages/agent-runtime/src/conversations/references.mts";
 const state = await mkdtemp(path.join(tmpdir(), "vibe-reference-"));
 try {
   const observation = {
@@ -16,9 +16,22 @@ try {
     circuit: "child",
     instancePath: ["instance-1"],
     signals: [{ key: "q:0", label: "Q", bits: "0011" }],
-    frame: { children: [] },
+    frame: {
+      circuit: "child",
+      instancePath: ["instance-1"],
+      clock: { enabled: false, frequency: 4 },
+      frameSequence: 7,
+      children: [],
+    },
   };
-  const host = async () => [observation];
+  const render = "data:image/png;base64,iVBORw0KGgo=";
+  // One kept frame: the detail carries the state, the image op its picture.
+  const host = async (request: any) =>
+    request.op === "observationGet"
+      ? observation
+      : request.op === "observationImage"
+        ? render
+        : [observation];
   const ref = await storeReference(
     state,
     "folder",
@@ -32,6 +45,8 @@ try {
   assert.equal(frozen.label, "before edge");
   assert(frozen.text.includes("0011"));
   assert(frozen.text.includes("instance-1"));
+  assert(frozen.text.includes('"frameSequence":7'));
+  assert.equal(frozen.image, render);
   await assert.rejects(readReferences(state, "other-folder", [ref.id]));
   await assert.rejects(readReferences(state, "folder", ["../../escape"]));
   await assert.rejects(

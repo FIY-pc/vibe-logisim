@@ -5,8 +5,8 @@ import {
   systemProxy,
   networkFetch,
   closeNetwork,
-} from "../../packages/agent-runtime/src/network.mts";
-import { resolveSystemProxy } from "../../packages/agent-runtime/core/system-proxy.mts";
+} from "../../packages/agent-runtime/src/network/fetch.mts";
+import { resolveSystemProxy } from "../../packages/agent-runtime/src/network/system-proxy.mts";
 const registry = `ProxyEnable REG_DWORD 0x1\nProxyServer REG_SZ http=127.0.0.1:8080;https=127.0.0.1:8443\nProxyOverride REG_SZ *.internal;<local>`;
 const windows = { platform: "win32", read: async () => registry };
 assert.equal(

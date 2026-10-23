@@ -10,7 +10,7 @@ Deliver a circuit that a person can trace, explain and continue editing. Functio
 ## Understand what can change
 
 - Identify the requested definitions, external interfaces, existing useful organization and explicitly protected objects or paths. A geometric top-panel detector only suggests protection; it cannot interpret a course requirement.
-- For a template, retain a baseline and the concrete protected objects before changing them. Direct XML edits have no automatic fixed-object guarantee. A submit receipt lists definition changes, not proof that a fixed panel survived.
+- For a template, record the concrete protected objects before changing them. Direct XML edits have no automatic fixed-object guarantee; after them, inspect the protected objects again instead of assuming they survived.
 - Preserve the user's scope. A small repair need not rearrange an otherwise readable circuit. For a complete build, keep track of all newly created or substantially changed definitions, including subcircuits completed earlier in the turn.
 
 ## Choose organization while constructing
@@ -34,11 +34,11 @@ Reserve space for native symbols **and their labels/value displays**, not just a
 
 The built-in grouped arranger is available to turn semantic groups into geometry, local wires and named remote links, with native connectivity and interface checks. Read [the arrangement reference](references/arrangement.md) when using it. Direct `.circ` edits, scripts and alternative methods remain valid; the same delivery standard applies to their outputs.
 
-An arrangement candidate has not been applied until `checkout_candidate` writes it. Direct file edits are already on disk; `submit_circuit` refreshes the shared canvas and gives a bounded diagnostic receipt. Neither action establishes intended behavior.
+`arrange_circuit` applies its result to the file as soon as the netlist is proven equivalent; `undo_edit` takes it back. Direct file edits are already on disk and the app reloads them. Neither establishes intended behavior.
 
 ## Review the actual deliverable
 
-When a layout is disappointing, name the specific reading problem and retain what already works. Compare a proposed revision against the last useful candidate, including its structure and tracing effort. These observed cases illustrate the decisions:
+When a layout is disappointing, name the specific reading problem and retain what already works. Compare a proposed revision against the last useful layout, including its structure and tracing effort. These observed cases illustrate the decisions:
 
 - A bank has a straight shared-control trunk and short branches, but one label overlaps. Repair the label reservation or nearby spacing; replacing the trunk with winding branches or one Tunnel per pin loses the original advantage.
 - A staged page is too wide because a long author legend occupies a bank cell and branches stack in one column. Separate the annotation and adjust group/stage packing. Deleting the stages and protecting every signal as named-only may shrink the page while making the main operation harder to follow.
@@ -46,7 +46,7 @@ When a layout is disappointing, name the specific reading problem and retain wha
 
 These are reasoning examples, not permission to change protected structures or mandatory choices for every circuit. Each revision should fix its stated problem without surrendering useful organization. The arranger's representationChoices and annotationOnlyGroups help expose such tradeoffs; they do not choose the semantic plan for you.
 
-Use `inspect_circuit({circuit: "<exact definition name>", layoutReview: {}})` for compact, read-only evidence on the working file or an optional `candidateId`. It works without calling the arranger. The result identifies overlapping bounds and suggested `render_circuit` viewports. `readingPaths.nearbyNamedLinks` gives actual source/consumer ports with identical native bit nets but separate copper paths joined by the same Tunnel label. These examples identify a possible hidden local relationship, not a wiring prescription or a full graph: split/recombined buses, ambiguous drivers and recognized control ports are excluded. Submit includes the same review for the active definition and lists other changed definitions; this is not coverage of the whole task.
+Use `inspect_circuit({circuit: "<exact definition name>", layoutReview: {}})` for compact, read-only evidence on the working file. It works without calling the arranger. The result identifies overlapping bounds and suggested `render_circuit` viewports. `readingPaths.nearbyNamedLinks` gives actual source/consumer ports with identical native bit nets but separate copper paths joined by the same Tunnel label. These examples identify a possible hidden local relationship, not a wiring prescription or a full graph: split/recombined buses, ambiguous drivers and recognized control ports are excluded. The review covers one definition at a time; it is not coverage of the whole task.
 
 View the main diagram and newly created/substantially changed definitions at a scale where labels can be read. In a large diagram, use the reported local viewports or your own regions; a scaled-down whole-sheet image can hide dense pin and label collisions. Cover useful regions beyond the first bounded examples if the report is truncated.
 

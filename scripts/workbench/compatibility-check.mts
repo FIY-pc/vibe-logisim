@@ -12,7 +12,7 @@ import {
   portSignal,
   signalTrace,
   wireSignal,
-} from "../../apps/workbench/src/lib/connections.ts";
+} from "../../apps/workbench/src/editor/connectivity.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-compatibility-"));
@@ -73,10 +73,17 @@ async function start(doc: any, circuit = "main") {
     command: { kind: "start" },
   });
   assert(result.sessionId && result.viewId, JSON.stringify(result));
-  return { sessionId: result.sessionId as string, viewId: result.viewId as string };
+  return {
+    sessionId: result.sessionId as string,
+    viewId: result.viewId as string,
+  };
 }
 /** Drives the run's current view. */
-const drive = (doc: any, run: { sessionId: string; viewId: string }, request: any) =>
+const drive = (
+  doc: any,
+  run: { sessionId: string; viewId: string },
+  request: any,
+) =>
   command({
     op: "simulationAct",
     documentId: doc.id,

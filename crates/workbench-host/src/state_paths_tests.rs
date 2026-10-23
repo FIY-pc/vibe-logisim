@@ -1,6 +1,6 @@
-use crate::{Host, ReviewRequest, WorkspaceRequest};
+use crate::{DocumentRequest, Host};
 use std::path::{Path, PathBuf};
-use vibe_workspace_core::{Document, Edit, Point};
+use vibe_circuit_document::{Document, Edit, Point};
 
 // Start with the ordinary path supplied by a launcher, even if TEMP itself was
 // canonicalized. The host, not its caller or executable manifest, must normalize it.
@@ -31,7 +31,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     let state = deep_directory(temporary.path(), "state");
     let host = Host::new(temporary.path().into(), state.clone(), None).unwrap();
     let created = host
-        .dispatch(WorkspaceRequest::New {
+        .dispatch(DocumentRequest::New {
             name: "long-path.circ".into(),
         })
         .await
@@ -48,7 +48,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     assert_eq!(host.snapshot(id, revision).await.unwrap().0, snapshot);
     assert_eq!(std::fs::read(&snapshot).unwrap(), bytes);
     let history = host
-        .dispatch(ReviewRequest::HistoryList { id: id.into() })
+        .dispatch(DocumentRequest::HistoryList { id: id.into() })
         .await
         .unwrap();
     assert_eq!(history["entries"].as_array().unwrap().len(), 1);
@@ -57,7 +57,7 @@ async fn state_paths_preserve_long_snapshot_history_and_restart() {
     let restored = Host::new(temporary.path().into(), state, None).unwrap();
     assert_eq!(restored.snapshot(id, revision).await.unwrap().0, snapshot);
     let reloaded = restored
-        .dispatch(ReviewRequest::HistoryList { id: id.into() })
+        .dispatch(DocumentRequest::HistoryList { id: id.into() })
         .await
         .unwrap();
     assert_eq!(reloaded["entries"], history["entries"]);

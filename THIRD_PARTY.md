@@ -10,11 +10,10 @@
 | Node.js                                   | 独立 AI 运行时进程，MIT 及其包含的第三方许可                  | `runtimes/node/LICENSE`                                         |
 | Pi SDK                                    | 内置模型协议与工具回合，MIT                                   | `third-party/node/` 中的包信息和许可证                          |
 | Models.dev                                | 模型名称与能力元数据，MIT                                     | 随 AI 运行时保留快照与许可证；不决定模型服务实际可用的模型      |
-| elkjs | 分组布局的分层求解，EPL-2.0 | 随 AI 运行时打包；许可证与包信息位于 `third-party/node/` |
+| elkjs                                     | 分组布局的分层求解，EPL-2.0                                   | 随 AI 运行时打包；许可证与包信息位于 `third-party/node/`        |
 | Eclipse Temurin                           | Java 运行时，GPL-2.0 with Classpath Exception 及其第三方许可  | 裁剪后的 `runtimes/java/legal/`                                 |
 | Logisim-ITA 2.16.2.2                      | 电路加载、绘制与仿真，GPL-3.0                                 | `native/Logisim-ITA.jar` 与 `third-party/logisim/source.tar.gz` |
 | HUST 2020 版 Logisim（2.15.0.2）          | 加载与仿真由 2.15 版保存的电路，原样附带                      | `native/logisim-ita-cn-20200118.exe`                            |
-| Codex                                     | 可选的 ChatGPT / Responses 运行时，Apache-2.0                 | `third-party/codex-LICENSE`；程序首次使用时按清单下载           |
 
 上表中的路径相对于应用的 `workbench` 资源目录。Windows 便携包将其放在 `resources/workbench`；安装程序使用系统应用资源目录。第三方 Node 依赖的版本和许可证信息分别列于 `third-party/node/packages.json` 与 `third-party/frontend/packages.json`。
 

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { ProviderSettings } from "../../../apps/workbench/src/components/ProviderSettings";
-import { ModelPicker } from "../../../apps/workbench/src/components/ModelPicker";
+import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
+import { ModelPicker } from "../../../apps/workbench/src/conversation/ModelPicker";
 
 export async function verifyAISettings() {
   const container = document.createElement("div");
@@ -54,19 +54,13 @@ export async function verifyAISettings() {
     });
   try {
     const props = {
-      runtime: "builtin" as const,
       services,
       provider: services[0],
       defaultServiceId: "first",
-      defaultRuntime: "builtin" as const,
       conversationId: "history-A",
       hasHistory: true,
       busy: false,
       request: request as any,
-      onRuntime: async (runtime: string) => {
-        calls.push({ method: "runtime", args: { runtime } });
-      },
-      onLogin: () => {},
       onSaved: async () => {},
       onClose: () => {},
     };
@@ -103,23 +97,7 @@ export async function verifyAISettings() {
         conversationId: "history-A",
       },
     });
-    await click(button("运行时"));
-    assert.doesNotMatch(container.textContent!, /导入|旧版/);
-    await change(
-      container.querySelector('select[aria-label="新对话默认运行时"]')!,
-      "codex",
-    );
-    assert.equal(calls.at(-1)?.method, "defaultRuntime");
-    assert.equal(
-      calls.some((call) => call.method === "runtime"),
-      false,
-    );
-    await click(button("用 Codex 新建对话"));
-    assert.deepEqual(calls.at(-1), {
-      method: "runtime",
-      args: { runtime: "codex" },
-    });
-    await click(button("模型服务"));
+    assert.doesNotMatch(container.textContent!, /导入|旧版|Codex/);
     await click(container.querySelector('button[aria-label="编辑 first"]')!);
     const key = container.querySelector<HTMLInputElement>(
       'input[type="password"]',
@@ -149,14 +127,10 @@ export async function verifyAISettings() {
     await act(async () =>
       root.render(<ProviderSettings {...props} conversationId={null} />),
     );
-    await click(button("运行时"));
-    assert.doesNotMatch(container.textContent!, /此对话/);
-    assert.equal(button("用 Codex 新建对话").disabled, true);
     assert.equal(
-      container.querySelector<HTMLSelectElement>(
-        'select[aria-label="新对话默认运行时"]',
-      )!.disabled,
-      false,
+      button("用于此对话").disabled,
+      true,
+      "Without a conversation a service can only become the default",
     );
 
     const listed: boolean[] = [],

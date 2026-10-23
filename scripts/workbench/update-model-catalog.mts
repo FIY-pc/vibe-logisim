@@ -5,7 +5,7 @@ import {
   compact,
   URL,
   VERSION,
-} from "../../packages/agent-runtime/core/model-catalog.mts";
+} from "../../packages/agent-runtime/src/models/catalog.mts";
 
 const text = process.argv[2]
   ? await readFile(process.argv[2], "utf8")
@@ -26,7 +26,7 @@ const snapshot = {
 };
 const target = path.resolve(
   import.meta.dirname,
-  "../../packages/agent-runtime/core/model-catalog.snapshot.json",
+  "../../packages/agent-runtime/src/models/catalog.snapshot.json",
 );
 await writeFile(target, JSON.stringify(snapshot));
 console.log(

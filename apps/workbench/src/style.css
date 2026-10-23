@@ -742,6 +742,37 @@ button.primary {
 .composer footer button:last-child {
   margin-left: auto;
 }
+.chat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.chat-card > span {
+  flex: 1;
+  min-width: 0;
+}
+.chat-card ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.chat-card li small {
+  display: inline-block;
+  min-width: 28px;
+  margin-right: 6px;
+}
+.chat-card > small {
+  color: var(--muted);
+}
 .provider-form {
   padding: 14px;
   overflow: auto;
@@ -910,18 +941,6 @@ button.primary {
 }
 .message.assistant img {
   max-width: 100%;
-}
-.runtime-progress {
-  padding: 8px 14px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-}
-.agent-questions label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 12px 0;
 }
 .inspector textarea {
   width: 100%;

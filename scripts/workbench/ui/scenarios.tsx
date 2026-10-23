@@ -3,29 +3,28 @@ import { verifyAISettings } from "./ai-settings";
 import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyProjectInfoUI } from "./project-info";
 import { verifyDocumentHistory } from "./history";
-import { verifyReferenceLinksAndCandidates } from "./reference-links";
+import { verifyReferenceLinks } from "./reference-links";
 import { verifyReferencesUI } from "./references";
 import { verifyFilesUI } from "./files";
 import { verifyRestoredInteractions } from "./restored-interactions";
-import { verifyProposalUI } from "./proposal";
 import assert from "node:assert/strict";
 import { act, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Chat } from "../../../apps/workbench/src/components/Chat";
+import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { App } from "../../../apps/workbench/src/App";
-import { Canvas } from "../../../apps/workbench/src/components/Canvas";
-import { ProviderSettings } from "../../../apps/workbench/src/components/ProviderSettings";
-import { ShortcutSettings } from "../../../apps/workbench/src/components/ShortcutSettings";
+import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
+import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
+import { ShortcutSettings } from "../../../apps/workbench/src/shell/ShortcutSettings";
 import {
   bindingProblem,
   defaultBindings,
   eventBinding,
   loadBindings,
-} from "../../../apps/workbench/src/lib/shortcuts";
+} from "../../../apps/workbench/src/shared/shortcuts";
 let observedFocus: any = null;
 let templateHandler: ((request: any) => any) | null = null;
-import { usePlacement } from "../../../apps/workbench/src/lib/usePlacement";
-import { PlacementInspector } from "../../../apps/workbench/src/components/PlacementInspector";
+import { usePlacement } from "../../../apps/workbench/src/editor/usePlacement";
+import { PlacementInspector } from "../../../apps/workbench/src/editor/PlacementInspector";
 import { Workbench } from "./workbench";
 const noPlacement = {
   tool: null,
@@ -90,8 +89,7 @@ const state = () => ({
 (globalThis as any).__command = async (request: any) => {
   calls.push(request);
   if (request.op === "agent") {
-    if (request.method === "proposals") return [];
-    if (request.method === "bind") runtimeDoc = request.args.id;
+    if (request.method === "bind") runtimeDoc = request.args.documentId;
     if (request.method === "ask" && askGate) await askGate.promise;
     if (request.method === "conversations")
       return {
@@ -255,23 +253,9 @@ await act(async () => {
     type: "document-changed",
     document: { ...doc("A"), revision: "r2" },
   });
-  agent({
-    type: "proposed-source",
-    id: "proposal-live",
-    createdAt: 1,
-    documentId: "A",
-    revision: "r2",
-    xml: "<project/>",
-  });
 });
 assert.equal(changed.at(-1).revision, "r2");
-// A proposal is actionable on the revision it was written from, so the chat
-// shows it once the document has moved to that revision.
-await render(chat({ ...doc("A"), revision: "r2" }));
-assert.ok(document.querySelector(".proposal"));
-console.log(
-  "PASS: hidden conversation continues receiving document changes and proposals",
-);
+console.log("PASS: hidden conversation continues receiving document changes");
 localStorage.setItem("vibe.draft:B:chat-B", "B own draft");
 await input("A to submit");
 askGate = defer();
@@ -296,7 +280,6 @@ assert.equal(
   document.querySelector<HTMLTextAreaElement>("textarea")!.disabled,
   false,
 );
-assert.ok(!document.querySelector(".proposal"));
 console.log(
   "PASS: document switch waits for binding, restores only matching conversation draft",
 );
@@ -1333,11 +1316,10 @@ console.log(
 );
 await act(async () => root.unmount());
 assert.deepEqual(errors, []);
-await verifyProposalUI();
 await verifyRestoredInteractions();
 await verifyFilesUI();
 await verifyReferencesUI();
-await verifyReferenceLinksAndCandidates();
+await verifyReferenceLinks();
 await verifyDocumentHistory();
 await verifyProjectInfoUI();
 await verifyConversationSummaries();

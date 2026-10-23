@@ -1,46 +1,31 @@
 mod agent;
-mod diagnostics;
-mod error;
-mod events;
-mod feedback;
-mod interfaces;
-mod requests;
-pub use error::{ErrorCode, HostError};
-pub use events::{Event, Events, Warning};
-pub use interfaces::{InterfaceImpact, InterfacePreview, InterfaceRead};
-pub use requests::{
-    AgentRequest, EditingRequest, FolderRequest, InterfaceRequest, ProjectRequest, Request,
-    ReviewRequest, SimulationRequest, WorkspaceRequest,
-};
-mod file_history;
-mod file_references;
-mod folder_operations;
-pub use folder_operations::{ImportAction, ImportChoice};
-mod comparison;
-mod document_history;
-mod movement;
-mod observations;
-mod project_info;
-mod proposal_review;
-mod snapshots;
-pub use comparison::ComparisonDetail;
-pub use document_history::{HistoryList, HistoryReview};
-pub use proposal_review::ProposalReview;
-pub use verification::{VerificationInput, VerificationRecord};
+mod api;
+mod app;
+mod documents;
+mod folder;
+mod simulation;
 #[cfg(test)]
 mod state_paths_tests;
-mod topology;
-mod verification;
-pub use observations::{ObservationRecord, ObservationSummary};
-use requests::Effect;
-pub use requests::editing::{EditResult, ErrorDetail, MovePreview, Selection};
+use api::Effect;
+pub use api::{
+    AgentRequest, AppRequest, DocumentRequest, EditResult, ErrorCode, ErrorDetail, Event, Events,
+    FolderRequest, HostError, MovePreview, Request, Selection, SimulationRequest,
+    TraceProgramInput, Warning,
+};
+use app::{diagnostics, feedback};
+pub use documents::{
+    ButtonEvent, HistoryList, HistoryReview, InputEvent, InterfaceImpact, InterfacePreview,
+    InterfaceRead, TestVector, TraceWatch,
+};
+use documents::{interfaces, snapshots};
+pub use folder::{ImportAction, ImportChoice};
 use serde::Serialize;
 use serde_json::{Value, json};
+pub use simulation::{ObservationRecord, ObservationSummary};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-pub use verification::{InputEvent, TestVector, TraceWatch};
-use vibe_logisim_adapter::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
-use vibe_workspace_core::{Document, DocumentView, Workspace, history::DocumentHistory};
+use vibe_circuit_document::{Document, DocumentView, Workspace, history::DocumentHistory};
+use vibe_logisim_runtime::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
 
 #[derive(Clone)]
 pub struct Host {
@@ -60,10 +45,10 @@ pub struct Host {
     recovery_error: Option<String>,
     events: tokio::sync::broadcast::Sender<Event>,
     stopping: tokio::sync::watch::Sender<bool>,
-    folder: Arc<Mutex<Option<vibe_workspace_core::Folder>>>,
+    folder: Arc<Mutex<Option<vibe_circuit_document::Folder>>>,
     history: Arc<DocumentHistory>,
     /// Digests of library files, by path, length and modification time.
-    digests: Arc<std::sync::Mutex<document_history::Digests>>,
+    digests: Arc<std::sync::Mutex<documents::history::Digests>>,
     // The OS releases this lease after a crash; no stale PID files to delete.
     _lease: Arc<std::fs::File>,
 }
@@ -82,7 +67,7 @@ impl Host {
         self.native.lock().await.shutdown().await;
         // Edits reach the session journal before they return; wait for the
         // background sync so the last ones are on disk before exit.
-        let _ = tokio::task::spawn_blocking(vibe_workspace_core::flush_journals).await;
+        let _ = tokio::task::spawn_blocking(vibe_circuit_document::flush_journals).await;
     }
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Result<Self> {
         std::fs::create_dir_all(&state).map_err(|e| e.to_string())?;
@@ -107,8 +92,8 @@ impl Host {
         };
         let folder = std::fs::read(state.join("folder.json"))
             .ok()
-            .and_then(|b| serde_json::from_slice::<vibe_workspace_core::Folder>(&b).ok())
-            .and_then(|f| vibe_workspace_core::Folder::open(&f.path).ok());
+            .and_then(|b| serde_json::from_slice::<vibe_circuit_document::Folder>(&b).ok())
+            .and_then(|f| vibe_circuit_document::Folder::open(&f.path).ok());
         let launcher = Launcher::new(
             RuntimeFacts::new(root.clone(), runtime.clone()),
             state.clone(),
@@ -147,7 +132,7 @@ impl Host {
         let documents = self.state.join("snapshots").join(&doc.id);
         let directory = documents
             .join(&view.revision)
-            .join(vibe_workspace_core::digest(
+            .join(vibe_circuit_document::digest(
                 view.path
                     .as_ref()
                     .map(|p| p.to_string_lossy().into_owned())
@@ -199,7 +184,7 @@ impl Host {
     }
     /// Runs one request with the rules its op declares: writes wait for each
     /// other, record history, write documents back and persist the workspace.
-    async fn apply(&self, request: Request, meta: &requests::Meta) -> Result<Value> {
+    async fn apply(&self, request: Request, meta: &api::Meta) -> Result<Value> {
         let writes = meta.effect != Effect::Read;
         if writes && let Some(error) = &self.recovery_error {
             return Err(HostError::new(ErrorCode::RecoveryFailed, error.clone()));
@@ -221,15 +206,11 @@ impl Host {
             _ => None,
         };
         let mut result = match request {
-            Request::Workspace(r) => self.workspace_request(r).await,
-            Request::Editing(r) => self.editing_request(r).await,
-            Request::Interface(r) => self.interface_request(r).await,
-            Request::Simulation(r) => self.simulation_request(r).await,
-            Request::Review(r) => self.review_request(r).await,
+            Request::Document(r) => self.document_request(r).await,
             Request::Folder(r) => self.folder_request(r).await,
-            Request::Project(r) => self.project_request(r).await,
+            Request::Simulation(r) => self.simulation_request(r).await,
             Request::Agent(r) => self.agent_request(r).await,
-            Request::Draft(r) => self.draft_request(r).await,
+            Request::App(r) => self.app_request(r).await,
         };
         let Ok(document) = &mut result else {
             return result;

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { Chat } from "../../../apps/workbench/src/components/Chat";
-import { useChatReferences } from "../../../apps/workbench/src/components/ChatReferences";
+import { Chat } from "../../../apps/workbench/src/conversation/Chat";
+import { useChatReferences } from "../../../apps/workbench/src/conversation/ChatReferences";
 import { Workbench } from "./workbench";
 export async function verifyReferencesUI() {
   const container = document.createElement("div");
@@ -143,7 +143,6 @@ async function verifyDocumentReferenceBinding() {
     return () => listeners.delete(listener);
   };
   globals.__command = async (request: any) => {
-    if (request.method === "proposals") return [];
     if (request.method === "conversations") return { conversations: [] };
     if (request.method === "bind") {
       assert.equal(
@@ -151,12 +150,12 @@ async function verifyDocumentReferenceBinding() {
         false,
         "An active turn cannot be rebound to another circuit document",
       );
-      binds.push(request.args.id);
-      if (request.args.id === "B")
+      binds.push(request.args.documentId);
+      if (request.args.documentId === "B")
         await new Promise<void>((resolve) => {
           releaseBind = resolve;
         });
-      bound = request.args.id;
+      bound = request.args.documentId;
     }
     if (request.method === "stageReferences") {
       assert.equal(

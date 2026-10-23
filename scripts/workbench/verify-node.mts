@@ -47,7 +47,7 @@ function cleanEnvironment(state: string) {
   for (const key of Object.keys(env))
     if (
       key.toLowerCase() === "path" ||
-      /^(NODE_OPTIONS|NODE_PATH|NODE_V8_COVERAGE|VIBE_LOGISIM_CODEX|VIBE_LOGISIM_CODE_MODE_HOST|VIBE_LOGISIM_NODE|VIBE_LOGISIM_AGENT_ROOT)$/.test(
+      /^(NODE_OPTIONS|NODE_PATH|NODE_V8_COVERAGE|VIBE_LOGISIM_CODE_MODE_HOST|VIBE_LOGISIM_NODE|VIBE_LOGISIM_AGENT_ROOT)$/.test(
         key,
       )
     )

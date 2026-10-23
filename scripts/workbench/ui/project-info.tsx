@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { ProjectInfo } from "../../../apps/workbench/src/components/ProjectInfo";
-import { FindDialog } from "../../../apps/workbench/src/components/FindDialog";
+import { ProjectInfo } from "../../../apps/workbench/src/workspace/ProjectInfo";
+import { FindDialog } from "../../../apps/workbench/src/editor/FindDialog";
 export async function verifyProjectInfoUI() {
   const node = document.createElement("div");
   document.body.append(node);

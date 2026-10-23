@@ -1,39 +1,40 @@
 import { useEffect, useLayoutEffect } from "react";
-import { UpdateNotice, useFeedback } from "./components/Feedback";
-import { useWorkspaceLayout } from "./components/WorkspaceLayout";
-import { usePlacement } from "./lib/usePlacement";
-import { Breadcrumbs } from "./regions/editor/Breadcrumbs";
-import { CanvasRegion } from "./regions/editor/CanvasRegion";
-import { CircuitPrompts } from "./regions/editor/CircuitPrompts";
-import { EditorToolbarRegion } from "./regions/editor/EditorToolbarRegion";
-import { FindRegion } from "./regions/editor/FindRegion";
-import { InterfaceEditorRegion } from "./regions/editor/InterfaceEditorRegion";
-import { SourceDialog } from "./regions/editor/SourceDialog";
-import { Aside } from "./regions/shell/Aside";
-import { DecisionRegion } from "./regions/shell/DecisionRegion";
-import { ErrorBar, Notice } from "./regions/shell/Notices";
-import { Rail } from "./regions/shell/Rail";
-import { ShortcutSettingsRegion } from "./regions/shell/ShortcutSettingsRegion";
-import { Titlebar } from "./regions/shell/Titlebar";
-import { CaptureNotice } from "./regions/simulation/CaptureNotice";
-import { MemoryRegion } from "./regions/simulation/MemoryRegion";
-import { ObservationsRegion } from "./regions/simulation/ObservationsRegion";
-import { SimulationAlerts } from "./regions/simulation/SimulationAlerts";
-import { SimulationDock } from "./regions/simulation/SimulationDock";
-import { SimulationTransportRegion } from "./regions/simulation/SimulationTransportRegion";
-import { FeedbackDialogRegion } from "./regions/workspace/FeedbackDialogRegion";
-import { FilePreviewRegion } from "./regions/workspace/FilePreviewRegion";
-import { FolderPrompt } from "./regions/workspace/FolderPrompt";
-import { ProjectInfoRegion } from "./regions/workspace/ProjectInfoRegion";
-import { SourceNotices } from "./regions/workspace/SourceNotices";
-import { UploadInput } from "./regions/workspace/UploadInput";
-import { Welcome } from "./regions/workspace/Welcome";
-import { useEditor, useFiles, useView } from "./workbench/hooks";
+import { UpdateNotice, useFeedback } from "./shell/Feedback";
+import { useWorkspaceLayout } from "./shell/WorkspaceLayout";
+import { usePlacement } from "./editor/usePlacement";
+import { Breadcrumbs } from "./editor/Breadcrumbs";
+import { CanvasRegion } from "./editor/CanvasRegion";
+import { CircuitPrompts } from "./editor/CircuitPrompts";
+import { EditorToolbarRegion } from "./editor/EditorToolbarRegion";
+import { FindRegion } from "./editor/FindRegion";
+import { InterfaceEditorRegion } from "./editor/InterfaceEditorRegion";
+import { SourceDialog } from "./editor/SourceDialog";
+import { Aside } from "./shell/Aside";
+import { DecisionRegion } from "./shell/DecisionRegion";
+import { ErrorBar, Notice } from "./shell/Notices";
+import { Rail } from "./shell/Rail";
+import { ShortcutSettingsRegion } from "./shell/ShortcutSettingsRegion";
+import { Titlebar } from "./shell/Titlebar";
+import { CaptureNotice } from "./simulation/CaptureNotice";
+import { MemoryRegion } from "./simulation/MemoryRegion";
+import { ObservationsRegion } from "./simulation/ObservationsRegion";
+import { SimulationAlerts } from "./simulation/SimulationAlerts";
+import { SimulationDock } from "./simulation/SimulationDock";
+import { SimulationTransportRegion } from "./simulation/SimulationTransportRegion";
+import { FeedbackDialogRegion } from "./shell/FeedbackDialogRegion";
+import { FilePreviewRegion } from "./workspace/FilePreviewRegion";
+import { FolderPrompt } from "./workspace/FolderPrompt";
+import { NewFilePrompt } from "./workspace/NewFilePrompt";
+import { ProjectInfoRegion } from "./workspace/ProjectInfoRegion";
+import { SourceNotices } from "./workspace/SourceNotices";
+import { UploadInput } from "./workspace/UploadInput";
+import { Welcome } from "./workspace/Welcome";
+import { useEditor, useFiles, useView } from "./app/hooks";
 import {
   useOwnWorkbench,
   useWorkbench,
   WorkbenchProvider,
-} from "./workbench/provider";
+} from "./app/provider";
 
 export function App() {
   const workbench = useOwnWorkbench();
@@ -66,6 +67,7 @@ function Shell() {
       data-workspace={doc ? "circuit" : folder ? "folder" : "empty"}
     >
       <FolderPrompt />
+      <NewFilePrompt />
       <UploadInput />
       <Titlebar feedback={feedback} />
       <UpdateNotice feedback={feedback} />

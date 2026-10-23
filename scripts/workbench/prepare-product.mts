@@ -103,10 +103,10 @@ async function copyFrontendNotices(destination: string) {
     let directory = from;
     let packageRoot = "";
     while (true) {
-      const candidate = path.join(directory, "node_modules", name);
+      const probe = path.join(directory, "node_modules", name);
       try {
-        await stat(path.join(candidate, "package.json"));
-        packageRoot = candidate;
+        await stat(path.join(probe, "package.json"));
+        packageRoot = probe;
         break;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -151,7 +151,7 @@ async function copyFrontendNotices(destination: string) {
   );
 }
 try {
-  const [node, java, jar, legacyJar, source, codexLicense] = await Promise.all([
+  const [node, java, jar, legacyJar, source] = await Promise.all([
     acquire(
       `node-${own.node.version}-${target}.${windows ? "zip" : "tar.xz"}`,
       own.node[target],
@@ -163,7 +163,6 @@ try {
     acquire("Logisim-ITA.jar", lock.artifacts["logisim.jar"]),
     acquire("logisim-ita-cn-20200118.exe", lock.artifacts["logisim-2.15"]),
     acquire("Logisim-source.tar.gz", lock.artifacts["logisim-source.tar.gz"]),
-    acquire("codex-LICENSE", lock.artifacts["codex-LICENSE"]),
   ]);
   const unpack = path.join(stage, ".build");
   await mkdir(unpack);
@@ -206,7 +205,7 @@ try {
   // The runtime derives its reported version from its own file name; keep it.
   await cp(legacyJar, path.join(native, "logisim-ita-cn-20200118.exe"));
   for (const directory of ["native", "observer/src"]) {
-    const base = path.join(root, "crates/logisim-adapter/java", directory);
+    const base = path.join(root, "crates/logisim-runtime/java", directory);
     for (const file of await files(base))
       if (file.endsWith(".java")) {
         const dest = path.join(native, "src", path.relative(base, file));
@@ -234,7 +233,6 @@ try {
   }
   await mkdir(path.join(stage, "third-party/logisim"), { recursive: true });
   await cp(source, path.join(stage, "third-party/logisim/source.tar.gz"));
-  await cp(codexLicense, path.join(stage, "third-party/codex-LICENSE"));
   await copyFrontendNotices(path.join(stage, "third-party/frontend"));
   await cp(path.join(root, "LICENSE"), path.join(stage, "LICENSE"));
   await cp(

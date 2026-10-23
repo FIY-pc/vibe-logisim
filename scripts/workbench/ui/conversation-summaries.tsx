@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { Chat } from "../../../apps/workbench/src/components/Chat";
+import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { Workbench } from "./workbench";
 
 export async function verifyConversationSummaries() {
@@ -48,13 +48,12 @@ export async function verifyConversationSummaries() {
     return () => listeners.delete(listener);
   };
   globals.__command = async (request: any) => {
-    if (request.method === "proposals") return [];
     if (request.method === "bind") {
-      if (request.args.workspaceKey === "summary-B")
+      if (request.args.documentId === "summary-B")
         await new Promise<void>((resolve) => {
           releaseBind = resolve;
         });
-      bound = request.args.workspaceKey;
+      bound = request.args.documentId;
     }
     if (request.method === "ask") {
       // The persisted title is authoritative; sending does not emit a list event.

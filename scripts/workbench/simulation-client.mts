@@ -56,16 +56,18 @@ export function simulationClient(command: Transport) {
     circuit: string,
     initialFrequency?: number,
   ): Promise<Run> => {
-    const result = await definition(document, circuit, { kind: "start" }, initialFrequency);
+    const result = await definition(
+      document,
+      circuit,
+      { kind: "start" },
+      initialFrequency,
+    );
     if (!result.sessionId || !result.viewId)
       throw new Error("simulationAct start returned no run");
     return { sessionId: result.sessionId, viewId: result.viewId };
   };
   const status = () => command({ op: "simulationStatus" }) as Promise<Status>;
-  const navigate = (
-    target: Run,
-    instancePath: string[],
-  ) =>
+  const navigate = (target: Run, instancePath: string[]) =>
     command({
       op: "simulationNavigate",
       sessionId: target.sessionId,
@@ -111,11 +113,7 @@ export function simulationClient(command: Transport) {
       stopped: boolean;
     }>;
   /** Freezes the shown frame as a kept observation. */
-  const keep = (
-    target: Run,
-    title: string,
-    frameSequence?: number,
-  ) =>
+  const keep = (target: Run, title: string, frameSequence?: number) =>
     command({
       op: "observationCapture",
       sessionId: target.sessionId,
@@ -150,7 +148,11 @@ export function simulationClient(command: Transport) {
   const settled = async (
     target: Run,
     acknowledged: ActResult,
-    options: { componentIds?: string[]; trace?: boolean; memory?: boolean } = {},
+    options: {
+      componentIds?: string[];
+      trace?: boolean;
+      memory?: boolean;
+    } = {},
   ) => {
     const wanted = acknowledged.commandSequence ?? 0;
     for (let attempt = 0; attempt < 500; attempt++) {

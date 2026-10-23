@@ -1,56 +1,51 @@
-# 架构与状态归属
+# 架构
 
-工作台围绕同一份电路文档组织人工编辑、AI 修改、资料和仿真。界面和模型工具调用同一应用宿主；原生 Logisim 决定元件、电气连接和运行行为。
+一句话：Rust 宿主拥有工作区，窗口和 AI 进程都只是它的客户端，走同一套请求。每个模块目录下有一份 README，写明职责、接口、不变量、状态和待办；本文只给地图。
 
 ## 模块
 
-| 模块                       | 职责                                                   |
-| -------------------------- | ------------------------------------------------------ |
-| `apps/workbench/src`       | React 编辑器、画布、会话、资料与仿真结果               |
-| `apps/workbench/src-tauri` | 桌面窗口、系统对话框、IPC、资源路径与退出              |
-| `crates/workspace-core`    | 文档身份、XML、结构修订、撤销、保存和恢复              |
-| `crates/workbench-host`    | 应用命令、工程与会话绑定、事件推送、观察留存           |
-| `crates/logisim-adapter`   | Java 进程、原生加载、连接观察、渲染和仿真              |
-| `packages/agent-runtime`   | Node 适配进程、内置与 Codex 运行时、模型服务、工具回合 |
+| 模块                                                            | 语言                     | 职责                                                                            |
+| --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------- |
+| [crates/circuit-document](../crates/circuit-document/README.md) | Rust                     | `.circ` 文件本身：解析与原样回写、对象 ID、修订、编辑、撤销、保存、历史、文件夹 |
+| [crates/logisim-runtime](../crates/logisim-runtime/README.md)   | Rust + Java              | 真实 Logisim 运行时：观察连通、元件目录、属性、渲染、仿真会话                   |
+| [crates/workbench-host](../crates/workbench-host/README.md)     | Rust                     | 唯一拥有工作区的进程：请求词汇与规则、状态目录、事件、AI 进程的生命周期         |
+| [apps/workbench](../apps/workbench/README.md)                   | TypeScript、React、Tauri | 窗口：按领域分文件夹的界面状态与交互，不含任何业务规则                          |
+| [packages/agent-runtime](../packages/agent-runtime/README.md)   | TypeScript、Node         | AI 回合：模型服务、按文件夹的对话、工具；每个工具调用都是一次宿主请求           |
+| [packages/arranger](../packages/arranger/README.md)             | TypeScript               | 纯函数布局：放置、布线、等价检查，不做 I/O                                      |
+| [scripts/workbench](../scripts/workbench/README.md)             | TypeScript               | 开发、验证、打包脚本                                                            |
 
-依赖方向为界面 → 传输 → 应用宿主 → 文档核心 / 兼容适配器。文档核心不依赖 UI、Java、Node 或网络。生产桌面通过 Tauri IPC 调用宿主，浏览器开发通过回环地址 HTTP/SSE 调用相同命令。Rust 定义命令和文档类型，生成 TypeScript 类型及模型编辑 schema。
+依赖只向下：`circuit-document` ← `logisim-runtime` ← `workbench-host` ← Tauri 壳；窗口和 AI 进程通过传输层调用宿主；AI 进程和窗口各自在 worker 里调用 `arranger`。没有模块依赖窗口或 AI 进程。
 
-AI 模块位于 `packages/agent-runtime/core`，以 TypeScript 实现并打包为独立 Node 进程；Java 桥接位于 `crates/logisim-adapter/java`。
+## 四条数据流
 
-## 文档与文件
+1. **人编辑。** 窗口动作构造 `{op, …}` → `Host::dispatch` → `Document::edit`（带调用方读到的修订）→ 自动保存到源文件 → 记录历史 → 返回 `view`/`selection` → 窗口替换对应 store → 画布向宿主请求新的 PNG。窗口不做乐观更新。
+2. **观察。** 宿主为每个修订落一份不可变 artifact → `Native::observe` 交给 Java 读取端口、位网、边界 → JSON 按 artifact 摘要缓存。连通、命中、追踪都来自这份观察，不从像素推断。
+3. **AI 回合。** 窗口 `agent{method:"ask"}` → 宿主 → sidecar 标准输入 → `TurnRunner` 流式调用模型 → 工具以 `{kind:"host"}` 发宿主请求，走和人编辑完全相同的 `dispatch` → 事件以 `{kind:"event"}` 回到宿主 → 窗口 `agent` 主题。每回合开始和结束各记一次文件夹检查点，窗口收到 `files-changed`，用户可整回合撤销。
+4. **仿真。** 窗口 `simulationAct` → `SimulationRegistry` → 一个 Java 会话 → 帧通过订阅流回 `Event::Simulation` → 窗口 store。每次请求后宿主 `reconcile`：文档关闭或修订变化即结束运行。
 
-文档拥有稳定 ID、源路径、结构修订和编辑历史。结构修改要求预期修订匹配，失败不部分应用。打开文件时保留原始 XML；修改时保留未知节点与属性。人和 AI 的结构操作都进入文档历史。
+## 全局规则，各在一处实现
 
-草稿恢复记录与源文件分开。已打开工程文件夹内的现有电路在结构修改后自动保存；未命名或工程外文档由用户保存。两条路径都检查磁盘基线，外部修改必须处理后再写入；自动保存失败时保留草稿并提供重试。另存为保留当前文档身份，原路径再次打开形成另一文档；跨目录保存同步重定位外部库引用和历史记录的路径基准。覆盖其他已打开文档会被拒绝。
+- 对象 ID 是位置：元件 `c<x>_<y>`（负号写 `m`，同锚点第二个加 `_2`），导线 `w<n>` 按文件顺序。由 `circuit-document` 定义，窗口、AI 和脚本都照此寻址。
+- 每个修改请求带调用方读到的修订，不匹配整条拒绝（`StaleRevision`），没有部分生效。`circuit-document` 检查，宿主透传。
+- 写操作串行、成功后自动保存（源文件在打开的文件夹内时）、记录文档历史、落恢复记录；全在 `Host::dispatch`。
+- 仿真寿命绑定修订：`Host::reconcile`。
+- AI 能调用哪些操作：`api/*.rs` 里每个 op 的 `Meta::agent()`，其余一律 `AgentOpUnknown`。
+- 对话的作用域是文件夹 ID：sidecar 从宿主 `status.folder` 取。
+- Rust 类型是契约源：`npm run contracts` 生成窗口和 sidecar 的 TypeScript 与编辑 schema，`npm run check:contracts` 校验。
+- 错误文案在错误产生处定义，面向用户、中文：宿主 `ErrorCode`、Java 桥接的字符串、AI 工具的 `CircuitToolError`。上层只展示，不翻译、不包装。
 
-工程文件夹拥有会话目录与资料。工程内切换电路不会另建会话，工程外的文档保持独立归属。工程路径校验拒绝逃逸和跨目录符号链接。
+## 改东西去哪里
 
-属性与连接观察绑定文档、修订、电路和选区。属性按字段提交，成功后保留被编辑对象的选择；迟到响应不能抢回用户后来的选区。源码和资料预览同样校验请求归属，标题与内容使用同一个文档身份。
+- 新的宿主操作：在 `crates/workbench-host/src/api/<领域>.rs` 加一个变体并声明 `Meta`，实现放进对应领域目录，跑 `npm run contracts`，再在窗口或 sidecar 使用。
+- 新的 AI 工具：`packages/agent-runtime/src/tools/schemas.mts` 加 schema 和中文标签，handler 放进对应 `tools/<领域>.mts`，在 `tools/index.mts` 注册；工具只能调用宿主操作。
+- 新的界面：放进 `apps/workbench/src/<领域>/`，状态进该领域的 store，跨领域只经过 `app/` 或 `shared/`。
+- Logisim 行为问题：先看 `crates/logisim-runtime/java/native`；Rust 和 TypeScript 不复制 Logisim 语义。
 
-## 仿真与观察
+## 待办
 
-仿真属于文档修订、根电路和实例路径。浏览其他定义保留已有运行；在另一电路明确启动、步进或操作输入时，替换当前临时仿真。进入子实例沿用根运行。输入、时钟与 RAM 运行值不进入结构历史，也不写入源文件；ROM 内容修改属于可撤销的结构修改。
+每个模块 README 末尾的「Remaining tasks」是当前的待办。跨模块的优先次序：
 
-界面按命令入队时的视图归属调度；执行前已离开的视图不再接受排队动作。时钟和自动传播的切换在宿主锁内依据已确认的原生帧判断。首次启用传播只启动仿真；频率偏好只在新运行建立时应用。适配器在实例导航前释放已确认按下的瞬时按钮，旧视图的迟到释放不能影响新视图。
-
-显示帧采用最新值通道，慢界面不会积压旧帧。信号轨迹在原生稳定步骤采样，与图像刷新分开；有界历史明确报告丢弃数量。留存观察固定源修订、根电路、实例路径、指定端口、轨迹和图像，异步保存不能混用后续运行。
-
-AI 的测试向量和时序验证使用独立 Java worker，不改变用户正在操作的仿真。结果携带源修订；缺少期望值标记为未判定，未知电平不能通过数值断言。
-
-原生连接按位网读取，不把几何交叉当连接。选择移动以候选前后的端口连接分区核对行为；不满足约束的移动不进入文档。
-
-## AI 运行时与会话
-
-每条会话保留其运行时。切换运行时不改写已有会话；内置运行时随包提供，Codex 按校验清单首次下载。模型服务配置与会话选择分开；更换服务地址不把旧凭据送到新地址。
-
-默认服务只影响新对话；有历史的对话更换服务前展示接收方及上下文转交影响。配置对话框保留底层对话、草稿与阅读位置。模型选择器展示当前服务返回的可用模型，目录元数据只补充能力信息；刷新失败保留此前可用列表。
-
-宿主绑定工程、文档和修订；适配进程串行保护绑定与发送准备，停止请求保持可用。过期发送不能落到另一个电路。状态快照携带事件游标，重连不会重复追加已经收到的流式内容。
-
-电路工具直接调用宿主编辑路径，遵循同一修订和保存规则。通用文件与脚本工具工作在 scratch 目录，直接编辑的电路副本在回合结束后交由用户明确应用。模型仍可使用直接 XML 编辑和脚本，辅助工具不规定强制推理流程。
-
-## 生命周期与分发
-
-工作区恢复目录持有操作系统文件锁，异常退出后释放。退出先关闭事件流，再停止 Node 与 Java 子进程。包内携带 Node、裁剪 Java、兼容运行时和桥接源码；文件缺失不能静默借用开发机资源。
-
-开发命令与状态配置见 [工作台开发参考](native-workbench.md)，平台包与验证入口见 [分发构建](distribution.md)。
+1. 通过新的 `agent-runtime` 跑一次真实模型回合，修掉断点（`packages/agent-runtime/README.md`）。
+2. 宿主加 `observeXml`，`arrange_circuit` 改为先验证再应用（`crates/workbench-host/README.md`、`packages/agent-runtime/README.md`）。
+3. 课程大小文件的编辑延迟：减少每次编辑的 Java↔Rust↔Node 往返（`crates/workbench-host/README.md`）。
+4. 补回 sidecar 回合的脚本场景（`scripts/workbench/README.md`）。

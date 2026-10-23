@@ -267,7 +267,8 @@ export async function verifySimulation(command: Command, state: string) {
   const records = await client.observations(doc);
   assert(
     records.some(
-      (record) => record.id === captured.id && record.title === "Clock and input",
+      (record) =>
+        record.id === captured.id && record.title === "Clock and input",
     ),
   );
   await client.stop(current);

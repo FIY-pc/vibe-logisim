@@ -16,24 +16,24 @@ npm run desktop
 
 `setup` downloads the checksum-pinned Logisim-ITA runtime into `.workbench-cache`. Set `VIBE_LOGISIM_JAR` to an absolute path to use another supported runtime. The Java bridge cache is keyed by the runtime and source digests.
 
-For browser development, run `npm run dev` and open `http://127.0.0.1:5173`. This starts Vite and the Rust HTTP development host. Desktop uses Tauri IPC directly; the HTTP host is a development tool and binds only to loopback. File pickers and opening external login pages require the desktop.
+For browser development, run `npm run dev` and open `http://127.0.0.1:5173`. This starts Vite and the Rust HTTP development host. Desktop uses Tauri IPC directly; the HTTP host is a development tool and binds only to loopback. File pickers require the desktop.
 
 Desktop state is stored in Tauri's application data directory. Browser development uses `.workbench-state`; `VIBE_WORKBENCH_STATE` selects another directory and `VIBE_WORKBENCH_PORT` sets the host port.
 
 ## Ownership and contracts
 
-| Area                  | Entry                                       | Responsibility                                                                    |
-| --------------------- | ------------------------------------------- | --------------------------------------------------------------------------------- |
-| Document core         | `crates/workspace-core`                     | Source XML, revision checks, atomic saving, undo, recovery, folder identity       |
-| Compatibility adapter | `crates/logisim-adapter`                    | Java process lifecycle, native catalog/properties/geometry, rendering, simulation |
-| Application host      | `crates/workbench-host`                     | Typed commands, document/simulation binding, sidecar callbacks                    |
-| Desktop               | `apps/workbench/src-tauri`                  | Window, native dialogs, IPC and application lifecycle                             |
-| Editor UI             | `apps/workbench/src/components/Canvas.tsx`  | Selection, placement, wiring, navigation and input feedback                       |
-| Conversation UI       | `apps/workbench/src/components/Chat.tsx`    | Runtime settings, history, actual streamed events and explicit source application |
-| Runtime adapter       | `packages/agent-runtime`                    | Node sidecar, built-in/Codex runtime dispatch, tool contract and scratch files    |
-| Simulation evidence   | `crates/workbench-host/src/observations.rs` | Revision-bound captures, exact watches and persistent observation records         |
+| Area                  | Entry                                   | Responsibility                                                                    |
+| --------------------- | --------------------------------------- | --------------------------------------------------------------------------------- |
+| Document core         | `crates/circuit-document`               | Source XML, revision checks, atomic saving, undo, recovery, folder identity       |
+| Compatibility adapter | `crates/logisim-runtime`                | Java process lifecycle, native catalog/properties/geometry, rendering, simulation |
+| Application host      | `crates/workbench-host`                 | Typed commands, document/simulation binding, sidecar callbacks                    |
+| Desktop               | `apps/workbench/src-tauri`              | Window, native dialogs, IPC and application lifecycle                             |
+| Editor UI             | `apps/workbench/src/editor/`            | Selection, placement, wiring, navigation and input feedback                       |
+| Conversation UI       | `apps/workbench/src/conversation/`      | Model service settings, history, actual streamed events and folder checkpoints    |
+| Runtime adapter       | `packages/agent-runtime`                | Node sidecar, model service access and the tool contract                          |
+| Simulation evidence   | `crates/workbench-host/src/simulation/` | Revision-bound captures, exact watches and persistent observation records         |
 
-AI modules are implemented in TypeScript under `packages/agent-runtime/core`; Java bridge sources live in `crates/logisim-adapter/java`.
+AI modules are implemented in TypeScript under `packages/agent-runtime/src`; Java bridge sources live in `crates/logisim-runtime/java`. Each module directory has a README describing its interface, invariants and open tasks; [architecture](architecture.md) is the map.
 
 The document core has no UI, Java, Node or network dependency. Both desktop and browser transports call the same Rust application host. `Request`, document types and model edit schemas are generated from Rust:
 
@@ -52,15 +52,13 @@ Signal traces capture settled native steps independently of rendering. A trace r
 
 Structural edits to existing documents inside the open project folder automatically save to their source path. Untitled documents and documents outside that folder require `Save`. Both paths reject external source changes; a failed automatic save preserves the edit and exposes a retry. Reload checks both draft and disk versions and retains the previous draft in undo history. Close checks the draft revision before discarding changes and stops the document's simulation. Save As transfers the document identity to the new path; reopening the old file creates a separate document. Replacing an existing target checks its observed digest and rejects targets already open as another document.
 
-Each open document has a recovery journal, separate from its source file: a snapshot of the document with its undo and redo steps, then one record per change holding only that change. A change is written before the host responds and synced to disk in the background; a record cut short by a crash is dropped on restart. Recovery restores these drafts with their undo and redo steps. An OS file lock restricts each recovery directory to one host process. Conversations retain their runtime; switching runtimes creates a new conversation when the current one has history. The host derives the conversation workspace from document membership in the open folder; files outside that folder keep separate conversations.
+Each open document has a recovery journal, separate from its source file: a snapshot of the document with its undo and redo steps, then one record per change holding only that change. A change is written before the host responds and synced to disk in the background; a record cut short by a crash is dropped on restart. Recovery restores these drafts with their undo and redo steps. An OS file lock restricts each recovery directory to one host process. The host derives the conversation workspace from document membership in the open folder; files outside that folder keep separate conversations.
 
-Codex tool and instruction contracts belong to the original native thread. A changed contract starts a new thread with an explicit text handoff: the complete visible prefix and original thread references remain local, while at most 24,000 characters of explicitly untrusted text are passed to the model. Truncation is reported; tool results and runtime state are not reconstructed. A handoff stays pending until `turn/start` returns a turn ID, so failed starts can retry after restart. Native history is merged with the retained prefix by message identity. Only subsequent native messages support editing or branching; reverting the turn that carried the handoff makes it pending again.
-
-Runtime scratch-file changes remain proposals until explicitly applied. Review compares the captured original source with the candidate, lists component, wire, definition and project-setting changes, and renders either version through Logisim without replacing a live simulation. Source comparison retains the exact XML. A proposal's original digest must match its recorded revision; an outdated proposal remains readable but cannot overwrite a newer draft. Whole-document application is one undo step and follows the document saving policy. Proposals persist independently of conversations; interrupted scratch work is recovered before another turn can replace it.
+The runtime edits the files in the open folder directly. Each AI turn records a folder checkpoint; the conversation lists the changed files, and the user can review and undo them from there.
 
 Document history stores immutable content-addressed versions separately from undo and redo. Each document's history is one append-only file; a version is stored as a patch against its predecessor when that is much smaller than the whole file. Open and explicit save operations establish baselines. Each structural change records its exact predecessor; review can compare that step or compare a selected version with the current document. Restoring a version appends a new history entry and remains one undo step. Historical library paths and digests are retained; if an external library changes, exact historical rendering is unavailable rather than silently using the new library. Source comparison remains available.
 
-Semantic review compares native port-bit partitions under explicit, comparison-local component matches. Native net IDs are not cross-version identities. Parent references and object locations support reviewing shared-definition changes; incomplete native coverage is reported as partial or unavailable. Candidate vector and trace verification runs the candidate bytes in an isolated native process before application. Retained results carry candidate, base revision, dependency and runtime identities. Invalid or modified evidence is reported separately from structural review. `node scripts/workbench/history-check.mts` exercises these paths with independent synthetic circuits, including unchanged layout connectivity, changed wiring, source conflicts, restart and changed external libraries.
+`node scripts/workbench/history-check.mts` exercises document history with independent synthetic circuits: baselines, before/after and current comparison, restore and undo, source conflicts, restart and changed external libraries.
 
 Project folders contain text, image and PDF previews. PDF character maps, fonts and decoding resources are bundled for offline viewing. Quoting selected text, an image, a PDF page or a retained observation adds an immutable reference to the conversation draft without sending it. PDF references include the rendered page, including scanned pages without extracted text. Sent messages retain those snapshots and page numbers. References belong to their conversation workspace, and sending failures preserve the draft. The runtime can list and read text files in the bound project and inspect retained observations; binary documents are referenced through the preview. File operations reject paths escaping the open folder, including through symlinks.
 
@@ -68,13 +66,13 @@ File-tree menus provide path copying, revealing files in the system file manager
 
 The editor keeps file and component resources, the circuit list and properties on the left, alongside the conversation on the right. Regions can be resized or collapsed; narrow windows use drawers. Tool shortcuts 1–4, A for the palette, the document dirty indicator, nearby undo controls and current-circuit simulation commands remain available. Memory, trace and observation controls remain adjacent to the editing and simulation tasks they serve.
 
-The right-hand Changes panel separates pending proposals from immutable document history. Historical restoration appends a change and remains undoable. Comparison separates structure, layout and native port-bit connectivity; ambiguity and unavailable dependencies remain visible. Verification records are associated with exact source contents, runtime and dependency fingerprints.
+The right-hand history panel lists the immutable document history. Historical restoration appends a change and remains undoable; unavailable dependencies remain visible.
 
 The document title opens file information and a ZIP export containing the current circuit, its external library closure, and observations and verification records from that source revision. Export rewrites packaged library references to relative paths and reports missing dependencies before writing. Metadata distinguishes the original source revision from the rewritten archive entry; retained evidence does not claim to verify those rewritten bytes. The archive excludes unrelated project materials and earlier versions.
 
-`simulate_circuit` evaluates independent input vectors against labeled output pins. `trace_circuit` starts a fresh sequential run with exact watched ports and tick-indexed input events. Both use a separate Java worker and request queue, leaving the visible simulation, source file and undo history untouched. Native errors discard that verification worker. Results carry their source revision; missing expectations remain unchecked, and unknown outputs do not pass numerical assertions. Read, observe, render, vector and trace tools accept an optional `working-copy` target to inspect and test scratch changes before application. Candidate test records remain available in review.
+`simulate_circuit` evaluates independent input vectors against labeled output pins. `trace_circuit` starts a fresh sequential run with exact watched ports and tick-indexed input events. Both use a separate Java worker and request queue, leaving the visible simulation, source file and undo history untouched. Native errors discard that verification worker. Results carry their source revision; missing expectations remain unchecked, and unknown outputs do not pass numerical assertions.
 
-For selection moves, the host prepares a candidate and compares Logisim's bit-net partitions before committing one undo step. A move that changes port connectivity is rejected. This check applies to selection movement; free wire drawing and direct source edits use their own edit paths.
+For selection moves, the host prepares the moved layout and compares Logisim's bit-net partitions before committing one undo step. A move that changes port connectivity is rejected. This check applies to selection movement; free wire drawing and direct source edits use their own edit paths.
 
 ## Verification
 
@@ -96,13 +94,9 @@ npm run build
 npm run bundle:agent
 ```
 
-`test:native` runs the Java adapter and Pi runtime against temporary circuits and a local HTTP model fixture. It requires no model credentials. Document, simulation and tool-transport scenarios are in [verify.mts](../scripts/workbench/verify.mts); routing scenarios are in [editing-scenarios.mts](../scripts/workbench/editing-scenarios.mts). Memory, trace and observation scenarios are in [simulation-scenarios.mts](../scripts/workbench/simulation-scenarios.mts). The independent [compatibility-check.mts](../scripts/workbench/compatibility-check.mts) workload covers custom symbols, local subcircuits, nested external `.circ` libraries, cross-directory Save As and a generated 3,072-component circuit. Provider compatibility and model behavior require separate checks. `test:runtime` verifies a local authenticated HTTP proxy and installer failure, cancellation and retry with synthetic archives. It does not download or log into Codex.
+`test:native` runs the Java adapter against temporary circuits. It requires no model service. Document, simulation and folder scenarios are in [verify.mts](../scripts/workbench/verify.mts); routing scenarios are in [editing-scenarios.mts](../scripts/workbench/editing-scenarios.mts). Memory, trace and observation scenarios are in [simulation-scenarios.mts](../scripts/workbench/simulation-scenarios.mts). The independent [compatibility-check.mts](../scripts/workbench/compatibility-check.mts) workload covers custom symbols, local subcircuits, nested external `.circ` libraries, cross-directory Save As and a generated 3,072-component circuit. Provider compatibility and model behavior require separate checks. `test:runtime` verifies proxy selection with a local authenticated HTTP proxy, reference storage and the built-in runtime instructions. It makes no model request.
 
 `test:files` runs on Linux with temporary project files and an isolated freedesktop trash. It checks move identity, undo preservation, stale-project and unsafe-path rejection, dirty-delete protection, and that trashed content remains recoverable. It does not manipulate the user's files or trash.
-
-`node scripts/workbench/context-transfer-check.mts` replays the app-server request boundary with synthetic history. It checks failed-start retries, ACK handling, restart retention, bounded contract handoffs and prefix preservation through native edit/fork responses. It starts no runtime process and makes no model request; actual native protocol compatibility is checked separately.
-
-`npm run test:codex` explicitly downloads the checksum-pinned optional Codex runtime and checks native history resume, fork position, inherited tool results and restart recovery in a temporary unauthenticated profile. It creates no model turns and does not inspect an existing account or conversation. This check is separate from the default checks because it downloads the optional runtime and requires the runtime's platform isolation support.
 
 `bundle:agent` builds the Node application code and SDK into `.workbench-cache/agent-product`, with dependency notices. Set `VIBE_LOGISIM_AGENT_ROOT` to that absolute directory when running `test:native` to exercise the bundled code.
 
@@ -120,11 +114,11 @@ See [distribution](distribution.md) for package names, resource layout, system r
 
 `VIBE_WORKBENCH_RESOURCES` selects an assembled resource directory. Packaged Tauri builds otherwise use the application resource directory; debug builds use the checkout. The Java bridge can reuse precompiled classes for the pinned jar or compile the included sources against another configured jar.
 
-The sidecar reads proxy environment variables first, then Windows Internet Settings or manual KDE/GNOME proxy settings. Model discovery, connection tests, built-in requests and optional-runtime downloads share the same HTTP proxy transport; Codex receives matching proxy environment variables. Automatic proxy scripts are reported as unsupported. Native system settings are read at connection time, without changing OS settings.
+The sidecar reads proxy environment variables first, then Windows Internet Settings or manual KDE/GNOME proxy settings. Model discovery, connection tests and model requests share the same HTTP proxy transport. Automatic proxy scripts are reported as unsupported. Native system settings are read at connection time, without changing OS settings.
 
 ## Validation boundaries
 
-The local-model fixture verifies tool/image transport, project text access, observation access, conversation switching, rename/archive/restore, branching and message replacement. It does not prove remote provider compatibility or authenticated Codex model behavior. The separate locked-runtime check covers native resume and fork without an account.
+The native checks use synthetic circuits and no model service. They do not prove remote provider compatibility or model behavior.
 
 The compatibility workload covers a custom two-port symbol, local subcircuit navigation, two levels of relative `.circ` libraries, changed dependencies, malformed libraries, cross-directory Save As and a generated large circuit. External Java plugins, arbitrary custom symbols and remote provider behavior require separate checks. Passing these workloads does not imply every component, circuit or Linux distribution is covered.
 

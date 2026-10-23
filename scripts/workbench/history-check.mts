@@ -1,4 +1,4 @@
-/** Synthetic version/proposal lifecycle against the native host; no paid model. */
+/** Synthetic document history lifecycle against the native host; no model service. */
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
@@ -59,7 +59,8 @@ async function stop() {
   await exited;
 }
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) => (result && result.view ? result.view : result);
+const documentOf = (result: any) =>
+  result && result.view ? result.view : result;
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
@@ -88,60 +89,12 @@ try {
   const baseline = list.entries[0].id;
   const client = simulationClient(command);
   const live = await client.started(doc, "child");
-  const layout = source.replace(
-    /\((\d+),100\)/g,
-    (_, x) => `(${Number(x) + 200},100)`,
-  );
-  const moved = await command({
-    op: "proposalDetail",
-    ...binding(),
-    original: source,
-    xml: layout,
-    circuit: "child",
-  });
-  assert.equal(moved.connectivity.status, "unchanged", JSON.stringify(moved));
-  assert.equal(moved.parents.after[0].count, 2);
-  assert(
-    moved.rows.some(
-      (row: any) =>
-        row.category === "layout" &&
-        row.beforeObjects.length &&
-        row.afterObjects.length,
-    ),
-  );
   const xml = source
     .replace(/<comp lib="1" name="NOT Gate".*?<\/comp>/, " ")
     .replace(
       '<wire from="(100,100)" to="(170,100)"/><wire from="(200,100)" to="(280,100)"/>',
       '<wire from="(100,100)" to="(280,100)"/>',
     );
-  const details = await command({
-    op: "proposalDetail",
-    ...binding(),
-    original: source,
-    xml,
-    circuit: "child",
-  });
-  assert.equal(details.connectivity.status, "changed", JSON.stringify(details));
-  assert(details.connectivity.rows.length > 0);
-  const proof = await command({
-    op: "proposalVerify",
-    ...binding(),
-    original: source,
-    xml,
-    circuit: "child",
-    verification: {
-      kind: "vectors",
-      vectors: [
-        { inputs: { A: 3 }, expected: { Y: 3 } },
-        { inputs: { A: 0 }, expected: { Y: 15 } },
-      ],
-    },
-  });
-  assert.equal(proof.result.passed, 1);
-  assert.equal(proof.result.failed, 1);
-  assert.notEqual(proof.revision, initial);
-  assert.equal(proof.baseRevision, initial);
   const originalRun = await command({
     op: "simulate",
     ...binding(),
@@ -152,52 +105,19 @@ try {
   assert.equal((await command({ op: "read", id: doc.id })).revision, initial);
   assert.equal((await client.status()).state?.viewId, live.viewId);
   assert.equal(await readFile(file, "utf8"), source);
-  const preview = await command({
-    op: "proposalPreview",
-    ...binding(),
-    original: source,
-    xml,
-    circuit: "child",
-    candidate: true,
-  });
-  assert(preview.image.startsWith("data:image/png"));
-  assert(preview.bounds.width > 0);
-  const reviewed = await command({
-    op: "proposalReview",
-    ...binding(),
-    original: source,
-    xml,
-  });
-  const output = reviewed.after.circuits
-    .find((c: any) => c.name === "child")
-    .components.find((c: any) => c.attributes.label === "Y");
-  const trace = await command({
-    op: "proposalVerify",
-    ...binding(),
-    original: source,
-    xml,
-    circuit: "child",
-    verification: {
-      kind: "trace",
-      ticks: 3,
-      inputs: { A: 3 },
-      watches: [{ component: output.id, port: 0 }],
-      events: [{ tick: 2, input: "A", value: 7 }],
-    },
-  });
-  assert.equal(trace.result.completed, true);
-  assert.equal(trace.result.samples.length, 4);
   doc = await command({
     op: "edit",
     ...binding(),
     circuit: "child",
     edit: { kind: "replace", xml },
   });
+  const edited = doc.revision;
+  assert.notEqual(edited, initial);
   list = await history();
   assert.equal(list.entries.length, 2);
   const change = list.entries[0];
   assert.equal(change.beforeRevision, initial);
-  assert.equal(change.revision, proof.revision);
+  assert.equal(change.revision, edited);
   const review = await command({
     op: "historyReview",
     ...binding(),
@@ -206,7 +126,6 @@ try {
   });
   assert.equal(review.original, source);
   assert.equal(review.xml, xml);
-  assert.equal(review.evidence.length, 2);
   doc = await command({ op: "save", ...binding() });
   list = await history();
   assert.equal(list.entries[0].kind, "save");
@@ -230,7 +149,7 @@ try {
     /改变/,
   );
   doc = await command({ op: "undo", ...binding() });
-  assert.equal(doc.revision, proof.revision);
+  assert.equal(doc.revision, edited);
   assert.equal((await history()).entries[0].kind, "undo");
   const againstCurrent = await command({
     op: "historyReview",
@@ -240,7 +159,6 @@ try {
   });
   assert.equal(againstCurrent.original, source);
   assert.equal(againstCurrent.xml, xml);
-  assert.equal(againstCurrent.evidence.length, 2);
   const count = (await history()).entries.length;
   await stop();
   await start();
@@ -252,7 +170,8 @@ try {
     entry: change.id,
     mode: "change",
   });
-  assert.equal(restartReview.evidence.length, 2);
+  assert.equal(restartReview.original, source);
+  assert.equal(restartReview.xml, xml);
   await command({
     op: "historyPreview",
     ...binding(),
@@ -272,7 +191,7 @@ try {
     doc.revision,
   );
   // Historical native views must reject changed external libraries, while
-  // immutable source comparison and the original verification record survive.
+  // immutable source comparison survives.
   const library = path.join(state, "parts.circ");
   await writeFile(library, source);
   const withLibrary = (text: string) =>
@@ -280,8 +199,7 @@ try {
       '<main name="main"/>',
       '<lib desc="file#parts.circ" name="9"/><main name="main"/>',
     );
-  const externalSource = withLibrary(source),
-    externalCandidate = withLibrary(xml);
+  const externalSource = withLibrary(source);
   const externalFile = path.join(state, "external.circ");
   await writeFile(externalFile, externalSource);
   const external = await command({ op: "open", path: externalFile });
@@ -296,18 +214,6 @@ try {
     circuit: "child",
     candidate: false,
   });
-  const externalProof = await command({
-    op: "proposalVerify",
-    ...externalBinding,
-    original: externalSource,
-    xml: externalCandidate,
-    circuit: "child",
-    verification: {
-      kind: "vectors",
-      vectors: [{ inputs: { A: 2 }, expected: { Y: 2 } }],
-    },
-  });
-  assert.equal(externalProof.result.passed, 1);
   await mkdir(path.join(state, "relocated"));
   const movedFile = path.join(state, "relocated", "external.circ");
   const savedAs = await command({
@@ -317,16 +223,6 @@ try {
   });
   assert.notEqual(savedAs.revision, external.revision);
   assert.equal(await readFile(externalFile, "utf8"), externalSource);
-  // Old candidate previews retain the original source-directory basis.
-  const oldProposalImage = await command({
-    op: "proposalPreview",
-    ...externalBinding,
-    original: externalSource,
-    xml: externalCandidate,
-    circuit: "child",
-    candidate: true,
-  });
-  assert(oldProposalImage.image.startsWith("data:image/png"));
   const restored = await command({
     op: "historyRestore",
     id: external.id,
@@ -356,14 +252,6 @@ try {
       }),
     /组件库已改变/,
   );
-  const unavailable = await command({
-    op: "historyDetail",
-    ...historicalBinding,
-    entry: externalEntry,
-    mode: "current",
-    circuit: "child",
-  });
-  assert.equal(unavailable.connectivity.status, "unavailable");
   assert.equal(
     (
       await command({
@@ -375,35 +263,8 @@ try {
     ).original,
     externalSource,
   );
-  const staleEvidence = (
-    await command({
-      op: "proposalReview",
-      ...externalBinding,
-      original: externalSource,
-      xml: externalCandidate,
-    })
-  ).evidence;
-  assert.equal(staleEvidence[0].dependenciesVerified, false);
-  const evidenceFile = path.join(
-    state,
-    "verification-records",
-    external.id,
-    externalProof.id + ".json",
-  );
-  const damaged = JSON.parse(await readFile(evidenceFile, "utf8"));
-  damaged.record.result.passed = 99;
-  await writeFile(evidenceFile, JSON.stringify(damaged));
-  const corruptReview = await command({
-    op: "proposalReview",
-    ...externalBinding,
-    original: externalSource,
-    xml: externalCandidate,
-  });
-  assert.match(corruptReview.evidenceWarning, /记录内容已改变/);
-  assert.equal(corruptReview.evidence.length, 0);
-  assert(corruptReview.rows.length > 0);
   console.log(
-    "Verified immutable history baselines, before/after and current comparison, native connectivity and parent impact, candidate-bound vector/trace evidence, readonly live simulation, restore+undo, stale/source guards and restart recovery.",
+    "Verified immutable history baselines, before/after and current comparison, readonly live simulation, restore+undo, stale/source guards, changed external libraries and restart recovery.",
   );
 } finally {
   await stop();
