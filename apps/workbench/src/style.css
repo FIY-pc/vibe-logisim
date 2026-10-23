@@ -1488,9 +1488,12 @@ button.primary {
 .observation-list label {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
   min-width: 0;
   flex: 1;
+}
+.observation-list label .checkbox {
+  margin-top: 4px;
 }
 .observation-list label span {
   overflow: hidden;
@@ -1611,6 +1614,31 @@ button.primary {
   display: flex;
   justify-content: flex-end;
   padding: 8px;
+}
+.file-preview-unavailable {
+  width: min(400px, calc(100vw - 32px));
+}
+.file-preview-reason {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+  text-align: center;
+  color: var(--muted);
+}
+.file-preview-reason p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.file-preview-reason p.muted {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.file-preview-unavailable .dialog-error {
+  margin: 12px 0 0;
 }
 .inspector label:has(textarea) {
   display: block;

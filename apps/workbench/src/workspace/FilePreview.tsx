@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReferenceInput } from "../conversation/references";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileQuestion } from "lucide-react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { openPdf, pageText } from "./pdf";
 import { DialogClose, useModal } from "../shared/Dialog";
+import { desktop } from "../shared/transport";
 export interface PreviewFile {
   name: string;
   text?: string;
@@ -14,6 +15,10 @@ export interface PreviewFile {
   page?: number;
   pathVersion?: number;
   folderId?: string;
+  /** Why the app cannot show this file; the preview then only says so. */
+  unavailable?: string;
+  /** The file's absolute path, for showing it in the file manager. */
+  location?: string;
 }
 export function FilePreview({
   file,
@@ -109,6 +114,51 @@ export function FilePreview({
     });
     onClose();
   };
+  if (file.unavailable)
+    return (
+      <dialog
+        ref={dialog}
+        className="text-prompt file-preview-unavailable"
+        aria-label={file.name}
+        onCancel={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+      >
+        <header>
+          <h2 title={file.name}>{file.name}</h2>
+          <DialogClose label="关闭资料" onClick={onClose} />
+        </header>
+        <div className="file-preview-reason">
+          <FileQuestion size={28} aria-hidden="true" />
+          <p>无法在应用内预览这个文件</p>
+          <p className="muted">{file.unavailable}</p>
+        </div>
+        <footer>
+          {desktop() && file.location && (
+            <button
+              onClick={() => {
+                const location = file.location!;
+                void import("@tauri-apps/plugin-opener")
+                  .then(({ revealItemInDir }) => revealItemInDir(location))
+                  .then(onClose)
+                  .catch((e) => setError(String(e)));
+              }}
+            >
+              在文件管理器中显示
+            </button>
+          )}
+          <button className="primary" data-autofocus onClick={onClose}>
+            好
+          </button>
+        </footer>
+        {error && (
+          <p role="alert" className="dialog-error">
+            {error}
+          </p>
+        )}
+      </dialog>
+    );
   return (
     <dialog
       ref={dialog}

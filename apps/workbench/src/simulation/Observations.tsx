@@ -38,7 +38,21 @@ export function Observations({
       op: "observationList",
       id: documentId,
     })
-      .then(setRecords)
+      .then((list) => {
+        setRecords(list);
+        // Opening the list shows the newest observation, as a viewer would.
+        setSelection((old) => {
+          if (old.length) return old;
+          const newest = list
+            .filter((record) => !record.damaged)
+            .reduce<ObservationSummary | null>(
+              (best, record) =>
+                !best || record.createdAt > best.createdAt ? record : best,
+              null,
+            );
+          return newest ? [newest.id] : [];
+        });
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [documentId]);
   useEffect(() => {
@@ -144,6 +158,9 @@ export function Observations({
           )}
         </div>
         <div className="observation-viewer">
+          {records.length > 0 && !selection.length && (
+            <p className="quiet-empty">勾选左侧的观察查看，勾选两条可以对比</p>
+          )}
           {selected.length === 2 && <Comparison records={selected} />}
           {selected.map((record) => (
             <article key={record.id}>

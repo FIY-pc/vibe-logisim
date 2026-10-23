@@ -5,6 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  CircuitBoard,
+  File as PlainFile,
+  FileArchive,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   Folder,
   FolderOpen,
@@ -70,6 +76,43 @@ const join = (parent: string, name: string) =>
 const message = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 /** The absolute path of a file of the folder, in the folder path's style. */
+/** A file's icon tells its kind at a glance, the way file managers do. */
+function EntryIcon({
+  name,
+  directory,
+  open = false,
+  size,
+}: {
+  name: string;
+  directory?: boolean;
+  open?: boolean;
+  size: number;
+}) {
+  if (directory)
+    return open ? <FolderOpen size={size} /> : <Folder size={size} />;
+  const extension = name.toLowerCase().match(/\.([^.]+)$/)?.[1] || "";
+  const Icon =
+    extension === "circ"
+      ? CircuitBoard
+      : /^(pdf|md|txt|text|csv|tsv|log)$/.test(extension)
+        ? FileText
+        : /^(png|jpe?g|webp|gif|bmp|svg)$/.test(extension)
+          ? FileImage
+          : /^(zip|jar|7z|rar|tar|gz|tgz|xz)$/.test(extension)
+            ? FileArchive
+            : /^(xlsx?|ods)$/.test(extension)
+              ? FileSpreadsheet
+              : /^(v|sv|vhdl?|asm|s|c|h|py|js|ts|json|xml|hex|coe|mif)$/.test(extension)
+                ? FileCode
+                : PlainFile;
+  return <Icon size={size} />;
+}
+const unreadable = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return /UTF-8/.test(message)
+    ? "应用内只能查看文本、PDF 和图片。"
+    : message;
+};
 export const absolutePath = (folderPath: string, relative: string) => {
   const base = folderPath
     .replace(/^\\\\\?\\UNC\\/, "\\\\")
@@ -319,7 +362,14 @@ export function Files({
       }
       if (entry.name.toLowerCase().endsWith(".circ")) {
         onOpen(absolute(entry.path));
-      } else if (/\.(pdf|png|jpe?g|webp)$/i.test(entry.name)) {
+        return;
+      }
+    } catch (error) {
+      if (current()) onError(error);
+      return;
+    }
+    try {
+      if (/\.(pdf|png|jpe?g|webp)$/i.test(entry.name)) {
         const result = await command<PreviewFile>({
           op: "folderPreview",
           folder_id: folderId,
@@ -338,7 +388,14 @@ export function Files({
           onPreview({ ...result, name: entry.name, path: result.relativePath });
       }
     } catch (error) {
-      if (current()) onError(error);
+      // A file the app cannot show still opens, saying why and where it is.
+      if (current())
+        onPreview({
+          name: entry.name,
+          path: entry.path,
+          location: absolute(entry.path),
+          unavailable: unreadable(error),
+        });
     }
   };
   const importSources = async (
@@ -770,7 +827,12 @@ export function Files({
             ) : (
               <span className="tree-spacer" />
             )}
-            {entry.directory ? <Folder size={14} /> : <FileText size={14} />}
+            <EntryIcon
+              name={entry.name}
+              directory={entry.directory}
+              open={expanded.has(entry.path)}
+              size={14}
+            />
             <span>{entry.name}</span>
           </button>
           <Menu
@@ -1093,7 +1155,11 @@ function ImportDialog({
         {plan.items.map((item) => (
           <div key={item.index}>
             <span title={item.path}>
-              {item.directory ? <Folder size={15} /> : <FileText size={15} />}{" "}
+              <EntryIcon
+                name={item.path}
+                directory={item.directory}
+                size={15}
+              />{" "}
               {item.path}
             </span>
             {item.conflict ? (
