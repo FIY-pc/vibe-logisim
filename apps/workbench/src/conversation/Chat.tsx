@@ -445,6 +445,17 @@ export function Chat({
   const draft = draftRecord.key === draftKey ? draftRecord.text : "";
   useAutoSize(composerInput, draft);
   useAutoSize(editInput, editedText);
+  // Editing a question starts typing at its end, as the composer would.
+  useEffect(() => {
+    const input = editInput.current;
+    if (!editingMessage || !input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [editingMessage]);
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    requestAnimationFrame(() => composerInput.current?.focus());
+  };
   useEffect(() => {
     setDraftRecord({
       key: draftKey,
@@ -783,19 +794,29 @@ export function Chat({
                       aria-label="编辑消息"
                       value={editedText}
                       onChange={(e) => setEditedText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          resubmit();
+                        } else if (e.key === "Escape" && !pending) {
+                          e.preventDefault();
+                          cancelEdit();
+                        }
+                      }}
                     />
-                    <button
-                      disabled={pending || !editedText.trim()}
-                      onClick={resubmit}
-                    >
-                      重新发送
-                    </button>
-                    <button
-                      disabled={pending}
-                      onClick={() => setEditingMessage(null)}
-                    >
-                      取消
-                    </button>
+                    <div className="message-edit-actions">
+                      <button disabled={pending} onClick={cancelEdit}>
+                        取消
+                      </button>
+                      <button
+                        className="primary"
+                        disabled={pending || !editedText.trim()}
+                        onClick={resubmit}
+                      >
+                        重新发送
+                      </button>
+                    </div>
                   </div>
                 ) : m.type === "assistant" ? (
                   <ChatMarkdown

@@ -963,13 +963,21 @@ button.primary {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+/* A question is a bubble at the right that fits its text; editing it takes
+ * the full width, like the composer. */
 .message.user {
   position: relative;
-  margin-left: 26px;
+  width: fit-content;
+  max-width: calc(100% - 26px);
+  margin-left: auto;
   margin-bottom: 42px;
   background: #eff2f7;
   padding: 8px 12px;
   border-radius: 12px 12px 3px 12px;
+}
+.message.user:has(> .message-edit) {
+  width: auto;
+  margin-left: 26px;
 }
 /* A question's copy and edit commands sit under its bubble, not inside it. */
 .message.user > .message-actions {
@@ -1736,6 +1744,13 @@ button.primary {
   width: 100%;
   min-height: 100px;
   max-height: min(50vh, 400px);
+}
+.message-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  white-space: normal;
 }
 
 .shortcut-settings {
