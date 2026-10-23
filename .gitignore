@@ -36,3 +36,7 @@ tmp/
 *.tsbuildinfo
 /.workbench-state/
 /.workbench-cache/
+
+# bun writes its own lock file; package-lock.json is the one in use
+bun.lock
+bun.lockb

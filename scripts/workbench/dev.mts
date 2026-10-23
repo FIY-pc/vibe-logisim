@@ -3,11 +3,13 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const windows = process.platform === "win32";
-const commands: [string, string[]][] = [
-  ["cargo", ["run", "-p", "vibe-workbench-host"]],
+const root = path.resolve(import.meta.dirname, "../..");
+const commands: [string, string[], string][] = [
+  ["cargo", ["run", "-p", "vibe-workbench-host"], root],
   [
     windows ? "npm.cmd" : "npm",
-    ["run", "dev", "-w", "@vibe-logisim/workbench"],
+    ["run", "dev"],
+    path.join(root, "apps/workbench"),
   ],
 ];
 function killWindowsTree(pid: number): Promise<void> {
@@ -38,8 +40,9 @@ function signalGroup(pid: number, signal: NodeJS.Signals) {
 if (process.send) {
   // Keep an owned tree root alive even if npm/cargo exits before its descendants.
   // Windows taskkill /T needs that root to exist; Unix uses its separate process group.
-  const [program, args] = commands[Number(process.argv[2])];
+  const [program, args, cwd] = commands[Number(process.argv[2])];
   const child = spawn(program, args, {
+    cwd,
     stdio: "inherit",
     shell: windows && program === "npm.cmd",
   });
