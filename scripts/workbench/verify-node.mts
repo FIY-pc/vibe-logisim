@@ -187,7 +187,7 @@ async function probe(resources: string, label: string, namespaced: boolean) {
           }
           if (value.id === 2) {
             if (
-              value.result?.runtime !== "builtin" ||
+              value.result?.status !== "ready" ||
               value.result?.model !== "fixture"
             ) {
               child.kill();
