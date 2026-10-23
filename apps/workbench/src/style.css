@@ -1394,39 +1394,67 @@ button.primary {
 }
 .waveform-row {
   display: flex;
-  height: 36px;
-  align-items: center;
+  height: 32px;
+  align-items: stretch;
+  border-bottom: 1px solid #f0f2f5;
 }
-.waveform-row > span {
+.waveform-label {
   position: sticky;
   left: 0;
-  width: 150px;
+  z-index: 1;
+  width: 160px;
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: var(--paper);
-  padding: 2px 6px;
+  padding: 0 10px 0 2px;
   font-size: 11px;
+}
+.waveform-label > span {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  z-index: 1;
+  white-space: nowrap;
 }
-.waveform-row code {
-  display: block;
+.waveform-label > code {
+  flex: none;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted);
+  font:
+    11px ui-monospace,
+    monospace;
 }
 .waveform-row svg {
   flex: none;
   cursor: crosshair;
 }
+.waveform-row path {
+  fill: none;
+  stroke-width: 1.25;
+}
+.waveform-row .trace-known {
+  stroke: #3f8a6c;
+}
+.waveform-row .trace-unknown {
+  stroke: #c2701f;
+}
 .waveform-row text {
   font:
-    9px ui-monospace,
+    11px ui-monospace,
     monospace;
-  fill: currentColor;
+  fill: var(--text);
+}
+.waveform-cursor {
+  fill: #315efb14;
 }
 .waveform-scroll input[type="range"] {
-  width: calc(100% - 150px);
-  margin-left: 150px;
-  padding: 0;
+  display: block;
+  width: calc(100% - 160px);
+  margin: 6px 0 0 160px;
 }
 .observations-dialog {
   width: min(1100px, 94vw);

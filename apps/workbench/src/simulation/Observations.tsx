@@ -6,7 +6,7 @@ import type { ObservationRecord } from "../generated/ObservationRecord";
 import type { ObservationSummary } from "../generated/ObservationSummary";
 import type { ReferenceInput } from "../conversation/references";
 import { command } from "../shared/transport";
-import { Waveform } from "./Waveform";
+import { busValue, Waveform } from "./Waveform";
 import { Checkbox } from "../shared/Checkbox";
 import { DialogClose, useModal } from "../shared/Dialog";
 
@@ -163,7 +163,7 @@ export function Observations({
                       <tr key={signal.key}>
                         <th>{signal.label}</th>
                         <td>
-                          <code>{signal.bits}</code>
+                          <code title={signal.bits}>{busValue(signal.bits)}</code>
                         </td>
                       </tr>
                     ))}

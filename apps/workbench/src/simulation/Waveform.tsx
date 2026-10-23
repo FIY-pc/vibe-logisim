@@ -1,6 +1,102 @@
 import { useEffect, useRef, useState } from "react";
 import type { TraceDelta } from "../generated/TraceDelta";
 
+const CELL = 28,
+  ROW = 32,
+  HIGH = 8,
+  LOW = 24,
+  MIDDLE = 16,
+  SLANT = 3,
+  DIGIT = 6.7;
+
+/** A sample's bits without the grouping spaces. */
+const bitsOf = (value: string | undefined) =>
+  (value ?? "?").replaceAll(" ", "");
+
+/** Bits read the way Logisim shows bus values: hex, one digit per four bits;
+ * a digit is `x` when all its bits are unknown, `E` on an error and `?` when
+ * known and unknown bits mix. */
+export function busValue(value: string | undefined) {
+  const bits = bitsOf(value);
+  if (bits.length <= 1) return bits;
+  let text = "";
+  for (let end = bits.length; end > 0; end -= 4) {
+    const nibble = bits.slice(Math.max(0, end - 4), end);
+    text =
+      (/^[01]+$/.test(nibble)
+        ? parseInt(nibble, 2).toString(16).toUpperCase()
+        : nibble.includes("E")
+          ? "E"
+          : /^x+$/.test(nibble)
+            ? "x"
+            : "?") + text;
+  }
+  return text;
+}
+
+/** Equal neighbouring samples drawn as one stretch. */
+function runs(values: string[]) {
+  const out: { start: number; end: number; bits: string }[] = [];
+  values.forEach((bits, index) => {
+    const last = out.at(-1);
+    if (last && last.bits === bits) last.end = index + 1;
+    else out.push({ start: index, end: index + 1, bits });
+  });
+  return out;
+}
+
+/** One signal's trace: a line between two levels for a single bit, a band
+ * with crossings and values for a bus. */
+function Trace({ values, wide }: { values: string[]; wide: boolean }) {
+  const stretches = runs(values);
+  if (!wide)
+    return (
+      <>
+        {stretches.map(({ start, end, bits }, index) => {
+          const level = bits === "1" ? HIGH : bits === "0" ? LOW : MIDDLE;
+          const before = stretches[index - 1]?.bits;
+          const from =
+            before === "1" ? HIGH : before === "0" ? LOW : before ? MIDDLE : level;
+          return (
+            <path
+              key={start}
+              className={/^[01]$/.test(bits) ? "trace-known" : "trace-unknown"}
+              d={`M${start * CELL},${from} V${level} H${end * CELL}`}
+            />
+          );
+        })}
+      </>
+    );
+  return (
+    <>
+      {stretches.map(({ start, end, bits }) => {
+        const x0 = start * CELL,
+          x1 = end * CELL,
+          text = busValue(bits),
+          span = text.length * DIGIT,
+          // Long stretches repeat their value so it stays in view while scrolled.
+          step = Math.max(span + 48, 168),
+          marks: number[] = [];
+        for (let x = x0 + SLANT + 4; x + span <= x1 - SLANT - 2; x += step)
+          marks.push(x);
+        return (
+          <g key={start}>
+            <path
+              className={/^[01]+$/.test(bits) ? "trace-known" : "trace-unknown"}
+              d={`M${x0},${MIDDLE} L${x0 + SLANT},${HIGH} H${x1 - SLANT} L${x1},${MIDDLE} L${x1 - SLANT},${LOW} H${x0 + SLANT} Z`}
+            />
+            {marks.map((x) => (
+              <text key={x} x={x} y={MIDDLE + 4}>
+                {text}
+              </text>
+            ))}
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
 /** The watched signals' samples, as the run delivered them. */
 export function Waveform({
   trace,
@@ -23,8 +119,8 @@ export function Waveform({
   }, [samples.at(-1)?.sample, cursor]);
   const chosen = samples.find((s) => s.sample === cursor) || samples.at(-1);
   if (!samples.length || !signals.length) return null;
-  const cell = 28,
-    width = Math.max(280, samples.length * cell);
+  const at = Math.max(0, samples.indexOf(chosen!));
+  const width = Math.max(280, samples.length * CELL);
   return (
     <div className="waveform">
       <div className="waveform-caption">
@@ -45,64 +141,47 @@ export function Waveform({
               40;
         }}
       >
-        <div style={{ minWidth: width + 150 }}>
-          {signals.map((signal, row) => (
-            <div className="waveform-row" key={signal.id}>
-              <span title={labels[signal.id]}>
-                {labels[signal.id] || signal.id}
-                <code>{chosen?.values[row] || "—"}</code>
-              </span>
-              <svg
-                width={width}
-                height={36}
-                role="img"
-                aria-label={`${labels[signal.id] || signal.id} 波形`}
-              >
-                {samples.map((sample, i) => {
-                  const bits = (sample.values[row] || "?").replaceAll(" ", ""),
-                    previous = (samples[i - 1]?.values[row] || bits).replaceAll(
-                      " ",
-                      "",
-                    );
-                  const y = bits === "1" ? 7 : bits === "0" ? 28 : 18,
-                    oldY = previous === "1" ? 7 : previous === "0" ? 28 : 18;
-                  return (
-                    <g
-                      key={sample.sample}
-                      onClick={() => setCursor(sample.sample)}
-                    >
-                      <title>{`步骤 ${sample.sample}, ${sample.tick} tick: ${bits}`}</title>
-                      <rect
-                        x={i * cell}
-                        y={0}
-                        width={cell}
-                        height={36}
-                        fill={sample === chosen ? "#536cba20" : "transparent"}
-                      />
-                      <path
-                        d={`M${i * cell},${oldY} V${y} H${(i + 1) * cell}`}
-                        fill="none"
-                        stroke={/^[01]+$/.test(bits) ? "#4c856e" : "#bd722d"}
-                      />
-                      {bits.length !== 1 || !/^[01]$/.test(bits) ? (
-                        <text x={i * cell + 3} y={15}>
-                          {/^[01]{2,32}$/.test(bits)
-                            ? parseInt(bits, 2).toString(16).toUpperCase()
-                            : bits}
-                        </text>
-                      ) : null}
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-          ))}
+        <div className="waveform-sheet" style={{ minWidth: width + 160 }}>
+          {signals.map((signal, row) => {
+            const name = labels[signal.id] || signal.id;
+            const value = chosen?.values[row];
+            return (
+              <div className="waveform-row" key={signal.id}>
+                <span className="waveform-label" title={name}>
+                  <span>{name}</span>
+                  <code>{value === undefined ? "—" : busValue(value)}</code>
+                </span>
+                <svg
+                  width={width}
+                  height={ROW}
+                  role="img"
+                  aria-label={`${name} 波形`}
+                  onClick={(event) => {
+                    const left = event.currentTarget.getBoundingClientRect().left;
+                    const index = Math.floor((event.clientX - left) / CELL);
+                    if (samples[index]) setCursor(samples[index].sample);
+                  }}
+                >
+                  <rect
+                    className="waveform-cursor"
+                    x={at * CELL}
+                    width={CELL}
+                    height={ROW}
+                  />
+                  <Trace
+                    values={samples.map((sample) => bitsOf(sample.values[row]))}
+                    wide={signal.width > 1}
+                  />
+                </svg>
+              </div>
+            );
+          })}
           <input
             aria-label="波形步骤"
             type="range"
             min={0}
             max={samples.length - 1}
-            value={Math.max(0, samples.indexOf(chosen!))}
+            value={at}
             onChange={(e) => setCursor(samples[Number(e.target.value)].sample)}
           />
         </div>
