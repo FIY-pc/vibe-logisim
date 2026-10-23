@@ -337,10 +337,12 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
             <Download size={15} />
             {busy
               ? "正在保存…"
-              : saved
-                ? "再次保存诊断"
-                : desktop()
-                  ? "保存诊断…"
+              : desktop()
+                ? saved
+                  ? "再次保存诊断…"
+                  : "保存诊断…"
+                : saved
+                  ? "再次下载诊断"
                   : "下载诊断"}
           </button>
           <button

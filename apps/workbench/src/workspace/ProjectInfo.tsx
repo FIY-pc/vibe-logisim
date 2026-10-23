@@ -221,7 +221,13 @@ export function ProjectInfo({
           onClick={() => void download()}
         >
           <Download size={15} />
-          {busy ? "正在导出…" : replacement ? "替换文件" : "导出工程 ZIP"}
+          {busy
+            ? "正在导出…"
+            : replacement
+              ? "替换文件"
+              : desktop()
+                ? "导出工程 ZIP…"
+                : "导出工程 ZIP"}
         </button>
       </footer>
     </dialog>
