@@ -13,7 +13,6 @@ export interface RuntimeMessage {
   startedAt?: number;
   elapsedMs?: number;
   error?: string | null;
-  delivery?: string;
   context?: ProtocolObject;
   turnId?: string | null;
   itemId?: string;
@@ -36,9 +35,8 @@ export interface ConversationRecord {
   customTitle?: boolean;
   titleGenerated?: boolean;
   selection?: ServiceSelection | null;
-  /** The model transcript, the queued steers and where each message starts in both. */
+  /** The model transcript and where each message starts in it and in `messages`. */
   transcript?: AgentMessage[];
-  queued?: AgentMessage[];
   checkpoints?: Record<string, { raw: number; history: number }>;
 }
 export interface ConversationWorkspace {

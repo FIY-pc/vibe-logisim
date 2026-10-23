@@ -66,10 +66,8 @@ export type RuntimeEvent =
       id: string;
       text: string;
       context?: unknown;
-      delivery?: string;
       canEdit?: boolean;
     }
-  | { type: "user-message-delivery"; id: string; delivery: string }
   | { type: "assistant-started"; itemId: string; turnId: string | null }
   | {
       type: "assistant-delta" | "reasoning-delta";
