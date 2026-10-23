@@ -56,6 +56,8 @@ export const optionLabels: Record<string, string> = {
   "One synchronous load/store port": "单端口同步读写",
   "One asynchronous load/store port": "单端口异步读写",
 };
+/** Parts by their native factory names, as `.circ` files and the catalog
+ * name them (some differ from the English display names). */
 export const componentLabels: Record<string, string> = {
   Pin: "引脚",
   Splitter: "分线器",
@@ -84,7 +86,7 @@ export const componentLabels: Record<string, string> = {
   Decoder: "译码器",
   Encoder: "编码器",
   "Priority Encoder": "优先编码器",
-  "Bit Selector": "位选择器",
+  BitSelector: "位选择器",
   Adder: "加法器",
   Subtractor: "减法器",
   Multiplier: "乘法器",
@@ -92,7 +94,7 @@ export const componentLabels: Record<string, string> = {
   Negator: "取负器",
   Comparator: "比较器",
   Shifter: "移位器",
-  "Bit Adder": "位计数器",
+  BitAdder: "位计数器",
   Register: "寄存器",
   Counter: "计数器",
   "D Flip-Flop": "D 触发器",
@@ -105,14 +107,36 @@ export const componentLabels: Record<string, string> = {
   Random: "随机数发生器",
   Button: "按钮",
   LED: "LED",
-  "RGB LED": "RGB LED",
+  RGBLed: "RGB LED",
   "7-Segment Display": "七段数码管",
   "Hex Digit Display": "十六进制数码管",
-  "LED Matrix": "LED 点阵",
+  DotMatrix: "LED 点阵",
   Keyboard: "键盘",
   TTY: "终端",
   Text: "文字",
   POR: "上电复位",
+  ProgrammableGenerator: "可编程信号发生器",
+  "Odd Parity": "奇校验",
+  "Even Parity": "偶校验",
+  DisplayDecoder: "七段译码器",
+  BitFinder: "位查找器",
+  PlaRom: "PLA ROM",
+  Switch: "开关",
+  DipSwitch: "拨码开关",
+  Slider: "滑块",
+  Joystick: "摇杆",
+  Buzzer: "蜂鸣器",
+  "Digital Oscilloscope": "数字示波器",
+};
+/** The built-in libraries by their native names, as the palette groups them. */
+export const libraryLabels: Record<string, string> = {
+  Wiring: "线路",
+  Gates: "逻辑门",
+  Plexers: "复用器",
+  Arithmetic: "运算器",
+  Memory: "存储器",
+  "I/O": "输入/输出",
+  Base: "基本",
 };
 export const isAppearanceProperty = (name: string) =>
   /^(labelfont|labelcolor|labelloc|color|font|labelvisible|appearance)$/.test(

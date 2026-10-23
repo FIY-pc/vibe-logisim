@@ -404,8 +404,10 @@ export function ComponentPalette({
       </div>
       <div className="palette">
         {catalog.map((group) => {
+          // Parts match by their label, native name or the runtime's name.
           const tools = group.tools.filter((t) =>
-            (t.name + " " + t.label)
+            [t.name, t.label, t.nativeLabel]
+              .join(" ")
               .toLowerCase()
               .includes(search.toLowerCase()),
           );

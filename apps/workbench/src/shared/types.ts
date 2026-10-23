@@ -19,6 +19,8 @@ export interface XmlNode {
 export interface CatalogTool {
   name: string;
   label: string;
+  /** The runtime's own name for the part, when the label translates it. */
+  nativeLabel?: string;
   library: string;
   icon?: string;
   disabled?: string;
