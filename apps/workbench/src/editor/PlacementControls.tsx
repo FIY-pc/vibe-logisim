@@ -1,4 +1,5 @@
 import { RotateCw, X } from "lucide-react";
+import { Checkbox } from "../shared/Checkbox";
 import { IconButton } from "../shared/IconButton";
 import { canRotate, type PlacementState } from "./usePlacement";
 import { useEditor, useSettings } from "../app/hooks";
@@ -22,10 +23,9 @@ export function PlacementControls({
         disabled={!canRotate(placement)}
       />
       <label className="placement-repeat">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={placement.repeat}
-          onChange={(e) => placement.setRepeat(e.target.checked)}
+          onCheckedChange={placement.setRepeat}
         />
         连续放置
       </label>

@@ -33,7 +33,6 @@
   width: calc(100% - 32px);
   height: 240px;
   margin: 0 16px 16px;
-  resize: vertical;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 6px;

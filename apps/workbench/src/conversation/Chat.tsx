@@ -43,6 +43,7 @@ import {
 } from "./ProviderSettings";
 import { TextPrompt } from "../shared/TextPrompt";
 import { Select } from "../shared/Select";
+import { useAutoSize } from "../shared/useAutoSize";
 export type { Message } from "./ConversationContent";
 
 /** The sidecar's `status` snapshot; the host adds `eventCursor`. */
@@ -219,6 +220,8 @@ export function Chat({
   const ready = scopeReady && boundTo?.documentId === doc?.id;
   const busy = Boolean(state?.busy);
   const scroller = useRef<HTMLDivElement>(null);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
+  const editInput = useRef<HTMLTextAreaElement>(null);
 
   // Runtime calls that change the conversation run one after another.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -440,6 +443,8 @@ export function Chat({
     ? "vibe.draft:" + scope + ":" + (state?.conversationId || "")
     : "";
   const draft = draftRecord.key === draftKey ? draftRecord.text : "";
+  useAutoSize(composerInput, draft);
+  useAutoSize(editInput, editedText);
   useEffect(() => {
     setDraftRecord({
       key: draftKey,
@@ -774,6 +779,7 @@ export function Chat({
                 {editingMessage?.id === m.id ? (
                   <div className="message-edit">
                     <textarea
+                      ref={editInput}
                       aria-label="编辑消息"
                       value={editedText}
                       onChange={(e) => setEditedText(e.target.value)}
@@ -877,6 +883,7 @@ export function Chat({
       <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
         {references.composer}
         <textarea
+          ref={composerInput}
           value={draft}
           onChange={(e) => changeDraft(e.target.value)}
           placeholder="描述你的想法…"

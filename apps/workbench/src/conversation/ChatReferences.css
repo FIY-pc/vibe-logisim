@@ -4,6 +4,12 @@
   gap: 5px;
   margin: 6px 0;
 }
+.reference-chips:empty {
+  display: none;
+}
+.composer > .reference-chips {
+  margin: 10px 10px 0;
+}
 .reference-chips > span {
   display: flex;
   min-width: 0;

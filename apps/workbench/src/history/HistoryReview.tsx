@@ -5,6 +5,7 @@ import { sourceDiff } from "./sourceDiff";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./HistoryReview.css";
+import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { DialogClose, useModal } from "../shared/Dialog";
 
@@ -234,11 +235,7 @@ export function HistoryReview({
           原始 XML
           {showSource && (
             <label onClick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                checked={allLines}
-                onChange={(e) => setAllLines(e.target.checked)}
-              />
+              <Checkbox checked={allLines} onCheckedChange={setAllLines} />
               显示完整源码
             </label>
           )}

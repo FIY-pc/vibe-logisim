@@ -40,7 +40,6 @@
   margin-top: 14px;
 }
 .inspector .appearance-properties summary {
-  cursor: pointer;
   font-size: 11px;
   margin-bottom: 10px;
 }
@@ -55,7 +54,7 @@
 }
 .inspector .inspector-memory span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .inspector .pin-table {
   width: 100%;
@@ -133,7 +132,7 @@
 }
 .selection-connections .connection-peer small {
   width: 100%;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .selection-connections .signal-action {

@@ -1267,8 +1267,8 @@ const inputValue = async (el: HTMLInputElement, value: string) => {
   });
 };
 assert.equal(
-  document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,
-  false,
+  document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked"),
+  "false",
 );
 await inputValue(field("接口地址"), "http://fixture.invalid/v1");
 await inputValue(field("模型"), "fixture");
@@ -1295,7 +1295,7 @@ await inputValue(
   document.querySelector('input[aria-label="上下文窗口"]')!,
   "128000",
 );
-await click(document.querySelector('input[type="checkbox"]'));
+await click(document.querySelector('[role="checkbox"]'));
 await act(async () =>
   document
     .querySelector("form")!

@@ -22,6 +22,7 @@
   /* Dialogs: one surface over one backdrop. */
   --dialog-shadow: 0 16px 48px #1a22331f, 0 2px 6px #1a223314;
   --backdrop: #1a223338;
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 @keyframes layer-in {
@@ -66,13 +67,114 @@ button:disabled {
   opacity: 0.38;
   cursor: default;
 }
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible,
-summary:focus-visible {
+/* One focus ring for everything focusable; text fields draw it on their
+ * border, scrolling regions inside their edge. */
+:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+:is(input, textarea):focus-visible {
+  outline-offset: -1px;
+}
+.messages:focus-visible,
+.chat-table:focus-visible {
+  outline-offset: -2px;
+}
+/* Native control parts follow the platform theme and differ between
+ * WebView engines, so the app draws its own. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: #c5cbd5;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a6aebb;
+}
+textarea {
+  resize: none;
+}
+input[type="number"] {
+  appearance: textfield;
+}
+input::-webkit-inner-spin-button,
+input::-webkit-outer-spin-button,
+input::-webkit-search-cancel-button,
+input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #dfe3ea;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #20263424;
+}
+input[type="range"]:focus-visible {
+  outline-offset: 0;
+  border-radius: 8px;
+}
+/* Disclosure rows draw one chevron everywhere: engines disagree on the
+ * built-in marker (WebKit keeps it on flex rows, Chromium drops it). */
+summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+summary::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  opacity: 0.65;
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+  transition: transform var(--layer-fade) ease-out;
+}
+details[open] > summary::before {
+  transform: rotate(90deg);
 }
 /* Every dialog shares one surface, backdrop and fade; each dialog sets its
  * own size and layout. Titles are `h2`. */
@@ -109,6 +211,7 @@ dialog h2 {
 .ai-settings-dialog {
   margin-top: min(12vh, 96px);
   margin-bottom: auto;
+  max-height: calc(100dvh - min(12vh, 96px) - 24px);
 }
 .dialog-close {
   flex: none;
@@ -316,7 +419,7 @@ button.primary {
   flex-shrink: 0;
 }
 /* Every title bar control sits on one 32 px line whatever its text size. */
-.titlebar :is(button, summary) {
+.titlebar button {
   min-height: 32px;
 }
 .app[data-workspace="empty"]
@@ -449,7 +552,6 @@ button.primary {
   font-size: 11px;
   color: #6d7380;
   padding: 9px 8px;
-  cursor: pointer;
 }
 .palette button {
   width: 100%;
@@ -528,7 +630,7 @@ button.primary {
 }
 .breadcrumbs .muted {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
 }
 .circuit-actions {
   display: flex;
@@ -546,10 +648,10 @@ button.primary {
   padding-block: 5px;
 }
 .breadcrumbs > .muted {
-  font-size: 10px;
+  font-size: 11px;
 }
 .placing {
-  font-size: 10px;
+  font-size: 11px;
   padding: 2px 7px;
   background: #edf1fa;
   color: var(--accent);
@@ -578,7 +680,7 @@ button.primary {
   display: flex;
   gap: 16px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   pointer-events: none;
   background: #ffffffce;
   border-radius: 4px;
@@ -812,9 +914,6 @@ button.primary {
   color: #778197;
   margin-bottom: 9px;
 }
-.activity summary {
-  cursor: pointer;
-}
 .activity pre {
   white-space: pre-wrap;
   max-height: 240px;
@@ -828,11 +927,12 @@ button.primary {
   background: white;
 }
 .composer textarea {
+  display: block;
   border: 0;
   outline: none;
   width: 100%;
-  resize: vertical;
   min-height: 88px;
+  max-height: min(40vh, 320px);
   padding: 12px;
   font-size: 12px;
   background: transparent;
@@ -845,7 +945,7 @@ button.primary {
 }
 .composer footer .composer-effort {
   padding: 3px 5px;
-  font-size: 10px;
+  font-size: 11px;
   max-width: 125px;
 }
 .composer footer button:last-child {
@@ -894,7 +994,7 @@ button.primary {
   margin-bottom: 13px;
   color: #6b7381;
 }
-.provider-form button {
+.provider-form button:not(.checkbox) {
   background: #edf1fa;
   color: var(--accent);
 }
@@ -1047,7 +1147,6 @@ button.primary {
 .inspector textarea {
   width: 100%;
   font: 11px monospace;
-  resize: vertical;
 }
 .canvas svg image {
   mix-blend-mode: multiply;
@@ -1199,7 +1298,7 @@ button.primary {
   align-items: center;
 }
 .memory-grid code {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 .memory-grid input {
@@ -1320,7 +1419,7 @@ button.primary {
   display: block;
   color: var(--muted);
   margin-top: 4px;
-  font-size: 10px;
+  font-size: 11px;
 }
 .observation-viewer {
   overflow: auto;
@@ -1426,7 +1525,6 @@ button.primary {
   width: 100%;
   min-height: 240px;
   white-space: pre-wrap;
-  resize: vertical;
 }
 .file-preview footer {
   display: flex;
@@ -1466,13 +1564,14 @@ button.primary {
   color: var(--muted);
 }
 .message-edit textarea {
+  display: block;
   width: 100%;
   min-height: 100px;
+  max-height: min(50vh, 400px);
 }
 
 .shortcut-settings {
   width: min(600px, calc(100vw - 40px));
-  max-height: calc(100vh - 80px);
   padding: 0;
 }
 .shortcut-settings[open] {
@@ -1575,16 +1674,13 @@ button.primary {
 }
 .provider-advanced summary {
   color: var(--muted);
-  cursor: pointer;
   padding: 6px 0;
 }
 .provider-form .provider-check {
-  display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
-}
-.provider-form .provider-check input {
-  width: auto;
+  color: var(--text);
 }
 .right-panel > [aria-label="信号追踪"] {
   overflow: auto;

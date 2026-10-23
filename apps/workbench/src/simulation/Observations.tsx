@@ -7,6 +7,7 @@ import type { ObservationSummary } from "../generated/ObservationSummary";
 import type { ReferenceInput } from "../conversation/references";
 import { command } from "../shared/transport";
 import { Waveform } from "./Waveform";
+import { Checkbox } from "../shared/Checkbox";
 import { DialogClose, useModal } from "../shared/Dialog";
 
 /**
@@ -81,13 +82,12 @@ export function Observations({
             records.map((record) => (
               <div key={record.id}>
                 <label>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     disabled={Boolean(record.damaged)}
                     checked={selection.includes(record.id)}
-                    onChange={(e) =>
+                    onCheckedChange={(checked) =>
                       setSelection((old) =>
-                        e.target.checked
+                        checked
                           ? [...old.slice(-1), record.id]
                           : old.filter((id) => id !== record.id),
                       )

@@ -4,7 +4,6 @@
 }
 .ai-settings-dialog {
   width: min(760px, calc(100vw - 32px));
-  max-height: calc(100dvh - 48px);
   overflow: hidden;
 }
 .ai-settings-dialog[open] {
@@ -82,7 +81,7 @@
   flex: none;
 }
 .ai-settings-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--muted);
   background: #f5f6f8;
@@ -119,11 +118,11 @@
   gap: 6px;
   margin-bottom: 14px;
 }
-.ai-settings-content .provider-form input:not([type="checkbox"]),
+.ai-settings-content .provider-form input,
 .ai-settings-content .provider-form .select-trigger {
   padding: 10px 12px;
 }
-.ai-settings-content .provider-form button {
+.ai-settings-content .provider-form button:not(.checkbox) {
   background: transparent;
   border: 1px solid var(--border);
   color: inherit;
@@ -142,7 +141,6 @@
 .ai-settings-content .provider-advanced summary {
   padding: 10px 0;
   font-size: 12px;
-  cursor: pointer;
 }
 .ai-settings-content .provider-advanced[open] summary {
   margin-bottom: 10px;

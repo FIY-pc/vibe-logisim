@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, RefreshCw } from "lucide-react";
 import "./ai-settings.css";
+import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { DialogClose, useModal } from "../shared/Dialog";
 export interface ProviderConfiguration {
@@ -295,11 +296,10 @@ function ProviderForm({
             />
           </label>
           <label className="provider-check">
-            <input
-              type="checkbox"
+            <Checkbox
               disabled={locked}
               checked={form.vision}
-              onChange={(e) => update({ vision: e.target.checked })}
+              onCheckedChange={(vision) => update({ vision })}
             />
             图片输入
           </label>

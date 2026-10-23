@@ -103,9 +103,7 @@
   min-width: 0;
 }
 .activity summary {
-  display: flex;
   align-items: baseline;
-  gap: 12px;
 }
 .activity summary > span {
   flex: 1;
@@ -113,6 +111,7 @@
 }
 .activity summary > small {
   flex: none;
+  margin-left: 6px;
   color: var(--muted);
 }
 .activity[data-result-status="unknown"] summary > small,
@@ -181,20 +180,15 @@
   font-size: 12px;
 }
 .activity-batch > summary {
-  display: flex;
   align-items: baseline;
-  gap: 10px;
-  cursor: pointer;
   padding: 5px 0;
-}
-.activity-batch > summary::before {
-  content: "›";
-}
-.activity-batch[open] > summary::before {
-  transform: rotate(90deg);
 }
 .activity-batch > summary > span {
   flex: 1;
+  min-width: 0;
+}
+.activity-batch > summary > small {
+  margin-left: 6px;
 }
 .activity-batch > div {
   border-left: 1px solid var(--border);

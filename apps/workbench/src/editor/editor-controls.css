@@ -52,7 +52,7 @@
   flex-shrink: 0;
 }
 .canvas-zoom {
-  font-size: 10px;
+  font-size: 11px;
   min-width: 34px;
   text-align: center;
   color: var(--muted);
