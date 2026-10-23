@@ -65,6 +65,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
       selection={selection}
       connectionComponent={connectionComponent}
       onOpenMemory={(id) => simulating.openMemory(view, id)}
+      onNarrow={(ids) => editing.select(view, ids)}
       edit={(change) => editing.edit(view, change)}
       live={live ? components[nativeId] || null : null}
       watched={watching}

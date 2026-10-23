@@ -81,9 +81,34 @@
   color: var(--accent);
   background: #eaf0ff;
 }
-.inspector .selected-wire-details {
+.inspector .selected-wire {
+  margin: 0;
   font-size: 11px;
   color: var(--muted);
+}
+.inspector .selection-kinds {
+  display: grid;
+  gap: 1px;
+}
+.inspector .selection-kinds button {
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  font-size: 12px;
+  text-align: left;
+}
+.inspector .selection-kinds button span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inspector .selection-kinds button span:last-child {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.inspector .selection-kinds button:disabled {
+  opacity: 1;
+  color: inherit;
 }
 .inspector .input-action {
   display: flex;
