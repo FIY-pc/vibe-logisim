@@ -5,7 +5,14 @@
  * model can address next.
  */
 import { CircuitToolError } from "./errors.mts";
-import { fileWireId, portIndex, route } from "./wiring.mts";
+import {
+  fileWireId,
+  netKey,
+  portIndex,
+  Router,
+  type Point,
+  type PortRef,
+} from "./wiring.mts";
 import { resolveLibrary } from "./inspect.mts";
 import type { ToolContext } from "./context.mts";
 import type { Edit } from "../generated/Edit.ts";
@@ -81,77 +88,199 @@ export async function setAttributes(
   return outcome(context, result);
 }
 
+const portName = (p: { component: string; port: number }) =>
+  `${p.component} 端口 ${p.port}`;
+
 export async function connect(context: ToolContext, args: Record<string, any>) {
   const { document, circuit } = await context.target(args);
-  const edits: Edit[] = [];
+  const prelude: Edit[] = [];
   if (args.removeWireIds?.length)
-    edits.push({ kind: "delete", ids: args.removeWireIds.map(fileWireId) });
+    prelude.push({ kind: "delete", ids: args.removeWireIds.map(fileWireId) });
   if (args.additions?.length)
-    edits.push(
+    prelude.push(
       ...(await placements(context, document, circuit, args.additions)),
     );
-  if (!edits.length && !args.connections?.length)
+  const connections: any[] = args.connections ?? [];
+  const drawn: Point[][] = (args.wires ?? []).map((w: any) => w.points);
+  if (!prelude.length && !connections.length && !drawn.length)
     throw new CircuitToolError("INVALID_ARGUMENT", "没有要执行的连线操作", {
-      hint: "给出 connections、additions 或 removeWireIds。",
+      hint: "给出 connections、wires、additions 或 removeWireIds。",
     });
   // Removals and placements land first so routing sees the real grid.
   let current = document;
   let last: EditResult | null = null;
-  if (edits.length) {
-    const applied = await context.edit(document, circuit, edits);
+  if (prelude.length) {
+    const applied = await context.edit(document, circuit, prelude);
     current = applied.result.view;
     last = applied.result;
   }
-  const wires: Edit[] = [];
-  if (args.connections?.length) {
+  const paths: Point[][] = [...drawn];
+  const joined: { from: PortRef; to: PortRef }[] = [];
+  const already: number[] = [];
+  let before: Map<string, string | null> | null = null;
+  if (connections.length) {
     const { view } = await context.observe(current, circuit);
     const ports = portIndex(view.circuit);
-    for (const connection of args.connections) {
+    before = netsOf(ports);
+    const router = new Router(view.circuit);
+    for (const wire of drawn) router.commit(wire);
+    for (const [i, connection] of connections.entries()) {
       const from = ports.get(
         `${connection.from.component}:${connection.from.port}`,
       );
       const to = ports.get(`${connection.to.component}:${connection.to.port}`);
-      if (!from || !to)
+      if (!from || !to) {
+        const missing = !from ? connection.from : connection.to;
+        const part = view.circuit.components.find(
+          (c) => c.componentId === missing.component,
+        );
         throw new CircuitToolError(
           "PORT_NOT_FOUND",
-          "连接端点不在当前电路中；先检查端口编号。",
+          part
+            ? `第 ${i + 1} 条连接：${missing.component} 没有端口 ${missing.port}（它有 ${part.ends.length} 个端口，编号 0–${part.ends.length - 1}）。`
+            : `第 ${i + 1} 条连接：电路里没有元件 ${missing.component}。`,
           {
-            hint: "用 inspect_circuit 的 portConnections 或 componentIds 确认端口编号。",
-            context: { from: connection.from, to: connection.to },
+            hint: "端口编号来自 inspect_circuit 的 componentIds 或 describe_component；元件移动后 id 会变。",
+            context: { connection: i, from: connection.from, to: connection.to },
           },
         );
-      const points = route(view.circuit, from, to);
+      }
+      if (from.end.width && to.end.width && from.end.width !== to.end.width)
+        throw new CircuitToolError(
+          "WIDTH_MISMATCH",
+          `第 ${i + 1} 条连接：${portName(connection.from)} 是 ${from.end.width} 位，${portName(connection.to)} 是 ${to.end.width} 位，不能直接相连。`,
+          {
+            hint: "先用 set_attributes 统一位宽，或经 Splitter 拆分/合并。",
+            context: { connection: i, from: connection.from, to: connection.to },
+          },
+        );
+      if (router.joined(from, to)) {
+        already.push(i);
+        continue;
+      }
+      const points = router.route(from, to);
       if (!points)
         throw new CircuitToolError(
           "NO_ROUTE",
-          "两个端口之间没有找到可行的正交路径。",
+          `第 ${i + 1} 条连接：${portName(connection.from)} 到 ${portName(connection.to)} 之间找不到不碰其他元件和导线的正交路径。`,
           {
-            hint: "先移动元件给出空间，或手工指定分段导线。",
-            context: { from: connection.from, to: connection.to },
+            hint: "移动元件留出通道，或用 wires 直接给出这段导线的拐点。前面的连接都还没有画。",
+            context: { connection: i, from: connection.from, to: connection.to },
           },
         );
-      if (points.length) {
-        wires.push({ kind: "wire", points });
-        // Later routes must avoid this one: mark it as an existing wire.
-        for (let i = 1; i < points.length; i += 1)
-          view.circuit.wires.push({
-            id: `pending${i}`,
-            from: points[i - 1],
-            to: points[i],
-          });
+      router.commit(points);
+      paths.push(points);
+      joined.push({ from, to });
+    }
+  }
+  if (paths.length) {
+    const applied = await context.edit(
+      current,
+      circuit,
+      paths.map((points) => ({ kind: "wire", points }) as Edit),
+    );
+    last = applied.result;
+    if (before && joined.length) await checkJoins(context, applied, circuit, before, joined);
+  }
+  const notes = already.length
+    ? [`第 ${already.map((i) => i + 1).join("、")} 条连接的两个端口本来就相连，没有画线。`]
+    : [];
+  if (!last)
+    return {
+      ...context.identity(current, circuit),
+      wiresAdded: 0,
+      alreadyConnected: already.length,
+      note: notes[0],
+    };
+  return outcome(context, last, {
+    wiresAdded: paths.length,
+    ...(already.length ? { alreadyConnected: already.length } : {}),
+    note: [...notes, "导线编号按文件顺序；增删导线后请重新读取。"].join(" "),
+  });
+}
+
+/** Each port's net, `componentId:port` → bit-net key. */
+function netsOf(ports: Map<string, PortRef>) {
+  return new Map(
+    [...ports].map(([key, port]) => [key, netKey(port.end.netBits)]),
+  );
+}
+
+/**
+ * The drawn wires must join exactly the requested nets: every requested pair
+ * shares a net afterwards, and no two nets merged that no request linked.
+ * Otherwise the wires are taken back and the call fails with the first
+ * unexpected merge.
+ */
+async function checkJoins(
+  context: ToolContext,
+  applied: { result: EditResult; results: EditResult[] },
+  circuit: string,
+  before: Map<string, string | null>,
+  joined: { from: PortRef; to: PortRef }[],
+) {
+  const observed = await context.observe(applied.result.view, circuit);
+  const after = netsOf(portIndex(observed.view.circuit));
+  // Nets the requests link, as union-find over the nets before.
+  const parent = new Map<string, string>();
+  const find = (n: string): string => {
+    const p = parent.get(n) ?? n;
+    if (p === n) return n;
+    const root = find(p);
+    parent.set(n, root);
+    return root;
+  };
+  for (const { from, to } of joined) {
+    const a = netKey(from.end.netBits),
+      b = netKey(to.end.netBits);
+    if (a && b) parent.set(find(a), find(b));
+  }
+  const port = (key: string) => key.replace(/:(\d+)$/, " 端口 $1");
+  let problem: string | null = null;
+  for (const { from, to } of joined) {
+    const a = after.get(`${from.c.componentId}:${from.end.index}`);
+    const b = after.get(`${to.c.componentId}:${to.end.index}`);
+    if (!a || a !== b) {
+      problem = `${port(`${from.c.componentId}:${from.end.index}`)} 和 ${port(`${to.c.componentId}:${to.end.index}`)} 画线后仍未相连`;
+      break;
+    }
+  }
+  if (!problem) {
+    const owner = new Map<string, [string, string]>();
+    for (const [key, net] of after) {
+      const was = before.get(key);
+      if (!net || !was) continue;
+      const seen = owner.get(net);
+      if (!seen) owner.set(net, [key, was]);
+      else if (find(seen[1]) !== find(was)) {
+        problem = `新导线把原本不相连的 ${port(seen[0])} 和 ${port(key)} 接到了一起`;
+        break;
       }
     }
-    if (wires.length)
-      last = (await context.edit(current, circuit, wires)).result;
   }
-  if (!last)
-    throw new CircuitToolError("NO_CHANGE", "端口已经相连，没有新增导线", {
-      hint: "用 inspect_circuit 的 portConnections 确认连通。",
-    });
-  return outcome(context, last, {
-    wiresAdded: wires.length,
-    note: "导线编号按文件顺序；增删导线后请重新读取。",
+  if (!problem) return;
+  // Take every wire edit of this call back, newest first.
+  let document = applied.result.view;
+  for (const _ of applied.results)
+    document = (
+      await context.host.call<EditResult>({
+        op: "undo",
+        id: document.id,
+        revision: document.revision,
+      })
+    ).view;
+  context.emit({
+    type: "document-changed",
+    document,
+    expectedBaseRevision: applied.result.revision,
   });
+  throw new CircuitToolError(
+    "ROUTE_CHANGED_NETS",
+    `自动布线出错：${problem}。这次的导线已撤回。`,
+    {
+      hint: "用 wires 直接给出这段导线的拐点，或移动元件后重试。",
+    },
+  );
 }
 
 export async function moveComponents(

@@ -270,7 +270,7 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
       name: "exec_command",
       label: "执行命令",
       description:
-        "Run bash in an isolated writable workspace at /tmp/workspace. Bundled references are read-only at /tmp/vibe-circuit-reference. No model credentials or user home access. Output is limited to the last 64000 characters.",
+        "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at /tmp/vibe-circuit-reference. No model credentials or user home access. Output is limited to the last 64000 characters.",
       parameters: schema({ command: string, timeout: { type: "number" } }),
       execute: async (_id: any, args: any, signal: any) => {
         assertCurrent();

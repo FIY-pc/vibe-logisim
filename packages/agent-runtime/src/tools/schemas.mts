@@ -276,7 +276,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "connect",
     label: "连接电路",
     description:
-      "Wire ports together with orthogonal wires routed around bodies and existing wires, optionally after removing listed wire segments and placing new parts. Port numbers come from inspect_circuit or describe_component. Each connection is one routed path from one port to another; chain several to join a net. Fails with NO_ROUTE when the grid is blocked; make room or wire by hand with explicit points via write_file.",
+      "Wire ports together. Each connection joins the nets of two ports with one orthogonal wire that may branch off any wire already on either net; it goes around component bodies, never touches another net's ports or wire ends, and crosses other wires only at right angles (Logisim leaves those unconnected). Ports already on one net are skipped, ports of different widths are refused, and the call fails with NO_ROUTE (drawing nothing) when no path fits. wires draws given polylines as they are. Optionally removes listed wire segments and places new parts first. Port numbers come from inspect_circuit or describe_component.",
     parameters: object(
       {
         path: PATH,
@@ -306,6 +306,25 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
         connections: array(object({ from: PORT, to: PORT }, ["from", "to"]), {
           maxItems: 240,
         }),
+        wires: array(
+          object(
+            {
+              points: array(
+                object(
+                  { x: int(GRID), y: int(GRID) },
+                  ["x", "y"],
+                ),
+                { minItems: 2, maxItems: 64 },
+              ),
+            },
+            ["points"],
+          ),
+          {
+            maxItems: 240,
+            description:
+              "Polylines drawn exactly as given, each point a corner; segments must be horizontal or vertical. An end on a port or on another wire joins it.",
+          },
+        ),
       },
       [],
     ),
@@ -314,7 +333,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "move_components",
     label: "调整电路布局",
     description:
-      "Move components, either to final positions (positions) or all by one delta (componentIds + delta). Wires attached to moved ports are not re-routed; reconnect or arrange afterwards when needed. Ids change with the position: a part moved to (x,y) is now c<x>_<y>.",
+      "Move components, either to final positions (positions) or all by one delta (componentIds + delta). Wires on moved ports follow them, bent around other ports and wires; a move that would change what is connected is refused with nothing moved. Ids change with the position: a part moved to (x,y) is now c<x>_<y>.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
