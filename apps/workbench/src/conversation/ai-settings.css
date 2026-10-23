@@ -122,15 +122,36 @@
 .ai-settings-content .provider-form .select-trigger {
   padding: 10px 12px;
 }
-.ai-settings-content .provider-form button:not(.checkbox) {
+.ai-settings-content .provider-form button:not(.checkbox, .select-trigger) {
   background: transparent;
   border: 1px solid var(--border);
   color: inherit;
 }
+.ai-settings-content
+  .provider-form
+  button:not(.checkbox, .select-trigger):hover:where(:not(:disabled)) {
+  background: #eceff4;
+}
+.ai-settings-content
+  .provider-form
+  button:not(.checkbox, .select-trigger):active:where(:not(:disabled)) {
+  background: #e2e6ed;
+}
 .ai-settings-content .provider-form button[type="submit"] {
   background: var(--accent);
+  border-color: var(--accent);
   color: white;
   margin-right: 8px;
+}
+.ai-settings-content
+  .provider-form
+  button[type="submit"]:hover:where(:not(:disabled)) {
+  background: #2652ea;
+}
+.ai-settings-content
+  .provider-form
+  button[type="submit"]:active:where(:not(:disabled)) {
+  background: #1f46d2;
 }
 .ai-settings-content .provider-advanced {
   border: 1px solid var(--border);

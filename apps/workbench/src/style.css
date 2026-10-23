@@ -60,8 +60,13 @@ button {
   padding: 7px 10px;
   white-space: nowrap;
 }
-button:hover {
+/* Buttons answer hover and press; disabled ones answer neither. The state
+ * test adds no specificity, so components keep their own hover colours. */
+button:hover:where(:not(:disabled)) {
   background: #eceff4;
+}
+button:active:where(:not(:disabled)) {
+  background: #e2e6ed;
 }
 button > svg {
   flex-shrink: 0;
@@ -357,6 +362,12 @@ kbd {
 button.primary {
   background: var(--accent);
   color: white;
+}
+button.primary:hover:where(:not(:disabled)) {
+  background: #2652ea;
+}
+button.primary:active:where(:not(:disabled)) {
+  background: #1f46d2;
 }
 /* The one tooltip (shared/Tooltips.tsx): dark, small, under its element. */
 .app-tooltip {
