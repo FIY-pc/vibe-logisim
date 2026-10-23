@@ -1,14 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod installation_check;
 use tauri::{Emitter, Manager};
-use vibe_workbench_host::{Host, HostError, Request, timing, timing_label};
+use vibe_workbench_host::{Host, HostError, Reply, Request, timing, timing_label};
 #[tauri::command]
 async fn command(
     host: tauri::State<'_, Host>,
     request: serde_json::Value,
-) -> Result<serde_json::Value, HostError> {
+) -> Result<Reply, HostError> {
     let label = timing_label(&request);
-    timing::scope(&label, host.dispatch(Request::from_value(request)?)).await
+    timing::scope(&label, host.respond(Request::from_value(request)?)).await
 }
 fn main() {
     tauri::Builder::default()

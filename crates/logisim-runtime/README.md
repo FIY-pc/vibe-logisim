@@ -23,6 +23,7 @@ pub struct Native;   // Native::new(root, state, runtime) | Native::with_launche
 impl Native {
     async fn observe(&mut self, artifact: &Path, circuit: &str) -> Result<Value>;                // components with ports/ends/nets, wires, bounds, focus for the arranger
     async fn observe_bytes(&mut self, artifact, circuit) -> Result<Vec<u8>>;                     // the same observation as the worker's JSON, for callers that deserialize only what they read
+    async fn observe_raw(&mut self, artifact, circuit) -> Result<Box<RawValue>>;                 // the same, checked to be JSON, for callers that pass it on whole
     async fn catalog(&mut self, artifact, circuit) -> Result<Value>;                             // <group id name label><tool name label factory [disabled] [icon]/>…>; id "" = this file's subcircuits
     async fn template(&mut self, artifact, circuit, library: Option<String>, name, location: Option<Point>, attributes) -> Result<Value>;
                                                                                                   // root attrs factory, facingAttribute, snap; children bounds, port, attribute(option…), comp (the <comp> to splice when location is given)

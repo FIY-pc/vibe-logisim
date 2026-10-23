@@ -6,7 +6,7 @@ pub mod timing;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
-use serde_json::{Value, json};
+use serde_json::{Value, json, value::RawValue};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -229,6 +229,14 @@ impl Native {
         let bytes = self.observe_bytes(artifact, circuit).await?;
         let _parse = timing::span("native.json");
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+    }
+    /// The observation as JSON text, checked but not parsed, for callers that
+    /// pass it on whole.
+    pub async fn observe_raw(&mut self, artifact: &Path, circuit: &str) -> Result<Box<RawValue>> {
+        let bytes = self.observe_bytes(artifact, circuit).await?;
+        let _check = timing::span("native.json");
+        let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+        RawValue::from_string(text).map_err(|e| e.to_string())
     }
     pub async fn catalog(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
         let libraries = artifact_libraries(artifact)?;

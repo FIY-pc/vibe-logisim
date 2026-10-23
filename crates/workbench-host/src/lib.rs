@@ -65,6 +65,34 @@ pub struct Host {
 }
 type Result<T> = std::result::Result<T, HostError>;
 
+/// A request's answer as the transports send it. An observation, megabytes on
+/// a course page, is the worker's JSON text, passed on without being parsed
+/// and written again; every other answer is a value.
+pub enum Reply {
+    Value(Value),
+    Text(Box<serde_json::value::RawValue>),
+}
+impl Reply {
+    pub fn into_value(self) -> Result<Value> {
+        match self {
+            Reply::Value(value) => Ok(value),
+            Reply::Text(text) => serde_json::from_str(text.get())
+                .map_err(|e| HostError::new(ErrorCode::Internal, e.to_string())),
+        }
+    }
+}
+impl Serialize for Reply {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            Reply::Value(value) => value.serialize(serializer),
+            Reply::Text(text) => text.serialize(serializer),
+        }
+    }
+}
+
 fn value<T: Serialize>(v: T) -> Result<Value> {
     serde_json::to_value(v).map_err(|e| HostError::new(ErrorCode::Internal, e.to_string()))
 }
@@ -199,10 +227,11 @@ impl Host {
         snapshots::prune(&documents, &revision);
         Ok(path)
     }
-    pub fn dispatch(
+    /// Answers a request from the window or the AI, in the form the transports send.
+    pub fn respond(
         &self,
         request: impl Into<Request>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + '_>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Reply>> + Send + '_>> {
         let request = request.into();
         Box::pin(async move {
             let meta = request.meta();
@@ -211,7 +240,7 @@ impl Host {
             if let Some(stage) = meta.stage {
                 match &outcome {
                     Err(error) => self.failures.lock().await.record(stage, &error.message),
-                    Ok(value) => {
+                    Ok(Reply::Value(value)) => {
                         if let Some(error) = value["saveError"].as_str() {
                             self.failures
                                 .lock()
@@ -219,14 +248,23 @@ impl Host {
                                 .record(diagnostics::Stage::Save, error);
                         }
                     }
+                    Ok(Reply::Text(_)) => {}
                 }
             }
             outcome
         })
     }
+    /// `respond` with the answer as a value, for callers in this process.
+    pub fn dispatch(
+        &self,
+        request: impl Into<Request>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + Send + '_>> {
+        let reply = self.respond(request);
+        Box::pin(async move { reply.await?.into_value() })
+    }
     /// Runs one request with the rules its op declares: writes wait for each
     /// other, record history, write documents back and persist the workspace.
-    async fn apply(&self, request: Request, meta: &api::Meta) -> Result<Value> {
+    async fn apply(&self, request: Request, meta: &api::Meta) -> Result<Reply> {
         let writes = meta.effect != Effect::Read;
         if writes && let Some(error) = &self.recovery_error {
             return Err(HostError::new(ErrorCode::RecoveryFailed, error.clone()));
@@ -250,12 +288,13 @@ impl Host {
         };
         let mut result = match request {
             Request::Document(r) => self.document_request(r).await,
-            Request::Folder(r) => self.folder_request(r).await,
-            Request::Simulation(r) => self.simulation_request(r).await,
-            Request::Agent(r) => self.agent_request(r).await,
-            Request::App(r) => self.app_request(r).await,
+            Request::Folder(r) => self.folder_request(r).await.map(Reply::Value),
+            Request::Simulation(r) => self.simulation_request(r).await.map(Reply::Value),
+            Request::Agent(r) => self.agent_request(r).await.map(Reply::Value),
+            Request::App(r) => self.app_request(r).await.map(Reply::Value),
         };
-        let Ok(document) = &mut result else {
+        // Only reads answer with text.
+        let Ok(Reply::Value(document)) = &mut result else {
             return result;
         };
         let unchanged = match (&revision_before, target) {

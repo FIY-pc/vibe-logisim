@@ -2,7 +2,7 @@
 //! them — editing, observation, rendering, checks, packaging and history.
 use super::{Effect::*, Meta};
 use crate::{
-    Host, Result,
+    Host, Reply, Result,
     app::diagnostics::Stage,
     documents::{
         history::Action,
@@ -498,8 +498,8 @@ impl Host {
         doc.check(revision)?;
         Ok(doc.clone())
     }
-    pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Value> {
-        match request {
+    pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Reply> {
+        let value = match request {
             DocumentRequest::Status => {
                 let w = self.workspace.lock().await;
                 let documents = w
@@ -710,7 +710,8 @@ impl Host {
             } => {
                 let p = self.snapshot(&id, &revision).await?;
                 let _observe = timing::span("observe");
-                Ok(self.native.lock().await.observe(&p, &circuit).await?)
+                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
             }
             DocumentRequest::Template {
                 id,
@@ -905,6 +906,7 @@ impl Host {
                 revision,
                 entry,
             } => self.history_restore(&id, &revision, &entry).await,
-        }
+        };
+        value.map(Reply::Value)
     }
 }

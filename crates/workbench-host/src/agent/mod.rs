@@ -1,4 +1,4 @@
-use crate::{ErrorCode, Event, Host, HostError, Request, timing, timing_label};
+use crate::{ErrorCode, Event, Host, HostError, Reply, Request, timing, timing_label};
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, VecDeque},
@@ -15,6 +15,18 @@ use tokio::{
     process::{Child, ChildStdin, Command},
     sync::{Mutex, oneshot},
 };
+
+/// The answer to a host call from the sidecar; the result goes out as the
+/// host gave it, so an observation is not parsed and written again.
+#[derive(serde::Serialize)]
+struct HostResult<'a> {
+    kind: &'static str,
+    id: &'a Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<Reply>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<HostError>,
+}
 type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<(Value, u64), HostError>>>>>;
 pub struct Agent {
     child: Mutex<Child>,
@@ -124,24 +136,29 @@ impl Agent {
                             let label = format!("agent.{}", timing_label(&message["request"]));
                             let result = match Request::from_value(message["request"].clone()) {
                                 Ok(request) if request.meta().agent => {
-                                    timing::scope(&label, host.dispatch(request)).await
+                                    timing::scope(&label, host.respond(request)).await
                                 }
                                 Ok(_) => Err(HostError::new(ErrorCode::NotAllowed, OUTSIDE)),
                                 Err(error) => Err(HostError::new(ErrorCode::InvalidInput, OUTSIDE)
                                     .with_context(json!({"detail": error.message}))),
                             };
-                            let reply = match result {
-                                Ok(result) => {
-                                    json!({"kind":"hostResult","id":message["id"],"result":result})
-                                }
-                                Err(error) => {
-                                    json!({"kind":"hostResult","id":message["id"],"error":error})
-                                }
+                            let (result, error) = match result {
+                                Ok(result) => (Some(result), None),
+                                Err(error) => (None, Some(error)),
                             };
+                            let reply = HostResult {
+                                kind: "hostResult",
+                                id: &message["id"],
+                                result,
+                                error,
+                            };
+                            let line = serde_json::to_string(&reply).unwrap_or_else(|e| {
+                                let error = HostError::new(ErrorCode::Internal, e.to_string());
+                                json!({"kind":"hostResult","id":message["id"],"error":error})
+                                    .to_string()
+                            });
                             let mut output = output.lock().await;
-                            let _ = output
-                                .write_all((reply.to_string() + "\n").as_bytes())
-                                .await;
+                            let _ = output.write_all((line + "\n").as_bytes()).await;
                             let _ = output.flush().await;
                         });
                     }

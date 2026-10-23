@@ -1,6 +1,6 @@
 # workbench-host
 
-The one process that owns the user's workspace. The window (Tauri or the Vite dev page) and the AI sidecar both talk to it with the same JSON requests; nothing else touches the open documents, the folder, the Java runtime or the state directory. If a rule must hold no matter who is editing, it is enforced here, once, in `Host::dispatch`.
+The one process that owns the user's workspace. The window (Tauri or the Vite dev page) and the AI sidecar both talk to it with the same JSON requests; nothing else touches the open documents, the folder, the Java runtime or the state directory. If a rule must hold no matter who is editing, it is enforced here, once, in `Host::respond`.
 
 ## Owns
 
@@ -21,12 +21,13 @@ Rendering widgets, conversation history, model services, prompts, tools (sidecar
 
 ```rust
 let host = Host::new(root, state, runtime)?;          // root = resources dir, state = per-user state dir
-host.dispatch(request).await -> Result<Value, HostError>   // request: Request (untagged: Document | Folder | Simulation | Agent | App)
+host.respond(request).await -> Result<Reply, HostError>    // request: Request (untagged: Document | Folder | Simulation | Agent | App)
+host.dispatch(request).await -> Result<Value, HostError>   // respond, as a value (in-process callers and tests)
 host.events().await -> Events;  events.next().await -> Option<Event>   // first event is always Resync
 host.shutdown().await;
 ```
 
-Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{error: HostError{code, message, retryable, detail?}}`. Ops by domain:
+Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{error: HostError{code, message, retryable, detail?}}`. `Reply` is a value, or for `observe` the worker's JSON text (`Reply::Text`), which the transports (dev HTTP, Tauri IPC, the sidecar's `hostResult`) write out as is: a course page's observation is megabytes and nothing in the host reads it. Ops by domain:
 
 | domain | ops |
 | --- | --- |
@@ -46,7 +47,7 @@ Environment: `VIBE_WORKBENCH_RESOURCES` (resources root; default: beside the exe
 
 State directory: `instance.lock`, `session/` (open documents and journals), `folder.json`, `document-history/`, `snapshots/`, `observations/`, `file-imports/`, `file-references/`, `feedback.json`, `index.json`; the sidecar keeps `profile/` and `conversations.json` in the same directory.
 
-## Rules enforced in `dispatch`
+## Rules enforced in `respond`
 
 - Writes (effect Write or AutoSave) serialise on one gate; reads never wait. A write while recovery failed (`RecoveryFailed`) is refused.
 - AutoSave ops write the document back to its source file when that file is inside the open folder; an edit that leaves the revision unchanged writes nothing and records no history.
@@ -60,12 +61,12 @@ State directory: `instance.lock`, `session/` (open documents and journals), `fol
 
 ## Status
 
-Done and exercised end to end on the course project (open, edit, AI turn, apply, save, reopen). 17 unit tests. Known cost: a move on the 1 MB course file takes about 900 ms because topology is observed twice through Java; wiring 600 ms. The agreed direction is fewer Java↔Rust↔Node hops per edit, not another cache.
+Done and exercised end to end on the course project (open, edit, AI turn, apply, save, reopen). 17 unit tests. On a course-size page (350 components, 374 wires; `scripts/workbench/editing-latency.mts`, release build, p50) an edit is answered in 30–45 ms and a move in about 130 ms; the canvas shows the new picture 60–110 ms after sending the edit (160 ms for a move), and the observation follows 20–55 ms later.
 
 ## Remaining tasks
 
 1. `observeXml` op (agent-callable, Read): take `{documentId, circuit, xml}`, write a scratch artifact, run `Native::observe` on it, return the same shape as `observe`. Needed so the AI arranger can verify a layout before applying it instead of apply-verify-undo. See `packages/agent-runtime/src/tools/arrange.mts` `TODO(arrange)`. Reuse `documents/topology.rs::ports` for the comparison.
-2. Edit latency: `documents/movement.rs` observes before and after; a single observe after the edit plus the cached "before" nets from the last observation of the same revision removes one Java round trip. Measure with `scripts/workbench/editing-scenarios.mts` against a course-size file before and after.
+2. Edit latency, what is left (release numbers above; measure with `scripts/workbench/editing-latency.mts`). A move reloads the whole moved file in Java to confirm its connections, 80 of its 130 ms (preflight 7, Logisim load 29, observation 33); loading only the edited circuit would remove most of it. Every edit answers with the whole document view, built as a `Value`, then written as text (`edit.view`, `edit.value`, `encode`: 14 ms, 35 ms in a development build); answering with the edited circuit only would cut it. The render after an edit loads the new revision in Java (35 of its 65 ms) and the observe after it reuses that load.
 3. Replace the remaining `.map_err(|e| e.to_string())?` with `?` where the function already returns `Result<_, HostError>` (`grep -rn 'map_err(|e| e.to_string())' crates/workbench-host/src`).
 
 ## Verify
