@@ -200,9 +200,17 @@ public final class ExactRuntimeObserver {
         if(focus==null)throw new IllegalArgumentException("Unknown circuit: "+name);
         ExactRuntimeObserver observer=new ExactRuntimeObserver(file,focus,null,false);
         observer.retainedLoaderMessages=messages;
+        phase("ids");
         Map<String,Object> document=observer.observe(artifact,runtime,runtimeDigest,null,bundle,stdout);
         if(renderPath!=null&&!renderPath.isEmpty())document.put("render",render(file,focus,new File(renderPath)));
-        StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);return out.toString();
+        StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);
+        phase("json");
+        return out.toString();
+    }
+
+    /** A worker timing mark; a no-op outside a timed worker request. */
+    private static void phase(String name) {
+        com.cburch.logisim.file.WorkerTiming.mark("observe." + name);
     }
 
     private static Map<String, Object> render(LogisimFile file, Circuit circuit, File output) throws Exception {
@@ -241,16 +249,22 @@ public final class ExactRuntimeObserver {
         String loaderStdout
     ) throws Exception {
         measureGeometry();
+        phase("geometry");
         NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns);
         nets.compute();
+        phase("nets");
 
         List<Object> components = observeComponents(nets);
+        phase("components");
         List<Object> states = observeStateElements(nets);
         List<Object> tunnels = observeTunnels(nets);
         List<Object> spatial = observeSpatialAdjacency();
+        phase("tunnels");
         List<Object> circuitSummaries = observeCircuitSummaries();
+        phase("summaries");
         List<Object> paths = observePathsToFocus();
         List<Object> widthErrors = observeWidthErrors();
+        phase("paths");
 
         addStandingUnknowns();
         if (!widthErrors.isEmpty()) {
@@ -297,6 +311,7 @@ public final class ExactRuntimeObserver {
             "artifactPath", artifact.toString(),
             "artifactSha256", sha256(artifact)
         );
+        phase("hashes");
         Map<String, Object> runtime = obj(
             "reportedVersion", Main.VERSION,
             "jarPath", runtimeJar.toAbsolutePath().normalize().toString(),
@@ -327,6 +342,7 @@ public final class ExactRuntimeObserver {
             "widthIncompatibilities", widthErrors
         );
 
+        phase("ledger");
         Map<String, Object> full = obj(
             "schema", SCHEMA,
             "mode", "full-ledger",
@@ -1133,14 +1149,11 @@ public final class ExactRuntimeObserver {
         if (shape != null) return shape;
         shape = new Shape();
         shapes.put(circuit, shape); // registered first: a definition reached again through itself is combinational
-        Map<Component, String> ids = idsByCircuit.get(circuit);
-        if (ids == null) ids = assignComponentIds(circuit);
-        NetIndex nets = new NetIndex(circuit, ids, new Coverage(), new ArrayList<Object>());
-        nets.compute();
+        circuit.wires.ensureComputed();
 
         // bit net -> components reading it; component -> bit nets it drives
-        Map<String, List<Component>> readers = new HashMap<String, List<Component>>();
-        Map<Component, Set<String>> drives = new IdentityHashMap<Component, Set<String>>();
+        Map<Object, List<Component>> readers = new HashMap<Object, List<Component>>();
+        Map<Component, Set<Object>> drives = new IdentityHashMap<Component, Set<Object>>();
         List<Component> inputs = new ArrayList<Component>();
         Set<Component> outputs = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
         Set<Component> storage = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
@@ -1169,11 +1182,10 @@ public final class ExactRuntimeObserver {
                     if (out) inputs.add(component);
                     if (in) outputs.add(component);
                 }
-                for (Object bitValue : nets.netBits(component, i, end)) {
-                    String netId = String.valueOf(asObject(bitValue).get("netId"));
-                    if (in) readers.computeIfAbsent(netId, k -> new ArrayList<Component>()).add(component);
+                for (Object net : bitNets(circuit, end)) {
+                    if (in) readers.computeIfAbsent(net, k -> new ArrayList<Component>()).add(component);
                     if (out) {
-                        drives.computeIfAbsent(component, k -> new HashSet<String>()).add(netId);
+                        drives.computeIfAbsent(component, k -> new HashSet<Object>()).add(net);
                         drivesSomething = true;
                     }
                 }
@@ -1204,17 +1216,36 @@ public final class ExactRuntimeObserver {
         return shape;
     }
 
+    /**
+     * The nets of an end's bits as NetIndex resolves them, without its
+     * records: the runtime's wire thread, or the point of an end that no
+     * bundle reaches. Bits of an unknown width or an invalid bundle have none.
+     */
+    private static List<Object> bitNets(Circuit circuit, EndData end) {
+        int width = width(end.getWidth());
+        if (width <= 0) return Collections.emptyList();
+        WireBundle bundle = circuit.wires.getWireBundle(end.getLocation());
+        if (bundle != null && (!bundle.isValid() || bundle.threads == null)) return Collections.emptyList();
+        List<Object> nets = new ArrayList<Object>(width);
+        Location point = end.getLocation();
+        for (int bit = 0; bit < width; bit++) {
+            if (bundle == null) nets.add(point.getX() + "," + point.getY() + "#" + bit);
+            else if (bit < bundle.threads.length) nets.add(bundle.threads[bit].find());
+        }
+        return nets;
+    }
+
     /** Components a signal leaving {@code from} reaches through combinational parts; storage stops it. */
     private static Set<Component> reach(
-        Component from, Map<String, List<Component>> readers,
-        Map<Component, Set<String>> drives, Set<Component> storage
+        Component from, Map<Object, List<Component>> readers,
+        Map<Component, Set<Object>> drives, Set<Component> storage
     ) {
         Set<Component> seen = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
         Deque<Component> queue = new ArrayDeque<Component>();
         queue.add(from);
         while (!queue.isEmpty()) {
             Component current = queue.remove();
-            for (String net : drives.getOrDefault(current, Collections.<String>emptySet())) {
+            for (Object net : drives.getOrDefault(current, Collections.<Object>emptySet())) {
                 for (Component next : readers.getOrDefault(net, Collections.<Component>emptyList())) {
                     if (next == from || !seen.add(next)) continue;
                     if (!storage.contains(next)) queue.add(next);
@@ -1308,56 +1339,31 @@ public final class ExactRuntimeObserver {
         return emptyToNull(attributes.getValue(StdAttr.LABEL));
     }
 
+    /**
+     * Name and standard value of every attribute. Display strings and option
+     * lists are not part of an observation: building an option list asks the
+     * native editor for a Swing combo box per attribute, which dominated the
+     * observation of a large page. A component's options come from the
+     * component-attributes request, for the components that are asked about.
+     */
     private static List<Object> attributes(AttributeSet attributes) {
         List<Object> result = new ArrayList<Object>();
         for (Attribute<?> attribute : attributes.getAttributes()) {
             Object value = attributes.getValue(attribute);
             String standard;
-            String display;
             try {
                 standard = standardString(attribute, value);
             } catch (Throwable error) {
                 standard = String.valueOf(value);
             }
-            try {
-                display = displayString(attribute, value);
-            } catch (Throwable error) {
-                display = standard;
-            }
-            result.add(obj(
-                "name", attribute.getName(),
-                "standard", standard,
-                "display", display,
-                "displayName", attribute.getDisplayName(),
-                "readOnly", attributes.isReadOnly(attribute) || !attributes.isToSave(attribute),
-                "options", attributeOptions(attributes, attribute),
-                "valueClass", value == null ? null : value.getClass().getName()
-            ));
+            result.add(obj("name", attribute.getName(), "standard", standard));
         }
         return result;
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static List<Object> attributeOptions(AttributeSet attributes, Attribute attribute) {
-        List<Object> options = new ArrayList<Object>();
-        // Consult the native editor model, never infer enums from current CPU fields.
-        try {
-            List<NativeAttributeAdapter.Choice> choices=NativeAttributeAdapter.choices(attributes,attribute);
-            if(choices.size()<=128)for(NativeAttributeAdapter.Choice choice:choices) {
-                options.add(obj("value",choice.value,"label",choice.label));
-            }
-        } catch (Throwable unavailable) { options.clear(); }
-        return options;
-    }
-
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     private static String standardString(Attribute attribute, Object value) {
         return attribute.toStandardString(value);
-    }
-
-    @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static String displayString(Attribute attribute, Object value) {
-        return attribute.toDisplayString(value);
     }
 
     private static String attributeFingerprint(AttributeSet attributes) {
@@ -2008,7 +2014,14 @@ public final class ExactRuntimeObserver {
 
         private static void string(String value, StringBuilder out) {
             out.append('"');
-            for (int i = 0; i < value.length(); i++) {
+            int plain = 0;
+            while (plain < value.length()) {
+                char ch = value.charAt(plain);
+                if (ch < 0x20 || ch == '"' || ch == '\\') break;
+                plain++;
+            }
+            out.append(value, 0, plain);
+            for (int i = plain; i < value.length(); i++) {
                 char ch = value.charAt(i);
                 switch (ch) {
                     case '"': out.append("\\\""); break;
