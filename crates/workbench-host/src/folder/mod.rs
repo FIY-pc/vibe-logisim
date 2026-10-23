@@ -282,12 +282,17 @@ impl Host {
         folder_id: &str,
         path: &str,
         directory: bool,
+        checkpoint: bool,
     ) -> Result<Value> {
         let guard = self.folder.lock().await;
         let folder = guard
             .as_ref()
             .filter(|f| f.id == folder_id)
             .ok_or("工程文件夹已改变，请重新操作")?;
+        if !checkpoint {
+            let result = folder.create(path, directory).map_err(|e| e.to_string())?;
+            return Ok(json!({"path":result,"historyWarning":null}));
+        }
         let history = Recording::start(&self.state, folder);
         let result = folder.create(path, directory).map_err(|e| e.to_string())?;
         let warning = history.finish(

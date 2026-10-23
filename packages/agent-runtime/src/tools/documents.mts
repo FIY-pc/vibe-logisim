@@ -57,6 +57,8 @@ export async function createCircuit(
         .split(path.sep)
         .join("/"),
       directory: false,
+      // The turn's checkpoint records the new file with everything else.
+      checkpoint: false,
     });
   } catch (error: any) {
     throw new CircuitToolError(
