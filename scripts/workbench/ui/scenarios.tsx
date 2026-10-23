@@ -566,6 +566,17 @@ await click(document.querySelector('[aria-label="关闭反馈"]'));
 console.log(
   "PASS: existing menu exposes feedback preview and reports development update status without an error",
 );
+// A control action is a sequence of host commands; it must not wait on the
+// queue those commands go through.
+const beforeClock = calls.length;
+await appKey("k", { ctrlKey: true });
+await settle();
+assert.ok(
+  calls
+    .slice(beforeClock)
+    .some((c) => c.op === "simulationAct" && c.command?.kind === "start"),
+);
+console.log("PASS: the clock shortcut starts a run of the shown circuit");
 
 await act(async () => root.unmount());
 root = createRoot(document.getElementById("root")!);
