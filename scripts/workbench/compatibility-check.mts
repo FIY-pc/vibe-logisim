@@ -13,6 +13,7 @@ import {
   signalTrace,
   wireSignal,
 } from "../../apps/workbench/src/editor/connectivity.ts";
+import { applyDocumentChange } from "../../packages/agent-runtime/src/protocol/document-change.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-compatibility-"));
@@ -530,9 +531,12 @@ try {
     return result;
   };
   const step = async (circuit: string, edit: any) => {
-    live = (
-      await command({ op: "edit", ...scope(live, circuit), edit })
-    ).view;
+    const { change } = await command({
+      op: "edit",
+      ...scope(live, circuit),
+      edit,
+    });
+    live = applyDocumentChange(live, change)!;
     await observeAll();
   };
   await observeAll();
@@ -569,9 +573,14 @@ try {
     attributes: { label: "b" },
   });
   await step("pair", { kind: "delete", ids: [part("pair", "a")] });
-  for (const verb of ["undo", "undo", "redo"])
-    live = (await command({ op: verb, id: live.id, revision: live.revision }))
-      .view;
+  for (const verb of ["undo", "undo", "redo"]) {
+    const { change } = await command({
+      op: verb,
+      id: live.id,
+      revision: live.revision,
+    });
+    live = applyDocumentChange(live, change)!;
+  }
   const applied = await observeAll();
   // Three unrelated files take the worker's places; the same revision then loads whole.
   for (let n = 0; n < 3; n++) {

@@ -313,21 +313,38 @@ export class TurnRunner extends EventEmitter {
       customProvider: config,
       services: this.services.list(),
       defaultServiceId: this.services.registry().defaultId,
-      messages: this.history.map((m) => ({
-        ...m,
-        canEdit: m.type === "user" && Boolean(this.checkpoints[m.id]),
-      })),
       network: this.network,
       transmission: this.transmission,
       modelConfigurationError: issue,
       modelCatalog: this.catalog.status(this.services.resolve(this.selection)),
     };
   }
+  /** The conversation as the window shows it. */
+  messages() {
+    return this.history.map((m) => ({
+      ...m,
+      canEdit: m.type === "user" && Boolean(this.checkpoints[m.id]),
+    }));
+  }
+  /** The snapshot plus the whole conversation: what a window loads once
+   * (binding, switching conversations, after missing events); afterwards
+   * events carry every change. */
+  historySnapshot() {
+    return { ...this.snapshot(), messages: this.messages() };
+  }
   emitStatus() {
     this.emit("event", { type: "status", ...this.snapshot() });
   }
   private emitEvent(event: RuntimeEvent) {
     this.emit("event", event);
+  }
+  /** Tells the window the conversation was replaced. */
+  private emitHistory() {
+    this.emitEvent({ type: "history", messages: this.messages() });
+  }
+  /** Tells the window one conversation entry was added or replaced. */
+  private emitMessage(message: RuntimeMessage) {
+    this.emitEvent({ type: "message", message: { ...message } });
   }
   async start() {
     this.status = this.services.resolve(this.selection)
@@ -554,6 +571,7 @@ export class TurnRunner extends EventEmitter {
       activate: true,
       ...this.conversationState(workspaceKey),
     });
+    this.emitHistory();
     this.emitStatus();
   }
   async changeConversation(key: string, action: string, request: any) {
@@ -604,7 +622,7 @@ export class TurnRunner extends EventEmitter {
         path: d.path,
         name: d.name,
         main: d.main,
-        circuits: d.circuits.map((c) => c.name),
+        circuits: d.circuits,
       })),
       currentDocument: current
         ? { id: current.id, path: current.path, circuit: request.circuit }
@@ -645,7 +663,10 @@ export class TurnRunner extends EventEmitter {
   }
 
   async ask(request: AskRequest) {
-    const status = await this.host.call<HostStatus>({ op: "status" });
+    const status = await this.host.call<HostStatus>({
+      op: "status",
+      summary: true,
+    });
     if (!status.folder) throw new Error("请先打开工作文件夹");
     const images = this.referenceImages(request.references);
     if (request.expectedTurnId) return this.steer(request, status, images);
@@ -689,7 +710,7 @@ export class TurnRunner extends EventEmitter {
             ([, p]) => p.history < point.history,
           ),
         );
-        this.emitEvent({ type: "history", messages: this.history });
+        this.emitHistory();
       }
       // The user's own edits before this turn get their own history entry so
       // the turn's checkpoint holds only what the AI changed.
@@ -764,12 +785,14 @@ export class TurnRunner extends EventEmitter {
         canEdit: true,
       });
       this.transmission = null;
-      this.history.push({
+      const record: RuntimeMessage = {
         type: "turn",
         id: turnId,
         status: "running",
         startedAt: Date.now(),
-      });
+      };
+      this.history.push(record);
+      this.emitMessage(record);
       // Earlier turns' tool output is the first thing to go when the
       // conversation outgrows the model's context (see context-budget.mts).
       const budget = config.contextWindow * CHARS_PER_TOKEN;
@@ -1155,12 +1178,14 @@ export class TurnRunner extends EventEmitter {
       const turn = this.history.find(
         (m) => m.type === "turn" && m.id === pending.turnId,
       );
-      if (turn)
+      if (turn) {
         Object.assign(turn, {
           status,
           error,
           elapsedMs: Date.now() - (turn.startedAt || Date.now()),
         });
+        this.emitMessage(turn);
+      }
       for (const m of this.history)
         if (
           m.type === "activity" &&

@@ -33,6 +33,7 @@ fn export_host_contract(directory: &Path) -> Result<()> {
     vibe_workbench_host::Request::export_all(&config)?;
     vibe_workbench_host::HostError::export_all(&config)?;
     vibe_circuit_document::DocumentView::export_all(&config)?;
+    vibe_circuit_document::DocumentSummary::export_all(&config)?;
     vibe_workbench_host::EditResult::export_all(&config)?;
     vibe_workbench_host::ObservationRecord::export_all(&config)?;
     vibe_workbench_host::ObservationSummary::export_all(&config)?;

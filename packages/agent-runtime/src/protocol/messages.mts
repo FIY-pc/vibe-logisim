@@ -5,6 +5,7 @@
  */
 import type { Request } from "../generated/Request.ts";
 import type { HostError } from "../generated/HostError.ts";
+import type { DocumentChange } from "../generated/DocumentChange.ts";
 
 /** Host → sidecar. */
 export type HostMessage =
@@ -24,6 +25,7 @@ export type WorkerMessage =
  */
 export type RuntimeMethod =
   | "status"
+  | "history"
   | "bind"
   | "ask"
   | "stop"
@@ -58,8 +60,12 @@ export const TRANSITIONS: ReadonlySet<RuntimeMethod> = new Set<RuntimeMethod>([
 
 /** Events pushed to the UI (host topic `agent`, each wrapped as {sequence, event}). */
 export type RuntimeEvent =
+  /** The runtime's state (`status` without the conversation). */
   | ({ type: "status" } & Record<string, unknown>)
+  /** The whole conversation, after it was replaced (switched, resumed or cut back for a resend). */
   | { type: "history"; messages: unknown[] }
+  /** One conversation entry was added or replaced (matched by id): a turn record starting or ending. */
+  | { type: "message"; message: unknown }
   | {
       type: "user-message";
       id: string;
@@ -96,12 +102,8 @@ export type RuntimeEvent =
       status: string;
       error: string | null;
     }
-  /** A tool edited an open document; the UI merges the view (expectedBaseRevision = revision before the tool's first edit). */
-  | {
-      type: "document-changed";
-      document: unknown;
-      expectedBaseRevision: string;
-    }
+  /** A tool edited an open document: what its edits changed, from the revision before its first edit. */
+  | { type: "document-changed"; change: DocumentChange }
   /** A tool opened or created a document; the UI shows it. */
   | { type: "document-opened"; document: unknown }
   /** The turn's folder checkpoint recorded changed files; the UI offers 撤销 via folderHistoryUndo. */

@@ -16,6 +16,7 @@ import {
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { documentViews } from "./document-views.mts";
 if (process.platform !== "linux")
   throw new Error("This isolated freedesktop trash check requires Linux");
 const root = path.resolve(import.meta.dirname, "../..");
@@ -47,9 +48,8 @@ child.stderr.on("data", (chunk) => {
   logs += chunk;
   url = logs.match(/Rust host: (http:\/\/127\.0\.0\.1:\d+)/)?.[1] || "";
 });
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 async function command(value: Record<string, unknown>): Promise<any> {
   if (
     ["folderCreate", "folderRename", "folderTrash"].includes(String(value.op))

@@ -119,6 +119,43 @@ pub struct DocumentView {
     pub circuits: Vec<Circuit>,
     pub libraries: Vec<Library>,
 }
+/// What an edit, undo or redo did to a document's view: the view's fields at
+/// the new revision, except that `circuits` holds only the circuits whose
+/// content changed (added ones included) and `order` names every circuit in
+/// file order, so a circuit missing from `order` was removed. Applied to the
+/// view at `base` it gives the view at `revision`.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+pub struct DocumentChange {
+    pub id: String,
+    pub name: String,
+    pub path: Option<PathBuf>,
+    pub base: String,
+    pub revision: String,
+    pub palette_identity: String,
+    pub dirty: bool,
+    pub can_undo: bool,
+    pub can_redo: bool,
+    pub main: String,
+    pub order: Vec<String>,
+    pub circuits: Vec<Circuit>,
+    pub libraries: Vec<Library>,
+}
+/// An open document without its circuits' content: what a client checks to
+/// know whether the view it holds is still current.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+pub struct DocumentSummary {
+    pub id: String,
+    pub name: String,
+    pub path: Option<PathBuf>,
+    pub revision: String,
+    pub main: String,
+    /// Circuit names in file order.
+    pub circuits: Vec<String>,
+}
 /// Source state is separate from the draft revision: saving/reloading requires both.
 #[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(tag = "state", rename_all = "camelCase")]
@@ -515,16 +552,10 @@ impl Document {
     }
     pub fn view(&self) -> Result<DocumentView> {
         let tree = &self.source.tree;
-        let root = tree.root();
         let circuits = tree
-            .named(root, "circuit")
+            .named(tree.root(), "circuit")
             .map(|c| Ok(editing::Sheet::new(tree, c)?.view()))
             .collect::<Result<Vec<_>>>()?;
-        let main = tree
-            .named(root, "main")
-            .next()
-            .map(|m| tree.get(m, "name").into_owned())
-            .unwrap_or_else(|| circuits[0].name.clone());
         Ok(DocumentView {
             id: self.id.clone(),
             name: self.name.clone(),
@@ -534,16 +565,73 @@ impl Document {
             dirty: self.dirty(),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
-            main,
+            main: self.main_circuit(),
             circuits,
-            libraries: tree
-                .named(root, "lib")
-                .map(|l| Library {
-                    id: tree.get(l, "name").into_owned(),
-                    descriptor: tree.get(l, "desc").into_owned(),
-                })
-                .collect(),
+            libraries: self.libraries(),
         })
+    }
+    /// The view change from `base` to this revision, building only the
+    /// `changed` circuits (an edit outcome's `changed_circuits`; names no
+    /// longer in the file are skipped).
+    pub fn view_change(&self, base: &str, changed: &[String]) -> Result<DocumentChange> {
+        let tree = &self.source.tree;
+        let mut order = Vec::new();
+        let mut circuits = Vec::new();
+        for c in tree.named(tree.root(), "circuit") {
+            let name = tree.get(c, "name");
+            if changed.iter().any(|n| *n == name) {
+                circuits.push(editing::Sheet::new(tree, c)?.view());
+            }
+            order.push(name.into_owned());
+        }
+        Ok(DocumentChange {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            path: self.path.clone(),
+            base: base.to_string(),
+            revision: self.revision(),
+            palette_identity: self.palette_identity(),
+            dirty: self.dirty(),
+            can_undo: !self.undo.is_empty(),
+            can_redo: !self.redo.is_empty(),
+            main: self.main_circuit(),
+            order,
+            circuits,
+            libraries: self.libraries(),
+        })
+    }
+    pub fn summary(&self) -> DocumentSummary {
+        let tree = &self.source.tree;
+        DocumentSummary {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            path: self.path.clone(),
+            revision: self.revision(),
+            main: self.main_circuit(),
+            circuits: tree
+                .named(tree.root(), "circuit")
+                .map(|c| tree.get(c, "name").into_owned())
+                .collect(),
+        }
+    }
+    /// The main circuit's name: the `<main>` element's, else the first circuit's.
+    fn main_circuit(&self) -> String {
+        let tree = &self.source.tree;
+        let root = tree.root();
+        tree.named(root, "main")
+            .next()
+            .or_else(|| tree.named(root, "circuit").next())
+            .map(|e| tree.get(e, "name").into_owned())
+            .unwrap_or_default()
+    }
+    fn libraries(&self) -> Vec<Library> {
+        let tree = &self.source.tree;
+        tree.named(tree.root(), "lib")
+            .map(|l| Library {
+                id: tree.get(l, "name").into_owned(),
+                descriptor: tree.get(l, "desc").into_owned(),
+            })
+            .collect()
     }
     /// The document `edit` would make of this revision, leaving this one as it
     /// is: same id and path, so it loads with the same libraries, and no
@@ -703,6 +791,7 @@ impl Document {
         self.record(Op::Undo(self.source.revision.clone()));
         Ok(EditOutcome {
             title: step.title,
+            changed_circuits: changed_circuits(&current.tree, &self.source.tree),
             ..EditOutcome::default()
         })
     }
@@ -721,6 +810,7 @@ impl Document {
         self.record(Op::Redo(self.source.revision.clone()));
         Ok(EditOutcome {
             title: step.title,
+            changed_circuits: changed_circuits(&current.tree, &self.source.tree),
             ..EditOutcome::default()
         })
     }

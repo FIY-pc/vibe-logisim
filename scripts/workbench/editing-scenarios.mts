@@ -5,10 +5,10 @@ import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
 import { courseSizeProject } from "./fixtures/course-size.mts";
 import { simulationClient } from "./simulation-client.mts";
+import { documentViews } from "./document-views.mts";
 type Command = (request: any) => Promise<any>;
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 
 // Independently constructed circuits. Expected behavior is checked through real native stimuli.
 export async function verifyEditing(command: Command) {
@@ -300,7 +300,7 @@ export async function measureEditing(command: Command, rounds = 5) {
   const circuit = "main";
   await command({ op: "folderOpen", path: folder });
   const [opened, open] = await timed({ op: "open", path: file });
-  let doc: Document = opened;
+  let doc: Document = documentOf(opened);
   const scope = () => ({ id: doc.id, revision: doc.revision, circuit });
   const [first, firstObserve] = await timed({ op: "observe", ...scope() });
   const page = doc.circuits.find((c) => c.name === circuit)!;
