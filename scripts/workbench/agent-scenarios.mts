@@ -1,28 +1,32 @@
 /**
  * One AI turn through the real sidecar, with a scripted model in place of a
- * model service: its tool call edits the open file, the turn checkpoints the
- * folder, and undoing that checkpoint gives the file back byte for byte.
+ * model service: its tool call edits the open file as one undo step, the
+ * turn checkpoints the folder, and undoing that checkpoint gives the file
+ * back byte for byte.
  */
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Script } from "./scripted-model.mts";
 
-export const QUESTION = "放一个非门";
+export const QUESTION = "放一个非门和一个输入";
 
 /** The model's side of the turn: one place_component call, then an answer. */
-export const placeOneGate: Script = ({ calls }) =>
+export const placeTwoParts: Script = ({ calls }) =>
   calls.length
     ? {
         text: calls[0].error
           ? `放置失败：${calls[0].error.code} ${calls[0].error.message}`
-          : "已放置一个非门。",
+          : "已放置。",
       }
     : {
         tool: {
           name: "place_component",
           args: {
-            components: [{ factory: "NOT Gate", location: { x: 200, y: 200 } }],
+            components: [
+              { factory: "NOT Gate", location: { x: 200, y: 200 } },
+              { factory: "Pin", location: { x: 100, y: 200 } },
+            ],
           },
         },
       };
@@ -61,7 +65,13 @@ export async function verifyAgentTurn(
   );
   const change = events.find((e) => e.type === "files-changed")?.change;
   assert.deepEqual(change?.files, [{ kind: "modified", path: "turn.circ" }]);
-  assert.match(await readFile(file, "utf8"), /name="NOT Gate"/, "The edit did not reach the file");
+  assert.match(await readFile(file, "utf8"), /name="NOT Gate"[\s\S]*name="Pin"/, "The edit did not reach the file");
+  const history = await command({ op: "historyList", id: doc.id });
+  assert.deepEqual(
+    history.entries.filter((e: any) => e.kind === "edit").map((e: any) => e.title),
+    ["放置 2 个元件"],
+    "One tool call should be one edit",
+  );
   const status = await command({ op: "agent", method: "status" });
   assert(
     JSON.stringify(status.messages).includes(QUESTION),

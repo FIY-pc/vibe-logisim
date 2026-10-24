@@ -834,3 +834,60 @@ fn files_in_other_encodings_keep_their_bytes_until_edited() {
         assert_eq!(d.bytes(), original);
     }
 }
+
+#[test]
+fn a_batch_is_one_change_and_one_undo_step() {
+    let mut d = open(CLASSIC);
+    let outcome = d
+        .edit(
+            &d.revision(),
+            "main",
+            Edit::Batch {
+                edits: vec![
+                    Edit::Place {
+                        name: "OR Gate".into(),
+                        library: Some("1".into()),
+                        location: p(260, 250),
+                        attributes: BTreeMap::new(),
+                    },
+                    Edit::Place {
+                        name: "Pin".into(),
+                        library: Some("0".into()),
+                        location: p(100, 250),
+                        attributes: BTreeMap::new(),
+                    },
+                    Edit::Wire {
+                        points: vec![p(100, 250), p(210, 250)],
+                    },
+                    Edit::Attributes {
+                        id: "c260_150".into(),
+                        values: BTreeMap::from([("label".into(), "sum".into())]),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+    assert_eq!(outcome.title, "4 处修改");
+    assert_eq!(outcome.components, ["c260_250", "c100_250", "c260_150"]);
+    assert_eq!(outcome.wires, ["w2"]);
+    assert_eq!(
+        diff(CLASSIC, &text(&d)),
+        [
+            "+    <wire from=\"(100,250)\" to=\"(210,250)\"/>",
+            "-      <a name=\"label\" val=\"g1\"/>",
+            "+      <a name=\"label\" val=\"sum\"/>",
+            "+    <comp lib=\"1\" loc=\"(260,250)\" name=\"OR Gate\"/>",
+            "+    <comp lib=\"0\" loc=\"(100,250)\" name=\"Pin\"/>",
+        ]
+    );
+    d.undo(&d.revision()).unwrap();
+    assert_eq!(d.bytes(), CLASSIC.as_bytes());
+    assert!(!d.view().unwrap().can_undo);
+    let nested = Edit::Batch {
+        edits: vec![Edit::Batch { edits: vec![] }],
+    };
+    assert!(matches!(
+        d.edit(&d.revision(), "main", nested),
+        Err(Error::InvalidCommand(_))
+    ));
+}

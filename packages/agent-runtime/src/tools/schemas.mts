@@ -555,7 +555,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "undo_edit",
     label: "撤销修改",
     description:
-      "Undo the latest edit of a document (yours or the user's). Returns the view afterwards.",
+      "Undo the latest edit of a document (yours or the user's). A call of an editing tool is one edit, or two for a connect with additions or removals (those, then the wires). Returns the view afterwards with the title of what was undone.",
     parameters: object({ path: PATH }),
   },
   read_observation: {

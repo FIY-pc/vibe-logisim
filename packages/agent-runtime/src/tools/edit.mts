@@ -13,7 +13,7 @@ import {
   type Point,
   type PortRef,
 } from "./wiring.mts";
-import { resolveLibrary } from "./inspect.mts";
+import { libraryResolver } from "./inspect.mts";
 import type { ToolContext } from "./context.mts";
 import type { Edit } from "../generated/Edit.ts";
 import type { EditResult } from "../protocol/host.mts";
@@ -37,14 +37,9 @@ async function placements(
   components: any[],
 ): Promise<Edit[]> {
   const edits: Edit[] = [];
+  const resolve = libraryResolver(context, document, circuit);
   for (const part of components) {
-    const library = await resolveLibrary(
-      context,
-      document,
-      circuit,
-      part.factory,
-      part.library,
-    );
+    const library = await resolve(part.factory, part.library);
     edits.push({
       kind: "place",
       name: part.factory,
@@ -79,10 +74,15 @@ export async function setAttributes(
   args: Record<string, any>,
 ) {
   const { document, circuit } = await context.target(args);
-  const edits: Edit[] = (args.edits ?? []).map((e: any) => ({
+  // One edit per part: the host checks each against the revision it was
+  // sent for, so two edits of one part in a batch would undo each other.
+  const values = new Map<string, Record<string, string>>();
+  for (const e of args.edits ?? [])
+    values.set(e.componentId, { ...values.get(e.componentId), ...e.attributes });
+  const edits: Edit[] = [...values].map(([id, attributes]) => ({
     kind: "attributes",
-    id: e.componentId,
-    values: e.attributes,
+    id,
+    values: attributes,
   }));
   const { result } = await context.edit(document, circuit, edits);
   return outcome(context, result);
@@ -259,7 +259,7 @@ async function checkJoins(
     }
   }
   if (!problem) return;
-  // Take every wire edit of this call back, newest first.
+  // Take the wires of this call back (one batch, or a single wire).
   let document = applied.result.view;
   for (const _ of applied.results)
     document = (

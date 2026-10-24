@@ -10,12 +10,12 @@ import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
 import { verifySimulationViewport } from "./viewport-scenarios.mts";
-import { placeOneGate, verifyAgentTurn } from "./agent-scenarios.mts";
+import { placeTwoParts, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 // The sidecar reads its model services at start: point them at a scripted model.
-const model = await startScriptedModel(placeOneGate);
+const model = await startScriptedModel(placeTwoParts);
 await mkdir(path.join(state, "profile"), { recursive: true });
 await writeFile(
   path.join(state, "profile", "builtin-provider.json"),

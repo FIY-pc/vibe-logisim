@@ -228,53 +228,69 @@ export function templateGeometry(reply: any) {
  * one group of the catalog that lists it. The group with the empty id is
  * this file's own subcircuits.
  */
-export async function resolveLibrary(
+/**
+ * Resolves component names to their library ids for one revision, reading
+ * the catalog once, and only when a name comes without its library.
+ */
+export function libraryResolver(
+  context: ToolContext,
+  document: { id: string; revision: string },
+  circuit: string,
+) {
+  let catalog: Promise<any> | null = null;
+  return async (
+    tool: string,
+    library: string | null | undefined,
+  ): Promise<string> => {
+    if (library !== undefined && library !== null) return library;
+    catalog ??= context.host.call<any>({
+      op: "catalog",
+      id: document.id,
+      revision: document.revision,
+      circuit,
+    });
+    const hits: { id: string; name: string }[] = [];
+    for (const group of (await catalog)?.children || [])
+      if (group.tag === "group")
+        for (const entry of group.children || [])
+          if (
+            entry.tag === "tool" &&
+            (entry.attributes?.name === tool ||
+              entry.attributes?.factory === tool)
+          )
+            hits.push({
+              id: group.attributes.id ?? "",
+              name: group.attributes.name,
+            });
+    if (hits.length === 1) return hits[0].id;
+    if (!hits.length)
+      throw new CircuitToolError(
+        "COMPONENT_NOT_FOUND",
+        "当前文件的组件库里没有这个元件：" + tool,
+        {
+          hint: "元件名是 Logisim 的原生名称（如 AND Gate、Register、Pin）；子电路用定义名并把 library 设为空字符串。",
+        },
+      );
+    throw new CircuitToolError(
+      "INVALID_ARGUMENT",
+      `多个组件库都有 ${tool}，请指定 library。`,
+      {
+        hint:
+          "可选：" +
+          hits.map((h) => `${h.name} (${JSON.stringify(h.id)})`).join("、"),
+        context: { libraries: hits },
+      },
+    );
+  };
+}
+
+export const resolveLibrary = (
   context: ToolContext,
   document: { id: string; revision: string },
   circuit: string,
   tool: string,
   library: string | null | undefined,
-): Promise<string> {
-  if (library !== undefined && library !== null) return library;
-  const catalog = await context.host.call<any>({
-    op: "catalog",
-    id: document.id,
-    revision: document.revision,
-    circuit,
-  });
-  const hits: { id: string; name: string }[] = [];
-  for (const group of catalog?.children || [])
-    if (group.tag === "group")
-      for (const entry of group.children || [])
-        if (
-          entry.tag === "tool" &&
-          (entry.attributes?.name === tool ||
-            entry.attributes?.factory === tool)
-        )
-          hits.push({
-            id: group.attributes.id ?? "",
-            name: group.attributes.name,
-          });
-  if (hits.length === 1) return hits[0].id;
-  if (!hits.length)
-    throw new CircuitToolError(
-      "COMPONENT_NOT_FOUND",
-      "当前文件的组件库里没有这个元件：" + tool,
-      {
-        hint: "元件名是 Logisim 的原生名称（如 AND Gate、Register、Pin）；子电路用定义名并把 library 设为空字符串。",
-      },
-    );
-  throw new CircuitToolError(
-    "INVALID_ARGUMENT",
-    `多个组件库都有 ${tool}，请指定 library。`,
-    {
-      hint:
-        "可选：" +
-        hits.map((h) => `${h.name} (${JSON.stringify(h.id)})`).join("、"),
-      context: { libraries: hits },
-    },
-  );
-}
+) => libraryResolver(context, document, circuit)(tool, library);
 
 export async function describeComponent(
   context: ToolContext,

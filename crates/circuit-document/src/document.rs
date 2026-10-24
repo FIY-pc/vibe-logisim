@@ -165,6 +165,11 @@ pub enum Edit {
     Replace {
         xml: String,
     },
+    /// Wire, place, delete and attributes edits applied in order on one
+    /// circuit as one change: one undo step, one title.
+    Batch {
+        edits: Vec<Edit>,
+    },
 }
 
 /// What an edit, undo or redo changed: the history title, the circuit it
@@ -572,8 +577,14 @@ impl Document {
                 | Edit::Move { .. }
                 | Edit::Delete { .. }
                 | Edit::Attributes { .. }
+                | Edit::Batch { .. }
         );
-        let old_wires = if matches!(edit, Edit::Wire { .. }) {
+        let wiring = match &edit {
+            Edit::Wire { .. } => true,
+            Edit::Batch { edits } => edits.iter().any(|e| matches!(e, Edit::Wire { .. })),
+            _ => false,
+        };
+        let old_wires = if wiring {
             self.circuit_wire_count(circuit)?
         } else {
             0
@@ -585,6 +596,7 @@ impl Document {
                 validate(&input)?;
                 Some(splice::merge(&self.source.tree, &input)?)
             }
+            Edit::Batch { edits } => batch(&self.source.tree, circuit, edits)?,
             edit => editing::apply(&self.source.tree, circuit, edit.clone())?,
         };
         // A file read in another encoding indexes as its UTF-8 text.
@@ -596,38 +608,31 @@ impl Document {
         outcome.changed_circuits = changed_circuits(&previous.tree, &self.source.tree);
         if selecting {
             let after = self.circuit_view(circuit)?;
-            match edit {
-                Edit::Wire { .. } => {
-                    let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
-                    outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
-                }
-                Edit::Place { .. } | Edit::Attributes { .. } => {
-                    let placed = match &edit {
-                        Edit::Place { location, name, .. } => {
-                            Some((location.x, location.y, name.clone()))
+            if wiring {
+                let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
+                outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
+            }
+            let items = match edit {
+                Edit::Batch { edits } => edits,
+                edit => vec![edit],
+            };
+            for item in items {
+                match item {
+                    Edit::Place { location, name, .. } => {
+                        if let Some(component) = after.as_ref().and_then(|c| {
+                            c.components.iter().find(|c| {
+                                c.location.x == location.x
+                                    && c.location.y == location.y
+                                    && c.name == name
+                            })
+                        }) {
+                            outcome.components.push(component.id.clone());
                         }
-                        Edit::Attributes { id, .. } => {
-                            outcome.components.push(id.clone());
-                            None
-                        }
-                        _ => None,
-                    };
-                    if let Some((x, y, name)) = placed
-                        && let Some(component) = after.as_ref().and_then(|c| {
-                            c.components
-                                .iter()
-                                .find(|c| c.location.x == x && c.location.y == y && c.name == name)
-                        })
-                    {
-                        outcome.components.push(component.id.clone());
                     }
+                    Edit::Attributes { id, .. } => outcome.components.push(id),
+                    Edit::Move { ids, .. } => outcome.components.extend(ids),
+                    _ => {}
                 }
-                Edit::Move { ids, .. } => {
-                    for id in ids {
-                        outcome.components.push(id.clone());
-                    }
-                }
-                _ => {}
             }
         }
         Ok(outcome)
@@ -898,6 +903,30 @@ fn changed_circuits(before: &Tree, after: &Tree) -> Vec<String> {
 }
 
 /// The history title for an edit, in the old application's formats.
+/// A batch's edits applied in order, each on the text the previous one made;
+/// the final text, or None when nothing changed.
+fn batch(tree: &Tree, circuit: &str, edits: &[Edit]) -> Result<Option<String>> {
+    if edits.is_empty() {
+        return Err(Error::InvalidCommand("批量修改是空的".into()));
+    }
+    let mut current: Option<Tree> = None;
+    for edit in edits {
+        if !matches!(
+            edit,
+            Edit::Wire { .. } | Edit::Place { .. } | Edit::Delete { .. } | Edit::Attributes { .. }
+        ) {
+            return Err(Error::InvalidCommand(
+                "批量修改只能包含导线、放置、删除和属性修改".into(),
+            ));
+        }
+        let base = current.as_ref().unwrap_or(tree);
+        if let Some(text) = editing::apply(base, circuit, edit.clone())? {
+            current = Some(Tree::index(text)?);
+        }
+    }
+    Ok(current.map(|tree| tree.text().to_owned()))
+}
+
 fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
     let short = |value: &str| {
         let mut text: String = value.chars().take(24).collect();
@@ -932,6 +961,19 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
             format!("{} \u{b7} {}", label, parts.join("\u{3001}"))
         }
         Edit::Replace { .. } => "替换电路内容".into(),
+        Edit::Batch { edits } => match edits.as_slice() {
+            [one] => edit_title(one, circuit, doc),
+            all if all.iter().all(|e| matches!(e, Edit::Place { .. })) => {
+                format!("放置 {} 个元件", all.len())
+            }
+            all if all.iter().all(|e| matches!(e, Edit::Wire { .. })) => {
+                format!("绘制 {} 条导线", all.len())
+            }
+            all if all.iter().all(|e| matches!(e, Edit::Attributes { .. })) => {
+                format!("修改 {} 个元件的属性", all.len())
+            }
+            all => format!("{} 处修改", all.len()),
+        },
         Edit::AddCircuit { .. } => "添加电路".into(),
         Edit::RenameCircuit { .. } => "重命名电路".into(),
         Edit::DeleteCircuit => "删除电路".into(),

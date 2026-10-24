@@ -361,7 +361,9 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
         Edit::Attributes { id, values } => {
             set_attributes(&Sheet::new(tree, node)?, id, &values, &mut out)?
         }
-        Edit::Replace { .. } => unreachable!("the document merges replacements"),
+        Edit::Replace { .. } | Edit::Batch { .. } => {
+            unreachable!("the document merges replacements and applies batches item by item")
+        }
     }
     finish(out)
 }

@@ -208,6 +208,26 @@
         "xml"
       ],
       "type": "object"
+    },
+    {
+      "description": "Wire, place, delete and attributes edits applied in order on one\ncircuit as one change: one undo step, one title.",
+      "properties": {
+        "edits": {
+          "items": {
+            "$ref": "#"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "batch",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "edits"
+      ],
+      "type": "object"
     }
   ],
   "title": "Edit"
