@@ -10,7 +10,11 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 const SCHEMA = "vibe-logisim.conversations/v2";
 
-/** Conversations per workspace key (a folder, a lone document or the app), kept as one JSON file. */
+/**
+ * Conversations per workspace key (a folder, a lone document or the app), kept
+ * as one JSON file. The file is read once; this process is its only writer, so
+ * later reads use the copy in memory and every write saves that copy.
+ */
 class ConversationStore {
   declare file: string | undefined;
   declare memory: ConversationIndex | null;
@@ -20,7 +24,8 @@ class ConversationStore {
     this.memory = null;
   }
   read(): ConversationIndex {
-    if (!this.file) return this.memory || { schema: SCHEMA, workspaces: {} };
+    if (this.memory) return this.memory;
+    if (!this.file) return (this.memory = { schema: SCHEMA, workspaces: {} });
     try {
       const data = JSON.parse(fs.readFileSync(this.file, "utf8"));
       if (
@@ -42,17 +47,16 @@ class ConversationStore {
           if (!record || !Array.isArray(record.messages))
             throw new Error("Invalid conversation");
       }
-      return data;
+      return (this.memory = data);
     } catch (error: any) {
-      if (error.code === "ENOENT") return { schema: SCHEMA, workspaces: {} };
+      if (error.code === "ENOENT")
+        return (this.memory = { schema: SCHEMA, workspaces: {} });
       throw new Error("无法读取对话记录，原文件仍保留。请重试");
     }
   }
   write(data: ConversationIndex) {
-    if (!this.file) {
-      this.memory = structuredClone(data);
-      return;
-    }
+    this.memory = data;
+    if (!this.file) return;
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     const temp = this.file + "." + randomUUID() + ".tmp";
     try {

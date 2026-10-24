@@ -270,7 +270,7 @@ export class TurnRunner extends EventEmitter {
   private steers = new Map<string, AgentMessage>();
   private messageId = "";
   private partialText = "";
-  private lastPartialWrite = 0;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private runError: string | null = null;
 
   constructor(options: RunnerOptions) {
@@ -563,6 +563,10 @@ export class TurnRunner extends EventEmitter {
     return this.conversationState(key);
   }
   persist() {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
     if (!this.workspaceKey) return;
     const active = this.history.find(
       (m) =>
@@ -924,7 +928,6 @@ export class TurnRunner extends EventEmitter {
     if (e.type === "message_start" && e.message.role === "assistant") {
       this.messageId = randomUUID();
       this.partialText = "";
-      this.lastPartialWrite = 0;
       this.emitEvent({
         type: "assistant-started",
         itemId: this.messageId,
@@ -946,7 +949,7 @@ export class TurnRunner extends EventEmitter {
           this.history.push(m);
         }
         m.text = this.partialText;
-        this.persistThrottled();
+        this.persistSoon();
         this.emitEvent({
           type: "assistant-delta",
           itemId: this.messageId,
@@ -962,7 +965,7 @@ export class TurnRunner extends EventEmitter {
           this.history.push(m);
         }
         m.text += delta.delta;
-        this.persistThrottled();
+        this.persistSoon();
         this.emitEvent({
           type: "reasoning-delta",
           itemId: id,
@@ -999,13 +1002,13 @@ export class TurnRunner extends EventEmitter {
       Object.assign(activity, toolActivity(e, existing));
       if (existing) Object.assign(existing, activity);
       else this.history.push(activity);
-      this.persist();
+      this.persistSoon();
       this.emitEvent(activity as any);
     }
     if (e.type === "turn_end" && this.checkpoints[this.messageId]) {
       this.checkpoints[this.messageId].raw = this.agent.state.messages.length;
       this.transcript = this.agent.state.messages;
-      this.persist();
+      this.persistSoon();
     }
     if (e.type === "message_end") {
       if (
@@ -1072,14 +1075,26 @@ export class TurnRunner extends EventEmitter {
           };
       }
       this.transcript = this.agent.state.messages;
-      this.persist();
+      this.persistSoon();
     }
   }
-  private persistThrottled() {
-    if (Date.now() - this.lastPartialWrite > 500) {
-      this.persist();
-      this.lastPartialWrite = Date.now();
-    }
+  /**
+   * Saves the conversation within half a second. A running turn's events
+   * (deltas, tool starts and ends, messages) are saved this way, not one by
+   * one: every save writes the whole conversation store. The turn's end
+   * saves at once.
+   */
+  private persistSoon() {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      try {
+        this.persist();
+      } catch (error: any) {
+        // The turn's own save at its end reports the failure.
+        console.error("conversation save failed:", error?.message ?? error);
+      }
+    }, 500);
   }
 
   private async runTurn(
