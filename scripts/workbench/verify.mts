@@ -10,12 +10,12 @@ import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
 import { verifySimulationViewport } from "./viewport-scenarios.mts";
-import { placeTwoParts, verifyAgentTurn } from "./agent-scenarios.mts";
+import { agentScript, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 // The sidecar reads its model services at start: point them at a scripted model.
-const model = await startScriptedModel(placeTwoParts);
+const model = await startScriptedModel(agentScript);
 await mkdir(path.join(state, "profile"), { recursive: true });
 await writeFile(
   path.join(state, "profile", "builtin-provider.json"),
@@ -412,7 +412,7 @@ try {
   );
   await verifyAgentTurn(command, stream!, state);
   console.log(
-    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup; a scripted AI turn's edit, folder checkpoint and undo.",
+    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup; a scripted AI turn's edit, folder checkpoint and undo; a turn that rewrites the open file reads it again.",
   );
 } finally {
   await stop();

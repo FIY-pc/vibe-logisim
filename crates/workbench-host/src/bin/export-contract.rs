@@ -33,6 +33,7 @@ fn export_host_contract(directory: &Path) -> Result<()> {
     vibe_workbench_host::Request::export_all(&config)?;
     vibe_workbench_host::HostError::export_all(&config)?;
     vibe_circuit_document::DocumentView::export_all(&config)?;
+    vibe_circuit_document::SourceStatus::export_all(&config)?;
     vibe_workbench_host::EditResult::export_all(&config)?;
     vibe_workbench_host::ObservationRecord::export_all(&config)?;
     vibe_workbench_host::ObservationSummary::export_all(&config)?;
@@ -47,7 +48,6 @@ fn generate(root: &Path) -> Result<()> {
     export_host_contract(&directory)?;
     let config = config(&directory);
     vibe_circuit_document::DocumentView::export_all(&config)?;
-    vibe_circuit_document::SourceStatus::export_all(&config)?;
     vibe_workbench_host::ObservationRecord::export_all(&config)?;
     vibe_workbench_host::ObservationSummary::export_all(&config)?;
     vibe_logisim_runtime::simulation::SimulationEvent::export_all(&config)?;

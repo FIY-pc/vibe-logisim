@@ -37,12 +37,13 @@ Rendering, document identity, saving, history (host); layout algorithms (`packag
 
 Events reach the window as host events on topic `agent`, in order, with a sequence number; the window replays missed ones from `status`. `status` alone rebuilds the conversation: each turn's record (`type: "turn"`) carries `status`, `error` (Chinese; `已停止` after a stop), `startedAt`, `elapsedMs` and `change` (the folder change it made, `undone` once undone). `transmission` is the retry notice while the model service is busy, null otherwise.
 
-Host ops the tools use: status read source open new edit undo observe observeXml template catalog render simulate trace folderCreate folderCheckpoint observationList observationGet observationImage. Each turn starts with `folderCheckpoint {title: "文件改动"}` and ends with another titled after the question, so the user's file history shows one undoable entry per turn (`files-changed` event).
+Host ops the tools use: status read source sourceStatus reload open new edit undo observe observeXml template catalog render simulate trace folderCreate folderCheckpoint observationList observationGet observationImage. Each turn starts with `folderCheckpoint {title: "文件改动"}` and ends with another titled after the question, so the user's file history shows one undoable entry per turn (`files-changed` event).
 
 ## Invariants
 
 - The conversation scope is the folder id from host `status`; without an open folder `ask` fails with `请先打开工作文件夹`.
 - A tool never caches a view across revisions: `ToolContext.edit` sends the revision it read and surfaces `StaleRevision` to the model as an error it can retry after re-reading.
+- The tools work on the file as it is: `ToolContext.resolveDocument` checks `sourceStatus` and, when a clean open document's file changed (write_file, a shell command, another program), has the host `reload` it (previous content in undo history) and tells the UI (`document-changed`). A document with unsaved changes is used as it is.
 - Component ids are positions (`c<x>_<y>`); the model is told so in the instructions and must not expect ids to survive a move.
 - Model-facing errors are `CircuitToolError` with the host's Chinese message and `code`; never a stack trace.
 - Credentials: keys live only in `<state>/profile`; nothing in this package logs request headers or writes keys elsewhere.
