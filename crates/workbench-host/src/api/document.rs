@@ -595,7 +595,7 @@ impl Host {
                     | Edit::Delete { .. }
                     | Edit::Attributes { .. }
             ) {
-                return Err("批量修改只能包含导线、放置、删除和属性修改".into());
+                return Err("批量修改只能包含导线、放置、删除和属性修改，或者只包含移动".into());
             }
             let (edit, template) = self.resolve_edit(id, revision, circuit, edit).await?;
             if let (Edit::Place { name, location, .. }, Some(template)) = (&edit, &template) {
@@ -736,13 +736,26 @@ impl Host {
                 circuit,
                 edit,
             } => {
+                let moves: Option<Vec<(Vec<String>, Point)>> = match &edit {
+                    Edit::Batch { edits } if !edits.is_empty() => edits
+                        .iter()
+                        .map(|e| match e {
+                            Edit::Move { ids, delta } => Some((ids.clone(), *delta)),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => None,
+                };
                 let edit = match edit {
+                    _ if moves.is_some() => edit,
                     Edit::Batch { edits } => Edit::Batch {
                         edits: self.resolve_batch(&id, &revision, &circuit, edits).await?,
                     },
                     edit => self.resolve_edit(&id, &revision, &circuit, edit).await?.0,
                 };
-                if let Edit::Move { ids, delta } = &edit {
+                if let Some(moves) = moves {
+                    value(self.commit_moves(&id, &revision, &circuit, &moves).await?)
+                } else if let Edit::Move { ids, delta } = &edit {
                     let moved = self
                         .commit_move(&id, &revision, &circuit, ids, *delta)
                         .await?;

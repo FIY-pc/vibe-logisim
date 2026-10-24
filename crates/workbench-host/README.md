@@ -39,7 +39,7 @@ Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{err
 
 Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folderCreate folderCheckpoint status read source sourceStatus saveTarget open new save edit undo redo observe observeXml template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply historyList observationList observationGet observationImage. Anything else from the sidecar fails with `NotAllowed`.
 
-`edit` with a batch resolves every place and attribute edit in it against the revision it was sent for (one Java load), refuses a move or a nested batch, and a placed part that would put an exclusive port on another new part's or repeat a new part at its location; the AI sends each tool call's edits as one batch.
+`edit` with a batch resolves every place and attribute edit in it against the revision it was sent for (one Java load), refuses a move among other edits or a nested batch, and a placed part that would put an exclusive port on another new part's or repeat a new part at its location. A batch of moves only (parts moved by different offsets) plans and checks each move on the result of the one before, like a single move, and applies the last result as one change ("移动 N 个对象"); nothing moves when any is refused. The AI sends each tool call's edits as one batch.
 
 Folder history: create, rename, trash and import are each one entry; `folderCheckpoint` records everything that changed since the folder's last entry (the AI calls it before and after each turn). `folderCreate {checkpoint: false}` leaves its file to the next checkpoint, so an AI turn that creates a file is one entry listing it as added.
 

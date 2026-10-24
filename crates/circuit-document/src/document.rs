@@ -545,10 +545,6 @@ impl Document {
                 .collect(),
         })
     }
-    /// Applies an edit as splices of the stored file, so bytes the edit does
-    /// not touch stay as they are. `Replace` keeps the current bytes of every
-    /// top-level element (circuit, library, …) whose content it leaves equal.
-    /// Returns what changed, for the host's edit result and history title.
     /// The document `edit` would make of this revision, leaving this one as it
     /// is: same id and path, so it loads with the same libraries, and no
     /// history. For checking what an edit does before applying it; applying
@@ -567,6 +563,10 @@ impl Document {
         preview.edit(expected, circuit, edit)?;
         Ok(preview)
     }
+    /// Applies an edit as splices of the stored file, so bytes the edit does
+    /// not touch stay as they are. `Replace` keeps the current bytes of every
+    /// top-level element (circuit, library, …) whose content it leaves equal.
+    /// Returns what changed, for the host's edit result and history title.
     pub fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<EditOutcome> {
         self.check(expected)?;
         let outcome = EditOutcome {
@@ -910,7 +910,6 @@ fn changed_circuits(before: &Tree, after: &Tree) -> Vec<String> {
     changed
 }
 
-/// The history title for an edit, in the old application's formats.
 /// A batch's edits applied in order, each on the text the previous one made;
 /// the final text, or None when nothing changed.
 fn batch(tree: &Tree, circuit: &str, edits: &[Edit]) -> Result<Option<String>> {
@@ -935,6 +934,7 @@ fn batch(tree: &Tree, circuit: &str, edits: &[Edit]) -> Result<Option<String>> {
     Ok(current.map(|tree| tree.text().to_owned()))
 }
 
+/// The history title for an edit, in the old application's formats.
 fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
     let short = |value: &str| {
         let mut text: String = value.chars().take(24).collect();

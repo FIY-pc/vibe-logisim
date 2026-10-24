@@ -187,6 +187,37 @@ export async function verifyEditing(command: Command) {
   const unchanged = await command({ op: "read", id: short.id });
   assert.equal(unchanged.revision, short.revision);
   assert.equal(unchanged.canUndo, false, "Rejected move entered history");
+  // Moves by different offsets are one change; a refused one moves nothing.
+  const moves = (doc: Document, edits: [string, number, number][]) =>
+    command({
+      op: "edit",
+      id: doc.id,
+      revision: doc.revision,
+      circuit: "main",
+      edit: {
+        kind: "batch",
+        edits: edits.map(([id, x, y]) => ({ kind: "move", ids: [id], delta: { x, y } })),
+      },
+    }).then(documentOf);
+  await assert.rejects(
+    () =>
+      moves(short, [
+        [component(short, "outB"), 40, 0],
+        [component(short, "outA"), -50, 40],
+      ]),
+    (e: any) => e.code === "CONNECTIONS_CHANGED" && /^第 2 组移动/.test(e.message),
+  );
+  assert.equal((await command({ op: "read", id: short.id })).revision, short.revision);
+  const spread = await moves(short, [
+    [component(short, "outA"), 40, 0],
+    [component(short, "outB"), 60, 0],
+  ]);
+  await signal(spread, "b", "1", ["outB"]);
+  assert.equal(
+    documentOf(await command({ op: "undo", id: spread.id, revision: spread.revision })).revision,
+    short.revision,
+    "Moves of one call must be one undo step",
+  );
 
   let crossing = await open(
     pin("a", 100, 100) +

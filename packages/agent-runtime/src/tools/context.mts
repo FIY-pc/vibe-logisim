@@ -161,10 +161,11 @@ export class ToolContext {
 
   /**
    * Applies edits and tells the UI once. Wire, place, delete and attribute
-   * edits go to the host as one batch (one undo step, one native load);
-   * anything else is applied one after another, each on the revision the
-   * previous one produced. Returns the last result; `noop` edits are
-   * reported, not hidden.
+   * edits go to the host as one batch (one undo step, one native load), and
+   * so do moves by different offsets (one undo step, nothing moved when one
+   * is refused); anything else is applied one after another, each on the
+   * revision the previous one produced. Returns the last result; `noop`
+   * edits are reported, not hidden.
    */
   async edit(
     document: DocumentView,
@@ -181,7 +182,8 @@ export class ToolContext {
     const results: EditResult[] = [];
     const batch =
       edits.length > 1 &&
-      edits.every((e) => BATCHED.has(e.kind));
+      (edits.every((e) => BATCHED.has(e.kind)) ||
+        edits.every((e) => e.kind === "move"));
     for (const edit of batch ? [{ kind: "batch", edits } as Edit] : edits) {
       this.assertCurrent();
       const result = await this.host.call<EditResult>({
