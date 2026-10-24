@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   BookOpen,
@@ -11,7 +11,6 @@ import {
   Settings2,
   Square,
   Timer,
-  Undo2,
 } from "lucide-react";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 import { subscribeEvents } from "../shared/events";
@@ -21,8 +20,6 @@ import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import { useChatReferences } from "./ChatReferences";
 import {
-  ActivityBatch,
-  ChatMarkdown,
   ConversationPicker,
   CopyButton,
   FollowLatest,
@@ -31,6 +28,8 @@ import {
   type ConversationSummary,
   type Message,
 } from "./ConversationContent";
+import { Turn, type TurnChange } from "./Turn";
+import { segments } from "./turns";
 import type { ProjectFolder } from "../workspace/Files";
 import {
   ModelPicker,
@@ -52,8 +51,6 @@ interface RuntimeState {
   detail?: string | null;
   available: boolean;
   busy: boolean;
-  canSteer?: boolean;
-  turnId?: string | null;
   conversationId: string | null;
   model: string | null;
   effort: string | null;
@@ -61,21 +58,9 @@ interface RuntimeState {
   services: ProviderConfiguration[];
   defaultServiceId?: string | null;
   messages: Message[];
-  transmission?: { message: string } | null;
+  /** The stream retry notice while the model service is busy. */
+  transmission?: { phase: string; message: string } | null;
   modelConfigurationError?: { message: string } | null;
-}
-/** A turn's file changes, recorded by the folder history as one entry. */
-interface FilesChange {
-  folderId: string;
-  conversationId: string | null;
-  change: {
-    id: string;
-    title: string;
-    at: number;
-    undoable: boolean;
-    files: { path: string; kind: string }[];
-  };
-  undone?: boolean;
 }
 interface Props {
   visible: boolean;
@@ -159,11 +144,6 @@ const runtime = <T,>(method: string, args: unknown = {}) =>
   command<T>({ op: "agent", method, args: args as JsonValue });
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
-const kindNames: Record<string, string> = {
-  added: "新增",
-  deleted: "删除",
-  modified: "修改",
-};
 const defaultEfforts = [
   ["none", "默认"],
   ["low", "轻度"],
@@ -191,11 +171,11 @@ export function Chat({
   const [state, setState] = useState<RuntimeState | null>(null),
     [messages, setMessages] = useState<Message[]>([]),
     [conversations, setConversations] = useState<ConversationSummary[]>([]),
-    [models, setModels] = useState<ModelOption[]>([]),
-    [fileChanges, setFileChanges] = useState<FilesChange[]>([]);
+    [models, setModels] = useState<ModelOption[]>([]);
   const [draftRecord, setDraftRecord] = useState({ key: "", text: "" }),
     [configure, setConfigure] = useState(false),
     [pending, setPending] = useState(false),
+    [stopping, setStopping] = useState(false),
     [runtimeError, setRuntimeError] = useState(""),
     [renameConversation, setRenameConversation] = useState(false),
     [editingMessage, setEditingMessage] = useState<Message | null>(null),
@@ -211,13 +191,14 @@ export function Chat({
   const bound = useRef<{ scope: string; documentId?: string } | null>(null);
   const target = useRef({ scope, documentId: doc?.id });
   target.current = { scope, documentId: doc?.id };
-  const live = useRef(state);
-  live.current = state;
   // The folder binding keeps the draft; sending and staging references also
   // wait for the current document to be bound.
   const scopeReady = Boolean(state) && boundTo?.scope === scope;
   const ready = scopeReady && boundTo?.documentId === doc?.id;
   const busy = Boolean(state?.busy);
+  useEffect(() => {
+    if (!busy) setStopping(false);
+  }, [busy]);
   const scroller = useRef<HTMLDivElement>(null);
 
   // Runtime calls that change the conversation run one after another.
@@ -248,6 +229,7 @@ export function Chat({
     snapshotCursor = useRef(0),
     buffered = useRef<{ sequence: number; event: any }[]>([]),
     applyEvent = useRef<(event: any) => void>(() => {});
+  const refreshing = useRef<Promise<unknown> | null>(null);
   const refresh = async (): Promise<RuntimeState> => {
     const next = await runtime<RuntimeState>("status");
     if (next.eventCursor < snapshotCursor.current) return next;
@@ -327,6 +309,9 @@ export function Chat({
         break;
       }
       case "assistant-completed":
+        // A reply that only called tools completes without text; the runtime
+        // keeps no message for it, and neither does the view.
+        if (!e.text) break;
         setMessages((previous) =>
           previous.some((m) => m.id === e.itemId)
             ? previous.map((m) =>
@@ -366,24 +351,15 @@ export function Chat({
       case "document-opened":
         onOpened(e.document);
         break;
-      case "files-changed":
-        setFileChanges((previous) => [
-          ...previous.filter((item) => item.change.id !== e.change.id),
-          {
-            folderId: e.folderId,
-            conversationId: live.current?.conversationId ?? null,
-            change: e.change,
-          },
-        ]);
-        break;
     }
   };
   useEffect(
     () =>
       subscribeEvents((event) => {
         if (event.topic === "resync") {
+          // Events may have been missed and the runtime may have restarted:
+          // bind again, keeping the conversation on screen meanwhile.
           bound.current = null;
-          setBoundTo(null);
           setConnection((value) => value + 1);
           return;
         }
@@ -391,47 +367,52 @@ export function Chat({
         const item = event.data;
         buffered.current.push(item);
         if (buffered.current.length > 2048) buffered.current.shift();
-        if (item.sequence > cursor.current) {
-          cursor.current = item.sequence;
-          applyEvent.current(item.event);
-        }
+        if (item.sequence <= cursor.current) return;
+        const missed =
+          snapshotCursor.current > 0 && item.sequence > cursor.current + 1;
+        cursor.current = item.sequence;
+        applyEvent.current(item.event);
+        // A gap in the sequence: the snapshot repairs what was missed.
+        if (missed && !refreshing.current)
+          refreshing.current = refresh()
+            .catch(() => {})
+            .finally(() => (refreshing.current = null));
       }),
     [],
   );
-  // Binds the current document whenever it or the folder changes; while the
-  // AI is answering, the binding waits for the turn to end.
+  // Binds the current document whenever it or the folder changes. A running
+  // turn keeps its folder's conversation: another folder binds after it ends.
   useEffect(() => {
-    if (state?.busy) return;
     const wanted = target.current;
     if (
       bound.current?.scope === wanted.scope &&
       bound.current.documentId === wanted.documentId
     )
       return;
+    if (busy && boundTo && boundTo.scope !== wanted.scope) return;
     void enqueue(async () => {
       if (
         target.current.scope !== wanted.scope ||
-        target.current.documentId !== wanted.documentId ||
-        live.current?.busy
+        target.current.documentId !== wanted.documentId
       )
         return;
-      if (bound.current?.scope !== wanted.scope) {
-        bound.current = null;
-        setBoundTo(null);
-      }
+      setBoundTo((old) => (old?.scope === wanted.scope ? old : null));
       await runtime("bind", { documentId: wanted.documentId });
       bound.current = wanted;
       setBoundTo(wanted);
       await refresh();
       await loadConversations();
-    }).catch((error) => setRuntimeError(errorText(error)));
+    }).catch(async (error) => {
+      // Another folder's turn is still running; the binding follows its end.
+      const next = await refresh().catch(() => null);
+      if (!next?.busy) setRuntimeError(errorText(error));
+    });
   }, [doc?.id, folder?.id, busy, connection]);
   const reconnect = () =>
     runtime("reconnect")
       .then(() => {
         setRuntimeError("");
         bound.current = null;
-        setBoundTo(null);
         setConnection((value) => value + 1);
       })
       .catch(onError);
@@ -478,20 +459,17 @@ export function Chat({
   const scroll = useConversationScroll(scroller, draftKey, visible, messages);
 
   const send = (text = draft) => {
-    if (!ready || !text.trim() || references.pending) return;
+    if (!ready || busy || !text.trim() || references.pending) return;
     const receipt = { key: draftKey, text },
       attachments = references.receipt();
+    scroll.latest();
     void act(async () => {
-      const current = live.current;
-      if (current?.busy && !current.canSteer)
-        throw new Error("请等待当前回答结束，或停止后发送");
       await runtime("ask", {
         question: text,
         references: attachments.ids,
         documentId: doc?.id,
         circuit: circuit ?? undefined,
         selection,
-        expectedTurnId: current?.busy ? current.turnId : undefined,
       });
       acknowledgeDraft(receipt);
       references.acknowledge(attachments);
@@ -499,12 +477,14 @@ export function Chat({
       await loadConversations();
     });
   };
-  const resubmit = () => {
-    const message = editingMessage;
-    if (!ready || !message || !editedText.trim() || busy) return;
+  /** Sends a question again from where it was asked: an edit, or a retry
+   * after the turn failed. */
+  const resubmit = (message: Message, text: string) => {
+    if (!ready || !text.trim() || busy) return;
+    scroll.latest();
     void act(async () => {
       await runtime("ask", {
-        question: editedText,
+        question: text,
         references:
           message.context?.references?.map((reference) => reference.id) || [],
         documentId: doc?.id,
@@ -525,18 +505,16 @@ export function Chat({
       await loadConversations();
     });
   };
-  const undoFiles = (item: FilesChange) =>
+  const undoFiles = (change: TurnChange) =>
     void act(async () => {
+      if (!folder) return;
       await command({
         op: "folderHistoryUndo",
-        folder_id: item.folderId,
-        id: item.change.id,
+        folder_id: folder.id,
+        id: change.id,
       });
-      setFileChanges((previous) =>
-        previous.map((entry) =>
-          entry === item ? { ...entry, undone: true } : entry,
-        ),
-      );
+      // The conversation remembers it, so the card reads 已撤销 after a reload.
+      await runtime("markUndone", { changeId: change.id }).catch(onError);
       await onFilesChanged();
     });
   // The shortcut listener stays registered for the component's lifetime and
@@ -583,16 +561,54 @@ export function Chat({
   const effortOptions = [...defaultEfforts];
   if (state?.effort && !effortOptions.some(([value]) => value === state.effort))
     effortOptions.unshift([state.effort, state.effort]);
-  const shownChanges = fileChanges.filter(
-    (item) =>
-      item.folderId === folder?.id &&
-      item.conversationId === (state?.conversationId ?? null),
-  );
   const shown = doc?.circuits.find((c) => c.name === circuit);
   const readable = Boolean(
     shown && (shown.components.length || shown.wires.length),
   );
   const locked = !ready || pending || busy;
+  const userMessage = (m: Message) => (
+    <div className="message user">
+      {editingMessage?.id === m.id ? (
+        <div className="message-edit">
+          <textarea
+            aria-label="编辑消息"
+            value={editedText}
+            onChange={(e) => setEditedText(e.target.value)}
+          />
+          <button
+            disabled={pending || !editedText.trim()}
+            onClick={() => resubmit(m, editedText)}
+          >
+            重新发送
+          </button>
+          <button disabled={pending} onClick={() => setEditingMessage(null)}>
+            取消
+          </button>
+        </div>
+      ) : (
+        m.text
+      )}
+      {references.renderContext(m.context)}
+      {!editingMessage && (
+        <div className="message-actions">
+          <CopyButton text={m.text || ""} onError={onError} />
+          {!busy && m.canEdit && (
+            <button
+              title="编辑并重新发送"
+              aria-label="编辑并重新发送"
+              disabled={pending}
+              onClick={() => {
+                setEditingMessage(m);
+                setEditedText(m.text || "");
+              }}
+            >
+              <Pencil size={12} />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
   return (
     <div
       className="chat"
@@ -703,9 +719,10 @@ export function Chat({
         onScroll={scroll.onScroll}
         onWheel={scroll.onWheel}
         onKeyDown={scroll.onKeyDown}
+        onClickCapture={scroll.onClickCapture}
       >
         <div className="messages-content">
-          {(!ready || !messages.length) && (
+          {(!scopeReady || !messages.length) && (
             <div className="quiet-empty">
               {!state ? (
                 runtimeError ? (
@@ -754,131 +771,44 @@ export function Chat({
               )}
             </div>
           )}
-          {(ready ? messages : []).map((m, index) =>
-            m.type === "activity" ? (
-              index > 0 && messages[index - 1].type === "activity" ? null : (
-                <ActivityBatch
-                  key={m.id}
-                  messages={messages.slice(
-                    index,
-                    messages.findIndex(
-                      (item, next) => next > index && item.type !== "activity",
-                    ) < 0
-                      ? undefined
-                      : messages.findIndex(
-                          (item, next) =>
-                            next > index && item.type !== "activity",
-                        ),
-                  )}
+          {(scopeReady ? segments(messages) : []).map((segment, index, all) => {
+            const live =
+              busy &&
+              index === all.length - 1 &&
+              (!segment.turn || segment.turn.status === "running");
+            const user = segment.user;
+            return (
+              <Fragment key={segment.key}>
+                {user && userMessage(user)}
+                <Turn
+                  segment={segment}
+                  live={live}
+                  notice={
+                    live && state?.transmission?.phase === "retrying"
+                      ? state.transmission.message
+                      : null
+                  }
+                  locked={pending || busy}
+                  onUndo={undoFiles}
+                  onRetry={
+                    user?.canEdit && segment.turn?.status === "failed"
+                      ? () => resubmit(user, user.text || "")
+                      : undefined
+                  }
+                  onError={onError}
+                  onFollowReference={
+                    onFollowReference
+                      ? (href, item) =>
+                          onFollowReference(href, {
+                            ...item,
+                            context: item.context || user?.context,
+                          })
+                      : undefined
+                  }
                 />
-              )
-            ) : m.type === "reasoning" ? (
-              <details className="message reasoning" key={m.id}>
-                <summary>思考过程</summary>
-                {m.text}
-              </details>
-            ) : m.type === "user" || m.type === "assistant" ? (
-              <div className={"message " + m.type} key={m.id}>
-                {editingMessage?.id === m.id ? (
-                  <div className="message-edit">
-                    <textarea
-                      aria-label="编辑消息"
-                      value={editedText}
-                      onChange={(e) => setEditedText(e.target.value)}
-                    />
-                    <button
-                      disabled={pending || !editedText.trim()}
-                      onClick={resubmit}
-                    >
-                      重新发送
-                    </button>
-                    <button
-                      disabled={pending}
-                      onClick={() => setEditingMessage(null)}
-                    >
-                      取消
-                    </button>
-                  </div>
-                ) : m.type === "assistant" ? (
-                  <ChatMarkdown
-                    text={m.text || ""}
-                    onError={onError}
-                    onFollowReference={
-                      onFollowReference
-                        ? (href) =>
-                            onFollowReference(href, {
-                              ...m,
-                              context:
-                                m.context ||
-                                messages
-                                  .slice(0, index)
-                                  .reverse()
-                                  .find((message) => message.type === "user")
-                                  ?.context,
-                            })
-                        : undefined
-                    }
-                  />
-                ) : (
-                  m.text
-                )}
-                {references.renderContext(m.context)}
-                {!editingMessage && (
-                  <div className="message-actions">
-                    <CopyButton text={m.text || ""} onError={onError} />
-                    {!busy && m.canEdit && (
-                      <button
-                        title="编辑并重新发送"
-                        aria-label="编辑并重新发送"
-                        disabled={pending}
-                        onClick={() => {
-                          setEditingMessage(m);
-                          setEditedText(m.text || "");
-                        }}
-                      >
-                        <Pencil size={12} />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : null,
-          )}
-          {state?.transmission && (
-            <div className="error-bar">{state.transmission.message}</div>
-          )}
-          {ready &&
-            shownChanges.map((item) => (
-              <div className="chat-card" key={item.change.id}>
-                <span>
-                  <strong>AI 改动了 {item.change.files.length} 个文件</strong>
-                  <ul>
-                    {item.change.files.map((file) => (
-                      <li key={file.path}>
-                        <small>{kindNames[file.kind] || file.kind}</small>
-                        {file.path}
-                      </li>
-                    ))}
-                  </ul>
-                </span>
-                {item.undone ? (
-                  <small>已撤销</small>
-                ) : (
-                  <button
-                    disabled={pending || busy || !item.change.undoable}
-                    title={
-                      item.change.undoable
-                        ? undefined
-                        : "包含未保留内容的大文件"
-                    }
-                    onClick={() => undoFiles(item)}
-                  >
-                    <Undo2 size={13} />
-                    撤销
-                  </button>
-                )}
-              </div>
-            ))}
+              </Fragment>
+            );
+          })}
         </div>
       </div>
       {!scroll.following && <FollowLatest onClick={scroll.latest} />}
@@ -896,6 +826,7 @@ export function Chat({
               !e.shiftKey &&
               !e.nativeEvent.isComposing
             ) {
+              // While the AI answers, Enter keeps the draft for later.
               e.preventDefault();
               send();
             }
@@ -936,26 +867,20 @@ export function Chat({
                 .catch(onError)
             }
           />
-          {busy && draft.trim() && (
-            <button
-              aria-label="追加意见"
-              title="追加意见"
-              disabled={
-                !ready || pending || references.pending || !state?.canSteer
-              }
-              onClick={() => send()}
-            >
-              <Send size={15} />
-            </button>
-          )}
           {busy ? (
             <button
               aria-label="停止回答"
-              onClick={() =>
+              title={stopping ? "正在停止…" : "停止回答"}
+              disabled={stopping}
+              onClick={() => {
+                setStopping(true);
                 void runtime("stop")
                   .then(() => refresh())
-                  .catch(onError)
-              }
+                  .catch((error) => {
+                    setStopping(false);
+                    onError(error);
+                  });
+              }}
             >
               <Square size={15} />
             </button>

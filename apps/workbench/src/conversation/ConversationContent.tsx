@@ -1,5 +1,6 @@
 import type { ReferenceContext } from "./conversationReferences";
 import type { ReferenceSummary } from "./references";
+import type { TurnChange } from "./Turn";
 import {
   Children,
   isValidElement,
@@ -37,6 +38,12 @@ export interface Message {
   } | null;
   context?: ReferenceContext & { references?: ReferenceSummary[] };
   canEdit?: boolean;
+  /** Turn records: when the turn started, how long it took, why it ended and
+   * the files it changed. */
+  startedAt?: number;
+  elapsedMs?: number;
+  error?: string | null;
+  change?: TurnChange;
 }
 export function mergeActivity(previous: Message, next: Message): Message {
   // A transport completion must not erase a tool's failed/unknown result.
@@ -171,114 +178,6 @@ export function ChatMarkdown({
     >
       {text}
     </Markdown>
-  );
-}
-export function ActivityOutput({ message: m }: { message: Message }) {
-  const output = m.toolOutput;
-  const input = output?.input ? { ...output.input } : null;
-  if (output?.type === "file" && input) delete input.path;
-  const label =
-    m.kind === "reasoning"
-      ? "分析电路与问题"
-      : m.kind === "command" &&
-          /\b(?:python(?:3)?|node|npm|npx|java|javac|cargo|go|rg|grep|find|ls|cat|sed|awk|pwd|git)\b|[\\/]/i.test(
-            m.label || "",
-          )
-        ? "执行本地操作"
-        : m.label || "工具调用";
-  const status =
-    m.resultStatus === "unknown"
-      ? "结果未知"
-      : m.resultStatus === "failed"
-        ? "不匹配"
-        : m.status === "running"
-          ? "进行中"
-          : m.status === "warning"
-            ? "待确认"
-            : m.status === "failed"
-              ? "调用失败"
-              : "完成";
-  return (
-    <details
-      className="activity"
-      data-status={m.status}
-      data-result-status={m.resultStatus || undefined}
-    >
-      <summary>
-        <span>{label}</span>
-        <small>{status}</small>
-      </summary>
-      {output ? (
-        <div className="tool-output">
-          {output.target && <code>{output.target}</code>}
-          {input &&
-            output.type !== "command" &&
-            Object.keys(input).length > 0 && (
-              <pre>{JSON.stringify(input, null, 2)}</pre>
-            )}
-          {output.text && <pre>{output.text}</pre>}
-          {output.exitCode != null && output.exitCode !== 0 && (
-            <small>退出码 {output.exitCode}</small>
-          )}
-          {output.truncated && <small>输出已截断</small>}
-        </div>
-      ) : m.detail ? (
-        <pre>{m.detail}</pre>
-      ) : null}
-    </details>
-  );
-}
-export function ActivityBatch({ messages }: { messages: Message[] }) {
-  const unknown = messages.filter(
-    (message) =>
-      message.resultStatus === "unknown" || message.status === "warning",
-  );
-  const failed = messages.filter(
-    (message) =>
-      message.resultStatus === "failed" || message.status === "failed",
-  );
-  const running = messages.filter((message) => message.status === "running");
-  const focus = unknown.at(-1) || running.at(-1) || failed.at(-1);
-  const labels = [
-    ...new Set(messages.map((message) => message.label).filter(Boolean)),
-  ];
-  const label =
-    focus?.label ||
-    labels.slice(0, 2).join("、") + (labels.length > 2 ? "…" : "") ||
-    "工具调用";
-  const meta = [
-    running.length ? "进行中" : "",
-    unknown.length ? `${unknown.length} 项待确认` : "",
-    failed.length ? `${failed.length} 项异常` : "",
-    !running.length && !unknown.length && !failed.length && messages.length > 1
-      ? `${messages.length} 项`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <details
-      className="activity-batch"
-      data-status={
-        unknown.length
-          ? "warning"
-          : failed.length
-            ? "failed"
-            : running.length
-              ? "running"
-              : "completed"
-      }
-    >
-      <summary>
-        <span>{label}</span>
-        <small>{meta}</small>
-      </summary>
-      <div>
-        {messages.map((message) => (
-          <ActivityOutput key={message.id} message={message} />
-        ))}
-      </div>
-    </details>
   );
 }
 export interface ConversationSummary {
@@ -421,13 +320,28 @@ export function useConversationScroll(
     onKeyDown: (event: { key: string }) => {
       if (["PageUp", "Home", "ArrowUp"].includes(event.key)) setFollow(false);
     },
+    // Opening a disclosure grows the content below what was clicked: keep it
+    // where the reader is looking, and follow again only from the bottom.
+    onClickCapture: (event: { target: EventTarget | null }) => {
+      const node = scroller.current;
+      if (
+        !node ||
+        !(event.target instanceof Element) ||
+        !event.target.closest("summary, [aria-expanded]")
+      )
+        return;
+      follow.current = false;
+      requestAnimationFrame(() =>
+        setFollow(node.scrollHeight - node.clientHeight - node.scrollTop < 32),
+      );
+    },
   };
 }
 export function FollowLatest({ onClick }: { onClick: () => void }) {
   return (
     <button className="follow-latest" onClick={onClick}>
       <ArrowDown size={13} />
-      回到最新
+      回到底部
     </button>
   );
 }

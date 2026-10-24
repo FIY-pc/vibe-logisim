@@ -763,27 +763,18 @@ button.primary {
   white-space: pre-wrap;
 }
 .message.user {
+  position: relative;
   margin-left: 26px;
+  margin-bottom: 26px;
   background: #eff2f7;
   padding: 10px 12px;
   border-radius: 12px 12px 3px 12px;
 }
-.message.reasoning {
-  font-size: 11px;
-  color: var(--muted);
-}
-.activity {
-  font-size: 11px;
-  color: #778197;
-  margin-bottom: 9px;
-}
-.activity summary {
-  cursor: pointer;
-}
-.activity pre {
-  white-space: pre-wrap;
-  max-height: 240px;
-  overflow: auto;
+/* The bubble holds what was asked; copy and edit appear just below it. */
+.message.user > .message-actions {
+  position: absolute;
+  top: 100%;
+  right: 0;
 }
 .composer {
   margin: 0 12px 12px;
