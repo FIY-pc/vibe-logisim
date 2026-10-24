@@ -7,8 +7,6 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import javax.imageio.ImageIO;
 
 /** Read-only drawing of one viewport of a loaded project. No propagation or simulation commands. */
 public final class CircuitRenderer {
@@ -30,8 +28,6 @@ public final class CircuitRenderer {
             circuit.draw(context, null);
         } finally { g.dispose(); }
         WorkerTiming.mark("render.draw");
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(256 * 1024);
-        ImageIO.write(bitmap, "png", bytes);
-        return bytes.toByteArray();
+        return PngEncoder.encode(bitmap);
     }
 }

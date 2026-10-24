@@ -11,9 +11,7 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.util.*;
-import javax.imageio.ImageIO;
 import org.w3c.dom.*;
 
 /** The running course libraries own tools, defaults, geometry and attribute parsing. */
@@ -36,8 +34,7 @@ public final class CircuitPalette {
         return lib;
     }
     private static String png(BufferedImage bitmap) throws Exception {
-        ByteArrayOutputStream bytes=new ByteArrayOutputStream();ImageIO.write(bitmap,"png",bytes);
-        return "data:image/png;base64,"+Base64.getEncoder().encodeToString(bytes.toByteArray());
+        return "data:image/png;base64,"+Base64.getEncoder().encodeToString(PngEncoder.encode(bitmap));
     }
     private static String icon(AddTool tool, Circuit circuit, Project project) throws Exception {
         BufferedImage bitmap=new BufferedImage(48,48,BufferedImage.TYPE_INT_ARGB);

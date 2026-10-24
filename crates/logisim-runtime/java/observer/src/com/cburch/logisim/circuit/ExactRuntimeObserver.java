@@ -36,7 +36,6 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -297,7 +296,7 @@ public final class ExactRuntimeObserver {
         context.setShowColor(true);
         circuit.draw(context, null);
         g.dispose();
-        ImageIO.write(bitmap, "png", output);
+        Files.write(output.toPath(), com.cburch.logisim.file.PngEncoder.encode(bitmap));
         return obj("bounds", bounds(box), "scale", scale, "authority", "Logisim native Circuit.draw");
     }
 
