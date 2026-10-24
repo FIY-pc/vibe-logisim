@@ -367,7 +367,14 @@ impl Host {
         .map_err(|e| e.to_string())?;
         let main = current.view().map_err(|e| e.to_string())?.main;
         current
-            .edit(revision, &main, Edit::Replace { xml })
+            .edit(
+                revision,
+                &main,
+                Edit::Replace {
+                    xml,
+                    title: Some("恢复历史版本".into()),
+                },
+            )
             .map_err(|e| e.to_string())?;
         value(current.view().map_err(|e| e.to_string())?)
     }

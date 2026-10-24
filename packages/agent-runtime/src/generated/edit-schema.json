@@ -194,10 +194,17 @@
       "type": "object"
     },
     {
+      "description": "The whole file; `title` names the undo step (default \"替换电路内容\").",
       "properties": {
         "kind": {
           "const": "replace",
           "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "xml": {
           "type": "string"

@@ -122,7 +122,7 @@ export function createEditorActions(stores: Stores) {
           id: doc.id,
           revision,
           circuit: circuit.name,
-          edit: { kind: "replace", xml: arranged.xml },
+          edit: { kind: "replace", xml: arranged.xml, title: "整理布局" },
         }),
       );
       documents.getState().mergeDocument(result.view, revision);
@@ -198,7 +198,7 @@ export function createEditorActions(stores: Stores) {
         id: source.id,
         revision: source.revision,
         circuit: source.circuit,
-        edit: { kind: "replace", xml: source.xml },
+        edit: { kind: "replace", xml: source.xml, title: "编辑源文件" },
       }),
     )
       .then((result) =>

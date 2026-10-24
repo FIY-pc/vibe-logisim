@@ -427,6 +427,7 @@ impl Host {
                     Edit::Replace {
                         xml: String::from_utf8(prepared.candidate.bytes().to_vec())
                             .map_err(|e| e.to_string())?,
+                        title: Some("修改封装与接口".into()),
                     },
                 )
                 .map_err(|e| e.to_string())?;

@@ -162,8 +162,12 @@ pub enum Edit {
     },
     DeleteCircuit,
     SetMain,
+    /// The whole file; `title` names the undo step (default "替换电路内容").
     Replace {
         xml: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        title: Option<String>,
     },
     /// Wire, place, delete and attributes edits applied in order on one
     /// circuit as one change: one undo step, one title.
@@ -590,7 +594,7 @@ impl Document {
             0
         };
         let next = match &edit {
-            Edit::Replace { xml } => {
+            Edit::Replace { xml, .. } => {
                 precheck(xml.as_bytes())?;
                 let input = Tree::index(xml.clone())?;
                 validate(&input)?;
@@ -964,7 +968,7 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
                 .collect();
             format!("{} \u{b7} {}", label, parts.join("\u{3001}"))
         }
-        Edit::Replace { .. } => "替换电路内容".into(),
+        Edit::Replace { title, .. } => title.clone().unwrap_or_else(|| "替换电路内容".into()),
         Edit::Batch { edits } => match edits.as_slice() {
             [one] => edit_title(one, circuit, doc),
             all if all.iter().all(|e| matches!(e, Edit::Place { .. })) => {

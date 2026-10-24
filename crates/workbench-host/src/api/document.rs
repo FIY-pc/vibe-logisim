@@ -813,9 +813,11 @@ impl Host {
                 // applying the same XML afterwards loads nothing new.
                 let p = {
                     let w = self.workspace.lock().await;
-                    let proposed =
-                        w.get(&id)?
-                            .preview(&revision, &circuit, Edit::Replace { xml })?;
+                    let proposed = w.get(&id)?.preview(
+                        &revision,
+                        &circuit,
+                        Edit::Replace { xml, title: None },
+                    )?;
                     self.materialize(&proposed)?
                 };
                 let _observe = timing::span("observe");

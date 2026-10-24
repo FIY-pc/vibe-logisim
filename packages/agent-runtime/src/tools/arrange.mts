@@ -80,7 +80,7 @@ export async function arrangeCircuit(
     after.focus,
   );
   const applied = await context.edit(document, circuit, [
-    { kind: "replace", xml: outcome.xml },
+    { kind: "replace", xml: outcome.xml, title: "整理布局" },
   ]);
   return {
     ...context.identity(applied.result.view, circuit),

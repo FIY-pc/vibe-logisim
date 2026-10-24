@@ -752,6 +752,7 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
         "main",
         Edit::Replace {
             xml: rewritten.clone(),
+            title: None,
         },
     );
     assert_eq!(d.bytes(), CLASSIC.as_bytes());
@@ -766,6 +767,7 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
         "main",
         Edit::Replace {
             xml: changed.clone(),
+            title: None,
         },
     );
     let span = |s: &str| {
@@ -796,6 +798,7 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
         "main",
         Edit::Replace {
             xml: text(&candidate),
+            title: None,
         },
     );
     assert_eq!(d.bytes(), candidate.bytes());
