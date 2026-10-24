@@ -34,7 +34,7 @@ Reserve space for native symbols **and their labels/value displays**, not just a
 
 The built-in grouped arranger is available to turn semantic groups into geometry, local wires and named remote links, with native connectivity and interface checks. Read [the arrangement reference](references/arrangement.md) when using it. Direct `.circ` edits, scripts and alternative methods remain valid; the same delivery standard applies to their outputs.
 
-`arrange_circuit` applies its result to the file as soon as the netlist is proven equivalent; `undo_edit` takes it back. Direct file edits are already on disk and the app reloads them. Neither establishes intended behavior.
+`arrange_circuit` applies its result to the file only when the netlist is proven equivalent and the new layout reads more clearly than the current drawing (lower readability score); otherwise it returns `applied: false` with the measures that would have got worse and the file is unchanged. Without options, a small gate-level definition is laid out by signal flow. `undo_edit` takes an applied layout back. Direct file edits are already on disk and the app reloads them. Neither establishes intended behavior.
 
 ## Review the actual deliverable
 

@@ -9,6 +9,7 @@ import {
   arrange,
   CircuitToolError,
   outsideUnchanged,
+  readability,
   resolveUnknownWidths,
   verifyArrangement,
 } from "../src/index.mts";
@@ -233,4 +234,48 @@ describe("verifyArrangement", () => {
       "ARRANGE_INTERFACE_CHANGED",
     );
   });
+});
+
+// Gate-level circuits as a scripted model first draws them: parts where it
+// placed them, wires routed one connection at a time.
+describe("signal-flow layout", () => {
+  for (const name of ["full-adder", "mux4"])
+    it(`draws ${name} inputs left, gates in columns, outputs right`, async () => {
+      const xml = file(`${name}.circ`);
+      const drawn = observation(`${name}.focus.json`);
+      const result = await arrange({
+        xml,
+        circuit: "main",
+        focus: clone(drawn),
+      });
+      assert.equal(result.report.engine, "flow");
+      const parts = result.predicted!.components;
+      const output = (c: (typeof parts)[number]) =>
+        c.attributes.some((a) => a.name === "output" && a.standard === "true");
+      const pins = parts.filter((c) => c.factoryName === "Pin");
+      const gates = parts.filter((c) => c.factoryName !== "Pin");
+      const left = Math.min(...gates.map((c) => c.bounds.x));
+      const right = Math.max(...gates.map((c) => c.bounds.x + c.bounds.width));
+      for (const pin of pins)
+        if (output(pin)) assert.ok(pin.bounds.x > right, pin.componentId);
+        else assert.ok(pin.bounds.x + pin.bounds.width < left, pin.componentId);
+      const after = readability(result.predicted!);
+      for (const measure of [
+        "overlaps",
+        "labelOverlaps",
+        "wireOverBody",
+        "portGrazes",
+        "labelsOnWires",
+        "closeParallels",
+        "pinsOffSide",
+      ] as const)
+        assert.equal(after[measure], 0, measure);
+      assert.ok(after.score < readability(clone(drawn)).score / 2);
+      const again = await arrange({
+        xml,
+        circuit: "main",
+        focus: clone(drawn),
+      });
+      assert.equal(again.xml, result.xml);
+    });
 });

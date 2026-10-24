@@ -18,6 +18,7 @@
 // parameters. Direct file editing and other layout strategies remain
 // available.
 import { regionSegment } from "./fixed-geometry.mts";
+import { flowIneligible, flowLayout, flowVariants } from "./flow-layout.mts";
 import { GroupedPlacement } from "./grouped-layout.mts";
 import type { GroupSolver } from "./grouped-layout.mts";
 import { solveGroups } from "./layout-solver.mts";
@@ -30,8 +31,6 @@ import {
 import {
   getOr,
   item,
-  maxOf,
-  minOf,
   pyEq,
   pyInt,
   PyValueError,
@@ -41,7 +40,6 @@ import {
   StopIteration,
   strCmp,
   strip,
-  sum,
   toInt,
   truthy,
 } from "./py.mts";
@@ -56,6 +54,8 @@ import {
   TUNNEL_SPAN,
 } from "./schematic-layout.mts";
 import type { Report } from "./schematic-layout.mts";
+import { predictedFocus, readability } from "./readability.mts";
+import type { Readability } from "./readability.mts";
 import { CircuitToolError } from "./tool-errors.mts";
 import type { Focus, Wire } from "./types.mts";
 import { circuitSpan, parseXml, serialize } from "./xml.mts";
@@ -75,11 +75,6 @@ function numbers(text: string | null): number[] {
   if (text === null)
     throw new TypeError("expected string or bytes-like object, got 'NoneType'");
   return (text.match(/-?[0-9]+/g) ?? []).map(pyInt);
-}
-
-function index(values: readonly number[], i: number): number {
-  if (i >= values.length) throw new RangeError("tuple index out of range");
-  return values[i];
 }
 
 // The definitions of the two files read last, parsed once: checking an
@@ -239,48 +234,6 @@ export function netlistSignature(
   return result;
 }
 
-export interface Readability {
-  components: number;
-  tunnels: number;
-  wireSegments: number;
-  wireLength: number;
-  crossings: number;
-  extent: { width: number; height: number };
-}
-
-export function readability(xml: string, circuit: string): Readability {
-  const c = circuitElement(xml, circuit);
-  const comps = c.findall("comp");
-  const wires = c
-    .findall("wire")
-    .map((w) => [numbers(w.get("from")), numbers(w.get("to"))]);
-  const xs = comps.map((x) => index(numbers(x.get("loc")), 0));
-  const ys = comps.map((x) => index(numbers(x.get("loc")), 1));
-  const horizontal = wires
-    .filter(([a, b]) => index(a, 1) === index(b, 1))
-    .map(([a, b]) => [Math.min(a[0], b[0]), Math.max(a[0], b[0]), a[1]]);
-  const vertical = wires
-    .filter(([a, b]) => a[0] === b[0])
-    .map(([a, b]) => [Math.min(a[1], b[1]), Math.max(a[1], b[1]), a[0]]);
-  let crossings = 0;
-  for (const [x1, x2, y] of horizontal)
-    for (const [y1, y2, x] of vertical)
-      if (x1 < x && x < x2 && y1 < y && y < y2) crossings += 1;
-  return {
-    components: comps.length,
-    tunnels: comps.filter((x) => x.get("name") === "Tunnel").length,
-    wireSegments: wires.length,
-    wireLength: sum(
-      wires.map(([a, b]) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1])),
-    ),
-    crossings,
-    extent: {
-      width: xs.length ? maxOf(xs) - minOf(xs) : 0,
-      height: ys.length ? maxOf(ys) - minOf(ys) : 0,
-    },
-  };
-}
-
 // Whether `observed` copper covers every `required` segment. Physical
 // coverage, so Logisim may split and merge wires as it loads them.
 export function copperPreserved(
@@ -371,15 +324,104 @@ export interface Arrangement {
   panelBelowY: number | null;
   // Source parts kept in place: pinned, loose-wire anchors and panel.
   fixedComponentIds: Set<string>;
+  // The observation the arranged file should load as (predictedFocus or the
+  // flow layout's own), for choosing a layout before the host sees it.
+  // Callers that rebuild an arrangement from a worker's message omit it.
+  predicted?: Focus;
 }
 
-// Rearranges one definition. An explicit organization the engine cannot
-// realize is an INVALID_LAYOUT_ORGANIZATION error the caller can correct.
+// Options that ask for what only the column engine does.
+const COLUMN_OPTIONS = [
+  "organization",
+  "pinnedComponentIds",
+  "keepTunnels",
+  "panelBelowY",
+  "columnGap",
+  "maxLayerSpan",
+  "tunnelSpan",
+];
+
+// Rearranges one definition. A small definition arranged without column
+// options is laid out by signal flow (FLOW_VARIANTS) and by the column
+// engine, and the layout predicted to read best is returned
+// (report.candidates lists them all); anything else goes to the column
+// engine. An explicit
+// organization the engine cannot realize is an INVALID_LAYOUT_ORGANIZATION
+// error the caller can correct.
 export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
   const { xml, circuit, focus } = request;
   const options = request.options ?? {};
-  const organization = getKey(options, "organization");
   resolveUnknownWidths(focus);
+  const asked = COLUMN_OPTIONS.filter((k) => {
+    const value = getKey(options, k);
+    return value !== null && !(Array.isArray(value) && !value.length);
+  });
+  if (asked.length || flowIneligible(focus) !== null) {
+    const columns = await columnArrangement(request);
+    columns.report.engine = "columns";
+    return columns;
+  }
+  const candidates: Arrangement[] = [];
+  const tried: Report[] = [];
+  const parts = focus.components.filter((c) => c.factoryName !== "Tunnel");
+  for (const variant of flowVariants(parts.length)) {
+    const flow = await flowLayout(xml, circuit, focus, variant);
+    if ("skipped" in flow) {
+      tried.push({
+        engine: "flow",
+        variant: variant.name,
+        skipped: flow.skipped,
+      });
+      continue;
+    }
+    candidates.push({
+      circuit,
+      source: xml,
+      focus,
+      xml: flow.xml,
+      report: flow.report,
+      placement: flow.placement,
+      keptWires: [],
+      panelBelowY: null,
+      fixedComponentIds: new Set(),
+      predicted: flow.predicted,
+    });
+  }
+  try {
+    const columns = await columnArrangement(request);
+    columns.report.engine = "columns";
+    candidates.push(columns);
+  } catch (error) {
+    if (!candidates.length) throw error;
+    tried.push({
+      engine: "columns",
+      skipped: error instanceof Error ? error.message : String(error),
+    });
+  }
+  let best: Arrangement | null = null;
+  let bestScore = Infinity;
+  for (const candidate of candidates) {
+    const { score } = readability(candidate.predicted!);
+    tried.push({
+      engine: candidate.report.engine,
+      ...(candidate.report.variant
+        ? { variant: candidate.report.variant }
+        : {}),
+      score,
+    });
+    if (score < bestScore) [best, bestScore] = [candidate, score];
+  }
+  best!.report.candidates = tried;
+  return best!;
+}
+
+// The column engine: stages, groups, tunnels for long spans, panels.
+async function columnArrangement(
+  request: ArrangeRequest,
+): Promise<Arrangement> {
+  const { xml, circuit, focus } = request;
+  const options = request.options ?? {};
+  const organization = getKey(options, "organization");
   const layoutArgs = layoutOptions(options);
   if (organization !== null)
     layoutArgs.placementStrategy = new GroupedPlacement(
@@ -425,6 +467,7 @@ export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
         .filter((c) => layout.isPanel(c))
         .map((c) => c.componentId),
     ),
+    predicted: predictedFocus(after, circuit, focus, layout.placement),
   };
 }
 
@@ -652,7 +695,7 @@ export function verifyArrangement(
     interfaceChecked: interfaceBefore[0] as string,
     protectedWireSegments: arrangement.keptWires.length,
     originalRegionWireSegments: originalRegion.length,
-    readabilityBefore: readability(beforeXml, circuit),
-    readabilityAfter: readability(afterXml, circuit),
+    readabilityBefore: readability(before),
+    readabilityAfter: readability(after),
   };
 }

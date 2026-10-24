@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <main name="before"/>
+  <options/>
+  <mappings/>
+  <toolbar/>
+  <circuit name="before">
+    <a name="circuit" val="before"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <comp lib="1" loc="(120,80)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+  </circuit>
+  <circuit name="after">
+    <a name="circuit" val="after"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <comp lib="1" loc="(220,80)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+  </circuit>
+</project>

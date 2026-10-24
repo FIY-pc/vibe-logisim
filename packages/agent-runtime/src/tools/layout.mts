@@ -8,8 +8,6 @@ export interface ArrangeOutcome {
   keptWires: unknown[];
   panelBelowY: number | null;
   fixedComponentIds: string[];
-  readabilityBefore: Record<string, unknown>;
-  readabilityAfter: Record<string, unknown>;
 }
 export function arrangeInWorker(
   request: Record<string, unknown>,
