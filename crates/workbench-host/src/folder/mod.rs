@@ -293,7 +293,9 @@ fn refresh_documents(workspace: &mut Workspace, paths: &[PathBuf]) -> Refreshed 
         match outcome {
             Ok(true) => refreshed.changed += 1,
             Ok(false) => {}
-            Err(error) => refreshed.warnings.push(format!("{}：{error}", path.display())),
+            Err(error) => refreshed
+                .warnings
+                .push(format!("{}：{error}", path.display())),
         }
     }
     for id in &closed {
