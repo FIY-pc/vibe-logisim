@@ -21,11 +21,18 @@ export function DocumentList() {
             >
               <CircuitBoard size={15} />
               <span>{d.name}</span>
-              {d.dirty && <span className="dirty-dot" title="有未保存的修改" />}
+              {d.dirty && (
+                <span
+                  className="dirty-dot"
+                  role="img"
+                  aria-label="有未保存的修改"
+                  data-tip="有未保存的修改"
+                />
+              )}
             </button>
             <button
               className="document-close"
-              title={`关闭 ${d.name}`}
+              data-tip={`关闭 ${d.name}`}
               aria-label={`关闭 ${d.name}`}
               disabled={Boolean(pending)}
               onClick={() => actions.workspace.requestClose(d)}

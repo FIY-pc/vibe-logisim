@@ -9,6 +9,7 @@ import { command } from "../shared/transport";
 import { inputBits, inputDisplay } from "../simulation/simulationInputs";
 import { formatSignal } from "../simulation/simulation";
 import { PropertyField } from "../shared/PropertyField";
+import { tip } from "../shared/Tooltips";
 import "./inspector.css";
 
 interface Props {
@@ -29,6 +30,8 @@ interface Props {
   onRelease: () => void;
   onError: (e: unknown) => void;
   onOpenMemory: (id: string) => void;
+  /** Keeps only these objects of a larger selection selected. */
+  onNarrow: (ids: string[]) => void;
   connectionComponent?: ConnectionComponent | null;
 }
 export function Inspector(props: Props) {
@@ -38,9 +41,17 @@ export function Inspector(props: Props) {
       ? circuit.components.find((c) => c.id === selection[0])
       : undefined;
   const wires = circuit.wires.filter((w) => selection.includes(w.id));
-  const count = circuit.components.filter((c) =>
-    selection.includes(c.id),
-  ).length;
+  const components = circuit.components.filter((c) => selection.includes(c.id));
+  const count = components.length;
+  // A larger selection reads as how many of each kind it holds, most first.
+  const byKind = new Map<string, string[]>();
+  for (const c of components) {
+    const label = componentLabels[c.name] || c.name;
+    byKind.set(label, [...(byKind.get(label) ?? []), c.id]);
+  }
+  const kinds = [...byKind].sort(
+    ([a, x], [b, y]) => y.length - x.length || a.localeCompare(b),
+  );
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   return (
     <div className="inspector">
@@ -62,14 +73,37 @@ export function Inspector(props: Props) {
               .filter(Boolean)
               .join(" · ")}
           </div>
-          <div className="inspector-content selected-wire-details">
-            {wires.slice(0, 8).map((w) => (
-              <p key={w.id}>
-                ({w.from.x}, {w.from.y}) → ({w.to.x}, {w.to.y})
-              </p>
-            ))}
-            {wires.length > 8 && <p>另有 {wires.length - 8} 段导线</p>}
-          </div>
+          {selection.length === 1 && wires.length === 1 ? (
+            <p className="inspector-content selected-wire">
+              ({wires[0].from.x}, {wires[0].from.y}) → ({wires[0].to.x},{" "}
+              {wires[0].to.y})
+            </p>
+          ) : (
+            <div className="inspector-content selection-kinds">
+              {[
+                ...kinds,
+                ...(wires.length
+                  ? [["导线", wires.map((w) => w.id)] as [string, string[]]]
+                  : []),
+              ].map(([label, ids]) => {
+                const whole = ids.length === selection.length;
+                return (
+                  <button
+                    key={label}
+                    {...tip(
+                      !whole &&
+                        `只选择这 ${ids.length} 个${label === "导线" ? "导线段" : label}`,
+                    )}
+                    disabled={whole}
+                    onClick={() => props.onNarrow(ids)}
+                  >
+                    <span>{label}</span>
+                    <span>{ids.length}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </>
       ) : (
         <div className="quiet-empty">选择元件或导线以查看属性</div>
@@ -173,7 +207,7 @@ function SelectedInspector({
     <>
       <div
         className="panel-heading"
-        title={`${circuit.name} › ${selected.name} · (${selected.location.x}, ${selected.location.y})`}
+        data-tip={`${circuit.name} › ${selected.name} · (${selected.location.x}, ${selected.location.y})`}
       >
         {title}
       </div>
@@ -271,7 +305,7 @@ function SelectedInspector({
                 const value = ports.find((p) => p.index === end.index);
                 return (
                   <tr key={end.index}>
-                    <td title={end.runtimeTooltip || undefined}>
+                    <td data-tip={end.runtimeTooltip || undefined}>
                       {portName(connectionComponent!, end)}
                     </td>
                     <td>{end.width ?? "?"}</td>
@@ -283,7 +317,7 @@ function SelectedInspector({
                         <td>
                           <button
                             aria-label={`观察端口 ${end.index}`}
-                            title="观察信号"
+                            data-tip="观察信号"
                             aria-pressed={watched.includes(
                               `${nativeId}:${end.index}`,
                             )}

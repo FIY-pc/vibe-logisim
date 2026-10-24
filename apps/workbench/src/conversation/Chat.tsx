@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   BookOpen,
   CircuitBoard,
-  MoreHorizontal,
   Pencil,
   Plus,
   ScanSearch,
@@ -14,6 +13,7 @@ import {
 } from "lucide-react";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 import { subscribeEvents } from "../shared/events";
+import { Menu, MenuItem } from "../shared/Menu";
 import type { Quotation } from "./references";
 import { eventBinding } from "../shared/shortcuts";
 import { command } from "../shared/transport";
@@ -42,6 +42,7 @@ import {
 } from "./ProviderSettings";
 import { TextPrompt } from "../shared/TextPrompt";
 import { Select } from "../shared/Select";
+import { useAutoSize } from "../shared/useAutoSize";
 export type { Message } from "./ConversationContent";
 
 /** The sidecar's `status` snapshot; the host adds `eventCursor`. */
@@ -200,6 +201,8 @@ export function Chat({
     if (!busy) setStopping(false);
   }, [busy]);
   const scroller = useRef<HTMLDivElement>(null);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
+  const editInput = useRef<HTMLTextAreaElement>(null);
 
   // Runtime calls that change the conversation run one after another.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -421,6 +424,19 @@ export function Chat({
     ? "vibe.draft:" + scope + ":" + (state?.conversationId || "")
     : "";
   const draft = draftRecord.key === draftKey ? draftRecord.text : "";
+  useAutoSize(composerInput, draft);
+  useAutoSize(editInput, editedText);
+  // Editing a question starts typing at its end, as the composer would.
+  useEffect(() => {
+    const input = editInput.current;
+    if (!editingMessage || !input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }, [editingMessage]);
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    requestAnimationFrame(() => composerInput.current?.focus());
+  };
   useEffect(() => {
     setDraftRecord({
       key: draftKey,
@@ -571,19 +587,33 @@ export function Chat({
       {editingMessage?.id === m.id ? (
         <div className="message-edit">
           <textarea
+            ref={editInput}
             aria-label="编辑消息"
             value={editedText}
             onChange={(e) => setEditedText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                resubmit(m, editedText);
+              } else if (e.key === "Escape" && !pending) {
+                e.preventDefault();
+                cancelEdit();
+              }
+            }}
           />
-          <button
-            disabled={pending || !editedText.trim()}
-            onClick={() => resubmit(m, editedText)}
-          >
-            重新发送
-          </button>
-          <button disabled={pending} onClick={() => setEditingMessage(null)}>
-            取消
-          </button>
+          <div className="message-edit-actions">
+            <button disabled={pending} onClick={cancelEdit}>
+              取消
+            </button>
+            <button
+              className="primary"
+              disabled={pending || !editedText.trim()}
+              onClick={() => resubmit(m, editedText)}
+            >
+              重新发送
+            </button>
+          </div>
         </div>
       ) : (
         m.text
@@ -594,7 +624,7 @@ export function Chat({
           <CopyButton text={m.text || ""} onError={onError} />
           {!busy && m.canEdit && (
             <button
-              title="编辑并重新发送"
+              data-tip="编辑并重新发送"
               aria-label="编辑并重新发送"
               disabled={pending}
               onClick={() => {
@@ -642,39 +672,31 @@ export function Chat({
           onRestore={(id) => switchConversation("restore", id)}
         />
         <button
-          title="新建对话"
+          data-tip="新建对话"
           aria-label="新建对话"
           disabled={locked}
           onClick={() => switchConversation("new")}
         >
           <Plus size={15} />
         </button>
-        <details className="menu">
-          <summary aria-label="对话操作" title="对话操作">
-            <MoreHorizontal size={16} />
-          </summary>
-          <div className="menu-content">
-            <button
-              disabled={locked || !state?.conversationId}
-              onClick={() => setRenameConversation(true)}
-            >
-              重命名…
-            </button>
-            <button
-              disabled={locked || !state?.conversationId}
-              onClick={() =>
-                switchConversation(
-                  "archive",
-                  state?.conversationId || undefined,
-                )
-              }
-            >
-              归档
-            </button>
-          </div>
-        </details>
+        <Menu label="对话操作">
+          <MenuItem
+            disabled={locked || !state?.conversationId}
+            onSelect={() => setRenameConversation(true)}
+          >
+            重命名…
+          </MenuItem>
+          <MenuItem
+            disabled={locked || !state?.conversationId}
+            onSelect={() =>
+              switchConversation("archive", state?.conversationId || undefined)
+            }
+          >
+            归档
+          </MenuItem>
+        </Menu>
         <button
-          title="AI 设置"
+          data-tip="AI 设置"
           aria-label="AI 设置"
           onClick={() => setConfigure(!configure)}
         >
@@ -752,7 +774,7 @@ export function Chat({
                     <button
                       key={starter.id}
                       className="conversation-starter"
-                      title="立即发送"
+                      data-tip="立即发送"
                       disabled={
                         locked || references.pending || !state.available
                       }
@@ -815,6 +837,7 @@ export function Chat({
       <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
         {references.composer}
         <textarea
+          ref={composerInput}
           value={draft}
           onChange={(e) => changeDraft(e.target.value)}
           placeholder="描述你的想法…"
@@ -869,8 +892,9 @@ export function Chat({
           />
           {busy ? (
             <button
+              className="primary composer-stop"
               aria-label="停止回答"
-              title={stopping ? "正在停止…" : "停止回答"}
+              data-tip={stopping ? "正在停止…" : "停止回答"}
               disabled={stopping}
               onClick={() => {
                 setStopping(true);
@@ -882,12 +906,14 @@ export function Chat({
                   });
               }}
             >
-              <Square size={15} />
+              <Square size={12} />
             </button>
           ) : (
             <button
               className="primary"
               aria-label="发送"
+              data-tip="发送"
+              data-tip-key="Enter"
               disabled={
                 !ready ||
                 !draft.trim() ||

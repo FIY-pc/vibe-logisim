@@ -143,7 +143,10 @@ export async function verifyRestoredInteractions() {
     await act(async () => button.click());
   };
   const input = async (selector: string, value: string) => {
-    const element = container.querySelector<HTMLInputElement>(selector)!;
+    // Popovers mount on <body>, outside the rendered container.
+    const element =
+      container.querySelector<HTMLInputElement>(selector) ??
+      document.querySelector<HTMLInputElement>(selector)!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -234,21 +237,26 @@ export async function verifyRestoredInteractions() {
       )!.textContent!,
       /没有观测值/,
     );
-    await click(".conversation-picker > summary");
-    await input('[aria-label="查找会话"]', "门电路");
+    await click(".conversation-picker");
     assert.equal(
-      container.querySelectorAll(".conversation-list button").length,
-      1,
+      document.activeElement?.getAttribute("aria-label"),
+      "查找会话",
+      "Opening the conversation list puts the cursor in its search field",
     );
-    assert.match(
-      container.querySelector(".conversation-list button")!.textContent!,
-      /另一会话/,
-    );
+    await input('[aria-label="查找会话"]', "门电路");
+    const options = () =>
+      document.querySelectorAll('.conversation-list [role="option"]');
+    assert.equal(options().length, 1);
+    assert.match(options()[0].textContent!, /另一会话/);
     await input('[aria-label="查找会话"]', "");
-    await click(".conversation-archive input");
+    await act(async () =>
+      document
+        .querySelector<HTMLElement>('.conversation-archive [role="checkbox"]')!
+        .click(),
+    );
     assert.match(
-      container.querySelector(".conversation-list")!.textContent!,
-      /恢复 · 旧对话/,
+      document.querySelector(".conversation-list")!.textContent!,
+      /旧对话恢复/,
     );
     const scroller = container.querySelector<HTMLElement>(".messages")!;
     let height = 1000;

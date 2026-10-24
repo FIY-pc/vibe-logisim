@@ -1,50 +1,89 @@
 .conversation-picker {
   flex: 1;
   min-width: 0;
-}
-.conversation-picker > summary {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  justify-content: flex-start;
+  gap: 4px;
   padding: 6px 8px;
+  font-weight: 500;
 }
-.conversation-picker .menu-content {
-  left: 0;
-  right: auto;
-  width: min(340px, 80vw);
-  max-height: min(520px, 70vh);
-  padding: 8px;
+.conversation-picker > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conversation-picker > svg {
+  flex: none;
+  color: var(--muted);
+}
+.conversation-picker[data-state="open"] {
+  background: var(--hover);
+}
+.conversation-popover {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  width: min(340px, var(--radix-popper-available-width, 340px));
+  max-height: min(520px, var(--radix-popper-available-height, 70vh));
+  padding: 8px;
 }
-.conversation-picker input[type="search"] {
+.conversation-search {
+  flex: none;
   width: 100%;
+  font-size: 12px;
 }
 .conversation-archive {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px;
+  padding: 2px 4px;
   color: var(--muted);
   font-size: 12px;
-}
-.conversation-archive input {
-  width: auto;
+  user-select: none;
 }
 .conversation-list {
   min-height: 0;
   overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
 }
-.conversation-list > button {
+.conversation-list > [role="option"] {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  width: 100%;
-  text-align: left;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: default;
 }
-.conversation-list > button[aria-current="true"] {
-  background: var(--selection-fill);
+.conversation-list > [data-highlighted] {
+  background: var(--hover);
+}
+.conversation-list > [aria-disabled="true"] {
+  opacity: 0.5;
+}
+.conversation-list > [role="option"] > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.conversation-list > [aria-current="true"] .conversation-title {
+  color: var(--accent);
+  font-weight: 500;
+}
+.conversation-list > [role="option"] > span > svg {
+  flex: none;
+  color: var(--accent);
+}
+.conversation-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-restore {
+  flex: none;
+  color: var(--accent);
+  font-size: 11px;
 }
 .conversation-list small {
   overflow: hidden;
@@ -52,6 +91,13 @@
   white-space: nowrap;
   color: var(--muted);
   font-size: 11px;
+}
+.conversation-empty {
+  margin: 0;
+  padding: 16px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 .messages-content {
   min-width: 0;

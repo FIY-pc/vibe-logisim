@@ -614,7 +614,7 @@ export async function verifyConversationTurns() {
     await click('button[aria-label="停止回答"]');
     const stop = $('button[aria-label="停止回答"]') as HTMLButtonElement;
     assert.equal(stop.disabled, true);
-    assert.equal(stop.title, "正在停止…");
+    assert.equal(stop.dataset.tip, "正在停止…");
     await step(() => {
       endTurn("interrupted", "已停止");
       releaseStop!();

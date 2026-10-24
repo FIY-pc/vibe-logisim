@@ -1,7 +1,9 @@
-import { Plus } from "lucide-react";
+import { House, Plus } from "lucide-react";
+import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import type { Document } from "../shared/types";
 import { useEditor, useNotices, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
+import { fullText } from "../shared/Tooltips";
 
 /** The circuits of the active document, with the shown circuit's commands. */
 export function CircuitList({ doc: d }: { doc: Document }) {
@@ -24,62 +26,49 @@ export function CircuitList({ doc: d }: { doc: Document }) {
             <button
               className={c.name === circuit?.name ? "active" : ""}
               onClick={() => navigation.switchCircuit(view, c.name)}
-              title={d.main === c.name ? "主电路" : undefined}
+              {...fullText(c.name)}
             >
-              {c.name}
+              <span>{c.name}</span>
               {d.main === c.name && (
-                <span className="main-marker" aria-label="主电路">
-                  ⌂
+                <span
+                  className="main-marker"
+                  role="img"
+                  aria-label="主电路"
+                  data-tip="主电路"
+                >
+                  <House size={12} aria-hidden="true" />
                 </span>
               )}
             </button>
             {c.name === circuit?.name && (
-              <details className="menu">
-                <summary aria-label="电路操作">···</summary>
-                <div
-                  className="menu-content"
-                  onClick={(event) => {
-                    if (
-                      (event.target as HTMLElement).closest(
-                        "button:not(:disabled)",
-                      )
-                    )
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                  }}
+              <Menu label="电路操作">
+                <MenuItem onSelect={() => setRenameCircuit(true)}>
+                  重命名…
+                </MenuItem>
+                <MenuItem
+                  onSelect={() =>
+                    setInterfaceTarget({ doc: d, circuit: c.name })
+                  }
                 >
-                  <button onClick={() => setRenameCircuit(true)}>
-                    重命名…
-                  </button>
-                  <button
-                    onClick={() =>
-                      setInterfaceTarget({
-                        doc: d,
-                        circuit: c.name,
-                      })
-                    }
-                  >
-                    封装与接口…
-                  </button>
-                  <button
-                    disabled={d.main === c.name}
-                    onClick={() =>
-                      void editing
-                        .edit(view, { kind: "setMain" })
-                        .catch(onError)
-                    }
-                  >
-                    设为主电路
-                  </button>
-                  <button
-                    disabled={d.circuits.length === 1}
-                    onClick={() => navigation.requestDeleteCircuit(view)}
-                  >
-                    删除电路
-                  </button>
-                </div>
-              </details>
+                  封装与接口…
+                </MenuItem>
+                <MenuItem
+                  disabled={d.main === c.name}
+                  onSelect={() =>
+                    void editing.edit(view, { kind: "setMain" }).catch(onError)
+                  }
+                >
+                  设为主电路
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem
+                  danger
+                  disabled={d.circuits.length === 1}
+                  onSelect={() => navigation.requestDeleteCircuit(view)}
+                >
+                  删除电路…
+                </MenuItem>
+              </Menu>
             )}
           </div>
         ))}

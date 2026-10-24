@@ -41,7 +41,7 @@
   line-height: 1.6;
 }
 .history-entry-title small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 3px;

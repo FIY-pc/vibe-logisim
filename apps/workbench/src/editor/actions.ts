@@ -1,5 +1,6 @@
 import type { EditResult } from "../generated/EditResult";
 import { arrangeCircuit } from "./arrange";
+import { componentLabels, libraryLabels } from "./componentLabels";
 import { command } from "../shared/transport";
 import type { CatalogTool, Document, Edit, XmlNode } from "../shared/types";
 import type { SourceDraft } from "./store";
@@ -180,6 +181,7 @@ export function createEditorActions(stores: Stores) {
       if (stillCurrent())
         editor.getState().setSource({
           xml: result.xml,
+          original: result.xml,
           id: doc.id,
           name: doc.name,
           revision: doc.revision,
@@ -243,11 +245,21 @@ export function createEditorActions(stores: Stores) {
               editor.getState().setCatalog(
                 root.children
                   .filter((n) => n.tag === "group")
+                  // Built-in libraries and parts read in the app's language,
+                  // as the inspector names them; others keep their own names.
                   .map((g) => ({
                     id: g.attributes.id,
-                    label: g.attributes.label,
+                    label:
+                      (g.attributes.id && libraryLabels[g.attributes.name]) ||
+                      g.attributes.label,
                     tools: g.children.map((t) => ({
                       ...t.attributes,
+                      label:
+                        (g.attributes.id &&
+                          libraryLabels[g.attributes.name] &&
+                          componentLabels[t.attributes.name]) ||
+                        t.attributes.label,
+                      nativeLabel: t.attributes.label,
                       library: g.attributes.id,
                     })) as unknown as CatalogTool[],
                   })),

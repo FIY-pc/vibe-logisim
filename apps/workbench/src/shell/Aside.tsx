@@ -5,6 +5,12 @@ import { ChangesRegion } from "../history/ChangesRegion";
 import { ChatRegion } from "../conversation/ChatRegion";
 import { ConnectionsPanel } from "../editor/ConnectionsPanel";
 
+const tabs = [
+  ["chat", "对话"],
+  ["connections", "连接"],
+  ["changes", "改动"],
+] as const;
+
 /** The review panel and its conversation, connections and changes tabs. */
 export function Aside() {
   const { stores } = useWorkbench();
@@ -20,25 +26,42 @@ export function Aside() {
         display: layout.showRight ? undefined : "none",
       }}
     >
-      <div className="panel-tabs">
-        <button
-          className={right === "chat" ? "active" : ""}
-          onClick={() => setRight("chat")}
-        >
-          对话
-        </button>
-        <button
-          className={right === "connections" ? "active" : ""}
-          onClick={() => setRight("connections")}
-        >
-          连接
-        </button>
-        <button
-          className={right === "changes" ? "active" : ""}
-          onClick={() => setRight("changes")}
-        >
-          改动
-        </button>
+      <div className="panel-tabs" role="tablist" aria-label="工作栏">
+        {tabs.map(([id, label], index) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={right === id}
+            tabIndex={right === id ? 0 : -1}
+            className={right === id ? "active" : ""}
+            onClick={() => setRight(id)}
+            onKeyDown={(event) => {
+              const step =
+                event.key === "ArrowRight"
+                  ? 1
+                  : event.key === "ArrowLeft"
+                    ? -1
+                    : 0;
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? tabs.length - 1
+                    : step
+                      ? (index + step + tabs.length) % tabs.length
+                      : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              setRight(tabs[next][0]);
+              (
+                event.currentTarget.parentElement?.children[next] as
+                  HTMLElement | undefined
+              )?.focus();
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <ConnectionsPanel />
       {!layout.narrow && <PanelResize side="review" layout={layout} />}

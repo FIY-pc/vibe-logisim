@@ -26,7 +26,7 @@ let observedFocus: any = null;
 let templateHandler: ((request: any) => any) | null = null;
 import { usePlacement } from "../../../apps/workbench/src/editor/usePlacement";
 import { PlacementInspector } from "../../../apps/workbench/src/editor/PlacementInspector";
-import { pickOption, Workbench } from "./workbench";
+import { clickMenuItem, openMenu, pickOption, Workbench } from "./workbench";
 const noPlacement = {
   tool: null,
   template: null,
@@ -373,11 +373,8 @@ const latestMutationDocument = {
   }
   return saveTransport(request);
 };
-await click(
-  [...document.querySelectorAll(".menu-content button")].find((button) =>
-    button.textContent?.trim().startsWith("保存 "),
-  )!,
-);
+await openMenu("更多");
+await clickMenuItem("保存");
 await act(async () =>
   agent({
     type: "document-changed",
@@ -546,18 +543,14 @@ await click(document.querySelector('.find-dialog [aria-label="关闭"]'));
 console.log(
   "PASS: editor keyboard dispatch toggles grid and opens actionable circuit/component search",
 );
-await click(
-  [...document.querySelectorAll(".menu-content button")].find(
-    (n) => n.textContent === "立即检查更新",
-  )!,
-);
+await openMenu("更多");
+await clickMenuItem("帮助与反馈");
+await clickMenuItem("立即检查更新");
 assert.match(document.querySelector(".capture-notice")!.textContent!, /开发版/);
 assert.equal(document.querySelector(".error-bar"), null);
-await click(
-  [...document.querySelectorAll(".menu-content button")].find(
-    (n) => n.textContent === "反馈问题…",
-  )!,
-);
+await openMenu("更多");
+await clickMenuItem("帮助与反馈");
+await clickMenuItem("反馈问题…");
 assert.ok(document.querySelector('dialog[aria-label="反馈问题"]'));
 assert.match(
   document.querySelector<HTMLTextAreaElement>('[aria-label="诊断预览"]')!.value,
@@ -628,7 +621,8 @@ const auditSnapshot = () => ({
 };
 const startupSnapshot = auditSnapshot();
 await render(<App />);
-await click(document.querySelector('[aria-label="新建电路文件"]'));
+await openMenu("更多");
+await clickMenuItem("新建电路");
 assert.match(document.querySelector(".file-title")!.textContent!, /C.circ/);
 auditStatusGate = null;
 await act(async () => {
@@ -643,12 +637,8 @@ assert.equal(statusReads, 2);
 const oldFileSnapshot = auditSnapshot();
 auditStatusGate = defer();
 const fileStatusGate = auditStatusGate;
-await click(document.querySelector('[aria-label="a.circ 的操作"]'));
-await click(
-  [...document.querySelectorAll('[role="menuitem"]')].find((n) =>
-    n.textContent?.startsWith("重命名…"),
-  )!,
-);
+await openMenu("a.circ 的操作");
+await clickMenuItem("重命名…");
 await act(async () => {
   const el = document.querySelector<HTMLInputElement>(
     'input[aria-label="重命名"]',
@@ -1278,8 +1268,8 @@ const inputValue = async (el: HTMLInputElement, value: string) => {
   });
 };
 assert.equal(
-  document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked,
-  false,
+  document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked"),
+  "false",
 );
 await inputValue(field("接口地址"), "http://fixture.invalid/v1");
 await inputValue(field("模型"), "fixture");
@@ -1306,7 +1296,7 @@ await inputValue(
   document.querySelector('input[aria-label="上下文窗口"]')!,
   "128000",
 );
-await click(document.querySelector('input[type="checkbox"]'));
+await click(document.querySelector('[role="checkbox"]'));
 await act(async () =>
   document
     .querySelector("form")!

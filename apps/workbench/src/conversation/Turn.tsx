@@ -150,7 +150,7 @@ export function Turn({
           ) : (
             <button
               disabled={locked || !change.undoable}
-              title={change.undoable ? undefined : "包含未保留内容的大文件"}
+              data-tip={change.undoable ? undefined : "包含未保留内容的大文件"}
               onClick={() => onUndo(change)}
             >
               <Undo2 size={13} aria-hidden />

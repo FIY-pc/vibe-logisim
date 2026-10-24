@@ -8,6 +8,7 @@ import type {
   StoredReference,
 } from "./references";
 import "./ChatReferences.css";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 interface Receipt {
   key: string;
@@ -111,7 +112,7 @@ export function useChatReferences({
       {refs.map((ref) => (
         <span key={ref.id}>
           <button
-            title={ref.path || ref.label}
+            data-tip={ref.path || ref.label}
             onClick={() => void open(ref.id)}
           >
             <Paperclip size={13} />
@@ -172,11 +173,7 @@ function ReferencePreview({
   reference: StoredReference;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
+  const dialog = useModal();
   return (
     <dialog
       className="reference-preview"
@@ -188,13 +185,11 @@ function ReferencePreview({
       }}
     >
       <header>
-        <strong>
+        <h2>
           {reference.label}
           {reference.page ? ` · 第 ${reference.page} 页` : ""}
-        </strong>
-        <button aria-label="关闭引用" onClick={onClose}>
-          <X size={16} />
-        </button>
+        </h2>
+        <DialogClose label="关闭引用" onClick={onClose} />
       </header>
       {reference.image && <img src={reference.image} alt={reference.label} />}
       {reference.text && <pre>{reference.text}</pre>}

@@ -20,6 +20,8 @@ export interface Selected {
 /** The XML source dialog's draft of one document revision. */
 export interface SourceDraft {
   xml: string;
+  /** The XML as read, to tell whether the draft has changes. */
+  original: string;
   id: string;
   name: string;
   revision: string;
