@@ -603,7 +603,7 @@ export class TurnRunner extends EventEmitter {
     if (!turn?.change) throw new Error("这次改动不在当前对话里");
     turn.change = { ...turn.change, undone: true };
     this.persist();
-    this.emitStatus();
+    this.emitMessage(turn);
     return { undone: true };
   }
   persist() {
