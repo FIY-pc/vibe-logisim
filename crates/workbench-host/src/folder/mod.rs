@@ -251,30 +251,47 @@ fn ensure_clean(workspace: &Workspace, paths: &[PathBuf]) -> Result<()> {
     }
     Ok(())
 }
-/// Reload clean documents only. The caller holds the workspace lock throughout
-/// validation and publication, so an editor cannot gain an unseen dirty draft.
-fn refresh_documents(workspace: &mut Workspace, paths: &[PathBuf]) -> Result<Vec<String>> {
+/// Brings open documents under `paths` in line with their files after
+/// something else wrote them: a clean document whose file changed is read
+/// again (its previous content stays in undo history), one whose file is gone
+/// closes, and one with unsaved changes is left alone (the editor shows the
+/// file notice). The caller holds the workspace lock throughout validation and
+/// publication, so an editor cannot gain an unseen dirty draft. A file that
+/// cannot be read back is reported, not an obstacle: the files are what they are.
+fn refresh_documents(workspace: &mut Workspace, paths: &[PathBuf]) -> Vec<String> {
+    let mut warnings = Vec::new();
     let mut closed = Vec::new();
     for doc in workspace.documents.values_mut() {
-        if let Some(path) = &doc.path {
-            if !paths.iter().any(|target| path.starts_with(target)) {
-                continue;
-            }
-            if !path.exists() {
-                closed.push(doc.id.clone());
-                continue;
-            }
-            let source = fs::read(path).map_err(|e| e.to_string())?;
-            if digest(&source) != doc.revision() {
-                doc.reload(&doc.revision(), &digest(&source), false)
-                    .map_err(|e| e.to_string())?;
-            }
+        let Some(path) = doc.path.clone() else {
+            continue;
+        };
+        if !paths.iter().any(|target| path.starts_with(target)) || doc.dirty() {
+            continue;
+        }
+        if !path.exists() {
+            closed.push(doc.id.clone());
+            continue;
+        }
+        let outcome = fs::read(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|source| {
+                let revision = digest(&source);
+                if revision == doc.revision() {
+                    return Ok(());
+                }
+                doc.reload(&doc.revision(), &revision, false)
+                    .map_err(|e| e.to_string())
+            });
+        if let Err(error) = outcome {
+            warnings.push(format!("{}：{error}", path.display()));
         }
     }
     for id in &closed {
-        workspace.close(id, false).map_err(|e| e.to_string())?;
+        if let Err(error) = workspace.close(id, false) {
+            warnings.push(error.to_string());
+        }
     }
-    Ok(closed)
+    warnings
 }
 impl Host {
     pub(crate) async fn create_project_entry(
@@ -547,7 +564,7 @@ impl Host {
                 .iter()
                 .map(|(_, p, _)| p.clone())
                 .collect::<Vec<_>>(),
-        )?;
+        );
         // Consume plans on publication, including partial failure. Retrying a consumed
         // batch would silently create another copy of already-imported entries.
         fs::remove_dir_all(directory).map_err(|e| e.to_string())?;
@@ -555,6 +572,39 @@ impl Host {
         self.persist(&mut workspace).await;
         publish.map_err(|e| format!("已导入 {} 项，其余未完成：{e}", imported.len()))?;
         Ok(json!({"imported":imported,"historyWarning":warning}))
+    }
+    /// Records everything that changed in the folder since its last entry.
+    /// Open documents of the files it found changed are read again (see
+    /// `refresh_documents`), so what a shell command or `write_file` wrote
+    /// reaches the canvas when the AI's turn ends, and what the user saved
+    /// from another program reaches the AI when its turn starts. A history
+    /// that cannot record the files is reported, not an obstacle to the turn.
+    pub(crate) async fn checkpoint_folder(&self, folder_id: &str, title: &str) -> Result<Value> {
+        let guard = self.folder.lock().await;
+        let folder = guard
+            .as_ref()
+            .filter(|f| f.id == folder_id)
+            .ok_or("工程文件夹已改变，请重新操作")?;
+        let change = match History::open(&self.state, folder)
+            .and_then(|mut history| history.checkpoint(folder, title, None))
+        {
+            Ok(change) => change,
+            Err(error) => return Ok(json!({"change":null,"historyWarning":error.to_string()})),
+        };
+        let mut warnings = Vec::new();
+        if let Some(change) = &change {
+            let paths = History::paths(change)
+                .iter()
+                .map(|p| folder.path.join(p))
+                .collect::<Vec<_>>();
+            let mut workspace = self.workspace.lock().await;
+            warnings = refresh_documents(&mut workspace, &paths);
+            self.persist(&mut workspace).await;
+        }
+        Ok(json!({
+            "change": change.as_ref().map(History::entry),
+            "refreshWarning": (!warnings.is_empty()).then(|| warnings.join("；")),
+        }))
     }
     pub(crate) async fn file_history(&self, folder_id: &str) -> Result<Value> {
         let guard = self.folder.lock().await;
@@ -638,7 +688,7 @@ impl Host {
                 }
             }
             history.checkpoint(folder, &format!("撤销：{}", change.title), None)?;
-            refresh_documents(&mut workspace, &paths)?;
+            refresh_documents(&mut workspace, &paths);
             self.persist(&mut workspace).await;
             result.map_err(|e| format!("撤销未能全部完成，请刷新文件改动：{e}"))?;
         }

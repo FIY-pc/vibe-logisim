@@ -1,8 +1,11 @@
 /**
- * One AI turn through the real sidecar, with a scripted model in place of a
- * model service: its tool call edits the open file as one undo step, the
- * turn checkpoints the folder, and undoing that checkpoint gives the file
- * back byte for byte.
+ * AI turns through the real sidecar, with a scripted model in place of a
+ * model service. First turn: its tool call edits the open file as one undo
+ * step, the turn checkpoints the folder, and undoing that checkpoint gives
+ * the file back byte for byte. Second turn: it rewrites the open file with
+ * write_file and then opens a definition only the file has; the tools read
+ * the file again, the UI is told, and undoing the turn restores both the
+ * file and the open document.
  */
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
@@ -30,6 +33,44 @@ export const placeTwoParts: Script = ({ calls }) =>
           },
         },
       };
+
+export const QUESTION_REWRITE = "在文件里手写一个定义";
+
+/** The model's side of the second turn: read, rewrite, then open what it wrote. */
+export const rewriteThenOpen: Script = ({ calls }) => {
+  if (!calls.length)
+    return { tool: { name: "read_file", args: { path: "turn.circ" } } };
+  if (calls.length === 1)
+    return {
+      tool: {
+        name: "write_file",
+        args: {
+          path: "turn.circ",
+          content: String(calls[0].result).replace(
+            "</project>",
+            '  <circuit name="extra">\n    <a name="circuit" val="extra"/>\n  </circuit>\n</project>',
+          ),
+        },
+      },
+    };
+  if (calls.length === 2)
+    return {
+      tool: {
+        name: "open_circuit",
+        args: { path: "turn.circ", circuit: "extra" },
+      },
+    };
+  const opened = calls[2];
+  return {
+    text: opened.error
+      ? `打不开：${opened.error.code} ${opened.error.message}`
+      : `看到了 ${opened.result.circuits.length} 个定义。`,
+  };
+};
+
+/** Both turns, told apart by the question. */
+export const agentScript: Script = (turn) =>
+  turn.question === QUESTION_REWRITE ? rewriteThenOpen(turn) : placeTwoParts(turn);
 
 export async function verifyAgentTurn(
   command: (request: any) => Promise<any>,
@@ -79,4 +120,44 @@ export async function verifyAgentTurn(
   );
   await command({ op: "folderHistoryUndo", folder_id: opened.id, id: change.id });
   assert((await readFile(file)).equals(before), "Undoing the turn did not restore the file");
+
+  const start = stream.events.length;
+  const second = await command({
+    op: "agent",
+    method: "ask",
+    args: { question: QUESTION_REWRITE, references: [], documentId: doc.id, circuit: "main", selection: [] },
+  });
+  const ended = await stream.wait(
+    (e) => e.topic === "agent" && e.data?.event?.type === "turn-completed" && e.data.event.turnId === second.turnId,
+    start,
+  );
+  const later = stream.events
+    .slice(start)
+    .filter((e) => e.topic === "agent")
+    .map((e) => e.data.event);
+  assert.equal(ended.data.event.status, "completed", JSON.stringify(later));
+  assert.equal(
+    later.findLast((e) => e.type === "assistant-completed")?.text,
+    "看到了 2 个定义。",
+    "The tools did not read the rewritten file",
+  );
+  const reloaded = later.find((e) => e.type === "document-changed" && e.document?.id === doc.id);
+  assert.deepEqual(
+    reloaded?.document.circuits.map((c: any) => c.name),
+    ["main", "extra"],
+    "The reload did not reach the UI",
+  );
+  assert(
+    (await command({ op: "historyList", id: doc.id })).entries.some((e: any) => e.title === "读取磁盘版本"),
+    "The reload is not in the document history",
+  );
+  const rewrite = later.find((e) => e.type === "files-changed")?.change;
+  assert.deepEqual(rewrite?.files, [{ kind: "modified", path: "turn.circ" }]);
+  await command({ op: "folderHistoryUndo", folder_id: opened.id, id: rewrite.id });
+  assert((await readFile(file)).equals(before), "Undoing the second turn did not restore the file");
+  assert.deepEqual(
+    (await command({ op: "read", id: doc.id })).circuits.map((c: any) => c.name),
+    ["main"],
+    "The open document did not follow the undo",
+  );
 }

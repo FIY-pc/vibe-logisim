@@ -6,12 +6,16 @@
  * Document resolution: `path` (folder-relative) → the open document with
  * that absolute path, else the host opens it (and the UI is told). No path →
  * the document last opened or created by a tool this turn, else the document
- * the user was looking at when they asked.
+ * the user was looking at when they asked. An open document whose file
+ * changed underneath it (a shell command or write_file rewrote it, the user
+ * saved it from another program) is read again first unless it has unsaved
+ * changes, so the tools always work on the file as it is.
  */
 import * as path from "node:path";
 import { CircuitToolError } from "./errors.mts";
 import { observationView, type ObservationView } from "./observe.mts";
 import type { Edit } from "../generated/Edit.ts";
+import type { SourceStatus } from "../generated/SourceStatus.ts";
 import type {
   DocumentView,
   EditResult,
@@ -86,7 +90,8 @@ export class ToolContext {
   /**
    * The document a tool works on. With `relative`, an open document at that
    * path or a freshly opened one (then the UI shows it); without, the current
-   * document. Always re-read from the host so the revision is fresh.
+   * document. Always re-read from the host so the revision is fresh, and
+   * read again from its file when that changed (see `fromFile`).
    */
   async resolveDocument(relative?: string | null): Promise<DocumentView> {
     const status = await this.status();
@@ -95,7 +100,7 @@ export class ToolContext {
       const open = status.documents.find((d) => d.path === target);
       if (open) {
         this.currentDocumentId = open.id;
-        return open;
+        return this.fromFile(open);
       }
       const view = await this.host.call<DocumentView>({
         op: "open",
@@ -112,7 +117,35 @@ export class ToolContext {
         hint: "给出 path 打开文件夹里的 .circ，或用 create_circuit 新建。",
       });
     this.currentDocumentId = current.id;
-    return current;
+    return this.fromFile(current);
+  }
+
+  /**
+   * An open document as its file is: when the file changed and the document
+   * has no unsaved changes, the host reads it again (the previous content
+   * stays in undo history) and the UI follows. A document with unsaved
+   * changes is returned as it is; the UI shows the user the file notice.
+   */
+  private async fromFile(open: DocumentView): Promise<DocumentView> {
+    if (!open.path || open.dirty) return open;
+    const source = await this.host.call<SourceStatus>({
+      op: "sourceStatus",
+      id: open.id,
+    });
+    if (source.state !== "modified") return open;
+    const view = await this.host.call<DocumentView>({
+      op: "reload",
+      id: open.id,
+      revision: open.revision,
+      source_revision: source.revision,
+      discard: false,
+    });
+    this.emit({
+      type: "document-changed",
+      document: view,
+      expectedBaseRevision: open.revision,
+    });
+    return view;
   }
 
   /** The definition a tool works on: the named one, else the user's current one, else main. */

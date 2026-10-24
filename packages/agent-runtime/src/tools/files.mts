@@ -236,7 +236,7 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
       name: "write_file",
       label: "写入文件",
       description:
-        "Write UTF-8 text to a folder-relative file. Parent directory must exist. Writing an open .circ is allowed: the app reloads it.",
+        "Write UTF-8 text to a folder-relative file. Parent directory must exist. Writing an open .circ is allowed: the circuit tools read the file again on their next call and the canvas follows (a document with unsaved changes keeps them instead).",
       parameters: schema({ path: string, content: string }),
       execute: async (_id: any, args: any, signal: any) => {
         assertCurrent();
