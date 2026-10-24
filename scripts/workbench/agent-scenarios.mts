@@ -4,7 +4,9 @@
  * step, the turn checkpoints the folder, and undoing that checkpoint gives
  * the file back byte for byte. Second turn: it rewrites the open file with
  * write_file and then opens a definition only the file has; the tools read
- * the file again, the UI is told, and undoing the turn restores both the
+ * the file again and the UI is told. It then rewrites the file once more
+ * without opening it: the turn's checkpoint reads the document again and
+ * the window gets a `documents` event. Undoing the turn restores both the
  * file and the open document.
  */
 import assert from "node:assert/strict";
@@ -36,7 +38,12 @@ export const placeTwoParts: Script = ({ calls }) =>
 
 export const QUESTION_REWRITE = "在文件里手写一个定义";
 
-/** The model's side of the second turn: read, rewrite, then open what it wrote. */
+const definition = (name: string) =>
+  `  <circuit name="${name}">\n    <a name="circuit" val="${name}"/>\n  </circuit>\n`;
+const withDefinitions = (xml: unknown, ...names: string[]) =>
+  String(xml).replace("</project>", names.map(definition).join("") + "</project>");
+
+/** The model's side of the second turn: read, rewrite, open what it wrote, rewrite again. */
 export const rewriteThenOpen: Script = ({ calls }) => {
   if (!calls.length)
     return { tool: { name: "read_file", args: { path: "turn.circ" } } };
@@ -44,13 +51,7 @@ export const rewriteThenOpen: Script = ({ calls }) => {
     return {
       tool: {
         name: "write_file",
-        args: {
-          path: "turn.circ",
-          content: String(calls[0].result).replace(
-            "</project>",
-            '  <circuit name="extra">\n    <a name="circuit" val="extra"/>\n  </circuit>\n</project>',
-          ),
-        },
+        args: { path: "turn.circ", content: withDefinitions(calls[0].result, "extra") },
       },
     };
   if (calls.length === 2)
@@ -58,6 +59,13 @@ export const rewriteThenOpen: Script = ({ calls }) => {
       tool: {
         name: "open_circuit",
         args: { path: "turn.circ", circuit: "extra" },
+      },
+    };
+  if (calls.length === 3)
+    return {
+      tool: {
+        name: "write_file",
+        args: { path: "turn.circ", content: withDefinitions(calls[0].result, "extra", "later") },
       },
     };
   const opened = calls[2];
@@ -153,6 +161,17 @@ export async function verifyAgentTurn(
   );
   const rewrite = later.find((e) => e.type === "files-changed")?.change;
   assert.deepEqual(rewrite?.files, [{ kind: "modified", path: "turn.circ" }]);
+  // The second rewrite was never opened by a tool: the turn's checkpoint
+  // read the document again and told the window.
+  assert(
+    stream.events.slice(start).some((e) => e.topic === "documents"),
+    "The checkpoint's reload did not reach the window",
+  );
+  assert.deepEqual(
+    (await command({ op: "read", id: doc.id })).circuits.map((c: any) => c.name),
+    ["main", "extra", "later"],
+    "The checkpoint did not read the rewritten file",
+  );
   await command({ op: "folderHistoryUndo", folder_id: opened.id, id: rewrite.id });
   assert((await readFile(file)).equals(before), "Undoing the second turn did not restore the file");
   assert.deepEqual(

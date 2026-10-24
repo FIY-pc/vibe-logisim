@@ -1,7 +1,7 @@
 pub(crate) mod file_history;
 pub(crate) mod file_references;
 mod recycle;
-use crate::{Host, Result};
+use crate::{Event, Host, Result};
 use file_history::{History, Version, replace_checked, version, write_new};
 use file_references::References;
 use serde::{Deserialize, Serialize};
@@ -251,6 +251,13 @@ fn ensure_clean(workspace: &Workspace, paths: &[PathBuf]) -> Result<()> {
     }
     Ok(())
 }
+/// What `refresh_documents` did: how many documents it read again or closed,
+/// and the files it could not read back.
+#[derive(Default)]
+struct Refreshed {
+    changed: usize,
+    warnings: Vec<String>,
+}
 /// Brings open documents under `paths` in line with their files after
 /// something else wrote them: a clean document whose file changed is read
 /// again (its previous content stays in undo history), one whose file is gone
@@ -258,8 +265,8 @@ fn ensure_clean(workspace: &Workspace, paths: &[PathBuf]) -> Result<()> {
 /// file notice). The caller holds the workspace lock throughout validation and
 /// publication, so an editor cannot gain an unseen dirty draft. A file that
 /// cannot be read back is reported, not an obstacle: the files are what they are.
-fn refresh_documents(workspace: &mut Workspace, paths: &[PathBuf]) -> Vec<String> {
-    let mut warnings = Vec::new();
+fn refresh_documents(workspace: &mut Workspace, paths: &[PathBuf]) -> Refreshed {
+    let mut refreshed = Refreshed::default();
     let mut closed = Vec::new();
     for doc in workspace.documents.values_mut() {
         let Some(path) = doc.path.clone() else {
@@ -277,21 +284,25 @@ fn refresh_documents(workspace: &mut Workspace, paths: &[PathBuf]) -> Vec<String
             .and_then(|source| {
                 let revision = digest(&source);
                 if revision == doc.revision() {
-                    return Ok(());
+                    return Ok(false);
                 }
                 doc.reload(&doc.revision(), &revision, false)
+                    .map(|()| true)
                     .map_err(|e| e.to_string())
             });
-        if let Err(error) = outcome {
-            warnings.push(format!("{}：{error}", path.display()));
+        match outcome {
+            Ok(true) => refreshed.changed += 1,
+            Ok(false) => {}
+            Err(error) => refreshed.warnings.push(format!("{}：{error}", path.display())),
         }
     }
     for id in &closed {
-        if let Err(error) = workspace.close(id, false) {
-            warnings.push(error.to_string());
+        match workspace.close(id, false) {
+            Ok(()) => refreshed.changed += 1,
+            Err(error) => refreshed.warnings.push(error.to_string()),
         }
     }
-    warnings
+    refreshed
 }
 impl Host {
     pub(crate) async fn create_project_entry(
@@ -577,8 +588,10 @@ impl Host {
     /// Open documents of the files it found changed are read again (see
     /// `refresh_documents`), so what a shell command or `write_file` wrote
     /// reaches the canvas when the AI's turn ends, and what the user saved
-    /// from another program reaches the AI when its turn starts. A history
-    /// that cannot record the files is reported, not an obstacle to the turn.
+    /// from another program reaches the AI when its turn starts; the window
+    /// is told (`documents` event) since no command of its own did this. A
+    /// history that cannot record the files is reported, not an obstacle to
+    /// the turn.
     pub(crate) async fn checkpoint_folder(&self, folder_id: &str, title: &str) -> Result<Value> {
         let guard = self.folder.lock().await;
         let folder = guard
@@ -591,19 +604,22 @@ impl Host {
             Ok(change) => change,
             Err(error) => return Ok(json!({"change":null,"historyWarning":error.to_string()})),
         };
-        let mut warnings = Vec::new();
+        let mut refreshed = Refreshed::default();
         if let Some(change) = &change {
             let paths = History::paths(change)
                 .iter()
                 .map(|p| folder.path.join(p))
                 .collect::<Vec<_>>();
             let mut workspace = self.workspace.lock().await;
-            warnings = refresh_documents(&mut workspace, &paths);
-            self.persist(&mut workspace).await;
+            refreshed = refresh_documents(&mut workspace, &paths);
+            if refreshed.changed > 0 {
+                self.persist(&mut workspace).await;
+                self.emit(Event::Documents(()));
+            }
         }
         Ok(json!({
             "change": change.as_ref().map(History::entry),
-            "refreshWarning": (!warnings.is_empty()).then(|| warnings.join("；")),
+            "refreshWarning": (!refreshed.warnings.is_empty()).then(|| refreshed.warnings.join("；")),
         }))
     }
     pub(crate) async fn file_history(&self, folder_id: &str) -> Result<Value> {

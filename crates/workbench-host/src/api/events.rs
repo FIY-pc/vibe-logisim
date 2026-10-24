@@ -13,6 +13,9 @@ pub enum Event {
     Simulation(SimulationEvent),
     /// Snapshots may be stale; read them again.
     Resync(()),
+    /// Open documents changed outside a window command (read again from
+    /// their files, or closed with them); read the workspace again.
+    Documents(()),
     /// A change took effect but something around it failed.
     Warning(Warning),
 }
