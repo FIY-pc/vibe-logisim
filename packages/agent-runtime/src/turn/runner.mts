@@ -40,6 +40,11 @@ import { fileTools } from "../tools/files.mts";
 import { circuitTools, TOOL_LABELS } from "../tools/index.mts";
 import { ToolContext } from "../tools/context.mts";
 import { toolActivity } from "./activity.mts";
+import {
+  CHARS_PER_TOKEN,
+  clearOldToolOutput,
+  contextSize,
+} from "./context-budget.mts";
 import { systemInstructions } from "./instructions.mts";
 import type {
   FolderChange,
@@ -761,6 +766,10 @@ export class TurnRunner extends EventEmitter {
         status: "running",
         startedAt: Date.now(),
       });
+      // Earlier turns' tool output is the first thing to go when the
+      // conversation outgrows the model's context (see context-budget.mts).
+      const budget = config.contextWindow * CHARS_PER_TOKEN;
+      this.transcript = clearOldToolOutput(this.transcript, budget);
       this.agent = new Agent({
         initialState: {
           model: modelFor(
@@ -801,13 +810,22 @@ export class TurnRunner extends EventEmitter {
             },
           ),
         prepareRequest: ({ context: requestContext }: any) => {
-          if (JSON.stringify(requestContext).length > config.contextWindow * 3)
+          // Old tool output is cleared within a long turn as well; the
+          // instructions and tool declarations take their share first.
+          const room =
+            budget -
+            JSON.stringify({ ...requestContext, messages: [] }).length;
+          const messages = clearOldToolOutput(requestContext.messages, room);
+          if (contextSize(messages) > room)
             throw new Error(
-              "会话内容超过配置的上下文预算，请新建对话并携带工作笔记继续",
+              "这次对话的内容超过了模型的上下文长度，请新建对话后继续",
             );
           for (const m of this.history)
             if (m.type === "user" && m.delivery === "deferred")
               this.setDelivery(m.id, "included");
+          return messages === requestContext.messages
+            ? undefined
+            : { context: { ...requestContext, messages } };
         },
       });
       this.agent.subscribe((e: any) => {
