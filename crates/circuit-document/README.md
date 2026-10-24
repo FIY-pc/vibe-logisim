@@ -69,7 +69,7 @@ Done and stable. 17 unit tests plus `tests/{document,fidelity,folder}.rs` (`carg
 
 None required for the rewrite. Candidates when the host needs them:
 
-- `Edit::Replace { xml }` re-parses the whole file; if the AI arranger's replace of a 1 MB file shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
+- `Edit::Replace` re-parses the whole file; if the AI arranger's replace of a 1 MB file shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
 
 ## Verify
 

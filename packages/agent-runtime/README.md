@@ -48,7 +48,7 @@ Host ops the tools use: status read source open new edit undo observe observeXml
 
 ## Status
 
-Compiles and type-checks; the JSONL protocol, status/bind/conversations/models and the "no service" refusal are smoke-tested against a fake host. **The first real-model turn through this runner has not been run yet**; the 10-22 course-project turns went through the previous sidecar. Running one is the first task below.
+Works end to end: a real-model turn on a large project (rename a pin label in a subcircuit) went through this runner, and `npm run test:native` runs a scripted turn through the real sidecar, tools and host. With the scripted model, a full adder from an empty folder (create, place, connect, simulate, arrange, render) takes about 0.5 s; a place, connect, move and arrange turn on a 700-component definition of a 1 MB file about 4 s, half of it `arrange_circuit`.
 
 ## Remaining tasks
 
