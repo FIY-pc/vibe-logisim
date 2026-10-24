@@ -6,6 +6,8 @@ import {
   rm,
   symlink,
   access,
+  chmod,
+  stat,
 } from "node:fs/promises";
 import path from "node:path";
 /** Edits, undo and redo answer with an edit result; scripts work with the view. */
@@ -39,6 +41,13 @@ export async function verifyFileHistory(
     await readFile(path.join(project, "bundle/note.txt"), "utf8"),
     "from outside",
   );
+  // Files written for the user get a plain file's permissions, not a temporary file's 0600.
+  const unix = process.platform !== "win32";
+  const mode = async (file: string) => (await stat(file)).mode & 0o777;
+  const probe = path.join(directory, "plain-file");
+  await writeFile(probe, "");
+  if (unix)
+    assert.equal(await mode(path.join(project, "bundle/note.txt")), await mode(probe));
   const imported = await latest();
   assert.equal(imported.title, "导入文件");
   assert(imported.files.some((f: any) => f.path === "bundle/empty"));
@@ -98,6 +107,7 @@ export async function verifyFileHistory(
   );
   plan = await prepare([input]);
   await writeFile(input, "changed source after confirmation");
+  if (unix) await chmod(path.join(project, "existing.txt"), 0o640);
   await apply(plan, "replace");
   assert.equal(
     await readFile(path.join(project, "existing.txt"), "utf8"),
@@ -110,6 +120,8 @@ export async function verifyFileHistory(
     await readFile(path.join(project, "existing.txt"), "utf8"),
     "new user edit",
   );
+  // Replacing and restoring keep the permissions the user gave the file.
+  if (unix) assert.equal(await mode(path.join(project, "existing.txt")), 0o640);
 
   await mkdir(path.join(incoming, "linked"));
   await symlink(

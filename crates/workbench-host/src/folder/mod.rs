@@ -221,7 +221,7 @@ fn copy_source(
         {
             return Err("导入文件的来源在复制时发生改变，请重试".into());
         }
-        write_new(target, &bytes)?;
+        write_new(target, &bytes, None)?;
     } else {
         return Err("只支持导入普通文件和文件夹".into());
     }
@@ -235,7 +235,7 @@ fn publish_tree(source: &Path, target: &Path) -> Result<()> {
             publish_tree(&child.path(), &target.join(child.file_name()))?;
         }
     } else {
-        write_new(target, &fs::read(source).map_err(|e| e.to_string())?)?;
+        write_new(target, &fs::read(source).map_err(|e| e.to_string())?, None)?;
     }
     Ok(())
 }

@@ -790,7 +790,11 @@ impl Document {
         let bytes = rebased
             .as_ref()
             .map_or(self.bytes(), |(source, _, _)| source.bytes());
-        let mut temp = tempfile::NamedTempFile::new_in(&parent)?;
+        // A new file gets a new file's permissions, not the temporary file's private 0600.
+        let mut builder = tempfile::Builder::new();
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o666));
+        let mut temp = builder.tempfile_in(&parent)?;
         temp.write_all(bytes)?;
         temp.as_file().sync_all()?;
         if let Ok(meta) = std::fs::metadata(&target) {

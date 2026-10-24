@@ -125,7 +125,7 @@ fn scan(
                 }
                 let blob = blobs.join(&value.digest);
                 if !blob.exists() {
-                    write_new(&blob, &bytes)?;
+                    write_blob(&blob, &bytes)?;
                 }
             }
         }
@@ -136,12 +136,45 @@ fn scan(
     }
     Ok(())
 }
-pub(crate) fn write_new(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut staged = tempfile::Builder::new()
-        .prefix(".vibe-file-")
-        .tempfile_in(path.parent().ok_or("无效文件路径")?)
-        .map_err(|e| e.to_string())?;
+/// Publishes `bytes` as a new file of the user's folder (`path` must not exist),
+/// with `permissions` when it takes the place of a file.
+pub(crate) fn write_new(
+    path: &Path,
+    bytes: &[u8],
+    permissions: Option<fs::Permissions>,
+) -> Result<()> {
+    let staged = stage(path, bytes, true)?;
+    #[cfg(unix)]
+    if let Some(permissions) = permissions {
+        staged
+            .as_file()
+            .set_permissions(permissions)
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(unix))]
+    let _ = permissions;
+    publish(staged, path)
+}
+/// Stores a history blob (`path` must not exist).
+fn write_blob(path: &Path, bytes: &[u8]) -> Result<()> {
+    publish(stage(path, bytes, false)?, path)
+}
+/// The bytes in a temporary file next to `path`: private to the user (0600), or
+/// with a new file's permissions for a file of the user's folder.
+fn stage(path: &Path, bytes: &[u8], user_file: bool) -> Result<tempfile::NamedTempFile> {
+    let parent = path.parent().ok_or("无效文件路径")?;
+    let mut staged = if user_file {
+        crate::staged_user_file(parent)
+    } else {
+        tempfile::Builder::new()
+            .prefix(".vibe-file-")
+            .tempfile_in(parent)
+    }
+    .map_err(|e| e.to_string())?;
     staged.write_all(bytes).map_err(|e| e.to_string())?;
+    Ok(staged)
+}
+fn publish(staged: tempfile::NamedTempFile, path: &Path) -> Result<()> {
     staged.as_file().sync_all().map_err(|e| e.to_string())?;
     staged.persist_noclobber(path).map_err(|e| e.to_string())?;
     Ok(())
@@ -156,6 +189,7 @@ pub(crate) fn replace_checked(
     if version(path)?.as_ref() != expected {
         return Err("文件在此之后又有改动，未覆盖当前内容".into());
     }
+    let permissions = fs::metadata(path).ok().map(|m| m.permissions());
     let backup = if expected.is_some() {
         let directory = tempfile::Builder::new()
             .prefix(".vibe-file-")
@@ -165,7 +199,7 @@ pub(crate) fn replace_checked(
         fs::rename(path, &saved).map_err(|e| e.to_string())?;
         if version(&saved).ok().flatten().as_ref() != expected {
             if let Ok(bytes) = fs::read(&saved)
-                && write_new(path, &bytes).is_ok()
+                && write_new(path, &bytes, permissions.clone()).is_ok()
             {
                 let _ = fs::remove_file(&saved);
             }
@@ -185,11 +219,11 @@ pub(crate) fn replace_checked(
         None
     };
     if let Some(bytes) = bytes
-        && let Err(error) = write_new(path, bytes)
+        && let Err(error) = write_new(path, bytes, permissions.clone())
     {
         if let Some((directory, saved)) = backup {
             if let Ok(bytes) = fs::read(&saved)
-                && write_new(path, &bytes).is_ok()
+                && write_new(path, &bytes, permissions.clone()).is_ok()
             {
                 let _ = fs::remove_file(&saved);
             }
