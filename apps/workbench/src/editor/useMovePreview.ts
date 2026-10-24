@@ -15,7 +15,9 @@ export function useMovePreview(move: Move | null) {
   latest.current = { key, move };
   const live = useRef(false);
   const running = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The position last sent: a frame that finds it already sent does nothing.
+  const sent = useRef("");
+  const frame = useRef<number | null>(null);
   const [preview, setPreview] = useState<{
     key: string;
     wires: Preview | null;
@@ -23,8 +25,10 @@ export function useMovePreview(move: Move | null) {
   }>({ key: "", wires: null, error: "" });
   const request = useRef<() => void>(() => {});
   request.current = () => {
-    if (running.current || !live.current || !latest.current.move) return;
     const target = latest.current;
+    if (running.current || !live.current || !target.move) return;
+    if (target.key === sent.current) return;
+    sent.current = target.key;
     running.current = true;
     void command<Preview>({ op: "movePreview", ...target.move! })
       .then((result) => {
@@ -59,15 +63,17 @@ export function useMovePreview(move: Move | null) {
     live.current = true;
     return () => {
       live.current = false;
-      if (timer.current) clearTimeout(timer.current);
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      frame.current = null;
     };
   }, []);
+  // At most one request per animation frame; it sends the latest position.
   useEffect(() => {
-    if (!move) return;
-    timer.current = setTimeout(() => request.current(), 100);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    if (!move || frame.current !== null) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = null;
+      request.current();
+    });
   }, [key]);
   return key && preview.key === key ? preview : { key, wires: null, error: "" };
 }

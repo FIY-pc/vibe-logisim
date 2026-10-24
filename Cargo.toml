@@ -11,7 +11,7 @@ rust-version = "1.99"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 thiserror = "2"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -27,3 +27,13 @@ ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# Development builds stay quick to rebuild and to edit a course-size file in:
+# dependencies (JSON, XML, digests, base64) are fully optimized, and the document
+# crate, which applies edits and routes wires, lightly. Unoptimized, editing is
+# four to six times slower.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.vibe-circuit-document]
+opt-level = 1

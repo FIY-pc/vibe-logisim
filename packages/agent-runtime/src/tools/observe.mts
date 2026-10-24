@@ -26,7 +26,6 @@ export interface ObservedComponent {
   location: { x: number; y: number };
   bounds: { x: number; y: number; width: number; height: number };
   attributes: Record<string, string | null>;
-  attributeDetails: any[];
   ends: ObservedEnd[];
   subcircuit: string | null;
 }
@@ -88,7 +87,6 @@ export function observationView(document: any): ObservationView {
         .filter((a: any) => a?.name)
         .map((a: any) => [a.name, a.standard ?? null]),
     ),
-    attributeDetails: c.attributes || [],
     ends: c.ends || [],
     subcircuit: c.subcircuit ?? null,
   }));
@@ -336,11 +334,19 @@ export function componentDirectory(
   );
 }
 
-/** Attributes, ports and bit nets of named components. */
+/** Allowed values of a component's enumerated attributes, by attribute name. */
+export type AttributeOptions = Record<string, string[]>;
+
+/**
+ * Attributes, ports and bit nets of named components. The observation has no
+ * option lists; `options` carries them for the named components, read from
+ * the native editor by the caller.
+ */
 export function componentDetails(
   view: ObservationView,
   identity: Identity,
   ids: string[],
+  options: Map<string, AttributeOptions> = new Map(),
 ) {
   const byId = new Map(view.circuit.components.map((c) => [c.componentId, c]));
   const missing = ids.filter((id) => !byId.has(id));
@@ -361,11 +367,7 @@ export function componentDetails(
         ? { displayName: c.displayName }
         : {}),
       attributes: clone(c.attributes),
-      attributeOptions: Object.fromEntries(
-        c.attributeDetails
-          .filter((a: any) => a?.name && !a.readOnly && a.options?.length)
-          .map((a: any) => [a.name, a.options.map((o: any) => o.value)]),
-      ),
+      attributeOptions: clone(options.get(id) ?? {}),
       ends: c.ends.map((end) => ({
         ...endGeometry(end),
         netBits: clone(end.netBits || []),
@@ -761,12 +763,8 @@ const DETAIL_OPTIONS = [
   "wireLimit",
 ];
 
-/** One named-definition view per call: overview, a directory page, details, connections or wires. */
-export function inspectView(
-  view: ObservationView,
-  identity: Identity,
-  args: Record<string, any>,
-) {
+/** Which view `inspectView` answers with; throws when the arguments ask for several. */
+export function inspectKind(args: Record<string, any>) {
   const used = DETAIL_OPTIONS.filter((key) => args[key] !== undefined);
   const wires = used.every(
     (key) => key.startsWith("includeWires") || key.startsWith("wire"),
@@ -779,17 +777,39 @@ export function inspectView(
         hint: "分开调用；每次只给 componentIds、componentDirectory、portConnections 或 includeWires 中的一种。",
       },
     );
-  if (args.portConnections)
-    return portConnections(view, identity, args.portConnections);
-  if (args.componentIds?.length)
-    return componentDetails(view, identity, args.componentIds);
-  if (args.componentDirectory)
-    return componentDirectory(view, identity, args.componentDirectory);
+  if (args.portConnections) return "portConnections";
+  if (args.componentIds?.length) return "componentIds";
+  if (args.componentDirectory) return "componentDirectory";
   if (
     args.includeWires ||
     args.wireOffset !== undefined ||
     args.wireLimit !== undefined
   )
-    return { ...identity, wireGeometry: wireGeometry(view, args) };
-  return circuitOverview(view, identity);
+    return "wires";
+  return "overview";
+}
+
+/**
+ * One named-definition view per call: overview, a directory page, details,
+ * connections or wires. `options` are the attribute options of the components
+ * a details view names.
+ */
+export function inspectView(
+  view: ObservationView,
+  identity: Identity,
+  args: Record<string, any>,
+  options?: Map<string, AttributeOptions>,
+) {
+  switch (inspectKind(args)) {
+    case "portConnections":
+      return portConnections(view, identity, args.portConnections);
+    case "componentIds":
+      return componentDetails(view, identity, args.componentIds, options);
+    case "componentDirectory":
+      return componentDirectory(view, identity, args.componentDirectory);
+    case "wires":
+      return { ...identity, wireGeometry: wireGeometry(view, args) };
+    case "overview":
+      return circuitOverview(view, identity);
+  }
 }

@@ -384,6 +384,75 @@ export function Canvas({
     ro.observe(container.current);
     return () => ro.disconnect();
   }, []);
+  // A new revision of the circuit on screen is drawn at once and observed
+  // after its picture arrives, so the runtime works on the picture first; the
+  // commit overlay covers the wait. Panning, zooming and another circuit wait
+  // for the view to settle, and a newly shown circuit is observed first
+  // because fitting it needs its bounds.
+  const drawn = useRef({ picture: "", revision: "" });
+  const drawing = useRef<{ scope: string; done: Promise<void> } | null>(null);
+  useEffect(() => {
+    if (live || !size.width || !size.height) {
+      setLoading(false);
+      return;
+    }
+    const ticket = ++generation.current;
+    const region = {
+      x: Math.floor(view.x),
+      y: Math.floor(view.y),
+      width: Math.ceil(size.width / view.scale),
+      height: Math.ceil(size.height / view.scale),
+    };
+    const revised =
+      drawn.current.picture === pictureScope &&
+      drawn.current.revision !== doc.revision;
+    const draw = () => {
+      drawn.current = { picture: pictureScope, revision: doc.revision };
+      setLoading(true);
+      const scale = Math.min(
+        view.scale * (devicePixelRatio || 1),
+        8,
+        Math.sqrt(7_000_000 / (region.width * region.height)),
+      );
+      const done = command<{ image: string }>({
+        op: "render",
+        ...bindings,
+        ...region,
+        scale,
+      })
+        .then((result) => {
+          if (ticket === generation.current)
+            setImage({
+              src: result.image,
+              bounds: region,
+              revision: doc.revision,
+            });
+        })
+        .catch((e) => {
+          if (ticket === generation.current) onError(e);
+        })
+        .finally(() => {
+          if (ticket === generation.current) setLoading(false);
+        });
+      drawing.current = { scope: observationScope, done };
+    };
+    const timer = revised ? undefined : setTimeout(draw, 80);
+    if (revised) draw();
+    return () => {
+      clearTimeout(timer);
+      generation.current++;
+    };
+  }, [
+    doc.id,
+    doc.revision,
+    circuit.name,
+    view.x,
+    view.y,
+    view.scale,
+    size.width,
+    size.height,
+    live,
+  ]);
   useEffect(() => {
     setWire([]);
     wireGesture.current = null;
@@ -400,12 +469,19 @@ export function Canvas({
       setSettle(null);
     }
     let live = true;
-    command<{ focus: ConnectionFocus }>({
-      op: "observe",
-      ...bindings,
-    })
+    // The render effect ran first: a new revision's picture is on its way.
+    const picture =
+      drawing.current?.scope === observationScope
+        ? drawing.current.done
+        : Promise.resolve();
+    picture
+      .then(() =>
+        live
+          ? command<{ focus: ConnectionFocus }>({ op: "observe", ...bindings })
+          : null,
+      )
       .then((data) => {
-        if (live)
+        if (live && data)
           setObservation({
             scope: observationScope,
             picture: pictureScope,
@@ -757,61 +833,6 @@ export function Canvas({
       y: bounds.y + bounds.height / 2 - size.height / previous.scale / 2,
     }));
   }, [focusTarget?.id, focusTarget?.token, size.width, size.height, boundsFor]);
-  useEffect(() => {
-    if (live || !size.width || !size.height) {
-      setLoading(false);
-      return;
-    }
-    const ticket = ++generation.current;
-    const region = {
-      x: Math.floor(view.x),
-      y: Math.floor(view.y),
-      width: Math.ceil(size.width / view.scale),
-      height: Math.ceil(size.height / view.scale),
-    };
-    const timer = setTimeout(() => {
-      setLoading(true);
-      const scale = Math.min(
-        view.scale * (devicePixelRatio || 1),
-        8,
-        Math.sqrt(7_000_000 / (region.width * region.height)),
-      );
-      command<{ image: string }>({
-        op: "render",
-        ...bindings,
-        ...region,
-        scale,
-      })
-        .then((result) => {
-          if (ticket === generation.current)
-            setImage({
-              src: result.image,
-              bounds: region,
-              revision: doc.revision,
-            });
-        })
-        .catch((e) => {
-          if (ticket === generation.current) onError(e);
-        })
-        .finally(() => {
-          if (ticket === generation.current) setLoading(false);
-        });
-    }, 80);
-    return () => {
-      clearTimeout(timer);
-      generation.current++;
-    };
-  }, [
-    doc.id,
-    doc.revision,
-    circuit.name,
-    view.x,
-    view.y,
-    view.scale,
-    size.width,
-    size.height,
-    live,
-  ]);
   // The run draws only what the canvas shows, at the canvas's zoom.
   const reported = useRef("");
   useEffect(() => {

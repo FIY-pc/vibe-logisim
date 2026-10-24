@@ -2,7 +2,7 @@
 //! them — editing, observation, rendering, checks, packaging and history.
 use super::{Effect::*, Meta};
 use crate::{
-    Host, Result,
+    Host, Reply, Result,
     app::diagnostics::Stage,
     documents::{
         history::Action,
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 use vibe_circuit_document::{Document, DocumentView, Edit, EditOutcome, Point};
-use vibe_logisim_runtime::Viewport;
+use vibe_logisim_runtime::{Viewport, timing};
 
 /// The objects a gesture leaves selected.
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -498,8 +498,8 @@ impl Host {
         doc.check(revision)?;
         Ok(doc.clone())
     }
-    pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Value> {
-        match request {
+    pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Reply> {
+        let value = match request {
             DocumentRequest::Status => {
                 let w = self.workspace.lock().await;
                 let documents = w
@@ -604,7 +604,8 @@ impl Host {
                     attributes,
                 } = &edit
                 {
-                    let (path, _) = self.snapshot(&id, &revision).await?;
+                    let path = self.snapshot(&id, &revision).await?;
+                    let _template = timing::span("edit.template");
                     let template = self
                         .native
                         .lock()
@@ -634,18 +635,15 @@ impl Host {
                     values,
                 } = &edit
                 {
-                    let (path, view) = self.snapshot(&id, &revision).await?;
-                    let component = view
-                        .circuits
-                        .iter()
-                        .find(|c| c.name == circuit)
-                        .and_then(|c| c.components.iter().find(|c| &c.id == component_id))
-                        .ok_or("请选择元件")?;
+                    let (path, component) = self
+                        .snapshot_component(&id, &revision, &circuit, component_id)
+                        .await?;
+                    let _properties = timing::span("edit.properties");
                     let checked = self
                         .native
                         .lock()
                         .await
-                        .properties(&path, &circuit, component, values.clone())
+                        .properties(&path, &circuit, &component, values.clone())
                         .await?;
                     let canonical = component_attributes(serialized_component(&checked)?)
                         .ok_or("元件属性缺失")?;
@@ -662,9 +660,16 @@ impl Host {
                 } else {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
-                    let outcome = d.edit(&revision, &circuit, edit)?;
-                    let view = d.view()?;
+                    let outcome = {
+                        let _edit = timing::span("edit.apply");
+                        d.edit(&revision, &circuit, edit)?
+                    };
+                    let view = {
+                        let _view = timing::span("edit.view");
+                        d.view()?
+                    };
                     drop(w);
+                    let _value = timing::span("edit.value");
                     value(edit_result(&outcome, view, false))
                 }
             }
@@ -703,8 +708,10 @@ impl Host {
                 revision,
                 circuit,
             } => {
-                let (p, _) = self.snapshot(&id, &revision).await?;
-                Ok(self.native.lock().await.observe(&p, &circuit).await?)
+                let p = self.snapshot(&id, &revision).await?;
+                let _observe = timing::span("observe");
+                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
             }
             DocumentRequest::Template {
                 id,
@@ -714,7 +721,7 @@ impl Host {
                 name,
                 attributes,
             } => {
-                let (path, _) = self.snapshot(&id, &revision).await?;
+                let path = self.snapshot(&id, &revision).await?;
                 Ok(self
                     .native
                     .lock()
@@ -735,18 +742,14 @@ impl Host {
                 circuit,
                 component,
             } => {
-                let (path, view) = self.snapshot(&id, &revision).await?;
-                let component = view
-                    .circuits
-                    .iter()
-                    .find(|c| c.name == circuit)
-                    .and_then(|c| c.components.iter().find(|c| c.id == component))
-                    .ok_or("请选择元件")?;
+                let (path, component) = self
+                    .snapshot_component(&id, &revision, &circuit, &component)
+                    .await?;
                 Ok(self
                     .native
                     .lock()
                     .await
-                    .properties(&path, &circuit, component, BTreeMap::new())
+                    .properties(&path, &circuit, &component, BTreeMap::new())
                     .await?)
             }
             DocumentRequest::Catalog {
@@ -754,8 +757,8 @@ impl Host {
                 revision,
                 circuit,
             } => {
-                let (p, v) = self.snapshot(&id, &revision).await?;
-                Ok(self.native.lock().await.catalog(&p, &v, &circuit).await?)
+                let path = self.snapshot(&id, &revision).await?;
+                Ok(self.native.lock().await.catalog(&path, &circuit).await?)
             }
             DocumentRequest::Render {
                 id,
@@ -767,7 +770,7 @@ impl Host {
                 height,
                 scale,
             } => {
-                let (path, _) = self.snapshot(&id, &revision).await?;
+                let path = self.snapshot(&id, &revision).await?;
                 let mut native = self.native.lock().await;
                 let viewport = match (x, y, width, height, scale) {
                     (Some(x), Some(y), Some(width), Some(height), Some(scale)) => Viewport {
@@ -779,6 +782,7 @@ impl Host {
                     },
                     _ => fitted_viewport(&native.observe(&path, &circuit).await?),
                 };
+                let _render = timing::span("render");
                 let image = native.render(&path, &circuit, viewport).await?;
                 Ok(json!({
                     "image": image,
@@ -902,6 +906,7 @@ impl Host {
                 revision,
                 entry,
             } => self.history_restore(&id, &revision, &entry).await,
-        }
+        };
+        value.map(Reply::Value)
     }
 }

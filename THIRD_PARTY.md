@@ -17,6 +17,6 @@
 
 上表中的路径相对于应用的 `workbench` 资源目录。Windows 便携包将其放在 `resources/workbench`；安装程序使用系统应用资源目录。第三方 Node 依赖的版本和许可证信息分别列于 `third-party/node/packages.json` 与 `third-party/frontend/packages.json`。
 
-Logisim 对应源码来自 [v2.16.2.2 标签](https://github.com/Logisim-Ita/Logisim/tree/v2.16.2.2)，源归档随每个应用包提供。HUST 2020 版运行文件按发布方原样附带、不作修改，由 Java 作为 jar 加载，只用于 `source` 为 2.15.x 的文件；发布方没有随它提供对应源码。如权利人提出要求，会移除并改为由用户自行放置该文件。用户可以通过 `VIBE_LOGISIM_JAR` 指定其他支持的运行文件；该文件及其外部组件库遵循各自许可，不自动进入分发包。
+Logisim 对应源码来自 [v2.16.2.2 标签](https://github.com/Logisim-Ita/Logisim/tree/v2.16.2.2)，源归档随每个应用包提供。HUST 2020 版运行文件按发布方原样附带、不作修改，由 Java 作为 jar 加载，只用于 `source` 为 2.15.x 的文件；发布方没有随它提供对应源码。如权利人提出要求，会移除并改为由用户自行放置该文件。用户可以通过 `VIBE_LOGISIM_JAR` 指定其他支持的运行文件；该文件及其外部组件库遵循各自许可，不自动进入分发包。桥接代码（随包提供源码，位于 `native/src`）含一份改过的 `com.cburch.logisim.circuit.WireRepair`：取自 Logisim-ITA 2.16.2.2（GPL-3.0），只改了载入时查找导线分割点的方法，结果与原版相同。它在类路径上排在运行文件之前，因此载入时替代两个运行文件里相同的同名类；运行文件本身不作修改。
 
 Windows 的 Java 启动程序附加 UTF-8 进程代码页声明，以支持非 ASCII 安装路径。此修改会使原签名失效；具体改动记录随 Java 运行时提供。Windows WebView2 与 Linux WebKitGTK 使用操作系统提供的 WebView，不包含在便携包内。

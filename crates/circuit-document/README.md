@@ -26,6 +26,7 @@ Anything that needs the Java runtime (connectivity, port positions, rendering, s
 pub struct Document;            // Document::new(name) | Document::open(path) | Document::from_bytes(..)
 impl Document {
     fn view(&self) -> Result<DocumentView>;                       // id, name, path, revision, circuits (components, wires), libraries, dirty, canUndo/canRedo, main
+    fn circuit_view(&self, name: &str) -> Result<Option<Circuit>>; // one circuit of `view`, without building the others (a 1 MB file has 20+)
     fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<EditOutcome>;
     fn undo(&mut self, expected: &str) -> Result<EditOutcome>;
     fn redo(&mut self, expected: &str) -> Result<EditOutcome>;
@@ -34,7 +35,7 @@ impl Document {
     fn revision(&self) -> String;  fn dirty(&self) -> bool;  fn check(&self, expected) -> Result<()>;
     fn source_status(&self) -> SourceStatus;                       // in sync / changed on disk / missing
     fn bytes(&self) -> &[u8];  fn bytes_with_absolute_libraries(&self) -> Result<Cow<[u8]>>;
-    fn move_connected(..);                                         // selection move keeping attached wires
+    fn move_connected(..);                                         // selection move keeping attached wires; one undo step "移动 N 个对象"
     fn relocate(&mut self, from: &Path, to: &Path);
 }
 pub struct Workspace;           // insert, open(path) (reuses an open doc with the same path or identity), get, get_mut, save, save_checked, save_in_place, close, restore(dir), persist(dir), relocate
