@@ -135,7 +135,7 @@ export function EditorToolbar({
         )}
         {actionButton(
           "整理布局",
-          "整理布局\n按信号流重新摆放元件并重连导线，保留行为；完成后可撤销",
+          "整理布局\n按信号流重新摆放元件并重连导线，保留行为；比现在清楚才应用，可撤销",
           undefined,
           <LayoutTemplate size={15} />,
           onArrange,

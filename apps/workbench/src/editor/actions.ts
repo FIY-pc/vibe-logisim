@@ -94,7 +94,10 @@ export function createEditorActions(stores: Stores) {
         .catch(onError);
   };
 
-  /** Rearranges the shown circuit and applies the result as one undoable edit. */
+  /**
+   * Rearranges the shown circuit and applies the result as one undoable edit,
+   * only when it reads more clearly than the drawing it replaces.
+   */
   const arrange = async ({ doc, circuit }: View) => {
     if (!doc || !circuit) return;
     const revision = doc.revision;
@@ -112,11 +115,34 @@ export function createEditorActions(stores: Stores) {
           circuit: circuit.name,
         }),
       );
-      const arranged = await arrangeCircuit({
-        xml: source.xml,
-        circuit: circuit.name,
-        focus,
-      });
+      const arranged = await arrangeCircuit(
+        { xml: source.xml, circuit: circuit.name, focus },
+        (xml) =>
+          busy(() =>
+            command<unknown>({
+              op: "observeXml",
+              id: doc.id,
+              revision,
+              circuit: circuit.name,
+              xml,
+            }),
+          ),
+      );
+      const { before, after, comparison, names } = arranged;
+      const changes = (metrics: typeof comparison.worse) =>
+        metrics.map((m) => `${names[m]} ${before[m]} → ${after[m]}`).join("，");
+      if (!comparison.clearer) {
+        notices
+          .getState()
+          .setNotice(
+            `没有整理：整理出的布局不比现在清楚` +
+              (comparison.worse.length
+                ? `（${changes(comparison.worse)}）`
+                : "") +
+              `，电路没有改动。`,
+          );
+        return;
+      }
       const result = await busy(() =>
         command<EditResult>({
           op: "edit",
@@ -127,12 +153,13 @@ export function createEditorActions(stores: Stores) {
         }),
       );
       documents.getState().mergeDocument(result.view, revision);
-      const before = arranged.before;
-      const after = arranged.after;
+      const better = changes(comparison.better);
       notices
         .getState()
         .setNotice(
-          `已整理：导线 ${before.wireSegments} → ${after.wireSegments} 段，交叉 ${before.crossings} → ${after.crossings}，占用 ${before.extent.width}×${before.extent.height} → ${after.extent.width}×${after.extent.height}。可用 Ctrl+Z 撤销。`,
+          `已整理：${better || `导线总长 ${before.wireLength} → ${after.wireLength}`}` +
+            (comparison.worse.length ? `；${changes(comparison.worse)}` : "") +
+            `。可用 Ctrl+Z 撤销。`,
         );
     } catch (error) {
       onError(error);

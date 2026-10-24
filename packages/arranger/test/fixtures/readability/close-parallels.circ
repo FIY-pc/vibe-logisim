@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <main name="before"/>
+  <options/>
+  <mappings/>
+  <toolbar/>
+  <circuit name="before">
+    <a name="circuit" val="before"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,100)" to="(300,100)"/>
+    <comp lib="1" loc="(330,100)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+    <comp lib="0" loc="(100,160)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="B"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,160)" to="(150,160)"/>
+    <wire from="(150,160)" to="(150,110)"/>
+    <wire from="(150,110)" to="(250,110)"/>
+    <wire from="(250,110)" to="(250,160)"/>
+    <wire from="(250,160)" to="(300,160)"/>
+    <comp lib="1" loc="(330,160)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+  </circuit>
+  <circuit name="after">
+    <a name="circuit" val="after"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,100)" to="(300,100)"/>
+    <comp lib="1" loc="(330,100)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+    <comp lib="0" loc="(100,160)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="B"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,160)" to="(150,160)"/>
+    <wire from="(150,160)" to="(150,120)"/>
+    <wire from="(150,120)" to="(250,120)"/>
+    <wire from="(250,120)" to="(250,160)"/>
+    <wire from="(250,160)" to="(300,160)"/>
+    <comp lib="1" loc="(330,160)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+  </circuit>
+</project>

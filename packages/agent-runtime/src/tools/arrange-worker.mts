@@ -1,7 +1,7 @@
 // Arranging runs in its own thread: the solver is synchronous and CPU-bound,
 // and a definition that takes too long must not freeze model transport.
 import { parentPort } from "node:worker_threads";
-import { arrange, readability } from "@vibe-logisim/arranger";
+import { arrange } from "@vibe-logisim/arranger";
 import type { Focus } from "@vibe-logisim/arranger";
 parentPort?.on("message", (request: any) => {
   // The native observation nests the parts under `focus` beside its coverage.
@@ -16,8 +16,6 @@ parentPort?.on("message", (request: any) => {
         keptWires: arrangement.keptWires,
         panelBelowY: arrangement.panelBelowY,
         fixedComponentIds: [...arrangement.fixedComponentIds],
-        readabilityBefore: readability(request.xml, arrangement.circuit),
-        readabilityAfter: readability(arrangement.xml, arrangement.circuit),
       }),
     )
     .catch((error: unknown) =>

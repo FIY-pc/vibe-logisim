@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <main name="before"/>
+  <options/>
+  <mappings/>
+  <toolbar/>
+  <circuit name="before">
+    <a name="circuit" val="before"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,100)" to="(170,100)"/>
+    <comp lib="1" loc="(200,100)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+    <wire from="(200,100)" to="(300,100)"/>
+    <comp lib="0" loc="(300,100)" name="Pin">
+      <a name="facing" val="west"/>
+      <a name="output" val="true"/>
+      <a name="label" val="S"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <comp lib="0" loc="(100,40)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="B"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,40)" to="(170,40)"/>
+    <comp lib="1" loc="(200,40)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+    <wire from="(200,40)" to="(250,40)"/>
+    <wire from="(250,40)" to="(250,80)"/>
+    <wire from="(250,80)" to="(400,80)"/>
+    <comp lib="0" loc="(400,80)" name="Pin">
+      <a name="facing" val="west"/>
+      <a name="output" val="true"/>
+      <a name="label" val="T"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+  </circuit>
+  <circuit name="after">
+    <a name="circuit" val="after"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,100)" to="(170,100)"/>
+    <comp lib="1" loc="(200,100)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+    <wire from="(200,100)" to="(300,100)"/>
+    <comp lib="0" loc="(300,100)" name="Pin">
+      <a name="facing" val="west"/>
+      <a name="output" val="true"/>
+      <a name="label" val="S"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <comp lib="0" loc="(100,40)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="B"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(100,40)" to="(170,40)"/>
+    <comp lib="1" loc="(200,40)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="30"/>
+    </comp>
+    <wire from="(200,40)" to="(250,40)"/>
+    <wire from="(250,40)" to="(250,60)"/>
+    <wire from="(250,60)" to="(400,60)"/>
+    <comp lib="0" loc="(400,60)" name="Pin">
+      <a name="facing" val="west"/>
+      <a name="output" val="true"/>
+      <a name="label" val="T"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+  </circuit>
+</project>

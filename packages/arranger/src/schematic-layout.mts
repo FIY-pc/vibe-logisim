@@ -497,7 +497,7 @@ interface SettledRoutes extends RouteAttempt {
 
 // Points the custom appearance's ports at the Pins that moved (old location
 // to new); returns how many it repointed.
-function repointPins(
+export function repointPins(
   circuit: XmlElement,
   moved: ReadonlyMap<string, Point>,
 ): number {
@@ -525,7 +525,7 @@ function repointPins(
 // Boxes and ports of a component written by the layout itself (a Tunnel or
 // Constant has no observation yet): Logisim draws a Tunnel's or Constant's
 // body on the side opposite its facing, from the connection point.
-function estimatedGeometry(
+export function estimatedGeometry(
   element: XmlElement,
   x: number,
   y: number,
