@@ -246,12 +246,13 @@ async function checkJoins(
     }
   }
   if (!problem) {
-    const owner = new Map<string, [string, string]>();
+    // The first port met on each net after the edit, with its net before.
+    const first = new Map<string, [string, string]>();
     for (const [key, net] of after) {
       const was = before.get(key);
       if (!net || !was) continue;
-      const seen = owner.get(net);
-      if (!seen) owner.set(net, [key, was]);
+      const seen = first.get(net);
+      if (!seen) first.set(net, [key, was]);
       else if (find(seen[1]) !== find(was)) {
         problem = `新导线把原本不相连的 ${port(seen[0])} 和 ${port(key)} 接到了一起`;
         break;
