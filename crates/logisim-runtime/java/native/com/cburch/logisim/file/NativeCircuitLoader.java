@@ -1,6 +1,7 @@
 package com.cburch.logisim.file;
 
 import com.cburch.logisim.data.Location;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +14,7 @@ import javax.xml.parsers.SAXParserFactory;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.xml.sax.Attributes;
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.helpers.DefaultHandler;
@@ -56,6 +58,15 @@ public final class NativeCircuitLoader {
      * memory contents must not carry both a val attribute and text.
      */
     private static void validateProject(File file) throws Exception {
+        validate(new InputSource(file.toURI().toASCIIString()));
+    }
+
+    /** The same checks over a document in memory: the parts of a revision the worker applies in place. */
+    static void validate(byte[] document) throws Exception {
+        validate(new InputSource(new ByteArrayInputStream(document)));
+    }
+
+    private static void validate(InputSource source) throws Exception {
         SAXParserFactory factory = SAXParserFactory.newInstance();
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -67,7 +78,7 @@ public final class NativeCircuitLoader {
         parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         try {
-            parser.parse(file, new Preflight());
+            parser.parse(source, new Preflight());
         } catch (Rejected rejected) {
             throw new IllegalArgumentException(rejected.getMessage());
         }
@@ -182,82 +193,97 @@ public final class NativeCircuitLoader {
      * reports are returned exactly as before, unverified.
      */
     public static LogisimFile openChecked(File file, List<String> warnings) throws Exception {
-        List<String> reported = new ArrayList<>();
-        Loader loader = new Loader(null) {
-            @Override public void showError(String description) { reported.add(description); }
-
-            @Override LogisimFile loadLogisimFile(File source) throws LoadFailedException {
-                int before = reported.size();
-                try {
-                    // External .circ libraries pass through this same boundary.
-                    // Checking just the root can miss silently dropped gates in
-                    // a library whose parent instance itself remains present.
-                    validateProject(source);
-                    WorkerTiming.mark("validate");
-                    LogisimFile loaded = super.loadLogisimFile(source);
-                    WorkerTiming.mark("logisim");
-                    if (reported.size() > before) {
-                        String loss = coverageLoss(loaded, source);
-                        if (loss != null) throw new LoadFailedException(loss);
-                        WorkerTiming.mark("coverage");
-                    }
-                    return loaded;
-                } catch (LoadFailedException error) {
-                    throw error;
-                } catch (Exception error) {
-                    throw new LoadFailedException(source.getName() + ": " + error.getMessage());
-                }
-            }
-
-            /**
-             * The stock resolver takes the library path recorded in the file
-             * literally and, when it cannot be read, asks through a Swing
-             * dialog — which in these windowless workers is a
-             * HeadlessException with no message. 2.7.1-era files record the
-             * original author's own machine path (C:\作业\…, /Users/…), so
-             * only the basename can mean anything here; look for it next to
-             * the file being loaded, the same rule the studio applies when it
-             * accepts the project. A library that is not there either is a
-             * plain load failure.
-             */
-            @Override File getFileFor(String name, FileFilter filter) {
-                name = javaPath(name);
-                String plugin = pluginAlias(name);
-                if (plugin != null) name = javaPath(plugin);
-                File file = new File(name);
-                if (!file.isAbsolute()) {
-                    File directory = getCurrentDirectory();
-                    if (directory != null) file = new File(directory, name);
-                }
-                if (file.canRead()) return file;
-                String base = name.replace('\\', '/');
-                base = base.substring(base.lastIndexOf('/') + 1);
-                File directory = getCurrentDirectory();
-                if (!base.isEmpty() && directory != null) {
-                    File beside = new File(directory, base);
-                    if (beside.canRead()) return beside;
-                }
-                throw new LoaderException(
-                    "缺少组件库：" + (base.isEmpty() ? name : base) + "。需与电路文件放在同一目录。");
-            }
-        };
-        LogisimFile loaded;
-        try {
-            // The loader's loadLogisimFile preflights each file it reads, this one included.
-            loaded = loader.openLogisimFile(file);
-        } catch (Exception error) {
-            if (reported.isEmpty()) throw error;
-            throw new IllegalStateException("Logisim 无法载入这个文件：" + String.join("；", reported), error);
-        }
-        if (!reported.isEmpty()) {
-            String loss = coverageLoss(loaded, file);
-            if (loss != null) {
-                throw new IllegalStateException(
-                    "Logisim 无法载入这个文件：" + String.join("；", reported) + "（" + loss + "）");
-            }
-            warnings.addAll(reported);
-        }
+        CheckedLoader loader = new CheckedLoader();
+        LogisimFile loaded = loader.open(file);
+        warnings.addAll(loader.reported);
         return loaded;
+    }
+
+    /**
+     * The loader behind openChecked. The worker keeps it with the file it
+     * loaded: applying a later revision in place goes through the same
+     * library resolution, and a report during that is visible here.
+     */
+    static final class CheckedLoader extends Loader {
+        final List<String> reported = new ArrayList<>();
+
+        CheckedLoader() { super(null); }
+
+        LogisimFile open(File file) throws Exception {
+            LogisimFile loaded;
+            try {
+                // The loader's loadLogisimFile preflights each file it reads, this one included.
+                loaded = openLogisimFile(file);
+            } catch (Exception error) {
+                if (reported.isEmpty()) throw error;
+                throw new IllegalStateException("Logisim 无法载入这个文件：" + String.join("；", reported), error);
+            }
+            if (!reported.isEmpty()) {
+                String loss = coverageLoss(loaded, file);
+                if (loss != null) {
+                    throw new IllegalStateException(
+                        "Logisim 无法载入这个文件：" + String.join("；", reported) + "（" + loss + "）");
+                }
+            }
+            return loaded;
+        }
+
+        @Override public void showError(String description) { reported.add(description); }
+
+        @Override LogisimFile loadLogisimFile(File source) throws LoadFailedException {
+            int before = reported.size();
+            try {
+                // External .circ libraries pass through this same boundary.
+                // Checking just the root can miss silently dropped gates in
+                // a library whose parent instance itself remains present.
+                validateProject(source);
+                WorkerTiming.mark("validate");
+                LogisimFile loaded = super.loadLogisimFile(source);
+                WorkerTiming.mark("logisim");
+                if (reported.size() > before) {
+                    String loss = coverageLoss(loaded, source);
+                    if (loss != null) throw new LoadFailedException(loss);
+                    WorkerTiming.mark("coverage");
+                }
+                return loaded;
+            } catch (LoadFailedException error) {
+                throw error;
+            } catch (Exception error) {
+                throw new LoadFailedException(source.getName() + ": " + error.getMessage());
+            }
+        }
+
+        /**
+         * The stock resolver takes the library path recorded in the file
+         * literally and, when it cannot be read, asks through a Swing
+         * dialog — which in these windowless workers is a
+         * HeadlessException with no message. 2.7.1-era files record the
+         * original author's own machine path (C:\作业\…, /Users/…), so
+         * only the basename can mean anything here; look for it next to
+         * the file being loaded, the same rule the studio applies when it
+         * accepts the project. A library that is not there either is a
+         * plain load failure.
+         */
+        @Override File getFileFor(String name, FileFilter filter) {
+            name = javaPath(name);
+            String plugin = pluginAlias(name);
+            if (plugin != null) name = javaPath(plugin);
+            File file = new File(name);
+            if (!file.isAbsolute()) {
+                File directory = getCurrentDirectory();
+                if (directory != null) file = new File(directory, name);
+            }
+            if (file.canRead()) return file;
+            String base = name.replace('\\', '/');
+            base = base.substring(base.lastIndexOf('/') + 1);
+            File directory = getCurrentDirectory();
+            if (!base.isEmpty() && directory != null) {
+                File beside = new File(directory, base);
+                if (beside.canRead()) return beside;
+            }
+            throw new LoaderException(
+                "缺少组件库：" + (base.isEmpty() ? name : base) + "。需与电路文件放在同一目录。");
+        }
     }
 
     /**

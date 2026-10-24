@@ -42,16 +42,15 @@ public final class CircuitPalette {
     private static String icon(AddTool tool, Circuit circuit, Project project) throws Exception {
         BufferedImage bitmap=new BufferedImage(48,48,BufferedImage.TYPE_INT_ARGB);
         Graphics2D g=bitmap.createGraphics();g.scale(2,2);g.setColor(Color.BLACK);
-        ComponentDrawContext context=new ComponentDrawContext(null,circuit,new CircuitState(project,circuit),g,g);
+        ComponentDrawContext context=new ComponentDrawContext(null,circuit,project.getCircuitState(circuit),g,g);
         context.setShowState(false);tool.paintIcon(context,2,2);g.dispose();return png(bitmap);
     }
     private static boolean canAdd(Project project,Circuit target,ComponentFactory factory) {
         return !(factory instanceof SubcircuitFactory)||project.getDependencies().canAdd(target,((SubcircuitFactory)factory).getSubcircuit());
     }
-    public static void catalog(LogisimFile file,Element request,Document result) throws Exception {
+    public static void catalog(LogisimFile file,Project project,Element request,Document result) throws Exception {
         Circuit target=file.getCircuit(request.getAttribute("circuit"));
         if(target==null)throw new IllegalArgumentException("请选择当前电路");
-        Project project=new Project(file);project.getSimulator().shutDown();
         catalog(file,target,project,request,result);
     }
     private static void catalog(LogisimFile file,Circuit target,Project project,Element request,Document result) throws Exception {
@@ -168,10 +167,10 @@ public final class CircuitPalette {
         }
     }
     @SuppressWarnings({"rawtypes","unchecked"})
-    public static void describe(LogisimFile file,Element request,Document result) throws Exception {
+    public static void describe(LogisimFile file,Project project,Element request,Document result) throws Exception {
         Circuit circuit=file.getCircuit(request.getAttribute("circuit"));
         if(circuit==null)throw new IllegalArgumentException("请选择当前电路");
-        AddTool tool=tool(file,request);Project project=new Project(file);project.getSimulator().shutDown();
+        AddTool tool=tool(file,request);
         describe(circuit,project,tool,request,result.getDocumentElement());
     }
     /** Describe or validate an existing instance without replacing unknown source XML. */
@@ -243,7 +242,7 @@ public final class CircuitPalette {
             double scale=Math.min(3,3072.0/Math.max(width,height));
             BufferedImage bitmap=new BufferedImage(Math.max(1,(int)Math.ceil(width*scale)),Math.max(1,(int)Math.ceil(height*scale)),BufferedImage.TYPE_INT_ARGB);
             Graphics2D g=bitmap.createGraphics();g.scale(scale,scale);g.translate(-ink.getX(),-ink.getY());g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-            ComponentDrawContext context=new ComponentDrawContext(null,circuit,new CircuitState(project,circuit),g,g);context.setShowState(false);
+            ComponentDrawContext context=new ComponentDrawContext(null,circuit,project.getCircuitState(circuit),g,g);context.setShowState(false);
             factory.drawGhost(context,new Color(66,86,139),0,0,attrs);g.dispose();
             Element image=child(result,root,"image");image.setAttribute("x",String.valueOf(ink.getX()));image.setAttribute("y",String.valueOf(ink.getY()));image.setAttribute("width",String.valueOf(width));image.setAttribute("height",String.valueOf(height));image.setTextContent(png(bitmap));
         }
