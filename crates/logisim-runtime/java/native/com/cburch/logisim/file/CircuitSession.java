@@ -284,8 +284,7 @@ public final class CircuitSession {
                     }
                     if (result != null) {
                         // Encoding and protocol output do not hold the live circuit lock.
-                        ByteArrayOutputStream png = new ByteArrayOutputStream(); ImageIO.write(bitmap, "png", png);
-                        ((Element)result.getElementsByTagName("render").item(0)).setTextContent(Base64.getEncoder().encodeToString(png.toByteArray()));
+                        ((Element)result.getElementsByTagName("render").item(0)).setTextContent(Base64.getEncoder().encodeToString(PngEncoder.encode(bitmap)));
                         result.getDocumentElement().setAttribute("captureMs", String.valueOf((captured - started) / 1e6));
                         result.getDocumentElement().setAttribute("encodeMs", String.valueOf((System.nanoTime() - captured) / 1e6));
                         send(result, protocol);

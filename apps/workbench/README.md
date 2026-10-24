@@ -22,8 +22,8 @@ Any rule about documents, saving, history, simulation lifetime or AI scope. If t
 ## How data flows
 
 - Read: a component calls `useWorkbench()` → store state. Stores are filled from host results (`status`, `read`, `observe`, `simulationSnapshot`…) by the action modules.
-- Write: an action builds `{op, ...}` → `command()` → host → the result replaces the relevant store slice (edit results carry `view`, `selection`, `title`). No optimistic edits: the canvas shows the host's revision.
-- Push: `router.ts` → simulation frames into `simulation.store`; `resync` → re-read workspace and simulation; `warning` → notice. `agent` events go to `Chat.tsx`, which owns the sequence gap check and replays from `status`.
+- Write: an action builds `{op, ...}` → `command()` → host → the result replaces the relevant store slice. Edit, undo and redo results carry `change` (what changed since the revision they were sent for, only the changed circuits), `selection` and `title`; `documents.applyChange` applies it to the open document, or reads the workspace again when that document is no longer at the change's base revision. No optimistic edits: the canvas shows the host's revision.
+- Push: `router.ts` → simulation frames into `simulation.store`; `resync` → re-read workspace and simulation; `warning` → notice. `agent` events go to `Chat.tsx`, which owns the sequence gap check: it loads the conversation with `history` when it binds, switches conversation or misses events, replays newer buffered events after it, and otherwise reads the state alone with `status`; AI edits arrive as `document-changed {change}` and go to `documents.applyChange`.
 - Shortcuts: `shared/shortcuts.ts` table (1 选择, 2 布线, 3 操作输入, 4 平移, A 元件库, Ctrl+K 时钟, Ctrl+T 一步, Ctrl+Z 撤销, Ctrl+S 保存, Ctrl+, 快捷键) → `app/keyboard.ts` → actions.
 
 ## Dependencies

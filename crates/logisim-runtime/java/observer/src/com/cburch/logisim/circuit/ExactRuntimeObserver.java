@@ -36,7 +36,6 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -97,6 +96,10 @@ public final class ExactRuntimeObserver {
     private final List<Object> unknowns = new ArrayList<Object>();
     private final Coverage coverage = new Coverage();
     private List<Object> retainedLoaderMessages;
+    /** Supplied by a resident caller: its project and the digests it already knows. */
+    private Project project;
+    private String artifactSha256;
+    private String bundleSha256;
 
     private ExactRuntimeObserver(
         LogisimFile file, Circuit focus, Region region, boolean compactMode
@@ -190,10 +193,14 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    /** Same observation contract for the desktop's resident read-only runtime. */
-    public static String observeLoaded(LogisimFile file, Path artifact, String name,
-            Path runtime, String runtimeDigest, Path bundle, String stdout,
-            List<Object> messages) throws Exception {
+    /**
+     * Same observation contract for the desktop's resident read-only runtime,
+     * which keeps the project (and its Project, so drawing leaves no listeners
+     * behind) and knows the artifact's and the bridge bundle's digests.
+     */
+    public static String observeLoaded(LogisimFile file, Project project, Path artifact,
+            String artifactDigest, String name, Path runtime, String runtimeDigest,
+            String bundleDigest, String stdout, List<Object> messages) throws Exception {
         courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
         if (!courseRuntime && !EXPECTED_RUNTIME_SHA256.equals(runtimeDigest))
             throw new IllegalArgumentException("Unsupported runtime digest");
@@ -201,8 +208,11 @@ public final class ExactRuntimeObserver {
         if(focus==null)throw new IllegalArgumentException("Unknown circuit: "+name);
         ExactRuntimeObserver observer=new ExactRuntimeObserver(file,focus,null,false);
         observer.retainedLoaderMessages=messages;
+        observer.project=project;
+        observer.artifactSha256=artifactDigest;
+        observer.bundleSha256=bundleDigest;
         phase("ids");
-        Map<String,Object> document=observer.observe(artifact,runtime,runtimeDigest,null,bundle,stdout);
+        Map<String,Object> document=observer.observe(artifact,runtime,runtimeDigest,null,null,stdout);
         StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);
         phase("json");
         return out.toString();
@@ -286,7 +296,7 @@ public final class ExactRuntimeObserver {
         context.setShowColor(true);
         circuit.draw(context, null);
         g.dispose();
-        ImageIO.write(bitmap, "png", output);
+        Files.write(output.toPath(), com.cburch.logisim.file.PngEncoder.encode(bitmap));
         return obj("bounds", bounds(box), "scale", scale, "authority", "Logisim native Circuit.draw");
     }
 
@@ -344,7 +354,7 @@ public final class ExactRuntimeObserver {
             "sourcePath", observerSource == null ? null
                 : observerSource.toAbsolutePath().normalize().toString(),
             "sourceSha256", observerSource == null ? null : sha256(observerSource),
-            "bundleSha256", sha256Tree(observerBundle),
+            "bundleSha256", bundleSha256 != null ? bundleSha256 : sha256Tree(observerBundle),
             "connectivityAuthority",
                 "Logisim-ITA CircuitWires.BundleMap and WireThread from the exact runtime",
             "doesNotInfer", Arrays.asList(
@@ -356,7 +366,7 @@ public final class ExactRuntimeObserver {
         );
         Map<String, Object> revision = obj(
             "artifactPath", artifact.toString(),
-            "artifactSha256", sha256(artifact)
+            "artifactSha256", artifactSha256 != null ? artifactSha256 : sha256(artifact)
         );
         phase("hashes");
         Map<String, Object> runtime = obj(
@@ -741,8 +751,11 @@ public final class ExactRuntimeObserver {
      */
     private void measureGeometry() {
         Graphics2D g = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics();
-        Project project = new Project(file);
-        project.getSimulator().shutDown();
+        Project project = this.project;
+        if (project == null) {
+            project = new Project(file);
+            project.getSimulator().shutDown();
+        }
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
@@ -1504,6 +1517,11 @@ public final class ExactRuntimeObserver {
             input.close();
         }
         return hex(digest.digest());
+    }
+
+    /** The digest observations report for a bridge bundle (a class directory or jar). */
+    public static String bundleDigest(Path bundle) throws Exception {
+        return sha256Tree(bundle);
     }
 
     private static String sha256Tree(Path root) throws Exception {

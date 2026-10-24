@@ -1,6 +1,8 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ProjectFolder } from "./Files";
 import type { SourceStatus } from "../generated/SourceStatus";
+import type { DocumentChange } from "../generated/DocumentChange";
+import { applyDocumentChange } from "../../../../packages/agent-runtime/src/protocol/document-change.ts";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import type { EditorState } from "../editor/store";
@@ -37,6 +39,9 @@ export interface DocumentsState {
   /** Takes a document returned by a mutation. When a later change already
    * replaced the base revision, the workspace is read again instead. */
   mergeDocument(document: Document, expectedBaseRevision?: string): void;
+  /** Takes what an edit, undo or redo changed. When the document is no longer
+   * at the change's base revision, the workspace is read again instead. */
+  applyChange(change: DocumentChange): void;
   /** Adds or replaces a document and activates it. */
   update(document: Document): void;
   setSourceStatus(record: DocumentsState["sourceStatus"]): void;
@@ -153,6 +158,19 @@ export function createDocumentsStore({
       }
       get().setDocs((previous) =>
         previous.map((item) => (item.id === document.id ? document : item)),
+      );
+    },
+    applyChange: (change) => {
+      const current = get().docs.find((item) => item.id === change.id);
+      if (!current) return;
+      const next = applyDocumentChange(current, change);
+      if (!next) {
+        // A later host event may arrive before this mutation response. Hashes have no ordering.
+        void get().refreshWorkspace().catch(notices.getState().onError);
+        return;
+      }
+      get().setDocs((previous) =>
+        previous.map((item) => (item.id === change.id ? next : item)),
       );
     },
     update: (document) => {

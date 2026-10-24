@@ -14,7 +14,7 @@ import {
   type PortRef,
 } from "./wiring.mts";
 import { libraryResolver } from "./inspect.mts";
-import type { ToolContext } from "./context.mts";
+import type { Applied, DocumentRef, ToolContext } from "./context.mts";
 import type { Edit } from "../generated/Edit.ts";
 import type { EditResult } from "../protocol/host.mts";
 
@@ -23,7 +23,7 @@ const outcome = (
   result: EditResult,
   extra: Record<string, unknown> = {},
 ) => ({
-  ...context.identity(result.view, result.circuit),
+  ...context.identity(result.change, result.circuit),
   title: result.title,
   changedCircuits: result.changedCircuits,
   selection: result.selection,
@@ -107,11 +107,11 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
       hint: "给出 connections、wires、additions 或 removeWireIds。",
     });
   // Removals and placements land first so routing sees the real grid.
-  let current = document;
+  let current: DocumentRef = document;
   let last: EditResult | null = null;
   if (prelude.length) {
     const applied = await context.edit(document, circuit, prelude);
-    current = applied.result.view;
+    current = applied.view;
     last = applied.result;
   }
   const paths: Point[][] = [...drawn];
@@ -214,12 +214,12 @@ function netsOf(ports: Map<string, PortRef>) {
  */
 async function checkJoins(
   context: ToolContext,
-  applied: { result: EditResult; results: EditResult[] },
+  applied: Applied,
   circuit: string,
   before: Map<string, string | null>,
   joined: { from: PortRef; to: PortRef }[],
 ) {
-  const observed = await context.observe(applied.result.view, circuit);
+  const observed = await context.observe(applied.view, circuit);
   const after = netsOf(portIndex(observed.view.circuit));
   // Nets the requests link, as union-find over the nets before.
   const parent = new Map<string, string>();
@@ -261,20 +261,14 @@ async function checkJoins(
   }
   if (!problem) return;
   // Take the wires of this call back (one batch, or a single wire).
-  let document = applied.result.view;
-  for (const _ of applied.results)
-    document = (
-      await context.host.call<EditResult>({
-        op: "undo",
-        id: document.id,
-        revision: document.revision,
-      })
-    ).view;
-  context.emit({
-    type: "document-changed",
-    document,
-    expectedBaseRevision: applied.result.revision,
-  });
+  await context.send(
+    applied.view,
+    applied.results.map(() => (revision) => ({
+      op: "undo",
+      id: applied.view.id,
+      revision,
+    })),
+  );
   throw new CircuitToolError(
     "ROUTE_CHANGED_NETS",
     `自动布线出错：${problem}。这次的导线已撤回。`,

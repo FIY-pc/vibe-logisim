@@ -13,6 +13,7 @@ import {
   signalTrace,
   wireSignal,
 } from "../../apps/workbench/src/editor/connectivity.ts";
+import { applyDocumentChange } from "../../packages/agent-runtime/src/protocol/document-change.ts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-compatibility-"));
@@ -496,6 +497,101 @@ try {
   console.log(
     "Custom appearance, local subcircuit navigation, relative and nested external libraries: passed",
   );
+
+  // The worker applies each new revision to the project it holds. After
+  // edits of every kind, including pins of a subcircuit whose instances
+  // follow them, it observes exactly what a whole load of the file does.
+  const pair = `<circuit name="pair">${pin(100, 100, "a")}<comp lib="1" name="NOT Gate" loc="(200,100)"/>${pin(280, 100, "y", true)}${wire(100, 100, 170, 100)}${wire(200, 100, 280, 100)}</circuit>`;
+  let live = await open(
+    "revisions.circ",
+    project(
+      `<circuit name="main">${pin(100, 100, "input")}<comp name="pair" loc="(300,100)"/><comp name="pair" loc="(300,300)"/><comp name="inverter" loc="(300,500)"/><comp lib="1" name="NOT Gate" loc="(500,100)"/>${pin(600, 100, "output", true)}${wire(100, 100, 240, 100)}${wire(300, 100, 470, 100)}${wire(500, 100, 600, 100)}</circuit>` +
+        pair +
+        inverter("inverter"),
+    ),
+  );
+  const part = (circuit: string, name: string) =>
+    live.circuits
+      .find((c: any) => c.name === circuit)
+      .components.find(
+        (c: any) => c.name === name || c.attributes.label === name,
+      ).id;
+  const observeAll = async () => {
+    const result: Record<string, any> = {};
+    for (const circuit of ["main", "pair", "inverter"]) {
+      const observed = await command({
+        op: "observe",
+        ...scope(live, circuit),
+      });
+      // Text is measured once per loaded project, which can widen the
+      // bounds other circuits report; the rest must match.
+      for (const summary of observed.project.circuits) delete summary.bounds;
+      result[circuit] = observed;
+    }
+    return result;
+  };
+  const step = async (circuit: string, edit: any) => {
+    const { change } = await command({
+      op: "edit",
+      ...scope(live, circuit),
+      edit,
+    });
+    live = applyDocumentChange(live, change)!;
+    await observeAll();
+  };
+  await observeAll();
+  await step("inverter", {
+    kind: "attributes",
+    id: part("inverter", "input"),
+    values: { label: "in" },
+  });
+  await step("main", {
+    kind: "move",
+    ids: [part("main", "NOT Gate")],
+    delta: { x: 10, y: 0 },
+  });
+  await step("main", {
+    kind: "wire",
+    points: [
+      { x: 700, y: 200 },
+      { x: 760, y: 200 },
+    ],
+  });
+  await step("main", {
+    kind: "place",
+    name: "NOT Gate",
+    library: "1",
+    location: { x: 800, y: 300 },
+    attributes: { label: "extra" },
+  });
+  await step("main", { kind: "delete", ids: [part("main", "output")] });
+  await step("pair", {
+    kind: "place",
+    name: "Pin",
+    library: "0",
+    location: { x: 100, y: 200 },
+    attributes: { label: "b" },
+  });
+  await step("pair", { kind: "delete", ids: [part("pair", "a")] });
+  for (const verb of ["undo", "undo", "redo"]) {
+    const { change } = await command({
+      op: verb,
+      id: live.id,
+      revision: live.revision,
+    });
+    live = applyDocumentChange(live, change)!;
+  }
+  const applied = await observeAll();
+  // Three unrelated files take the worker's places; the same revision then loads whole.
+  for (let n = 0; n < 3; n++) {
+    const other = await open(
+      `unrelated-${n}.circ`,
+      project(`<circuit name="main">${pin(100, 100, `x${n}`)}</circuit>`),
+    );
+    await command({ op: "observe", ...scope(other) });
+  }
+  assert.deepEqual(await observeAll(), applied);
+  console.log("Revisions applied in place observe like a whole load: passed");
 
   const columns = 32,
     rows = 32;

@@ -419,7 +419,7 @@ mod autosave_tests {
             .await
             .unwrap();
         let saved = rename(&host, &original, "changed").await;
-        assert_eq!(saved["view"]["dirty"], false);
+        assert_eq!(saved["change"]["dirty"], false);
         assert!(saved["saveError"].is_null());
         assert!(
             std::fs::read_to_string(&source)
@@ -435,19 +435,19 @@ mod autosave_tests {
         .unwrap();
         let undone = host
             .dispatch(DocumentRequest::Undo {
-                id: saved["view"]["id"].as_str().unwrap().into(),
+                id: saved["change"]["id"].as_str().unwrap().into(),
                 revision: saved["revision"].as_str().unwrap().into(),
             })
             .await
             .unwrap();
-        let undone = undone.get("view").cloned().unwrap_or(undone);
+        let undone = undone.get("change").cloned().unwrap_or(undone);
         assert_eq!(undone["dirty"], false);
         assert_eq!(undone["main"], original["main"]);
         let prior = std::fs::read(&source).unwrap();
         std::fs::write(&source, b"external user content").unwrap();
         let draft = rename(&host, &undone, "preserved").await;
         assert!(draft["saveError"].is_string());
-        let draft = &draft["view"];
+        let draft = &draft["change"];
         assert_eq!(draft["dirty"], true);
         assert_eq!(draft["main"], "preserved");
         assert_eq!(std::fs::read(&source).unwrap(), b"external user content");
@@ -472,7 +472,7 @@ mod autosave_tests {
             .await
             .unwrap();
         let external = rename(&host, &external, "outsideDraft").await;
-        assert_eq!(external["view"]["dirty"], true);
+        assert_eq!(external["change"]["dirty"], true);
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), EMPTY_CIRCUIT);
         let untitled = host
             .dispatch(DocumentRequest::New {
@@ -481,7 +481,7 @@ mod autosave_tests {
             .await
             .unwrap();
         let untitled = rename(&host, &untitled, "untitledDraft").await;
-        assert_eq!(untitled["view"]["dirty"], true);
+        assert_eq!(untitled["change"]["dirty"], true);
         assert!(untitled["saveError"].is_null());
         let report = host.diagnostics().await;
         assert!(

@@ -103,11 +103,9 @@ class ConversationStore {
   }
   state(key: string) {
     const data = this.read(),
-      w = this.workspace(data, key),
-      current = w.conversations[w.activeId];
+      w = this.workspace(data, key);
     return {
       activeId: w.activeId,
-      conversation: structuredClone(current),
       conversations: Object.values(w.conversations)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
         .map((c) => ({

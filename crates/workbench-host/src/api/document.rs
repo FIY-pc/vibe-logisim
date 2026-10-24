@@ -14,7 +14,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
-use vibe_circuit_document::{Document, DocumentView, Edit, EditOutcome, Point};
+use vibe_circuit_document::{Document, DocumentChange, Edit, EditOutcome, Point};
 use vibe_logisim_runtime::{Viewport, timing};
 
 /// The objects a gesture leaves selected.
@@ -25,12 +25,12 @@ pub struct Selection {
     pub wires: Vec<String>,
 }
 
-/// What an edit returns: the whole view plus what changed, so the canvas can
-/// select what it placed and the history can name the step.
+/// What an edit, undo or redo returns: the view change (only the circuits it
+/// changed) plus what the canvas selects afterwards and the history title.
 #[derive(Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EditResult {
-    pub view: DocumentView,
+    pub change: DocumentChange,
     pub revision: String,
     pub noop: bool,
     pub title: String,
@@ -71,7 +71,13 @@ pub struct TraceProgramInput {
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum DocumentRequest {
-    Status,
+    /// The open documents, the active one, the folder and the runtime. With
+    /// `summary` the documents come without their circuits' content.
+    Status {
+        #[serde(default)]
+        #[ts(optional)]
+        summary: Option<bool>,
+    },
     Open {
         path: PathBuf,
     },
@@ -341,7 +347,7 @@ impl DocumentRequest {
     pub(crate) fn meta(&self) -> Meta {
         match self {
             // The runtime reads status to resolve the open folder and file facts.
-            Self::Status
+            Self::Status { .. }
             | Self::Read { .. }
             | Self::Source { .. }
             | Self::SourceStatus { .. }
@@ -444,11 +450,11 @@ fn component_attributes(component: &Value) -> Option<BTreeMap<String, String>> {
     })
 }
 
-/// The edit result: the view plus what changed, for history titles and the
-/// selection the canvas restores. `noop` means nothing was written.
-fn edit_result(outcome: &EditOutcome, view: DocumentView, noop: bool) -> EditResult {
+/// The edit result: the view change plus the history title and the selection
+/// the canvas restores. `noop` means nothing was written.
+fn edit_result(outcome: &EditOutcome, change: DocumentChange, noop: bool) -> EditResult {
     EditResult {
-        revision: view.revision.clone(),
+        revision: change.revision.clone(),
         noop: noop || outcome.title.is_empty() && outcome.changed_circuits.is_empty(),
         title: outcome.title.clone(),
         circuit: outcome.circuit.clone(),
@@ -457,7 +463,7 @@ fn edit_result(outcome: &EditOutcome, view: DocumentView, noop: bool) -> EditRes
             components: outcome.components.clone(),
             wires: outcome.wires.clone(),
         },
-        view,
+        change,
     }
 }
 
@@ -466,7 +472,7 @@ pub(crate) fn edit_result_for_move(
     circuit: &str,
     components: Vec<String>,
     wires: Vec<String>,
-    view: DocumentView,
+    change: DocumentChange,
 ) -> EditResult {
     let title = if wires.is_empty() {
         format!("移动 {} 个对象", components.len() + wires.len())
@@ -474,18 +480,18 @@ pub(crate) fn edit_result_for_move(
         format!("移动 {} 个元件、{} 段导线", components.len(), wires.len())
     };
     EditResult {
-        revision: view.revision.clone(),
+        revision: change.revision.clone(),
         noop: false,
         title,
         circuit: circuit.to_string(),
         changed_circuits: vec![circuit.to_string()],
         selection: Selection { components, wires },
-        view,
+        change,
     }
 }
 
-fn undo_result(outcome: EditOutcome, view: DocumentView, verb: &str) -> EditResult {
-    let mut result = edit_result(&outcome, view, outcome.title.is_empty());
+fn undo_result(outcome: EditOutcome, change: DocumentChange, verb: &str) -> EditResult {
+    let mut result = edit_result(&outcome, change, outcome.title.is_empty());
     result.title = if outcome.title.is_empty() {
         format!("{verb}修改")
     } else {
@@ -639,13 +645,23 @@ impl Host {
     }
     pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Reply> {
         let value = match request {
-            DocumentRequest::Status => {
+            DocumentRequest::Status { summary } => {
                 let w = self.workspace.lock().await;
-                let documents = w
-                    .documents
-                    .values()
-                    .map(|d| d.view())
-                    .collect::<vibe_circuit_document::Result<Vec<_>>>()?;
+                let documents = if summary == Some(true) {
+                    value(
+                        w.documents
+                            .values()
+                            .map(Document::summary)
+                            .collect::<Vec<_>>(),
+                    )?
+                } else {
+                    value(
+                        w.documents
+                            .values()
+                            .map(Document::view)
+                            .collect::<vibe_circuit_document::Result<Vec<_>>>()?,
+                    )?
+                };
                 let active = w.active.clone();
                 drop(w);
                 Ok(
@@ -767,13 +783,13 @@ impl Host {
                         let _edit = timing::span("edit.apply");
                         d.edit(&revision, &circuit, edit)?
                     };
-                    let view = {
+                    let change = {
                         let _view = timing::span("edit.view");
-                        d.view()?
+                        d.view_change(&revision, &outcome.changed_circuits)?
                     };
                     drop(w);
                     let _value = timing::span("edit.value");
-                    value(edit_result(&outcome, view, false))
+                    value(edit_result(&outcome, change, false))
                 }
             }
             DocumentRequest::MovePreview {
@@ -789,22 +805,24 @@ impl Host {
                 value(preview)
             }
             DocumentRequest::Undo { id, revision } => {
-                let (outcome, view) = {
+                let (outcome, change) = {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
                     let outcome = d.undo(&revision)?;
-                    (outcome, d.view()?)
+                    let change = d.view_change(&revision, &outcome.changed_circuits)?;
+                    (outcome, change)
                 };
-                value(undo_result(outcome, view, "撤销"))
+                value(undo_result(outcome, change, "撤销"))
             }
             DocumentRequest::Redo { id, revision } => {
-                let (outcome, view) = {
+                let (outcome, change) = {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
                     let outcome = d.redo(&revision)?;
-                    (outcome, d.view()?)
+                    let change = d.view_change(&revision, &outcome.changed_circuits)?;
+                    (outcome, change)
                 };
-                value(undo_result(outcome, view, "重做"))
+                value(undo_result(outcome, change, "重做"))
             }
             DocumentRequest::Observe {
                 id,

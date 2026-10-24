@@ -6,7 +6,7 @@
 import * as path from "node:path";
 import { CircuitToolError } from "./errors.mts";
 import type { ToolContext } from "./context.mts";
-import type { DocumentView, EditResult } from "../protocol/host.mts";
+import type { DocumentView } from "../protocol/host.mts";
 
 const summary = (context: ToolContext, view: DocumentView) => ({
   ...context.identity(view, view.main),
@@ -81,17 +81,13 @@ export async function defineCircuit(
   args: Record<string, any>,
 ) {
   let view = await context.resolveDocument(args.path);
-  const base = view.revision;
-  let last: EditResult | null = null;
+  let steps = 0;
   const step = async (circuit: string, edit: any) => {
-    last = await context.host.call<EditResult>({
-      op: "edit",
-      id: view.id,
-      revision: view.revision,
-      circuit,
-      edit,
-    });
-    view = last.view;
+    const applied = await context.send(view, [
+      (revision) => ({ op: "edit", id: view.id, revision, circuit, edit }),
+    ]);
+    view = applied.view;
+    steps++;
   };
   for (const name of args.add ?? [])
     await step(view.main, { kind: "addCircuit", name });
@@ -107,16 +103,11 @@ export async function defineCircuit(
     context.circuitOf(view, args.main);
     await step(args.main, { kind: "setMain" });
   }
-  if (!last)
+  if (!steps)
     throw new CircuitToolError(
       "INVALID_ARGUMENT",
       "请给出 add、rename、remove 或 main 中的至少一项。",
     );
-  context.emit({
-    type: "document-changed",
-    document: view,
-    expectedBaseRevision: base,
-  });
   return summary(context, view);
 }
 
@@ -129,18 +120,11 @@ export async function undoEdit(
     throw new CircuitToolError("NO_CHANGE", "没有可撤销的修改", {
       hint: "文档没有更早的版本。",
     });
-  const result = await context.host.call<EditResult>({
-    op: "undo",
-    id: view.id,
-    revision: view.revision,
-  });
-  context.emit({
-    type: "document-changed",
-    document: result.view,
-    expectedBaseRevision: view.revision,
-  });
+  const { result, view: undone } = await context.send(view, [
+    (revision) => ({ op: "undo", id: view.id, revision }),
+  ]);
   return {
-    ...context.identity(result.view, result.circuit || result.view.main),
+    ...context.identity(undone, result.circuit || undone.main),
     title: result.title,
   };
 }

@@ -8,9 +8,9 @@ use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
 use serde_json::{Value, json, value::RawValue};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
@@ -92,6 +92,105 @@ pub struct Native {
     launcher: Launcher,
     worker: Option<Worker>,
     observed_version: Option<String>,
+    files: KnownFiles,
+}
+
+/// A file as a request last read it. Artifacts never change once written and
+/// libraries rarely do, so a request reads a file again only when its size,
+/// modification time or (on Unix) inode or change time differ.
+struct Known {
+    stamp: Stamp,
+    digest: String,
+    /// The top-level libraries and `source` version of a circuit file.
+    libraries: Vec<TopLevelLibrary>,
+    version: Option<String>,
+}
+#[derive(PartialEq, Eq)]
+struct Stamp {
+    len: u64,
+    modified: Option<SystemTime>,
+    inode: u64,
+    changed: (i64, i64),
+}
+impl Stamp {
+    fn of(path: &Path) -> Result<Self> {
+        let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        let (inode, changed) = {
+            use std::os::unix::fs::MetadataExt;
+            (metadata.ino(), (metadata.ctime(), metadata.ctime_nsec()))
+        };
+        #[cfg(not(unix))]
+        let (inode, changed) = (0, (0, 0));
+        Ok(Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            inode,
+            changed,
+        })
+    }
+}
+#[derive(Default)]
+struct KnownFiles(HashMap<PathBuf, Known>);
+impl KnownFiles {
+    fn get(&mut self, path: &Path, circuit: bool) -> Result<&Known> {
+        let stamp = Stamp::of(path)?;
+        if !self.0.get(path).is_some_and(|known| known.stamp == stamp) {
+            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+            let known = Known {
+                stamp,
+                digest: digest(&bytes),
+                libraries: if circuit {
+                    top_level_libraries(&bytes)?
+                } else {
+                    Vec::new()
+                },
+                version: circuit.then(|| runtime::source_version(&bytes)).flatten(),
+            };
+            if self.0.len() >= 256 {
+                self.0.clear();
+            }
+            self.0.insert(path.to_path_buf(), known);
+        }
+        Ok(&self.0[path])
+    }
+    /// `artifact_dependencies`, reading only files that changed since the last call.
+    fn dependencies(&mut self, artifact: &Path) -> Result<BTreeMap<PathBuf, String>> {
+        let mut dependencies = BTreeMap::new();
+        let mut visited = std::collections::BTreeSet::new();
+        let mut pending = vec![artifact.to_path_buf()];
+        while let Some(source) = pending.pop() {
+            let source = source.canonicalize().map_err(|e| e.to_string())?;
+            if !visited.insert(source.clone()) {
+                continue;
+            }
+            if visited.len() > 256 {
+                return Err("外部组件库数量超过限制".into());
+            }
+            let descriptors: Vec<String> = self
+                .get(&source, true)?
+                .libraries
+                .iter()
+                .filter_map(|library| library.desc.clone())
+                .collect();
+            for desc in descriptors {
+                let Some((path, circuit)) = library_file(&source, &desc)? else {
+                    continue;
+                };
+                if !path.is_file() {
+                    dependencies.insert(path, "missing".into());
+                    continue;
+                }
+                let path = path.canonicalize().map_err(|e| e.to_string())?;
+                let known = self.get(&path, circuit)?;
+                dependencies.insert(path.clone(), known.digest.clone());
+                if circuit {
+                    pending.push(path);
+                }
+            }
+        }
+        Ok(dependencies)
+    }
 }
 impl Native {
     pub fn new(root: PathBuf, state: PathBuf, runtime: Option<PathBuf>) -> Self {
@@ -104,6 +203,7 @@ impl Native {
             launcher,
             worker: None,
             observed_version: None,
+            files: KnownFiles::default(),
         }
     }
     pub fn launcher(&self) -> &Launcher {
@@ -161,9 +261,9 @@ impl Native {
     }
     pub async fn request(&mut self, artifact: &Path, operation: Element) -> Result<Vec<u8>> {
         let read = timing::span("native.read");
-        let source = std::fs::read(artifact).map_err(|e| e.to_string())?;
-        let (runtime, _) = self.facts().runtime_for(&source)?;
-        let hash = digest(&source);
+        let known = self.files.get(artifact, true)?;
+        let (hash, version) = (known.digest.clone(), known.version.clone());
+        let (runtime, _) = self.facts().runtime_for_version(version.as_deref())?;
         drop(read);
         let request = xml(
             "request",
@@ -175,7 +275,7 @@ impl Native {
         );
         let line = B64.encode(encode_xml(&request)?) + "\n";
         let scan = timing::span("native.dependencies");
-        let dependencies = artifact_dependencies(artifact)?;
+        let dependencies = self.files.dependencies(artifact)?;
         drop(scan);
         // Logisim's LibraryManager also caches external files globally. Drop the
         // process when dependencies change, so geometry and verification cannot
@@ -205,7 +305,7 @@ impl Native {
         worker.awaiting = false;
         if result.is_ok() && !dependencies.is_empty() {
             let _scan = timing::span("native.dependencies");
-            match artifact_dependencies(artifact) {
+            match self.files.dependencies(artifact) {
                 Ok(after) if after == dependencies => {}
                 Ok(_) => result = Err("操作期间组件库已改变，请重试".into()),
                 Err(error) => result = Err(error),
@@ -251,7 +351,7 @@ impl Native {
         RawValue::from_string(text).map_err(|e| e.to_string())
     }
     pub async fn catalog(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
-        let libraries = artifact_libraries(artifact)?;
+        let libraries = self.artifact_libraries(artifact)?;
         let bytes = self
             .request(
                 artifact,
@@ -275,7 +375,7 @@ impl Native {
         location: Option<vibe_circuit_document::Point>,
         attributes: BTreeMap<String, String>,
     ) -> Result<Value> {
-        let mut children = artifact_libraries(artifact)?;
+        let mut children = self.artifact_libraries(artifact)?;
         children.extend(
             attributes
                 .into_iter()
@@ -413,6 +513,26 @@ impl Native {
             .await?;
         Ok(format!("data:image/png;base64,{}", B64.encode(bytes)))
     }
+    /// The `<library id desc>` elements the palette requests name: every
+    /// top-level `<lib>` of the artifact.
+    fn artifact_libraries(&mut self, artifact: &Path) -> Result<Vec<Element>> {
+        Ok(self
+            .files
+            .get(artifact, true)?
+            .libraries
+            .iter()
+            .map(|library| {
+                xml(
+                    "library",
+                    &[
+                        ("id", library.name.clone().unwrap_or_default()),
+                        ("desc", library.desc.clone().unwrap_or_default()),
+                    ],
+                    vec![],
+                )
+            })
+            .collect())
+    }
     pub async fn shutdown(&mut self) {
         if let Some(mut worker) = self.worker.take() {
             let _ = worker.child.kill().await;
@@ -434,20 +554,8 @@ pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String
         }
         let bytes = std::fs::read(&source).map_err(|e| e.to_string())?;
         for desc in library_descriptors(&bytes)? {
-            let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
-                (name, true)
-            } else if let Some(name) = desc.strip_prefix("jar#") {
-                (name.split_once('#').map_or(name, |(file, _)| file), false)
-            } else {
+            let Some((path, circuit)) = library_file(&source, &desc)? else {
                 continue;
-            };
-            let directory = source.parent().ok_or("电路目录不可用")?;
-            let path = directory.join(name);
-            let path = if path.is_file() {
-                path
-            } else {
-                // Match the native loader's basename fallback for moved files.
-                directory.join(name.replace('\\', "/").rsplit('/').next().unwrap_or(name))
             };
             if !path.is_file() {
                 // Let the native loader resolve runtime-specific plugin aliases
@@ -470,23 +578,29 @@ pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String
     collect(artifact, &mut dependencies, &mut Default::default())?;
     Ok(dependencies)
 }
-/// The `<library id desc>` elements the palette requests name: every
-/// top-level `<lib>` of the artifact.
-fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
-    let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
-    Ok(top_level_libraries(&bytes)?
-        .into_iter()
-        .map(|library| {
-            xml(
-                "library",
-                &[
-                    ("id", library.name.unwrap_or_default()),
-                    ("desc", library.desc.unwrap_or_default()),
-                ],
-                vec![],
-            )
-        })
-        .collect())
+/// The file a library descriptor of `source` names and whether it is a
+/// circuit file; None for built-in libraries. A missing file is returned as
+/// is: the native loader resolves runtime-specific plugin aliases and reports
+/// missing files with its own error context.
+fn library_file(source: &Path, desc: &str) -> Result<Option<(PathBuf, bool)>> {
+    let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
+        (name, true)
+    } else if let Some(name) = desc.strip_prefix("jar#") {
+        (name.split_once('#').map_or(name, |(file, _)| file), false)
+    } else {
+        return Ok(None);
+    };
+    let directory = source.parent().ok_or("电路目录不可用")?;
+    let path = directory.join(name);
+    if path.is_file() {
+        return Ok(Some((path, circuit)));
+    }
+    // Match the native loader's basename fallback for moved files.
+    let base = name.replace('\\', "/");
+    Ok(Some((
+        directory.join(base.rsplit('/').next().unwrap_or(name)),
+        circuit,
+    )))
 }
 
 /// The `desc` of each top-level `<lib>`.
@@ -497,6 +611,7 @@ fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
         .collect())
 }
 
+#[derive(Clone)]
 struct TopLevelLibrary {
     name: Option<String>,
     desc: Option<String>,
