@@ -1,10 +1,13 @@
 /**
  * arrange_circuit: re-lay out one definition with @vibe-logisim/arranger in a
  * worker thread, observe the result through the native runtime without
- * applying it (host `observeXml`), prove the netlist equivalent and only
- * then replace the document's XML. A rejected layout never touches the file.
+ * applying it (host `observeXml`), prove the netlist equivalent, and replace
+ * the document's XML only when the layout reads more clearly than the
+ * drawing it replaces. A rejected or less clear layout never touches the file.
  */
 import {
+  compareReadability,
+  READABILITY_NAMES,
   resolveUnknownWidths,
   verifyArrangement,
 } from "@vibe-logisim/arranger";
@@ -79,17 +82,41 @@ export async function arrangeCircuit(
     },
     after.focus,
   );
+  const readability = {
+    before: checks.readabilityBefore,
+    after: checks.readabilityAfter,
+  };
+  const comparison = compareReadability(
+    checks.readabilityBefore,
+    checks.readabilityAfter,
+  );
+  const named = (metrics: (keyof typeof READABILITY_NAMES)[]) =>
+    metrics.map((m) => READABILITY_NAMES[m]);
+  if (!comparison.clearer)
+    return {
+      ...context.identity(document, circuit),
+      applied: false,
+      arrangement: outcome.report,
+      readability,
+      worse: named(comparison.worse),
+      note:
+        `整理出的布局不比现在清楚（可读性得分 ${checks.readabilityBefore.score} → ${checks.readabilityAfter.score}，越低越清楚` +
+        (comparison.worse.length
+          ? `；${named(comparison.worse).join("、")}会变多`
+          : "") +
+        "），没有应用，文件没有改动。要改就针对具体问题用 move_components 或 connect 调整，或给 organization 后再整理。",
+    };
   const applied = await context.edit(document, circuit, [
     { kind: "replace", xml: outcome.xml, title: "整理布局" },
   ]);
   return {
     ...context.identity(applied.view, circuit),
     title: applied.result.title,
+    applied: true,
     arrangement: outcome.report,
-    readability: {
-      before: outcome.readabilityBefore,
-      after: outcome.readabilityAfter,
-    },
+    readability,
+    better: named(comparison.better),
+    worse: named(comparison.worse),
     netlist: {
       equivalent: true,
       groupsCompared: checks.netGroupsCompared,
@@ -97,6 +124,6 @@ export async function arrangeCircuit(
     },
     note:
       "连通性已按网表逐端口组核对（含探针等位宽随网络而定的端口，不是仿真）；作为子电路的引脚排列不变；" +
-      "文件里其他电路一个字节都没改。可用 render_circuit 看图，可调整 organization 的功能分组与阅读行序或连线参数后重新整理；不满意可用 undo_edit 撤销。",
+      "文件里其他电路一个字节都没改；可读性得分越低越清楚。可用 render_circuit 看图，可调整 organization 的功能分组与阅读行序或连线参数后重新整理；不满意可用 undo_edit 撤销。",
   };
 }

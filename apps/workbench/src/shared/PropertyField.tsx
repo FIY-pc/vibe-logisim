@@ -68,11 +68,11 @@ export function PropertyField({
     "aria-describedby": problem ? errorId : undefined,
     disabled: Boolean(readOnly || disabled || pending),
     value,
-    title: readOnly
+    "data-tip": readOnly
       ? "此属性暂不支持在这里编辑"
       : title ||
         (options.length
-          ? label
+          ? undefined
           : multiline
             ? "Ctrl+Enter 提交 · Escape 取消"
             : "Enter 提交 · Escape 取消"),
@@ -105,7 +105,7 @@ export function PropertyField({
         {options.length ? (
           <Select
             label={label}
-            title={common.title}
+            title={common["data-tip"]}
             disabled={common.disabled}
             value={value}
             options={options.map((option) => ({

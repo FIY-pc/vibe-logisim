@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
 import type { HistoryEntry } from "../generated/HistoryEntry";
 import type { HistoryReview as Review } from "../generated/HistoryReview";
 import { sourceDiff } from "./sourceDiff";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./HistoryReview.css";
+import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 interface Preview {
   image: string | null;
@@ -33,7 +34,7 @@ export function HistoryReview({
   onClose: () => void;
   onDocument: (doc: Document, expectedBaseRevision?: string) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const initial = useRef({ id: doc.id, revision: doc.revision }).current;
   const [mode, setMode] = useState<"change" | "current">(
     entry.beforeRevision ? "change" : "current",
@@ -64,10 +65,6 @@ export function HistoryReview({
         ]),
       ]
     : [selected];
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   useEffect(() => {
     let live = true;
     setReview(null);
@@ -162,9 +159,7 @@ export function HistoryReview({
             {doc.name} · {new Date(entry.createdAt).toLocaleString()}
           </small>
         </h2>
-        <button aria-label="关闭" disabled={pending} onClick={onClose}>
-          <X size={18} />
-        </button>
+        <DialogClose disabled={pending} onClick={onClose} />
       </header>
       <nav aria-label="对照方式">
         <Select
@@ -240,11 +235,7 @@ export function HistoryReview({
           原始 XML
           {showSource && (
             <label onClick={(e) => e.stopPropagation()}>
-              <input
-                type="checkbox"
-                checked={allLines}
-                onChange={(e) => setAllLines(e.target.checked)}
-              />
+              <Checkbox checked={allLines} onCheckedChange={setAllLines} />
               显示完整源码
             </label>
           )}

@@ -7,6 +7,7 @@ import {
   type ConnectionPeer,
   type SignalTarget,
 } from "./connectivity";
+import { tip } from "../shared/Tooltips";
 
 interface Props {
   index: ConnectionIndex;
@@ -37,11 +38,11 @@ export function Connections({
       <header>
         <strong>{target.label}</strong>
         {onBack && (
-          <button onClick={onBack} title="Alt+←">
+          <button onClick={onBack} {...tip("返回上个位置", "Alt+←")}>
             返回上个位置
           </button>
         )}
-        <button onClick={onClose} aria-label="退出信号追踪" title="退出追踪">
+        <button onClick={onClose} aria-label="退出信号追踪" data-tip="退出追踪">
           ×
         </button>
       </header>
@@ -58,7 +59,7 @@ export function Connections({
               <button
                 key={`${peer.component.componentId}:${peer.end.index}`}
                 onClick={() => onNavigate(peer)}
-                title={`定位 ${componentName(peer.component)} · ${portName(peer.component, peer.end)}`}
+                data-tip={`定位 ${componentName(peer.component)} · ${portName(peer.component, peer.end)}`}
               >
                 <strong>{componentName(peer.component)}</strong>
                 <span> · {portName(peer.component, peer.end)}</span>

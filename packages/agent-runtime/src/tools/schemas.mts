@@ -374,7 +374,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "arrange_circuit",
     label: "整理布局与连线",
     description:
-      "Re-lay out one definition: places parts, routes wires and tunnels, keeps every other definition byte-identical and proves the netlist equivalent before applying. For a readable functional layout first read inspect_circuit({layoutContext:{}}) and supply organization: {groups:[{id,label,row,componentIds}], namedLinks?, localSignals?, stages?, annotations?}. Pinned parts, kept tunnels and the panel row are respected. Look at the result with render_circuit and refine the organization rather than the coordinates.",
+      "Re-lay out one definition: places parts, routes wires and tunnels, keeps every other definition byte-identical and proves the netlist equivalent before applying. Small definitions without options are laid out by signal flow (inputs left, outputs right, gates in columns, every connection a wire). The result is applied only when it reads more clearly than the current drawing (lower readability score: crossings, bends, close parallel wires, wires over bodies or grazing ports, labels on wires, overlaps); otherwise applied is false, the file is unchanged and worse names what would have got worse. For a readable functional layout of a large sheet first read inspect_circuit({layoutContext:{}}) and supply organization: {groups:[{id,label,row,componentIds}], namedLinks?, localSignals?, stages?, annotations?}. Pinned parts, kept tunnels and the panel row are respected. Look at the result with render_circuit and refine the organization rather than the coordinates.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,

@@ -66,7 +66,7 @@ export async function verifyProjectInfoUI() {
     );
     assert.match(node.textContent!, /尚未载入/);
     assert.match(node.textContent!, /未保存的改动/);
-    await act(async () => button("导出工程 ZIP").click());
+    await act(async () => button("导出工程 ZIP…").click());
     assert(
       !calls.some((c) => c.op === "projectExport"),
       "Existing target needs explicit replacement confirmation",
@@ -82,7 +82,7 @@ export async function verifyProjectInfoUI() {
         <ProjectInfo doc={{ ...doc, revision: "r2" }} onClose={() => {}} />,
       ),
     );
-    assert(button("导出工程 ZIP").disabled);
+    assert(button("导出工程 ZIP…").disabled);
     assert.match(node.textContent!, /组件库文件不存在/);
     const circuit: any = {
       name: "main",

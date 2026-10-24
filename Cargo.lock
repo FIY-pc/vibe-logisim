@@ -4745,7 +4745,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibe-circuit-document"
-version = "0.6.0-beta.1"
+version = "0.6.0-beta.2"
 dependencies = [
  "crc32fast",
  "quick-xml",
@@ -4765,7 +4765,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-logisim-app"
-version = "0.6.0-beta.1"
+version = "0.6.0-beta.2"
 dependencies = [
  "serde_json",
  "tauri",
@@ -4778,7 +4778,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-logisim-runtime"
-version = "0.6.0-beta.1"
+version = "0.6.0-beta.2"
 dependencies = [
  "base64 0.22.1",
  "quick-xml",
@@ -4794,7 +4794,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-workbench-host"
-version = "0.6.0-beta.1"
+version = "0.6.0-beta.2"
 dependencies = [
  "axum",
  "base64 0.22.1",

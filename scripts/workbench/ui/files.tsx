@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { Files } from "../../../apps/workbench/src/workspace/Files";
-import { pickOption } from "./workbench";
+import { clickMenuItem, openMenu, pickOption } from "./workbench";
 
 export async function verifyFilesUI() {
   const node = document.createElement("div");
@@ -111,7 +111,7 @@ export async function verifyFilesUI() {
   const row = (path: string) => {
     const found = [
       ...node.querySelectorAll<HTMLButtonElement>('[role="treeitem"]'),
-    ].find((b) => b.title === path);
+    ].find((b) => b.dataset.tip === path);
     assert(found, "tree row " + path);
     return found;
   };
@@ -144,7 +144,7 @@ export async function verifyFilesUI() {
     await key("ArrowRight");
     await key("ArrowDown");
     assert.equal(
-      (document.activeElement as HTMLElement).title,
+      (document.activeElement as HTMLElement).dataset.tip,
       "dir/child.circ",
     );
     assert.equal(
@@ -155,7 +155,7 @@ export async function verifyFilesUI() {
     await key("Enter");
     assert.deepEqual(opened, ["/fixture/project/dir/child.circ"]);
     await key("ArrowLeft");
-    assert.equal((document.activeElement as HTMLElement).title, "dir");
+    assert.equal((document.activeElement as HTMLElement).dataset.tip, "dir");
     await key("F2");
     assert(
       document
@@ -165,7 +165,10 @@ export async function verifyFilesUI() {
     await click("取消");
     await click("定位当前文件");
     await flush();
-    assert.equal((document.activeElement as HTMLElement).title, "main.circ");
+    assert.equal(
+      (document.activeElement as HTMLElement).dataset.tip,
+      "main.circ",
+    );
     assert.equal(row("main.circ").getAttribute("aria-current"), "page");
     await key("Delete");
     assert(document.querySelector('dialog[aria-label="移入回收站"]'));
@@ -275,8 +278,8 @@ export async function verifyFilesUI() {
     );
     conflict = false;
     g.__pickedFiles = ["/outside/picked-folder"];
-    await click("文件夹操作");
-    await click("导入文件夹…");
+    await openMenu("文件夹操作", node);
+    await clickMenuItem("导入文件夹…");
     await flush();
     assert(
       calls.some(
@@ -290,8 +293,8 @@ export async function verifyFilesUI() {
     assert.equal(previews.at(-1).revision, "immutable-digest");
     assert.equal(previews.at(-1).path, "readme.txt");
     assert.equal(previews.at(-1).folderId, folder.id);
-    await click("文件夹操作");
-    await click("文件改动…");
+    await openMenu("文件夹操作", node);
+    await clickMenuItem("文件改动…");
     await click("修改dir/new.circ");
     assert(
       document

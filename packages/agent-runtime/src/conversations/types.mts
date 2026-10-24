@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ProtocolObject } from "../protocol/types.mts";
 import type { ServiceSelection } from "../models/types.mts";
+import type { FolderChange } from "../protocol/host.mts";
 
 /** One entry of the conversation the UI shows: user, assistant, reasoning, activity or turn. */
 export interface RuntimeMessage {
@@ -12,7 +13,6 @@ export interface RuntimeMessage {
   startedAt?: number;
   elapsedMs?: number;
   error?: string | null;
-  delivery?: string;
   context?: ProtocolObject;
   turnId?: string | null;
   itemId?: string;
@@ -22,6 +22,8 @@ export interface RuntimeMessage {
   detail?: string | null;
   resultStatus?: string;
   canEdit?: boolean;
+  /** On a turn record: the files the turn changed; `undone` once the user undid them. */
+  change?: FolderChange & { undone?: boolean };
 }
 export interface ConversationRecord {
   id: string;
@@ -33,9 +35,8 @@ export interface ConversationRecord {
   customTitle?: boolean;
   titleGenerated?: boolean;
   selection?: ServiceSelection | null;
-  /** The model transcript, the queued steers and where each message starts in both. */
+  /** The model transcript and where each message starts in it and in `messages`. */
   transcript?: AgentMessage[];
-  queued?: AgentMessage[];
   checkpoints?: Record<string, { raw: number; history: number }>;
 }
 export interface ConversationWorkspace {

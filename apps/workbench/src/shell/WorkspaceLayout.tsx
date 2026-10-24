@@ -17,6 +17,7 @@ import {
 import { useShell } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import "./WorkspaceLayout.css";
+import { fullText, tip } from "../shared/Tooltips";
 /** The workspace frame's layout, read from the shell store. */
 export function useWorkspaceLayout() {
   const {
@@ -403,8 +404,10 @@ export function ComponentPalette({
       </div>
       <div className="palette">
         {catalog.map((group) => {
+          // Parts match by their label, native name or the runtime's name.
           const tools = group.tools.filter((t) =>
-            (t.name + " " + t.label)
+            [t.name, t.label, t.nativeLabel]
+              .join(" ")
               .toLowerCase()
               .includes(search.toLowerCase()),
           );
@@ -415,7 +418,7 @@ export function ComponentPalette({
                 <button
                   key={t.name}
                   disabled={Boolean(t.disabled)}
-                  title={t.disabled || t.label}
+                  {...(t.disabled ? tip(t.disabled) : fullText(t.label))}
                   aria-label={t.label}
                   className={
                     place?.name === t.name && place.library === t.library

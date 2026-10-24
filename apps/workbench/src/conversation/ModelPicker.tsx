@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronUp, RefreshCw, X } from "lucide-react";
+import { Check, ChevronDown, RefreshCw } from "lucide-react";
+import { DialogClose } from "../shared/Dialog";
 import "./ai-settings.css";
 
 export interface ModelOption {
@@ -74,7 +75,7 @@ export function ModelPicker({
         }}
       >
         <span>{name || model || "选择模型"}</span>
-        <ChevronUp size={12} />
+        <ChevronDown size={12} aria-hidden="true" />
       </button>
       {open && (
         <ModelDialog
@@ -256,9 +257,7 @@ function ModelDialog({
     >
       <header>
         <h2 id="ai-model-title">选择模型</h2>
-        <button aria-label="关闭模型设置" disabled={saving} onClick={onClose}>
-          <X size={16} />
-        </button>
+        <DialogClose label="关闭模型设置" disabled={saving} onClick={onClose} />
       </header>
       <input
         ref={search}
@@ -303,7 +302,7 @@ function ModelDialog({
               aria-selected={entry.model === chosen}
               disabled={busy || saving}
               onClick={() => void choose(entry)}
-              title={[
+              data-tip={[
                 entry.model,
                 info?.source ? `资料来源：${info.source}` : null,
                 info?.toolCall === false ? "目录标记不支持工具调用" : null,

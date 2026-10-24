@@ -1,4 +1,6 @@
+import { X } from "lucide-react";
 import { Waveform } from "./Waveform";
+import { tip } from "../shared/Tooltips";
 import { liveRun, watchScope } from "./store";
 import { useSimulation, useSimulationState, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
@@ -34,7 +36,7 @@ export function SimulationDock() {
   return (
     <section className="simulation-dock" aria-label="观察信号">
       <header>
-        <span>观察信号</span>
+        <strong>观察信号</strong>
         <button
           onClick={() =>
             void (
@@ -45,6 +47,20 @@ export function SimulationDock() {
           }
         >
           {recording ? "停止记录" : "重新记录"}
+        </button>
+        <button
+          aria-label="关闭观察信号"
+          {...tip("不再观察这些端口")}
+          onClick={(event) => {
+            // Keyboard focus moves on to the canvas instead of leaving with the panel.
+            event.currentTarget
+              .closest("main")
+              ?.querySelector<HTMLElement>(".canvas")
+              ?.focus({ preventScroll: true });
+            actions.simulation.clearWatches(view);
+          }}
+        >
+          <X size={15} />
         </button>
       </header>
       <Waveform key={trace.id} trace={trace} labels={labels} />

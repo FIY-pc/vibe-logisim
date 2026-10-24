@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <main name="before"/>
+  <options/>
+  <mappings/>
+  <toolbar/>
+  <circuit name="before">
+    <a name="circuit" val="before"/>
+    <comp lib="0" loc="(210,40)" name="Pin">
+      <a name="facing" val="south"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(210,40)" to="(210,200)"/>
+    <comp lib="1" loc="(210,230)" name="NOT Gate">
+      <a name="facing" val="south"/>
+      <a name="size" val="30"/>
+    </comp>
+    <comp lib="1" loc="(240,120)" name="AND Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="50"/>
+      <a name="inputs" val="2"/>
+    </comp>
+  </circuit>
+  <circuit name="after">
+    <a name="circuit" val="after"/>
+    <comp lib="0" loc="(210,40)" name="Pin">
+      <a name="facing" val="south"/>
+      <a name="label" val="A"/>
+      <a name="labelloc" val="north"/>
+    </comp>
+    <wire from="(210,40)" to="(210,200)"/>
+    <comp lib="1" loc="(210,230)" name="NOT Gate">
+      <a name="facing" val="south"/>
+      <a name="size" val="30"/>
+    </comp>
+    <comp lib="1" loc="(340,120)" name="AND Gate">
+      <a name="facing" val="east"/>
+      <a name="size" val="50"/>
+      <a name="inputs" val="2"/>
+    </comp>
+  </circuit>
+</project>

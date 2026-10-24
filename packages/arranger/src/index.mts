@@ -10,7 +10,6 @@ export {
   netlistSignature,
   outsideUnchanged,
   protectedNodes,
-  readability,
   verifyArrangement,
 } from "./arrangement.mts";
 export type {
@@ -20,8 +19,15 @@ export type {
   IdentityMap,
   NetGroup,
   NetlistSignature,
-  Readability,
 } from "./arrangement.mts";
+export {
+  compareReadability,
+  predictedFocus,
+  readability,
+  READABILITY_NAMES,
+  READABILITY_WEIGHTS,
+} from "./readability.mts";
+export type { Readability, ReadabilityComparison } from "./readability.mts";
 export type { GroupSolver } from "./grouped-layout.mts";
 export { solveGroups } from "./layout-solver.mts";
 export { assertFloatingIsolation } from "./loose-wires.mts";

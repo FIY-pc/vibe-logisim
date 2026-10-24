@@ -1,0 +1,1030 @@
+{
+ "before": {
+  "circuit": "before",
+  "bounds": {
+   "x": 190,
+   "y": 15,
+   "width": 50,
+   "height": 215
+  },
+  "region": null,
+  "instancePaths": [
+   {
+    "root": "before",
+    "steps": []
+   }
+  ],
+  "components": [
+   {
+    "componentId": "c210_40",
+    "selector": {
+     "circuit": "before",
+     "factory": "Pin",
+     "location": {
+      "x": 210,
+      "y": 40
+     },
+     "label": "A"
+    },
+    "factoryName": "Pin",
+    "displayName": "Pin",
+    "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+    "factoryProvenance": "library:Wiring",
+    "location": {
+     "x": 210,
+     "y": 40
+    },
+    "bounds": {
+     "x": 200,
+     "y": 15,
+     "width": 20,
+     "height": 25
+    },
+    "visualBounds": {
+     "x": 200,
+     "y": -4,
+     "width": 20,
+     "height": 44
+    },
+    "inRegion": true,
+    "attributes": [
+     {
+      "name": "facing",
+      "standard": "south"
+     },
+     {
+      "name": "output",
+      "standard": "false"
+     },
+     {
+      "name": "width",
+      "standard": "1"
+     },
+     {
+      "name": "tristate",
+      "standard": "true"
+     },
+     {
+      "name": "pull",
+      "standard": "none"
+     },
+     {
+      "name": "label",
+      "standard": "A"
+     },
+     {
+      "name": "labelloc",
+      "standard": "north"
+     },
+     {
+      "name": "labelfont",
+      "standard": "Dialog plain 12"
+     },
+     {
+      "name": "labelcolor",
+      "standard": "#000000"
+     }
+    ],
+    "ends": [
+     {
+      "index": 0,
+      "location": {
+       "x": 210,
+       "y": 40
+      },
+      "width": 1,
+      "exclusive": true,
+      "semanticRole": "circuitInput",
+      "runtimeTooltip": "Add an input pin",
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:ace1b5c3299b095e"
+       }
+      ],
+      "localOccupants": 2,
+      "direction": "output"
+     }
+    ],
+    "subcircuit": null,
+    "storage": null
+   },
+   {
+    "componentId": "c240_120",
+    "selector": {
+     "circuit": "before",
+     "factory": "AND Gate",
+     "location": {
+      "x": 240,
+      "y": 120
+     },
+     "label": null
+    },
+    "factoryName": "AND Gate",
+    "displayName": "AND Gate",
+    "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+    "factoryProvenance": "library:Gates",
+    "location": {
+     "x": 240,
+     "y": 120
+    },
+    "bounds": {
+     "x": 190,
+     "y": 95,
+     "width": 50,
+     "height": 50
+    },
+    "visualBounds": {
+     "x": 190,
+     "y": 95,
+     "width": 50,
+     "height": 50
+    },
+    "inRegion": true,
+    "attributes": [
+     {
+      "name": "facing",
+      "standard": "east"
+     },
+     {
+      "name": "width",
+      "standard": "1"
+     },
+     {
+      "name": "size",
+      "standard": "50"
+     },
+     {
+      "name": "inputs",
+      "standard": "2"
+     },
+     {
+      "name": "out",
+      "standard": "01"
+     },
+     {
+      "name": "label",
+      "standard": ""
+     },
+     {
+      "name": "labelfont",
+      "standard": "Dialog plain 12"
+     },
+     {
+      "name": "labelcolor",
+      "standard": "#000000"
+     },
+     {
+      "name": "negate0",
+      "standard": "false"
+     },
+     {
+      "name": "negate1",
+      "standard": "false"
+     }
+    ],
+    "ends": [
+     {
+      "index": 0,
+      "location": {
+       "x": 240,
+       "y": 120
+      },
+      "width": 1,
+      "exclusive": true,
+      "semanticRole": "output",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:240,120#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "output"
+     },
+     {
+      "index": 1,
+      "location": {
+       "x": 190,
+       "y": 100
+      },
+      "width": 1,
+      "exclusive": false,
+      "semanticRole": "input[0]",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:190,100#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "input"
+     },
+     {
+      "index": 2,
+      "location": {
+       "x": 190,
+       "y": 140
+      },
+      "width": 1,
+      "exclusive": false,
+      "semanticRole": "input[1]",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:190,140#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "input"
+     }
+    ],
+    "subcircuit": null,
+    "storage": null
+   },
+   {
+    "componentId": "c210_230",
+    "selector": {
+     "circuit": "before",
+     "factory": "NOT Gate",
+     "location": {
+      "x": 210,
+      "y": 230
+     },
+     "label": null
+    },
+    "factoryName": "NOT Gate",
+    "displayName": "NOT Gate",
+    "factoryClass": "com.cburch.logisim.std.gates.NotGate",
+    "factoryProvenance": "library:Gates",
+    "location": {
+     "x": 210,
+     "y": 230
+    },
+    "bounds": {
+     "x": 201,
+     "y": 200,
+     "width": 18,
+     "height": 30
+    },
+    "visualBounds": {
+     "x": 201,
+     "y": 185,
+     "width": 18,
+     "height": 45
+    },
+    "inRegion": true,
+    "attributes": [
+     {
+      "name": "facing",
+      "standard": "south"
+     },
+     {
+      "name": "width",
+      "standard": "1"
+     },
+     {
+      "name": "size",
+      "standard": "30"
+     },
+     {
+      "name": "out",
+      "standard": "01"
+     },
+     {
+      "name": "label",
+      "standard": ""
+     },
+     {
+      "name": "labelfont",
+      "standard": "Dialog plain 12"
+     },
+     {
+      "name": "labelcolor",
+      "standard": "#000000"
+     }
+    ],
+    "ends": [
+     {
+      "index": 0,
+      "location": {
+       "x": 210,
+       "y": 230
+      },
+      "width": 1,
+      "exclusive": true,
+      "semanticRole": "output",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:210,230#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "output"
+     },
+     {
+      "index": 1,
+      "location": {
+       "x": 210,
+       "y": 200
+      },
+      "width": 1,
+      "exclusive": false,
+      "semanticRole": "input[0]",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:ace1b5c3299b095e"
+       }
+      ],
+      "localOccupants": 2,
+      "direction": "input"
+     }
+    ],
+    "subcircuit": null,
+    "storage": null
+   }
+  ],
+  "wires": [
+   {
+    "wireId": "w000",
+    "from": {
+     "x": 210,
+     "y": 40
+    },
+    "to": {
+     "x": 210,
+     "y": 200
+    },
+    "bundleId": "b:7051d34ce7d0ae0f"
+   }
+  ],
+  "wireBundles": [
+   {
+    "bundleId": "b:7051d34ce7d0ae0f",
+    "valid": true,
+    "width": 1,
+    "widthDeterminant": {
+     "x": 210,
+     "y": 200
+    },
+    "points": [
+     {
+      "x": 210,
+      "y": 40
+     },
+     {
+      "x": 210,
+      "y": 200
+     }
+    ],
+    "wireIds": [
+     "w000"
+    ],
+    "bitNets": [
+     {
+      "bit": 0,
+      "netId": "n:ace1b5c3299b095e"
+     }
+    ]
+   }
+  ],
+  "bitNets": [
+   {
+    "netId": "n:ace1b5c3299b095e",
+    "kind": "runtime-wire-thread",
+    "slices": [
+     {
+      "bundleId": "b:7051d34ce7d0ae0f",
+      "bit": 0
+     }
+    ],
+    "contacts": [
+     {
+      "componentId": "c210_230",
+      "endIndex": 1,
+      "bit": 0,
+      "location": {
+       "x": 210,
+       "y": 200
+      },
+      "semanticRole": "input[0]",
+      "direction": "input"
+     },
+     {
+      "componentId": "c210_40",
+      "endIndex": 0,
+      "bit": 0,
+      "location": {
+       "x": 210,
+       "y": 40
+      },
+      "semanticRole": "circuitInput",
+      "direction": "output"
+     }
+    ],
+    "contactCount": 2
+   },
+   {
+    "netId": "n:p:190,100#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c240_120",
+      "endIndex": 1,
+      "bit": 0,
+      "location": {
+       "x": 190,
+       "y": 100
+      },
+      "semanticRole": "input[0]",
+      "direction": "input"
+     }
+    ],
+    "contactCount": 1
+   },
+   {
+    "netId": "n:p:190,140#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c240_120",
+      "endIndex": 2,
+      "bit": 0,
+      "location": {
+       "x": 190,
+       "y": 140
+      },
+      "semanticRole": "input[1]",
+      "direction": "input"
+     }
+    ],
+    "contactCount": 1
+   },
+   {
+    "netId": "n:p:210,230#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c210_230",
+      "endIndex": 0,
+      "bit": 0,
+      "location": {
+       "x": 210,
+       "y": 230
+      },
+      "semanticRole": "output",
+      "direction": "output"
+     }
+    ],
+    "contactCount": 1
+   },
+   {
+    "netId": "n:p:240,120#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c240_120",
+      "endIndex": 0,
+      "bit": 0,
+      "location": {
+       "x": 240,
+       "y": 120
+      },
+      "semanticRole": "output",
+      "direction": "output"
+     }
+    ],
+    "contactCount": 1
+   }
+  ],
+  "stateElements": [],
+  "tunnels": [],
+  "spatialAdjacency": [],
+  "widthIncompatibilities": []
+ },
+ "after": {
+  "circuit": "after",
+  "bounds": {
+   "x": 200,
+   "y": 15,
+   "width": 140,
+   "height": 215
+  },
+  "region": null,
+  "instancePaths": [
+   {
+    "root": "after",
+    "steps": []
+   }
+  ],
+  "components": [
+   {
+    "componentId": "c210_40",
+    "selector": {
+     "circuit": "after",
+     "factory": "Pin",
+     "location": {
+      "x": 210,
+      "y": 40
+     },
+     "label": "A"
+    },
+    "factoryName": "Pin",
+    "displayName": "Pin",
+    "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+    "factoryProvenance": "library:Wiring",
+    "location": {
+     "x": 210,
+     "y": 40
+    },
+    "bounds": {
+     "x": 200,
+     "y": 15,
+     "width": 20,
+     "height": 25
+    },
+    "visualBounds": {
+     "x": 200,
+     "y": -4,
+     "width": 20,
+     "height": 44
+    },
+    "inRegion": true,
+    "attributes": [
+     {
+      "name": "facing",
+      "standard": "south"
+     },
+     {
+      "name": "output",
+      "standard": "false"
+     },
+     {
+      "name": "width",
+      "standard": "1"
+     },
+     {
+      "name": "tristate",
+      "standard": "true"
+     },
+     {
+      "name": "pull",
+      "standard": "none"
+     },
+     {
+      "name": "label",
+      "standard": "A"
+     },
+     {
+      "name": "labelloc",
+      "standard": "north"
+     },
+     {
+      "name": "labelfont",
+      "standard": "Dialog plain 12"
+     },
+     {
+      "name": "labelcolor",
+      "standard": "#000000"
+     }
+    ],
+    "ends": [
+     {
+      "index": 0,
+      "location": {
+       "x": 210,
+       "y": 40
+      },
+      "width": 1,
+      "exclusive": true,
+      "semanticRole": "circuitInput",
+      "runtimeTooltip": "Add an input pin",
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:ace1b5c3299b095e"
+       }
+      ],
+      "localOccupants": 2,
+      "direction": "output"
+     }
+    ],
+    "subcircuit": null,
+    "storage": null
+   },
+   {
+    "componentId": "c340_120",
+    "selector": {
+     "circuit": "after",
+     "factory": "AND Gate",
+     "location": {
+      "x": 340,
+      "y": 120
+     },
+     "label": null
+    },
+    "factoryName": "AND Gate",
+    "displayName": "AND Gate",
+    "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+    "factoryProvenance": "library:Gates",
+    "location": {
+     "x": 340,
+     "y": 120
+    },
+    "bounds": {
+     "x": 290,
+     "y": 95,
+     "width": 50,
+     "height": 50
+    },
+    "visualBounds": {
+     "x": 290,
+     "y": 95,
+     "width": 50,
+     "height": 50
+    },
+    "inRegion": true,
+    "attributes": [
+     {
+      "name": "facing",
+      "standard": "east"
+     },
+     {
+      "name": "width",
+      "standard": "1"
+     },
+     {
+      "name": "size",
+      "standard": "50"
+     },
+     {
+      "name": "inputs",
+      "standard": "2"
+     },
+     {
+      "name": "out",
+      "standard": "01"
+     },
+     {
+      "name": "label",
+      "standard": ""
+     },
+     {
+      "name": "labelfont",
+      "standard": "Dialog plain 12"
+     },
+     {
+      "name": "labelcolor",
+      "standard": "#000000"
+     },
+     {
+      "name": "negate0",
+      "standard": "false"
+     },
+     {
+      "name": "negate1",
+      "standard": "false"
+     }
+    ],
+    "ends": [
+     {
+      "index": 0,
+      "location": {
+       "x": 340,
+       "y": 120
+      },
+      "width": 1,
+      "exclusive": true,
+      "semanticRole": "output",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:340,120#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "output"
+     },
+     {
+      "index": 1,
+      "location": {
+       "x": 290,
+       "y": 100
+      },
+      "width": 1,
+      "exclusive": false,
+      "semanticRole": "input[0]",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:290,100#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "input"
+     },
+     {
+      "index": 2,
+      "location": {
+       "x": 290,
+       "y": 140
+      },
+      "width": 1,
+      "exclusive": false,
+      "semanticRole": "input[1]",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:290,140#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "input"
+     }
+    ],
+    "subcircuit": null,
+    "storage": null
+   },
+   {
+    "componentId": "c210_230",
+    "selector": {
+     "circuit": "after",
+     "factory": "NOT Gate",
+     "location": {
+      "x": 210,
+      "y": 230
+     },
+     "label": null
+    },
+    "factoryName": "NOT Gate",
+    "displayName": "NOT Gate",
+    "factoryClass": "com.cburch.logisim.std.gates.NotGate",
+    "factoryProvenance": "library:Gates",
+    "location": {
+     "x": 210,
+     "y": 230
+    },
+    "bounds": {
+     "x": 201,
+     "y": 200,
+     "width": 18,
+     "height": 30
+    },
+    "visualBounds": {
+     "x": 201,
+     "y": 185,
+     "width": 18,
+     "height": 45
+    },
+    "inRegion": true,
+    "attributes": [
+     {
+      "name": "facing",
+      "standard": "south"
+     },
+     {
+      "name": "width",
+      "standard": "1"
+     },
+     {
+      "name": "size",
+      "standard": "30"
+     },
+     {
+      "name": "out",
+      "standard": "01"
+     },
+     {
+      "name": "label",
+      "standard": ""
+     },
+     {
+      "name": "labelfont",
+      "standard": "Dialog plain 12"
+     },
+     {
+      "name": "labelcolor",
+      "standard": "#000000"
+     }
+    ],
+    "ends": [
+     {
+      "index": 0,
+      "location": {
+       "x": 210,
+       "y": 230
+      },
+      "width": 1,
+      "exclusive": true,
+      "semanticRole": "output",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:p:210,230#0"
+       }
+      ],
+      "localOccupants": 1,
+      "direction": "output"
+     },
+     {
+      "index": 1,
+      "location": {
+       "x": 210,
+       "y": 200
+      },
+      "width": 1,
+      "exclusive": false,
+      "semanticRole": "input[0]",
+      "runtimeTooltip": null,
+      "netBits": [
+       {
+        "bit": 0,
+        "netId": "n:ace1b5c3299b095e"
+       }
+      ],
+      "localOccupants": 2,
+      "direction": "input"
+     }
+    ],
+    "subcircuit": null,
+    "storage": null
+   }
+  ],
+  "wires": [
+   {
+    "wireId": "w000",
+    "from": {
+     "x": 210,
+     "y": 40
+    },
+    "to": {
+     "x": 210,
+     "y": 200
+    },
+    "bundleId": "b:7051d34ce7d0ae0f"
+   }
+  ],
+  "wireBundles": [
+   {
+    "bundleId": "b:7051d34ce7d0ae0f",
+    "valid": true,
+    "width": 1,
+    "widthDeterminant": {
+     "x": 210,
+     "y": 200
+    },
+    "points": [
+     {
+      "x": 210,
+      "y": 40
+     },
+     {
+      "x": 210,
+      "y": 200
+     }
+    ],
+    "wireIds": [
+     "w000"
+    ],
+    "bitNets": [
+     {
+      "bit": 0,
+      "netId": "n:ace1b5c3299b095e"
+     }
+    ]
+   }
+  ],
+  "bitNets": [
+   {
+    "netId": "n:ace1b5c3299b095e",
+    "kind": "runtime-wire-thread",
+    "slices": [
+     {
+      "bundleId": "b:7051d34ce7d0ae0f",
+      "bit": 0
+     }
+    ],
+    "contacts": [
+     {
+      "componentId": "c210_230",
+      "endIndex": 1,
+      "bit": 0,
+      "location": {
+       "x": 210,
+       "y": 200
+      },
+      "semanticRole": "input[0]",
+      "direction": "input"
+     },
+     {
+      "componentId": "c210_40",
+      "endIndex": 0,
+      "bit": 0,
+      "location": {
+       "x": 210,
+       "y": 40
+      },
+      "semanticRole": "circuitInput",
+      "direction": "output"
+     }
+    ],
+    "contactCount": 2
+   },
+   {
+    "netId": "n:p:210,230#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c210_230",
+      "endIndex": 0,
+      "bit": 0,
+      "location": {
+       "x": 210,
+       "y": 230
+      },
+      "semanticRole": "output",
+      "direction": "output"
+     }
+    ],
+    "contactCount": 1
+   },
+   {
+    "netId": "n:p:290,100#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c340_120",
+      "endIndex": 1,
+      "bit": 0,
+      "location": {
+       "x": 290,
+       "y": 100
+      },
+      "semanticRole": "input[0]",
+      "direction": "input"
+     }
+    ],
+    "contactCount": 1
+   },
+   {
+    "netId": "n:p:290,140#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c340_120",
+      "endIndex": 2,
+      "bit": 0,
+      "location": {
+       "x": 290,
+       "y": 140
+      },
+      "semanticRole": "input[1]",
+      "direction": "input"
+     }
+    ],
+    "contactCount": 1
+   },
+   {
+    "netId": "n:p:340,120#0",
+    "kind": "unbundled-runtime-point",
+    "slices": [],
+    "contacts": [
+     {
+      "componentId": "c340_120",
+      "endIndex": 0,
+      "bit": 0,
+      "location": {
+       "x": 340,
+       "y": 120
+      },
+      "semanticRole": "output",
+      "direction": "output"
+     }
+    ],
+    "contactCount": 1
+   }
+  ],
+  "stateElements": [],
+  "tunnels": [],
+  "spatialAdjacency": [],
+  "widthIncompatibilities": []
+ }
+}

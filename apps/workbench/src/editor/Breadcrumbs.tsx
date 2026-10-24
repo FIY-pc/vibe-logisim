@@ -18,9 +18,10 @@ export function Breadcrumbs({ placement }: { placement: PlacementState }) {
       <span>/</span>
       <ParentInstanceButton />
       <strong>{circuit.name}</strong>
-      <CircuitActions />
-      <PlacementControls placement={placement} />
       <InstanceStatus />
+      <span className="breadcrumbs-spacer" />
+      <PlacementControls placement={placement} />
+      <CircuitActions />
     </div>
   );
 }
