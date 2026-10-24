@@ -14,6 +14,12 @@ const samePath = (a: string, b: string) => {
   const [x, y] = [comparable(a), comparable(b)];
   return /^[a-z]:\//i.test(x) ? x.toLowerCase() === y.toLowerCase() : x === y;
 };
+/** Whether `file` lies in `folder`, compared like `samePath`. */
+const within = (folder: string, file: string) => {
+  let [f, p] = [comparable(folder).replace(/\/+$/, ""), comparable(file)];
+  if (/^[a-z]:\//i.test(f)) [f, p] = [f.toLowerCase(), p.toLowerCase()];
+  return p.startsWith(f + "/");
+};
 
 /** Opening, saving, reloading and closing documents, and the project folder. */
 export function createWorkspaceActions(stores: Stores) {
@@ -231,11 +237,16 @@ export function createWorkspaceActions(stores: Stores) {
     });
   };
 
-  /** Shows a newly opened project folder in the rail. */
+  /** Shows a newly opened project folder in the rail. The circuits of the
+   * previous folder close with it, as when an editor opens a folder in
+   * place; one with unsaved changes stays open. */
   const onFolder = (next: ProjectFolder) => {
     documents.getState().invalidate();
     files.getState().setFolder(next);
     shell.getState().revealFiles();
+    for (const doc of documents.getState().docs)
+      if (doc.path && !doc.dirty && !within(next.path, doc.path))
+        void closeDocument(doc).catch(onError);
   };
   const openFolderAt = (path: string) =>
     openFolderPath(path, onFolder, onError);
