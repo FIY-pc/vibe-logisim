@@ -36,6 +36,7 @@ import type {
 import type { RunState } from "../generated/RunState";
 import type { FrameImage } from "../generated/FrameImage";
 import { command } from "../shared/transport";
+import { HostError } from "../shared/host-error";
 import { liveViewport } from "../simulation/simulation";
 interface Props {
   doc: Document;
@@ -69,6 +70,9 @@ interface Props {
     },
   ) => void;
   onError: (e: unknown) => void;
+  /** A picture or connection read was refused because the host's document
+   * moved on (another revision exists); read the workspace again. */
+  onStale: () => void;
   fitToken: number;
   zoomRequest?: { token: number; factor: number };
   /** A deletion asked for outside the canvas (the toolbar); committed here so
@@ -94,6 +98,9 @@ const route = (a: Point, b: Point): Point[] =>
   [a, { x: b.x, y: a.y }, b].filter(
     (p, i, arr) => i === 0 || p.x !== arr[i - 1].x || p.y !== arr[i - 1].y,
   );
+/** The host refused a read because the window's revision is no longer its current one. */
+const stale = (e: unknown) => HostError.from(e).code === "STALE_REVISION";
+
 export function Canvas({
   doc,
   circuit,
@@ -111,6 +118,7 @@ export function Canvas({
   onRelease,
   onViewport,
   onError,
+  onStale,
   fitToken,
   zoomRequest,
   deleteRequest,
@@ -429,7 +437,9 @@ export function Canvas({
             });
         })
         .catch((e) => {
-          if (ticket === generation.current) onError(e);
+          if (ticket !== generation.current) return;
+          if (stale(e)) onStale();
+          else onError(e);
         })
         .finally(() => {
           if (ticket === generation.current) setLoading(false);
@@ -494,10 +504,10 @@ export function Canvas({
           });
       })
       .catch((e) => {
-        if (live) {
-          setObservationError(e instanceof Error ? e.message : String(e));
-          onError(e);
-        }
+        if (!live) return;
+        if (stale(e)) return onStale();
+        setObservationError(e instanceof Error ? e.message : String(e));
+        onError(e);
       });
     return () => {
       live = false;

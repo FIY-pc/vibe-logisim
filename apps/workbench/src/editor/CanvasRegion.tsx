@@ -79,6 +79,9 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
           simulating.viewport(session.sessionId, viewId, area);
       }}
       onError={onError}
+      onStale={() =>
+        void stores.documents.getState().refreshWorkspace().catch(onError)
+      }
       fitToken={fitToken}
       zoomRequest={zoomRequest}
       deleteRequest={deleteRequest}

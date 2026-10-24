@@ -206,6 +206,7 @@ const input = async (value: string) => {
   });
 };
 const errors: any[] = [];
+let stales = 0;
 const changed: any[] = [];
 const chat = (d: any, visible = true) => (
   <Workbench>
@@ -738,6 +739,7 @@ const canvas = (d: any) => (
     onRelease={() => {}}
     onViewport={() => {}}
     onError={(e: any) => errors.push(e)}
+    onStale={() => stales++}
     fitToken={0}
     onOpenMemory={() => {}}
     onEnterCircuit={() => {}}
@@ -770,6 +772,35 @@ await pointer("pointerup", 160);
 assert.equal(edits.length, 0);
 console.log(
   "PASS: revision change cancels in-flight canvas drag instead of editing new revision",
+);
+
+// A picture or connection read refused as stale re-reads the workspace instead of raising an error.
+const hostBeforeStale = (globalThis as any).__command;
+(globalThis as any).__command = async (request: any) => {
+  if (
+    (request.op === "render" || request.op === "observe") &&
+    request.revision === "r3"
+  )
+    throw {
+      code: "STALE_REVISION",
+      message: "电路已改变，请重新读取后再修改",
+      retryable: false,
+    };
+  return hostBeforeStale(request);
+};
+const errorsBeforeStale = errors.length,
+  stalesBefore = stales;
+await render(canvas({ ...cd, revision: "r3" }));
+// The picture waits up to 80 ms for the view to settle; the connections follow it.
+await act(async () => {
+  await new Promise((r) => setTimeout(r, 150));
+});
+await settle();
+assert.equal(errors.length, errorsBeforeStale);
+assert.ok(stales > stalesBefore);
+(globalThis as any).__command = hostBeforeStale;
+console.log(
+  "PASS: stale picture and connection reads re-read the workspace instead of raising an error",
 );
 
 // Native template requests and placement commits must carry the same facing.
@@ -811,6 +842,7 @@ function PlacementHarness({ token }: { token: number }) {
       onRelease={() => {}}
       onViewport={() => {}}
       onError={(e) => errors.push(e)}
+      onStale={() => stales++}
       fitToken={0}
       onOpenMemory={() => {}}
       onEnterCircuit={() => {}}
@@ -913,6 +945,7 @@ function QueueHarness() {
         onRelease={() => {}}
         onViewport={() => {}}
         onError={(e) => errors.push(e)}
+        onStale={() => stales++}
         fitToken={0}
         onOpenMemory={() => {}}
         onEnterCircuit={() => {}}
@@ -1129,6 +1162,7 @@ function TraceHarness() {
         onRelease={() => {}}
         onViewport={() => {}}
         onError={(e) => errors.push(e)}
+        onStale={() => stales++}
         fitToken={0}
         onOpenMemory={() => {}}
         onEnterCircuit={() => {}}
