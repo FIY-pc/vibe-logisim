@@ -131,4 +131,40 @@ describe("grouped organization", () => {
     );
     assert.ok((error as ToolError).hint);
   });
+
+  it("says why a member cannot be grouped", async () => {
+    const refused = (options: Record<string, unknown>) =>
+      arrange({
+        xml: XML,
+        circuit: "main",
+        focus: JSON.parse(file("adder-main.focus.json")),
+        options: { organization: ORGANIZATION, ...options },
+      }).then(
+        () => null,
+        (e: unknown) => (e as ToolError).message,
+      );
+    // A pin above the panel line is frozen, not a bad id.
+    assert.equal(
+      await refused({ panelBelowY: 100 }),
+      "分组引用的元件 c100_100 在固定的面板里（panelBelowY=100：上边缘在这条线之上的元件原地不动），要布局它就去掉 panelBelowY 或把它改小",
+    );
+    assert.equal(
+      await refused({ pinnedComponentIds: ["c300_150"] }),
+      "分组引用的元件 c300_150 在 pinnedComponentIds 里，原地不动的元件不分组",
+    );
+    const groups = ORGANIZATION.groups.map((g) => ({ ...g }));
+    groups[0] = { ...groups[0], componentIds: ["c300_150", "c999_999"] };
+    assert.equal(
+      await arrange({
+        xml: XML,
+        circuit: "main",
+        focus: JSON.parse(file("adder-main.focus.json")),
+        options: { organization: { groups } },
+      }).then(
+        () => null,
+        (e: unknown) => (e as ToolError).message,
+      ),
+      "分组引用的元件 c999_999 不存在（元件 ID 以当前 inspect_circuit 的结果为准）",
+    );
+  });
 });

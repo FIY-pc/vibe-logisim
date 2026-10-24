@@ -24,12 +24,20 @@ const referenceRoot = (() => {
 })();
 const inside = (root: string, target: string) =>
   target === root || target.startsWith(root + path.sep);
+/** Where exec_command's sandbox mounts the reference directory. */
+const SANDBOX_REFERENCE = "/tmp/vibe-circuit-reference";
+// A reference path as the shell sees it, so that the two spellings of the
+// same file both read.
+const fromSandbox = (value: string) =>
+  value === SANDBOX_REFERENCE || value.startsWith(SANDBOX_REFERENCE + "/")
+    ? path.join(referenceRoot, value.slice(SANDBOX_REFERENCE.length))
+    : value;
 const result = (text: string): AgentToolResult<any> => ({
   content: [{ type: "text", text }],
   details: null,
 });
 async function resolveFile(root: string, value: any, write = false) {
-  const target = path.resolve(root, value);
+  const target = path.resolve(root, fromSandbox(String(value)));
   const allowed =
     inside(root, target) || (!write && inside(referenceRoot, target));
   if (!allowed) throw new Error("路径不在工作区或内置参考目录中");
@@ -101,7 +109,7 @@ function command(
   const unit = `vibe-builtin-${randomUUID()}.service`;
   const bind = (source: any, target: string) =>
     `${JSON.stringify(source)}:${JSON.stringify(target)}`;
-  const readOnly = [bind(referenceRoot, "/tmp/vibe-circuit-reference")];
+  const readOnly = [bind(referenceRoot, SANDBOX_REFERENCE)];
   if (runtimeRoot) readOnly.push(bind(runtimeRoot, "/tmp/vibe-runtime"));
   const args = [
     "--user",
@@ -270,7 +278,9 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
       name: "exec_command",
       label: "执行命令",
       description:
-        "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at /tmp/vibe-circuit-reference. No model credentials or user home access. Output is limited to the last 64000 characters.",
+        "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at " +
+        SANDBOX_REFERENCE +
+        ". No model credentials or user home access. Output is limited to the last 64000 characters.",
       parameters: schema({ command: string, timeout: { type: "number" } }),
       execute: async (_id: any, args: any, signal: any) => {
         assertCurrent();
@@ -284,4 +294,11 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
     });
   return tools;
 }
-export { fileTools, resolveFile, command, referenceRoot, readText };
+export {
+  fileTools,
+  resolveFile,
+  command,
+  referenceRoot,
+  SANDBOX_REFERENCE,
+  readText,
+};

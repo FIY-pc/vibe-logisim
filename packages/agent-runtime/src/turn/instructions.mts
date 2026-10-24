@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { referenceRoot } from "../tools/files.mts";
+import { referenceRoot, SANDBOX_REFERENCE } from "../tools/files.mts";
 
 const skillRelativePath = "skills/circuit-organization/SKILL.md";
 const skillText = fs.readFileSync(
@@ -48,7 +48,7 @@ Building and tidying
 A complete build is correct behaviour, preserved required interfaces and a readable, well-organized drawing; drawing quality is part of delivery even when the user only asks to build. Plan the organization while building and leave time to finish it. Review the main drawing and every definition you created or substantially changed at a scale where labels and pin values are readable, by following an actual principal signal through its operations and state to its consumer. Use the bundled circuit-organization skill for substantial construction, extension or layout work, including an ordinary course assignment; read its SKILL.md when applicable and its references only as needed. Geometry warnings from inspect_circuit's layoutReview are evidence to look at, not a score. Do not report diagram work as complete merely because it rendered or arranged.
 
 Available bundled skill (read-only; name and description only until loaded)
-- ${BUNDLED_SKILL.name}: ${BUNDLED_SKILL.description} File: ${referenceRoot}/${BUNDLED_SKILL.path}
+- ${BUNDLED_SKILL.name}: ${BUNDLED_SKILL.description} Load it with read_file, path ${referenceRoot}/${BUNDLED_SKILL.path}
 Skill bundle revision: ${BUNDLED_SKILL.sha256}
 
 Long tasks and scope
@@ -65,7 +65,7 @@ export function systemInstructions(
   if (override) return override;
   const shell =
     platform === "linux"
-      ? "Shell cwd is /tmp/workspace; file tools use folder-relative paths."
+      ? `Shell cwd is /tmp/workspace; file tools use folder-relative paths. In the shell the bundled reference directory is ${SANDBOX_REFERENCE} (read_file accepts that path too).`
       : "No shell is available; file tools use folder-relative paths.";
   return (
     INSTRUCTIONS +

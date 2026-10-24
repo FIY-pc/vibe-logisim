@@ -378,13 +378,44 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
-      keepTunnels: array(str({ maxLength: 128 }), { maxItems: 256 }),
-      pinnedComponentIds: array(str({ maxLength: 64 }), { maxItems: 2048 }),
-      localiseConstants: { type: "boolean" },
-      columnGap: int({ minimum: 60, maximum: 1000 }),
-      panelBelowY: int({ minimum: -100000, maximum: 100000 }),
-      maxLayerSpan: int({ minimum: 1, maximum: 64 }),
-      tunnelSpan: int({ minimum: 100, maximum: 5000 }),
+      keepTunnels: array(str({ maxLength: 128 }), {
+        maxItems: 256,
+        description:
+          "Tunnel labels to keep as tunnels instead of wiring their nets.",
+      }),
+      pinnedComponentIds: array(str({ maxLength: 64 }), {
+        maxItems: 2048,
+        description:
+          "Parts that stay where they are; they cannot be in a group. Interface pins are ordinary parts: leave them unpinned to let the layout place them.",
+      }),
+      localiseConstants: {
+        type: "boolean",
+        description:
+          "Give each consumer of a Constant its own copy on its port (default true).",
+      },
+      columnGap: int({
+        minimum: 60,
+        maximum: 1000,
+        description: "Horizontal space between layers in px (default 160).",
+      }),
+      panelBelowY: int({
+        minimum: -100000,
+        maximum: 100000,
+        description:
+          "Only for sheets with a fixed control panel on top: every part whose top edge is above this y stays in place and cannot be grouped. Omit it otherwise (a panel is detected only on sheets of 40 or more parts); a value below the whole drawing freezes everything.",
+      }),
+      maxLayerSpan: int({
+        minimum: 1,
+        maximum: 64,
+        description:
+          "A named net spanning more layers than this becomes a tunnel (default 8).",
+      }),
+      tunnelSpan: int({
+        minimum: 100,
+        maximum: 5000,
+        description:
+          "Longest wire in px before a net becomes a tunnel; larger keeps more wires.",
+      }),
       organization: object(
         {
           groups: array(

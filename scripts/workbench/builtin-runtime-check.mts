@@ -11,6 +11,8 @@ import { systemInstructions } from "../../packages/agent-runtime/src/turn/instru
 import {
   readText,
   referenceRoot,
+  resolveFile,
+  SANDBOX_REFERENCE,
 } from "../../packages/agent-runtime/src/tools/files.mts";
 import {
   CLEARED,
@@ -24,8 +26,26 @@ for (const text of [linux, windows]) {
   assert.ok(text.includes(referenceRoot), "the reference directory is named");
 }
 assert.match(linux, /Shell cwd is \/tmp\/workspace/);
+assert.ok(linux.includes(SANDBOX_REFERENCE), "the sandbox path is named");
 assert.match(windows, /No shell is available/);
 assert.doesNotMatch(windows, /Shell cwd/);
+// The skill is readable at the path the prompt gives and at the sandbox path.
+const skillPath = linux.match(/path (\S+SKILL\.md)/)?.[1];
+assert.ok(skillPath, "the prompt names the skill file");
+assert.equal(
+  await resolveFile("/nonexistent-folder", skillPath),
+  path.join(referenceRoot, "skills/circuit-organization/SKILL.md"),
+);
+assert.equal(
+  await resolveFile(
+    "/nonexistent-folder",
+    SANDBOX_REFERENCE + "/skills/circuit-organization/SKILL.md",
+  ),
+  path.join(referenceRoot, "skills/circuit-organization/SKILL.md"),
+);
+await assert.rejects(
+  resolveFile("/nonexistent-folder", SANDBOX_REFERENCE + "/../escape"),
+);
 assert.equal(
   systemInstructions("Custom instructions.", "win32"),
   "Custom instructions.",

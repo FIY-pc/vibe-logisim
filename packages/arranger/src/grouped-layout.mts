@@ -119,10 +119,19 @@ export class GroupedPlacement implements PlacementStrategy {
         seen.add(original);
         const cid = (layout.fused.get(original as string) ??
           original) as string;
-        if (!layout.bodyIds.has(cid))
+        if (!layout.bodyIds.has(cid)) {
+          const part = layout.byId.get(cid);
+          const reason = !part
+            ? "不存在（元件 ID 以当前 inspect_circuit 的结果为准）"
+            : part.factoryName === "Tunnel"
+              ? "是隧道：隧道随它的网络布置，不分组"
+              : layout.pinned.has(cid)
+                ? "在 pinnedComponentIds 里，原地不动的元件不分组"
+                : `在固定的面板里（panelBelowY=${layout.panelBelowY}：上边缘在这条线之上的元件原地不动），要布局它就去掉 panelBelowY 或把它改小`;
           throw new PyValueError(
-            `分组引用了不存在、固定或不支持的元件: ${pyStr(original)}`,
+            `分组引用的元件 ${pyStr(original)} ${reason}`,
           );
+        }
         if (textIds.has(cid)) {
           legacyAnnotations.set(cid, gid);
           continue;
