@@ -244,7 +244,7 @@ impl Host {
         circuit: &str,
     ) -> Result<Value> {
         let doc = self.interface_document(id, revision).await?;
-        let (path, _) = self.materialize(&doc)?;
+        let path = self.materialize(&doc)?;
         let mut native = self.native.lock().await;
         let symbol = native_symbol(&mut native, &path, circuit).await?;
         let observation = native.observe(&path, circuit).await?;
@@ -272,7 +272,7 @@ impl Host {
     ) -> Result<Value> {
         let fingerprint = draft_digest(draft)?;
         let doc = self.interface_document(id, revision).await?;
-        let (path, _) = self.materialize(&doc)?;
+        let path = self.materialize(&doc)?;
         let dependencies = artifact_dependencies(&path)?;
         let mut native = self.native.lock().await;
         let before = native_symbol(&mut native, &path, circuit).await?;
@@ -293,7 +293,7 @@ impl Host {
             }
         }
         let initial = candidate(&doc, &root)?;
-        let (initial_path, _) = self.materialize(&initial)?;
+        let initial_path = self.materialize(&initial)?;
         let proposed = native_symbol(&mut native, &initial_path, circuit).await?;
         let mut scenes = BTreeMap::new();
         let mut impacts = Vec::new();
@@ -330,7 +330,7 @@ impl Host {
         if *draft == before.draft {
             final_doc = doc.clone();
         }
-        let (final_path, _) = self.materialize(&final_doc)?;
+        let final_path = self.materialize(&final_doc)?;
         for name in &names {
             let after_value = native.observe(&final_path, name).await?;
             let after = Scene::read(&after_value)?;
@@ -415,7 +415,7 @@ impl Host {
         {
             return Err("封装草稿或工程已经改变，请重新预览".into());
         }
-        let (path, _) = self.materialize(current)?;
+        let path = self.materialize(current)?;
         if prepared.dependencies != artifact_dependencies(&path)? {
             return Err("组件库已改变，请重新预览".into());
         }
@@ -427,6 +427,7 @@ impl Host {
                     Edit::Replace {
                         xml: String::from_utf8(prepared.candidate.bytes().to_vec())
                             .map_err(|e| e.to_string())?,
+                        title: Some("修改封装与接口".into()),
                     },
                 )
                 .map_err(|e| e.to_string())?;
@@ -458,14 +459,14 @@ impl Host {
         if prepared.path != current.path {
             return Err("文档位置已改变，请重新预览".into());
         }
-        let (current_path, _) = self.materialize(&current)?;
+        let current_path = self.materialize(&current)?;
         if prepared.dependencies != artifact_dependencies(&current_path)? {
             return Err("组件库已改变，请重新预览".into());
         }
         if !prepared.result.impacts.iter().any(|i| i.circuit == circuit) {
             return Err("预览不包含这个电路".into());
         }
-        let (path, _) = self.materialize(&prepared.candidate)?;
+        let path = self.materialize(&prepared.candidate)?;
         let mut native = self.native.lock().await;
         let observed = native.observe(&path, circuit).await?;
         let b = &observed["focus"]["bounds"];

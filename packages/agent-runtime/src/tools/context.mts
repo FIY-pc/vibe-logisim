@@ -21,6 +21,9 @@ import type {
 } from "../protocol/host.mts";
 import type { RuntimeEvent } from "../protocol/messages.mts";
 
+/** Edits the host applies together as one change. */
+const BATCHED = new Set<Edit["kind"]>(["wire", "place", "delete", "attributes"]);
+
 export interface ToolContextOptions {
   host: HostClient;
   folder: HostFolder;
@@ -157,9 +160,12 @@ export class ToolContext {
   }
 
   /**
-   * Applies edits one after another, each on the revision the previous one
-   * produced, and tells the UI once. Returns the last result; `noop` edits
-   * are reported, not hidden.
+   * Applies edits and tells the UI once. Wire, place, delete and attribute
+   * edits go to the host as one batch (one undo step, one native load), and
+   * so do moves by different offsets (one undo step, nothing moved when one
+   * is refused); anything else is applied one after another, each on the
+   * revision the previous one produced. Returns the last result; `noop`
+   * edits are reported, not hidden.
    */
   async edit(
     document: DocumentView,
@@ -174,7 +180,11 @@ export class ToolContext {
     let revision = base;
     let last: EditResult | null = null;
     const results: EditResult[] = [];
-    for (const edit of edits) {
+    const batch =
+      edits.length > 1 &&
+      (edits.every((e) => BATCHED.has(e.kind)) ||
+        edits.every((e) => e.kind === "move"));
+    for (const edit of batch ? [{ kind: "batch", edits } as Edit] : edits) {
       this.assertCurrent();
       const result = await this.host.call<EditResult>({
         op: "edit",

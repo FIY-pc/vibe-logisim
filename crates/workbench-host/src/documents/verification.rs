@@ -92,11 +92,10 @@ impl Host {
         }
         let id = &doc.id;
         let revision = doc.revision();
-        let (artifact, view) = self.materialize(doc)?;
-        let selected = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
+        let artifact = self.materialize(doc)?;
+        let selected = doc
+            .circuit_view(circuit)
+            .map_err(|e| e.to_string())?
             .ok_or("找不到电路")?;
         for vector in &vectors {
             if vector.expected.keys().any(|name| {
@@ -166,11 +165,10 @@ impl Host {
         {
             return Err("时序检查支持 1–10000 tick、1–24 个观察端口及最多 6000 个刺激事件".into());
         }
-        let (artifact, view) = self.materialize(doc)?;
-        let selected = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
+        let artifact = self.materialize(doc)?;
+        let selected = doc
+            .circuit_view(circuit)
+            .map_err(|e| e.to_string())?
             .ok_or("找不到电路")?;
         let mut nodes = input_nodes(&inputs)?;
         let mut seen = BTreeSet::new();

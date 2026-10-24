@@ -40,11 +40,18 @@ pub enum FolderRequest {
         #[ts(optional)]
         path_version: Option<u32>,
     },
+    /// Creates an empty file (a `.circ` gets an empty circuit) or directory.
+    /// Recorded as its own folder history entry unless `checkpoint` is
+    /// false: then the caller's next `folderCheckpoint` includes it (the AI
+    /// keeps a whole turn in one entry).
     FolderCreate {
         folder_id: String,
         path: String,
         #[serde(default)]
         directory: bool,
+        #[serde(default)]
+        #[ts(optional)]
+        checkpoint: Option<bool>,
     },
     FolderRename {
         folder_id: String,
@@ -216,8 +223,9 @@ impl Host {
                 folder_id,
                 path,
                 directory,
+                checkpoint,
             } => {
-                self.create_project_entry(&folder_id, &path, directory)
+                self.create_project_entry(&folder_id, &path, directory, checkpoint != Some(false))
                     .await
             }
             FolderRequest::FolderImportPrepare {

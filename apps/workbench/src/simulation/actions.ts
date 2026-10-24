@@ -117,14 +117,22 @@ export function createSimulationActions(stores: Stores) {
     );
   };
 
-  // Commands run one at a time in request order, so the command after a start
-  // sees that run, and a toggle decides from the clock the previous one left.
-  let queue: Promise<unknown> = Promise.resolve();
-  function enqueue<T>(run: () => Promise<T>): Promise<T> {
-    const next = queue.then(run, run);
-    queue = next.catch(() => undefined);
-    return next;
+  /** Runs tasks one at a time in the order they were asked for. */
+  function serial() {
+    let queue: Promise<unknown> = Promise.resolve();
+    return function <T>(task: () => Promise<T>): Promise<T> {
+      const next = queue.then(task, task);
+      queue = next.catch(() => undefined);
+      return next;
+    };
   }
+  // Host commands go out one at a time in request order. A control action is
+  // a sequence of commands, so control actions take their own turns: the one
+  // after a start sees that run, and a toggle decides from the clock the
+  // previous one left. One queue for both would have a control action wait
+  // for its own commands.
+  const enqueue = serial();
+  const control = serial();
 
   const status = (view: View) =>
     simulationStatus(state(), view.doc, view.circuit?.name);
@@ -384,7 +392,7 @@ export function createSimulationActions(stores: Stores) {
     if (!allowed(view, action)) return false;
     const origin = originOf(view);
     if (!origin) return false;
-    return enqueue(async () => {
+    return control(async () => {
       if (!sameTarget(origin) || !allowed(view, action)) return false;
       const wasActive = status(view).current;
       if (!wasActive) {
@@ -446,6 +454,14 @@ export function createSimulationActions(stores: Stores) {
     setWatches(scope.key, next);
     void sendTrace(view).catch(() => {});
     return next.includes(key);
+  };
+
+  /** Stops watching every port of the shown run, which closes the waveform. */
+  const clearWatches = (view: View) => {
+    const live = liveRun(state(), view.doc, view.circuit?.name);
+    if (!live) return;
+    setWatches(watchesAt(live.session, live.view.instancePath).key, []);
+    void sendTrace(view).catch(() => {});
   };
 
   /** Stops recording the waveform, keeping the samples on screen. */
@@ -1119,6 +1135,7 @@ export function createSimulationActions(stores: Stores) {
     release,
     setInput,
     toggleWatch,
+    clearWatches,
     stopTrace,
     startTrace,
     readMemory,

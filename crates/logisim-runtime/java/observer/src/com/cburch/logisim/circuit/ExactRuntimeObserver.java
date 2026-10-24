@@ -66,6 +66,7 @@ import java.util.stream.Stream;
 public final class ExactRuntimeObserver {
     private static final String SCHEMA =
         "vibe-logisim.experiment-001.runtime-observation/v0";
+    private static final String CONNECTIVITY_SCHEMA = "vibe-logisim.runtime-connectivity/v0";
     private static final String OBSERVER_VERSION = "spike-1";
     private static final String EXPECTED_RUNTIME_SHA256 =
         "9eb1aae5e87cf0c6e4af845dde00624338c6dce25d945b6482cad017aa6cbb34";
@@ -192,7 +193,7 @@ public final class ExactRuntimeObserver {
     /** Same observation contract for the desktop's resident read-only runtime. */
     public static String observeLoaded(LogisimFile file, Path artifact, String name,
             Path runtime, String runtimeDigest, Path bundle, String stdout,
-            List<Object> messages, String renderPath) throws Exception {
+            List<Object> messages) throws Exception {
         courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
         if (!courseRuntime && !EXPECTED_RUNTIME_SHA256.equals(runtimeDigest))
             throw new IllegalArgumentException("Unsupported runtime digest");
@@ -200,9 +201,63 @@ public final class ExactRuntimeObserver {
         if(focus==null)throw new IllegalArgumentException("Unknown circuit: "+name);
         ExactRuntimeObserver observer=new ExactRuntimeObserver(file,focus,null,false);
         observer.retainedLoaderMessages=messages;
+        phase("ids");
         Map<String,Object> document=observer.observe(artifact,runtime,runtimeDigest,null,bundle,stdout);
-        if(renderPath!=null&&!renderPath.isEmpty())document.put("render",render(file,focus,new File(renderPath)));
-        StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);return out.toString();
+        StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);
+        phase("json");
+        return out.toString();
+    }
+
+    /**
+     * The native connectivity of one circuit, the part of an observation a
+     * connection check compares: every component with its ends and the bit
+     * nets each end joins, and every wire bundle with its points and bit nets.
+     * Nothing is drawn or described, so it costs a fraction of an observation.
+     */
+    public static String connectivityLoaded(LogisimFile file, String name) {
+        Circuit focus = file.getCircuit(name);
+        if (focus == null) throw new IllegalArgumentException("Unknown circuit: " + name);
+        NetIndex nets = new NetIndex(
+            focus, assignComponentIds(focus), new Coverage(), new ArrayList<Object>(), false
+        );
+        nets.compute();
+        com.cburch.logisim.file.WorkerTiming.mark("connectivity.nets");
+        List<Object> components = new ArrayList<Object>();
+        for (Component component : sortedComponents(focus)) {
+            List<Object> ends = new ArrayList<Object>();
+            for (int index = 0; index < component.getEnds().size(); index++) {
+                EndData end = component.getEnd(index);
+                int width = width(end.getWidth());
+                ends.add(obj(
+                    "index", index,
+                    "location", location(end.getLocation()),
+                    "width", width < 0 ? null : width,
+                    "netBits", nets.netBits(component, index, end)
+                ));
+            }
+            components.add(obj(
+                "location", location(component.getLocation()),
+                "factoryName", component.getFactory().getName(),
+                "ends", ends
+            ));
+        }
+        Map<String, Object> document = obj(
+            "schema", CONNECTIVITY_SCHEMA,
+            "focus", obj(
+                "circuit", focus.getName(),
+                "components", components,
+                "wireBundles", nets.bundlesJson(false)
+            )
+        );
+        StringBuilder out = new StringBuilder(64 * 1024);
+        Json.writeCompact(document, out);
+        com.cburch.logisim.file.WorkerTiming.mark("connectivity.json");
+        return out.toString();
+    }
+
+    /** A worker timing mark; a no-op outside a timed worker request. */
+    private static void phase(String name) {
+        com.cburch.logisim.file.WorkerTiming.mark("observe." + name);
     }
 
     private static Map<String, Object> render(LogisimFile file, Circuit circuit, File output) throws Exception {
@@ -241,16 +296,22 @@ public final class ExactRuntimeObserver {
         String loaderStdout
     ) throws Exception {
         measureGeometry();
-        NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns);
+        phase("geometry");
+        NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns, true);
         nets.compute();
+        phase("nets");
 
         List<Object> components = observeComponents(nets);
+        phase("components");
         List<Object> states = observeStateElements(nets);
         List<Object> tunnels = observeTunnels(nets);
         List<Object> spatial = observeSpatialAdjacency();
+        phase("tunnels");
         List<Object> circuitSummaries = observeCircuitSummaries();
+        phase("summaries");
         List<Object> paths = observePathsToFocus();
         List<Object> widthErrors = observeWidthErrors();
+        phase("paths");
 
         addStandingUnknowns();
         if (!widthErrors.isEmpty()) {
@@ -297,6 +358,7 @@ public final class ExactRuntimeObserver {
             "artifactPath", artifact.toString(),
             "artifactSha256", sha256(artifact)
         );
+        phase("hashes");
         Map<String, Object> runtime = obj(
             "reportedVersion", Main.VERSION,
             "jarPath", runtimeJar.toAbsolutePath().normalize().toString(),
@@ -319,7 +381,7 @@ public final class ExactRuntimeObserver {
             "instancePaths", paths,
             "components", components,
             "wires", nets.wiresJson(),
-            "wireBundles", nets.bundlesJson(),
+            "wireBundles", nets.bundlesJson(true),
             "bitNets", nets.netsJson(),
             "stateElements", states,
             "tunnels", tunnels,
@@ -327,6 +389,7 @@ public final class ExactRuntimeObserver {
             "widthIncompatibilities", widthErrors
         );
 
+        phase("ledger");
         Map<String, Object> full = obj(
             "schema", SCHEMA,
             "mode", "full-ledger",
@@ -1133,14 +1196,11 @@ public final class ExactRuntimeObserver {
         if (shape != null) return shape;
         shape = new Shape();
         shapes.put(circuit, shape); // registered first: a definition reached again through itself is combinational
-        Map<Component, String> ids = idsByCircuit.get(circuit);
-        if (ids == null) ids = assignComponentIds(circuit);
-        NetIndex nets = new NetIndex(circuit, ids, new Coverage(), new ArrayList<Object>());
-        nets.compute();
+        circuit.wires.ensureComputed();
 
         // bit net -> components reading it; component -> bit nets it drives
-        Map<String, List<Component>> readers = new HashMap<String, List<Component>>();
-        Map<Component, Set<String>> drives = new IdentityHashMap<Component, Set<String>>();
+        Map<Object, List<Component>> readers = new HashMap<Object, List<Component>>();
+        Map<Component, Set<Object>> drives = new IdentityHashMap<Component, Set<Object>>();
         List<Component> inputs = new ArrayList<Component>();
         Set<Component> outputs = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
         Set<Component> storage = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
@@ -1169,11 +1229,10 @@ public final class ExactRuntimeObserver {
                     if (out) inputs.add(component);
                     if (in) outputs.add(component);
                 }
-                for (Object bitValue : nets.netBits(component, i, end)) {
-                    String netId = String.valueOf(asObject(bitValue).get("netId"));
-                    if (in) readers.computeIfAbsent(netId, k -> new ArrayList<Component>()).add(component);
+                for (Object net : bitNets(circuit, end)) {
+                    if (in) readers.computeIfAbsent(net, k -> new ArrayList<Component>()).add(component);
                     if (out) {
-                        drives.computeIfAbsent(component, k -> new HashSet<String>()).add(netId);
+                        drives.computeIfAbsent(component, k -> new HashSet<Object>()).add(net);
                         drivesSomething = true;
                     }
                 }
@@ -1204,17 +1263,36 @@ public final class ExactRuntimeObserver {
         return shape;
     }
 
+    /**
+     * The nets of an end's bits as NetIndex resolves them, without its
+     * records: the runtime's wire thread, or the point of an end that no
+     * bundle reaches. Bits of an unknown width or an invalid bundle have none.
+     */
+    private static List<Object> bitNets(Circuit circuit, EndData end) {
+        int width = width(end.getWidth());
+        if (width <= 0) return Collections.emptyList();
+        WireBundle bundle = circuit.wires.getWireBundle(end.getLocation());
+        if (bundle != null && (!bundle.isValid() || bundle.threads == null)) return Collections.emptyList();
+        List<Object> nets = new ArrayList<Object>(width);
+        Location point = end.getLocation();
+        for (int bit = 0; bit < width; bit++) {
+            if (bundle == null) nets.add(point.getX() + "," + point.getY() + "#" + bit);
+            else if (bit < bundle.threads.length) nets.add(bundle.threads[bit].find());
+        }
+        return nets;
+    }
+
     /** Components a signal leaving {@code from} reaches through combinational parts; storage stops it. */
     private static Set<Component> reach(
-        Component from, Map<String, List<Component>> readers,
-        Map<Component, Set<String>> drives, Set<Component> storage
+        Component from, Map<Object, List<Component>> readers,
+        Map<Component, Set<Object>> drives, Set<Component> storage
     ) {
         Set<Component> seen = Collections.newSetFromMap(new IdentityHashMap<Component, Boolean>());
         Deque<Component> queue = new ArrayDeque<Component>();
         queue.add(from);
         while (!queue.isEmpty()) {
             Component current = queue.remove();
-            for (String net : drives.getOrDefault(current, Collections.<String>emptySet())) {
+            for (Object net : drives.getOrDefault(current, Collections.<Object>emptySet())) {
                 for (Component next : readers.getOrDefault(net, Collections.<Component>emptyList())) {
                     if (next == from || !seen.add(next)) continue;
                     if (!storage.contains(next)) queue.add(next);
@@ -1308,56 +1386,31 @@ public final class ExactRuntimeObserver {
         return emptyToNull(attributes.getValue(StdAttr.LABEL));
     }
 
+    /**
+     * Name and standard value of every attribute. Display strings and option
+     * lists are not part of an observation: building an option list asks the
+     * native editor for a Swing combo box per attribute, which dominated the
+     * observation of a large page. A component's options come from the
+     * component-attributes request, for the components that are asked about.
+     */
     private static List<Object> attributes(AttributeSet attributes) {
         List<Object> result = new ArrayList<Object>();
         for (Attribute<?> attribute : attributes.getAttributes()) {
             Object value = attributes.getValue(attribute);
             String standard;
-            String display;
             try {
                 standard = standardString(attribute, value);
             } catch (Throwable error) {
                 standard = String.valueOf(value);
             }
-            try {
-                display = displayString(attribute, value);
-            } catch (Throwable error) {
-                display = standard;
-            }
-            result.add(obj(
-                "name", attribute.getName(),
-                "standard", standard,
-                "display", display,
-                "displayName", attribute.getDisplayName(),
-                "readOnly", attributes.isReadOnly(attribute) || !attributes.isToSave(attribute),
-                "options", attributeOptions(attributes, attribute),
-                "valueClass", value == null ? null : value.getClass().getName()
-            ));
+            result.add(obj("name", attribute.getName(), "standard", standard));
         }
         return result;
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static List<Object> attributeOptions(AttributeSet attributes, Attribute attribute) {
-        List<Object> options = new ArrayList<Object>();
-        // Consult the native editor model, never infer enums from current CPU fields.
-        try {
-            List<NativeAttributeAdapter.Choice> choices=NativeAttributeAdapter.choices(attributes,attribute);
-            if(choices.size()<=128)for(NativeAttributeAdapter.Choice choice:choices) {
-                options.add(obj("value",choice.value,"label",choice.label));
-            }
-        } catch (Throwable unavailable) { options.clear(); }
-        return options;
-    }
-
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     private static String standardString(Attribute attribute, Object value) {
         return attribute.toStandardString(value);
-    }
-
-    @SuppressWarnings({ "unchecked", "rawtypes" })
-    private static String displayString(Attribute attribute, Object value) {
-        return attribute.toDisplayString(value);
     }
 
     private static String attributeFingerprint(AttributeSet attributes) {
@@ -1697,15 +1750,18 @@ public final class ExactRuntimeObserver {
         final Map<String, String> endBitNet = new HashMap<String, String>();
         final List<Wire> wires;
         final Map<Wire, String> wireIds = new IdentityHashMap<Wire, String>();
+        /** Whether each net lists the component ends it joins. */
+        final boolean contacts;
 
         NetIndex(
             Circuit circuit, Map<Component, String> componentIds,
-            Coverage coverage, List<Object> unknowns
+            Coverage coverage, List<Object> unknowns, boolean contacts
         ) {
             this.circuit = circuit;
             this.componentIds = componentIds;
             this.coverage = coverage;
             this.unknowns = unknowns;
+            this.contacts = contacts;
             // Loaded files may repeat the same interned native Wire. One
             // selectable object must have one ID and one geometry record.
             this.wires = new ArrayList<Wire>(new java.util.LinkedHashSet<Wire>(circuit.getWires()));
@@ -1755,7 +1811,7 @@ public final class ExactRuntimeObserver {
                 for (int endIndex = 0; endIndex < component.getEnds().size(); endIndex++) {
                     EndData end = component.getEnd(endIndex);
                     Map<String, Object> direction = new LinkedHashMap<String, Object>();
-                    NativePortSemantics.putDirection(direction, component, endIndex);
+                    if (contacts) NativePortSemantics.putDirection(direction, component, endIndex);
                     int width = width(end.getWidth());
                     if (width < 0) continue;
                     WireBundle bundle = circuit.wires.getWireBundle(end.getLocation());
@@ -1783,6 +1839,7 @@ public final class ExactRuntimeObserver {
                         if (net == null) continue;
                         String key = endKey(componentId, endIndex, bit);
                         endBitNet.put(key, net.id);
+                        if (!contacts) continue;
                         Map<String, Object> contact = obj(
                             "componentId", componentId,
                             "endIndex", endIndex,
@@ -1840,7 +1897,8 @@ public final class ExactRuntimeObserver {
             return result;
         }
 
-        List<Object> bundlesJson() {
+        /** The bundles, with the wires each one joins when `withWires`. */
+        List<Object> bundlesJson(boolean withWires) {
             List<BundleRecord> ordered = new ArrayList<BundleRecord>(bundles.values());
             Collections.sort(ordered, Comparator.comparing(record -> record.id));
             List<Object> result = new ArrayList<Object>();
@@ -1858,16 +1916,17 @@ public final class ExactRuntimeObserver {
                         bitNets.add(obj("bit", bit, "netId", net == null ? null : net.id));
                     }
                 }
-                result.add(obj(
+                Map<String, Object> json = obj(
                     "bundleId", record.id,
                     "valid", bundle.isValid(),
                     "width", width(bundle.getWidth()),
                     "widthDeterminant", bundle.getWidthDeterminant() == null
                         ? null : location(bundle.getWidthDeterminant()),
-                    "points", points,
-                    "wireIds", record.wireIds,
-                    "bitNets", bitNets
-                ));
+                    "points", points
+                );
+                if (withWires) json.put("wireIds", record.wireIds);
+                json.put("bitNets", bitNets);
+                result.add(json);
             }
             return result;
         }
@@ -2008,7 +2067,14 @@ public final class ExactRuntimeObserver {
 
         private static void string(String value, StringBuilder out) {
             out.append('"');
-            for (int i = 0; i < value.length(); i++) {
+            int plain = 0;
+            while (plain < value.length()) {
+                char ch = value.charAt(plain);
+                if (ch < 0x20 || ch == '"' || ch == '\\') break;
+                plain++;
+            }
+            out.append(value, 0, plain);
+            for (int i = plain; i < value.length(); i++) {
                 char ch = value.charAt(i);
                 switch (ch) {
                     case '"': out.append("\\\""); break;

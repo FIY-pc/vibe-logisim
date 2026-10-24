@@ -378,8 +378,7 @@ impl Host {
             Ok(())
         };
         check()?;
-        let mut temp =
-            tempfile::NamedTempFile::new_in(&parent).map_err(|_| "无法创建工程包文件")?;
+        let mut temp = crate::staged_user_file(&parent).map_err(|_| "无法创建工程包文件")?;
         temp.write_all(&bytes).map_err(|_| "无法写入工程包")?;
         temp.as_file().sync_all().map_err(|_| "无法写入工程包")?;
         check()?;

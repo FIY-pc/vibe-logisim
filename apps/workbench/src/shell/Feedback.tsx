@@ -2,14 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { command, desktop } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
 import {
-  Check,
   Download,
   ExternalLink,
   MessageSquare,
   RefreshCw,
   X,
 } from "lucide-react";
+import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
 import "./feedback.css";
+import { DialogClose, useModal } from "../shared/Dialog";
 
 const RELEASES = "https://github.com/FIY-pc/vibe-logisim/releases";
 const ISSUES =
@@ -150,36 +151,39 @@ export function useFeedback(
   };
 }
 export type FeedbackController = ReturnType<typeof useFeedback>;
+/** The help and update commands, as items of the app menu. */
 export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
   const { status } = feedback;
   return (
     <>
-      <button onClick={() => feedback.setDialogOpen(true)}>
-        <MessageSquare size={15} />
+      <MenuItem
+        icon={<MessageSquare size={14} />}
+        onSelect={() => feedback.setDialogOpen(true)}
+      >
         反馈问题…
-      </button>
-      <button
-        role="menuitemcheckbox"
-        aria-checked={Boolean(status?.enabled && !status.forcedOff)}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuCheckboxItem
+        checked={Boolean(status?.enabled && !status.forcedOff)}
         disabled={!status || status.forcedOff}
-        onClick={() => void feedback.setAutomatic(!status?.enabled)}
+        onCheckedChange={(enabled) => void feedback.setAutomatic(enabled)}
       >
-        <span className="feedback-menu-check">
-          {status?.enabled && !status.forcedOff && <Check size={15} />}
-        </span>
         自动检查更新
-      </button>
-      <button
+      </MenuCheckboxItem>
+      <MenuItem
+        icon={<RefreshCw size={14} />}
         disabled={feedback.checking || status?.forcedOff}
-        onClick={() => void feedback.checkNow()}
+        onSelect={() => void feedback.checkNow()}
       >
-        <RefreshCw size={15} />
         {feedback.checking ? "正在检查…" : "立即检查更新"}
-      </button>
-      <button onClick={() => void feedback.openRelease()}>
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        trailing={<ExternalLink size={13} aria-hidden="true" />}
+        onSelect={() => void feedback.openRelease()}
+      >
         关于 Vibe Logisim {status?.current || ""}
-        <ExternalLink size={14} />
-      </button>
+      </MenuItem>
     </>
   );
 }
@@ -192,7 +196,7 @@ export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
       <button onClick={() => void feedback.dismiss()}>忽略此版本</button>
       <button
         onClick={feedback.closeNotice}
-        title="关闭"
+        data-tip="关闭"
         aria-label="关闭更新提示"
       >
         <X size={14} />
@@ -201,7 +205,7 @@ export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
   );
 }
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -212,7 +216,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
   } | null>(null);
   useEffect(() => {
     let live = true;
-    dialog.current?.showModal();
     void command<DiagnosticReport>({ op: "diagnostics" })
       .then((value) => {
         if (live) setReport(value);
@@ -222,7 +225,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
       });
     return () => {
       live = false;
-      dialog.current?.close();
     };
   }, []);
   const text = report ? JSON.stringify(report, null, 2) + "\n" : "";
@@ -299,10 +301,8 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
       }}
     >
       <header>
-        <strong>反馈问题</strong>
-        <button disabled={busy} aria-label="关闭反馈" onClick={onClose}>
-          <X size={17} />
-        </button>
+        <h2>反馈问题</h2>
+        <DialogClose label="关闭反馈" disabled={busy} onClick={onClose} />
       </header>
       <p>诊断文件只包含下方内容。</p>
       <textarea
@@ -337,16 +337,18 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
             <Download size={15} />
             {busy
               ? "正在保存…"
-              : saved
-                ? "再次保存诊断"
-                : desktop()
-                  ? "保存诊断…"
+              : desktop()
+                ? saved
+                  ? "再次保存诊断…"
+                  : "保存诊断…"
+                : saved
+                  ? "再次下载诊断"
                   : "下载诊断"}
           </button>
           <button
             className="primary"
             disabled={!saved || busy}
-            title={saved ? undefined : "先检查并保存诊断文件"}
+            data-tip={saved ? undefined : "先检查并保存诊断文件"}
             onClick={() =>
               void openFeedbackLink(ISSUES).catch((error) =>
                 setError(String(error)),

@@ -12,6 +12,8 @@
     ]
   },
   "include": [
-    "*.mts"
+    "*.mts",
+    "fixtures/*.mts",
+    "turns/*.mts"
   ]
 }

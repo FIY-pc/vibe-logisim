@@ -2,10 +2,11 @@
 mod process;
 mod runtime;
 pub mod simulation;
+pub mod timing;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
-use serde_json::{Value, json};
+use serde_json::{Value, json, value::RawValue};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -15,7 +16,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{Child, ChildStdin},
 };
-use vibe_circuit_document::{DocumentView, digest};
+use vibe_circuit_document::digest;
 use xmltree::{Element, XMLNode};
 #[derive(Clone, Copy)]
 pub struct Viewport {
@@ -76,6 +77,10 @@ impl Worker {
             return Err("Logisim 响应超过限制".into());
         }
         let (status, payload) = line.split_once('\t').ok_or("无效的 Logisim 响应")?;
+        // A worker started with timing enabled appends its phases as a third field.
+        let (payload, phases) = payload.split_once('\t').unwrap_or((payload, ""));
+        timing::record_java(phases);
+        let _decode = timing::span("native.decode");
         let bytes = B64.decode(payload).map_err(|e| e.to_string())?;
         if status != "ok" {
             return Err(String::from_utf8_lossy(&bytes).into_owned());
@@ -110,12 +115,6 @@ impl Native {
     pub fn observed_version(&self) -> Option<&str> {
         self.observed_version.as_deref()
     }
-    fn record_version(&mut self, bytes: &[u8]) {
-        if let Some(version) = runtime::reported_version(bytes) {
-            self.facts().record_version(version.clone());
-            self.observed_version = Some(version);
-        }
-    }
     pub fn runtime(&self) -> Result<PathBuf> {
         self.facts().runtime()
     }
@@ -149,17 +148,23 @@ impl Native {
                 dependencies: BTreeMap::new(),
                 awaiting: false,
             };
-            if worker.receive(true).await? != b"ready" {
-                return Err("Logisim 未就绪".into());
+            // The handshake names the runtime version: `ready <version>`.
+            let hello = worker.receive(true).await?;
+            let version = hello.strip_prefix(b"ready").ok_or("Logisim 未就绪")?;
+            if let Some(version) = runtime::plain_version(&String::from_utf8_lossy(version)) {
+                self.facts().record_version(version.clone());
+                self.observed_version = Some(version);
             }
             self.worker = Some(worker);
         }
         Ok(self.worker.as_mut().unwrap())
     }
     pub async fn request(&mut self, artifact: &Path, operation: Element) -> Result<Vec<u8>> {
+        let read = timing::span("native.read");
         let source = std::fs::read(artifact).map_err(|e| e.to_string())?;
         let (runtime, _) = self.facts().runtime_for(&source)?;
         let hash = digest(&source);
+        drop(read);
         let request = xml(
             "request",
             &[
@@ -169,7 +174,9 @@ impl Native {
             vec![operation],
         );
         let line = B64.encode(encode_xml(&request)?) + "\n";
+        let scan = timing::span("native.dependencies");
         let dependencies = artifact_dependencies(artifact)?;
+        drop(scan);
         // Logisim's LibraryManager also caches external files globally. Drop the
         // process when dependencies change, so geometry and verification cannot
         // disagree with a newly started interactive simulation.
@@ -183,6 +190,7 @@ impl Native {
         let worker = self.worker(&runtime).await?;
         worker.dependencies = dependencies.clone();
         worker.awaiting = true;
+        let roundtrip = timing::span("native.roundtrip");
         let mut result = async {
             worker
                 .input
@@ -193,37 +201,56 @@ impl Native {
             worker.receive(false).await
         }
         .await;
+        drop(roundtrip);
         worker.awaiting = false;
         if result.is_ok() && !dependencies.is_empty() {
+            let _scan = timing::span("native.dependencies");
             match artifact_dependencies(artifact) {
                 Ok(after) if after == dependencies => {}
                 Ok(_) => result = Err("操作期间组件库已改变，请重试".into()),
                 Err(error) => result = Err(error),
             }
         }
-        if let Ok(bytes) = &result {
-            self.record_version(bytes);
-        }
         if result.is_err() {
             self.worker = None;
         }
         result
     }
+    /// The observation of one circuit as the JSON the worker wrote.
+    async fn observe_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
+        self.request(
+            artifact,
+            xml("observe", &[("circuit", circuit.into())], vec![]),
+        )
+        .await
+    }
+    /// The native connectivity of one circuit as the JSON the worker wrote:
+    /// `{schema, focus: {circuit, components: [{location, factoryName,
+    /// ends: [{index, location, width, netBits: [{bit, netId}]}]}],
+    /// wireBundles: [{bundleId, valid, width, widthDeterminant, points,
+    /// bitNets}]}}`, the fields of an observation a connection check compares,
+    /// at a fraction of its cost.
+    pub async fn connectivity_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
+        self.request(
+            artifact,
+            xml("connectivity", &[("circuit", circuit.into())], vec![]),
+        )
+        .await
+    }
     pub async fn observe(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
-        let bytes = self
-            .request(
-                artifact,
-                xml("observe", &[("circuit", circuit.into())], vec![]),
-            )
-            .await?;
+        let bytes = self.observe_bytes(artifact, circuit).await?;
+        let _parse = timing::span("native.json");
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())
     }
-    pub async fn catalog(
-        &mut self,
-        artifact: &Path,
-        _view: &DocumentView,
-        circuit: &str,
-    ) -> Result<Value> {
+    /// The observation as JSON text, checked but not parsed, for callers that
+    /// pass it on whole.
+    pub async fn observe_raw(&mut self, artifact: &Path, circuit: &str) -> Result<Box<RawValue>> {
+        let bytes = self.observe_bytes(artifact, circuit).await?;
+        let _check = timing::span("native.json");
+        let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+        RawValue::from_string(text).map_err(|e| e.to_string())
+    }
+    pub async fn catalog(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
         let libraries = artifact_libraries(artifact)?;
         let bytes = self
             .request(
@@ -443,23 +470,18 @@ pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String
     collect(artifact, &mut dependencies, &mut Default::default())?;
     Ok(dependencies)
 }
+/// The `<library id desc>` elements the palette requests name: every
+/// top-level `<lib>` of the artifact.
 fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
     let bytes = std::fs::read(artifact).map_err(|e| e.to_string())?;
-    let root = Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?;
-    Ok(root
-        .children
-        .iter()
-        .filter_map(XMLNode::as_element)
-        .filter(|e| e.name == "lib")
-        .map(|l| {
+    Ok(top_level_libraries(&bytes)?
+        .into_iter()
+        .map(|library| {
             xml(
                 "library",
                 &[
-                    ("id", l.attributes.get("name").cloned().unwrap_or_default()),
-                    (
-                        "desc",
-                        l.attributes.get("desc").cloned().unwrap_or_default(),
-                    ),
+                    ("id", library.name.unwrap_or_default()),
+                    ("desc", library.desc.unwrap_or_default()),
                 ],
                 vec![],
             )
@@ -467,9 +489,22 @@ fn artifact_libraries(artifact: &Path) -> Result<Vec<Element>> {
         .collect())
 }
 
-/// The `desc` of each top-level `<lib>`. This runs twice per worker request on
-/// a file that can be megabytes, so UTF-8 text is scanned without building a tree.
+/// The `desc` of each top-level `<lib>`.
 fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
+    Ok(top_level_libraries(bytes)?
+        .into_iter()
+        .filter_map(|library| library.desc)
+        .collect())
+}
+
+struct TopLevelLibrary {
+    name: Option<String>,
+    desc: Option<String>,
+}
+
+/// The top-level `<lib>` elements. This runs on every worker request on a
+/// file that can be megabytes, so UTF-8 text is scanned without building a tree.
+fn top_level_libraries(bytes: &[u8]) -> Result<Vec<TopLevelLibrary>> {
     use quick_xml::{XmlVersion, events::Event, reader::Reader};
     let Ok(text) = std::str::from_utf8(bytes) else {
         let tree = Element::parse(bytes).map_err(|e| e.to_string())?;
@@ -478,11 +513,14 @@ fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
             .iter()
             .filter_map(XMLNode::as_element)
             .filter(|e| e.name == "lib")
-            .filter_map(|e| e.attributes.get("desc").cloned())
+            .map(|e| TopLevelLibrary {
+                name: e.attributes.get("name").cloned(),
+                desc: e.attributes.get("desc").cloned(),
+            })
             .collect());
     };
     let mut reader = Reader::from_str(text);
-    let (mut depth, mut descriptors) = (0usize, Vec::new());
+    let (mut depth, mut libraries) = (0usize, Vec::new());
     loop {
         let (element, opens) = match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(element) => (element, true),
@@ -491,19 +529,27 @@ fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
                 depth = depth.saturating_sub(1);
                 continue;
             }
-            Event::Eof => return Ok(descriptors),
+            Event::Eof => return Ok(libraries),
             _ => continue,
         };
         if depth == 1 && element.name().as_ref() == "lib" {
+            let mut library = TopLevelLibrary {
+                name: None,
+                desc: None,
+            };
             for attribute in element.attributes() {
                 let attribute = attribute.map_err(|e| e.to_string())?;
-                if attribute.key.as_ref() == "desc" {
-                    let value = attribute
-                        .normalized_value(XmlVersion::Implicit1_0)
-                        .map_err(|e| e.to_string())?;
-                    descriptors.push(value.into_owned());
-                }
+                let slot = match attribute.key.as_ref() {
+                    "name" => &mut library.name,
+                    "desc" => &mut library.desc,
+                    _ => continue,
+                };
+                let value = attribute
+                    .normalized_value(XmlVersion::Implicit1_0)
+                    .map_err(|e| e.to_string())?;
+                *slot = Some(value.into_owned());
             }
+            libraries.push(library);
         }
         depth += usize::from(opens);
     }

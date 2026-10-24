@@ -40,6 +40,11 @@ import { fileTools } from "../tools/files.mts";
 import { circuitTools, TOOL_LABELS } from "../tools/index.mts";
 import { ToolContext } from "../tools/context.mts";
 import { toolActivity } from "./activity.mts";
+import {
+  CHARS_PER_TOKEN,
+  clearOldToolOutput,
+  contextSize,
+} from "./context-budget.mts";
 import { systemInstructions } from "./instructions.mts";
 import type {
   FolderChange,
@@ -70,8 +75,6 @@ export interface AskRequest {
   selection: string[];
   /** Resend from this user message: history and transcript are cut back first. */
   editMessageId?: string | null;
-  /** Steer the running turn instead of starting one. */
-  expectedTurnId?: string | null;
 }
 
 interface PendingTurn {
@@ -237,6 +240,38 @@ export function retryingStream(
   return out;
 }
 
+/** SDK and transport failures arrive in English. Say what went wrong in
+ * Chinese and keep the original text after it for diagnosis. */
+const FAILURES: [RegExp, string][] = [
+  [
+    /\b401\b|unauthori[sz]ed|invalid.*(api[ _-]?key|token)|incorrect api key|authentication/i,
+    "模型服务拒绝了 API 密钥",
+  ],
+  [/\b403\b|forbidden|permission denied/i, "模型服务拒绝了这次请求"],
+  [
+    /\b404\b|does not exist|not found|no such model|unknown model/i,
+    "模型服务找不到这个模型或接口",
+  ],
+  [
+    /\b429\b|rate limit|too many requests|quota|insufficient/i,
+    "模型服务限流或额度不足",
+  ],
+  [
+    /overloaded|\b5\d\d\b|service unavailable|bad gateway|server error/i,
+    "模型服务暂时不可用",
+  ],
+  [/timed? ?out|timeout|ETIMEDOUT/i, "模型服务响应超时"],
+  [
+    /terminated|socket|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed|network|connection/i,
+    "与模型服务的连接中断",
+  ],
+];
+function failureText(message: string) {
+  if (/[\u4e00-\u9fff]/.test(message)) return message;
+  const known = FAILURES.find(([pattern]) => pattern.test(message));
+  return known ? `${known[1]}（${message}）` : message;
+}
+
 export class TurnRunner extends EventEmitter {
   readonly services: ServiceStore;
   readonly conversations: ConversationStore;
@@ -252,9 +287,9 @@ export class TurnRunner extends EventEmitter {
   activeTurnId: string | null = null;
   history: RuntimeMessage[] = [];
   transcript: AgentMessage[] = [];
-  queued: AgentMessage[] = [];
   checkpoints: Record<string, { raw: number; history: number }> = {};
   selection: ServiceSelection | null = null;
+  /** The stream retry notice while the model service is busy; null otherwise. */
   transmission: { phase: string; message: string | null } | null = null;
   network: Record<string, unknown> | null = null;
   private agent: Agent | undefined;
@@ -262,10 +297,9 @@ export class TurnRunner extends EventEmitter {
   private run: Promise<void> | null = null;
   private starting = false;
   private cancelStarting = false;
-  private steers = new Map<string, AgentMessage>();
   private messageId = "";
   private partialText = "";
-  private lastPartialWrite = 0;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private runError: string | null = null;
 
   constructor(options: RunnerOptions) {
@@ -298,11 +332,7 @@ export class TurnRunner extends EventEmitter {
       status: this.status,
       available: this.status === "ready" || this.status === "busy",
       busy: this.starting || Boolean(this.run) || Boolean(this.pending),
-      canSteer: Boolean(
-        this.agent && this.activeTurnId && !this.agent.signal?.aborted,
-      ),
       conversationId: this.conversationId,
-      turnId: this.activeTurnId,
       model: selected?.model || null,
       effort: selected?.effort === "none" ? null : (selected?.effort ?? null),
       customProvider: config,
@@ -526,18 +556,8 @@ export class TurnRunner extends EventEmitter {
     this.conversationId = saved.id;
     this.selection = saved.selection || null;
     this.history = recoverHistory(saved.messages || []);
-    const lastTurn = this.history.findLast((m) => m.type === "turn");
-    this.transmission =
-      lastTurn && lastTurn.status !== "completed"
-        ? {
-            phase: lastTurn.status === "interrupted" ? "interrupted" : "failed",
-            message: lastTurn.error || "上次回答没有完成",
-          }
-        : null;
-    this.transcript = recoverTranscript([
-      ...(saved.transcript || []),
-      ...(saved.queued || []),
-    ]);
+    this.transmission = null;
+    this.transcript = recoverTranscript(saved.transcript || []);
     this.checkpoints = saved.checkpoints || {};
     if (
       JSON.stringify(this.history) !== JSON.stringify(saved.messages || []) ||
@@ -557,7 +577,22 @@ export class TurnRunner extends EventEmitter {
     await this.resume(key);
     return this.conversationState(key);
   }
+  /** The window undid a turn's file change in the folder history. */
+  markUndone(changeId: string) {
+    const turn = this.history.find(
+      (m) => m.type === "turn" && m.change?.id === changeId,
+    );
+    if (!turn?.change) throw new Error("这次改动不在当前对话里");
+    turn.change = { ...turn.change, undone: true };
+    this.persist();
+    this.emitStatus();
+    return { undone: true };
+  }
   persist() {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
     if (!this.workspaceKey) return;
     const active = this.history.find(
       (m) =>
@@ -573,7 +608,6 @@ export class TurnRunner extends EventEmitter {
       data: {
         selection: this.selection,
         transcript: this.transcript,
-        queued: [...this.steers.values()],
         checkpoints: this.checkpoints,
       },
     });
@@ -639,7 +673,6 @@ export class TurnRunner extends EventEmitter {
     const status = await this.host.call<HostStatus>({ op: "status" });
     if (!status.folder) throw new Error("请先打开工作文件夹");
     const images = this.referenceImages(request.references);
-    if (request.expectedTurnId) return this.steer(request, status, images);
     if (this.snapshot().busy) throw new Error("请先等待或停止当前回答");
     const workspaceKey = status.folder.id;
     if (
@@ -761,6 +794,10 @@ export class TurnRunner extends EventEmitter {
         status: "running",
         startedAt: Date.now(),
       });
+      // Earlier turns' tool output is the first thing to go when the
+      // conversation outgrows the model's context (see context-budget.mts).
+      const budget = config.contextWindow * CHARS_PER_TOKEN;
+      this.transcript = clearOldToolOutput(this.transcript, budget);
       this.agent = new Agent({
         initialState: {
           model: modelFor(
@@ -801,13 +838,18 @@ export class TurnRunner extends EventEmitter {
             },
           ),
         prepareRequest: ({ context: requestContext }: any) => {
-          if (JSON.stringify(requestContext).length > config.contextWindow * 3)
+          // Old tool output is cleared within a long turn as well; the
+          // instructions and tool declarations take their share first.
+          const room =
+            budget - JSON.stringify({ ...requestContext, messages: [] }).length;
+          const messages = clearOldToolOutput(requestContext.messages, room);
+          if (contextSize(messages) > room)
             throw new Error(
-              "会话内容超过配置的上下文预算，请新建对话并携带工作笔记继续",
+              "这次对话的内容超过了模型的上下文长度，请新建对话后继续",
             );
-          for (const m of this.history)
-            if (m.type === "user" && m.delivery === "deferred")
-              this.setDelivery(m.id, "included");
+          return messages === requestContext.messages
+            ? undefined
+            : { context: { ...requestContext, messages } };
         },
       });
       this.agent.subscribe((e: any) => {
@@ -840,73 +882,12 @@ export class TurnRunner extends EventEmitter {
     }
   }
 
-  /** A message for the running turn: queued into the Agent and shown as queued. */
-  private async steer(
-    request: AskRequest,
-    status: HostStatus,
-    images: { data: string; mimeType: string }[],
-  ) {
-    if (
-      !this.agent ||
-      !this.pending ||
-      request.expectedTurnId !== this.activeTurnId ||
-      this.agent.signal?.aborted
-    )
-      throw new Error("回合已结束，请重新发送");
-    if (
-      images.length &&
-      !{ ...this.services.resolve(this.selection), ...this.selection }.vision
-    )
-      throw new Error(
-        "当前模型服务未启用图片输入，请开启后重试，或移除图片引用",
-      );
-    const id = randomUUID();
-    const message: AgentMessage & { vibeId?: string } = {
-      role: "user",
-      content: this.userContent(
-        request.question,
-        await this.workspaceContext(request, status),
-        images,
-      ),
-      timestamp: Date.now(),
-      vibeId: id,
-    } as any;
-    const context = { turnContinuation: true, selection: request.selection };
-    this.steers.set(id, message);
-    this.history.push({
-      type: "user",
-      id,
-      text: request.question,
-      delivery: "queued",
-      context,
-    });
-    this.emitEvent({
-      type: "user-message",
-      id,
-      text: request.question,
-      delivery: "queued",
-      context,
-    });
-    this.persist();
-    this.agent.steer(message);
-    return { turnId: this.activeTurnId };
-  }
-
-  private setDelivery(id: string, delivery: string) {
-    const m = this.history.find((m) => m.type === "user" && m.id === id);
-    if (m) {
-      m.delivery = delivery;
-      this.emitEvent({ type: "user-message-delivery", id, delivery });
-    }
-  }
-
   private onAgentEvent(e: any) {
     if (!this.agent) return;
     const turnId = this.activeTurnId;
     if (e.type === "message_start" && e.message.role === "assistant") {
       this.messageId = randomUUID();
       this.partialText = "";
-      this.lastPartialWrite = 0;
       this.emitEvent({
         type: "assistant-started",
         itemId: this.messageId,
@@ -928,7 +909,7 @@ export class TurnRunner extends EventEmitter {
           this.history.push(m);
         }
         m.text = this.partialText;
-        this.persistThrottled();
+        this.persistSoon();
         this.emitEvent({
           type: "assistant-delta",
           itemId: this.messageId,
@@ -944,7 +925,7 @@ export class TurnRunner extends EventEmitter {
           this.history.push(m);
         }
         m.text += delta.delta;
-        this.persistThrottled();
+        this.persistSoon();
         this.emitEvent({
           type: "reasoning-delta",
           itemId: id,
@@ -981,27 +962,15 @@ export class TurnRunner extends EventEmitter {
       Object.assign(activity, toolActivity(e, existing));
       if (existing) Object.assign(existing, activity);
       else this.history.push(activity);
-      this.persist();
+      this.persistSoon();
       this.emitEvent(activity as any);
     }
     if (e.type === "turn_end" && this.checkpoints[this.messageId]) {
       this.checkpoints[this.messageId].raw = this.agent.state.messages.length;
       this.transcript = this.agent.state.messages;
-      this.persist();
+      this.persistSoon();
     }
     if (e.type === "message_end") {
-      if (
-        e.message.role === "user" &&
-        e.message.vibeId &&
-        this.steers.has(e.message.vibeId)
-      ) {
-        this.checkpoints[e.message.vibeId] = {
-          raw: this.agent.state.messages.length - 1,
-          history: this.history.findIndex((m) => m.id === e.message.vibeId),
-        };
-        this.steers.delete(e.message.vibeId);
-        this.setDelivery(e.message.vibeId, "included");
-      }
       if (e.message.role === "assistant") {
         const thought = this.history.find(
           (m) => m.id === this.messageId + ":reasoning",
@@ -1054,14 +1023,26 @@ export class TurnRunner extends EventEmitter {
           };
       }
       this.transcript = this.agent.state.messages;
-      this.persist();
+      this.persistSoon();
     }
   }
-  private persistThrottled() {
-    if (Date.now() - this.lastPartialWrite > 500) {
-      this.persist();
-      this.lastPartialWrite = Date.now();
-    }
+  /**
+   * Saves the conversation within half a second. A running turn's events
+   * (deltas, tool starts and ends, messages) are saved this way, not one by
+   * one: every save writes the whole conversation store. The turn's end
+   * saves at once.
+   */
+  private persistSoon() {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      try {
+        this.persist();
+      } catch (error: any) {
+        // The turn's own save at its end reports the failure.
+        console.error("conversation save failed:", error?.message ?? error);
+      }
+    }, 500);
   }
 
   private async runTurn(
@@ -1082,39 +1063,30 @@ export class TurnRunner extends EventEmitter {
         this.agent.signal?.aborted || this.cancelStarting
           ? "interrupted"
           : "failed";
-      error = e.message;
+      error = status === "interrupted" ? "已停止" : failureText(e.message);
     } finally {
+      let change: FolderChange | null = null;
       try {
         this.transcript = [...this.agent.state.messages];
-        for (const [id, message] of this.steers) {
-          this.checkpoints[id] = {
-            raw: this.transcript.length,
-            history: this.history.findIndex((m) => m.id === id),
-          };
-          this.transcript.push(message);
-          this.setDelivery(id, "deferred");
-        }
-        this.steers.clear();
         this.persist();
         // Everything the turn changed on disk becomes one undoable entry.
-        const change = await this.host.call<{ change: FolderChange | null }>({
+        const recorded = await this.host.call<{ change: FolderChange | null }>({
           op: "folderCheckpoint",
           folder_id: pending.folder.id,
           title: question.replace(/\s+/g, " ").trim().slice(0, 40) || "AI 修改",
         });
-        if (change?.change)
+        change = recorded?.change ?? null;
+        if (change)
           this.emitEvent({
             type: "files-changed",
             folderId: pending.folder.id,
             conversationId: pending.conversationId,
-            change: change.change,
+            change,
           });
       } catch (e: any) {
         status = "failed";
         error = "工作区刷新或会话保存失败：" + e.message;
       }
-      this.agent.clearAllQueues();
-      this.steers.clear();
       this.pending = null;
       this.activeTurnId = null;
       this.run = null;
@@ -1122,11 +1094,14 @@ export class TurnRunner extends EventEmitter {
       const turn = this.history.find(
         (m) => m.type === "turn" && m.id === pending.turnId,
       );
+      // The record says how the turn ended, how long it took and which
+      // files it changed, so a reloaded window shows what the live one did.
       if (turn)
         Object.assign(turn, {
           status,
           error,
           elapsedMs: Date.now() - (turn.startedAt || Date.now()),
+          ...(change ? { change } : {}),
         });
       for (const m of this.history)
         if (
@@ -1147,11 +1122,7 @@ export class TurnRunner extends EventEmitter {
         status = "failed";
         error = "会话保存失败：" + e.message;
       }
-      if (error)
-        this.transmission = {
-          phase: status === "interrupted" ? "interrupted" : "failed",
-          message: error,
-        };
+      this.transmission = null;
       this.emitStatus();
       this.emitEvent({
         type: "turn-completed",

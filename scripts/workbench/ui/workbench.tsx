@@ -35,6 +35,54 @@ export async function pickOption(label: string, optionText: string) {
   });
 }
 
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+/** Opens the shared Menu whose button is named `label` (within `scope`), as
+ * Enter on the focused button does. */
+export async function openMenu(label: string, scope: ParentNode = document) {
+  const trigger = scope.querySelector<HTMLButtonElement>(
+    `[aria-haspopup="menu"][aria-label="${label}"]`,
+  );
+  assert(trigger, `menu ${label}`);
+  assert(!trigger.disabled, `menu ${label} is enabled`);
+  await act(async () => {
+    trigger.focus();
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await settle();
+}
+
+/** The command reading `text` in the open menus (shortcut aside), or the
+ * first one starting with it. */
+export function menuItem(text: string) {
+  const items = [
+    ...document.querySelectorAll<HTMLElement>('[role^="menuitem"]'),
+  ];
+  const item =
+    items.find(
+      (node) => node.querySelector(".menu-label")?.textContent === text,
+    ) ?? items.find((node) => node.textContent?.trim().startsWith(text));
+  assert(item, `menu item ${text}`);
+  return item;
+}
+
+/** Chooses the command reading `text` in the open menus, or opens the
+ * sub-menu it names. */
+export async function clickMenuItem(text: string) {
+  const item = menuItem(text);
+  await act(async () => item.click());
+  await settle();
+}
+
 /** Provides a workbench that is never started, for components rendered outside App. */
 export function Workbench({ children }: { children: ReactNode }) {
   return (

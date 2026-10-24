@@ -10,8 +10,17 @@ import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
 import { verifySimulationViewport } from "./viewport-scenarios.mts";
+import { placeTwoParts, verifyAgentTurn } from "./agent-scenarios.mts";
+import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
+// The sidecar reads its model services at start: point them at a scripted model.
+const model = await startScriptedModel(placeTwoParts);
+await mkdir(path.join(state, "profile"), { recursive: true });
+await writeFile(
+  path.join(state, "profile", "builtin-provider.json"),
+  JSON.stringify(scriptedProfile(model.url)),
+);
 let child: ChildProcess | undefined,
   url = "",
   logs = "";
@@ -299,7 +308,6 @@ try {
     automaticallySaved,
     "Recovery changed the source",
   );
-  // TODO(agent-runtime): the sidecar turn scenario is re-added once packages/agent-runtime/src/worker.mts is implemented; see packages/agent-runtime/README.md.
   // Save As must not alias the old path to the open copy, including after restart.
   const copyPath = path.join(state, "copy.circ");
   const copied = await command({
@@ -402,10 +410,12 @@ try {
     ),
     "Observation did not survive restart",
   );
+  await verifyAgentTurn(command, stream!, state);
   console.log(
-    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup.",
+    "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup; a scripted AI turn's edit, folder checkpoint and undo.",
   );
 } finally {
   await stop();
+  await model.close();
   await rm(state, { recursive: true, force: true });
 }

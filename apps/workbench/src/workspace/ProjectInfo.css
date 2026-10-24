@@ -3,11 +3,6 @@
   max-height: calc(100vh - 48px);
   overflow: auto;
 }
-.project-info header strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .project-source {
   display: flex;
   gap: 8px;

@@ -162,8 +162,17 @@ pub enum Edit {
     },
     DeleteCircuit,
     SetMain,
+    /// The whole file; `title` names the undo step (default "替换电路内容").
     Replace {
         xml: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        title: Option<String>,
+    },
+    /// Wire, place, delete and attributes edits applied in order on one
+    /// circuit as one change: one undo step, one title.
+    Batch {
+        edits: Vec<Edit>,
     },
 }
 
@@ -536,6 +545,24 @@ impl Document {
                 .collect(),
         })
     }
+    /// The document `edit` would make of this revision, leaving this one as it
+    /// is: same id and path, so it loads with the same libraries, and no
+    /// history. For checking what an edit does before applying it; applying
+    /// the same edit afterwards gives the same revision.
+    pub fn preview(&self, expected: &str, circuit: &str, edit: Edit) -> Result<Document> {
+        let mut preview = Document {
+            id: self.id.clone(),
+            path: self.path.clone(),
+            name: self.name.clone(),
+            source: self.source.clone(),
+            saved_digest: self.saved_digest.clone(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+            pending: None,
+        };
+        preview.edit(expected, circuit, edit)?;
+        Ok(preview)
+    }
     /// Applies an edit as splices of the stored file, so bytes the edit does
     /// not touch stay as they are. `Replace` keeps the current bytes of every
     /// top-level element (circuit, library, …) whose content it leaves equal.
@@ -554,19 +581,26 @@ impl Document {
                 | Edit::Move { .. }
                 | Edit::Delete { .. }
                 | Edit::Attributes { .. }
+                | Edit::Batch { .. }
         );
-        let old_wires = if matches!(edit, Edit::Wire { .. }) {
+        let wiring = match &edit {
+            Edit::Wire { .. } => true,
+            Edit::Batch { edits } => edits.iter().any(|e| matches!(e, Edit::Wire { .. })),
+            _ => false,
+        };
+        let old_wires = if wiring {
             self.circuit_wire_count(circuit)?
         } else {
             0
         };
         let next = match &edit {
-            Edit::Replace { xml } => {
+            Edit::Replace { xml, .. } => {
                 precheck(xml.as_bytes())?;
                 let input = Tree::index(xml.clone())?;
                 validate(&input)?;
                 Some(splice::merge(&self.source.tree, &input)?)
             }
+            Edit::Batch { edits } => batch(&self.source.tree, circuit, edits)?,
             edit => editing::apply(&self.source.tree, circuit, edit.clone())?,
         };
         // A file read in another encoding indexes as its UTF-8 text.
@@ -577,51 +611,44 @@ impl Document {
         let mut outcome = self.change(text.into_bytes(), outcome)?;
         outcome.changed_circuits = changed_circuits(&previous.tree, &self.source.tree);
         if selecting {
-            let after = self.circuit(circuit)?;
-            match edit {
-                Edit::Wire { .. } => {
-                    let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
-                    outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
-                }
-                Edit::Place { .. } | Edit::Attributes { .. } => {
-                    let placed = match &edit {
-                        Edit::Place { location, name, .. } => {
-                            Some((location.x, location.y, name.clone()))
+            let after = self.circuit_view(circuit)?;
+            if wiring {
+                let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
+                outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
+            }
+            let items = match edit {
+                Edit::Batch { edits } => edits,
+                edit => vec![edit],
+            };
+            for item in items {
+                match item {
+                    Edit::Place { location, name, .. } => {
+                        if let Some(component) = after.as_ref().and_then(|c| {
+                            c.components.iter().find(|c| {
+                                c.location.x == location.x
+                                    && c.location.y == location.y
+                                    && c.name == name
+                            })
+                        }) {
+                            outcome.components.push(component.id.clone());
                         }
-                        Edit::Attributes { id, .. } => {
-                            outcome.components.push(id.clone());
-                            None
-                        }
-                        _ => None,
-                    };
-                    if let Some((x, y, name)) = placed
-                        && let Some(component) = after.as_ref().and_then(|c| {
-                            c.components
-                                .iter()
-                                .find(|c| c.location.x == x && c.location.y == y && c.name == name)
-                        })
-                    {
-                        outcome.components.push(component.id.clone());
                     }
+                    Edit::Attributes { id, .. } => outcome.components.push(id),
+                    Edit::Move { ids, .. } => outcome.components.extend(ids),
+                    _ => {}
                 }
-                Edit::Move { ids, .. } => {
-                    for id in ids {
-                        outcome.components.push(id.clone());
-                    }
-                }
-                _ => {}
             }
         }
         Ok(outcome)
     }
     fn circuit_wire_count(&self, circuit: &str) -> Result<usize> {
         let circuit = self
-            .circuit(circuit)?
+            .circuit_view(circuit)?
             .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))?;
         Ok(circuit.wires.len())
     }
     /// One circuit's view, without building the others.
-    fn circuit(&self, name: &str) -> Result<Option<Circuit>> {
+    pub fn circuit_view(&self, name: &str) -> Result<Option<Circuit>> {
         let tree = &self.source.tree;
         tree.named(tree.root(), "circuit")
             .find(|&c| tree.get(c, "name") == name)
@@ -767,7 +794,11 @@ impl Document {
         let bytes = rebased
             .as_ref()
             .map_or(self.bytes(), |(source, _, _)| source.bytes());
-        let mut temp = tempfile::NamedTempFile::new_in(&parent)?;
+        // A new file gets a new file's permissions, not the temporary file's private 0600.
+        let mut builder = tempfile::Builder::new();
+        #[cfg(unix)]
+        builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o666));
+        let mut temp = builder.tempfile_in(&parent)?;
         temp.write_all(bytes)?;
         temp.as_file().sync_all()?;
         if let Ok(meta) = std::fs::metadata(&target) {
@@ -834,9 +865,19 @@ impl Document {
         fixed_ports: Vec<Point>,
     ) -> Result<()> {
         self.check(expected)?;
+        let title = format!("移动 {} 个对象", ids.len());
         match editing::move_connected(&self.source.tree, circuit, &ids, delta, ports, &fixed_ports)?
         {
-            Some(text) => self.replace(text.into_bytes()),
+            Some(text) => self
+                .change(
+                    text.into_bytes(),
+                    EditOutcome {
+                        title,
+                        circuit: circuit.to_string(),
+                        ..EditOutcome::default()
+                    },
+                )
+                .map(|_| ()),
             None => Ok(()),
         }
     }
@@ -867,6 +908,30 @@ fn changed_circuits(before: &Tree, after: &Tree) -> Vec<String> {
         }
     }
     changed
+}
+
+/// A batch's edits applied in order, each on the text the previous one made;
+/// the final text, or None when nothing changed.
+fn batch(tree: &Tree, circuit: &str, edits: &[Edit]) -> Result<Option<String>> {
+    if edits.is_empty() {
+        return Err(Error::InvalidCommand("批量修改是空的".into()));
+    }
+    let mut current: Option<Tree> = None;
+    for edit in edits {
+        if !matches!(
+            edit,
+            Edit::Wire { .. } | Edit::Place { .. } | Edit::Delete { .. } | Edit::Attributes { .. }
+        ) {
+            return Err(Error::InvalidCommand(
+                "批量修改只能包含导线、放置、删除和属性修改".into(),
+            ));
+        }
+        let base = current.as_ref().unwrap_or(tree);
+        if let Some(text) = editing::apply(base, circuit, edit.clone())? {
+            current = Some(Tree::index(text)?);
+        }
+    }
+    Ok(current.map(|tree| tree.text().to_owned()))
 }
 
 /// The history title for an edit, in the old application's formats.
@@ -903,7 +968,20 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
                 .collect();
             format!("{} \u{b7} {}", label, parts.join("\u{3001}"))
         }
-        Edit::Replace { .. } => "替换电路内容".into(),
+        Edit::Replace { title, .. } => title.clone().unwrap_or_else(|| "替换电路内容".into()),
+        Edit::Batch { edits } => match edits.as_slice() {
+            [one] => edit_title(one, circuit, doc),
+            all if all.iter().all(|e| matches!(e, Edit::Place { .. })) => {
+                format!("放置 {} 个元件", all.len())
+            }
+            all if all.iter().all(|e| matches!(e, Edit::Wire { .. })) => {
+                format!("绘制 {} 条导线", all.len())
+            }
+            all if all.iter().all(|e| matches!(e, Edit::Attributes { .. })) => {
+                format!("修改 {} 个元件的属性", all.len())
+            }
+            all => format!("{} 处修改", all.len()),
+        },
         Edit::AddCircuit { .. } => "添加电路".into(),
         Edit::RenameCircuit { .. } => "重命名电路".into(),
         Edit::DeleteCircuit => "删除电路".into(),
@@ -913,7 +991,7 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
 
 impl Document {
     fn circuit_component(&self, circuit: &str, id: &str) -> Option<Component> {
-        self.circuit(circuit)
+        self.circuit_view(circuit)
             .ok()??
             .components
             .into_iter()

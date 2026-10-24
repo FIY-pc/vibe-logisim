@@ -510,6 +510,50 @@ fn rerouted_wire_keeps_the_junction_at_its_other_end() {
 }
 
 #[test]
+fn wires_into_neighbouring_ports_fan_out_when_their_part_moves() {
+    // Two stacked inputs: one bend at either end would fold both wires onto
+    // one column and join them.
+    let gate = r##"<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <main name="main"/>
+  <circuit name="main">
+    <wire from="(100,90)" to="(170,90)"/>
+    <wire from="(100,110)" to="(170,110)"/>
+    <comp lib="0" loc="(100,90)" name="Pin"/>
+    <comp lib="0" loc="(100,110)" name="Pin"/>
+    <comp lib="1" loc="(200,100)" name="AND Gate"/>
+  </circuit>
+</project>
+"##;
+    let mut d = open(gate);
+    d.move_connected(
+        &d.revision(),
+        "main",
+        vec!["c200_100".into()],
+        p(0, 40),
+        vec![p(200, 100), p(170, 90), p(170, 110)],
+        vec![p(100, 90), p(100, 110)],
+    )
+    .unwrap();
+    let wires: Vec<String> = text(&d)
+        .lines()
+        .filter(|l| l.contains("<wire"))
+        .map(|l| l.trim().to_owned())
+        .collect();
+    assert_eq!(
+        wires,
+        [
+            r#"<wire from="(100,90)" to="(160,90)"/>"#,
+            r#"<wire from="(160,90)" to="(160,130)"/>"#,
+            r#"<wire from="(160,130)" to="(170,130)"/>"#,
+            r#"<wire from="(100,110)" to="(100,150)"/>"#,
+            r#"<wire from="(100,150)" to="(170,150)"/>"#,
+        ]
+    );
+}
+
+#[test]
 fn d1_deleting_a_pin_removes_its_appearance_port() {
     let mut d = open(CLASSIC);
     edit(
@@ -708,6 +752,7 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
         "main",
         Edit::Replace {
             xml: rewritten.clone(),
+            title: None,
         },
     );
     assert_eq!(d.bytes(), CLASSIC.as_bytes());
@@ -722,6 +767,7 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
         "main",
         Edit::Replace {
             xml: changed.clone(),
+            title: None,
         },
     );
     let span = |s: &str| {
@@ -752,6 +798,7 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
         "main",
         Edit::Replace {
             xml: text(&candidate),
+            title: None,
         },
     );
     assert_eq!(d.bytes(), candidate.bytes());
@@ -789,4 +836,61 @@ fn files_in_other_encodings_keep_their_bytes_until_edited() {
         d.undo(&d.revision()).unwrap();
         assert_eq!(d.bytes(), original);
     }
+}
+
+#[test]
+fn a_batch_is_one_change_and_one_undo_step() {
+    let mut d = open(CLASSIC);
+    let outcome = d
+        .edit(
+            &d.revision(),
+            "main",
+            Edit::Batch {
+                edits: vec![
+                    Edit::Place {
+                        name: "OR Gate".into(),
+                        library: Some("1".into()),
+                        location: p(260, 250),
+                        attributes: BTreeMap::new(),
+                    },
+                    Edit::Place {
+                        name: "Pin".into(),
+                        library: Some("0".into()),
+                        location: p(100, 250),
+                        attributes: BTreeMap::new(),
+                    },
+                    Edit::Wire {
+                        points: vec![p(100, 250), p(210, 250)],
+                    },
+                    Edit::Attributes {
+                        id: "c260_150".into(),
+                        values: BTreeMap::from([("label".into(), "sum".into())]),
+                    },
+                ],
+            },
+        )
+        .unwrap();
+    assert_eq!(outcome.title, "4 处修改");
+    assert_eq!(outcome.components, ["c260_250", "c100_250", "c260_150"]);
+    assert_eq!(outcome.wires, ["w2"]);
+    assert_eq!(
+        diff(CLASSIC, &text(&d)),
+        [
+            "+    <wire from=\"(100,250)\" to=\"(210,250)\"/>",
+            "-      <a name=\"label\" val=\"g1\"/>",
+            "+      <a name=\"label\" val=\"sum\"/>",
+            "+    <comp lib=\"1\" loc=\"(260,250)\" name=\"OR Gate\"/>",
+            "+    <comp lib=\"0\" loc=\"(100,250)\" name=\"Pin\"/>",
+        ]
+    );
+    d.undo(&d.revision()).unwrap();
+    assert_eq!(d.bytes(), CLASSIC.as_bytes());
+    assert!(!d.view().unwrap().can_undo);
+    let nested = Edit::Batch {
+        edits: vec![Edit::Batch { edits: vec![] }],
+    };
+    assert!(matches!(
+        d.edit(&d.revision(), "main", nested),
+        Err(Error::InvalidCommand(_))
+    ));
 }

@@ -60,8 +60,8 @@ Ported from the v0.5.0 Python arranger with its fixtures; 13 tests (`npm run tes
 
 ## Remaining tasks
 
-1. The AI tool currently applies, verifies through the host, and undoes on failure; once the host has `observeXml`, `arrange_circuit` should verify first. No change here, but keep `checks` complete enough that a failed host verification is rare.
-2. Performance on course-size definitions (hundreds of components): profile `solveGroups`; ELK dominates. Acceptable budget is a few seconds in the worker.
+1. Done: `arrange_circuit` observes the arranged XML through the host's `observeXml` and runs `verifyArrangement` before anything is applied; a rejected layout never touches the file.
+2. Measured on a 713-component, 1000-wire definition of a 1 MB file (dev Node 24, sidecar): `arrange` 650–800 ms, `readability` before and after 70 ms, `verifyArrangement` 100 ms (300 ms before `circuitElement` kept the last two files parsed), the whole `arrange_circuit` call about 1.6 s including observation, worker start and apply. Within budget. What is left is the router: `Router.path` (A*) is half of `arrange`; the next gain is there, not in ELK.
 3. Readability metrics were calibrated on hand-drawn course circuits; when adding a metric, add a fixture under `test/fixtures` that shows the before/after.
 
 ## Verify

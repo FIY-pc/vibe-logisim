@@ -1,4 +1,6 @@
 /** Tool failures the model can act on: a code, a message and a hint. */
+import { isHostError } from "../protocol/host.mts";
+
 export const ERROR_SCHEMA = "vibe-logisim.circuit-tool.error/v2";
 export const DEFAULT_HINT =
   "根据 message 修正参数或先读取当前电路，再决定是否重试。";
@@ -9,13 +11,6 @@ export interface ToolError {
   retryable: boolean;
   hint?: string;
   context?: Record<string, unknown>;
-}
-interface HostError {
-  code: string;
-  message: string;
-  retryable: boolean;
-  hint?: string | null;
-  context?: unknown;
 }
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -47,15 +42,6 @@ export class CircuitToolError extends Error {
       ...(record(context) ? { context } : {}),
     };
   }
-}
-
-export function isHostError(error: unknown): error is HostError {
-  return (
-    record(error) &&
-    typeof error.code === "string" &&
-    typeof error.message === "string" &&
-    typeof error.retryable === "boolean"
-  );
 }
 
 /** Any thrown value as a tool error the model can read. */

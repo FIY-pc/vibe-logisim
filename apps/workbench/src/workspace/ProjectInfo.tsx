@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { Copy, Download, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Copy, Download } from "lucide-react";
 import { command, desktop } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./ProjectInfo.css";
+import { DialogClose, useModal } from "../shared/Dialog";
 interface Info {
   documentId: string;
   revision: string;
@@ -31,7 +32,7 @@ export function ProjectInfo({
   doc: Document;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [info, setInfo] = useState<Info | null>(null),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -40,10 +41,6 @@ export function ProjectInfo({
     path: string;
     revision: string;
   } | null>(null);
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
   useEffect(() => {
     let live = true;
     setInfo(null);
@@ -135,10 +132,8 @@ export function ProjectInfo({
       }}
     >
       <header>
-        <strong>{doc.name}</strong>
-        <button aria-label="关闭文件信息" disabled={busy} onClick={onClose}>
-          <X size={17} />
-        </button>
+        <h2>{doc.name}</h2>
+        <DialogClose label="关闭文件信息" disabled={busy} onClick={onClose} />
       </header>
       {info && (
         <>
@@ -146,7 +141,7 @@ export function ProjectInfo({
             <span>{info.path || "未命名文件"}</span>
             {info.path && (
               <button
-                title="复制路径"
+                data-tip="复制路径"
                 aria-label="复制源文件路径"
                 onClick={() =>
                   void navigator.clipboard
@@ -226,7 +221,13 @@ export function ProjectInfo({
           onClick={() => void download()}
         >
           <Download size={15} />
-          {busy ? "正在导出…" : replacement ? "替换文件" : "导出工程 ZIP"}
+          {busy
+            ? "正在导出…"
+            : replacement
+              ? "替换文件"
+              : desktop()
+                ? "导出工程 ZIP…"
+                : "导出工程 ZIP"}
         </button>
       </footer>
     </dialog>

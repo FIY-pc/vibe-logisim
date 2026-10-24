@@ -7,7 +7,7 @@ The `.circ` document as data: open, edit, undo, save, restore, with no UI, Java,
 - Parsing and re-serialising `.circ` XML while keeping unknown nodes and attributes intact (`splice.rs`, `patch.rs`: edits are byte-range splices on the original text, never a full re-emit).
 - Object identity: component ids `c<x>_<y>` from the anchor point (`m` for a minus sign, `_2`, `_3`… for stacked copies on the same anchor), wire ids `w<n>` by file order. A part that did not move keeps its id across unrelated edits; a moved or deleted part's old id is gone.
 - Revisions: `Document::revision()` is the content digest; every mutating call takes the caller's expected revision and fails with `StaleRevision` instead of applying partially.
-- Edits (`Edit` enum in `document.rs`): wire, place, move, delete, attributes, addCircuit, renameCircuit, deleteCircuit, setMain, replace. The JSON schema of this enum is exported for the AI runtime (`edit_schema()`).
+- Edits (`Edit` enum in `document.rs`): wire, place, move, delete, attributes, addCircuit, renameCircuit, deleteCircuit, setMain, replace `{xml, title?}` (the whole file; `title` names the undo step, "整理布局" for an arrangement, else "替换电路内容"), and batch `{edits}`: wire, place, delete and attributes edits applied in order on one circuit as one change and one undo step ("放置 3 个元件"), selecting what each placed or drew. The JSON schema of this enum is exported for the AI runtime (`edit_schema()`).
 - Undo and redo (`editing.rs`, `session.rs`), with a crash-safe recovery journal per open document (`journal.rs`: snapshot plus one record per change, synced in the background; a torn record is dropped on restart).
 - Saving: atomic, with the on-disk baseline checked so an external change is reported (`ExternalChange`) rather than overwritten; Save As keeps the document identity and relocates relative library references (`relocate`).
 - `Workspace`: the set of open documents keyed by stable id, with restore and persist of the session directory.
@@ -26,7 +26,9 @@ Anything that needs the Java runtime (connectivity, port positions, rendering, s
 pub struct Document;            // Document::new(name) | Document::open(path) | Document::from_bytes(..)
 impl Document {
     fn view(&self) -> Result<DocumentView>;                       // id, name, path, revision, circuits (components, wires), libraries, dirty, canUndo/canRedo, main
+    fn circuit_view(&self, name: &str) -> Result<Option<Circuit>>; // one circuit of `view`, without building the others (a 1 MB file has 20+)
     fn edit(&mut self, expected: &str, circuit: &str, edit: Edit) -> Result<EditOutcome>;
+    fn preview(&self, expected: &str, circuit: &str, edit: Edit) -> Result<Document>;  // what `edit` would make of this revision, this one unchanged; no history
     fn undo(&mut self, expected: &str) -> Result<EditOutcome>;
     fn redo(&mut self, expected: &str) -> Result<EditOutcome>;
     fn save(&mut self, expected: &str, target: Option<&Path>) -> Result<()>;
@@ -34,7 +36,7 @@ impl Document {
     fn revision(&self) -> String;  fn dirty(&self) -> bool;  fn check(&self, expected) -> Result<()>;
     fn source_status(&self) -> SourceStatus;                       // in sync / changed on disk / missing
     fn bytes(&self) -> &[u8];  fn bytes_with_absolute_libraries(&self) -> Result<Cow<[u8]>>;
-    fn move_connected(..);                                         // selection move keeping attached wires
+    fn move_connected(..);                                         // selection move keeping attached wires; one undo step "移动 N 个对象". A wire with one end on a moved port follows it with the first shape that touches no other port or wire: a bend at its fixed end, a bend at its moved end, else a jog at the first free column or row; the host's connectivity check refuses what still joins nets
     fn relocate(&mut self, from: &Path, to: &Path);
 }
 pub struct Workspace;           // insert, open(path) (reuses an open doc with the same path or identity), get, get_mut, save, save_checked, save_in_place, close, restore(dir), persist(dir), relocate
@@ -67,8 +69,7 @@ Done and stable. 17 unit tests plus `tests/{document,fidelity,folder}.rs` (`carg
 
 None required for the rewrite. Candidates when the host needs them:
 
-- An `observe this XML without applying it` entry point does not belong here; it is a host op (see `crates/workbench-host/README.md`).
-- `Edit::Replace { xml }` re-parses the whole file; if the AI arranger's replace of a 1 MB file shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
+- `Edit::Replace` re-parses the whole file; if the AI arranger's replace of a 1 MB file shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
 
 ## Verify
 

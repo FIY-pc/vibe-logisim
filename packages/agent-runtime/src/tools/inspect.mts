@@ -6,7 +6,12 @@
  */
 import { organizationContext } from "@vibe-logisim/arranger";
 import { CircuitToolError } from "./errors.mts";
-import { inspectView } from "./observe.mts";
+import {
+  inspectKind,
+  inspectView,
+  type AttributeOptions,
+  type ObservationView,
+} from "./observe.mts";
 import { layoutReview, reviewOptions } from "./layout-review.mts";
 import type { ToolContext } from "./context.mts";
 
@@ -78,7 +83,57 @@ export async function inspectCircuit(
     };
   }
   const { view } = await context.observe(document, circuit);
-  return inspectView(view, identity, args);
+  const options =
+    inspectKind(args) === "componentIds"
+      ? await attributeOptions(
+          context,
+          document,
+          circuit,
+          view,
+          args.componentIds,
+        )
+      : undefined;
+  return inspectView(view, identity, args, options);
+}
+
+/**
+ * The allowed values of the named components' enumerated attributes, as the
+ * native attribute editor offers them (the same answer the inspector shows).
+ * Ids the observation does not know are left to the details view to report.
+ */
+async function attributeOptions(
+  context: ToolContext,
+  document: { id: string; revision: string },
+  circuit: string,
+  view: ObservationView,
+  ids: string[],
+) {
+  const known = new Set(view.circuit.components.map((c) => c.componentId));
+  const result = new Map<string, AttributeOptions>();
+  for (const id of new Set(ids)) {
+    if (!known.has(id)) continue;
+    let reply: any;
+    try {
+      reply = await context.host.call<any>({
+        op: "properties",
+        id: document.id,
+        revision: document.revision,
+        circuit,
+        component: id,
+      });
+    } catch {
+      // A stacked copy of the same part on one anchor cannot be addressed
+      // natively; its details still list attributes, ports and nets.
+      continue;
+    }
+    const options: AttributeOptions = {};
+    for (const [name, attribute] of Object.entries(templateAttributes(reply)))
+      if (attribute.editable !== false && attribute.options?.length)
+        options[name] = attribute.options;
+    result.set(id, options);
+  }
+  context.assertCurrent();
+  return result;
 }
 
 export async function renderCircuit(
@@ -173,53 +228,69 @@ export function templateGeometry(reply: any) {
  * one group of the catalog that lists it. The group with the empty id is
  * this file's own subcircuits.
  */
-export async function resolveLibrary(
+/**
+ * Resolves component names to their library ids for one revision, reading
+ * the catalog once, and only when a name comes without its library.
+ */
+export function libraryResolver(
+  context: ToolContext,
+  document: { id: string; revision: string },
+  circuit: string,
+) {
+  let catalog: Promise<any> | null = null;
+  return async (
+    tool: string,
+    library: string | null | undefined,
+  ): Promise<string> => {
+    if (library !== undefined && library !== null) return library;
+    catalog ??= context.host.call<any>({
+      op: "catalog",
+      id: document.id,
+      revision: document.revision,
+      circuit,
+    });
+    const hits: { id: string; name: string }[] = [];
+    for (const group of (await catalog)?.children || [])
+      if (group.tag === "group")
+        for (const entry of group.children || [])
+          if (
+            entry.tag === "tool" &&
+            (entry.attributes?.name === tool ||
+              entry.attributes?.factory === tool)
+          )
+            hits.push({
+              id: group.attributes.id ?? "",
+              name: group.attributes.name,
+            });
+    if (hits.length === 1) return hits[0].id;
+    if (!hits.length)
+      throw new CircuitToolError(
+        "COMPONENT_NOT_FOUND",
+        "当前文件的组件库里没有这个元件：" + tool,
+        {
+          hint: "元件名是 Logisim 的原生名称（如 AND Gate、Register、Pin）；子电路用定义名并把 library 设为空字符串。",
+        },
+      );
+    throw new CircuitToolError(
+      "INVALID_ARGUMENT",
+      `多个组件库都有 ${tool}，请指定 library。`,
+      {
+        hint:
+          "可选：" +
+          hits.map((h) => `${h.name} (${JSON.stringify(h.id)})`).join("、"),
+        context: { libraries: hits },
+      },
+    );
+  };
+}
+
+export const resolveLibrary = (
   context: ToolContext,
   document: { id: string; revision: string },
   circuit: string,
   tool: string,
   library: string | null | undefined,
-): Promise<string> {
-  if (library !== undefined && library !== null) return library;
-  const catalog = await context.host.call<any>({
-    op: "catalog",
-    id: document.id,
-    revision: document.revision,
-    circuit,
-  });
-  const hits: { id: string; name: string }[] = [];
-  for (const group of catalog?.children || [])
-    if (group.tag === "group")
-      for (const entry of group.children || [])
-        if (
-          entry.tag === "tool" &&
-          (entry.attributes?.name === tool ||
-            entry.attributes?.factory === tool)
-        )
-          hits.push({
-            id: group.attributes.id ?? "",
-            name: group.attributes.name,
-          });
-  if (hits.length === 1) return hits[0].id;
-  if (!hits.length)
-    throw new CircuitToolError(
-      "COMPONENT_NOT_FOUND",
-      "当前文件的组件库里没有这个元件：" + tool,
-      {
-        hint: "元件名是 Logisim 的原生名称（如 AND Gate、Register、Pin）；子电路用定义名并把 library 设为空字符串。",
-      },
-    );
-  throw new CircuitToolError(
-    "INVALID_ARGUMENT",
-    `多个组件库都有 ${tool}，请指定 library。`,
-    {
-      hint:
-        "可选：" +
-        hits.map((h) => `${h.name} (${JSON.stringify(h.id)})`).join("、"),
-      context: { libraries: hits },
-    },
-  );
-}
+) => libraryResolver(context, document, circuit)(tool, library);
 
 export async function describeComponent(
   context: ToolContext,

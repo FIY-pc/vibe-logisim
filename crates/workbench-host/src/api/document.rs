@@ -2,7 +2,7 @@
 //! them — editing, observation, rendering, checks, packaging and history.
 use super::{Effect::*, Meta};
 use crate::{
-    Host, Result,
+    Host, Reply, Result,
     app::diagnostics::Stage,
     documents::{
         history::Action,
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 use vibe_circuit_document::{Document, DocumentView, Edit, EditOutcome, Point};
-use vibe_logisim_runtime::Viewport;
+use vibe_logisim_runtime::{Viewport, timing};
 
 /// The objects a gesture leaves selected.
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -148,6 +148,14 @@ pub enum DocumentRequest {
         id: String,
         revision: String,
         circuit: String,
+    },
+    /// Observes what `edit replace` with this whole-file XML would make of
+    /// the revision, without applying it; same reply as `observe`.
+    ObserveXml {
+        id: String,
+        revision: String,
+        circuit: String,
+        xml: String,
     },
     Template {
         id: String,
@@ -311,6 +319,7 @@ impl DocumentRequest {
         "undo",
         "redo",
         "observe",
+        "observeXml",
         "template",
         "properties",
         "catalog",
@@ -364,7 +373,9 @@ impl DocumentRequest {
                 .stage(Stage::Edit)
                 .history(Action::document("redo", "重做修改", id))
                 .agent(),
-            Self::Observe { .. } => Meta::new(Read).stage(Stage::Observe).agent(),
+            Self::Observe { .. } | Self::ObserveXml { .. } => {
+                Meta::new(Read).stage(Stage::Observe).agent()
+            }
             Self::Template { .. } | Self::Properties { .. } | Self::Catalog { .. } => {
                 Meta::new(Read).stage(Stage::Library).agent()
             }
@@ -491,6 +502,134 @@ fn serialized_component(reply: &Value) -> Result<&Value> {
 }
 
 impl Host {
+    /// A place or attributes edit as the native runtime resolves it against
+    /// the revision the caller saw: canonical name and attribute values,
+    /// checked (placement conflicts, invalid values). A placement also
+    /// returns the runtime's template, with its ports. Other edits pass.
+    async fn resolve_edit(
+        &self,
+        id: &str,
+        revision: &str,
+        circuit: &str,
+        edit: Edit,
+    ) -> Result<(Edit, Option<Value>)> {
+        match edit {
+            Edit::Place {
+                name,
+                library,
+                location,
+                attributes,
+            } => {
+                let path = self.snapshot(id, revision).await?;
+                let _template = timing::span("edit.template");
+                let template = self
+                    .native
+                    .lock()
+                    .await
+                    .template(
+                        &path,
+                        circuit,
+                        library.clone(),
+                        name,
+                        Some(location),
+                        attributes,
+                    )
+                    .await?;
+                let component = serialized_component(&template)?;
+                let resolved = Edit::Place {
+                    name: component["attributes"]["name"]
+                        .as_str()
+                        .ok_or("元件名称缺失")?
+                        .into(),
+                    library,
+                    location,
+                    attributes: component_attributes(component).unwrap_or_default(),
+                };
+                Ok((resolved, Some(template)))
+            }
+            Edit::Attributes {
+                id: component_id,
+                values,
+            } => {
+                let (path, component) = self
+                    .snapshot_component(id, revision, circuit, &component_id)
+                    .await?;
+                let _properties = timing::span("edit.properties");
+                let checked = self
+                    .native
+                    .lock()
+                    .await
+                    .properties(&path, circuit, &component, values)
+                    .await?;
+                let values =
+                    component_attributes(serialized_component(&checked)?).ok_or("元件属性缺失")?;
+                Ok((
+                    Edit::Attributes {
+                        id: component_id,
+                        values,
+                    },
+                    None,
+                ))
+            }
+            edit => Ok((edit, None)),
+        }
+    }
+    /// A batch's edits resolved against one revision (one native load). The
+    /// runtime checks each placement against the circuit as it is; the new
+    /// parts are checked against each other here, as the runtime would once
+    /// they are in: no exclusive port on another's, no two alike on one spot.
+    async fn resolve_batch(
+        &self,
+        id: &str,
+        revision: &str,
+        circuit: &str,
+        edits: Vec<Edit>,
+    ) -> Result<Vec<Edit>> {
+        let mut resolved = Vec::with_capacity(edits.len());
+        let mut placed: Vec<(String, Point, Vec<Point>)> = Vec::new();
+        for (index, edit) in edits.into_iter().enumerate() {
+            if !matches!(
+                edit,
+                Edit::Wire { .. }
+                    | Edit::Place { .. }
+                    | Edit::Delete { .. }
+                    | Edit::Attributes { .. }
+            ) {
+                return Err("批量修改只能包含导线、放置、删除和属性修改，或者只包含移动".into());
+            }
+            let (edit, template) = self.resolve_edit(id, revision, circuit, edit).await?;
+            if let (Edit::Place { name, location, .. }, Some(template)) = (&edit, &template) {
+                let exclusive: Vec<Point> = template["children"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|n| n["tag"] == "port" && n["attributes"]["exclusive"] == "true")
+                    .filter_map(|n| {
+                        let at = |key: &str| n["attributes"][key].as_str()?.parse::<i32>().ok();
+                        Some(Point {
+                            x: location.x + at("x")?,
+                            y: location.y + at("y")?,
+                        })
+                    })
+                    .collect();
+                for (other, at, ports) in &placed {
+                    if other == name && at == location {
+                        return Err(format!("第 {} 项：此位置已有相同元件", index + 1).into());
+                    }
+                    if exclusive.iter().any(|p| ports.contains(p)) {
+                        return Err(format!(
+                            "第 {} 项：此位置与同一批放置的元件冲突，请换一个位置",
+                            index + 1
+                        )
+                        .into());
+                    }
+                }
+                placed.push((name.clone(), *location, exclusive));
+            }
+            resolved.push(edit);
+        }
+        Ok(resolved)
+    }
     /// A copy of the document at the revision the caller saw.
     async fn checked_document(&self, id: &str, revision: &str) -> Result<Document> {
         let workspace = self.workspace.lock().await;
@@ -498,8 +637,8 @@ impl Host {
         doc.check(revision)?;
         Ok(doc.clone())
     }
-    pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Value> {
-        match request {
+    pub(crate) async fn document_request(&self, request: DocumentRequest) -> Result<Reply> {
+        let value = match request {
             DocumentRequest::Status => {
                 let w = self.workspace.lock().await;
                 let documents = w
@@ -595,66 +734,28 @@ impl Host {
                 id,
                 revision,
                 circuit,
-                mut edit,
+                edit,
             } => {
-                if let Edit::Place {
-                    name,
-                    library,
-                    location,
-                    attributes,
-                } = &edit
-                {
-                    let (path, _) = self.snapshot(&id, &revision).await?;
-                    let template = self
-                        .native
-                        .lock()
-                        .await
-                        .template(
-                            &path,
-                            &circuit,
-                            library.clone(),
-                            name.clone(),
-                            Some(*location),
-                            attributes.clone(),
-                        )
-                        .await?;
-                    let component = serialized_component(&template)?;
-                    edit = Edit::Place {
-                        name: component["attributes"]["name"]
-                            .as_str()
-                            .ok_or("元件名称缺失")?
-                            .into(),
-                        library: library.clone(),
-                        location: *location,
-                        attributes: component_attributes(component).unwrap_or_default(),
-                    };
-                }
-                if let Edit::Attributes {
-                    id: component_id,
-                    values,
-                } = &edit
-                {
-                    let (path, view) = self.snapshot(&id, &revision).await?;
-                    let component = view
-                        .circuits
+                let moves: Option<Vec<(Vec<String>, Point)>> = match &edit {
+                    Edit::Batch { edits } if !edits.is_empty() => edits
                         .iter()
-                        .find(|c| c.name == circuit)
-                        .and_then(|c| c.components.iter().find(|c| &c.id == component_id))
-                        .ok_or("请选择元件")?;
-                    let checked = self
-                        .native
-                        .lock()
-                        .await
-                        .properties(&path, &circuit, component, values.clone())
-                        .await?;
-                    let canonical = component_attributes(serialized_component(&checked)?)
-                        .ok_or("元件属性缺失")?;
-                    edit = Edit::Attributes {
-                        id: component_id.clone(),
-                        values: canonical,
-                    };
-                }
-                if let Edit::Move { ids, delta } = &edit {
+                        .map(|e| match e {
+                            Edit::Move { ids, delta } => Some((ids.clone(), *delta)),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => None,
+                };
+                let edit = match edit {
+                    _ if moves.is_some() => edit,
+                    Edit::Batch { edits } => Edit::Batch {
+                        edits: self.resolve_batch(&id, &revision, &circuit, edits).await?,
+                    },
+                    edit => self.resolve_edit(&id, &revision, &circuit, edit).await?.0,
+                };
+                if let Some(moves) = moves {
+                    value(self.commit_moves(&id, &revision, &circuit, &moves).await?)
+                } else if let Edit::Move { ids, delta } = &edit {
                     let moved = self
                         .commit_move(&id, &revision, &circuit, ids, *delta)
                         .await?;
@@ -662,9 +763,16 @@ impl Host {
                 } else {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
-                    let outcome = d.edit(&revision, &circuit, edit)?;
-                    let view = d.view()?;
+                    let outcome = {
+                        let _edit = timing::span("edit.apply");
+                        d.edit(&revision, &circuit, edit)?
+                    };
+                    let view = {
+                        let _view = timing::span("edit.view");
+                        d.view()?
+                    };
                     drop(w);
+                    let _value = timing::span("edit.value");
                     value(edit_result(&outcome, view, false))
                 }
             }
@@ -703,8 +811,31 @@ impl Host {
                 revision,
                 circuit,
             } => {
-                let (p, _) = self.snapshot(&id, &revision).await?;
-                Ok(self.native.lock().await.observe(&p, &circuit).await?)
+                let p = self.snapshot(&id, &revision).await?;
+                let _observe = timing::span("observe");
+                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::ObserveXml {
+                id,
+                revision,
+                circuit,
+                xml,
+            } => {
+                // Written where the applied revision's file would go, so
+                // applying the same XML afterwards loads nothing new.
+                let p = {
+                    let w = self.workspace.lock().await;
+                    let proposed = w.get(&id)?.preview(
+                        &revision,
+                        &circuit,
+                        Edit::Replace { xml, title: None },
+                    )?;
+                    self.materialize(&proposed)?
+                };
+                let _observe = timing::span("observe");
+                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
             }
             DocumentRequest::Template {
                 id,
@@ -714,7 +845,7 @@ impl Host {
                 name,
                 attributes,
             } => {
-                let (path, _) = self.snapshot(&id, &revision).await?;
+                let path = self.snapshot(&id, &revision).await?;
                 Ok(self
                     .native
                     .lock()
@@ -735,18 +866,14 @@ impl Host {
                 circuit,
                 component,
             } => {
-                let (path, view) = self.snapshot(&id, &revision).await?;
-                let component = view
-                    .circuits
-                    .iter()
-                    .find(|c| c.name == circuit)
-                    .and_then(|c| c.components.iter().find(|c| c.id == component))
-                    .ok_or("请选择元件")?;
+                let (path, component) = self
+                    .snapshot_component(&id, &revision, &circuit, &component)
+                    .await?;
                 Ok(self
                     .native
                     .lock()
                     .await
-                    .properties(&path, &circuit, component, BTreeMap::new())
+                    .properties(&path, &circuit, &component, BTreeMap::new())
                     .await?)
             }
             DocumentRequest::Catalog {
@@ -754,8 +881,8 @@ impl Host {
                 revision,
                 circuit,
             } => {
-                let (p, v) = self.snapshot(&id, &revision).await?;
-                Ok(self.native.lock().await.catalog(&p, &v, &circuit).await?)
+                let path = self.snapshot(&id, &revision).await?;
+                Ok(self.native.lock().await.catalog(&path, &circuit).await?)
             }
             DocumentRequest::Render {
                 id,
@@ -767,7 +894,7 @@ impl Host {
                 height,
                 scale,
             } => {
-                let (path, _) = self.snapshot(&id, &revision).await?;
+                let path = self.snapshot(&id, &revision).await?;
                 let mut native = self.native.lock().await;
                 let viewport = match (x, y, width, height, scale) {
                     (Some(x), Some(y), Some(width), Some(height), Some(scale)) => Viewport {
@@ -779,6 +906,7 @@ impl Host {
                     },
                     _ => fitted_viewport(&native.observe(&path, &circuit).await?),
                 };
+                let _render = timing::span("render");
                 let image = native.render(&path, &circuit, viewport).await?;
                 Ok(json!({
                     "image": image,
@@ -902,6 +1030,7 @@ impl Host {
                 revision,
                 entry,
             } => self.history_restore(&id, &revision, &entry).await,
-        }
+        };
+        value.map(Reply::Value)
     }
 }
