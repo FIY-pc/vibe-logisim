@@ -1,4 +1,5 @@
 import { RotateCw, X } from "lucide-react";
+import { Checkbox } from "../shared/Checkbox";
 import { IconButton } from "../shared/IconButton";
 import { canRotate, type PlacementState } from "./usePlacement";
 import { useEditor, useSettings } from "../app/hooks";
@@ -16,16 +17,16 @@ export function PlacementControls({
   return (
     <>
       <IconButton
-        title={`旋转 90° (${shortcuts.rotate})`}
+        title="旋转 90°"
+        shortcut={shortcuts.rotate}
         icon={<RotateCw size={14} />}
         onClick={() => placement.rotate()}
         disabled={!canRotate(placement)}
       />
       <label className="placement-repeat">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={placement.repeat}
-          onChange={(e) => placement.setRepeat(e.target.checked)}
+          onCheckedChange={placement.setRepeat}
         />
         连续放置
       </label>

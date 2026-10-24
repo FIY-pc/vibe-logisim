@@ -4,6 +4,12 @@
   gap: 5px;
   margin: 6px 0;
 }
+.reference-chips:empty {
+  display: none;
+}
+.composer > .reference-chips {
+  margin: 10px 10px 0;
+}
 .reference-chips > span {
   display: flex;
   min-width: 0;
@@ -26,11 +32,6 @@
   max-height: 88vh;
   overflow: auto;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.reference-preview::backdrop {
-  background: #20263450;
 }
 .reference-preview header {
   display: flex;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
+import { tip } from "../shared/Tooltips";
 import type { MemoryPage } from "../generated/MemoryPage";
 import type { Document } from "../shared/types";
 import type { Component } from "../shared/types";
@@ -160,7 +161,18 @@ export function MemoryPanel({
           {ram ? "RAM · 运行内容" : "ROM · 工程内容"}
         </span>
         <span className="muted memory-state">{stateLine}</span>
-        <button aria-label="关闭存储器" onClick={onClose}>
+        <button
+          aria-label="关闭存储器"
+          {...tip("关闭")}
+          onClick={(event) => {
+            // Keyboard focus moves on to the canvas instead of leaving with the panel.
+            event.currentTarget
+              .closest("main")
+              ?.querySelector<HTMLElement>(".canvas")
+              ?.focus({ preventScroll: true });
+            onClose();
+          }}
+        >
           <X size={15} />
         </button>
       </header>
@@ -208,6 +220,7 @@ export function MemoryPanel({
             )}
             <button
               aria-label="上一页地址"
+              {...tip("上一页")}
               disabled={pending || !offset}
               onClick={() =>
                 void runAction(() => read(Math.max(0, offset - PAGE)))
@@ -217,6 +230,7 @@ export function MemoryPanel({
             </button>
             <button
               aria-label="下一页地址"
+              {...tip("下一页")}
               disabled={pending || !shown || offset + PAGE >= shown.length}
               onClick={() => void runAction(() => read(offset + PAGE))}
             >
@@ -224,6 +238,7 @@ export function MemoryPanel({
             </button>
             <button
               aria-label="刷新存储器"
+              {...tip("重新读取")}
               disabled={pending}
               onClick={() => void runAction(() => read(offset))}
             >

@@ -14,6 +14,7 @@ import {
   type SignalTarget,
 } from "./connectivity";
 import "./inspector.css";
+import { tip } from "../shared/Tooltips";
 
 interface Props {
   focus: ConnectionFocus | null;
@@ -77,7 +78,7 @@ export function SelectionConnections({
             <button
               className="connection-peer"
               key={`${peer.component.componentId}:${peer.end.index}`}
-              title={`在画布定位 ${componentName(peer.component)} · ${portName(peer.component, peer.end)}`}
+              data-tip={`在画布定位 ${componentName(peer.component)} · ${portName(peer.component, peer.end)}`}
               onClick={() => onVisit(peer)}
             >
               <strong>{componentName(peer.component)}</strong>
@@ -96,7 +97,11 @@ export function SelectionConnections({
   return (
     <div className="selection-connections" aria-label="选中对象的连接">
       {onBack && (
-        <button className="signal-action" onClick={onBack} title="Alt+←">
+        <button
+          className="signal-action"
+          onClick={onBack}
+          {...tip("返回上个位置", "Alt+←")}
+        >
           返回上个位置
         </button>
       )}

@@ -14,6 +14,8 @@ import {
   LayoutTemplate,
 } from "lucide-react";
 import type { CatalogTool, Tool } from "../shared/types";
+import { bindingLabel } from "../shared/shortcuts";
+import { tip } from "../shared/Tooltips";
 import "./editor-controls.css";
 
 interface Props {
@@ -36,16 +38,20 @@ interface Props {
   onToggleGrid: () => void;
   onArrange: () => void;
 }
-const hint = (label: string, binding?: string) =>
-  binding ? `${label}（${binding}）` : label;
 const actionButton = (
   label: string,
-  title: string,
+  hint: string,
+  shortcut: string | undefined,
   icon: ReactNode,
   action: () => void,
   disabled = false,
 ) => (
-  <button title={title} aria-label={label} onClick={action} disabled={disabled}>
+  <button
+    {...tip(hint, shortcut)}
+    aria-label={label}
+    onClick={action}
+    disabled={disabled}
+  >
     {icon}
   </button>
 );
@@ -80,15 +86,15 @@ export function EditorToolbar({
               "wire",
               "布线",
               Waypoints,
-              "；拖动松手落线；点击拐弯，Enter 完成，Esc 取消",
+              "拖动松手落线；点击拐弯，Enter 完成，Esc 取消",
             ],
-            ["poke", "操作输入", MousePointerClick, "；首次点击自动启动仿真"],
-            ["pan", "平移", Hand, "；也可按住空格"],
+            ["poke", "操作输入", MousePointerClick, "首次点击自动启动仿真"],
+            ["pan", "平移", Hand, "也可按住空格"],
           ] as const
         ).map(([id, label, Icon, detail]) => (
           <button
             key={id}
-            title={hint(label, shortcuts[id]) + detail}
+            {...tip(detail ? `${label}\n${detail}` : label, shortcuts[id])}
             aria-label={label}
             aria-pressed={tool === id && !place}
             onClick={() => {
@@ -105,28 +111,32 @@ export function EditorToolbar({
       <div className="canvas-tool-actions" role="group" aria-label="电路编辑">
         {actionButton(
           "撤销",
-          hint("撤销上一步改动", shortcuts.undo),
+          "撤销上一步改动",
+          shortcuts.undo,
           <Undo2 size={15} />,
           () => onHistory("undo"),
           !canUndo || Boolean(pending),
         )}
         {actionButton(
           "重做",
-          "重做（Ctrl Shift Z）",
+          "重做",
+          bindingLabel("Mod+Shift+Z"),
           <Redo2 size={15} />,
           () => onHistory("redo"),
           !canRedo || Boolean(pending),
         )}
         {actionButton(
           "删除选中对象",
-          "删除选中对象（Backspace / Delete）",
+          "删除选中对象",
+          "Delete",
           <Trash2 size={15} />,
           onDelete,
           !hasSelection || Boolean(pending),
         )}
         {actionButton(
           "整理布局",
-          "整理布局：按信号流重新摆放元件并重连导线，保留行为；比现在清楚才应用，可撤销",
+          "整理布局\n按信号流重新摆放元件并重连导线，保留行为；比现在清楚才应用，可撤销",
+          undefined,
           <LayoutTemplate size={15} />,
           onArrange,
           arranging || Boolean(pending) || (!canUndo && false),
@@ -136,6 +146,7 @@ export function EditorToolbar({
         {actionButton(
           "缩小",
           "缩小",
+          undefined,
           <Minus size={15} />,
           () => onZoom(1 / 1.2),
           zoom <= 0.05,
@@ -146,18 +157,19 @@ export function EditorToolbar({
         {actionButton(
           "放大",
           "放大",
+          undefined,
           <Plus size={15} />,
           () => onZoom(1.2),
           zoom >= 8,
         )}
-        <button title={hint("适合窗口", shortcuts.fit)} onClick={onFit}>
+        <button {...tip("适合窗口", shortcuts.fit)} onClick={onFit}>
           <Maximize size={15} aria-hidden="true" />
           适合
         </button>
         <button
           aria-label="网格"
           aria-pressed={showGrid}
-          title={hint(showGrid ? "隐藏网格" : "显示网格", shortcuts.grid)}
+          {...tip(showGrid ? "隐藏网格" : "显示网格", shortcuts.grid)}
           onClick={onToggleGrid}
         >
           <Grid2X2 size={15} />

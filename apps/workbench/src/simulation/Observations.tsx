@@ -1,12 +1,15 @@
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
-import { useEffect, useRef, useState } from "react";
-import { Pencil, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { ObservationRecord } from "../generated/ObservationRecord";
 import type { ObservationSummary } from "../generated/ObservationSummary";
 import type { ReferenceInput } from "../conversation/references";
 import { command } from "../shared/transport";
-import { Waveform } from "./Waveform";
+import { busValue, Waveform } from "./Waveform";
+import { Checkbox } from "../shared/Checkbox";
+import { DialogClose, useModal } from "../shared/Dialog";
+import { Menu, MenuItem } from "../shared/Menu";
+import { fullText } from "../shared/Tooltips";
 
 /**
  * The observations a document kept, with one or two shown side by side. The
@@ -24,7 +27,7 @@ export function Observations({
   initial?: string;
   onQuote: (references: ReferenceInput[]) => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [renaming, setRenaming] = useState<ObservationSummary | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [records, setRecords] = useState<ObservationSummary[]>([]),
@@ -32,14 +35,26 @@ export function Observations({
     [shown, setShown] = useState<Record<string, ObservationRecord>>({}),
     [error, setError] = useState("");
   useEffect(() => {
-    dialog.current?.showModal();
     void command<ObservationSummary[]>({
       op: "observationList",
       id: documentId,
     })
-      .then(setRecords)
+      .then((list) => {
+        setRecords(list);
+        // Opening the list shows the newest observation, as a viewer would.
+        setSelection((old) => {
+          if (old.length) return old;
+          const newest = list
+            .filter((record) => !record.damaged)
+            .reduce<ObservationSummary | null>(
+              (best, record) =>
+                !best || record.createdAt > best.createdAt ? record : best,
+              null,
+            );
+          return newest ? [newest.id] : [];
+        });
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-    return () => dialog.current?.close();
   }, [documentId]);
   useEffect(() => {
     for (const id of selection.slice(-2))
@@ -69,9 +84,7 @@ export function Observations({
     >
       <header>
         <h2>留存观察</h2>
-        <button aria-label="关闭留存观察" onClick={onClose}>
-          <X size={17} />
-        </button>
+        <DialogClose label="关闭留存观察" onClick={onClose} />
       </header>
       {error && (
         <p role="alert" className="dialog-error">
@@ -84,20 +97,24 @@ export function Observations({
             records.map((record) => (
               <div key={record.id}>
                 <label>
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     disabled={Boolean(record.damaged)}
                     checked={selection.includes(record.id)}
-                    onChange={(e) =>
+                    onCheckedChange={(checked) =>
                       setSelection((old) =>
-                        e.target.checked
+                        checked
                           ? [...old.slice(-1), record.id]
                           : old.filter((id) => id !== record.id),
                       )
                     }
                   />
                   <span>
-                    {record.title}
+                    <span
+                      className="observation-title"
+                      {...fullText(record.title)}
+                    >
+                      {record.title}
+                    </span>
                     <small>
                       {record.damaged
                         ? record.damaged
@@ -105,41 +122,42 @@ export function Observations({
                     </small>
                   </span>
                 </label>
-                <button
-                  aria-label={`重命名观察 ${record.title}`}
-                  disabled={Boolean(record.damaged)}
-                  onClick={() => setRenaming(record)}
-                >
-                  <Pencil size={13} />
-                </button>
-                <button
-                  aria-label={`删除观察 ${record.title}`}
-                  onClick={() =>
-                    setDecision({
-                      title: `删除 ${record.title}？`,
-                      message: "这条观察记录删除后无法恢复。",
-                      actions: [
-                        {
-                          label: "删除",
-                          run: async () => {
-                            await command({
-                              op: "observationDelete",
-                              record: record.id,
-                            });
-                            setRecords((old) =>
-                              old.filter((item) => item.id !== record.id),
-                            );
-                            setSelection((old) =>
-                              old.filter((id) => id !== record.id),
-                            );
+                <Menu label={`${record.title} 的操作`}>
+                  <MenuItem
+                    disabled={Boolean(record.damaged)}
+                    onSelect={() => setRenaming(record)}
+                  >
+                    重命名…
+                  </MenuItem>
+                  <MenuItem
+                    danger
+                    onSelect={() =>
+                      setDecision({
+                        title: `删除 ${record.title}？`,
+                        message: "这条观察记录删除后无法恢复。",
+                        actions: [
+                          {
+                            label: "删除",
+                            run: async () => {
+                              await command({
+                                op: "observationDelete",
+                                record: record.id,
+                              });
+                              setRecords((old) =>
+                                old.filter((item) => item.id !== record.id),
+                              );
+                              setSelection((old) =>
+                                old.filter((id) => id !== record.id),
+                              );
+                            },
                           },
-                        },
-                      ],
-                    })
-                  }
-                >
-                  <Trash2 size={13} />
-                </button>
+                        ],
+                      })
+                    }
+                  >
+                    删除…
+                  </MenuItem>
+                </Menu>
               </div>
             ))
           ) : (
@@ -147,6 +165,9 @@ export function Observations({
           )}
         </div>
         <div className="observation-viewer">
+          {records.length > 0 && !selection.length && (
+            <p className="quiet-empty">勾选左侧的观察查看，勾选两条可以对比</p>
+          )}
           {selected.length === 2 && <Comparison records={selected} />}
           {selected.map((record) => (
             <article key={record.id}>
@@ -166,7 +187,9 @@ export function Observations({
                       <tr key={signal.key}>
                         <th>{signal.label}</th>
                         <td>
-                          <code>{signal.bits}</code>
+                          <code data-tip={signal.bits}>
+                            {busValue(signal.bits)}
+                          </code>
                         </td>
                       </tr>
                     ))}
@@ -187,6 +210,7 @@ export function Observations({
       </div>
       <footer>
         <button
+          className="primary"
           disabled={!selected.length}
           onClick={() => {
             onQuote(

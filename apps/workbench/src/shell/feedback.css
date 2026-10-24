@@ -1,8 +1,3 @@
-.feedback-menu-check {
-  width: 15px;
-  height: 15px;
-  display: inline-flex;
-}
 .update-notice {
   display: flex;
   align-items: center;
@@ -28,22 +23,20 @@
   align-items: center;
   justify-content: space-between;
 }
-.feedback-dialog header button {
-  border: 0;
-  background: transparent;
-  display: inline-flex;
-}
+/* The body lines up with the title and the buttons. */
 .feedback-dialog > p {
-  margin: 12px 16px;
+  margin: 0 0 10px;
   font-size: 13px;
+}
+.feedback-dialog textarea + p {
+  margin-top: 12px;
 }
 .feedback-dialog textarea {
   box-sizing: border-box;
   display: block;
-  width: calc(100% - 32px);
+  width: 100%;
   height: 240px;
-  margin: 0 16px 16px;
-  resize: vertical;
+  margin: 0;
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 6px;

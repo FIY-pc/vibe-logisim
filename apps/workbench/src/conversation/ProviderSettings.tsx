@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, RefreshCw } from "lucide-react";
 import "./ai-settings.css";
+import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
+import { DialogClose, useModal } from "../shared/Dialog";
 export interface ProviderConfiguration {
   id?: string;
   name: string;
@@ -294,11 +296,10 @@ function ProviderForm({
             />
           </label>
           <label className="provider-check">
-            <input
-              type="checkbox"
+            <Checkbox
               disabled={locked}
               checked={form.vision}
-              onChange={(e) => update({ vision: e.target.checked })}
+              onCheckedChange={(vision) => update({ vision })}
             />
             图片输入
           </label>
@@ -349,7 +350,7 @@ interface SettingsProps {
  * use, and adding, editing or removing one. */
 export function ProviderSettings(props: SettingsProps) {
   const { services, provider, request, onSaved, onClose } = props;
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const heading = useRef<HTMLHeadingElement>(null);
   const [page, setPage] = useState<"services" | "edit" | "confirm">("services");
   const [editing, setEditing] = useState<Partial<ProviderConfiguration> | null>(
@@ -364,15 +365,6 @@ export function ProviderSettings(props: SettingsProps) {
   const [formWorking, setFormWorking] = useState(false);
   const [error, setError] = useState("");
   const locked = props.busy || working || formWorking;
-  useEffect(() => {
-    const node = dialog.current;
-    const previous = document.activeElement as HTMLElement | null;
-    node?.showModal();
-    return () => {
-      node?.close();
-      if (previous?.isConnected) previous.focus();
-    };
-  }, []);
   useEffect(() => {
     heading.current?.focus();
   }, [page]);
@@ -440,13 +432,11 @@ export function ProviderSettings(props: SettingsProps) {
     >
       <header>
         <h2 id="ai-settings-title">AI 设置</h2>
-        <button
-          aria-label="关闭 AI 设置"
+        <DialogClose
+          label="关闭 AI 设置"
           disabled={working || formWorking}
           onClick={onClose}
-        >
-          <X size={18} />
-        </button>
+        />
       </header>
       <div className="ai-settings-content">
         <div className="ai-settings-heading">
@@ -456,7 +446,7 @@ export function ProviderSettings(props: SettingsProps) {
               disabled={working || formWorking}
               onClick={() => navigate("services")}
             >
-              <ArrowLeft size={17} />
+              <ArrowLeft size={15} />
             </button>
           )}
           <h3 ref={heading} tabIndex={-1}>

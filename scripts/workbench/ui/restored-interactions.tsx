@@ -143,7 +143,10 @@ export async function verifyRestoredInteractions() {
     await act(async () => button.click());
   };
   const input = async (selector: string, value: string) => {
-    const element = container.querySelector<HTMLInputElement>(selector)!;
+    // Popovers mount on <body>, outside the rendered container.
+    const element =
+      container.querySelector<HTMLInputElement>(selector) ??
+      document.querySelector<HTMLInputElement>(selector)!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -199,20 +202,6 @@ export async function verifyRestoredInteractions() {
       label: "检查输出",
       status: "completed",
     });
-    assert.equal(
-      container.querySelector('.activity[data-result-status="failed"] small')
-        ?.textContent,
-      "不匹配",
-    );
-    assert.match(
-      container.querySelector('.activity[data-result-status="failed"]')!
-        .textContent!,
-      /expected 1, observed 0/,
-    );
-    assert.match(
-      container.querySelector(".tool-output")!.textContent!,
-      /退出码 3.*输出已截断/,
-    );
     await emit({
       id: "unknown",
       type: "activity",
@@ -221,27 +210,53 @@ export async function verifyRestoredInteractions() {
       resultStatus: "unknown",
       detail: "没有观测值",
     });
+    // The finished steps fold into one summary line; each opens to its output.
+    assert.equal(container.querySelectorAll(".turn-summary").length, 1);
+    await click(".turn-summary");
+    await click('.turn-tool[data-state="failed"] > summary');
     assert.equal(
-      container.querySelector('.activity[data-result-status="unknown"] small')
+      container.querySelector('.turn-tool[data-state="failed"] summary small')
+        ?.textContent,
+      "失败",
+    );
+    assert.match(
+      container.querySelector(
+        '.turn-tool[data-state="failed"] .turn-tool-detail',
+      )!.textContent!,
+      /expected 1, observed 0.*退出码 3.*输出已截断/,
+    );
+    await click('.turn-tool[data-state="unknown"] > summary');
+    assert.equal(
+      container.querySelector('.turn-tool[data-state="unknown"] summary small')
         ?.textContent,
       "结果未知",
     );
-    assert.equal(container.querySelectorAll(".activity-batch").length, 1);
-    await click(".conversation-picker > summary");
-    await input('[aria-label="查找会话"]', "门电路");
+    assert.match(
+      container.querySelector(
+        '.turn-tool[data-state="unknown"] .turn-tool-detail',
+      )!.textContent!,
+      /没有观测值/,
+    );
+    await click(".conversation-picker");
     assert.equal(
-      container.querySelectorAll(".conversation-list button").length,
-      1,
+      document.activeElement?.getAttribute("aria-label"),
+      "查找会话",
+      "Opening the conversation list puts the cursor in its search field",
     );
-    assert.match(
-      container.querySelector(".conversation-list button")!.textContent!,
-      /另一会话/,
-    );
+    await input('[aria-label="查找会话"]', "门电路");
+    const options = () =>
+      document.querySelectorAll('.conversation-list [role="option"]');
+    assert.equal(options().length, 1);
+    assert.match(options()[0].textContent!, /另一会话/);
     await input('[aria-label="查找会话"]', "");
-    await click(".conversation-archive input");
+    await act(async () =>
+      document
+        .querySelector<HTMLElement>('.conversation-archive [role="checkbox"]')!
+        .click(),
+    );
     assert.match(
-      container.querySelector(".conversation-list")!.textContent!,
-      /恢复 · 旧对话/,
+      document.querySelector(".conversation-list")!.textContent!,
+      /旧对话恢复/,
     );
     const scroller = container.querySelector<HTMLElement>(".messages")!;
     let height = 1000;

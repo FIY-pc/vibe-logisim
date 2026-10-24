@@ -9,11 +9,21 @@ export function FileTitle() {
     <div className="file-title">
       {doc && (
         <>
-          <button title="文件信息与导出" onClick={() => setInfoTarget(doc.id)}>
+          <button
+            data-tip="文件信息与导出"
+            onClick={() => setInfoTarget(doc.id)}
+          >
             <FileText size={15} />
             {doc.name}
           </button>
-          {doc.dirty && <span className="dirty-dot" title="有未保存的修改" />}
+          {doc.dirty && (
+            <span
+              className="dirty-dot"
+              role="img"
+              aria-label="有未保存的修改"
+              data-tip="有未保存的修改"
+            />
+          )}
         </>
       )}
     </div>

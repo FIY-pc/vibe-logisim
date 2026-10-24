@@ -11,6 +11,7 @@ import {
   useView,
 } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
+import { tip } from "../shared/Tooltips";
 
 /** The rail inspector: the component being placed, or the selection's
  * properties and connections. */
@@ -64,6 +65,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
       selection={selection}
       connectionComponent={connectionComponent}
       onOpenMemory={(id) => simulating.openMemory(view, id)}
+      onNarrow={(ids) => editing.select(view, ids)}
       edit={(change) => editing.edit(view, change)}
       live={live ? components[nativeId] || null : null}
       watched={watching}
@@ -91,7 +93,7 @@ export function InspectorActions() {
   return (
     <button
       className="quiet-button"
-      title="取消当前选择"
+      {...tip("取消当前选择", "Esc")}
       onClick={() => actions.editor.select(view, [])}
     >
       取消选择

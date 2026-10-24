@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
 import {
   bindingLabel,
@@ -9,6 +9,7 @@ import {
   type Bindings,
   type ShortcutId,
 } from "../shared/shortcuts";
+import { DialogClose, useModal } from "../shared/Dialog";
 export function ShortcutSettings({
   bindings,
   onChange,
@@ -18,13 +19,25 @@ export function ShortcutSettings({
   onChange: (value: Bindings) => void;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
+  const dialog = useModal();
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
-  useEffect(() => {
-    dialog.current?.showModal();
-    return () => dialog.current?.close();
-  }, []);
+  const needle = query.trim().toLowerCase();
+  const groups = [...new Set(shortcutCommands.map((c) => c.group))]
+    .map(
+      (group) =>
+        [
+          group,
+          shortcutCommands.filter(
+            (c) =>
+              c.group === group &&
+              (c.label + bindingLabel(bindings[c.id]))
+                .toLowerCase()
+                .includes(needle),
+          ),
+        ] as const,
+    )
+    .filter(([, commands]) => commands.length);
   const change = (id: ShortcutId, value: string | null) => {
     const problem = bindingProblem(id, value, bindings);
     if (problem) {
@@ -46,55 +59,47 @@ export function ShortcutSettings({
       onCancel={onClose}
     >
       <header>
-        快捷键
-        <button aria-label="关闭" onClick={onClose}>
-          <X size={18} />
-        </button>
+        <h2>快捷键</h2>
+        <DialogClose onClick={onClose} />
       </header>
       <input
-        autoFocus
+        data-autofocus
         aria-label="查找快捷键"
         placeholder="查找命令或快捷键"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
       <div className="shortcut-list">
-        {[...new Set(shortcutCommands.map((c) => c.group))].map((group) => (
+        {groups.map(([group, commands]) => (
           <section key={group}>
             <h3>{group}</h3>
-            {shortcutCommands
-              .filter(
-                (c) =>
-                  c.group === group &&
-                  (c.label + bindingLabel(bindings[c.id]))
-                    .toLowerCase()
-                    .includes(query.toLowerCase()),
-              )
-              .map((c) => (
-                <label key={c.id}>
-                  <span>{c.label}</span>
-                  <input
-                    readOnly
-                    aria-label={c.label + " 快捷键"}
-                    value={bindingLabel(bindings[c.id])}
-                    onKeyDown={(e) => {
-                      if (["Tab", "Escape"].includes(e.key)) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const binding = eventBinding(e.nativeEvent);
-                      if (binding) change(c.id, binding);
-                    }}
-                  />
-                  <button
-                    aria-label={`清除 ${c.label} 快捷键`}
-                    onClick={() => change(c.id, null)}
-                  >
-                    <X size={12} />
-                  </button>
-                </label>
-              ))}
+            {commands.map((c) => (
+              <label key={c.id}>
+                <span>{c.label}</span>
+                <input
+                  readOnly
+                  aria-label={c.label + " 快捷键"}
+                  value={bindingLabel(bindings[c.id])}
+                  onKeyDown={(e) => {
+                    if (["Tab", "Escape"].includes(e.key)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const binding = eventBinding(e.nativeEvent);
+                    if (binding) change(c.id, binding);
+                  }}
+                />
+                <button
+                  aria-label={`清除 ${c.label} 快捷键`}
+                  data-tip="清除快捷键"
+                  onClick={() => change(c.id, null)}
+                >
+                  <X size={12} />
+                </button>
+              </label>
+            ))}
           </section>
         ))}
+        {!groups.length && <p className="quiet-empty">没有匹配的命令</p>}
       </div>
       {error && (
         <p className="dialog-error" role="alert">

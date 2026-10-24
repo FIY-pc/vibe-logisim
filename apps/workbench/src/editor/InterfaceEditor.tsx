@@ -12,6 +12,7 @@ import {
 } from "./symbol-geometry";
 import "./InterfaceEditor.css";
 import { Select } from "../shared/Select";
+import { DialogClose, useModal } from "../shared/Dialog";
 interface Definition extends SymbolDraft {
   uses: { circuit: string }[];
   newPinLocation: { x: number; y: number };
@@ -41,7 +42,7 @@ export function InterfaceEditor({
   onDocument: (doc: Document, expectedBaseRevision?: string) => void;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
+  const dialog = useModal(),
     svg = useRef<SVGSVGElement>(null),
     artwork = useRef<SVGGElement>(null);
   const [base, setBase] = useState<Definition | null>(null),
@@ -79,7 +80,6 @@ export function InterfaceEditor({
       );
   };
   useEffect(() => {
-    dialog.current?.showModal();
     let live = true;
     void command<Definition>({ op: "interfaceRead", ...ref })
       .then((result) => {
@@ -96,7 +96,6 @@ export function InterfaceEditor({
       });
     return () => {
       live = false;
-      dialog.current?.close();
     };
   }, []);
   useEffect(() => {
@@ -205,13 +204,11 @@ export function InterfaceEditor({
     >
       <header>
         <h2>{circuit} · 封装与接口</h2>
-        <button
-          aria-label="关闭封装编辑器"
+        <DialogClose
+          label="关闭封装编辑器"
           disabled={applying}
           onClick={onClose}
-        >
-          <X size={17} />
-        </button>
+        />
       </header>
       {!active && (
         <p role="alert" className="dialog-error">
@@ -276,11 +273,11 @@ export function InterfaceEditor({
             >
               文字
             </button>
-            <button title="适应封装" aria-label="适应封装" onClick={fit}>
+            <button data-tip="适应封装" aria-label="适应封装" onClick={fit}>
               <Maximize size={15} />
             </button>
             <button
-              title="撤销封装修改"
+              data-tip="撤销封装修改"
               aria-label="撤销封装修改"
               disabled={busy || !undo.length}
               onClick={restore}
@@ -627,6 +624,7 @@ export function InterfaceEditor({
               />
               <button
                 aria-label={`删除端口 ${p.label}`}
+                data-tip="删除端口"
                 onClick={() =>
                   edit((d) => {
                     removePort(d, p.id);

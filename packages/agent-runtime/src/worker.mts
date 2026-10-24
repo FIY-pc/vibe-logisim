@@ -55,13 +55,16 @@ async function dispatch(method: RuntimeMethod, args: any) {
     case "status":
       return runner.snapshot();
     case "bind": {
-      if (runner.snapshot().busy) throw new Error("请先停止当前回答");
       const folder = await folderOf();
+      // A running turn keeps its conversation: another document of the same
+      // folder, or a reloaded window, binds without stopping it.
+      if (runner.snapshot().busy && folder?.id !== runner.workspaceKey)
+        throw new Error("请先停止当前回答");
       binding = {
         documentId: args.documentId ?? null,
         workspaceKey: folder?.id ?? null,
       };
-      if (folder) await runner.resume(folder.id);
+      if (folder && !runner.snapshot().busy) await runner.resume(folder.id);
       return runner.snapshot();
     }
     case "ask": {
@@ -82,11 +85,12 @@ async function dispatch(method: RuntimeMethod, args: any) {
         circuit: args.circuit ?? null,
         selection: Array.isArray(args.selection) ? args.selection : [],
         editMessageId: args.editMessageId || null,
-        expectedTurnId: args.expectedTurnId || null,
       });
     }
     case "stop":
       return runner.interrupt();
+    case "markUndone":
+      return runner.markUndone(String(args.changeId ?? ""));
     case "reconnect":
       return runner.reconnect();
     case "conversations": {

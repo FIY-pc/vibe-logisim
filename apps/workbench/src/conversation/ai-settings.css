@@ -1,19 +1,9 @@
 .ai-settings-dialog,
 .ai-model-dialog {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--paper);
-  color: inherit;
   padding: 0;
-  box-shadow: 0 18px 60px #14213d24;
-}
-.ai-settings-dialog::backdrop,
-.ai-model-dialog::backdrop {
-  background: #1823382e;
 }
 .ai-settings-dialog {
   width: min(760px, calc(100vw - 32px));
-  max-height: calc(100dvh - 48px);
   overflow: hidden;
 }
 .ai-settings-dialog[open] {
@@ -31,9 +21,6 @@
 }
 .ai-settings-dialog h2,
 .ai-model-dialog h2 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0;
   flex: 1;
 }
 .ai-settings-content {
@@ -51,7 +38,7 @@
   margin-bottom: 18px;
 }
 .ai-settings-heading h3 {
-  font-size: 15px;
+  font-size: 13px;
   margin: 0;
   flex: 1;
   font-weight: 600;
@@ -94,7 +81,7 @@
   flex: none;
 }
 .ai-settings-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 400;
   color: var(--muted);
   background: #f5f6f8;
@@ -131,19 +118,40 @@
   gap: 6px;
   margin-bottom: 14px;
 }
-.ai-settings-content .provider-form input:not([type="checkbox"]),
+.ai-settings-content .provider-form input,
 .ai-settings-content .provider-form .select-trigger {
   padding: 10px 12px;
 }
-.ai-settings-content .provider-form button {
+.ai-settings-content .provider-form button:not(.checkbox, .select-trigger) {
   background: transparent;
   border: 1px solid var(--border);
   color: inherit;
 }
+.ai-settings-content
+  .provider-form
+  button:not(.checkbox, .select-trigger):hover:where(:not(:disabled)) {
+  background: #eceff4;
+}
+.ai-settings-content
+  .provider-form
+  button:not(.checkbox, .select-trigger):active:where(:not(:disabled)) {
+  background: #e2e6ed;
+}
 .ai-settings-content .provider-form button[type="submit"] {
   background: var(--accent);
+  border-color: var(--accent);
   color: white;
   margin-right: 8px;
+}
+.ai-settings-content
+  .provider-form
+  button[type="submit"]:hover:where(:not(:disabled)) {
+  background: #2652ea;
+}
+.ai-settings-content
+  .provider-form
+  button[type="submit"]:active:where(:not(:disabled)) {
+  background: #1f46d2;
 }
 .ai-settings-content .provider-advanced {
   border: 1px solid var(--border);
@@ -154,7 +162,6 @@
 .ai-settings-content .provider-advanced summary {
   padding: 10px 0;
   font-size: 12px;
-  cursor: pointer;
 }
 .ai-settings-content .provider-advanced[open] summary {
   margin-bottom: 10px;
@@ -201,6 +208,7 @@
 }
 .ai-model-trigger svg {
   flex: none;
+  color: var(--muted);
 }
 .ai-model-dialog {
   width: min(380px, calc(100vw - 24px));
@@ -215,9 +223,6 @@
 }
 .ai-model-dialog > header {
   padding: 12px 14px;
-}
-.ai-model-dialog h2 {
-  font-size: 13px;
 }
 .ai-model-search {
   margin: 12px;

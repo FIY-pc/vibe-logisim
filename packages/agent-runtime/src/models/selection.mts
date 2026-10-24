@@ -36,28 +36,26 @@ function configurationIssue(selection: any, config: any, hasHistory: any) {
 }
 function recoverHistory(history: RuntimeMessage[]): RuntimeMessage[] {
   return history.map((m: any) =>
-    m.type === "user" && m.delivery === "queued"
-      ? { ...m, delivery: "deferred" }
-      : m.type === "turn" && m.status === "running"
+    m.type === "turn" && m.status === "running"
+      ? {
+          ...m,
+          status: "interrupted",
+          error: "应用在回答结束前退出，已有内容已保留。",
+          elapsedMs: m.elapsedMs || 0,
+        }
+      : m.type === "activity" && m.status === "running"
         ? {
             ...m,
-            status: "interrupted",
-            error: "应用在回答结束前退出，已有内容已保留。",
-            elapsedMs: m.elapsedMs || 0,
+            status: "warning",
+            resultStatus: "unknown",
+            detail: [
+              m.detail,
+              "应用在调用结束前退出，结果未知，请先检查工作区。",
+            ]
+              .filter(Boolean)
+              .join("\n"),
           }
-        : m.type === "activity" && m.status === "running"
-          ? {
-              ...m,
-              status: "warning",
-              resultStatus: "unknown",
-              detail: [
-                m.detail,
-                "应用在调用结束前退出，结果未知，请先检查工作区。",
-              ]
-                .filter(Boolean)
-                .join("\n"),
-            }
-          : m,
+        : m,
   );
 }
 export { selectionFor, sameService, configurationIssue, recoverHistory };
