@@ -561,8 +561,8 @@ impl Host {
                     .await
                     .properties(&path, circuit, &component, values)
                     .await?;
-                let values = component_attributes(serialized_component(&checked)?)
-                    .ok_or("元件属性缺失")?;
+                let values =
+                    component_attributes(serialized_component(&checked)?).ok_or("元件属性缺失")?;
                 Ok((
                     Edit::Attributes {
                         id: component_id,
@@ -590,7 +590,10 @@ impl Host {
         for (index, edit) in edits.into_iter().enumerate() {
             if !matches!(
                 edit,
-                Edit::Wire { .. } | Edit::Place { .. } | Edit::Delete { .. } | Edit::Attributes { .. }
+                Edit::Wire { .. }
+                    | Edit::Place { .. }
+                    | Edit::Delete { .. }
+                    | Edit::Attributes { .. }
             ) {
                 return Err("批量修改只能包含导线、放置、删除和属性修改".into());
             }
@@ -810,7 +813,9 @@ impl Host {
                 // applying the same XML afterwards loads nothing new.
                 let p = {
                     let w = self.workspace.lock().await;
-                    let proposed = w.get(&id)?.preview(&revision, &circuit, Edit::Replace { xml })?;
+                    let proposed =
+                        w.get(&id)?
+                            .preview(&revision, &circuit, Edit::Replace { xml })?;
                     self.materialize(&proposed)?
                 };
                 let _observe = timing::span("observe");

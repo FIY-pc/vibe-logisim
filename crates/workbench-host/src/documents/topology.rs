@@ -224,7 +224,11 @@ pub fn preserved(
     };
     Err(match difference(&before, &after) {
         Some((joined, a, b)) => error(if joined {
-            format!("这个位置会把 {} 和 {} 接到一起，移动未应用。", port(&a), port(&b))
+            format!(
+                "这个位置会把 {} 和 {} 接到一起，移动未应用。",
+                port(&a),
+                port(&b)
+            )
         } else {
             format!("这个位置会断开 {} 和 {}，移动未应用。", port(&a), port(&b))
         })
@@ -251,10 +255,7 @@ fn difference(before: &Partition, after: &Partition) -> Option<(bool, Contact, C
     for (joined, nets, other) in [(true, after, &was), (false, before, &now)] {
         for contacts in nets {
             let first = &contacts[0];
-            if let Some(c) = contacts
-                .iter()
-                .find(|c| other.get(*c) != other.get(first))
-            {
+            if let Some(c) = contacts.iter().find(|c| other.get(*c) != other.get(first)) {
                 return Some((joined, first.clone(), c.clone()));
             }
         }

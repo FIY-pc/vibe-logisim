@@ -614,18 +614,18 @@ fn reroute(
 /// fixed end, one at the moved end, then jogs from the moved end outwards.
 fn shapes(fixed: Point, moved: Point, vertical: bool) -> Vec<Vec<Segment>> {
     let seg = |from, to| Segment { from, to };
-    let flip = |p: Point| if vertical { Point { x: p.y, y: p.x } } else { p };
+    let flip = |p: Point| {
+        if vertical {
+            Point { x: p.y, y: p.x }
+        } else {
+            p
+        }
+    };
     // Work as if the wire were horizontal: x runs along it.
     let (f, m) = (flip(fixed), flip(moved));
     let mut out = vec![
-        vec![
-            (f, Point { x: f.x, y: m.y }),
-            (Point { x: f.x, y: m.y }, m),
-        ],
-        vec![
-            (f, Point { x: m.x, y: f.y }),
-            (Point { x: m.x, y: f.y }, m),
-        ],
+        vec![(f, Point { x: f.x, y: m.y }), (Point { x: f.x, y: m.y }, m)],
+        vec![(f, Point { x: m.x, y: f.y }), (Point { x: m.x, y: f.y }, m)],
     ];
     let step = if f.x < m.x { -10 } else { 10 };
     let mut x = m.x + step;
@@ -669,7 +669,9 @@ fn clear(pieces: &[Segment], ends: [Point; 2], wires: &[Segment], ports: &[Point
         !ports.iter().any(|p| !own(p) && piece.touches(*p))
             && wires.iter().all(|w| {
                 ![w.from, w.to].iter().any(|p| !own(p) && piece.touches(*p))
-                    && ![piece.from, piece.to].iter().any(|p| !own(p) && w.touches(*p))
+                    && ![piece.from, piece.to]
+                        .iter()
+                        .any(|p| !own(p) && w.touches(*p))
                     && !along(piece, w)
             })
     })
