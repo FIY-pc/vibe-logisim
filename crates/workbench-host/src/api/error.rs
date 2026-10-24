@@ -13,6 +13,8 @@ pub enum ErrorCode {
     InvalidCommand,
     StaleRevision,
     ExternalChange,
+    /// A move would join or separate ports; nothing moved.
+    ConnectionsChanged,
     Io,
     DocumentNotFound,
     // Simulation

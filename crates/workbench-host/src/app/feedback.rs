@@ -275,7 +275,7 @@ impl Host {
             Ok(())
         };
         check()?;
-        let mut file = tempfile::NamedTempFile::new_in(&parent).map_err(|_| "无法写入诊断")?;
+        let mut file = crate::staged_user_file(&parent).map_err(|_| "无法写入诊断")?;
         file.write_all(&bytes).map_err(|_| "无法写入诊断")?;
         file.as_file().sync_all().map_err(|_| "无法写入诊断")?;
         check()?;

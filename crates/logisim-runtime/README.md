@@ -61,7 +61,7 @@ Done; this is the code path every real-model turn already exercised. Costs on a 
 
 ## Remaining tasks
 
-- Add an `observe` variant that accepts XML bytes instead of a path (or have the host write a scratch artifact) so the AI arranger can verify a proposed layout before applying it. Java side: `CircuitWorker` already takes a path; the cheapest form is a host-side temporary artifact and no Java change. Pointer: `crates/workbench-host/src/documents/topology.rs` shows the before/after net comparison to reuse.
+- Done: observing proposed XML is the host's `observeXml`, which writes the proposal as an artifact and calls `observe_raw`; no Java change.
 - `template` without `location` returns defaults only; `place_component` in the AI runtime wants bounds too and currently gets them. Keep that contract when touching `CircuitPalette.java`.
 
 ## Verify

@@ -93,6 +93,18 @@ impl Serialize for Reply {
     }
 }
 
+/// A temporary file to publish as a file of the user's (a restored or imported
+/// file, an export), created with a new file's permissions (0666 less the umask)
+/// rather than the private 0600 of a temporary file.
+pub(crate) fn staged_user_file(
+    parent: &std::path::Path,
+) -> std::io::Result<tempfile::NamedTempFile> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".vibe-file-");
+    #[cfg(unix)]
+    builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o666));
+    builder.tempfile_in(parent)
+}
 fn value<T: Serialize>(v: T) -> Result<Value> {
     serde_json::to_value(v).map_err(|e| HostError::new(ErrorCode::Internal, e.to_string()))
 }
