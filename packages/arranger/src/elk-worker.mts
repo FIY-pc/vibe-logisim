@@ -9,6 +9,8 @@
 // module body checks for it.
 import "./worker-scope.mts";
 import "elkjs/lib/elk-worker.min.js";
+import elkjs from "elkjs/lib/elk-api.js";
+import type { ElkNode } from "elkjs/lib/elk-api.js";
 
 interface Reply {
   id?: number;
@@ -52,3 +54,19 @@ let shared: ElkWorker | null = null;
 
 /** The `workerFactory` the ELK API takes: one dispatcher, reused per instance. */
 export const elkWorkerFactory = (): ElkWorker => (shared ??= install());
+
+// The API file is CommonJS: under NodeNext its class is the module's
+// `default`, while a browser bundler hands the class itself. The worker is
+// passed explicitly because the library's own choice resolves to undefined
+// under a bundler.
+interface ElkConstructor {
+  new (options: { workerFactory: () => unknown }): {
+    layout(graph: unknown): Promise<ElkNode>;
+  };
+}
+const ELK = ((elkjs as unknown as { default?: ElkConstructor }).default ??
+  elkjs) as unknown as ElkConstructor;
+
+/** The one API instance. The dispatcher answers whichever instance set its
+ * `onmessage` last, so a second instance would swallow the first's replies. */
+export const elk = new ELK({ workerFactory: elkWorkerFactory });
