@@ -70,6 +70,14 @@ const doc = (id: string) => ({
       ? [circuit("B-main"), circuit("ancestor")]
       : [circuit("main"), circuit("ancestor")],
 });
+/** What an edit of `d` from revision `base` reports: its fields, every
+ * circuit name, and no changed circuit. */
+const change = (d: any, base: string) => ({
+  ...d,
+  base,
+  order: d.circuits.map((c: any) => c.name),
+  circuits: [],
+});
 const state = () => ({
   eventCursor: sequence,
   runtime: "builtin",
@@ -254,7 +262,7 @@ await render(chat(doc("A"), false));
 await act(async () => {
   agent({
     type: "document-changed",
-    document: { ...doc("A"), revision: "r2" },
+    change: change({ ...doc("A"), revision: "r2" }, "r1"),
   });
 });
 assert.equal(changed.at(-1).revision, "r2");
@@ -299,7 +307,7 @@ await click(
 await act(async () =>
   agent({
     type: "document-changed",
-    document: { ...doc("A"), revision: "r2", dirty: true },
+    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r1"),
   }),
 );
 assert.ok(document.querySelector(".file-title .dirty-dot"));
@@ -325,13 +333,16 @@ const saveTransport = (globalThis as any).__command;
 await act(async () =>
   agent({
     type: "document-changed",
-    document: {
-      ...doc("A"),
-      revision: "r2",
-      path: "/fixture/A.circ",
-      dirty: true,
-      saveError: "磁盘暂不可写",
-    },
+    change: change(
+      {
+        ...doc("A"),
+        revision: "r2",
+        path: "/fixture/A.circ",
+        dirty: true,
+        saveError: "磁盘暂不可写",
+      },
+      "r1",
+    ),
   }),
 );
 assert(
@@ -378,8 +389,7 @@ await clickMenuItem("保存");
 await act(async () =>
   agent({
     type: "document-changed",
-    expectedBaseRevision: "r2",
-    document: latestMutationDocument,
+    change: change(latestMutationDocument, "r2"),
   }),
 );
 await act(async () => {
@@ -407,8 +417,10 @@ assert.equal(
 await act(async () =>
   agent({
     type: "document-changed",
-    expectedBaseRevision: "r2",
-    document: { ...doc("A"), revision: "r-delayed-agent", dirty: false },
+    change: change(
+      { ...doc("A"), revision: "r-delayed-agent", dirty: false },
+      "r2",
+    ),
   }),
 );
 await settle();
@@ -422,7 +434,7 @@ assert(document.querySelector(".file-title .dirty-dot"));
 await act(async () =>
   agent({
     type: "document-changed",
-    document: { ...doc("A"), revision: "r2", dirty: true },
+    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r3"),
   }),
 );
 console.log(
@@ -658,7 +670,9 @@ await settle();
 assert.equal(statusReads, 3);
 const changedC = { ...doc("C"), revision: "r-new", dirty: true };
 auditDocs = auditDocs.map((d) => (d.id === "C" ? changedC : d));
-await act(async () => agent({ type: "document-changed", document: changedC }));
+await act(async () =>
+  agent({ type: "document-changed", change: change(changedC, "r1") }),
+);
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 auditStatusGate = null;
 await act(async () => {

@@ -10,9 +10,9 @@ import {
   stat,
 } from "node:fs/promises";
 import path from "node:path";
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+import { documentViews } from "./document-views.mts";
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 export async function verifyFileHistory(
   command: (request: Record<string, unknown>) => Promise<any>,
   directory: string,

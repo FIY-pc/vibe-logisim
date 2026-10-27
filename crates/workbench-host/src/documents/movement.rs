@@ -5,7 +5,7 @@ use crate::{
     timing,
 };
 use std::collections::HashSet;
-use vibe_circuit_document::{Circuit, Document, DocumentView, Edit, Point, Wire};
+use vibe_circuit_document::{Circuit, Document, DocumentChange, Edit, Point, Wire};
 
 struct MovePlan {
     candidate: Document,
@@ -143,15 +143,15 @@ impl Host {
         // cloned: the candidate, with the move as its newest undo step, is its
         // next state.
         *current = plan.candidate;
-        let view = {
+        let change = {
             let _view = timing::span("move.view");
-            current.view().map_err(|e| e.to_string())?
+            current.view_change(revision, &[circuit.to_string()])?
         };
         Ok(moved_result(
             circuit,
             &plan.graph,
             &[(ids.to_vec(), delta)],
-            view,
+            change,
         ))
     }
     /// Several moves, each by its own offset, as one change: each is planned
@@ -203,24 +203,22 @@ impl Host {
         if current.path != original.path {
             return Err("文档位置已改变，请重新移动".into());
         }
-        {
+        let outcome = {
             let _apply = timing::span("move.apply");
-            current
-                .edit(
-                    revision,
-                    circuit,
-                    Edit::Replace {
-                        xml: String::from_utf8(doc.bytes().to_vec()).map_err(|e| e.to_string())?,
-                        title: Some(format!("移动 {count} 个对象")),
-                    },
-                )
-                .map_err(|e| e.to_string())?;
-        }
-        let view = {
-            let _view = timing::span("move.view");
-            current.view().map_err(|e| e.to_string())?
+            current.edit(
+                revision,
+                circuit,
+                Edit::Replace {
+                    xml: String::from_utf8(doc.bytes().to_vec()).map_err(|e| e.to_string())?,
+                    title: Some(format!("移动 {count} 个对象")),
+                },
+            )?
         };
-        Ok(moved_result(circuit, &graph, moves, view))
+        let change = {
+            let _view = timing::span("move.view");
+            current.view_change(revision, &outcome.changed_circuits)?
+        };
+        Ok(moved_result(circuit, &graph, moves, change))
     }
 }
 
@@ -260,10 +258,10 @@ fn moved_result(
     circuit: &str,
     graph: &Circuit,
     moves: &[(Vec<String>, Point)],
-    view: DocumentView,
+    change: DocumentChange,
 ) -> EditResult {
     let _selection = timing::span("move.selection");
-    let shown = view.circuits.iter().find(|c| c.name == circuit);
+    let shown = change.circuits.iter().find(|c| c.name == circuit);
     // Component ids name their location, so the moved ones are found again
     // at the old place plus the delta.
     let components = shown
@@ -288,7 +286,7 @@ fn moved_result(
     let wires = shown
         .map(|c| new_wires(&graph.wires, &c.wires))
         .unwrap_or_default();
-    edit_result_for_move(circuit, components, wires, view)
+    edit_result_for_move(circuit, components, wires, change)
 }
 
 /// The ids of the wires in `after` that `before` does not have: the segments

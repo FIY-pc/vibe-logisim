@@ -81,7 +81,8 @@ interface Props {
   }) => void;
   showGrid?: boolean;
   placement: PlacementState;
-  onPlace: (revision: string, edit: Edit) => Promise<Document>;
+  /** Commits a placement; answers with the revision it made. */
+  onPlace: (revision: string, edit: Edit) => Promise<{ revision: string }>;
   onCancelPlace: () => void;
   focusTarget?: { id: string; token: number } | null;
   onOpenMemory: (id: string) => void;

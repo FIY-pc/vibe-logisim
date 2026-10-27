@@ -60,7 +60,7 @@ export async function verifyAgentTurn(
     .map((e) => e.data.event);
   assert.equal(done.data.event.status, "completed", JSON.stringify(events));
   assert(
-    events.some((e) => e.type === "document-changed" && e.document?.id === doc.id),
+    events.some((e) => e.type === "document-changed" && e.change?.id === doc.id),
     "The tool call did not report its edit",
   );
   const change = events.find((e) => e.type === "files-changed")?.change;
@@ -73,8 +73,10 @@ export async function verifyAgentTurn(
     "One tool call should be one edit",
   );
   const status = await command({ op: "agent", method: "status" });
+  assert.equal(status.messages, undefined, "status carries the conversation");
+  const conversation = await command({ op: "agent", method: "history" });
   assert(
-    JSON.stringify(status.messages).includes(QUESTION),
+    JSON.stringify(conversation.messages).includes(QUESTION),
     "The conversation does not list the question",
   );
   await command({ op: "folderHistoryUndo", folder_id: opened.id, id: change.id });

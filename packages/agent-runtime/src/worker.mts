@@ -48,12 +48,14 @@ runner.on("event", (event) => send({ kind: "event", event }));
 let binding: { documentId: string | null; workspaceKey: string | null } | null =
   null;
 const folderOf = async () =>
-  (await host.call<HostStatus>({ op: "status" })).folder;
+  (await host.call<HostStatus>({ op: "status", summary: true })).folder;
 
 async function dispatch(method: RuntimeMethod, args: any) {
   switch (method) {
     case "status":
       return runner.snapshot();
+    case "history":
+      return runner.historySnapshot();
     case "bind": {
       const folder = await folderOf();
       // A running turn keeps its conversation: another document of the same

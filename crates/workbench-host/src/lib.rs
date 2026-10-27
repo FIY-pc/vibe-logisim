@@ -316,11 +316,11 @@ impl Host {
         if !writes || unchanged {
             return result;
         }
-        // An edit result nests the document view so it can also carry the
+        // An edit result nests the document change so it can also carry the
         // selection and title; other auto-saving ops return the view itself.
         if meta.effect == Effect::AutoSave {
             let _save = timing::span("save");
-            if let Some(view) = document.get_mut("view") {
+            if let Some(view) = document.get_mut("change") {
                 self.auto_save_edit(view).await;
                 let reported =
                     ["saveError", "referenceWarning"].map(|key| (key, view.get(key).cloned()));

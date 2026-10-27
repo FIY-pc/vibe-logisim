@@ -12,6 +12,7 @@ import { verifyEditing } from "./editing-scenarios.mts";
 import { verifySimulationViewport } from "./viewport-scenarios.mts";
 import { placeTwoParts, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
+import { documentViews } from "./document-views.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 // The sidecar reads its model services at start: point them at a scripted model.
@@ -87,9 +88,8 @@ async function stop() {
   await stream?.close();
   child = undefined;
 }
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",

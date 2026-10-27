@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { simulationClient } from "./simulation-client.mts";
+import { documentViews } from "./document-views.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-history-"));
 let child: ChildProcess | undefined,
@@ -58,9 +59,8 @@ async function stop() {
   } else child.kill();
   await exited;
 }
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
