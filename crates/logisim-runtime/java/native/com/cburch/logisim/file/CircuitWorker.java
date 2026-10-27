@@ -105,6 +105,9 @@ public final class CircuitWorker {
                                 circuit,runtime,args[1],bundleDigest,loaded.stdout,loaded.messages)
                             :ExactRuntimeObserver.connectivityLoaded(loaded.file,circuit)).getBytes(StandardCharsets.UTF_8));
                         WorkerTiming.mark(kind);
+                    } else if(kind.equals("symbols")) {
+                        response=CircuitSymbols.describe(loaded.file,loaded.project(),operation);
+                        WorkerTiming.mark("symbols");
                     } else if(kind.equals("render")) {
                         com.cburch.logisim.circuit.Circuit circuit=loaded.file.getCircuit(operation.getAttribute("circuit"));
                         if(circuit==null)throw new IllegalArgumentException("Unknown circuit");

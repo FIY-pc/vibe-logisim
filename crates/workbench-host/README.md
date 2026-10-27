@@ -27,11 +27,13 @@ host.events().await -> Events;  events.next().await -> Option<Event>   // first 
 host.shutdown().await;
 ```
 
-Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{error: HostError{code, message, retryable, detail?}}`. `Reply` is a value, or for `observe` and `observeXml` the worker's JSON text (`Reply::Text`), which the transports (dev HTTP, Tauri IPC, the sidecar's `hostResult`) write out as is: a course page's observation is megabytes and nothing in the host reads it. `observeXml` is `observe` of a proposed whole-file change: `{id, revision, circuit, xml}`, nothing applied. Ops by domain:
+Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{error: HostError{code, message, retryable, detail?}}`. `Reply` is a value, or for `observe`, `observeXml` and `symbols` the worker's JSON text (`Reply::Text`), which the transports (dev HTTP, Tauri IPC, the sidecar's `hostResult`) write out as is: a course page's observation is megabytes and nothing in the host reads it. `observeXml` is `observe` of a proposed whole-file change: `{id, revision, circuit, xml}`, nothing applied.
+
+`symbols {id, revision, circuit, symbols: [SymbolKey {library?, name, attributes}]}` is how the window gets the picture of each kind of component it draws: per key `{bounds, ink, ports, ops} | {error}` in request order, plus the circuit's `widthErrors`, as `crates/logisim-runtime/README.md` (Symbols) describes. A key is a component's library (none or empty for the file's circuits), name and complete attribute map as the document has them. The host records a component of `circuit` with exactly that key when there is one whose location and name no other component shares, and otherwise one made from the library tool (a placement ghost from `template`'s `comp`). Keys may be empty: the reply then carries only the width conflicts of that revision. Read, not for the AI. Ops by domain:
 
 | domain | ops |
 | --- | --- |
-| document | status open new import read activate source sourceStatus reload close save saveTarget edit movePreview undo redo observe observeXml template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply interfaceRender projectInfo projectExport projectExportTarget historyList historyReview historyPreview historyRestore |
+| document | status open new import read activate source sourceStatus reload close save saveTarget edit movePreview undo redo observe observeXml symbols template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply interfaceRender projectInfo projectExport projectExportTarget historyList historyReview historyPreview historyRestore |
 | folder | folderOpen folderList folderRead folderPreview folderResolve folderCreate folderRename folderTrash folderImportPrepare folderImportApply folderImportCancel folderCheckpoint folderHistory folderHistoryDetail folderHistoryUndo |
 | simulation | simulationAct simulationNavigate simulationViewport simulationStop simulationStatus simulationSnapshot simulationFrameImage memory memoryWrite observationList observationGet observationImage observationCapture observationRename observationDelete |
 | agent | agent `{method, args}` → forwarded to the sidecar (see `packages/agent-runtime/README.md`) |
@@ -67,7 +69,7 @@ State directory: `instance.lock`, `session/` (open documents and journals), `fol
 
 ## Status
 
-Done and exercised end to end on the course project (open, edit, AI turn, apply, save, reopen). 18 unit tests. On a course-size page (350 components, 374 wires; `scripts/workbench/editing-latency.mts`, release build, p50) an edit is answered in 14–24 ms and a move in about 37 ms; the canvas shows the new picture 44–60 ms after sending the edit, and the observation follows about 45 ms later. On a page twice that size (about 700 components and 1000 wires) the picture is up 48–58 ms after an edit and 79 ms after a move.
+Done and exercised end to end on the course project (open, edit, AI turn, apply, save, reopen). 18 unit tests. The window draws the editor picture itself from the edit reply (`docs/rendering.md`), so the time from sending an edit to the new picture is the edit's answer plus one frame. On a course-size page (350 components, 374 wires; `scripts/workbench/editing-latency.mts`, release build, p50) an edit is answered in 14–24 ms and a move in about 37 ms.
 
 ## Remaining tasks
 

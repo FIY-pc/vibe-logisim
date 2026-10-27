@@ -9,7 +9,6 @@ import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.tools.*;
 import java.awt.Color;
 import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.*;
 import org.w3c.dom.*;
@@ -127,14 +126,17 @@ public final class CircuitPalette {
         }
     }
     private static AddTool tool(LogisimFile file,Element request) {
-        String id=request.getAttribute("library"),name=request.getAttribute("tool");
+        return tool(file,request.getAttribute("library"),request.getAttribute("tool"),request);
+    }
+    /** The placeable tool `name` of library `id` ("" for the file's circuits), its library among the `library` specs under `specs`. */
+    static AddTool tool(LogisimFile file,String id,String name,Element specs) {
         Library lib=file;
         if(!id.isEmpty()) {
-            Element spec=null;NodeList specs=request.getElementsByTagName("library");
-            for(int i=0;i<specs.getLength();i++)if(((Element)specs.item(i)).getAttribute("id").equals(id))spec=(Element)specs.item(i);
+            Element spec=null;NodeList all=specs.getElementsByTagName("library");
+            for(int i=0;i<all.getLength();i++)if(((Element)all.item(i)).getAttribute("id").equals(id))spec=(Element)all.item(i);
             if(spec==null) {
                 List<String> ids=new ArrayList<>();
-                for(int i=0;i<specs.getLength();i++)ids.add(((Element)specs.item(i)).getAttribute("id"));
+                for(int i=0;i<all.getLength();i++)ids.add(((Element)all.item(i)).getAttribute("id"));
                 throw new IllegalArgumentException("组件库不在当前文件中: "+id+"；当前库 ID: "
                     +NativeAttributeAdapter.names(ids)+"；当前文件的子电路使用空字符串");
             }
@@ -234,14 +236,5 @@ public final class CircuitPalette {
         Element serialized=child(result,root,"comp");serialized.setAttribute("name",factory.getName());serialized.setAttribute("loc","("+x+","+y+")");
         if(!request.getAttribute("library").isEmpty())serialized.setAttribute("lib",request.getAttribute("library"));
         serialize(attrs,serialized);
-        if(!placing&&!request.getAttribute("images").equals("false")) {
-            Bounds ink=bounds.expand(6);int width=Math.max(1,ink.getWidth()),height=Math.max(1,ink.getHeight());
-            double scale=Math.min(3,3072.0/Math.max(width,height));
-            BufferedImage bitmap=new BufferedImage(Math.max(1,(int)Math.ceil(width*scale)),Math.max(1,(int)Math.ceil(height*scale)),BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g=bitmap.createGraphics();g.scale(scale,scale);g.translate(-ink.getX(),-ink.getY());g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-            ComponentDrawContext context=new ComponentDrawContext(null,circuit,project.getCircuitState(circuit),g,g);context.setShowState(false);
-            factory.drawGhost(context,new Color(66,86,139),0,0,attrs);g.dispose();
-            Element image=child(result,root,"image");image.setAttribute("x",String.valueOf(ink.getX()));image.setAttribute("y",String.valueOf(ink.getY()));image.setAttribute("width",String.valueOf(width));image.setAttribute("height",String.valueOf(height));image.setTextContent(png(bitmap));
-        }
     }
 }

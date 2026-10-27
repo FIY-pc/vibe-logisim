@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 use vibe_circuit_document::{Document, DocumentChange, Edit, EditOutcome, Point};
-use vibe_logisim_runtime::{Viewport, timing};
+use vibe_logisim_runtime::{SymbolSource, Viewport, timing};
 
 /// The objects a gesture leaves selected.
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -58,6 +58,19 @@ pub struct MovePreview {
 pub struct ErrorDetail {
     pub code: crate::ErrorCode,
     pub message: String,
+}
+
+/// One kind of component the window draws: a component's library (none or
+/// empty for the file's circuits), name and complete attributes, as the
+/// document has them.
+#[derive(Debug, Clone, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolKey {
+    #[serde(default)]
+    #[ts(optional)]
+    pub library: Option<String>,
+    pub name: String,
+    pub attributes: BTreeMap<String, String>,
 }
 
 /// ROM component id and the words loaded into it before a trace.
@@ -162,6 +175,14 @@ pub enum DocumentRequest {
         revision: String,
         circuit: String,
         xml: String,
+    },
+    /// The vector picture of each kind and the circuit's width conflicts
+    /// (`crates/logisim-runtime/README.md`, Symbols), as the worker's JSON.
+    Symbols {
+        id: String,
+        revision: String,
+        circuit: String,
+        symbols: Vec<SymbolKey>,
     },
     Template {
         id: String,
@@ -326,6 +347,7 @@ impl DocumentRequest {
         "redo",
         "observe",
         "observeXml",
+        "symbols",
         "template",
         "properties",
         "catalog",
@@ -386,6 +408,7 @@ impl DocumentRequest {
                 Meta::new(Read).stage(Stage::Library).agent()
             }
             Self::Render { .. } => Meta::new(Read).stage(Stage::Render).agent(),
+            Self::Symbols { .. } => Meta::new(Read).stage(Stage::Render),
             Self::Simulate { .. } | Self::Trace { .. } => {
                 Meta::new(Read).stage(Stage::Verify).agent()
             }
@@ -433,6 +456,56 @@ pub(crate) fn fitted_viewport(observation: &Value) -> Viewport {
 }
 
 /// Attribute name/value pairs of the first serialized `<comp>` in a native reply.
+/// Which component records each key: one of the circuit with exactly that
+/// key whose location and name no other component shares (the worker finds
+/// it by those), otherwise one made from the library tool.
+fn symbol_sources(
+    circuit: Option<&vibe_circuit_document::Circuit>,
+    keys: Vec<SymbolKey>,
+) -> Vec<SymbolSource> {
+    use std::collections::HashMap;
+    fn library(value: Option<&str>) -> Option<&str> {
+        value.filter(|library| !library.is_empty())
+    }
+    let components = circuit.map(|c| c.components.as_slice()).unwrap_or_default();
+    let mut stacked: HashMap<(Point, &str), usize> = HashMap::new();
+    for c in components {
+        *stacked.entry((c.location, c.name.as_str())).or_default() += 1;
+    }
+    let mut placed: HashMap<(Option<&str>, &str, &BTreeMap<String, String>), Point> =
+        HashMap::new();
+    for c in components {
+        if stacked[&(c.location, c.name.as_str())] == 1 {
+            placed
+                .entry((
+                    library(c.library.as_deref()),
+                    c.name.as_str(),
+                    &c.attributes,
+                ))
+                .or_insert(c.location);
+        }
+    }
+    keys.into_iter()
+        .map(|key| {
+            match placed.get(&(
+                library(key.library.as_deref()),
+                key.name.as_str(),
+                &key.attributes,
+            )) {
+                Some(&location) => SymbolSource::Placed {
+                    location,
+                    factory: key.name,
+                },
+                None => SymbolSource::Made {
+                    library: key.library.filter(|library| !library.is_empty()),
+                    name: key.name,
+                    attributes: key.attributes,
+                },
+            }
+        })
+        .collect()
+}
+
 fn component_attributes(component: &Value) -> Option<BTreeMap<String, String>> {
     component["children"].as_array().map(|all| {
         all.iter()
@@ -853,6 +926,23 @@ impl Host {
                 };
                 let _observe = timing::span("observe");
                 let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::Symbols {
+                id,
+                revision,
+                circuit,
+                symbols,
+            } => {
+                let (path, view) = self.snapshot_circuit(&id, &revision, &circuit).await?;
+                let sources = symbol_sources(view.as_ref(), symbols);
+                let _symbols = timing::span("symbols");
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .symbols(&path, &circuit, &sources)
+                    .await?;
                 return Ok(Reply::Text(text));
             }
             DocumentRequest::Template {

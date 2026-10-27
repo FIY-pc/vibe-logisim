@@ -28,6 +28,23 @@ pub struct Viewport {
 }
 type Result<T> = std::result::Result<T, String>;
 
+/// Which component a `symbols` item records.
+#[derive(Clone, Debug)]
+pub enum SymbolSource {
+    /// The circuit's component at this location with this factory name.
+    Placed {
+        location: vibe_circuit_document::Point,
+        factory: String,
+    },
+    /// One made at (0, 0) from tool `name` of library `library` (none: the
+    /// file's circuits) with these attributes, as `template` makes it.
+    Made {
+        library: Option<String>,
+        name: String,
+        attributes: BTreeMap<String, String>,
+    },
+}
+
 pub fn xml(tag: &str, attrs: &[(&str, String)], children: Vec<Element>) -> Element {
     let mut node = Element::new(tag);
     for (k, v) in attrs {
@@ -347,6 +364,67 @@ impl Native {
     pub async fn observe_raw(&mut self, artifact: &Path, circuit: &str) -> Result<Box<RawValue>> {
         let bytes = self.observe_bytes(artifact, circuit).await?;
         let _check = timing::span("native.json");
+        let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+        RawValue::from_string(text).map_err(|e| e.to_string())
+    }
+    /// The vector picture of each item's component, in order, and the points
+    /// of the circuit's wire bundles whose widths disagree, as the JSON the
+    /// worker wrote: `{symbols: [{bounds, ink, ports, ops} | {error}],
+    /// widthErrors: [[x, y]]}` (README, Symbols).
+    pub async fn symbols(
+        &mut self,
+        artifact: &Path,
+        circuit: &str,
+        items: &[SymbolSource],
+    ) -> Result<Box<RawValue>> {
+        let made = items
+            .iter()
+            .any(|item| matches!(item, SymbolSource::Made { .. }));
+        let mut children = if made {
+            self.artifact_libraries(artifact)?
+        } else {
+            vec![]
+        };
+        children.extend(items.iter().map(|item| {
+            match item {
+                SymbolSource::Placed { location, factory } => xml(
+                    "symbol",
+                    &[
+                        ("x", location.x.to_string()),
+                        ("y", location.y.to_string()),
+                        ("factory", factory.clone()),
+                    ],
+                    vec![],
+                ),
+                SymbolSource::Made {
+                    library,
+                    name,
+                    attributes,
+                } => xml(
+                    "symbol",
+                    &[
+                        ("library", library.clone().unwrap_or_default()),
+                        ("tool", name.clone()),
+                    ],
+                    attributes
+                        .iter()
+                        .map(|(name, value)| {
+                            xml(
+                                "set",
+                                &[("name", name.clone()), ("value", value.clone())],
+                                vec![],
+                            )
+                        })
+                        .collect(),
+                ),
+            }
+        }));
+        let bytes = self
+            .request(
+                artifact,
+                xml("symbols", &[("circuit", circuit.into())], children),
+            )
+            .await?;
         let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
         RawValue::from_string(text).map_err(|e| e.to_string())
     }

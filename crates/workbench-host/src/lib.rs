@@ -187,6 +187,19 @@ impl Host {
             doc.view().map_err(|e| e.to_string())?,
         ))
     }
+    /// The artifact and one circuit of a revision (none when it has no such circuit).
+    async fn snapshot_circuit(
+        &self,
+        id: &str,
+        revision: &str,
+        circuit: &str,
+    ) -> Result<(PathBuf, Option<vibe_circuit_document::Circuit>)> {
+        let workspace = self.workspace.lock().await;
+        let doc = workspace.get(id).map_err(|e| e.to_string())?;
+        doc.check(revision).map_err(|e| e.to_string())?;
+        let view = doc.circuit_view(circuit).map_err(|e| e.to_string())?;
+        Ok((self.materialize(doc)?, view))
+    }
     /// The artifact and one component of a revision, for requests about that part.
     async fn snapshot_component(
         &self,
