@@ -4,7 +4,10 @@
  * editing scenario from `editing-scenarios.mts`, and adds the host's own
  * breakdown: the p50 of every stage it reported, per request kind.
  *
- *   node scripts/workbench/editing-latency.mts [rounds]
+ *   node scripts/workbench/editing-latency.mts [rounds] [circuit]
+ *
+ * `circuit` is a page of the synthetic project: `main` (350 components, the
+ * default) or `core_c` (about 700).
  */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -16,6 +19,7 @@ import { measureEditing } from "./editing-scenarios.mts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const rounds = Number(process.argv[2] ?? 5);
+const circuit = process.argv[3] ?? "main";
 const state = await mkdtemp(path.join(tmpdir(), "vibe-latency-state-"));
 const executable =
   process.env.VIBE_VERIFY_HOST ||
@@ -59,7 +63,7 @@ const command = async (request: unknown) => {
 
 let folder = "";
 try {
-  folder = (await measureEditing(command, rounds)).folder;
+  folder = (await measureEditing(command, rounds, circuit)).folder;
 } finally {
   host.kill();
   await once(host, "exit");
