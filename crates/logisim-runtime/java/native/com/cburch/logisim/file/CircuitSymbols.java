@@ -7,6 +7,7 @@ import com.cburch.logisim.circuit.WireWidths;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.comp.EndData;
+import com.cburch.logisim.data.Attribute;
 import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.data.Bounds;
 import com.cburch.logisim.data.Location;
@@ -16,6 +17,7 @@ import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.RenderingHints;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -106,12 +108,42 @@ final class CircuitSymbols {
         return placed;
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     private static Component create(LogisimFile file, Element request, Element item) {
         AddTool tool = CircuitPalette.tool(file, item.getAttribute("library"), item.getAttribute("tool"), request);
         AttributeSet attrs = (AttributeSet) tool.getAttributeSet().clone();
-        CircuitPalette.applyOverrides(attrs, item);
+        setAll(attrs, item);
         return tool.getFactory().createComponent(Location.create(0, 0), attrs);
+    }
+
+    /**
+     * Sets every attribute the item names that the set has and can take, in as
+     * many passes as attributes appear (a gate's inputs, a splitter's bits).
+     * A key comes from a saved component or a template, so it carries values
+     * the edit path does not take (fonts, read-only ones); a picture needs no
+     * validation, only the same values.
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void setAll(AttributeSet attrs, Element item) {
+        Map<String, String> pending = new LinkedHashMap<>();
+        for (Node n = item.getFirstChild(); n != null; n = n.getNextSibling())
+            if (n instanceof Element && ((Element) n).getTagName().equals("set"))
+                pending.put(((Element) n).getAttribute("name"), ((Element) n).getAttribute("value"));
+        boolean progressed = true;
+        while (progressed && !pending.isEmpty()) {
+            progressed = false;
+            for (Attribute attr : new ArrayList<Attribute<?>>(attrs.getAttributes())) {
+                String raw = pending.remove(attr.getName());
+                if (raw == null) continue;
+                progressed = true;
+                if (attrs.isReadOnly(attr)) continue;
+                try {
+                    Object value = attr.parse(raw);
+                    if (value != null && !value.equals(attrs.getValue(attr))) attrs.setValue(attr, value);
+                } catch (RuntimeException ignored) {
+                    // A value this runtime cannot take: draw with its own.
+                }
+            }
+        }
     }
 
     private static void box(StringBuilder out, double x, double y, double width, double height) {
