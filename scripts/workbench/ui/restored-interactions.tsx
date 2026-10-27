@@ -430,13 +430,12 @@ export async function verifyRestoredInteractions() {
             edits.push(edit);
           }}
           run={null}
-          picture={null}
+          live={null}
           pending={[]}
           pressed={null}
           onPoke={() => {}}
           onPress={() => {}}
           onRelease={() => {}}
-          onViewport={() => {}}
           onError={(error) => errors.push(error)}
           fitToken={0}
           onOpenMemory={() => {}}

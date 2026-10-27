@@ -1,4 +1,5 @@
 use crate::{Host, HostError, Result, value};
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -242,8 +243,10 @@ impl Host {
     }
     pub(crate) fn observation_image(&self, record: &str) -> Result<Value> {
         let path = self.observation_path(record)?.with_extension("png");
-        let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-        use base64::{Engine, engine::general_purpose::STANDARD as B64};
+        let bytes = std::fs::read(&path).map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => "这条观察没有留存画面".to_string(),
+            _ => error.to_string(),
+        })?;
         Ok(Value::String(format!(
             "data:image/png;base64,{}",
             B64.encode(bytes)
@@ -257,7 +260,9 @@ impl Host {
         view_id: &str,
         frame_sequence: Option<u64>,
         title: String,
+        image_data: Option<String>,
     ) -> Result<Value> {
+        let image = image_data.as_deref().map(png).transpose()?;
         let snapshot = self
             .simulation
             .snapshot(session_id, frame_sequence, true)
@@ -268,10 +273,6 @@ impl Host {
         let (_, view) = self
             .snapshot_view(&snapshot.session.document_id, &snapshot.session.revision)
             .await?;
-        let image = self
-            .simulation
-            .frame_image(session_id, snapshot.frame.frame_sequence)
-            .map_err(HostError::from)?;
         let circuit = snapshot.frame.circuit.clone();
         let signals = signals(&view, &circuit, &snapshot.frame, snapshot.trace.as_ref());
         let title = if title.trim().is_empty() {
@@ -310,11 +311,13 @@ impl Host {
                 .map_err(|e| e.to_string())
                 .map_err(Into::into)
         })?;
-        persist(&directory, &format!("{}.png", record.id), |file| {
-            file.write_all(image.as_slice())
-                .map_err(|e| e.to_string())
-                .map_err(Into::into)
-        })?;
+        if let Some(image) = image {
+            persist(&directory, &format!("{}.png", record.id), |file| {
+                file.write_all(&image)
+                    .map_err(|e| e.to_string())
+                    .map_err(Into::into)
+            })?;
+        }
         value(record)
     }
     pub(crate) fn delete_observation(&self, record: &str) -> Result<Value> {
@@ -344,6 +347,22 @@ impl Host {
         })?;
         crate::value(value)
     }
+}
+
+/// The largest picture a kept frame takes.
+const IMAGE_BYTES: usize = 8 << 20;
+
+/// The PNG of a `data:image/png;base64,` URL from the window.
+fn png(data: &str) -> Result<Vec<u8>> {
+    let data = data.strip_prefix("data:image/png;base64,").unwrap_or(data);
+    if data.len() > IMAGE_BYTES.div_ceil(3) * 4 {
+        return Err("留存画面超过 8 MB".into());
+    }
+    let bytes = B64.decode(data).map_err(|_| "留存画面无效")?;
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("留存画面不是 PNG".into());
+    }
+    Ok(bytes)
 }
 
 /// Writes a kept file whole or not at all.

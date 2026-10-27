@@ -9,7 +9,7 @@ import { once } from "node:events";
 import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
-import { verifySimulationViewport } from "./viewport-scenarios.mts";
+import { verifySimulationPaint } from "./paint-scenarios.mts";
 import { placeTwoParts, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 import { documentViews } from "./document-views.mts";
@@ -371,7 +371,7 @@ try {
   await stop();
   await start();
   assert.equal((await command({ op: "open", path: copyPath })).id, id);
-  await verifySimulationViewport(command);
+  await verifySimulationPaint(command, stream!);
   await verifyEditing(command);
   // Files saved by 2.15 builds load on the bundled 2.15 runtime. A relocated
   // product must serve both runtimes from its precompiled bridge classes.

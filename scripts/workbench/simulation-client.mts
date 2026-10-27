@@ -98,12 +98,6 @@ export function simulationClient(command: Transport) {
       trace: true,
       ...(frameSequence === undefined ? {} : { frameSequence }),
     }) as Promise<Snapshot>;
-  const image = (target: Run, frameSequence: number) =>
-    command({
-      op: "simulationFrameImage",
-      sessionId: target.sessionId,
-      frameSequence,
-    }) as Promise<string>;
   /** Ends the run a target or a session id names. */
   const stop = (target: Run | string) =>
     command({
@@ -181,7 +175,6 @@ export function simulationClient(command: Transport) {
     navigate,
     snapshot,
     traced,
-    image,
     stop,
     keep,
     observations,

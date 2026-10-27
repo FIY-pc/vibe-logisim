@@ -6,10 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { FrameImage } from "../generated/FrameImage";
 import type { RunState } from "../generated/RunState";
 import type { SymbolKey } from "../generated/SymbolKey";
-import { liveViewport } from "../simulation/simulation";
 import type {
   CatalogTool,
   Circuit,
@@ -35,7 +33,7 @@ import {
   type SignalTarget,
 } from "./connectivity";
 import { fitView, hitTest, insideBox, type View } from "./geometry";
-import { buildScene, program, type Frame } from "./paint";
+import { buildScene, program, type Frame, type Live } from "./paint";
 import { symbolId, templateKey, useSymbols, type SymbolEntry } from "./symbols";
 import { useMovePreview } from "./useMovePreview";
 import { useObservation } from "./useObservation";
@@ -52,8 +50,8 @@ interface Props {
   edit: (e: Edit) => Promise<void>;
   /** The run, when the canvas shows its view rather than the definition. */
   run: RunState | null;
-  /** The decoded picture of the run's frame, and where it was drawn. */
-  picture: { frameSequence: number; url: string; image: FrameImage } | null;
+  /** The run's picture of that view, as the runtime drew it. */
+  live: Live | null;
   /** Components of the run whose input the user changed, until a frame shows it. */
   pending: string[];
   /** The button held down in the run. */
@@ -63,16 +61,6 @@ interface Props {
   onPoke: (component: Component, point: Point) => void;
   onPress: (component: Component) => void;
   onRelease: () => void;
-  onViewport: (
-    viewId: string,
-    area: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      scale: number;
-    },
-  ) => void;
   onError: (e: unknown) => void;
   /** A picture or connection read was refused because the host's document
    * moved on (another revision exists); read the workspace again. */
@@ -130,13 +118,12 @@ export function Canvas({
   place,
   edit,
   run,
-  picture: frame,
+  live,
   pending,
   pressed,
   onPoke,
   onPress,
   onRelease,
-  onViewport,
   onError,
   onStale,
   fitToken,
@@ -430,7 +417,6 @@ export function Canvas({
       });
     return list.length ? list : none;
   }, [previews, ghostAt, ghostProgram, symbols.version]);
-  const cover = frame?.image.bounds ?? null;
   const paintable = shown.current;
   const pictureFrame = useMemo<Frame>(() => {
     const moved = overlay?.move.length ? new Set(overlay.move) : null;
@@ -450,9 +436,9 @@ export function Canvas({
           : null,
       added: overlay?.wires ?? [],
       ghosts,
-      cover,
+      live: run ? live : null,
     };
-  }, [view, size, scene, paintable, overlay, ghosts, cover]);
+  }, [view, size, scene, paintable, overlay, ghosts, run, live]);
 
   const visitSignal = (peer: ConnectionPeer, previousSignal = signal) => {
     const component = documentComponent(circuit, peer.component);
@@ -651,25 +637,6 @@ export function Canvas({
       y: bounds.y + bounds.height / 2 - size.height / previous.scale / 2,
     }));
   }, [focusTarget?.id, focusTarget?.token, size.width, size.height, scene]);
-  // The run draws only what the canvas shows, at the canvas's zoom.
-  const reported = useRef("");
-  useEffect(() => {
-    if (!run || !size.width || !size.height) return;
-    const timer = setTimeout(() => {
-      const area = liveViewport(
-        { x: view.x, y: view.y, scale: view.scale },
-        size,
-      );
-      const key = `${run.viewId}:${area.x},${area.y},${area.width},${area.height},${area.scale}`;
-      if (reported.current === key) return;
-      reported.current = key;
-      onViewport(run.viewId, area);
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [run, size.width, size.height, view.x, view.y, view.scale, onViewport]);
-  useEffect(() => {
-    if (!run) reported.current = "";
-  }, [run]);
   const lastDelete = useRef(deleteRequest?.token);
   useEffect(() => {
     if (!deleteRequest || lastDelete.current === deleteRequest.token) return;
@@ -940,13 +907,6 @@ export function Canvas({
       </svg>
       <CanvasPicture frame={pictureFrame} />
       <svg width="100%" height="100%" viewBox={viewBox}>
-        {frame && (
-          <image
-            href={frame.url}
-            {...frame.image.bounds}
-            preserveAspectRatio="none"
-          />
-        )}
         {overlay && overlay.lines.length > 0 && (
           <g
             className="move-wire-preview"

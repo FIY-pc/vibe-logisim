@@ -3,9 +3,10 @@
 use super::{
     error::{Code, SimError},
     model::{
-        Bounds, ButtonValue, ClockState, Command, ComponentState, Control, FrameImage, MemoryPage,
-        MemoryStorage, PortState, Signal, Timing, TraceSample, TraceSignal,
+        ButtonValue, ClockState, Command, ComponentState, Control, MemoryPage, MemoryStorage,
+        PortState, Signal, Timing, TraceSample, TraceSignal,
     },
+    paint::RawPaint,
 };
 use quick_xml::{
     XmlVersion,
@@ -39,9 +40,8 @@ pub(crate) struct RawFrame {
     pub components: Vec<ComponentState>,
     pub memory: Option<MemoryPage>,
     pub trace: RawTrace,
-    pub image: FrameImage,
-    /// Base64 PNG.
-    pub png: String,
+    /// What the view's picture changed, or all of it.
+    pub paint: RawPaint,
 }
 
 pub(crate) enum Line {
@@ -184,7 +184,10 @@ enum Open {
         keep: bool,
         text: String,
     },
-    Render(FrameImage, String),
+    Paint {
+        full: bool,
+        text: String,
+    },
     Other,
 }
 
@@ -193,7 +196,7 @@ struct Parts {
     components: Vec<ComponentState>,
     memory: Option<MemoryPage>,
     trace: Option<RawTrace>,
-    render: Option<(FrameImage, String)>,
+    paint: Option<RawPaint>,
 }
 
 impl Parts {
@@ -213,7 +216,7 @@ impl Parts {
                 }
                 trace.samples.push(sample);
             }
-            Open::Render(image, png) => self.render = Some((image, png)),
+            Open::Paint { full, text } => self.paint = Some(RawPaint::parse(full, &text)?),
             Open::Frame | Open::Trace | Open::Sample { .. } | Open::Other => {}
         }
         Ok(())
@@ -240,7 +243,7 @@ fn frame(
                 }
             },
             Event::Text(text) => {
-                if let Some(Open::Sample { text: buffer, .. } | Open::Render(_, buffer)) =
+                if let Some(Open::Sample { text: buffer, .. } | Open::Paint { text: buffer, .. }) =
                     stack.last_mut()
                 {
                     buffer.push_str(&text.xml10_content());
@@ -263,7 +266,7 @@ fn frame(
                         _ => return Err("unknown entity".into()),
                     }
                 };
-                if let Some(Open::Sample { text: buffer, .. } | Open::Render(_, buffer)) =
+                if let Some(Open::Sample { text: buffer, .. } | Open::Paint { text: buffer, .. }) =
                     stack.last_mut()
                 {
                     buffer.push(resolved);
@@ -353,20 +356,10 @@ fn frame(
                     text: String::new(),
                 }
             }
-            (Some(Open::Frame), "render") => Open::Render(
-                FrameImage {
-                    width: attrs.number("pixelWidth")?,
-                    height: attrs.number("pixelHeight")?,
-                    bounds: Bounds {
-                        x: attrs.number("x")?,
-                        y: attrs.number("y")?,
-                        width: attrs.number("width")?,
-                        height: attrs.number("height")?,
-                    },
-                    scale: attrs.number("scale")?,
-                },
-                String::new(),
-            ),
+            (Some(Open::Frame), "paint") => Open::Paint {
+                full: attrs.flag("full")?,
+                text: String::new(),
+            },
             _ => Open::Other,
         };
         if empty {
@@ -375,15 +368,13 @@ fn frame(
             stack.push(open);
         }
     }
-    let (image, png) = parts.render.ok_or("frame without render")?;
     Ok(RawFrame {
         meta,
         timing,
         components: parts.components,
         memory: parts.memory,
         trace: parts.trace.ok_or("frame without trace")?,
-        image,
-        png,
+        paint: parts.paint.ok_or("frame without paint")?,
     })
 }
 
@@ -513,7 +504,6 @@ pub(crate) fn command_line(
         Command::TraceStop => "trace-stop",
         Command::Memory { .. } => "memory",
         Command::MemoryWrite { .. } => "memory-write",
-        Command::Viewport { .. } => "viewport",
     };
     let mut line = Element::new(op)
         .attr("requestId", &request_id.to_string())?
@@ -591,23 +581,6 @@ pub(crate) fn command_line(
                 .attr("expected", &format!("{expected:x}"))?
                 .attr("value", &format!("{value:x}"))?;
         }
-        Command::Viewport {
-            x,
-            y,
-            width,
-            height,
-            scale,
-        } => {
-            if !scale.is_finite() {
-                return Err(SimError::new(Code::ViewportBudget));
-            }
-            line = line
-                .attr("x", &x.to_string())?
-                .attr("y", &y.to_string())?
-                .attr("width", &width.to_string())?
-                .attr("height", &height.to_string())?
-                .attr("scale", &scale.to_string())?;
-        }
         _ => {}
     }
     Ok(line.empty() + "\n")
@@ -621,7 +594,7 @@ pub(crate) mod tests {
 
     pub(crate) fn frame_line(view: &str, sequence: u64, trace: &str) -> String {
         format!(
-            r#"<frame viewId="{view}" circuit="main" commandSequence="{sequence}" ticks="{sequence}" running="true" automatic="true" pending="false" frequency="2.0" actualFrequency="0.0" oscillating="false" captureMs="1.5" encodeMs="2.5"><component id="a" control="input"><input width="1" bits="1" value="1"/><port index="0" width="1" bits="1" value="1"/></component><component id="b"><port index="0" width="8" bits="0000 x01x"/></component>{trace}<render x="-24" y="-24" width="160.0" height="100.0" scale="1.5" pixelWidth="240" pixelHeight="150">iVBORw0KGgo=</render></frame>"#
+            r##"<frame viewId="{view}" circuit="main" commandSequence="{sequence}" ticks="{sequence}" running="true" automatic="true" pending="false" frequency="2.0" actualFrequency="0.0" oscillating="false" captureMs="1.5" encodeMs="2.5"><component id="a" control="input"><input width="1" bits="1" value="1"/><port index="0" width="1" bits="1" value="1"/></component><component id="b"><port index="0" width="8" bits="0000 x01x"/></component>{trace}<paint full="false">{{"wires":[[0,0,10,0,"#00d200"]],"dots":[],"components":{{"a":[["C","#006400"],["T","1 &lt; 2",0,0]]}}}}</paint></frame>"##
         )
     }
 
@@ -643,9 +616,9 @@ pub(crate) mod tests {
         // Samples the reader already has are skipped.
         assert_eq!(frame.trace.samples.len(), 1);
         assert_eq!(frame.trace.samples[0].values, ["1", "0000 x01x"]);
-        assert_eq!(frame.image.width, 240);
-        assert_eq!(frame.image.bounds.width, 160.0);
-        assert_eq!(frame.png, "iVBORw0KGgo=");
+        assert!(!frame.paint.full);
+        assert_eq!(frame.paint.wires, [([0, 0, 10, 0], 0x00d2_00ff)]);
+        assert_eq!(frame.paint.components[0].0, "a");
         assert_eq!(frame.timing.encode_ms, 2.5);
 
         let Line::Ack { request_id, result } =

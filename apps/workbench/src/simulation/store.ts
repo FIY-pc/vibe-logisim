@@ -1,12 +1,14 @@
 import { createStore } from "zustand/vanilla";
 import type { ComponentState } from "../generated/ComponentState";
+import type { DotPaint } from "../generated/DotPaint";
 import type { EndedInfo } from "../generated/EndedInfo";
-import type { FrameImage } from "../generated/FrameImage";
 import type { MemoryPage } from "../generated/MemoryPage";
 import type { ObservationRecord } from "../generated/ObservationRecord";
+import type { PaintDelta } from "../generated/PaintDelta";
 import type { RunState } from "../generated/RunState";
 import type { SessionInfo } from "../generated/SessionInfo";
 import type { TraceDelta } from "../generated/TraceDelta";
+import type { WirePaint } from "../generated/WirePaint";
 import type { Displayed } from "./simulation";
 import { field, type Update } from "../shared/setter";
 
@@ -40,14 +42,19 @@ export interface PendingInput {
   sequence?: number;
 }
 
-/** A frame picture decoded and ready to paint. */
-export interface Picture {
+/** The picture of a run's view as the runtime drew it: wires and junctions
+ * by geometry with their color, each component's ops by id. The `paint` of
+ * the run's state events is laid over it in place, in the order they come;
+ * a new object with the next `version` marks each change. */
+export interface LivePaint {
   sessionId: string;
   viewId: string;
-  frameSequence: number;
-  commandSequence: number;
-  url: string;
-  image: FrameImage;
+  /** By `x1,y1,x2,y2`. */
+  wires: Map<string, WirePaint>;
+  /** By `x,y`. */
+  dots: Map<string, DotPaint>;
+  components: Map<string, PaintDelta["components"][string]>;
+  version: number;
 }
 
 export interface SimulationState {
@@ -67,10 +74,9 @@ export interface SimulationState {
     viewId: string;
     frameSequence: number;
     commandSequence: number;
-    image: FrameImage;
   } | null;
-  /** The newest picture fetched for the displayed view. */
-  picture: Picture | null;
+  /** The picture of the view the run last painted. */
+  paint: LivePaint | null;
   /** The waveform of the run's current view. A new id starts a new one. */
   trace: TraceDelta | null;
   /** Whether the run is recording the watched ports; stopping keeps the
@@ -108,7 +114,7 @@ export interface SimulationState {
   setDisplayed(displayed: Update<Displayed | null>): void;
   setComponents(components: Update<Record<string, ComponentState>>): void;
   setFrame(frame: Update<SimulationState["frame"]>): void;
-  setPicture(picture: Update<Picture | null>): void;
+  setPaint(paint: Update<LivePaint | null>): void;
   setTrace(trace: Update<TraceDelta | null>): void;
   setRecording(recording: Update<boolean>): void;
   setPage(page: Update<MemoryPage | null>): void;
@@ -132,7 +138,7 @@ export function createSimulationStore() {
     displayed: null,
     components: {},
     frame: null,
-    picture: null,
+    paint: null,
     trace: null,
     recording: false,
     page: null,
@@ -152,7 +158,7 @@ export function createSimulationStore() {
     setDisplayed: field(set, "displayed"),
     setComponents: field(set, "components"),
     setFrame: field(set, "frame"),
-    setPicture: field(set, "picture"),
+    setPaint: field(set, "paint"),
     setTrace: field(set, "trace"),
     setRecording: field(set, "recording"),
     setPage: field(set, "page"),

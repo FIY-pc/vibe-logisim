@@ -13,8 +13,6 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
 import javax.xml.parsers.*;
 import javax.xml.transform.*;
 import javax.xml.transform.dom.DOMSource;
@@ -30,7 +28,6 @@ public final class CircuitSession {
     private int ticks;
     private Element memoryRequest;
     private final CircuitTrace trace = new CircuitTrace();
-    private CircuitFrame.Viewport viewport;
     private boolean running, automatic = true, pending;
     private double frequency = 2, actualFrequency;
     private long version, commandSequence, nextTick, rateStart = System.nanoTime();
@@ -98,10 +95,9 @@ public final class CircuitSession {
 
     private void command(Element request) {
         String op = request.getTagName();
-        if (op.equals("view")) { view.navigate(request, state, this::release); trace.clear(); memoryRequest = null; viewport = null; version++; return; }
+        if (op.equals("view")) { view.navigate(request, state, this::release); trace.clear(); memoryRequest = null; version++; return; }
         if (request.hasAttribute("viewId") && !view.id.equals(request.getAttribute("viewId")))
             throw new SessionError("VIEW_CHANGED", "运行视图已切换，请重新选择对象");
-        if (op.equals("viewport")) { viewport = CircuitFrame.Viewport.from(request); version++; return; }
         Map<String, Component> components = view.components;
         CircuitState local = view.resolve(state);
         if (op.equals("trace")) {
@@ -198,11 +194,10 @@ public final class CircuitSession {
         if (failureCode != null) root.setAttribute("failureCode", failureCode);
     }
 
-    private BufferedImage sample(Document result) throws Exception {
+    private CircuitPaint.Recorded sample(Document result) throws Exception {
         Element root = result.getDocumentElement();
         metadata(root);
         CircuitState state = view.resolve(this.state);
-        Circuit circuit = view.circuit;
         Map<String, Component> components = view.components;
         for (Map.Entry<String, Component> entry : components.entrySet()) {
             Component c = entry.getValue();
@@ -231,18 +226,31 @@ public final class CircuitSession {
         }
         if (memoryRequest != null) root.appendChild(StudioMemory.page(components.get(memoryRequest.getAttribute("componentId")), state, memoryRequest, result));
         root.appendChild(trace.element(result));
-        Element render = result.createElement("render");
-        BufferedImage bitmap = CircuitFrame.draw(circuit, state, viewport, render);
-        root.appendChild(render);
-        return bitmap;
+        return CircuitPaint.record(view, state);
+    }
+
+    private static final ThreadLocal<Transformer> XML = ThreadLocal.withInitial(() -> {
+        try {
+            Transformer transformer = TransformerFactory.newInstance().newTransformer();
+            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+            return transformer;
+        } catch (TransformerConfigurationException error) {
+            throw new IllegalStateException(error);
+        }
+    });
+
+    private static String xml(Document result) throws Exception {
+        StringWriter xml = new StringWriter();
+        XML.get().transform(new DOMSource(result), new StreamResult(xml));
+        return xml.toString();
+    }
+
+    private static void print(PrintStream protocol, String line) {
+        synchronized (protocol) { protocol.println(line); protocol.flush(); }
     }
 
     private static void send(Document result, PrintStream protocol) throws Exception {
-        Transformer transformer = TransformerFactory.newInstance().newTransformer();
-        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-        StringWriter xml = new StringWriter();
-        transformer.transform(new DOMSource(result), new StreamResult(xml));
-        synchronized (protocol) { protocol.println(xml); protocol.flush(); }
+        print(protocol, xml(result));
     }
 
     private void startWorkers(PrintStream protocol) {
@@ -271,23 +279,28 @@ public final class CircuitSession {
         clock.setDaemon(true); clock.start();
         Thread frames = new Thread(() -> {
             long rendered = -1;
+            CircuitPaint paint = new CircuitPaint();
             try {
                 DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
                 while (true) {
-                    Document result = null; BufferedImage bitmap = null;
+                    Document result = null; CircuitPaint.Recorded recorded = null;
                     long started = System.nanoTime(), captured = started;
                     synchronized (this) {
                         if (version != rendered) {
                             result = builder.newDocument(); result.appendChild(result.createElement("frame"));
-                            bitmap = sample(result); rendered = version; captured = System.nanoTime();
+                            recorded = sample(result); rendered = version; captured = System.nanoTime();
                         }
                     }
                     if (result != null) {
-                        // Encoding and protocol output do not hold the live circuit lock.
-                        ((Element)result.getElementsByTagName("render").item(0)).setTextContent(Base64.getEncoder().encodeToString(PngEncoder.encode(bitmap)));
-                        result.getDocumentElement().setAttribute("captureMs", String.valueOf((captured - started) / 1e6));
-                        result.getDocumentElement().setAttribute("encodeMs", String.valueOf((System.nanoTime() - captured) / 1e6));
-                        send(result, protocol);
+                        // What changed, its JSON and the XML do not hold the live circuit lock.
+                        Element picture = result.createElement("paint");
+                        picture.setAttribute("full", String.valueOf(paint.full(recorded)));
+                        picture.setTextContent(paint.delta(recorded));
+                        result.getDocumentElement().appendChild(picture);
+                        String xml = xml(result), root = "<frame";
+                        // The timing covers the serialization, so it joins the root tag afterwards.
+                        print(protocol, root + " captureMs=\"" + (captured - started) / 1e6 + "\" encodeMs=\""
+                            + (System.nanoTime() - captured) / 1e6 + "\"" + xml.substring(root.length()));
                     }
                     Thread.sleep(16);
                 }
@@ -389,8 +402,9 @@ public final class CircuitSession {
 
     public static void main(String[] args) throws Exception {
         System.setProperty("java.awt.headless", "true");
-        ImageIO.setUseCache(false);
-        PrintStream protocol = System.out; System.setOut(System.err);
+        // The host reads UTF-8 whatever the platform's encoding (labels, messages).
+        PrintStream protocol = new PrintStream(new BufferedOutputStream(new FileOutputStream(FileDescriptor.out), 1 << 16), false, "UTF-8");
+        System.setOut(System.err);
         DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
         f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);

@@ -1,6 +1,5 @@
 use super::{Effect::*, Meta};
 use crate::{Host, Result, app::diagnostics::Stage, documents::history::Action, value};
-use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -25,16 +24,15 @@ pub enum TargetRequest {
 /// The live run and the frames kept from it.
 ///
 /// There is at most one run at a time. The window drives it with
-/// `simulationAct`, follows it through `simulation` events (`session`, then
-/// `state` deltas, then `ended`) and fetches pictures with
-/// `simulationFrameImage`. None of these requests changes a document: stimulus
-/// never makes a revision and never saves. Only `memoryWrite`, which edits a
-/// ROM's stored contents, does.
+/// `simulationAct` and follows it through `simulation` events (`session`, then
+/// `state` deltas carrying what changed in the components and the picture,
+/// then `ended`). None of these requests changes a document: stimulus never
+/// makes a revision and never saves. Only `memoryWrite`, which edits a ROM's
+/// stored contents, does.
 ///
-/// The agent reads, never drives: `simulationStatus`, `simulationSnapshot` and
-/// `simulationFrameImage` for the run the user is looking at, and
-/// `observationList`, `observationGet` and `observationImage` for frames the
-/// user kept. The isolated test runs behind its vector and trace tools are the
+/// The agent reads, never drives: `simulationStatus` and `simulationSnapshot`
+/// for the run the user is looking at, and `observationList`,
+/// `observationGet` and `observationImage` for frames the user kept. The isolated test runs behind its vector and trace tools are the
 /// `simulate` and `trace` review requests, which never touch the live run.
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -59,21 +57,11 @@ pub enum SimulationRequest {
     /// Shows a subcircuit instance of the run, keeping its state: the path
     /// holds component ids from the root circuit, and an empty path returns
     /// to the root. Every call makes a new view, which releases held buttons,
-    /// clears the waveform and the shown memory page, and renders the default
-    /// viewport until the window sends its own.
+    /// clears the waveform and the shown memory page, and paints the whole
+    /// view again.
     SimulationNavigate {
         session_id: String,
         instance_path: Vec<String>,
-    },
-    /// The world rectangle and scale the run renders for a view.
-    SimulationViewport {
-        session_id: String,
-        view_id: String,
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-        scale: f64,
     },
     /// Ends the run. Returns `{"stopped": false}` when it already ended.
     SimulationStop {
@@ -105,13 +93,6 @@ pub enum SimulationRequest {
         trace: bool,
         #[serde(default)]
         memory: bool,
-    },
-    /// The PNG of a kept frame, as a data URL. The newest two frames are
-    /// always kept.
-    SimulationFrameImage {
-        session_id: String,
-        #[ts(type = "number")]
-        frame_sequence: u64,
     },
     /// A page of a ROM's stored contents (`MemoryPage` with `design`
     /// storage), read through the editor worker. A RAM's contents belong to a
@@ -158,13 +139,16 @@ pub enum SimulationRequest {
         #[ts(optional)]
         limit: Option<usize>,
     },
-    /// The PNG of a kept frame, as a data URL.
+    /// The picture of a kept frame, as a PNG data URL. Fails for a record
+    /// kept without one.
     ObservationImage {
         record: String,
     },
     /// Keeps the frame the user saw (the newest unless `frameSequence` names
     /// one) with its waveform, read from what the run already delivered, never
     /// from the runtime. Fails when the run moved to another view meanwhile.
+    /// `imageData` is the picture the window showed, a PNG data URL of at
+    /// most 8 MB, kept beside the record.
     ObservationCapture {
         session_id: String,
         view_id: String,
@@ -174,6 +158,9 @@ pub enum SimulationRequest {
         frame_sequence: Option<u64>,
         #[serde(default)]
         title: String,
+        #[serde(default)]
+        #[ts(optional)]
+        image_data: Option<String>,
     },
     ObservationRename {
         record: String,
@@ -225,11 +212,9 @@ impl SimulationRequest {
     pub(crate) const OPS: &[&str] = &[
         "simulationAct",
         "simulationNavigate",
-        "simulationViewport",
         "simulationStop",
         "simulationStatus",
         "simulationSnapshot",
-        "simulationFrameImage",
         "memory",
         "memoryWrite",
         "observationList",
@@ -241,14 +226,13 @@ impl SimulationRequest {
     ];
     pub(crate) fn meta(&self) -> Meta {
         match self {
-            Self::SimulationAct { .. }
-            | Self::SimulationNavigate { .. }
-            | Self::SimulationViewport { .. } => Meta::new(Read).stage(Stage::Simulation),
+            Self::SimulationAct { .. } | Self::SimulationNavigate { .. } => {
+                Meta::new(Read).stage(Stage::Simulation)
+            }
             Self::SimulationStop { .. } => Meta::new(Read),
             // The AI reads the run state the user asks from; it never drives it.
             Self::SimulationStatus
             | Self::SimulationSnapshot { .. }
-            | Self::SimulationFrameImage { .. }
             | Self::ObservationList { .. }
             | Self::ObservationGet { .. }
             | Self::ObservationImage { .. } => Meta::new(Read).agent(),
@@ -309,40 +293,6 @@ impl Host {
                 let result = self.simulation.navigate(&session_id, instance_path).await?;
                 value(result)
             }
-            SimulationRequest::SimulationViewport {
-                session_id,
-                view_id,
-                x,
-                y,
-                width,
-                height,
-                scale,
-            } => {
-                let revision = self
-                    .simulation
-                    .session()
-                    .filter(|session| session.session_id == session_id)
-                    .map(|session| session.revision)
-                    .ok_or_else(|| {
-                        vibe_logisim_runtime::simulation::SimError::from(
-                            vibe_logisim_runtime::simulation::Code::SessionEnded,
-                        )
-                    })?;
-                let target = Target::Run {
-                    session_id,
-                    view_id,
-                    revision,
-                };
-                let command = Command::Viewport {
-                    x,
-                    y,
-                    width,
-                    height,
-                    scale,
-                };
-                let result = self.simulation.act(target, command, None).await?;
-                value(result)
-            }
             SimulationRequest::SimulationStop { session_id } => {
                 value(serde_json::json!({"stopped": self.simulation.stop(&session_id)}))
             }
@@ -360,16 +310,6 @@ impl Host {
                     .simulation
                     .snapshot(&session_id, frame_sequence, trace)?;
                 value(paged(snapshot, component_ids, offset, limit, memory))
-            }
-            SimulationRequest::SimulationFrameImage {
-                session_id,
-                frame_sequence,
-            } => {
-                let bytes = self.simulation.frame_image(&session_id, frame_sequence)?;
-                Ok(Value::String(format!(
-                    "data:image/png;base64,{}",
-                    B64.encode(bytes.as_slice())
-                )))
             }
             SimulationRequest::Memory {
                 id,
@@ -415,8 +355,9 @@ impl Host {
                 view_id,
                 frame_sequence,
                 title,
+                image_data,
             } => {
-                self.capture(&session_id, &view_id, frame_sequence, title)
+                self.capture(&session_id, &view_id, frame_sequence, title, image_data)
                     .await
             }
             SimulationRequest::ObservationRename { record, title } => {

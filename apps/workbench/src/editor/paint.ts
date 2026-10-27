@@ -311,10 +311,15 @@ function poly(v: number[]) {
   return p;
 }
 
-const programs = new WeakMap<SymbolPicture, Program>();
+const programs = new WeakMap<Op[], Program>();
 /** Compiles a recorded picture once; see RecordingGraphics2D for the ops. */
 export function program(picture: SymbolPicture): Program {
-  const known = programs.get(picture);
+  return compiled(picture.ops);
+}
+/** Compiles recorded ops once per list: a symbol's, or a component's as a
+ * running simulation drew it. */
+function compiled(ops: Op[]): Program {
+  const known = programs.get(ops);
   if (known) return known;
   const steps: Step[] = [];
   const conditions: Point[] = [];
@@ -339,7 +344,7 @@ export function program(picture: SymbolPicture): Program {
   };
   const stroke = (segments: Segments) =>
     push({ kind: "stroke", segments, index: strokes++ });
-  for (const op of picture.ops as Op[]) {
+  for (const op of ops) {
     const v = op as unknown[];
     switch (v[0]) {
       case "C":
@@ -487,14 +492,14 @@ export function program(picture: SymbolPicture): Program {
       // "N" (a paint that is not a color) keeps the last color; "Z" (XOR) paints plainly.
     }
   }
-  const compiled: Program = {
+  const result: Program = {
     steps,
     conditions,
     clips,
     strokes: { k: 0, byOrigin: new Map() },
   };
-  programs.set(picture, compiled);
-  return compiled;
+  programs.set(ops, result);
+  return result;
 }
 
 /** A component of the picture: its kind's program at its location. */
@@ -833,12 +838,42 @@ export interface Frame {
   added: { from: Point; to: Point }[];
   /** Placement previews and the cursor ghost. */
   ghosts: { program: Program; x: number; y: number; alpha: number }[];
-  /** The region a running simulation's frame covers. */
-  cover: Bounds | null;
+  /** A running simulation's picture of the circuit. */
+  live: Live | null;
+}
+
+/** The picture a running simulation drew of the view, in its state: wires
+ * and junctions with the colors of their values, which replace the scene's,
+ * and the ops of each component, which replace its kind's picture. */
+export interface Live {
+  wires: Map<string, readonly [number, number, number, number, string]>;
+  dots: Map<string, readonly [number, number, string]>;
+  components: Map<string, Op[]>;
+}
+
+/** Whether the segment `[x1, y1, x2, y2]` lies on wire `w`: the runtime
+ * splits and joins the document's wires as Logisim's wire repair does. */
+function lies(
+  w: SceneWire,
+  [x1, y1, x2, y2]: readonly [number, number, number, number, ...unknown[]],
+) {
+  const { from, to } = w;
+  if (from.y === to.y && y1 === from.y && y2 === from.y)
+    return (
+      Math.min(x1, x2) >= Math.min(from.x, to.x) &&
+      Math.max(x1, x2) <= Math.max(from.x, to.x)
+    );
+  if (from.x === to.x && x1 === from.x && x2 === from.x)
+    return (
+      Math.min(y1, y2) >= Math.min(from.y, to.y) &&
+      Math.max(y1, y2) <= Math.max(from.y, to.y)
+    );
+  return false;
 }
 
 const pens = new WeakMap<CanvasRenderingContext2D, Pen>();
 const WIRE = 3;
+const BLACK = "#000000";
 const ERROR = "#ff7b00";
 
 /** Paints one frame of the editor picture onto `canvas`, `dpr` device pixels to the CSS pixel. */
@@ -875,41 +910,32 @@ export function paintFrame(
     b.x + b.width >= left &&
     b.y + b.height >= top;
   ctx.save();
-  if (frame.cover) {
-    const c = frame.cover;
-    const outside = new Path2D();
-    outside.rect(0, 0, width, height);
-    outside.rect(c.x * k + ox, c.y * k + oy, c.width * k, c.height * k);
-    ctx.clip(outside, "evenodd");
-  }
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  // Wires: Logisim's width-3 round stroke, its ends at pixel centres as Java2D puts them.
-  const strokeWires = (
-    wires: { from: Point; to: Point; error?: boolean }[],
-    dx: number,
-    dy: number,
-    color: (error: boolean) => string,
+  // Wires: Logisim's width-3 round stroke, its ends at pixel centres as
+  // Java2D puts them, one path per color.
+  const lines = new Map<string, Path2D>();
+  const line = (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    color: string,
   ) => {
-    const paths = new Map<string, Path2D>();
-    for (const w of wires) {
-      const x1 = w.from.x + dx,
-        y1 = w.from.y + dy,
-        x2 = w.to.x + dx,
-        y2 = w.to.y + dy;
-      if (
-        Math.max(x1, x2) < left ||
-        Math.min(x1, x2) > right ||
-        Math.max(y1, y2) < top ||
-        Math.min(y1, y2) > bottom
-      )
-        continue;
-      const key = color(Boolean(w.error));
-      let path = paths.get(key);
-      if (!path) paths.set(key, (path = new Path2D()));
-      path.moveTo(centre(x1 * k + ox), centre(y1 * k + oy));
-      path.lineTo(centre(x2 * k + ox), centre(y2 * k + oy));
-    }
+    if (
+      Math.max(x1, x2) < left ||
+      Math.min(x1, x2) > right ||
+      Math.max(y1, y2) < top ||
+      Math.min(y1, y2) > bottom
+    )
+      return;
+    let path = lines.get(color);
+    if (!path) lines.set(color, (path = new Path2D()));
+    path.moveTo(centre(x1 * k + ox), centre(y1 * k + oy));
+    path.lineTo(centre(x2 * k + ox), centre(y2 * k + oy));
+  };
+  const strokeLines = () => {
+    if (!lines.size) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.lineWidth = pen.width = WIRE * k;
     ctx.lineCap = pen.cap = "round";
@@ -917,55 +943,75 @@ export function paintFrame(
     if (pen.dash !== "") ctx.setLineDash([]);
     pen.dash = "";
     if (pen.alpha !== 1) ctx.globalAlpha = pen.alpha = 1;
-    for (const [key, path] of paths) {
-      ctx.strokeStyle = pen.stroke = key;
+    for (const [color, path] of lines) {
+      ctx.strokeStyle = pen.stroke = color;
       ctx.stroke(path);
     }
+    lines.clear();
   };
-  const { scene, hidden } = frame;
-  strokeWires(
-    hidden.size ? scene.wires.filter((w) => !hidden.has(w.id)) : scene.wires,
-    0,
-    0,
-    (error) => (error ? ERROR : "#000000"),
-  );
+  const strokeWires = (
+    wires: { from: Point; to: Point; error?: boolean }[],
+    dx: number,
+    dy: number,
+  ) => {
+    for (const w of wires)
+      line(
+        w.from.x + dx,
+        w.from.y + dy,
+        w.to.x + dx,
+        w.to.y + dy,
+        w.error ? ERROR : BLACK,
+      );
+    strokeLines();
+  };
+  const { scene, hidden, live } = frame;
+  if (live) {
+    const gone = hidden.size ? scene.wires.filter((w) => hidden.has(w.id)) : [];
+    for (const w of live.wires.values())
+      if (!gone.length || !gone.some((g) => lies(g, w)))
+        line(w[0], w[1], w[2], w[3], w[4]);
+    strokeLines();
+  } else
+    strokeWires(
+      hidden.size ? scene.wires.filter((w) => !hidden.has(w.id)) : scene.wires,
+      0,
+      0,
+    );
+  // Junctions: Logisim's 8-wide dot, one path per color.
+  const fills = new Map<string, Path2D>();
+  const dot = (x: number, y: number, color: string) => {
+    if (x < left || x > right || y < top || y > bottom) return;
+    let path = fills.get(color);
+    if (!path) fills.set(color, (path = new Path2D()));
+    const cx = x * k + ox,
+      cy = y * k + oy;
+    path.moveTo(cx + 4 * k, cy);
+    path.arc(cx, cy, 4 * k, 0, Math.PI * 2);
+  };
+  if (live) for (const d of live.dots.values()) dot(d[0], d[1], d[2]);
+  else for (const d of scene.dots) dot(d.x, d.y, d.error ? ERROR : BLACK);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  for (const error of [false, true]) {
-    const path = new Path2D();
-    let any = false;
-    for (const dot of scene.dots) {
-      if (
-        dot.error !== error ||
-        dot.x < left ||
-        dot.x > right ||
-        dot.y < top ||
-        dot.y > bottom
-      )
-        continue;
-      const cx = dot.x * k + ox,
-        cy = dot.y * k + oy;
-      path.moveTo(cx + 4 * k, cy);
-      path.arc(cx, cy, 4 * k, 0, Math.PI * 2);
-      any = true;
-    }
-    if (any) {
-      fillWith(ctx, pen, error ? ERROR : "#000000", 1);
-      ctx.fill(path);
-    }
+  for (const [color, path] of fills) {
+    fillWith(ctx, pen, color, 1);
+    ctx.fill(path);
   }
-  for (const part of scene.parts) {
-    if (hidden.has(part.id) || !visible(part.ink)) continue;
+  // A component the run drew is its ops in the run's state; the conditions
+  // of a kind's picture do not apply to them.
+  const drawPart = (part: Part, dx: number, dy: number) => {
+    const ops = live?.components.get(part.id);
     replay(
       ctx,
       pen,
-      part.program,
-      part.when,
+      ops ? compiled(ops) : part.program,
+      ops ? null : part.when,
       k,
-      ox + part.x * k,
-      oy + part.y * k,
+      ox + (part.x + dx) * k,
+      oy + (part.y + dy) * k,
       1,
     );
-  }
+  };
+  for (const part of scene.parts)
+    if (!hidden.has(part.id) && visible(part.ink)) drawPart(part, 0, 0);
   if (scene.broken.length) {
     const boxes = new Path2D();
     for (const { id, bounds: b } of scene.broken)
@@ -985,22 +1031,10 @@ export function paintFrame(
   }
   if (frame.moved) {
     const { delta, parts, wires } = frame.moved;
-    strokeWires(wires, delta.x, delta.y, (error) =>
-      error ? ERROR : "#000000",
-    );
-    for (const part of parts)
-      replay(
-        ctx,
-        pen,
-        part.program,
-        part.when,
-        k,
-        ox + (part.x + delta.x) * k,
-        oy + (part.y + delta.y) * k,
-        1,
-      );
+    strokeWires(wires, delta.x, delta.y);
+    for (const part of parts) drawPart(part, delta.x, delta.y);
   }
-  if (frame.added.length) strokeWires(frame.added, 0, 0, () => "#000000");
+  if (frame.added.length) strokeWires(frame.added, 0, 0);
   for (const ghost of frame.ghosts)
     replay(
       ctx,

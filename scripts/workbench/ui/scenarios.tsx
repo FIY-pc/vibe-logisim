@@ -161,8 +161,6 @@ const state = () => ({
         },
       ],
     };
-  if (request.op === "simulationFrameImage")
-    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
   if (request.op === "simulationNavigate") {
     if (navGate) return navGate.promise;
     const child = request.instancePath.length > 0;
@@ -454,12 +452,6 @@ const simClock = {
   actualFrequency: 0,
   oscillating: false,
 };
-const simImage = {
-  width: 1,
-  height: 1,
-  bounds: { x: 0, y: 0, width: 1, height: 1 },
-  scale: 1,
-};
 const simState = (
   viewId: string,
   circuit: string,
@@ -475,7 +467,7 @@ const simState = (
   commandSequence: frameSequence,
   clock: simClock,
   components: { full: true, items: [] },
-  image: simImage,
+  paint: { full: true, wires: [], dots: [], components: {} },
   timing: { captureMs: 0, encodeMs: 0 },
 });
 await act(async () => {
@@ -739,13 +731,12 @@ const canvas = (d: any) => (
       edits.push(e);
     }}
     run={null}
-    picture={null}
+    live={null}
     pending={[]}
     pressed={null}
     onPoke={() => {}}
     onPress={() => {}}
     onRelease={() => {}}
-    onViewport={() => {}}
     onError={(e: any) => errors.push(e)}
     fitToken={0}
     onOpenMemory={() => {}}
@@ -818,13 +809,12 @@ function PlacementHarness({ token }: { token: number }) {
         edits.push(e);
       }}
       run={null}
-      picture={null}
+      live={null}
       pending={[]}
       pressed={null}
       onPoke={() => {}}
       onPress={() => {}}
       onRelease={() => {}}
-      onViewport={() => {}}
       onError={(e) => errors.push(e)}
       fitToken={0}
       onOpenMemory={() => {}}
@@ -920,13 +910,12 @@ function QueueHarness() {
           throw new Error("Unexpected structural edit before placement");
         }}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         fitToken={0}
         onOpenMemory={() => {}}
@@ -1136,13 +1125,12 @@ function TraceHarness() {
           edits.push(e);
         }}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         fitToken={0}
         onOpenMemory={() => {}}
@@ -1229,13 +1217,12 @@ console.log(
         onCancelPlace={() => {}}
         edit={async () => {}}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         onStale={() => stales++}
         fitToken={0}
