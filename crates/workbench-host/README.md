@@ -69,7 +69,7 @@ State directory: `instance.lock`, `session/` (open documents and journals), `fol
 
 ## Status
 
-Done and exercised end to end on the course project (open, edit, AI turn, apply, save, reopen). 18 unit tests. The window draws the editor picture itself from the edit reply (`docs/rendering.md`), so the time from sending an edit to the new picture is the edit's answer plus one frame. On a course-size page (350 components, 374 wires; `scripts/workbench/editing-latency.mts`, release build, p50) an edit is answered in 14–24 ms and a move in about 37 ms.
+Done and exercised end to end on the course project (open, edit, AI turn, apply, save, reopen). 18 unit tests. The window draws the editor picture itself (`docs/rendering.md`): an edit's new picture needs the edit's answer and, when the edit made a kind of component the document has not drawn yet, one `symbols` request. Release build, p50 on the synthetic course-size pages (`scripts/workbench/editing-latency.mts`, 350 / 713 components): move 35 / 57, wire 13 / 17, place 21 / 23, delete 13 / 15, attributes 32 / 39 ms; a whole page's `symbols` 9 / 13 ms (220 / 446 kinds, 89 / 184 KB). On the course project's 713-component page in a browser, from input to the new picture on screen: wire 36–39, delete 32–35, place 49, attributes 46–67, undo 43–44 ms, move 76–94 ms (drawn in place while dragging); opening the page is one `symbols` request of 175 KB answered in 11–28 ms.
 
 ## Remaining tasks
 

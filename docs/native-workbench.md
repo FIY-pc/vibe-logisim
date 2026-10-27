@@ -28,7 +28,7 @@ Desktop state is stored in Tauri's application data directory. Browser developme
 | Compatibility adapter | `crates/logisim-runtime`                | Java process lifecycle, native catalog/properties/geometry, rendering, simulation |
 | Application host      | `crates/workbench-host`                 | Typed commands, document/simulation binding, sidecar callbacks                    |
 | Desktop               | `apps/workbench/src-tauri`              | Window, native dialogs, IPC and application lifecycle                             |
-| Editor UI             | `apps/workbench/src/editor/`            | Selection, placement, wiring, navigation and input feedback                       |
+| Editor UI             | `apps/workbench/src/editor/`            | Editor picture, selection, placement, wiring, navigation, input feedback          |
 | Conversation UI       | `apps/workbench/src/conversation/`      | Model service settings, history, actual streamed events and folder checkpoints    |
 | Runtime adapter       | `packages/agent-runtime`                | Node sidecar, model service access and the tool contract                          |
 | Simulation evidence   | `crates/workbench-host/src/simulation/` | Revision-bound captures, exact watches and persistent observation records         |

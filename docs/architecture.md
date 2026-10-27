@@ -7,7 +7,7 @@
 | 模块                                                            | 语言                     | 职责                                                                            |
 | --------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------- |
 | [crates/circuit-document](../crates/circuit-document/README.md) | Rust                     | `.circ` 文件本身：解析与原样回写、对象 ID、修订、编辑、撤销、保存、历史、文件夹 |
-| [crates/logisim-runtime](../crates/logisim-runtime/README.md)   | Rust + Java              | 真实 Logisim 运行时：观察连通、元件目录、属性、渲染、仿真会话                   |
+| [crates/logisim-runtime](../crates/logisim-runtime/README.md)   | Rust + Java              | 真实 Logisim 运行时：观察连通、元件目录、属性、元件符号、渲染、仿真会话         |
 | [crates/workbench-host](../crates/workbench-host/README.md)     | Rust                     | 唯一拥有工作区的进程：请求词汇与规则、状态目录、事件、AI 进程的生命周期         |
 | [apps/workbench](../apps/workbench/README.md)                   | TypeScript、React、Tauri | 窗口：按领域分文件夹的界面状态与交互，不含任何业务规则                          |
 | [packages/agent-runtime](../packages/agent-runtime/README.md)   | TypeScript、Node         | AI 回合：模型服务、按文件夹的对话、工具；每个工具调用都是一次宿主请求           |
@@ -18,8 +18,8 @@
 
 ## 四条数据流
 
-1. **人编辑。** 窗口动作构造 `{op, …}` → `Host::dispatch` → `Document::edit`（带调用方读到的修订）→ 自动保存到源文件 → 记录历史 → 返回 `view`/`selection` → 窗口替换对应 store → 画布向宿主请求新的 PNG。窗口不做乐观更新。
-2. **观察。** 宿主为每个修订落一份不可变 artifact → `Native::observe` 交给 Java 读取端口、位网、边界 → JSON 按 artifact 摘要缓存。连通、命中、追踪都来自这份观察，不从像素推断。
+1. **人编辑。** 窗口动作构造 `{op, …}` → `Host::dispatch` → `Document::edit`（带调用方读到的修订）→ 自动保存到源文件 → 记录历史 → 返回只含改动电路的 `change` 和 `selection` → 窗口把它并进打开的文档 → 画布在下一帧用缓存的元件符号重画（缺的种类发一次 `symbols`，见 [rendering.md](rendering.md)）。提交的连线、删除、移动在回复到达前先画出手势本身的结果，其余不预测。
+2. **观察。** 宿主为每个修订落一份不可变 artifact → `Native::observe` 交给 Java 读取端口、位网、边界 → JSON 按 artifact 摘要缓存。连通面板、信号追踪、整理和 AI 的连接检查来自这份观察；画面、命中测试和端口标记用 `symbols` 录下的包围盒和端口，不等观察。
 3. **AI 回合。** 窗口 `agent{method:"ask"}` → 宿主 → sidecar 标准输入 → `TurnRunner` 流式调用模型 → 工具以 `{kind:"host"}` 发宿主请求，走和人编辑完全相同的 `dispatch` → 事件以 `{kind:"event"}` 回到宿主 → 窗口 `agent` 主题。每回合开始和结束各记一次文件夹检查点，窗口收到 `files-changed`，用户可整回合撤销。
 4. **仿真。** 窗口 `simulationAct` → `SimulationRegistry` → 一个 Java 会话 → 帧通过订阅流回 `Event::Simulation` → 窗口 store。每次请求后宿主 `reconcile`：文档关闭或修订变化即结束运行。
 

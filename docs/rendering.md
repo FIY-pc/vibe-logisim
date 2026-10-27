@@ -1,28 +1,95 @@
 # 画布渲染
 
-Logisim 的 Java 绘制实现负责元件外观和运行电平。Rust 适配器负责进程、资源和请求校验；React/SVG 层负责选择、放置预览、布线、追踪及相机操作。组件几何与位网来自原生观察，点击命中和连接追踪不以 PNG 像素推断。
+一句话：Java 只回答「每种元件长什么样」和仿真，编辑器的静态画面由窗口用 Canvas2D 自己合成；运行中的仿真画面仍是 Java 的 PNG 帧，盖在静态画面上。外观仍然 100% 由 Logisim 自己的 `Component.draw` 产生（课程 jar 里的元件也是），只是每种元件录一次、按种类缓存，不再每次出一张位图。
 
-## 静态与运行画面
+## 谁画什么
 
-[Canvas.tsx](../apps/workbench/src/editor/Canvas.tsx) 在相机变化后请求当前可见世界区域，结合设备像素比设置比例。请求采用短暂合并，提交前核对文档、修订、电路与请求代次，迟到画面不能覆盖当前视图。拖动与缩放先作用于已有图像和独立交互层，不等待重新绘图。
+| 内容 | 谁画 | 从哪来 |
+| --- | --- | --- |
+| 元件 | 窗口回放录下的矢量指令 | 宿主 `symbols`：每个 (library, name, attributes) 一份 `{bounds, ink, ports, ops}`，相对元件位置（指令表和录制器见 [logisim-runtime README](../crates/logisim-runtime/README.md) 的 Symbols 一节） |
+| 导线、交点 | 窗口按 `CircuitWires.draw` 的规则直接画 | 文档视图里的导线端点 |
+| 线宽冲突的导线 | 窗口画成 `#ff7b00`（Logisim 的 `Value.WIDTH_ERROR_COLOR`） | `symbols` 回复里的 `widthErrors`，每个修订问一次；答复到之前先画黑 |
+| 网格 | canvas 下面的 SVG | — |
+| 选择框、端口标记、布线中的线、框选、移动时的改线 | canvas 上面的 SVG 交互层 | 窗口状态、`movePreview` |
+| 运行中的仿真 | Java 的 PNG 帧（SVG `<image>`，盖住 canvas 的同一块区域） | `simulationFrameImage` |
+| 给 AI 看的图（`render`、`interfaceRender`、`historyPreview`） | Java 的 PNG（`CircuitRenderer`） | 不变 |
 
-静态请求限制约 7 MP，宿主拒绝超过 8 MP 或比例不合法的请求。大范围视图会降低图像分辨率；当前实现没有分块图像缓存。增加瓦片或矢量路径时，应分别度量原生绘制、PNG 编码、传输和 WebView 合成，不以请求完成时间代替实际帧率。
+导线规则：每条导线一条宽 3 的黑线（圆头圆角）；一个点上导线端数 + 2×从中间穿过的导线数 + 元件端口数 > 2，且至少有一条导线到这里，就画一个 8×8 的实心圆点。
 
-运行中使用仿真会话的原生 PNG 帧，仍共享同一世界坐标和交互层。显示采用最新值通道，慢界面不累积过时帧。信号轨迹在原生稳定步骤采样，与图像刷新独立；图像帧率不能作为逻辑时钟频率。
+## 代码
 
-## 状态与边界
+都在 `apps/workbench/src/editor/`：
 
-画面绑定文档修订、根电路和运行实例。切换实例改变当前视图，保留根电路运行状态；结构编辑与另启电路走明确的会话替换路径。选中对象、追踪焦点和运行输入互相独立，普通选择会退出原来的显式追踪。
+- `symbols.ts`：符号缓存和请求（`useSymbols`、`symbolId`、`templateKey`、`keepSymbols`）。
+- `paint.ts`：把指令编译成 `Program`、`buildScene`（元件、导线、交点、包围盒、端口）、`paintFrame`（画一帧）。
+- `CanvasPicture.tsx`：`<canvas>`；帧变了就在下一个动画帧画，一帧里变多少次都只画一次；设备像素比变化、录下的图片加载完都会重画。
+- `geometry.ts`：命中测试、框选、适合视图，全读 scene 里的包围盒（来自符号的 `bounds`；种类还不知道时用 `fallbackBounds`）。
+- `useObservation.ts`：连接面板和信号追踪要用时才 `observe`。
+- `usePlacementQueue.ts`：放置的点击排队提交。
+- `Canvas.tsx`：交互（指针、键盘、工具、拖动、提交）和把上面这些拼成一帧。
 
-Java 桥接保留 Logisim 和外部组件库的绘制语义。Rust 不复制组件外形或电气模型。库路径或内容变化会使对应原生加载缓存失效；历史依赖无法复原时明确报告图面不可用，不拿当前依赖伪装历史画面。
+## 一帧怎么画
+
+`paintFrame(canvas, frame, dpr)`：
+
+- `k = view.scale × dpr` 是每个单位的设备像素数；原点 `(-view.x·k, -view.y·k)` 取整到整设备像素，100% 时和 Logisim 自己的像素格对齐。
+- 墨迹盒（`ink`，指令可能碰到的范围）在视口外的元件不画。
+- 填充、文字、图片在符号空间回放（`setTransform(k, 0, 0, k, x, y)`）。
+- 描边在设备空间建路径，按 Java2D 抗锯齿描边的规整化（stroke normalization，JDK 21 的 Marlin 实测）摆点：路径上每个点移到它所在设备像素的中心 `floor(d) + 0.5`；二次曲线的控制点平移前后两个端点调整量的平均，三次曲线的第一个控制点跟前一个端点、第二个跟后一个端点；闭合后当前调整量回到起点的。填充不规整化。导线中心同样取 `floor(d) + 0.5`，交点圆点不取整。描边路径因此和原点的亚像素相位有关，按 (k, 相位) 缓存在 `Program` 上，k 变了清空；同一缩放下拖动只多一两份。
+- 矩形、圆角矩形、椭圆、弧按 Java 的路径迭代器（`RectIterator`：M 加四段 L 回到起点再 Z；`RoundRectIterator`、`EllipseIterator` 的 KAPPA 控制点、`ArcIterator` 每段不超过 90°）展开成同样的点，再规整化，所以描边落在和 Logisim 一样的像素上。
+- Java 的 0 宽描边画成 1 个设备像素；虚线长度和相位乘 k。
+- `U` 指令：形状门的输入线只在那一点有连接时才画（Logisim 打印视图的行为）。`buildScene` 按文档算：那一点的导线端、穿过的导线、别的元件端口，去掉这个元件自己的端口后大于 0 才画。
+- 文字：Java 的逻辑字体 Dialog/SansSerif 换成平台的 sans（Windows Arial + SimSun，macOS Lucida Grande，其他 fontconfig 的 sans-serif），`(x, y)` 是基线左端。Java 有 hinting 和整数字宽，浏览器没有，文字会差一两个像素；中文字形高低差 1 px。接受。Logisim 在非 100% 时按当前缩放重新量文字，这里等比缩放，放大和高 DPI 下反而更清楚。
+- 画不出来的种类（`symbols` 回了 `{error}`）在它的大概位置画红色虚线框。
+- 运行中的仿真帧盖住的区域 canvas 不画（`frame.cover`）。
+
+100% 下和 Logisim 自己画的位图（`CircuitRenderer` 在 scale 1 出的 PNG）逐像素比：文字之外有差的像素在 126 万里约 120–150 个，剩下的是字体光栅化。
+
+## 缓存与失效
+
+- 键：`JSON [library 或 "", name, 按名字排好的属性]`（`symbolId`）。缓存按文档 id 分开（`DocumentSymbols`）；`paletteIdentity` 变了整份丢；文档不在打开列表里了也丢（`editor/actions.ts` 的 `watchSymbols` 跟着打开的文档调 `keepSymbols`）。
+- 子电路的符号（library 为空）记着录它时的电路定义对象。编辑回复的 `DocumentChange` 里出现的电路会换成新对象，于是用它的实例的符号算缺失、重新问；新答复到之前继续用旧图（`latest`），不闪。
+- 每个修订只发一次 `symbols`：当前电路所有元件，加放置幻影和排队中放置的模板键（`extra`），只带缺的键；一个都不缺也发（为了这个修订的 `widthErrors`）。打开一页就是一次往返。
+- 请求失败：这些键在这个修订内不再问，下个修订再问。被拒 `STALE_REVISION` 且窗口还停在那个修订，调 `onStale`（`CanvasRegion` 重读工作区，不报错）；别的错误报出来。
+- 一个电路第一次显示，等它所有种类都答复过一次再画、再适合视图，不出半张图；之后的改动不等。
+
+## 编辑时画面怎么变
+
+- 平移缩放：只改视口，下一帧重画，不发任何请求，没有去抖，没有「正在绘制」。
+- 提交的编辑（连线、删除、移动）：手势的结果（新线、隐藏删掉的对象、移到新位置的对象）立刻画在当前修订上，编辑回复（只带改动电路的 `DocumentChange`）到了就换成新修订的画面。种类变了的元件（改属性、放了新种类）等这个修订的那次 `symbols`，期间用旧图。
+- 移动：拖动中选中的元件和导线按位移画在新位置；`movePreview`（每帧至多一个，同时只有一个在路上，见 `useMovePreview.ts`）回来 Java 做完连通检查的改线：要删的线不画，要加的线用强调色画在交互层。松手发 `edit move`。
+- 放置：幻影画模板键的符号（`template` 不再回 PNG，窗口把幻影的键并进 `symbols` 请求）。每次点击排队，按顺序从上一个放置产生的修订提交，提交完成前幻影留在点的位置。
+- 撤销、重做、AI 的改动：和编辑回复一样，`DocumentChange` 到了就画。
+
+## observe 不在出图路径上
+
+画面、命中测试、端口标记、适合视图都不读 observe。只有选中对象时的连接面板和信号追踪需要它（`useObservation`），而且只在需要时读当前修订一次；被拒 `STALE_REVISION` 同样走 `onStale`。线宽冲突颜色来自 `symbols` 的 `widthErrors`。
+
+## 数字
+
+Release 宿主，生产构建，headless Chrome 1600×1000，课程工程的 713 件页面：
+
+- 打开页面：一次 `symbols`，369 种、请求 60 KB、回复 175 KB（gzip 13 KB），宿主 11–28 ms；点击到画面出现 63–72 ms（dpr 1 / 2，含第一次编译符号的 20–27 ms）。
+- 平移缩放：适合视图和 100% 下都是 60 fps（dpr 2），主线程每帧 3–6 ms；100% 时画一帧 0.4–0.6 ms。
+- 编辑，从输入到新画面画进 canvas：手势结果在下一帧（3–14 ms）；带上回复的画面：连线 36–39、删除 32–35、放置 49、改属性 46–67、撤销 43–44 ms，移动 76–94 ms（拖动中已经画在新位置）。其中回复到画完 10–25 ms（解析 200 KB 的 `DocumentChange`、React 更新、等下一帧）。
+
+`scripts/workbench/editing-latency.mts`（合成的课程尺寸工程，350 件页 / 713 件页，p50）：编辑回复 + 缺键时的 `symbols` = 窗口可以画的时间：移动 35 / 57、连线 13 / 17、放置 21 / 23、删除 13 / 15、改属性 32 / 39 ms；整页 `symbols` 9 / 13 ms（220 / 446 种，89 / 184 KB）。改这条路径之前（编辑 + 视口 PNG）是 60 / 79、45 / 51、56 / 55、44 / 48、53 / 58 ms，还不含 webview 解码 PNG。
 
 ## 测量
 
 ```sh
-cargo build -p vibe-workbench-host --bin vibe-workbench-host --release
-VIBE_WORKBENCH_RESOURCES="$PWD" \
-VIBE_VERIFY_HOST="$PWD/target/release/vibe-workbench-host" \
-node scripts/workbench/compatibility-check.mts
+cargo build --release -p vibe-workbench-host
+VIBE_WORKBENCH_RESOURCES="$PWD" VIBE_VERIFY_HOST="$PWD/target/release/vibe-workbench-host" \
+  node scripts/workbench/editing-latency.mts 10            # 350 件页
+VIBE_WORKBENCH_RESOURCES="$PWD" VIBE_VERIFY_HOST="$PWD/target/release/vibe-workbench-host" \
+  node scripts/workbench/editing-latency.mts 10 core_c     # 713 件页
 ```
 
-此脚本使用自动生成的电路，报告宿主打开、原生观察、视口渲染、仿真启动和输入确认耗时。它不调用模型，也不修改用户工程。WebView 帧率、连续指针操作、高 DPI 和不同窗口尺寸需要另行观察实际界面。
+宿主带 `VIBE_WORKBENCH_TIMING=1` 时每个请求在 stderr 打一行 `timing <op> <总>ms <阶段>=<ms> …`，脚本最后汇总各阶段 p50。窗口一侧的帧率和输入到出图要在真实浏览器里量：浏览器预览窗格不在前台时 `requestAnimationFrame` 被节流到 4 fps 甚至暂停，量不准，用 headless Chrome（playwright-core）开生产构建（`vite preview`，宿主要用 `VIBE_WORKBENCH_DEV_PORT` 放行它的端口）。
+
+## 还没做
+
+- 仿真画面也由窗口画（第二阶段）：导线和元件的运行值换成窗口画，Java 只给值。现在运行中仍是整块视口的 PNG 帧，视口变化后 100 ms 才向宿主报告新视口。
+- `widthErrors` 每个修订单独发一次 `symbols`；可以并进编辑回复，省掉这次往返（它不挡画面）。
+- 选中对象时连接面板读整页 observe（713 件页 3.5 MB、100–130 ms）；换成只读选中网络的 `connectivity` 会便宜得多。
+- 外部 jar 内容变了而 `<lib>` 没变时 `paletteIdentity` 不变，窗口不会丢那份缓存（宿主会重启 worker）；画不出的种类也一直缓存到调色板变化。
