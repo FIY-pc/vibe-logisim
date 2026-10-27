@@ -351,10 +351,7 @@ export function Canvas({
   useEffect(() => {
     if (!container.current) return;
     const ro = new ResizeObserver(([e]) =>
-      setSize({
-        width: Math.max(1, e.contentRect.width),
-        height: Math.max(1, e.contentRect.height),
-      }),
+      setSize({ width: e.contentRect.width, height: e.contentRect.height }),
     );
     ro.observe(container.current);
     return () => ro.disconnect();
@@ -603,17 +600,25 @@ export function Canvas({
     setTraceRequest(null);
     traceAt(traceRequest.point, traceRequest.id);
   }, [traceRequest, connections, observationScope, observation.error]);
-  const fitted = useRef("");
+  // A circuit opens fitted; until its view is moved, the fit follows the
+  // canvas size as the layout around it settles.
+  const fitted = useRef<{ scope: string; size: string; view: View } | null>(
+    null,
+  );
+  const shownView = useRef(view);
+  shownView.current = view;
   useLayoutEffect(() => {
     const fitScope = `${doc.id}:${circuit.name}:${fitToken}`;
+    const sized = `${size.width}x${size.height}`;
+    const last = fitted.current;
     if (
-      !size.width ||
-      !size.height ||
-      fitted.current === fitScope ||
-      !symbols.ready
+      size.width < 2 ||
+      size.height < 2 ||
+      !symbols.ready ||
+      (last?.scope === fitScope &&
+        (last.size === sized || last.view !== shownView.current))
     )
       return;
-    fitted.current = fitScope;
     const viewport = container.current!.getBoundingClientRect();
     const surface = container.current!.parentElement;
     const toolbar = surface
@@ -628,9 +633,13 @@ export function Canvas({
     const bottom = toolbar
       ? Math.max(0, viewport.bottom - toolbar.top) + 12
       : 0;
-    setView(
-      fitView(scene, size, { top, bottom }) ?? { x: -40, y: -40, scale: 1 },
-    );
+    const next = fitView(scene, size, { top, bottom }) ?? {
+      x: -40,
+      y: -40,
+      scale: 1,
+    };
+    fitted.current = { scope: fitScope, size: sized, view: next };
+    setView(next);
   }, [doc.id, circuit.name, fitToken, size, symbols.ready, scene]);
   useEffect(() => {
     const bounds = focusTarget && scene.bounds.get(focusTarget.id);
