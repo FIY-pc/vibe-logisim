@@ -6,6 +6,7 @@ import { applyDocumentChange } from "../../../../packages/agent-runtime/src/prot
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import type { EditorState } from "../editor/store";
+import { recordWidthErrors } from "../editor/symbols";
 import type { FilesState } from "./filesStore";
 import type { NoticesState } from "../shared/notices";
 import type { Update } from "../shared/setter";
@@ -39,8 +40,9 @@ export interface DocumentsState {
   /** Takes a document returned by a mutation. When a later change already
    * replaced the base revision, the workspace is read again instead. */
   mergeDocument(document: Document, expectedBaseRevision?: string): void;
-  /** Takes what an edit, undo or redo changed. When the document is no longer
-   * at the change's base revision, the workspace is read again instead. */
+  /** Takes what an edit, undo or redo changed, with the width conflicts of
+   * the circuits it changed. When the document is no longer at the change's
+   * base revision, the workspace is read again instead. */
   applyChange(change: DocumentChange): void;
   /** Adds or replaces a document and activates it. */
   update(document: Document): void;
@@ -169,6 +171,8 @@ export function createDocumentsStore({
         void get().refreshWorkspace().catch(notices.getState().onError);
         return;
       }
+      // The new view holds the change's circuit objects.
+      recordWidthErrors(change.circuits, change.widthErrors);
       get().setDocs((previous) =>
         previous.map((item) => (item.id === change.id ? next : item)),
       );

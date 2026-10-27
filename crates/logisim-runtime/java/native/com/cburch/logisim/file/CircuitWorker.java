@@ -77,6 +77,7 @@ public final class CircuitWorker {
             if(!digest(Files.readAllBytes(runtime)).equals(args[1]))throw new IllegalArgumentException("运行时已改变");
             // The bridge's classes do not change while it runs.
             String bundleDigest=ExactRuntimeObserver.bundleDigest(bundle);
+            ExactRuntimeObserver.useRuntime(args[1]);
             CircuitWorker worker=new CircuitWorker();
             DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);
@@ -105,6 +106,19 @@ public final class CircuitWorker {
                                 circuit,runtime,args[1],bundleDigest,loaded.stdout,loaded.messages)
                             :ExactRuntimeObserver.connectivityLoaded(loaded.file,circuit)).getBytes(StandardCharsets.UTF_8));
                         WorkerTiming.mark(kind);
+                    } else if(kind.equals("connections")) {
+                        String circuit=operation.getAttribute("circuit");
+                        com.cburch.logisim.circuit.CircuitConnections index=loaded.connections.get(circuit);
+                        if(index==null) {
+                            index=com.cburch.logisim.circuit.CircuitConnections.of(loaded.file,circuit);
+                            loaded.connections.put(circuit,index);
+                            WorkerTiming.mark("connections.index");
+                        }
+                        response=index.answer(operation);
+                        WorkerTiming.mark("connections");
+                    } else if(kind.equals("width-errors")) {
+                        response=CircuitSymbols.widthErrors(loaded.file,operation);
+                        WorkerTiming.mark("width-errors");
                     } else if(kind.equals("symbols")) {
                         response=CircuitSymbols.describe(loaded.file,loaded.project(),operation);
                         WorkerTiming.mark("symbols");

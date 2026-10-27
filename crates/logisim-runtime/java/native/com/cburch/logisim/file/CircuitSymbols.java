@@ -88,14 +88,39 @@ final class CircuitSymbols {
                 probe.recording = null;
             }
         }
-        out.append("],\"widthErrors\":[");
-        first = true;
+        out.append("],\"widthErrors\":");
+        conflicts(circuit, out);
+        return out.append('}').toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The width conflicts of each {@code <circuit name>} the request lists, in
+     * its order: [[[x, y], …] | null, …], null for a circuit the file lacks.
+     */
+    static byte[] widthErrors(LogisimFile file, Element request) {
+        StringBuilder out = new StringBuilder(256).append('[');
+        boolean first = true;
+        for (Node n = request.getFirstChild(); n != null; n = n.getNextSibling()) {
+            if (!(n instanceof Element) || !((Element) n).getTagName().equals("circuit")) continue;
+            if (!first) out.append(',');
+            first = false;
+            Circuit circuit = file.getCircuit(((Element) n).getAttribute("name"));
+            if (circuit == null) out.append("null");
+            else conflicts(circuit, out);
+        }
+        return out.append(']').toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** The points of the circuit's wire bundles whose widths disagree, as [[x, y], …]. */
+    private static void conflicts(Circuit circuit, StringBuilder out) {
+        out.append('[');
+        boolean first = true;
         for (Location point : WireWidths.conflicts(circuit)) {
             if (!first) out.append(',');
             first = false;
             out.append('[').append(point.getX()).append(',').append(point.getY()).append(']');
         }
-        return out.append("]}").toString().getBytes(StandardCharsets.UTF_8);
+        out.append(']');
     }
 
     /** The circuit's components by location and factory name, the first of a stack. */

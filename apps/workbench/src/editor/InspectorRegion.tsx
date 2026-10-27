@@ -41,6 +41,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
     canvasObservation.scope === scope && selection.length === 1
       ? canvasObservation.focus?.components.find(
           (component) =>
+            !component.partial &&
             documentComponent(circuit, component)?.id === selection[0],
         ) || null
       : null;

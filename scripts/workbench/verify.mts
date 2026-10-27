@@ -90,7 +90,8 @@ async function stop() {
 }
 /** Edits, undo and redo answer with what they changed; scripts work with whole views. */
 const documentOf = documentViews();
-async function command(request: any) {
+/** The host's answer as it is. */
+async function post(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -99,7 +100,10 @@ async function command(request: any) {
   const body = await response.json();
   if (body.error)
     throw Object.assign(new Error(body.error.message), body.error);
-  return documentOf(body.result);
+  return body.result;
+}
+async function command(request: any) {
+  return documentOf(await post(request));
 }
 try {
   await start();
@@ -373,6 +377,73 @@ try {
   assert.equal((await command({ op: "open", path: copyPath })).id, id);
   await verifySimulationPaint(command, stream!);
   await verifyEditing(command);
+  {
+    // The connection panel reads the nets of the selection with observe's
+    // IDs; an edit answers with the width conflicts of the page it changed.
+    const connected = await command({
+      op: "import",
+      name: "connections.circ",
+      xml: '<?xml version="1.0"?><project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><lib desc="#Gates" name="1"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main"><comp lib="0" name="Pin" loc="(100,100)"/><comp lib="1" name="NOT Gate" loc="(200,100)"/><comp lib="0" name="Pin" loc="(300,100)"><a name="output" val="true"/><a name="facing" val="west"/></comp><wire from="(100,100)" to="(170,100)"/><wire from="(200,100)" to="(300,100)"/></circuit></project>',
+    });
+    const scope = {
+      id: connected.id,
+      revision: connected.revision,
+      circuit: "main",
+    };
+    const at = (x: number) =>
+      connected.circuits[0].components.find((c: any) => c.location.x === x);
+    const { focus } = await command({
+      op: "connections",
+      ...scope,
+      components: [at(200).id],
+      wires: [],
+    });
+    const observed = (await command({ op: "observe", ...scope })).focus;
+    const nativeAt = (x: number) =>
+      observed.components.find((c: any) => c.location.x === x).componentId;
+    assert.deepEqual(
+      focus.components.map((c: any) => [c.componentId, c.partial ?? false]),
+      [
+        [nativeAt(100), true],
+        [nativeAt(200), false],
+        [nativeAt(300), true],
+      ],
+    );
+    const nets = new Set(focus.bitNets.map((n: any) => n.netId));
+    assert.equal(nets.size, 2);
+    assert.deepEqual(
+      focus.bitNets,
+      observed.bitNets
+        .filter((n: any) => nets.has(n.netId))
+        .map((n: any) => ({
+          netId: n.netId,
+          contacts: n.contacts.map((c: any) => ({
+            componentId: c.componentId,
+            endIndex: c.endIndex,
+            bit: c.bit,
+          })),
+        })),
+    );
+    assert.deepEqual(
+      focus.wires.map((w: any) => w.wireId),
+      observed.wires.map((w: any) => w.wireId),
+    );
+    const widened = await post({
+      op: "edit",
+      ...scope,
+      edit: { kind: "attributes", id: at(300).id, values: { width: "8" } },
+    });
+    assert(
+      widened.change.widthErrors.main.length > 0,
+      "Width conflict missing",
+    );
+    const undone = await post({
+      op: "undo",
+      id: connected.id,
+      revision: widened.change.revision,
+    });
+    assert.deepEqual(undone.change.widthErrors, { main: [] });
+  }
   // Files saved by 2.15 builds load on the bundled 2.15 runtime. A relocated
   // product must serve both runtimes from its precompiled bridge classes.
   const legacyPath = path.join(state, "legacy-2.15.circ");

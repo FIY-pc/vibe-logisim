@@ -86,7 +86,7 @@ export async function verifyRestoredInteractions() {
         conversationId: "conversation",
       };
     }
-    if (request.op === "observe")
+    if (request.op === "observe" || request.op === "connections")
       return {
         focus: {
           components: [

@@ -31,6 +31,10 @@ impl Native {
     async fn memory(&mut self, ..) -> Result<Value>;
     async fn symbols(&mut self, artifact, circuit, items: &[SymbolSource]) -> Result<Box<RawValue>>;
                                                                                                   // the vector picture of each item, in order, plus the circuit's width conflicts (below)
+    async fn connections(&mut self, artifact, circuit, seeds: &ConnectionSeeds) -> Result<Box<RawValue>>;
+                                                                                                  // the nets of chosen components, wires and a point, in observation ids and fields (below)
+    async fn width_errors(&mut self, artifact, circuits: &[String]) -> Result<Vec<Option<Vec<[i32; 2]>>>>;
+                                                                                                  // each circuit's width-conflict points, as symbols reports them; None for a circuit the file lacks
     async fn render(&mut self, artifact, circuit, Viewport{x,y,width,height,scale}) -> Result<String>; // PNG data URL; scale ≤ 8, area ≤ 8 M px
     async fn request(&mut self, artifact, operation: Element) -> Result<Vec<u8>>;                // raw escape hatch
     fn status(&self) -> Value;  fn observed_version(&self) -> Option<&str>;  async fn shutdown(&mut self);
@@ -38,6 +42,7 @@ impl Native {
 pub struct SimulationRegistry;  // new(launcher); act(target, command) ; navigate ; stop ; end ; reconcile ; session ; status ; snapshot ; subscribe() -> Subscription ; verify(artifact, operation) ; shutdown
 pub mod simulation::{Command, RunTarget, Frame, Snapshot, Status, SimulationEvent, ActResult, NavigateResult, EndReason, SimError, Code};
 pub enum SymbolSource { Placed { location: Point, factory: String }, Made { library: Option<String>, name: String, attributes: BTreeMap<String, String> } }
+pub struct ConnectionSeeds { components: Vec<(Point, String)>, wires: Vec<(Point, Point)>, point: Option<(Point, f64)> }  // by location and factory name; by both ends; ends within the radius
 pub fn xml(tag, attrs, children) -> Element;  pub fn encode_xml(..);  pub fn xml_json(node) -> Value;
 pub fn artifact_dependencies(artifact) -> Result<BTreeMap<PathBuf, String>>;  // external .circ/.jar libraries with digests
 ```
@@ -78,6 +83,22 @@ Ops are arrays in the component's space; style ops apply to every following op a
 
 `U` exists because shaped gates in print view draw an input's line only when that input is connected (`PainterShaped`, `PainterDin`, the only painters of both runtimes and the course jars that ask). The recording's draw context has a circuit that answers every `isConnected` with yes and marks the next drawing op with the point it was asked about; the window checks the point against the document, the way `Circuit.isConnected` checks wire and component ends.
 
+### Connections
+
+`connections` is what the editor's connection panel and signal tracing read: the part of an observation's focus that some chosen objects need, with the same ids and values as `observe` at that revision (`CircuitConnections`, in the bridge's `circuit` package to reuse `ExactRuntimeObserver.NetIndex`). Request children are the seeds: `<component x y factory/>` (every component of that factory at that location), `<wire x0 y0 x1 y1/>` (the wire between those points, either way round), `<point x y radius/>` (every component with an end that close). The bit nets read are those of every end of a seed component and of every bit of a seed wire's bundle. The reply is JSON:
+
+```text
+{"focus": {"components": [{componentId, factoryName, displayName?, selector?: {label}, location, bounds, partial?: true,
+                           ends: [{index, location, width, direction, semanticRole?, runtimeTooltip?, netBits?: [{bit, netId}]}]}, …],
+           "wires": [{wireId, from, to, bundleId}, …],
+           "wireBundles": [{bundleId, valid, width, wireIds, bitNets: [{bit, netId}]}, …],
+           "bitNets": [{netId, contacts: [{componentId, endIndex, bit}]}, …]}}
+```
+
+Seed components come whole: every end, with `netBits`. Every other component with an end on those nets comes `partial`, with only those ends and without `netBits` (the nets' `contacts` say which bit of which end is on which net). `wireBundles` are the seed wires' bundles and every bundle the nets pass through, `wires` the wires of those bundles. A circuit's index (nets, each net's contacts, each component's end nets, the components by place and the wires by ends) is built the first time a revision is asked about it and kept with the loaded project until it advances; a request only picks its part and writes it.
+
+`width-errors` takes `<circuit name/>` children and answers `[[[x, y], …] | null, …]` in their order: each circuit's width-conflict points as `symbols` reports them, null for a circuit the file does not have. The host asks it for the circuits an edit, undo or redo changed and puts the points in its answer.
+
 Java error texts are user-facing and the host passes them through unchanged, for example `组件库不在当前文件中: <id>`, `当前组件库没有这个可放置元件: <name>`, `请将整个元件放在画布的非负坐标区域`, `此位置与已有元件冲突，请换一个位置`, `此位置已有相同元件`, `不能放入自身或引用了当前电路的子电路`.
 
 ### Run picture
@@ -103,13 +124,13 @@ A running session draws nothing itself: each frame says how the circuit looks no
 - The bridge carries `com.cburch.logisim.circuit.WireRepair`: the ITA 2.16.2.2 class with a `doSplits` that looks up split points on each wire's row or column (within the 2 px `Wire.contains` accepts) instead of testing every point against every wire, which was most of the load time of a large file. Same points, same order, same loaded circuit. Bridge classes come first on the worker class path, so this copy replaces the class of both supported runtimes, which carry the same one. Before adding or upgrading a runtime, diff its `WireRepair` against this copy; `test:compatibility` loads a junction file on both runtimes.
 - The worker is headless. Anything that could create a `JFrame` or dialog must be guarded; `java.awt.headless=true` is set by the launcher.
 - One request at a time per worker. The registry holds a gate so simulation commands never wait behind editor observations.
-- The worker keeps two loaded projects, keyed by artifact digest, each with one `Project` that every drawing and observation of it uses (a `Project` per request leaves listeners behind) and its latest four observation and connectivity replies. A new artifact goes to the kept project it differs least from: when the header and circuit list are byte-identical and only circuits' components and wires changed, `LoadedProject.advance` applies the change in place (components of vanished element text taken out, those of new text built by the runtime's reader after its version repairs, the wires made the new file's, one `CircuitTransaction`, which repairs wires and updates instance ports like an edit in Logisim). Anything else, a file that loaded with reports, or one older than 2.6.3, loads whole through `openChecked`. `test:compatibility` pins that a revision applied in place observes like a whole load; a change to how revisions are applied must keep that. A changed external library restarts the worker.
+- The worker keeps two loaded projects, keyed by artifact digest, each with one `Project` that every drawing and observation of it uses (a `Project` per request leaves listeners behind) and its latest four observation and connectivity replies, plus the `connections` index of each circuit asked about at the current revision. A new artifact goes to the kept project it differs least from: when the header and circuit list are byte-identical and only circuits' components and wires changed, `LoadedProject.advance` applies the change in place (components of vanished element text taken out, those of new text built by the runtime's reader after its version repairs, the wires made the new file's, one `CircuitTransaction`, which repairs wires and updates instance ports like an edit in Logisim). Anything else, a file that loaded with reports, or one older than 2.6.3, loads whole through `openChecked`. `test:compatibility` pins that a revision applied in place observes like a whole load; a change to how revisions are applied must keep that. A changed external library restarts the worker.
 - A symbol is a function of the component's library, name and attributes, the project's libraries and, for a subcircuit, its definition; the window caches it under that key and drops subcircuit symbols when their circuit changes. What a painting reads besides that must stay out of it: the draw context shows no state (pins show the fresh project's value), connections go through `U`, and nothing in it depends on where the component sits. A painter that reads anything else (time, the circuit through `getCircuit()`) would make the window's picture differ from Logisim's; the bridge and the course jars were scanned for such reads when this was built.
 - An observation measures text with a graphics context, which caches in the components; a circuit's reported `bounds` can grow by a few pixels after the project has been observed once. Compare observations of a project measured the same way.
 
 ## Status
 
-Done; this is the code path every real-model turn already exercised. Costs on a 1 MB course file, release build: opening it loads it whole, 35–90 ms (preflight 7–24, Logisim 29–63); the first request on each later revision applies the edit in place, 3–7 ms; an observation of a 350-component page takes 30 ms and of a 700-component page 60–80 ms, a quarter of it writing 3.6 MB of JSON; connectivity 5–12 ms; a render of a 1400×900 viewport about 10 ms at scale 1 (drawing 6, PNG 2.5), 16 ms at 1.5 and 22 ms at 2; recording every kind of component on a 713-component page (369 kinds, 4269 ops, 174 KB of JSON) takes 10–14 ms once the worker has drawn before and about 0.7 s the first time (class loading). A run of that page: the whole picture is 79 KB of paint (999 wires, 1184 ops in 367 lists), recording a frame takes 2.5 ms (p50; 10 ms for a whole one, 0.26 s for the first frame of a new process), and a clock cycle changes 6–9 KB.
+Done; this is the code path every real-model turn already exercised. Costs on a 1 MB course file, release build: opening it loads it whole, 35–90 ms (preflight 7–24, Logisim 29–63); the first request on each later revision applies the edit in place, 3–7 ms; an observation of a 350-component page takes 30 ms and of a 700-component page 60–80 ms, a quarter of it writing 3.6 MB of JSON; connectivity 5–12 ms; `connections` on a 713-component page builds its index in 5–7 ms the first time a revision is asked, then answers in under a millisecond of worker time (3–72 KB); `width-errors` under 1 ms; a render of a 1400×900 viewport about 10 ms at scale 1 (drawing 6, PNG 2.5), 16 ms at 1.5 and 22 ms at 2; recording every kind of component on a 713-component page (369 kinds, 4269 ops, 174 KB of JSON) takes 10–14 ms once the worker has drawn before and about 0.7 s the first time (class loading). A run of that page: the whole picture is 79 KB of paint (999 wires, 1184 ops in 367 lists), recording a frame takes 2.5 ms (p50; 10 ms for a whole one, 0.26 s for the first frame of a new process), and a clock cycle changes 6–9 KB.
 
 ## Remaining tasks
 

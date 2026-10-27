@@ -141,6 +141,12 @@ pub struct DocumentChange {
     pub order: Vec<String>,
     pub circuits: Vec<Circuit>,
     pub libraries: Vec<Library>,
+    /// The points of each of `circuits` whose wire bundle widths disagree,
+    /// as the native runtime reads the new revision (the canvas draws those
+    /// wires in the conflict color); absent when they were not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub width_errors: Option<BTreeMap<String, Vec<[i32; 2]>>>,
 }
 /// An open document without its circuits' content: what a client checks to
 /// know whether the view it holds is still current.
@@ -598,6 +604,7 @@ impl Document {
             order,
             circuits,
             libraries: self.libraries(),
+            width_errors: None,
         })
     }
     pub fn summary(&self) -> DocumentSummary {

@@ -50,6 +50,7 @@ export function SelectionConnections({
       </div>
     );
   const components = focus.components.filter((c) => {
+    if (c.partial) return false;
     const selected = documentComponent(circuit, c);
     return selected && selection.includes(selected.id);
   });

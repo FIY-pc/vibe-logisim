@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 use vibe_circuit_document::{Document, DocumentChange, Edit, EditOutcome, Point};
-use vibe_logisim_runtime::{SymbolSource, Viewport, timing};
+use vibe_logisim_runtime::{ConnectionSeeds, SymbolSource, Viewport, timing};
 
 /// The objects a gesture leaves selected.
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -71,6 +71,14 @@ pub struct SymbolKey {
     pub library: Option<String>,
     pub name: String,
     pub attributes: BTreeMap<String, String>,
+}
+
+/// A traced click: every component with an end within `radius` of it.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ts_rs::TS)]
+pub struct ConnectionPoint {
+    pub x: i32,
+    pub y: i32,
+    pub radius: f64,
 }
 
 /// ROM component id and the words loaded into it before a trace.
@@ -183,6 +191,23 @@ pub enum DocumentRequest {
         revision: String,
         circuit: String,
         symbols: Vec<SymbolKey>,
+    },
+    /// The connections of chosen objects of a circuit, for the canvas's
+    /// connection panel and signal tracing: the bit nets the components and
+    /// wires are on, every component end on them, and the wire
+    /// bundles and wires they pass through (`crates/logisim-runtime/README.md`,
+    /// Connections), as the worker's JSON `{focus}`.
+    Connections {
+        id: String,
+        revision: String,
+        circuit: String,
+        #[serde(default)]
+        components: Vec<String>,
+        #[serde(default)]
+        wires: Vec<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        point: Option<ConnectionPoint>,
     },
     Template {
         id: String,
@@ -348,6 +373,7 @@ impl DocumentRequest {
         "observe",
         "observeXml",
         "symbols",
+        "connections",
         "template",
         "properties",
         "catalog",
@@ -409,6 +435,7 @@ impl DocumentRequest {
             }
             Self::Render { .. } => Meta::new(Read).stage(Stage::Render).agent(),
             Self::Symbols { .. } => Meta::new(Read).stage(Stage::Render),
+            Self::Connections { .. } => Meta::new(Read).stage(Stage::Observe),
             Self::Simulate { .. } | Self::Trace { .. } => {
                 Meta::new(Read).stage(Stage::Verify).agent()
             }
@@ -582,6 +609,33 @@ fn serialized_component(reply: &Value) -> Result<&Value> {
 }
 
 impl Host {
+    /// Adds the width conflicts of the circuits an edit, undo or redo changed,
+    /// read from the native runtime at the new revision, so the canvas draws
+    /// them with the change. They are left out when the runtime cannot read
+    /// them; the canvas then asks with its next `symbols`.
+    async fn add_width_errors(&self, result: &mut EditResult) {
+        let change = &mut result.change;
+        if result.noop || change.base == change.revision {
+            return;
+        }
+        let _widths = timing::span("edit.widths");
+        let names: Vec<String> = change.circuits.iter().map(|c| c.name.clone()).collect();
+        if names.is_empty() {
+            change.width_errors = Some(BTreeMap::new());
+            return;
+        }
+        let Ok(path) = self.snapshot(&change.id, &change.revision).await else {
+            return;
+        };
+        let read = self.native.lock().await.width_errors(&path, &names).await;
+        change.width_errors = read.ok().map(|found| {
+            names
+                .into_iter()
+                .zip(found)
+                .filter_map(|(name, points)| Some((name, points?)))
+                .collect()
+        });
+    }
     /// A place or attributes edit as the native runtime resolves it against
     /// the revision the caller saw: canonical name and attribute values,
     /// checked (placement conflicts, invalid values). A placement also
@@ -843,13 +897,11 @@ impl Host {
                     },
                     edit => self.resolve_edit(&id, &revision, &circuit, edit).await?.0,
                 };
-                if let Some(moves) = moves {
-                    value(self.commit_moves(&id, &revision, &circuit, &moves).await?)
+                let mut result = if let Some(moves) = moves {
+                    self.commit_moves(&id, &revision, &circuit, &moves).await?
                 } else if let Edit::Move { ids, delta } = &edit {
-                    let moved = self
-                        .commit_move(&id, &revision, &circuit, ids, *delta)
-                        .await?;
-                    value(moved)
+                    self.commit_move(&id, &revision, &circuit, ids, *delta)
+                        .await?
                 } else {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
@@ -861,10 +913,11 @@ impl Host {
                         let _view = timing::span("edit.view");
                         d.view_change(&revision, &outcome.changed_circuits)?
                     };
-                    drop(w);
-                    let _value = timing::span("edit.value");
-                    value(edit_result(&outcome, change, false))
-                }
+                    edit_result(&outcome, change, false)
+                };
+                self.add_width_errors(&mut result).await;
+                let _value = timing::span("edit.value");
+                value(result)
             }
             DocumentRequest::MovePreview {
                 id,
@@ -886,7 +939,9 @@ impl Host {
                     let change = d.view_change(&revision, &outcome.changed_circuits)?;
                     (outcome, change)
                 };
-                value(undo_result(outcome, change, "撤销"))
+                let mut result = undo_result(outcome, change, "撤销");
+                self.add_width_errors(&mut result).await;
+                value(result)
             }
             DocumentRequest::Redo { id, revision } => {
                 let (outcome, change) = {
@@ -896,7 +951,9 @@ impl Host {
                     let change = d.view_change(&revision, &outcome.changed_circuits)?;
                     (outcome, change)
                 };
-                value(undo_result(outcome, change, "重做"))
+                let mut result = undo_result(outcome, change, "重做");
+                self.add_width_errors(&mut result).await;
+                value(result)
             }
             DocumentRequest::Observe {
                 id,
@@ -943,6 +1000,40 @@ impl Host {
                     .lock()
                     .await
                     .symbols(&path, &circuit, &sources)
+                    .await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::Connections {
+                id,
+                revision,
+                circuit,
+                components,
+                wires,
+                point,
+            } => {
+                let (path, view) = self.snapshot_circuit(&id, &revision, &circuit).await?;
+                let view = view.ok_or("找不到电路")?;
+                // The runtime's ids differ from the document's; it finds the
+                // objects by where they are.
+                let seeds = ConnectionSeeds {
+                    components: components
+                        .iter()
+                        .filter_map(|id| view.components.iter().find(|c| &c.id == id))
+                        .map(|c| (c.location, c.name.clone()))
+                        .collect(),
+                    wires: wires
+                        .iter()
+                        .filter_map(|id| view.wires.iter().find(|w| &w.id == id))
+                        .map(|w| (w.from, w.to))
+                        .collect(),
+                    point: point.map(|p| (Point { x: p.x, y: p.y }, p.radius)),
+                };
+                let _connections = timing::span("connections");
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .connections(&path, &circuit, &seeds)
                     .await?;
                 return Ok(Reply::Text(text));
             }

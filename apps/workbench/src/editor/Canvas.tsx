@@ -36,7 +36,7 @@ import { fitView, hitTest, insideBox, type View } from "./geometry";
 import { buildScene, program, type Frame, type Live } from "./paint";
 import { symbolId, templateKey, useSymbols, type SymbolEntry } from "./symbols";
 import { useMovePreview } from "./useMovePreview";
-import { useObservation } from "./useObservation";
+import { useConnections, type ConnectionSeeds } from "./useConnections";
 import type { PlacementState } from "./usePlacement";
 import { usePlacementQueue } from "./usePlacementQueue";
 
@@ -223,18 +223,35 @@ export function Canvas({
   if (symbols.ready) shown.current = true;
 
   const [signal, setSignal] = useState<SignalTarget | null>(null);
+  /** A Ctrl+click: the ports within `radius` of `point`, else object `id`. */
   const [traceRequest, setTraceRequest] = useState<{
     point: Point;
+    radius: number;
     id: string | null;
     scope: string;
   } | null>(null);
-  const observation = useObservation(
-    doc,
-    circuit,
-    selection.length > 0 || Boolean(signal) || Boolean(traceRequest),
-    onError,
-    stale,
-  );
+  // The selection's connections and a traced click's are read; a traced
+  // signal's nets are already in what was read.
+  const seeds = useMemo((): ConnectionSeeds => {
+    const wires = new Set(circuit.wires.map((w) => w.id));
+    const components = new Set(circuit.components.map((c) => c.id));
+    const ids = [...new Set([...selection, traceRequest?.id ?? ""])];
+    const { point, radius } = traceRequest ?? {};
+    return {
+      components: ids.filter((id) => components.has(id)),
+      wires: ids.filter((id) => wires.has(id)),
+      // The runtime takes whole points; a wider radius keeps every port near the click.
+      point:
+        point && radius
+          ? {
+              x: Math.round(point.x),
+              y: Math.round(point.y),
+              radius: radius + 1,
+            }
+          : null,
+    };
+  }, [circuit, selection.join(","), traceRequest]);
+  const observation = useConnections(doc, circuit, seeds, onError, stale);
   const { scope: observationScope, focus } = observation;
   useEffect(() => {
     onObservation?.({ scope: observationScope, focus });
@@ -472,7 +489,8 @@ export function Canvas({
     setView(previous.view);
   };
   useEffect(() => {
-    onSignalView?.(
+    const reading = !observation.ready && !observation.error;
+    const panel =
       signal && connections ? (
         <Connections
           index={connections}
@@ -483,7 +501,7 @@ export function Canvas({
         />
       ) : (
         <SelectionConnections
-          focus={focus}
+          focus={reading ? null : focus}
           circuit={circuit}
           selection={selection}
           error={observation.error}
@@ -491,8 +509,14 @@ export function Canvas({
           onTrace={(target) => startSignal(target, false)}
           onBack={signalHistory.length ? signalBack : undefined}
         />
-      ),
-    );
+      );
+    // A selection's connections take a moment to read; the panel says so
+    // only when that takes long, and keeps what it showed until then.
+    if (!(signal && connections) && selection.length && reading) {
+      const timer = setTimeout(() => onSignalView?.(panel), 200);
+      return () => clearTimeout(timer);
+    }
+    onSignalView?.(panel);
   }, [
     signal,
     connections,
@@ -502,6 +526,7 @@ export function Canvas({
     onSignalView,
     focus,
     circuit,
+    observation.ready,
     observation.error,
   ]);
   useEffect(() => () => onSignalView?.(null), [onSignalView]);
@@ -539,7 +564,7 @@ export function Canvas({
     ).singleSource;
     if (source && jump) visitSignal(source, previous);
   };
-  const traceAt = (p: Point, id: string | null) => {
+  const traceAt = (p: Point, id: string | null, radius: number) => {
     if (!connections || !focus) {
       onError("未读取到此信号的连接信息");
       return;
@@ -552,7 +577,7 @@ export function Canvas({
           distance: Math.hypot(p.x - end.location.x, p.y - end.location.y),
         })),
       )
-      .filter((port) => port.distance <= Math.max(5, 7 / view.scale))
+      .filter((port) => port.distance <= radius)
       .sort((a, b) => a.distance - b.distance)[0];
     if (near) {
       startSignal(portSignal(near.component, near.end));
@@ -575,17 +600,17 @@ export function Canvas({
       onError("请选择要追踪的端口");
     }
   };
-  // A trace asked for before the connections were read runs once they arrive.
+  // A trace runs once the connections around the click are read.
   useEffect(() => {
     if (!traceRequest) return;
     if (traceRequest.scope !== observationScope || observation.error) {
       setTraceRequest(null);
       return;
     }
-    if (!connections) return;
+    if (!observation.ready) return;
     setTraceRequest(null);
-    traceAt(traceRequest.point, traceRequest.id);
-  }, [traceRequest, connections, observationScope, observation.error]);
+    traceAt(traceRequest.point, traceRequest.id, traceRequest.radius);
+  }, [traceRequest, observation.ready, observationScope, observation.error]);
   // A circuit opens fitted; until its view is moved, the fit follows the
   // canvas size as the layout around it settles.
   const fitted = useRef<{ scope: string; size: string; view: View } | null>(
@@ -728,14 +753,12 @@ export function Canvas({
             onError("请先按 Esc 结束连线，再追踪信号");
             return;
           }
-          const exact = point(e, false);
-          if (connections) traceAt(exact, target);
-          else
-            setTraceRequest({
-              point: exact,
-              id: target,
-              scope: observationScope,
-            });
+          setTraceRequest({
+            point: point(e, false),
+            radius: Math.max(5, 7 / view.scale),
+            id: target,
+            scope: observationScope,
+          });
           return;
         }
         if (e.button === 1 || tool === "pan" || spaceHeld.current) {
