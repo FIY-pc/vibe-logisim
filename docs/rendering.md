@@ -1,6 +1,6 @@
 # 画布渲染
 
-一句话：Java 只回答「每种元件长什么样」和仿真，编辑器的静态画面由窗口用 Canvas2D 自己合成；运行中的仿真画面仍是 Java 的 PNG 帧，盖在静态画面上。外观仍然 100% 由 Logisim 自己的 `Component.draw` 产生（课程 jar 里的元件也是），只是每种元件录一次、按种类缓存，不再每次出一张位图。
+一句话：画面全部由窗口用 Canvas2D 合成，Java 只给矢量指令。编辑时 Java 回答「每种元件长什么样」，每种录一次、按种类缓存；运行仿真时 Java 每帧把导线的颜色、交点和每个元件在当前状态下的样子录成同样的指令，只发变了的部分。外观仍然 100% 由 Logisim 自己的 `CircuitWires.draw` 和 `Component.draw` 产生（课程 jar 里的元件也是），不再出位图。
 
 ## 谁画什么
 
@@ -11,7 +11,7 @@
 | 线宽冲突的导线 | 窗口画成 `#ff7b00`（Logisim 的 `Value.WIDTH_ERROR_COLOR`） | `symbols` 回复里的 `widthErrors`，每个修订问一次；答复到之前先画黑 |
 | 网格 | canvas 下面的 SVG | — |
 | 选择框、端口标记、布线中的线、框选、移动时的改线 | canvas 上面的 SVG 交互层 | 窗口状态、`movePreview` |
-| 运行中的仿真 | Java 的 PNG 帧（SVG `<image>`，盖住 canvas 的同一块区域） | `simulationFrameImage` |
+| 运行中的仿真 | 窗口画运行时录下的导线、交点和每个元件（代替上面三行的导线、交点和元件） | 仿真 `state` 事件的 `paint`（下面「运行中的画面」） |
 | 给 AI 看的图（`render`、`interfaceRender`、`historyPreview`） | Java 的 PNG（`CircuitRenderer`） | 不变 |
 
 导线规则：每条导线一条宽 3 的黑线（圆头圆角）；一个点上导线端数 + 2×从中间穿过的导线数 + 元件端口数 > 2，且至少有一条导线到这里，就画一个 8×8 的实心圆点。
@@ -41,7 +41,7 @@
 - `U` 指令：形状门的输入线只在那一点有连接时才画（Logisim 打印视图的行为）。`buildScene` 按文档算：那一点的导线端、穿过的导线、别的元件端口，去掉这个元件自己的端口后大于 0 才画。
 - 文字：Java 的逻辑字体 Dialog/SansSerif 换成平台的 sans（Windows Arial + SimSun，macOS Lucida Grande，其他 fontconfig 的 sans-serif），`(x, y)` 是基线左端。Java 有 hinting 和整数字宽，浏览器没有，文字会差一两个像素；中文字形高低差 1 px。接受。Logisim 在非 100% 时按当前缩放重新量文字，这里等比缩放，放大和高 DPI 下反而更清楚。
 - 画不出来的种类（`symbols` 回了 `{error}`）在它的大概位置画红色虚线框。
-- 运行中的仿真帧盖住的区域 canvas 不画（`frame.cover`）。
+- 运行中（`frame.live`）：不画文档的导线和交点，画运行时给的，同样按颜色一条路径；每个元件先用运行时给它录的指令（编译结果按指令列表对象缓存，同一副样子的元件共用一份），没有的（画不出来的）用种类的符号。
 
 100% 下和 Logisim 自己画的位图（`CircuitRenderer` 在 scale 1 出的 PNG）逐像素比：文字之外有差的像素在 126 万里约 120–150 个，剩下的是字体光栅化。
 
@@ -87,9 +87,26 @@ VIBE_WORKBENCH_RESOURCES="$PWD" VIBE_VERIFY_HOST="$PWD/target/release/vibe-workb
 
 宿主带 `VIBE_WORKBENCH_TIMING=1` 时每个请求在 stderr 打一行 `timing <op> <总>ms <阶段>=<ms> …`，脚本最后汇总各阶段 p50。窗口一侧的帧率和输入到出图要在真实浏览器里量：浏览器预览窗格不在前台时 `requestAnimationFrame` 被节流到 4 fps 甚至暂停，量不准，用 headless Chrome（playwright-core）开生产构建（`vite preview`，宿主要用 `VIBE_WORKBENCH_DEV_PORT` 放行它的端口）。
 
+## 运行中的画面
+
+运行中画面上的一切都来自运行时，窗口不推算任何值：
+
+- Java（`CircuitSession` 的帧线程，`CircuitPaint`）：状态变了才采一帧，至多 16 ms 一次。持锁期间用 `RecordingGraphics2D` 录两样：导线和交点（经 `circuit` 包里的桥类 `WirePaint` 调包私有的 `CircuitWires.draw`，按 Logisim 自己的规则上色：值的颜色、线宽冲突 `#ff7b00`、整张网络无效时的灰），和每个元件（`ComponentDrawContext` 的 printView=false、`showState`、`showColor`，每个元件在自己的 `g.create()` 上，坐标相对元件位置，指令和 `symbols` 的完全相同，真实电路回答连接问题，所以没有 `U`）。和上次发出的逐根线、逐个点、逐个元件的指令串比较，只把变了的放进帧：`<paint full="true|false">{"wires":[[x1,y1,x2,y2,color],…],"dots":[[x,y,color],…],"components":{id:[op,…],…}}</paint>`，切换视图后的第一帧是全量。`captureMs` 是持锁录制的时间，`encodeMs` 是比较、拼 JSON 和 XML 的时间。
+- 宿主（`logisim-runtime` 的 `simulation/paint.rs`）：会话把每帧的增量叠在同一视图上一帧的画面上，每帧一份不可变的快照（`Arc<Paint>`，AI 读的 `Snapshot`/`Frame` 不带）。每个订阅者拿到的 `StateEvent.paint` 是它上次拿到的画面和最新画面的差，所以慢的订阅者跳过的帧不丢东西：导线和交点按颜色分组成坐标数组；元件的样子在几种之间来回（隧道随值变色、寄存器显示的值），同种元件也常长得一样，所以每条指令、每个指令列表对每个订阅者只发一次并编号，变了的元件只发它的列表编号。一个订阅者累计收到 4 MB 指令后，下一帧全量并重新编号。
+- 窗口（`simulation/actions.ts` 的 `overlay`）：每个 `state` 事件的 `paint` 按顺序叠进这个视图的 `LivePaint`（导线、交点按坐标的 Map，元件 id 到指令列表），全量的从头来；画布显示这次运行的视图时，`CanvasRegion` 把它作为 `Frame.live` 交给 `paintFrame`。画面覆盖整个电路，平移缩放只重画，不发请求，边缘不会露出静态图。`pending`/`pressed` 的标记、操作输入的命中仍在 SVG 层和编辑器的包围盒上。
+- 运行画面是 Logisim 画布的样子，不是打印视图：带形状的门画出全部输入线，引脚、探针、寄存器、显示器画出值。（改之前的 PNG 帧用了 printView=true，`getShowState()` = `!printView && showState`，所以运行帧从来没画出过值：导线全黑、引脚没有数字。）
+- 留存观察（`observationCapture`）带上窗口画布当时的 PNG（`imageData`，就是用户看到的那层，不含 SVG 标记），宿主限 8 MB、校验后存在记录旁边；没带图的记录，`observationImage` 报「这条观察没有留存画面」。
+
+数字（调试宿主 + Vite 开发构建，Chrome 1600×1000、dpr 1.5，课程工程 713 件的流水线页）：
+
+- 第一帧：`paint` 79 KB（999 根线、33 个点、713 个元件共 1184 条指令、367 个列表）；整个 `state` 事件 168 KB，其余是 713 个元件的端口值（`components`）。新进程的第一帧录制 250–270 ms（类加载），之后的全量帧 10 ms；从点「启动仿真」到画面出现 0.7 s（含起 JVM），第一帧到了以后画进 canvas 5 ms。
+- 每个时钟周期（2 Hz）：`paint` 6–9 KB（上升沿 5–8 KB、下降沿约 1 KB）。256 Hz 时每秒约 47 帧，每帧 `paint` p50 5 KB（235 KB/s）。
+- Java 每帧录制 `captureMs` p50 2.5、p90 3.3、偶发最大 13 ms；`encodeMs` p50 1.4 ms。
+- 窗口每帧重画：100% p50 0.5 ms、最大 1.8 ms；适合视图（18%，713 件全在画面里）p50 2.3–2.6 ms、最大 3.2 ms。运行中平移 61 帧 p50 0.5 ms，缩放 60 次 p50 2.1 ms，期间没有请求。
+
 ## 还没做
 
-- 仿真画面也由窗口画（第二阶段）：导线和元件的运行值换成窗口画，Java 只给值。现在运行中仍是整块视口的 PNG 帧，视口变化后 100 ms 才向宿主报告新视口。
+- 运行中每帧的 `state` 事件里，`components`（每个变了的元件的端口值）现在是大头：256 Hz 时每帧 p50 61 KB，`paint` 只有 5 KB。窗口只在连接面板、输入和波形里用到端口值，可以按需读。
 - `widthErrors` 每个修订单独发一次 `symbols`；可以并进编辑回复，省掉这次往返（它不挡画面）。
 - 选中对象时连接面板读整页 observe（713 件页 3.5 MB、100–130 ms）；换成只读选中网络的 `connectivity` 会便宜得多。
 - 外部 jar 内容变了而 `<lib>` 没变时 `paletteIdentity` 不变，窗口不会丢那份缓存（宿主会重启 worker）；画不出的种类也一直缓存到调色板变化。

@@ -35,7 +35,7 @@ Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{err
 | --- | --- |
 | document | status open new import read activate source sourceStatus reload close save saveTarget edit movePreview undo redo observe observeXml symbols template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply interfaceRender projectInfo projectExport projectExportTarget historyList historyReview historyPreview historyRestore |
 | folder | folderOpen folderList folderRead folderPreview folderResolve folderCreate folderRename folderTrash folderImportPrepare folderImportApply folderImportCancel folderCheckpoint folderHistory folderHistoryDetail folderHistoryUndo |
-| simulation | simulationAct simulationNavigate simulationViewport simulationStop simulationStatus simulationSnapshot simulationFrameImage memory memoryWrite observationList observationGet observationImage observationCapture observationRename observationDelete |
+| simulation | simulationAct simulationNavigate simulationStop simulationStatus simulationSnapshot memory memoryWrite observationList observationGet observationImage observationCapture observationRename observationDelete |
 | agent | agent `{method, args}` → forwarded to the sidecar (see `packages/agent-runtime/README.md`) |
 | app | feedbackStatus feedbackCheck feedbackPreference feedbackDismiss diagnostics diagnosticsExport |
 
@@ -47,7 +47,9 @@ Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folder
 
 Folder history: create, rename, trash and import are each one entry; `folderCheckpoint` records everything that changed since the folder's last entry (the AI calls it before and after each turn). `folderCreate {checkpoint: false}` leaves its file to the next checkpoint, so an AI turn that creates a file is one entry listing it as added.
 
-Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulation` (session, frames, end); `resync` (snapshots may be stale, read again); `warning {message}` (a change took effect, something around it failed).
+`observationCapture {sessionId, viewId, frameSequence?, title, imageData?}` keeps the run's frame and, when the window sends `imageData` (its canvas as a PNG data URL, at most 8 MB), that picture beside the record; `observationImage` of a record kept without one fails with 这条观察没有留存画面. The run's picture itself is not a request: each `state` event carries what changed in it for that listener (`crates/logisim-runtime/README.md`, Run picture).
+
+Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulation` (session, frames with each listener's own picture delta, end); `resync` (snapshots may be stale, read again); `warning {message}` (a change took effect, something around it failed).
 
 Transports: dev `POST /api/command`, `GET /api/events` (SSE), origin restricted to the Vite port; production Tauri `invoke("command")` and the `workbench-event` window event (`apps/workbench/src-tauri/src/main.rs`).
 
@@ -84,6 +86,6 @@ Done and exercised end to end on the course project (open, edit, AI turn, apply,
 ```sh
 cargo test -p vibe-workbench-host
 npm run check:contracts          # generated TS matches the Rust types
-npm run test:native              # real JVM: editing, viewport and simulation scenarios
+npm run test:native              # real JVM: editing, run picture and simulation scenarios
 npm run test:files  && npm run test:history && npm run test:interfaces
 ```

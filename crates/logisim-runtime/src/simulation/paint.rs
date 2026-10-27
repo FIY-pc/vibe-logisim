@@ -266,7 +266,10 @@ mod tests {
         );
         let full = first.delta(None, &mut sent);
         assert!(full.full);
-        assert_eq!(json(&full.wires), r##"{"#000000":[10,0,10,10],"#00d200":[0,0,10,0]}"##);
+        assert_eq!(
+            json(&full.wires),
+            r##"{"#000000":[10,0,10,10],"#00d200":[0,0,10,0]}"##
+        );
         assert_eq!(json(&full.dots), r##"{"#00d200":[10,0]}"##);
         // Components that look alike share their ops and list.
         assert_eq!(json(&full.ops), r##"[["C","#000000"],["L",0,0,1,1]]"##);
@@ -304,7 +307,10 @@ mod tests {
         // A frame with nothing new is the same picture.
         let unchanged = Paint::apply(Some(&back), "v", raw(false, "{}"));
         assert!(Arc::ptr_eq(&unchanged, &back));
-        assert_eq!(unchanged.delta(Some(&back), &mut sent), PaintDelta::default());
+        assert_eq!(
+            unchanged.delta(Some(&back), &mut sent),
+            PaintDelta::default()
+        );
         // A listener that missed frames gets what changed since its last one.
         let missed = back.delta(Some(&first), &mut Sent::default());
         assert!(missed.components.is_empty() && json(&missed.wires).contains("#006400"));
@@ -312,7 +318,10 @@ mod tests {
         let other = Paint::apply(
             Some(&back),
             "w",
-            raw(false, r##"{"dots":[[5,5,"#12345678"]],"components":{"d":[["C","#ff0000"]]}}"##),
+            raw(
+                false,
+                r##"{"dots":[[5,5,"#12345678"]],"components":{"d":[["C","#ff0000"]]}}"##,
+            ),
         );
         let switched = other.delta(Some(&back), &mut sent);
         assert!(switched.full);
