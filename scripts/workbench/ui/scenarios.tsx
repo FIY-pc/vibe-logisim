@@ -14,6 +14,7 @@ import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { App } from "../../../apps/workbench/src/App";
 import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
+import { recordWidthErrors } from "../../../apps/workbench/src/editor/symbols";
 import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
 import { ShortcutSettings } from "../../../apps/workbench/src/shell/ShortcutSettings";
 import {
@@ -144,7 +145,7 @@ const state = () => ({
     };
   if (request.op === "sourceStatus") return { state: "unchanged" };
   if (request.op === "catalog") return { children: [] };
-  if (request.op === "observe")
+  if (request.op === "observe" || request.op === "connections")
     return { focus: observedFocus || { components: [] } };
   if (request.op === "template" && templateHandler)
     return templateHandler(request);
@@ -1200,7 +1201,7 @@ console.log(
   let stales = 0;
   (globalThis as any).__command = async (request: any) => {
     if (
-      (request.op === "symbols" || request.op === "observe") &&
+      (request.op === "symbols" || request.op === "connections") &&
       request.revision === "r3"
     ) {
       refused.push(request.op);
@@ -1212,7 +1213,12 @@ console.log(
     }
     return host(request);
   };
-  const staleDoc = { ...cd, revision: "r3" };
+  // Read from the workspace: no edit reported its width conflicts.
+  const staleDoc = {
+    ...cd,
+    revision: "r3",
+    circuits: cd.circuits.map((c: any) => ({ ...c })),
+  };
   const reported = errors.length;
   function StaleHarness() {
     const [selection, setSelection] = useState<string[]>([]);
@@ -1248,12 +1254,41 @@ console.log(
   await pointer("pointerdown", 100);
   await pointer("pointerup", 100);
   await settle();
-  assert.deepEqual(refused, ["symbols", "observe"]);
+  assert.deepEqual(refused, ["symbols", "connections"]);
   assert.equal(stales, 2);
   assert.equal(errors.length, reported, "a stale read is not an error");
   (globalThis as any).__command = host;
   console.log(
     "PASS: a picture or connection read refused as stale re-reads the workspace instead of reporting an error",
+  );
+}
+{
+  // An edit answers with the width conflicts of the circuits it changed, so
+  // the canvas draws the new revision without another request; a circuit
+  // read from the workspace asks once.
+  const host = (globalThis as any).__command;
+  const asked: string[] = [];
+  (globalThis as any).__command = async (request: any) => {
+    if (request.op === "symbols") asked.push(request.revision);
+    return host(request);
+  };
+  const read = {
+    ...cd,
+    revision: "w1",
+    circuits: cd.circuits.map((c: any) => ({ ...c })),
+  };
+  await render(canvas(read));
+  const edited = {
+    ...cd,
+    revision: "w2",
+    circuits: read.circuits.map((c: any) => ({ ...c, wires: [...c.wires] })),
+  };
+  recordWidthErrors(edited.circuits, { main: [[100, 100]] });
+  await render(canvas(edited));
+  assert.deepEqual(asked, ["w1"]);
+  (globalThis as any).__command = host;
+  console.log(
+    "PASS: an edit's answer brings its width conflicts; the canvas sends no request for the new revision",
   );
 }
 assert.equal(loadBindings({ palette: "a" }).palette, "A");

@@ -11,7 +11,8 @@ export interface ConnectionEnd {
   direction: string;
   semanticRole?: string | null;
   runtimeTooltip?: string | null;
-  netBits: SignalBit[];
+  /** Absent on a partial component's ends: the nets' contacts hold them. */
+  netBits?: SignalBit[];
 }
 export interface ConnectionComponent {
   componentId: string;
@@ -20,6 +21,8 @@ export interface ConnectionComponent {
   selector?: { label?: string | null };
   location: Point;
   bounds: Bounds;
+  /** Read as the peer of another object: only its ends on the nets read. */
+  partial?: boolean;
   ends: ConnectionEnd[];
 }
 export interface ConnectionWire {
@@ -39,11 +42,50 @@ export interface ConnectionNet {
   netId: string;
   contacts: { componentId: string; endIndex: number; bit: number }[];
 }
+/** The bit nets read so far, with every component end on them (the
+ * components read whole with all their ends) and the wire bundles and wires
+ * they pass through. */
 export interface ConnectionFocus {
   components: ConnectionComponent[];
   wires: ConnectionWire[];
   wireBundles: ConnectionBundle[];
   bitNets: ConnectionNet[];
+}
+/** Two reads of one revision together: a component read whole replaces its
+ * partial copies, and partial copies add up their ends. */
+export function mergeFocus(
+  into: ConnectionFocus | null,
+  add: Partial<ConnectionFocus> | undefined,
+): ConnectionFocus {
+  const components = new Map(
+    (into?.components ?? []).map((c) => [c.componentId, c]),
+  );
+  for (const component of add?.components ?? []) {
+    const known = components.get(component.componentId);
+    if (!known || (known.partial && !component.partial))
+      components.set(component.componentId, component);
+    else if (known.partial && component.partial) {
+      const ends = new Map(known.ends.map((end) => [end.index, end]));
+      for (const end of component.ends) ends.set(end.index, end);
+      components.set(component.componentId, {
+        ...known,
+        ends: [...ends.values()].sort((a, b) => a.index - b.index),
+      });
+    }
+  }
+  const union = <T>(
+    old: T[] = [],
+    added: T[] = [],
+    key: (item: T) => string,
+  ) => [
+    ...new Map([...old, ...added].map((item) => [key(item), item])).values(),
+  ];
+  return {
+    components: [...components.values()],
+    wires: union(into?.wires, add?.wires, (w) => w.wireId),
+    wireBundles: union(into?.wireBundles, add?.wireBundles, (b) => b.bundleId),
+    bitNets: union(into?.bitNets, add?.bitNets, (n) => n.netId),
+  };
 }
 export interface SignalOrigin {
   componentId: string;
@@ -201,7 +243,7 @@ export function portSignal(
   end: ConnectionEnd,
 ): SignalTarget {
   return {
-    bits: end.netBits,
+    bits: end.netBits ?? [],
     origin: { componentId: component.componentId, endIndex: end.index },
     label: `${componentName(component)} · ${portName(component, end)}`,
   };

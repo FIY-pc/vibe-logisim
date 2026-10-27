@@ -5,8 +5,10 @@
  * A kind is its library, name and attributes; a subcircuit's picture also
  * follows its definition, so it is asked again when that circuit changed.
  * Pictures are kept per document until its palette changes; the canvas asks
- * once per revision for what it is missing, together with the wires of that
- * revision whose widths conflict (see docs/rendering.md).
+ * for what it is missing. The points of a circuit's wires whose widths
+ * conflict come with the edit that made the circuit (`DocumentChange`), or
+ * with a picture answer for circuits that arrived otherwise (see
+ * docs/rendering.md).
  */
 import { useEffect, useReducer, useRef } from "react";
 import type { SymbolKey } from "../generated/SymbolKey";
@@ -45,6 +47,28 @@ export interface SymbolEntry {
 interface Reply {
   symbols: ({ error: string } | SymbolPicture)[];
   widthErrors: [number, number][];
+}
+
+/** The conflicting points ("x,y") of each circuit view, from the change or
+ * the picture answer that brought them. */
+const conflicts = new WeakMap<Circuit, Set<string>>();
+/** The picture request that last set a circuit's conflicts. */
+const conflictRequests = new WeakMap<Circuit, number>();
+let conflictRequest = 0;
+const pointSet = (points: [number, number][]) =>
+  new Set(points.map(([x, y]) => `${x},${y}`));
+/** Takes the width conflicts an edit, undo or redo reported for the circuits it changed. */
+export function recordWidthErrors(
+  circuits: Circuit[],
+  errors: Record<string, [number, number][] | undefined> | undefined,
+) {
+  if (!errors) return;
+  for (const circuit of circuits) {
+    const points = errors[circuit.name];
+    if (!points) continue;
+    conflicts.set(circuit, pointSet(points));
+    conflictRequests.set(circuit, ++conflictRequest);
+  }
 }
 
 const keys = new WeakMap<object, string>();
@@ -98,11 +122,8 @@ class DocumentSymbols {
   readonly pending = new Set<string>();
   /** Kinds whose last request failed as a whole, by the revision asked. */
   readonly failed = new Map<string, string>();
-  /** The conflicting points ("x,y") of each circuit, from the latest request answered. */
-  readonly widths = new Map<string, { request: number; points: Set<string> }>();
-  /** The revision of each circuit last asked about. */
-  readonly asked = new Map<string, string>();
-  requests = 0;
+  /** Circuit views whose width conflicts were asked for. */
+  readonly asked = new WeakSet<Circuit>();
   readonly listeners = new Set<() => void>();
   constructor(readonly palette: string) {}
   notify() {
@@ -139,7 +160,8 @@ export interface Symbols {
   latest(key: SymbolKey | Component): SymbolEntry | undefined;
   /** Whether every kind the circuit uses has been answered at least once. */
   ready: boolean;
-  /** The points of wires whose widths conflict, as last answered. */
+  /** The points of wires whose widths conflict; until a circuit's are
+   * known, the ones last known for its name. */
   widthErrors: Set<string>;
   /** Changes whenever an answer arrives. */
   version: number;
@@ -147,9 +169,10 @@ export interface Symbols {
 
 /**
  * The pictures for `circuit` and for `extra` kinds (placement ghosts),
- * asking the host for the missing ones in one request per revision. A
- * request the host refuses because the document moved on calls `onStale`
- * when the window still shows that revision.
+ * asking the host for the missing ones in one request, which also brings
+ * the circuit's width conflicts when no edit reported them. A request the
+ * host refuses because the document moved on calls `onStale` when the
+ * window still shows that revision.
  */
 export function useSymbols(
   doc: Document,
@@ -191,13 +214,14 @@ export function useSymbols(
     };
     circuit.components.forEach(want);
     extra.forEach(want);
-    // Every revision is asked once, for its wire widths, even with nothing missing.
-    if (!wanted.size && cache.asked.get(circuit.name) === doc.revision) return;
-    cache.asked.set(circuit.name, doc.revision);
+    // A circuit whose conflicts no edit reported is asked once, even with nothing missing.
+    const widths = !conflicts.has(circuit) && !cache.asked.has(circuit);
+    if (!wanted.size && !widths) return;
+    cache.asked.add(circuit);
     const asked = [...wanted];
     for (const [id] of asked) cache.pending.add(id);
     const revision = doc.revision;
-    const request = ++cache.requests;
+    const request = ++conflictRequest;
     const definitions = asked.map(([, key]) => definitionOf(doc, key));
     command<Reply>({
       op: "symbols",
@@ -221,14 +245,11 @@ export function useSymbols(
                 },
           );
         });
-        const known = cache.widths.get(circuit.name);
-        if (!known || known.request < request)
-          cache.widths.set(circuit.name, {
-            request,
-            points: new Set(
-              (reply?.widthErrors ?? []).map(([x, y]) => `${x},${y}`),
-            ),
-          });
+        // The answer is for this revision, which this circuit view is part of.
+        if ((conflictRequests.get(circuit) ?? 0) < request) {
+          conflicts.set(circuit, pointSet(reply?.widthErrors ?? []));
+          conflictRequests.set(circuit, request);
+        }
       })
       .catch((error) => {
         for (const [id] of asked) cache.failed.set(id, revision);
@@ -252,11 +273,16 @@ export function useSymbols(
       (!cache.pending.has(id) && cache.failed.get(id) === doc.revision)
     );
   });
+  const known = conflicts.get(circuit);
+  const last = useRef<{ name: string; points: Set<string> } | null>(null);
+  if (known) last.current = { name: circuit.name, points: known };
   return {
     get,
     latest: (key) => cache.entries.get(symbolId(key)),
     ready,
-    widthErrors: cache.widths.get(circuit.name)?.points ?? none,
+    widthErrors:
+      known ??
+      (last.current?.name === circuit.name ? last.current.points : none),
     version,
   };
 }
