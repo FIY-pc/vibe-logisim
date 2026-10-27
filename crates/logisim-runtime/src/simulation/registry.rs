@@ -6,7 +6,7 @@ use super::{
         ActResult, ButtonValue, Command, ComponentDelta, EndReason, EndedInfo, Frame,
         NavigateResult, SessionInfo, SimulationEvent, Snapshot, StateEvent, Status, TraceMark,
     },
-    paint::Paint,
+    paint::{Paint, Sent},
     protocol,
     session::{Deadlines, Ended, Io, OnEnd, Process, Session, View, now_ms},
 };
@@ -717,8 +717,9 @@ struct Follow {
     frames: watch::Receiver<u64>,
     last: Option<Arc<Frame>>,
     trace: Option<TraceMark>,
-    /// The picture this listener has.
+    /// The picture this listener has, and the ops it was sent for it.
     paint: Option<Arc<Paint>>,
+    sent: Sent,
 }
 
 /// Simulation events for one listener, in order. Frames do not queue: a slow
@@ -773,6 +774,7 @@ impl Subscription {
                     last: None,
                     trace: None,
                     paint: None,
+                    sent: Sent::default(),
                 });
                 SimulationEvent::Session { session: info }
             }
@@ -833,7 +835,7 @@ impl Subscription {
             },
             trace,
             memory,
-            paint: paint.delta(follow.paint.as_deref()),
+            paint: paint.delta(follow.paint.as_deref(), &mut follow.sent),
             timing: frame.timing,
         };
         follow.trace = Some(frame.trace.clone());
@@ -1548,13 +1550,13 @@ mod tests {
                     if first.is_none() {
                         first = Some(state.paint.clone());
                     }
-                    if let Some(painted) = state
+                    if let Some((color, _)) = state
                         .paint
                         .wires
                         .iter()
-                        .find(|w| (w.0, w.1, w.2, w.3) == (100, 100, 200, 100))
+                        .find(|(_, wires)| wires.chunks(4).any(|w| w == [100, 100, 200, 100]))
                     {
-                        wire = Some(painted.4.clone());
+                        wire = Some(color.clone());
                     }
                     if let Some(item) = state.components.items.iter().find(|item| item.id == output)
                         && item.ports[0].signal.bits == "1"
@@ -1567,7 +1569,8 @@ mod tests {
             .unwrap();
             let first = first.unwrap();
             assert!(first.full);
-            assert_eq!((first.wires.len(), first.components.len()), (2, 4));
+            let wires: usize = first.wires.values().map(|w| w.len() / 4).sum();
+            assert_eq!((wires, first.components.len()), (2, 4));
             assert_eq!(wire.as_deref(), Some("#00d200"));
             let tick = registry
                 .act(run(&result), Command::Tick, None)

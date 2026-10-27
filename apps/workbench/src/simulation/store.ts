@@ -1,6 +1,5 @@
 import { createStore } from "zustand/vanilla";
 import type { ComponentState } from "../generated/ComponentState";
-import type { DotPaint } from "../generated/DotPaint";
 import type { EndedInfo } from "../generated/EndedInfo";
 import type { MemoryPage } from "../generated/MemoryPage";
 import type { ObservationRecord } from "../generated/ObservationRecord";
@@ -8,7 +7,6 @@ import type { PaintDelta } from "../generated/PaintDelta";
 import type { RunState } from "../generated/RunState";
 import type { SessionInfo } from "../generated/SessionInfo";
 import type { TraceDelta } from "../generated/TraceDelta";
-import type { WirePaint } from "../generated/WirePaint";
 import type { Displayed } from "./simulation";
 import { field, type Update } from "../shared/setter";
 
@@ -42,6 +40,9 @@ export interface PendingInput {
   sequence?: number;
 }
 
+/** One op of a component's picture (the editor's symbol ops). */
+export type PaintOp = PaintDelta["ops"][number];
+
 /** The picture of a run's view as the runtime drew it: wires and junctions
  * by geometry with their color, each component's ops by id. The `paint` of
  * the run's state events is laid over it in place, in the order they come;
@@ -49,11 +50,15 @@ export interface PendingInput {
 export interface LivePaint {
   sessionId: string;
   viewId: string;
-  /** By `x1,y1,x2,y2`. */
-  wires: Map<string, WirePaint>;
-  /** By `x,y`. */
-  dots: Map<string, DotPaint>;
-  components: Map<string, PaintDelta["components"][string]>;
+  /** `[x1, y1, x2, y2, color]` by `x1,y1,x2,y2`. */
+  wires: Map<string, readonly [number, number, number, number, string]>;
+  /** `[x, y, color]` by `x,y`. */
+  dots: Map<string, readonly [number, number, string]>;
+  /** The ops and op lists the run sent, by number. */
+  ops: PaintOp[];
+  lists: PaintOp[][];
+  /** Each component's list. */
+  components: Map<string, PaintOp[]>;
   version: number;
 }
 

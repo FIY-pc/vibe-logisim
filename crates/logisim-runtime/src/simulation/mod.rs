@@ -15,5 +15,5 @@ pub use model::{
     RunTarget, SessionInfo, Signal, SimulationEvent, Snapshot, StateEvent, Status, Timing,
     TraceDelta, TraceKey, TraceSample, TraceSignal,
 };
-pub use paint::{DotPaint, Ops, PaintDelta, WirePaint};
+pub use paint::{Op, PaintDelta};
 pub use registry::{RunDocument, SimulationRegistry, Subscription, Target};

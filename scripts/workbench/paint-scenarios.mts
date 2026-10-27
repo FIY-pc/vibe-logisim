@@ -41,20 +41,46 @@ export async function verifySimulationPaint(command: Command, stream: Stream) {
         from,
       )
       .then((e) => e.data);
-  const wire = (event: StateEvent) =>
-    event.paint.wires.find((w) => w.slice(0, 4).join() === "100,100,200,100");
+  /** The run's picture as the window lays its state events over each other,
+   * up to `last`: wire colors by geometry, component ops by id. */
+  const picture = (last: StateEvent) => {
+    const wires = new Map<string, string>();
+    const components = new Map<string, unknown[]>();
+    let ops: unknown[] = [];
+    let lists: unknown[][] = [];
+    for (const { topic, data } of stream.events) {
+      if (topic !== "simulation" || data?.kind !== "state") continue;
+      if (data.sessionId !== last.sessionId) continue;
+      const paint: StateEvent["paint"] = data.paint;
+      if (paint.full) {
+        wires.clear();
+        components.clear();
+        ops = [];
+        lists = [];
+      }
+      for (const [color, xs] of Object.entries(paint.wires))
+        for (let i = 0; i < xs.length; i += 4)
+          wires.set(xs.slice(i, i + 4).join(), color);
+      ops.push(...paint.ops);
+      for (const list of paint.lists) lists.push(list.map((n) => ops[n]));
+      for (const [id, list] of Object.entries(paint.components))
+        components.set(id, lists[list]);
+      if (data === last) break;
+    }
+    return { wire: wires.get("100,100,200,100"), components };
+  };
 
   let from = stream.events.length;
   let run = await client.started(doc, "main");
   const first = await state(run.sessionId, from);
   assert(first.paint.full, "A run's first state event carries its picture");
-  const low = wire(first);
-  assert(low, "The picture has the wire");
+  const before = picture(first);
+  assert(before.wire, "The picture has the wire");
   assert(
-    first.paint.components[input] && first.paint.components[output],
+    before.components.get(input)?.length &&
+      before.components.get(output)?.length,
     "The picture has both pins",
   );
-  const shown = first.paint.components[output];
   from = stream.events.length;
   const ack = await client.run(doc, run, {
     kind: "input",
@@ -67,11 +93,14 @@ export async function verifySimulationPaint(command: Command, stream: Stream) {
     (e) => e.commandSequence >= (ack.commandSequence ?? 0),
   );
   assert(!next.paint.full, "Later state events carry what changed");
-  const high = wire(next);
-  assert(high && high[4] !== low[4], "The wire takes its new value's color");
+  const after = picture(next);
+  assert(
+    after.wire && after.wire !== before.wire,
+    "The wire takes its new value's color",
+  );
   assert.notDeepEqual(
-    next.paint.components[output],
-    shown,
+    after.components.get(output),
+    before.components.get(output),
     "The output pin shows its new value",
   );
   assert(
@@ -88,9 +117,9 @@ export async function verifySimulationPaint(command: Command, stream: Stream) {
   assert.equal(empty.circuit, "empty");
   assert(
     empty.paint.full &&
-      !empty.paint.wires.length &&
-      !empty.paint.dots.length &&
-      !Object.keys(empty.paint.components).length,
+      [empty.paint.wires, empty.paint.dots, empty.paint.components].every(
+        (map) => !Object.keys(map).length,
+      ),
     "An empty circuit paints nothing",
   );
   // A tick on a circuit with no clock still advances the run's clock and keeps

@@ -909,7 +909,7 @@ pub(crate) mod tests {
         assert_eq!(evicted.code, Code::FrameEvicted);
         // The picture is the frames' paint laid over each other.
         let (_, _, paint) = session.latest(None).unwrap();
-        let picture = paint.delta(None);
+        let picture = paint.delta(None, &mut Default::default());
         assert_eq!((picture.wires.len(), picture.components.len()), (1, 1));
         // Unchanged components are shared between frames.
         let (previous, _) = session.snapshot(Some(9_999), false).unwrap();

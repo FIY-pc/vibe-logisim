@@ -20,6 +20,7 @@ import {
   simulationStatus,
   watchScope,
   type MemoryTarget,
+  type LivePaint,
   type PendingInput,
   type SimulationState,
 } from "./store";
@@ -919,35 +920,55 @@ export function createSimulationActions(stores: Stores) {
   });
 
   /** Lays a state event's paint over the picture of its view. Each listener
-   * gets what changed since its own last event, so every event counts, in
-   * order, even one `fold` drops as older than a snapshot; a full one starts
-   * the picture over. */
+   * gets what changed since its own last event, and ops and op lists once by
+   * number, so every event counts, in order, even one `fold` drops as older
+   * than a snapshot; a full one starts the picture and the numbering over. */
   const overlay = ({ sessionId, viewId, paint: delta }: StateEvent) => {
-    let paint = state().paint;
-    const same = paint?.sessionId === sessionId && paint.viewId === viewId;
-    if (!delta.full) {
-      if (!same) return;
-      if (
-        !delta.wires.length &&
-        !delta.dots.length &&
-        !Object.keys(delta.components).length
-      )
-        return;
+    const current = state().paint;
+    const changed = [delta.wires, delta.dots, delta.components].some(
+      (map) => Object.keys(map).length,
+    );
+    if (
+      !delta.full &&
+      (current?.sessionId !== sessionId ||
+        current.viewId !== viewId ||
+        !changed)
+    )
+      return;
+    const paint: LivePaint =
+      delta.full || !current
+        ? {
+            sessionId,
+            viewId,
+            wires: new Map(),
+            dots: new Map(),
+            ops: [],
+            lists: [],
+            components: new Map(),
+            version: 0,
+          }
+        : current;
+    for (const color in delta.wires) {
+      const xs = delta.wires[color];
+      for (let i = 0; i + 3 < xs.length; i += 4)
+        paint.wires.set(`${xs[i]},${xs[i + 1]},${xs[i + 2]},${xs[i + 3]}`, [
+          xs[i],
+          xs[i + 1],
+          xs[i + 2],
+          xs[i + 3],
+          color,
+        ]);
     }
-    if (delta.full || !paint)
-      paint = {
-        sessionId,
-        viewId,
-        wires: new Map(),
-        dots: new Map(),
-        components: new Map(),
-        version: 0,
-      };
-    for (const w of delta.wires)
-      paint.wires.set(`${w[0]},${w[1]},${w[2]},${w[3]}`, w);
-    for (const d of delta.dots) paint.dots.set(`${d[0]},${d[1]}`, d);
+    for (const color in delta.dots) {
+      const xs = delta.dots[color];
+      for (let i = 0; i + 1 < xs.length; i += 2)
+        paint.dots.set(`${xs[i]},${xs[i + 1]}`, [xs[i], xs[i + 1], color]);
+    }
+    for (const op of delta.ops) paint.ops.push(op);
+    for (const list of delta.lists)
+      paint.lists.push(list.map((number) => paint.ops[number]));
     for (const id in delta.components)
-      paint.components.set(id, delta.components[id]);
+      paint.components.set(id, paint.lists[delta.components[id]]);
     patch({ paint: { ...paint, version: paint.version + 1 } });
   };
 

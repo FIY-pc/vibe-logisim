@@ -284,9 +284,11 @@ public final class CircuitSession {
                 DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
                 while (true) {
                     Document result = null; CircuitPaint.Recorded recorded = null;
-                    long started = System.nanoTime(), captured = started;
+                    long started = 0, captured = 0;
                     synchronized (this) {
                         if (version != rendered) {
+                            // The time the frame holds the circuit, not the wait for the clock to let go.
+                            started = System.nanoTime();
                             result = builder.newDocument(); result.appendChild(result.createElement("frame"));
                             recorded = sample(result); rendered = version; captured = System.nanoTime();
                         }

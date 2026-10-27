@@ -467,7 +467,14 @@ const simState = (
   commandSequence: frameSequence,
   clock: simClock,
   components: { full: true, items: [] },
-  paint: { full: true, wires: [], dots: [], components: {} },
+  paint: {
+    full: true,
+    wires: {},
+    dots: {},
+    ops: [],
+    lists: [],
+    components: {},
+  },
   timing: { captureMs: 0, encodeMs: 0 },
 });
 await act(async () => {
