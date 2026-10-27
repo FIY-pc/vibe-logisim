@@ -455,7 +455,6 @@ pub(crate) fn fitted_viewport(observation: &Value) -> Viewport {
     }
 }
 
-/// Attribute name/value pairs of the first serialized `<comp>` in a native reply.
 /// Which component records each key: one of the circuit with exactly that
 /// key whose location and name no other component shares (the worker finds
 /// it by those), otherwise one made from the library tool.
@@ -472,8 +471,9 @@ fn symbol_sources(
     for c in components {
         *stacked.entry((c.location, c.name.as_str())).or_default() += 1;
     }
-    let mut placed: HashMap<(Option<&str>, &str, &BTreeMap<String, String>), Point> =
-        HashMap::new();
+    // A kind: library (none for the file's circuits), name, attributes.
+    type Kind<'a> = (Option<&'a str>, &'a str, &'a BTreeMap<String, String>);
+    let mut placed: HashMap<Kind, Point> = HashMap::new();
     for c in components {
         if stacked[&(c.location, c.name.as_str())] == 1 {
             placed
@@ -506,6 +506,7 @@ fn symbol_sources(
         .collect()
 }
 
+/// Attribute name/value pairs of the first serialized `<comp>` in a native reply.
 fn component_attributes(component: &Value) -> Option<BTreeMap<String, String>> {
     component["children"].as_array().map(|all| {
         all.iter()
