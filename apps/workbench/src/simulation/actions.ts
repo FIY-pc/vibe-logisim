@@ -344,6 +344,14 @@ export function createSimulationActions(stores: Stores) {
       displayed?.sessionId === session.sessionId &&
       displayed.viewId === run.viewId;
     if (showing && run.circuit === view.circuit.name) return true;
+    // A run already on the root circuit on screen only needs showing; a new
+    // view would cost the runtime a whole picture for the same thing.
+    if (run.instancePath.length === 0 && run.circuit === view.circuit.name) {
+      patch({
+        displayed: { sessionId: session.sessionId, viewId: run.viewId },
+      });
+      return true;
+    }
     const inInstance =
       run.instancePath.length > 0 && session.rootCircuit === view.circuit.name;
     if (run.circuit !== view.circuit.name && !inInstance) return false;
