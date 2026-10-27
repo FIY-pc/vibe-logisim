@@ -2,9 +2,10 @@
  * The editor picture, composed in the window: wires and junctions from the
  * document, each component from the recorded picture of its kind (see
  * `symbols.ts`), drawn with Canvas2D the way Logisim's Circuit.draw paints
- * them. Ops replay in symbol space under the view transform; strokes take the
- * offset Java2D's stroke normalization gives them, so a picture at 100% lands
- * on the same pixels as Logisim's own (docs/rendering.md).
+ * them. Fills and text replay in symbol space under the view transform;
+ * strokes are built in device space with every point moved to its pixel
+ * centre, as Java2D's stroke normalization moves it, so a picture at 100%
+ * lands on the same pixels as Logisim's own (docs/rendering.md).
  */
 import type { Bounds, Circuit, Component, Point } from "../shared/types";
 import { fallbackBounds, wireBounds, type View } from "./geometry";
@@ -21,9 +22,16 @@ interface Style {
   phase: number;
   font: string;
 }
+/** A stroked outline as Java2D iterates it: a segment code, then its points. */
+type Segments = number[];
+const M = 0,
+  L = 1,
+  Q = 2,
+  C = 3,
+  Z = 4;
 type Draw =
   | { kind: "fill"; path: Path2D; rule: CanvasFillRule }
-  | { kind: "stroke"; path: Path2D; shift: number }
+  | { kind: "stroke"; segments: Segments; index: number }
   | {
       kind: "text";
       text: string;
@@ -41,6 +49,8 @@ export interface Program {
   /** The points whose connection decides the steps marked with them ("U"). */
   conditions: Point[];
   clips: boolean;
+  /** Its strokes in device space, by sub-pixel origin, for one scale. */
+  strokes: { k: number; byOrigin: Map<string, Path2D[]> };
 }
 
 const caps: CanvasLineCap[] = ["butt", "round", "square"];
@@ -82,6 +92,176 @@ function image(url: string) {
 const n = (v: unknown) => (typeof v === "number" ? v : 0);
 const list = (v: unknown) => (Array.isArray(v) ? (v as number[]) : []);
 
+// Outlines to stroke, point for point as Java's path iterators give them
+// (RectIterator, RoundRectIterator, EllipseIterator, ArcIterator), because
+// normalization moves exactly those points.
+function rectOutline(x: number, y: number, w: number, h: number): Segments {
+  return [M, x, y, L, x + w, y, L, x + w, y + h, L, x, y + h, L, x, y, Z];
+}
+const bend = (() => {
+  const a = 1 - Math.cos(Math.PI / 4),
+    b = Math.tan(Math.PI / 4),
+    c = Math.sqrt(1 + b * b) - 1 + a;
+  return (1 - ((4 / 3) * a * b) / c) / 2;
+})();
+function roundRectOutline(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  arcWidth: number,
+  arcHeight: number,
+): Segments {
+  const aw = Math.min(w, Math.abs(arcWidth)),
+    ah = Math.min(h, Math.abs(arcHeight));
+  const v = bend;
+  // prettier-ignore
+  return [
+    M, x, y + ah / 2,
+    L, x, y + h - ah / 2,
+    C, x, y + h - v * ah, x + v * aw, y + h, x + aw / 2, y + h,
+    L, x + w - aw / 2, y + h,
+    C, x + w - v * aw, y + h, x + w, y + h - v * ah, x + w, y + h - ah / 2,
+    L, x + w, y + ah / 2,
+    C, x + w, y + v * ah, x + w - v * aw, y, x + w - aw / 2, y,
+    L, x + aw / 2, y,
+    C, x + v * aw, y, x, y + v * ah, x, y + ah / 2,
+    Z,
+  ];
+}
+const KAPPA = 0.5522847498307933;
+const PCV = 0.5 + KAPPA * 0.5,
+  NCV = 0.5 - KAPPA * 0.5;
+function ovalOutline(x: number, y: number, w: number, h: number): Segments {
+  // prettier-ignore
+  return [
+    M, x + w, y + h / 2,
+    C, x + w, y + PCV * h, x + PCV * w, y + h, x + w / 2, y + h,
+    C, x + NCV * w, y + h, x, y + PCV * h, x, y + h / 2,
+    C, x, y + NCV * h, x + NCV * w, y, x + w / 2, y,
+    C, x + PCV * w, y, x + w, y + NCV * h, x + w, y + h / 2,
+    Z,
+  ];
+}
+function arcOutline(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  start: number,
+  extent: number,
+): Segments {
+  const w = width / 2,
+    h = height / 2,
+    x = left + w,
+    y = top + h;
+  const from = (-start * Math.PI) / 180,
+    ext = -extent;
+  let count: number, step: number, cv: number;
+  if (ext >= 360 || ext <= -360) {
+    count = 4;
+    step = ext < 0 ? -Math.PI / 2 : Math.PI / 2;
+    cv = ext < 0 ? -KAPPA : KAPPA;
+  } else {
+    count = Math.ceil(Math.abs(ext) / 90);
+    step = ((ext / count) * Math.PI) / 180;
+    const half = step / 2;
+    cv = ((4 / 3) * Math.sin(half)) / (1 + Math.cos(half));
+    if (cv === 0) count = 0;
+  }
+  const out: Segments = [M, x + Math.cos(from) * w, y + Math.sin(from) * h];
+  for (let i = 0; i < count; i++) {
+    const a1 = from + step * i,
+      a2 = a1 + step;
+    const c1 = Math.cos(a1),
+      s1 = Math.sin(a1),
+      c2 = Math.cos(a2),
+      s2 = Math.sin(a2);
+    out.push(
+      C,
+      x + (c1 - cv * s1) * w,
+      y + (s1 + cv * c1) * h,
+      x + (c2 + cv * s2) * w,
+      y + (s2 - cv * c2) * h,
+      x + c2 * w,
+      y + s2 * h,
+    );
+  }
+  return out;
+}
+function polyOutline(v: number[], close: boolean): Segments {
+  const out: Segments = [];
+  for (let i = 0; i + 1 < v.length; i += 2) out.push(i ? L : M, v[i], v[i + 1]);
+  if (close && out.length) out.push(Z);
+  return out;
+}
+/** The recorder's path text ("M0 1L2 3Q…C…Z") as segments. */
+function pathOutline(d: string): Segments {
+  const out: Segments = [];
+  for (const [, letter, numbers] of d.matchAll(/([MLQCZ])([^MLQCZ]*)/g)) {
+    out.push("MLQCZ".indexOf(letter));
+    const text = numbers.trim();
+    if (text) for (const t of text.split(/\s+/)) out.push(Number(t));
+  }
+  return out;
+}
+
+/**
+ * An outline in device space (`k` device pixels to the unit, origin at
+ * `fx, fy` past a whole pixel), normalized as Java2D's antialiased stroking
+ * does: each segment end moves to the centre of its pixel, quadratic
+ * controls by the mean of both ends' moves, cubic controls with their end.
+ */
+function deviceOutline(s: Segments, k: number, fx: number, fy: number) {
+  const p = new Path2D();
+  let cx = 0,
+    cy = 0,
+    mx = 0,
+    my = 0;
+  for (let i = 0; i < s.length;) {
+    const code = s[i++];
+    if (code === Z) {
+      p.closePath();
+      cx = mx;
+      cy = my;
+      continue;
+    }
+    const count = code === Q ? 2 : code === C ? 3 : 1;
+    const e = i + 2 * (count - 1);
+    const ex = s[e] * k + fx,
+      ey = s[e + 1] * k + fy;
+    const ax = Math.floor(ex) + 0.5 - ex,
+      ay = Math.floor(ey) + 0.5 - ey;
+    if (code === M) {
+      p.moveTo(ex + ax, ey + ay);
+      mx = ax;
+      my = ay;
+    } else if (code === L) p.lineTo(ex + ax, ey + ay);
+    else if (code === Q)
+      p.quadraticCurveTo(
+        s[i] * k + fx + (cx + ax) / 2,
+        s[i + 1] * k + fy + (cy + ay) / 2,
+        ex + ax,
+        ey + ay,
+      );
+    else
+      p.bezierCurveTo(
+        s[i] * k + fx + cx,
+        s[i + 1] * k + fy + cy,
+        s[i + 2] * k + fx + ax,
+        s[i + 3] * k + fy + ay,
+        ex + ax,
+        ey + ay,
+      );
+    cx = ax;
+    cy = ay;
+    i += 2 * count;
+  }
+  return p;
+}
+/** Where Java2D puts a stroked point: the centre of its device pixel. */
+const centre = (d: number) => Math.floor(d) + 0.5;
+
 function roundRect(
   p: Path2D,
   x: number,
@@ -104,8 +284,8 @@ function roundRect(
   p.ellipse(x + rx, y + ry, rx, ry, 0, Math.PI, Math.PI * 1.5);
   p.closePath();
 }
-/** Java's arc: degrees counterclockwise on screen, angles relative to the frame. */
-function arc(
+/** Java's filled arc (a pie): degrees counterclockwise on screen, relative to the frame. */
+function pie(
   p: Path2D,
   x: number,
   y: number,
@@ -113,25 +293,21 @@ function arc(
   h: number,
   start: number,
   extent: number,
-  pie: boolean,
 ) {
   const cx = x + w / 2,
-    cy = y + h / 2,
-    rx = w / 2,
-    ry = h / 2;
+    cy = y + h / 2;
   const from = (-start * Math.PI) / 180,
     to = (-(start + extent) * Math.PI) / 180;
-  if (pie) p.moveTo(cx, cy);
-  else p.moveTo(cx + rx * Math.cos(from), cy + ry * Math.sin(from));
-  p.ellipse(cx, cy, rx, ry, 0, from, to, extent > 0);
-  if (pie) p.closePath();
+  p.moveTo(cx, cy);
+  p.ellipse(cx, cy, w / 2, h / 2, 0, from, to, extent > 0);
+  p.closePath();
 }
-function poly(v: number[], close: boolean) {
+function poly(v: number[]) {
   const p = new Path2D();
   for (let i = 0; i + 1 < v.length; i += 2)
     if (i === 0) p.moveTo(v[0], v[1]);
     else p.lineTo(v[i], v[i + 1]);
-  if (close) p.closePath();
+  p.closePath();
   return p;
 }
 
@@ -156,13 +332,13 @@ export function program(picture: SymbolPicture): Program {
   const restyle = (change: Partial<Style>) => (style = { ...style, ...change });
   let when = -1;
   let clips = false;
+  let strokes = 0;
   const push = (step: Draw) => {
     steps.push({ ...step, style, when });
     when = -1;
   };
-  // Java2D normalizes strokes: lines and mitered rectangles through its
-  // parallelogram pipe by 0.499 px, every other stroke by a quarter pixel.
-  const solid = () => style.cap !== "round" && !style.dash.length;
+  const stroke = (segments: Segments) =>
+    push({ kind: "stroke", segments, index: strokes++ });
   for (const op of picture.ops as Op[]) {
     const v = op as unknown[];
     switch (v[0]) {
@@ -210,75 +386,70 @@ export function program(picture: SymbolPicture): Program {
       case "U":
         when = conditions.push({ x: n(v[1]), y: n(v[2]) }) - 1;
         break;
-      case "L": {
-        const path = new Path2D();
-        path.moveTo(n(v[1]), n(v[2]));
-        path.lineTo(n(v[3]), n(v[4]));
-        push({ kind: "stroke", path, shift: solid() ? 0.499 : 0.25 });
+      case "L":
+        stroke([M, n(v[1]), n(v[2]), L, n(v[3]), n(v[4])]);
         break;
-      }
       case "R":
       case "r": {
         const [x, y, w, h] = [n(v[1]), n(v[2]), n(v[3]), n(v[4])];
-        const path = new Path2D();
-        path.rect(x, y, w, h);
-        if (v[0] === "r") push({ kind: "fill", path, rule: "nonzero" });
-        else
-          push({
-            kind: "stroke",
-            path,
-            shift:
-              w > 0 && h > 0
-                ? style.join === "miter" && !style.dash.length
-                  ? 0.499
-                  : 0.25
-                : solid()
-                  ? 0.499
-                  : 0.25,
-          });
+        if (v[0] === "R")
+          // Java draws an empty rectangle as the line it is.
+          stroke(w && h ? rectOutline(x, y, w, h) : [M, x, y, L, x + w, y + h]);
+        else {
+          const path = new Path2D();
+          path.rect(x, y, w, h);
+          push({ kind: "fill", path, rule: "nonzero" });
+        }
         break;
       }
       case "Q":
       case "q": {
         const [x, y, w, h] = [n(v[1]), n(v[2]), n(v[3]), n(v[4])];
         if (w < 0 || h < 0) break;
-        const path = new Path2D();
-        roundRect(path, x, y, w, h, n(v[5]), n(v[6]));
-        if (v[0] === "q") push({ kind: "fill", path, rule: "nonzero" });
-        else push({ kind: "stroke", path, shift: 0.25 });
+        if (v[0] === "Q")
+          stroke(roundRectOutline(x, y, w, h, n(v[5]), n(v[6])));
+        else {
+          const path = new Path2D();
+          roundRect(path, x, y, w, h, n(v[5]), n(v[6]));
+          push({ kind: "fill", path, rule: "nonzero" });
+        }
         break;
       }
       case "O":
       case "o": {
         const [x, y, w, h] = [n(v[1]), n(v[2]), n(v[3]), n(v[4])];
         if (w < 0 || h < 0) break;
-        const path = new Path2D();
-        path.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-        if (v[0] === "o") push({ kind: "fill", path, rule: "nonzero" });
-        else push({ kind: "stroke", path, shift: 0.25 });
+        if (v[0] === "O") stroke(ovalOutline(x, y, w, h));
+        else {
+          const path = new Path2D();
+          path.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+          push({ kind: "fill", path, rule: "nonzero" });
+        }
         break;
       }
       case "A":
       case "a": {
         const [x, y, w, h] = [n(v[1]), n(v[2]), n(v[3]), n(v[4])];
         if (w < 0 || h < 0) break;
-        const path = new Path2D();
-        arc(path, x, y, w, h, n(v[5]), n(v[6]), v[0] === "a");
-        if (v[0] === "a") push({ kind: "fill", path, rule: "nonzero" });
-        else push({ kind: "stroke", path, shift: 0.25 });
+        if (v[0] === "A") stroke(arcOutline(x, y, w, h, n(v[5]), n(v[6])));
+        else {
+          const path = new Path2D();
+          pie(path, x, y, w, h, n(v[5]), n(v[6]));
+          push({ kind: "fill", path, rule: "nonzero" });
+        }
         break;
       }
       case "Y":
-        push({ kind: "stroke", path: poly(list(v[1]), false), shift: 0.25 });
+        stroke(polyOutline(list(v[1]), false));
         break;
       case "G":
-        push({ kind: "stroke", path: poly(list(v[1]), true), shift: 0.25 });
+        stroke(polyOutline(list(v[1]), true));
         break;
       case "g":
-        push({ kind: "fill", path: poly(list(v[1]), true), rule: "evenodd" });
+        push({ kind: "fill", path: poly(list(v[1])), rule: "evenodd" });
         break;
       case "P":
-        push({ kind: "stroke", path: new Path2D(String(v[1])), shift: 0.25 });
+        stroke(pathOutline(String(v[1])));
         break;
       case "p":
         push({
@@ -316,7 +487,12 @@ export function program(picture: SymbolPicture): Program {
       // "N" (a paint that is not a color) keeps the last color; "Z" (XOR) paints plainly.
     }
   }
-  const compiled = { steps, conditions, clips };
+  const compiled: Program = {
+    steps,
+    conditions,
+    clips,
+    strokes: { k: 0, byOrigin: new Map() },
+  };
   programs.set(picture, compiled);
   return compiled;
 }
@@ -498,12 +674,11 @@ class Pen {
   cap = "";
   join = "";
   miter = -1;
-  dash: number[] | null = null;
-  phase = -1;
+  dash: string | null = null;
   font = "";
   reset() {
     this.fill = this.stroke = this.cap = this.join = this.font = "";
-    this.alpha = this.width = this.miter = this.phase = -1;
+    this.alpha = this.width = this.miter = -1;
     this.dash = null;
   }
 }
@@ -516,6 +691,7 @@ function fillWith(
   if (pen.fill !== color) ctx.fillStyle = pen.fill = color;
   if (pen.alpha !== alpha) ctx.globalAlpha = pen.alpha = alpha;
 }
+/** Sets a style for stroking in device space, `k` device pixels to the unit. */
 function strokeWith(
   ctx: CanvasRenderingContext2D,
   pen: Pen,
@@ -526,78 +702,102 @@ function strokeWith(
   if (pen.stroke !== style.color) ctx.strokeStyle = pen.stroke = style.color;
   if (pen.alpha !== alpha) ctx.globalAlpha = pen.alpha = alpha;
   // Java's zero-width stroke is the thinnest line the device can draw.
-  const width = style.width > 0 ? style.width : 1 / k;
+  const width = style.width > 0 ? style.width * k : 1;
   if (pen.width !== width) ctx.lineWidth = pen.width = width;
   if (pen.cap !== style.cap)
     ctx.lineCap = (pen.cap = style.cap) as CanvasLineCap;
   if (pen.join !== style.join)
     ctx.lineJoin = (pen.join = style.join) as CanvasLineJoin;
   if (pen.miter !== style.miter) ctx.miterLimit = pen.miter = style.miter;
-  if (pen.dash !== style.dash) {
-    ctx.setLineDash((pen.dash = style.dash));
-    ctx.lineDashOffset = pen.phase = style.phase;
+  const dash = style.dash.length
+    ? `${k} ${style.dash.join(" ")} ${style.phase}`
+    : "";
+  if (pen.dash !== dash) {
+    pen.dash = dash;
+    ctx.setLineDash(style.dash.map((d) => d * k));
+    ctx.lineDashOffset = style.phase * k;
   }
 }
 
+/** A program's strokes in device space for scale `k` and an origin `fx, fy` past a whole pixel. */
+function strokePaths(compiled: Program, k: number, fx: number, fy: number) {
+  const cache = compiled.strokes;
+  if (cache.k !== k) {
+    cache.k = k;
+    cache.byOrigin.clear();
+  }
+  const key = `${fx} ${fy}`;
+  let paths = cache.byOrigin.get(key);
+  if (!paths) {
+    paths = [];
+    for (const step of compiled.steps)
+      if (step.kind === "stroke")
+        paths.push(deviceOutline(step.segments, k, fx, fy));
+    cache.byOrigin.set(key, paths);
+  }
+  return paths;
+}
+
+/** Replays a program with its origin at device point `x, y`, `k` device pixels to the unit. */
 function replay(
   ctx: CanvasRenderingContext2D,
   pen: Pen,
   compiled: Program,
   when: boolean[] | null,
   k: number,
-  ox: number,
-  oy: number,
+  x: number,
+  y: number,
   alpha: number,
 ) {
-  // The stroke offset the transform carries; -1 after a step set its own.
-  let applied = 0;
-  const offset = (shift: number) => {
-    if (applied === shift) return;
-    applied = shift;
-    ctx.setTransform(k, 0, 0, k, ox + shift, oy + shift);
+  const bx = Math.floor(x),
+    by = Math.floor(y);
+  let strokes: Path2D[] | null = null;
+  // The transform set: 1 symbol space, 2 device space, 0 something else.
+  let space = 0;
+  const symbolSpace = () => {
+    if (space !== 1) ctx.setTransform(k, 0, 0, k, x, y);
+    space = 1;
   };
-  ctx.setTransform(k, 0, 0, k, ox, oy);
   if (compiled.clips) ctx.save();
   for (const step of compiled.steps) {
     if (step.when >= 0 && !when?.[step.when]) continue;
     const style = step.style;
     switch (step.kind) {
       case "stroke":
-        offset(step.shift);
+        strokes ??= strokePaths(compiled, k, x - bx, y - by);
+        if (space !== 2) ctx.setTransform(1, 0, 0, 1, bx, by);
+        space = 2;
         strokeWith(ctx, pen, style, style.alpha * alpha, k);
-        ctx.stroke(step.path);
+        ctx.stroke(strokes[step.index]);
         break;
       case "fill":
-        offset(0);
+        symbolSpace();
         fillWith(ctx, pen, style.color, style.alpha * alpha);
         ctx.fill(step.path, step.rule);
         break;
       case "clear":
-        offset(0);
+        symbolSpace();
         fillWith(ctx, pen, step.color, alpha);
         ctx.fill(step.path);
         break;
       case "text":
         fillWith(ctx, pen, style.color, style.alpha * alpha);
         if (pen.font !== style.font) ctx.font = pen.font = style.font;
+        symbolSpace();
         if (step.matrix) {
           const [a, b, c, d] = step.matrix;
-          offset(0);
           ctx.translate(step.x, step.y);
           ctx.transform(a, b, c, d, 0, 0);
-          applied = -1;
+          space = 0;
           ctx.fillText(step.text, 0, 0);
-        } else {
-          offset(0);
-          ctx.fillText(step.text, step.x, step.y);
-        }
+        } else ctx.fillText(step.text, step.x, step.y);
         break;
       case "image": {
         if (!step.image.complete || !step.image.naturalWidth) break;
         const m = step.matrix;
-        offset(0);
+        symbolSpace();
         ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-        applied = -1;
+        space = 0;
         if (pen.alpha !== style.alpha * alpha)
           ctx.globalAlpha = pen.alpha = style.alpha * alpha;
         ctx.drawImage(step.image, 0, 0);
@@ -607,8 +807,8 @@ function replay(
         ctx.restore();
         ctx.save();
         pen.reset();
-        applied = 0;
-        ctx.setTransform(k, 0, 0, k, ox, oy);
+        space = 0;
+        symbolSpace();
         if (step.path) ctx.clip(step.path);
         break;
     }
@@ -684,8 +884,7 @@ export function paintFrame(
   }
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  // Wires: Logisim's width-3 round stroke, its vertices normalized as Java2D does.
-  const snap = (d: number) => Math.floor(d + 0.25) + 0.25;
+  // Wires: Logisim's width-3 round stroke, its ends at pixel centres as Java2D puts them.
   const strokeWires = (
     wires: { from: Point; to: Point; error?: boolean }[],
     dx: number,
@@ -708,14 +907,15 @@ export function paintFrame(
       const key = color(Boolean(w.error));
       let path = paths.get(key);
       if (!path) paths.set(key, (path = new Path2D()));
-      path.moveTo(snap(x1 * k + ox), snap(y1 * k + oy));
-      path.lineTo(snap(x2 * k + ox), snap(y2 * k + oy));
+      path.moveTo(centre(x1 * k + ox), centre(y1 * k + oy));
+      path.lineTo(centre(x2 * k + ox), centre(y2 * k + oy));
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.lineWidth = pen.width = WIRE * k;
     ctx.lineCap = pen.cap = "round";
     ctx.lineJoin = pen.join = "round";
-    if (pen.dash?.length !== 0) ctx.setLineDash((pen.dash = []));
+    if (pen.dash !== "") ctx.setLineDash([]);
+    pen.dash = "";
     if (pen.alpha !== 1) ctx.globalAlpha = pen.alpha = 1;
     for (const [key, path] of paths) {
       ctx.strokeStyle = pen.stroke = key;
@@ -767,11 +967,21 @@ export function paintFrame(
     );
   }
   if (scene.broken.length) {
-    ctx.setTransform(k, 0, 0, k, ox, oy);
-    strokeWith(ctx, pen, { ...brokenStyle }, 1, k);
+    const boxes = new Path2D();
     for (const { id, bounds: b } of scene.broken)
-      if (!hidden.has(id) && visible(b))
-        ctx.strokeRect(b.x, b.y, b.width, b.height);
+      if (!hidden.has(id) && visible(b)) {
+        const x1 = centre(b.x * k + ox),
+          y1 = centre(b.y * k + oy);
+        boxes.rect(
+          x1,
+          y1,
+          centre((b.x + b.width) * k + ox) - x1,
+          centre((b.y + b.height) * k + oy) - y1,
+        );
+      }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    strokeWith(ctx, pen, brokenStyle, 1, k);
+    ctx.stroke(boxes);
   }
   if (frame.moved) {
     const { delta, parts, wires } = frame.moved;
