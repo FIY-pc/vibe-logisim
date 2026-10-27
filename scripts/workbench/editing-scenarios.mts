@@ -182,7 +182,8 @@ export async function verifyEditing(command: Command) {
   await assert.rejects(
     () => move(short, [component(short, "outA")], -50, 40),
     (e: any) =>
-      e.code === "CONNECTIONS_CHANGED" && /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
+      e.code === "CONNECTIONS_CHANGED" &&
+      /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
   );
   const unchanged = await command({ op: "read", id: short.id });
   assert.equal(unchanged.revision, short.revision);
@@ -196,7 +197,11 @@ export async function verifyEditing(command: Command) {
       circuit: "main",
       edit: {
         kind: "batch",
-        edits: edits.map(([id, x, y]) => ({ kind: "move", ids: [id], delta: { x, y } })),
+        edits: edits.map(([id, x, y]) => ({
+          kind: "move",
+          ids: [id],
+          delta: { x, y },
+        })),
       },
     }).then(documentOf);
   await assert.rejects(
@@ -205,16 +210,22 @@ export async function verifyEditing(command: Command) {
         [component(short, "outB"), 40, 0],
         [component(short, "outA"), -50, 40],
       ]),
-    (e: any) => e.code === "CONNECTIONS_CHANGED" && /^第 2 组移动/.test(e.message),
+    (e: any) =>
+      e.code === "CONNECTIONS_CHANGED" && /^第 2 组移动/.test(e.message),
   );
-  assert.equal((await command({ op: "read", id: short.id })).revision, short.revision);
+  assert.equal(
+    (await command({ op: "read", id: short.id })).revision,
+    short.revision,
+  );
   const spread = await moves(short, [
     [component(short, "outA"), 40, 0],
     [component(short, "outB"), 60, 0],
   ]);
   await signal(spread, "b", "1", ["outB"]);
   assert.equal(
-    documentOf(await command({ op: "undo", id: spread.id, revision: spread.revision })).revision,
+    documentOf(
+      await command({ op: "undo", id: spread.id, revision: spread.revision }),
+    ).revision,
     short.revision,
     "Moves of one call must be one undo step",
   );
@@ -330,7 +341,8 @@ export async function measureEditing(
     for (const c of page().components) {
       const kind = kindOf(c);
       if (missing.has(kind)) continue;
-      if (!all && known.has(kind) && known.get(kind) === definition(c)) continue;
+      if (!all && known.has(kind) && known.get(kind) === definition(c))
+        continue;
       missing.set(kind, c);
     }
     const [reply, ms] = await timed({
@@ -343,7 +355,10 @@ export async function measureEditing(
       })),
     });
     [...missing].forEach(([kind, c], i) => {
-      assert(reply.symbols[i]?.ops, `No symbol for ${c.name}: ${reply.symbols[i]?.error}`);
+      assert(
+        reply.symbols[i]?.ops,
+        `No symbol for ${c.name}: ${reply.symbols[i]?.error}`,
+      );
       known.set(kind, definition(c));
     });
     sample.symbols = ms;
