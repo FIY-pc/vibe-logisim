@@ -1,5 +1,6 @@
 import type { EditResult } from "../generated/EditResult";
 import { arrangeCircuit } from "./arrange";
+import { keepSymbols } from "./symbols";
 import { componentLabels, libraryLabels } from "./componentLabels";
 import { command } from "../shared/transport";
 import type { CatalogTool, Document, Edit, XmlNode } from "../shared/types";
@@ -240,6 +241,14 @@ export function createEditorActions(stores: Stores) {
         ),
       );
 
+  /** Drops the recorded pictures of documents that closed. Returns the stop. */
+  const watchSymbols = () =>
+    reaction(
+      [documents],
+      () => [documents.getState().docs],
+      ([docs]) => keepSymbols(docs.map((doc) => doc.id)),
+    );
+
   /** Loads the component catalog of each shown circuit. Returns the stop. */
   const watchCatalog = () =>
     reaction(
@@ -307,6 +316,7 @@ export function createEditorActions(stores: Stores) {
     readSource,
     applySource,
     watchCatalog,
+    watchSymbols,
   };
 }
 export type EditorActions = ReturnType<typeof createEditorActions>;

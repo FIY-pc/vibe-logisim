@@ -118,9 +118,10 @@ function documentSymbols(doc: Document) {
   }
   return cache;
 }
-/** Forgets the pictures of a closed document. */
-export function forgetSymbols(id: string) {
-  documents.delete(id);
+/** Forgets the pictures of documents that are no longer open. */
+export function keepSymbols(open: string[]) {
+  for (const id of documents.keys())
+    if (!open.includes(id)) documents.delete(id);
 }
 
 const definitionOf = (
