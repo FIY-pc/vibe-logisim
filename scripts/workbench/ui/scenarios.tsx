@@ -161,11 +161,6 @@ const state = () => ({
         },
       ],
     };
-  if (request.op === "render")
-    return {
-      image:
-        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-    };
   if (request.op === "simulationFrameImage")
     return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
   if (request.op === "simulationNavigate") {
@@ -758,29 +753,35 @@ const canvas = (d: any) => (
   />
 );
 await render(canvas(cd));
-const canvasEl = document.querySelector(".canvas")!;
+// Points at circuit (x, 100) through the view the canvas shows (600px wide).
 const pointer = async (type: string, x: number) => {
+  const [vx, vy, vw] = document
+    .querySelector(".canvas svg[viewBox]")!
+    .getAttribute("viewBox")!
+    .split(" ")
+    .map(Number);
+  const scale = 600 / vw;
   await act(async () =>
     document.querySelector(".canvas")!.dispatchEvent(
       new MouseEvent(type, {
         bubbles: true,
         button: 0,
-        clientX: x,
-        clientY: 140,
+        clientX: (x - vx) * scale,
+        clientY: (100 - vy) * scale,
       }),
     ),
   );
 };
-await pointer("pointerdown", 140);
-await pointer("pointermove", 160);
-await pointer("pointerup", 160);
+await pointer("pointerdown", 100);
+await pointer("pointermove", 120);
+await pointer("pointerup", 120);
 assert.equal(edits.length, 1);
 assert.equal(edits[0].kind, "move");
 edits = [];
-await pointer("pointerdown", 140);
-await pointer("pointermove", 160);
+await pointer("pointerdown", 100);
+await pointer("pointermove", 120);
 await render(canvas({ ...cd, revision: "r2" }));
-await pointer("pointerup", 160);
+await pointer("pointerup", 120);
 assert.equal(edits.length, 0);
 console.log(
   "PASS: revision change cancels in-flight canvas drag instead of editing new revision",
@@ -1192,6 +1193,69 @@ observedFocus = null;
 console.log(
   "PASS: Ctrl-click uses native bit connectivity without wiring, Alt-left restores camera and selection",
 );
+{
+  // Pictures and connections the host refuses as stale re-read the workspace.
+  const host = (globalThis as any).__command;
+  const refused: string[] = [];
+  let stales = 0;
+  (globalThis as any).__command = async (request: any) => {
+    if (
+      (request.op === "symbols" || request.op === "observe") &&
+      request.revision === "r3"
+    ) {
+      refused.push(request.op);
+      throw {
+        code: "STALE_REVISION",
+        message: "电路已改变，请重新读取后再修改",
+        retryable: false,
+      };
+    }
+    return host(request);
+  };
+  const staleDoc = { ...cd, revision: "r3" };
+  const reported = errors.length;
+  function StaleHarness() {
+    const [selection, setSelection] = useState<string[]>([]);
+    return (
+      <Canvas
+        doc={staleDoc as any}
+        circuit={staleDoc.circuits[0]}
+        tool="select"
+        selection={selection}
+        setSelection={setSelection}
+        place={null}
+        placement={noPlacement}
+        onPlace={async () => staleDoc as any}
+        onCancelPlace={() => {}}
+        edit={async () => {}}
+        run={null}
+        picture={null}
+        pending={[]}
+        pressed={null}
+        onPoke={() => {}}
+        onPress={() => {}}
+        onRelease={() => {}}
+        onViewport={() => {}}
+        onError={(e) => errors.push(e)}
+        onStale={() => stales++}
+        fitToken={0}
+        onOpenMemory={() => {}}
+        onEnterCircuit={() => {}}
+      />
+    );
+  }
+  await render(<StaleHarness />);
+  await pointer("pointerdown", 100);
+  await pointer("pointerup", 100);
+  await settle();
+  assert.deepEqual(refused, ["symbols", "observe"]);
+  assert.equal(stales, 2);
+  assert.equal(errors.length, reported, "a stale read is not an error");
+  (globalThis as any).__command = host;
+  console.log(
+    "PASS: a picture or connection read refused as stale re-reads the workspace instead of reporting an error",
+  );
+}
 assert.equal(loadBindings({ palette: "a" }).palette, "A");
 assert.match(bindingProblem("grid", "Mod+S", defaultBindings)!, /保存/);
 assert.match(bindingProblem("grid", "Mod+Shift+S", defaultBindings)!, /另存为/);
