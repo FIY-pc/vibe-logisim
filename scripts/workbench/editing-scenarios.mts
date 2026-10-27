@@ -258,7 +258,7 @@ export async function verifyEditing(command: Command) {
 /** Milliseconds per request of one repetition, by request, and derived columns. */
 type Sample = Record<string, number>;
 /** The requests a repetition sends; `total` adds these up. */
-const REQUESTS = ["preview", "edit", "symbols", "observe"];
+const REQUESTS = ["preview", "edit", "symbols", "observe", "connections"];
 const percentile = (values: number[], p: number) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[
@@ -297,12 +297,14 @@ export function latencyTable(rows: [string, Sample[]][], columns: string[]) {
  * 1 MB project from a folder (so each edit also saves the file), asks for the
  * symbols of every kind on the page the way the canvas does when it opens a
  * circuit, and then repeats every edit the way the canvas issues it: the edit,
- * then one `symbols` request for the new revision with the kinds the window
- * does not have yet (none for most edits; the request still answers the wire
- * width conflicts, which do not hold the picture back). Prints p50/p95 per
- * request in milliseconds; `drawn` is when the canvas can draw the new
- * picture: the edit's answer, plus the symbols' when a kind was missing
- * (`kinds`). The picture is on screen one animation frame later.
+ * whose answer carries the page's width conflicts, then a `symbols` request
+ * only when the new revision uses kinds the window does not have yet
+ * (`kinds`; `requests` counts the round trips). Selecting a component reads
+ * its connections (`select`: the first read of a revision, `reselect`: another
+ * component of the same revision). Prints p50/p95 per request in
+ * milliseconds; `drawn` is when the canvas can draw the new picture: the
+ * edit's answer, plus the symbols' when a kind was missing. The picture is on
+ * screen one animation frame later.
  */
 export async function measureEditing(
   command: Command,
@@ -334,8 +336,8 @@ export async function measureEditing(
     ]);
   const definition = (c: { library?: string | null; name: string }) =>
     c.library ? null : (doc.circuits.find((d) => d.name === c.name) ?? null);
-  /** Asks for the kinds of the page the cache lacks, like the canvas once per
-   * revision; `all` asks for every kind, as when the canvas opens the page. */
+  /** Asks for the kinds of the page the cache lacks, like the canvas; `all`
+   * asks for every kind, as when the canvas opens the page. */
   const symbols = async (sample: Sample, all = false) => {
     const missing = new Map<string, any>();
     for (const c of page().components) {
@@ -344,6 +346,11 @@ export async function measureEditing(
       if (!all && known.has(kind) && known.get(kind) === definition(c))
         continue;
       missing.set(kind, c);
+    }
+    sample.kinds = missing.size;
+    if (!missing.size && !all) {
+      sample.symbols = 0;
+      return null;
     }
     const [reply, ms] = await timed({
       op: "symbols",
@@ -362,7 +369,6 @@ export async function measureEditing(
       known.set(kind, definition(c));
     });
     sample.symbols = ms;
-    sample.kinds = missing.size;
     sample.KB = Buffer.byteLength(JSON.stringify(reply)) / 1024;
     return reply;
   };
@@ -379,18 +385,42 @@ export async function measureEditing(
       (c) =>
         c.name === "AND Gate" && c.location.x === at.x && c.location.y === at.y,
     )!.id;
-  /** Applies an edit, then asks for the symbols of the new revision like the canvas. */
+  /** Applies an edit, then asks for the kinds it brought, like the canvas. */
   const edit = async (change: any, sample: Sample) => {
     const [result, ms] = await timed({ op: "edit", ...scope(), edit: change });
+    assert(
+      Array.isArray(result.change.widthErrors?.[circuit]),
+      "An edit must answer with the width conflicts of the page it changed",
+    );
     doc = documentOf(result);
     sample.edit = ms;
     await symbols(sample);
+    sample.requests = sample.kinds ? 2 : 1;
     sample.drawn = sample.edit + (sample.kinds ? sample.symbols : 0);
     return result;
+  };
+  /** Selects a component: the connection panel reads its nets. */
+  const select = async (at: { x: number; y: number }) => {
+    const [reply, ms] = await timed({
+      op: "connections",
+      ...scope(),
+      components: [find(at)],
+      wires: [],
+    });
+    assert(
+      reply.focus.components.some((c: any) => !c.partial),
+      "The selected component must be read whole",
+    );
+    return {
+      connections: ms,
+      KB: Buffer.byteLength(JSON.stringify(reply)) / 1024,
+    };
   };
   const rows: Record<string, Sample[]> = {
     page: [],
     observe: [],
+    select: [],
+    reselect: [],
     move: [],
     wire: [],
     place: [],
@@ -404,6 +434,8 @@ export async function measureEditing(
     rows.observe.push({
       observe: (await timed({ op: "observe", ...scope() }))[1],
     });
+    rows.select.push(await select(moving));
+    rows.reselect.push(await select(labelled));
     const delta = { x: round % 2 ? -10 : 10, y: 0 };
     const move: Sample = {};
     move.preview = (
@@ -463,9 +495,11 @@ export async function measureEditing(
       "edit",
       "symbols",
       "kinds",
+      "requests",
       "KB",
       "drawn",
       "observe",
+      "connections",
       "total",
     ]),
   );
