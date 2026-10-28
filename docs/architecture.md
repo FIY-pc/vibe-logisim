@@ -21,7 +21,7 @@
 1. **人编辑。** 窗口动作构造 `{op, …}` → `Host::dispatch` → `Document::edit`（带调用方读到的修订）→ 自动保存到源文件 → 记录历史 → 返回只含改动电路的 `change` 和 `selection` → 窗口把它并进打开的文档 → 画布在下一帧用缓存的元件符号重画（缺的种类发一次 `symbols`，见 [rendering.md](rendering.md)）。提交的连线、删除、移动在回复到达前先画出手势本身的结果，其余不预测。
 2. **观察。** 宿主为每个修订落一份不可变 artifact → `Native::observe` 交给 Java 读取端口、位网、边界 → JSON 按 artifact 摘要缓存。连通面板、信号追踪、整理和 AI 的连接检查来自这份观察；画面、命中测试和端口标记用 `symbols` 录下的包围盒和端口，不等观察。
 3. **AI 回合。** 窗口 `agent{method:"ask"}` → 宿主 → sidecar 标准输入 → `TurnRunner` 流式调用模型 → 工具以 `{kind:"host"}` 发宿主请求，走和人编辑完全相同的 `dispatch` → 事件以 `{kind:"event"}` 回到宿主 → 窗口 `agent` 主题。每回合开始和结束各记一次文件夹检查点，窗口收到 `files-changed`，用户可整回合撤销。
-4. **仿真。** 窗口 `simulationAct` → `SimulationRegistry` → 一个 Java 会话 → 帧通过订阅流回 `Event::Simulation` → 窗口 store。每次请求后宿主 `reconcile`：文档关闭或修订变化即结束运行。
+4. **仿真。** 窗口 `simulationStart`/`simulationCommand`/`simulationNavigate`/`simulationStop` → `SimulationRegistry` 里唯一的 run → 一个 Java 进程（运行状态只在这里）。回复只有 `commandSequence` 或错误；Java 的帧经 run 叠进最新状态后，作为 `Event::Simulation` 推给每个页面的订阅（订阅先拿整幅）→ 窗口 store。每次请求后宿主 `reconcile`：文档关闭或修订变化即结束运行。
 
 ## 全局规则，各在一处实现
 
