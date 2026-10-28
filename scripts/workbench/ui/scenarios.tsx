@@ -1090,7 +1090,7 @@ console.log(
   "PASS: Ctrl-click uses native bit connectivity without wiring, Alt-left restores camera and selection",
 );
 {
-  // Pictures and connections the host refuses as stale re-read the workspace.
+  // Pictures and connections the host refuses as stale read the document again.
   const host = (globalThis as any).__command;
   const refused: string[] = [];
   let stales = 0;

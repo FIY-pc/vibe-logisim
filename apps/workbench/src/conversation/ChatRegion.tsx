@@ -39,10 +39,9 @@ export function ChatRegion() {
       doc={doc}
       circuit={circuit?.name || null}
       onError={onError}
-      onFilesChanged={async () => {
-        await stores.documents.getState().refreshWorkspace(true);
-        stores.files.getState().refreshTree();
-      }}
+      // The host reloads or closes the documents whose files the undo
+      // changed and broadcasts that; only the file tree is read again.
+      onFilesChanged={async () => stores.files.getState().refreshTree()}
       folder={folder}
       selection={selection}
       quotation={quotation}

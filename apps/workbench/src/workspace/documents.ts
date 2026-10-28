@@ -44,6 +44,9 @@ export interface DocumentsState {
    * When the document is not at the change's base revision, that one document
    * is read again instead and replaced where it is. */
   applyChange(change: DocumentChange): void;
+  /** Reads one document again and replaces it where it is, for a view the
+   * host said is behind; an older read's answer is dropped. */
+  reread(id: string): void;
   /** Adds or replaces a document and activates it. */
   update(document: Document): void;
   /** Takes the documents the host opened or closed outside a command of this
@@ -170,17 +173,7 @@ export function createDocumentsStore({
       const next = applyDocumentChange(current, change);
       if (!next) {
         // This view missed a change of the document: read that one again.
-        const read = ++readCount;
-        reads.set(change.id, read);
-        void command<Document>({ op: "read", id: change.id })
-          .then((view) => {
-            if (reads.get(view.id) !== read) return;
-            reads.delete(view.id);
-            get().setDocs((previous) =>
-              previous.map((item) => (item.id === view.id ? view : item)),
-            );
-          })
-          .catch(notices.getState().onError);
+        get().reread(change.id);
         return;
       }
       // The new view holds the change's circuit objects.
@@ -188,6 +181,19 @@ export function createDocumentsStore({
       get().setDocs((previous) =>
         previous.map((item) => (item.id === change.id ? next : item)),
       );
+    },
+    reread: (id) => {
+      const read = ++readCount;
+      reads.set(id, read);
+      void command<Document>({ op: "read", id })
+        .then((view) => {
+          if (reads.get(view.id) !== read) return;
+          reads.delete(view.id);
+          get().setDocs((previous) =>
+            previous.map((item) => (item.id === view.id ? view : item)),
+          );
+        })
+        .catch(notices.getState().onError);
     },
     update: (document) => {
       get().setDocs((old) =>
