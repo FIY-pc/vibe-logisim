@@ -374,17 +374,14 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "arrange_circuit",
     label: "整理布局与连线",
     description:
-      "Re-lay out one definition: places parts, routes wires and tunnels, keeps every other definition byte-identical and proves the netlist equivalent before applying. Small definitions without options are laid out by signal flow (inputs left, outputs right, gates in columns, every connection a wire). The result is applied only when it reads more clearly than the current drawing (lower readability score: crossings, bends, close parallel wires, wires over bodies or grazing ports, labels on wires, overlaps); otherwise applied is false, the file is unchanged and worse names what would have got worse. For a readable functional layout of a large sheet first read inspect_circuit({layoutContext:{}}) and supply organization: {groups:[{id,label,row,componentIds}], namedLinks?, localSignals?, stages?, annotations?}. Pinned parts, kept tunnels and the panel row are respected. Look at the result with render_circuit and refine the organization rather than the coordinates.",
+      "Re-lay out one definition from its netlist and apply it only if it reads more clearly. Parts go in columns by signal flow (input Pins left in their order, output Pins right, a carry chain stepping left to right); a net reaching several ports of one column gets one trunk with short taps; Tunnels stand at the ports of nets the sheet already draws with Tunnels, of controls reaching a dozen ports, and of connections a wire cannot reach cleanly. Every other definition stays byte-identical and the netlist is proven equivalent before anything is applied. The result is applied only when it reads more clearly than the current drawing (lower readability score: crossings, bends, close parallel wires, wires over bodies or grazing ports, labels on wires, overlaps); otherwise applied is false, the file is unchanged and worse names what would have got worse. To lay a large sheet out by function, first read inspect_circuit({layoutContext:{}}) and supply organization: {groups:[{id,label,row,componentIds}], namedLinks?, localSignals?, stages?, annotations?}: each group becomes a box under its numbered heading (real Text), groups of one row stand side by side in the given order, rows stack from the top, and nets between rows become Tunnels. Pinned parts, kept tunnels and the panel row stay where they are. Look at the result with render_circuit and refine the organization rather than the coordinates.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
       keepTunnels: array(str({ maxLength: 128 }), { maxItems: 256 }),
       pinnedComponentIds: array(str({ maxLength: 64 }), { maxItems: 2048 }),
       localiseConstants: { type: "boolean" },
-      columnGap: int({ minimum: 60, maximum: 1000 }),
       panelBelowY: int({ minimum: -100000, maximum: 100000 }),
-      maxLayerSpan: int({ minimum: 1, maximum: 64 }),
-      tunnelSpan: int({ minimum: 100, maximum: 5000 }),
       organization: object(
         {
           groups: array(
@@ -402,15 +399,6 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
                   minItems: 1,
                   maxItems: 2048,
                 }),
-                layout: str({
-                  enum: ["flow", "bank"],
-                  description:
-                    "flow: layered logic (default); bank: repeated parallel parts in narrow columns.",
-                }),
-                columns: int({ minimum: 1, maximum: 2 }),
-                role: str({ enum: ["main", "support"] }),
-                bankOrder: str({ enum: ["connected", "given"] }),
-                attachTo: str(),
               },
               ["id", "label", "row", "componentIds"],
             ),
@@ -428,8 +416,6 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
             { maxItems: 256 },
           ),
           localSignals: array(str(), { maxItems: 256 }),
-          maxRowWidth: int({ minimum: 0 }),
-          sharedControls: { type: "boolean" },
           stages: array(
             object(
               {

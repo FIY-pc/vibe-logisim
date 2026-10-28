@@ -32,9 +32,9 @@ Reserve space for native symbols **and their labels/value displays**, not just a
 
 ## Realize the plan
 
-The built-in grouped arranger is available to turn semantic groups into geometry, local wires and named remote links, with native connectivity and interface checks. Read [the arrangement reference](references/arrangement.md) when using it. Direct `.circ` edits, scripts and alternative methods remain valid; the same delivery standard applies to their outputs.
+The built-in arranger lays a definition out by signal flow, or by the semantic groups you give it, with native connectivity and interface checks. Read [the arrangement reference](references/arrangement.md) when using it. Direct `.circ` edits, scripts and alternative methods remain valid; the same delivery standard applies to their outputs.
 
-`arrange_circuit` applies its result to the file only when the netlist is proven equivalent and the new layout reads more clearly than the current drawing (lower readability score); otherwise it returns `applied: false` with the measures that would have got worse and the file is unchanged. Without options, a small gate-level definition is laid out by signal flow. `undo_edit` takes an applied layout back. Direct file edits are already on disk and the app reloads them. Neither establishes intended behavior.
+`arrange_circuit` applies its result to the file only when the netlist is proven equivalent and the new layout reads more clearly than the current drawing (lower readability score); otherwise it returns `applied: false` with the measures that would have got worse and the file is unchanged. Without options the whole definition is laid out by signal flow; `organization` lays it out by function. `undo_edit` takes an applied layout back. Direct file edits are already on disk and the app reloads them. Neither establishes intended behavior.
 
 ## Review the actual deliverable
 
@@ -44,7 +44,7 @@ When a layout is disappointing, name the specific reading problem and retain wha
 - A staged page is too wide because a long author legend occupies a bank cell and branches stack in one column. Separate the annotation and adjust group/stage packing. Deleting the stages and protecting every signal as named-only may shrink the page while making the main operation harder to follow.
 - A small terminal output sits at the end of a long empty wire. Move the terminal toward its producer, preserving the local motif. A remote multi-consumer reference may instead justify a named link; the decision follows what the reader needs to trace.
 
-These are reasoning examples, not permission to change protected structures or mandatory choices for every circuit. Each revision should fix its stated problem without surrendering useful organization. The arranger's representationChoices and annotationOnlyGroups help expose such tradeoffs; they do not choose the semantic plan for you.
+These are reasoning examples, not permission to change protected structures or mandatory choices for every circuit. Each revision should fix its stated problem without surrendering useful organization.
 
 Use `inspect_circuit({circuit: "<exact definition name>", layoutReview: {}})` for compact, read-only evidence on the working file. It works without calling the arranger. The result identifies overlapping bounds and suggested `render_circuit` viewports. `readingPaths.nearbyNamedLinks` gives actual source/consumer ports with identical native bit nets but separate copper paths joined by the same Tunnel label. These examples identify a possible hidden local relationship, not a wiring prescription or a full graph: split/recombined buses, ambiguous drivers and recognized control ports are excluded. The review covers one definition at a time; it is not coverage of the whole task.
 

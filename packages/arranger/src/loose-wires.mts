@@ -1,7 +1,6 @@
 // Preserve unfinished and cyclic copper independently of port-net
 // equivalence. Native normalised segments: a crossing is not a connection
 // unless it has an endpoint. Tunnel aliases must not join distant drawings.
-import { PyValueError } from "./py.mts";
 import type { Focus, Wire, XY } from "./types.mts";
 
 export interface WireIsland {
@@ -119,7 +118,7 @@ export function assertFloatingIsolation(before: Focus, after: Focus): void {
             Math.max(Math.min(a[0], b[0]), Math.min(p[0], q[0]));
         }
         if (overlap)
-          throw new PyValueError(
+          throw new Error(
             "整理把独立导线接到了元件，请调整整理范围或固定相关元件",
           );
       }

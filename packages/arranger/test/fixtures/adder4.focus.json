@@ -1,0 +1,7824 @@
+{
+ "circuit": "main",
+ "bounds": {
+  "x": 75,
+  "y": 20,
+  "width": 590,
+  "height": 765
+ },
+ "region": null,
+ "instancePaths": [
+  {
+   "root": "main",
+   "steps": []
+  }
+ ],
+ "components": [
+  {
+   "componentId": "c100_30",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 30
+    },
+    "label": "Cin"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 30
+   },
+   "bounds": {
+    "x": 75,
+    "y": 20,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 1,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "Cin"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 30
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:080790795b8dd0d2"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_80",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 80
+    },
+    "label": "A0"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 80
+   },
+   "bounds": {
+    "x": 75,
+    "y": 70,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 51,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "A0"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 80
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:ced0bf5322fe1b0b"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c260_110",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 260,
+     "y": 110
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 260,
+    "y": 110
+   },
+   "bounds": {
+    "x": 220,
+    "y": 95,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 220,
+    "y": 95,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 260,
+      "y": 110
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b57a7b60b6ff5087"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 220,
+      "y": 100
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:ced0bf5322fe1b0b"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 220,
+      "y": 120
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b47e759e2e8233e8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_120",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 120
+    },
+    "label": "B0"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 120
+   },
+   "bounds": {
+    "x": 75,
+    "y": 110,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 91,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "B0"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 120
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b47e759e2e8233e8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_120",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 420,
+     "y": 120
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 120
+   },
+   "bounds": {
+    "x": 380,
+    "y": 105,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 380,
+    "y": 105,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 120
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:f949b858d1ea47f9"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 380,
+      "y": 110
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b57a7b60b6ff5087"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 380,
+      "y": 130
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:080790795b8dd0d2"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c640_120",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 640,
+     "y": 120
+    },
+    "label": "S0"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 640,
+    "y": 120
+   },
+   "bounds": {
+    "x": 640,
+    "y": 110,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 640,
+    "y": 91,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "west"
+    },
+    {
+     "name": "output",
+     "standard": "true"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "S0"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 640,
+      "y": 120
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "circuitOutput",
+     "runtimeTooltip": "Add an output pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:f949b858d1ea47f9"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_180",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 180
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 180
+   },
+   "bounds": {
+    "x": 390,
+    "y": 165,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 165,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 180
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:da5c4ed298e623bc"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 170
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b57a7b60b6ff5087"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 190
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:080790795b8dd0d2"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c540_210",
+   "selector": {
+    "circuit": "main",
+    "factory": "OR Gate",
+    "location": {
+     "x": 540,
+     "y": 210
+    },
+    "label": null
+   },
+   "factoryName": "OR Gate",
+   "displayName": "OR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.OrGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 540,
+    "y": 210
+   },
+   "bounds": {
+    "x": 510,
+    "y": 195,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 510,
+    "y": 195,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 540,
+      "y": 210
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:25eec39c670b726f"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 510,
+      "y": 200
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:da5c4ed298e623bc"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 510,
+      "y": 220
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:ebae912bc0491aee"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_230",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 230
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 230
+   },
+   "bounds": {
+    "x": 390,
+    "y": 215,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 215,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 230
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:ebae912bc0491aee"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 220
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:ced0bf5322fe1b0b"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 240
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b47e759e2e8233e8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_260",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 260
+    },
+    "label": "A1"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 260
+   },
+   "bounds": {
+    "x": 75,
+    "y": 250,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 231,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "A1"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 260
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:fec301cff94bfabf"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c260_290",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 260,
+     "y": 290
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 260,
+    "y": 290
+   },
+   "bounds": {
+    "x": 220,
+    "y": 275,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 220,
+    "y": 275,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 260,
+      "y": 290
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:5fe45e4be0337ef8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 220,
+      "y": 280
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:fec301cff94bfabf"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 220,
+      "y": 300
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b17d8206932ef19f"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_300",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 300
+    },
+    "label": "B1"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 300
+   },
+   "bounds": {
+    "x": 75,
+    "y": 290,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 271,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "B1"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 300
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b17d8206932ef19f"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_300",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 420,
+     "y": 300
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 300
+   },
+   "bounds": {
+    "x": 380,
+    "y": 285,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 380,
+    "y": 285,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 300
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:c0712fab6020d8a0"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 380,
+      "y": 290
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:5fe45e4be0337ef8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 380,
+      "y": 310
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:25eec39c670b726f"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c640_300",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 640,
+     "y": 300
+    },
+    "label": "S1"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 640,
+    "y": 300
+   },
+   "bounds": {
+    "x": 640,
+    "y": 290,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 640,
+    "y": 271,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "west"
+    },
+    {
+     "name": "output",
+     "standard": "true"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "S1"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 640,
+      "y": 300
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "circuitOutput",
+     "runtimeTooltip": "Add an output pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:c0712fab6020d8a0"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_360",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 360
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 360
+   },
+   "bounds": {
+    "x": 390,
+    "y": 345,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 345,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 360
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:50f12aaea64ff428"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 350
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:5fe45e4be0337ef8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 370
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:25eec39c670b726f"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c540_390",
+   "selector": {
+    "circuit": "main",
+    "factory": "OR Gate",
+    "location": {
+     "x": 540,
+     "y": 390
+    },
+    "label": null
+   },
+   "factoryName": "OR Gate",
+   "displayName": "OR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.OrGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 540,
+    "y": 390
+   },
+   "bounds": {
+    "x": 510,
+    "y": 375,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 510,
+    "y": 375,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 540,
+      "y": 390
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:0bc1edc7574c219d"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 510,
+      "y": 380
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:50f12aaea64ff428"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 510,
+      "y": 400
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1eb687168dd69ae8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_410",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 410
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 410
+   },
+   "bounds": {
+    "x": 390,
+    "y": 395,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 395,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 410
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1eb687168dd69ae8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 400
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:fec301cff94bfabf"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 420
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:b17d8206932ef19f"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_440",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 440
+    },
+    "label": "A2"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 440
+   },
+   "bounds": {
+    "x": 75,
+    "y": 430,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 411,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "A2"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 440
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1daa5111c8579d31"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c260_470",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 260,
+     "y": 470
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 260,
+    "y": 470
+   },
+   "bounds": {
+    "x": 220,
+    "y": 455,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 220,
+    "y": 455,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 260,
+      "y": 470
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1c94faea9743e9ee"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 220,
+      "y": 460
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1daa5111c8579d31"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 220,
+      "y": 480
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:24f52d45003a4c04"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_480",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 480
+    },
+    "label": "B2"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 480
+   },
+   "bounds": {
+    "x": 75,
+    "y": 470,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 451,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "B2"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 480
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:24f52d45003a4c04"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_480",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 420,
+     "y": 480
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 480
+   },
+   "bounds": {
+    "x": 380,
+    "y": 465,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 380,
+    "y": 465,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 480
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:eacf319af0fbd200"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 380,
+      "y": 470
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1c94faea9743e9ee"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 380,
+      "y": 490
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:0bc1edc7574c219d"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c640_480",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 640,
+     "y": 480
+    },
+    "label": "S2"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 640,
+    "y": 480
+   },
+   "bounds": {
+    "x": 640,
+    "y": 470,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 640,
+    "y": 451,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "west"
+    },
+    {
+     "name": "output",
+     "standard": "true"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "S2"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 640,
+      "y": 480
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "circuitOutput",
+     "runtimeTooltip": "Add an output pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:eacf319af0fbd200"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_540",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 540
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 540
+   },
+   "bounds": {
+    "x": 390,
+    "y": 525,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 525,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 540
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:08a5aaaf0eea5190"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 530
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1c94faea9743e9ee"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 550
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:0bc1edc7574c219d"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c540_570",
+   "selector": {
+    "circuit": "main",
+    "factory": "OR Gate",
+    "location": {
+     "x": 540,
+     "y": 570
+    },
+    "label": null
+   },
+   "factoryName": "OR Gate",
+   "displayName": "OR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.OrGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 540,
+    "y": 570
+   },
+   "bounds": {
+    "x": 510,
+    "y": 555,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 510,
+    "y": 555,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 540,
+      "y": 570
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:fc7d466106ff9fea"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 510,
+      "y": 560
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:08a5aaaf0eea5190"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 510,
+      "y": 580
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:3cf2dcf5fbe17d8e"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_590",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 590
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 590
+   },
+   "bounds": {
+    "x": 390,
+    "y": 575,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 575,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 590
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:3cf2dcf5fbe17d8e"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 580
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:1daa5111c8579d31"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 600
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:24f52d45003a4c04"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_620",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 620
+    },
+    "label": "A3"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 620
+   },
+   "bounds": {
+    "x": 75,
+    "y": 610,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 591,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "A3"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 620
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:7ee4235b40d1ed8a"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c260_650",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 260,
+     "y": 650
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 260,
+    "y": 650
+   },
+   "bounds": {
+    "x": 220,
+    "y": 635,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 220,
+    "y": 635,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 260,
+      "y": 650
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:57a6464730ef85f2"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 220,
+      "y": 640
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:7ee4235b40d1ed8a"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 220,
+      "y": 660
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:3361a03aa40b5c4a"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c100_660",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 100,
+     "y": 660
+    },
+    "label": "B3"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 100,
+    "y": 660
+   },
+   "bounds": {
+    "x": 75,
+    "y": 650,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 75,
+    "y": 631,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "output",
+     "standard": "false"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "B3"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 100,
+      "y": 660
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "circuitInput",
+     "runtimeTooltip": "Add an input pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:3361a03aa40b5c4a"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_660",
+   "selector": {
+    "circuit": "main",
+    "factory": "XOR Gate",
+    "location": {
+     "x": 420,
+     "y": 660
+    },
+    "label": null
+   },
+   "factoryName": "XOR Gate",
+   "displayName": "XOR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.XorGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 660
+   },
+   "bounds": {
+    "x": 380,
+    "y": 645,
+    "width": 40,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 380,
+    "y": 645,
+    "width": 40,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "xor",
+     "standard": "1"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 660
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:33b8d500a65d8d2c"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 380,
+      "y": 650
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:57a6464730ef85f2"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 380,
+      "y": 670
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:fc7d466106ff9fea"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c640_660",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 640,
+     "y": 660
+    },
+    "label": "S3"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 640,
+    "y": 660
+   },
+   "bounds": {
+    "x": 640,
+    "y": 650,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 640,
+    "y": 631,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "west"
+    },
+    {
+     "name": "output",
+     "standard": "true"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "S3"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 640,
+      "y": 660
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "circuitOutput",
+     "runtimeTooltip": "Add an output pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:33b8d500a65d8d2c"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_720",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 720
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 720
+   },
+   "bounds": {
+    "x": 390,
+    "y": 705,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 705,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 720
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:e14d2675e477d271"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 710
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:57a6464730ef85f2"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 730
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:fc7d466106ff9fea"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c540_750",
+   "selector": {
+    "circuit": "main",
+    "factory": "OR Gate",
+    "location": {
+     "x": 540,
+     "y": 750
+    },
+    "label": null
+   },
+   "factoryName": "OR Gate",
+   "displayName": "OR Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.OrGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 540,
+    "y": 750
+   },
+   "bounds": {
+    "x": 510,
+    "y": 735,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 510,
+    "y": 735,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 540,
+      "y": 750
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:9f3d8c09881ad36b"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 510,
+      "y": 740
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:e14d2675e477d271"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 510,
+      "y": 760
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:e78d0279ad1abbf8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c640_750",
+   "selector": {
+    "circuit": "main",
+    "factory": "Pin",
+    "location": {
+     "x": 640,
+     "y": 750
+    },
+    "label": "Cout"
+   },
+   "factoryName": "Pin",
+   "displayName": "Pin",
+   "factoryClass": "com.cburch.logisim.std.wiring.Pin",
+   "factoryProvenance": "library:Wiring",
+   "location": {
+    "x": 640,
+    "y": 750
+   },
+   "bounds": {
+    "x": 640,
+    "y": 740,
+    "width": 25,
+    "height": 20
+   },
+   "visualBounds": {
+    "x": 640,
+    "y": 721,
+    "width": 25,
+    "height": 39
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "west"
+    },
+    {
+     "name": "output",
+     "standard": "true"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "tristate",
+     "standard": "true"
+    },
+    {
+     "name": "pull",
+     "standard": "none"
+    },
+    {
+     "name": "label",
+     "standard": "Cout"
+    },
+    {
+     "name": "labelloc",
+     "standard": "north"
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 640,
+      "y": 750
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "circuitOutput",
+     "runtimeTooltip": "Add an output pin",
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:9f3d8c09881ad36b"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  },
+  {
+   "componentId": "c420_770",
+   "selector": {
+    "circuit": "main",
+    "factory": "AND Gate",
+    "location": {
+     "x": 420,
+     "y": 770
+    },
+    "label": null
+   },
+   "factoryName": "AND Gate",
+   "displayName": "AND Gate",
+   "factoryClass": "com.cburch.logisim.std.gates.AndGate",
+   "factoryProvenance": "library:Gates",
+   "location": {
+    "x": 420,
+    "y": 770
+   },
+   "bounds": {
+    "x": 390,
+    "y": 755,
+    "width": 30,
+    "height": 30
+   },
+   "visualBounds": {
+    "x": 390,
+    "y": 755,
+    "width": 30,
+    "height": 30
+   },
+   "inRegion": true,
+   "attributes": [
+    {
+     "name": "facing",
+     "standard": "east"
+    },
+    {
+     "name": "width",
+     "standard": "1"
+    },
+    {
+     "name": "size",
+     "standard": "30"
+    },
+    {
+     "name": "inputs",
+     "standard": "2"
+    },
+    {
+     "name": "out",
+     "standard": "01"
+    },
+    {
+     "name": "label",
+     "standard": ""
+    },
+    {
+     "name": "labelfont",
+     "standard": "Dialog plain 12"
+    },
+    {
+     "name": "labelcolor",
+     "standard": "#000000"
+    },
+    {
+     "name": "negate0",
+     "standard": "false"
+    },
+    {
+     "name": "negate1",
+     "standard": "false"
+    }
+   ],
+   "ends": [
+    {
+     "index": 0,
+     "location": {
+      "x": 420,
+      "y": 770
+     },
+     "width": 1,
+     "exclusive": true,
+     "semanticRole": "output",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:e78d0279ad1abbf8"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "output"
+    },
+    {
+     "index": 1,
+     "location": {
+      "x": 390,
+      "y": 760
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[0]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:7ee4235b40d1ed8a"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    },
+    {
+     "index": 2,
+     "location": {
+      "x": 390,
+      "y": 780
+     },
+     "width": 1,
+     "exclusive": false,
+     "semanticRole": "input[1]",
+     "runtimeTooltip": null,
+     "netBits": [
+      {
+       "bit": 0,
+       "netId": "n:3361a03aa40b5c4a"
+      }
+     ],
+     "localOccupants": 2,
+     "direction": "input"
+    }
+   ],
+   "subcircuit": null,
+   "storage": null
+  }
+ ],
+ "wires": [
+  {
+   "wireId": "w000",
+   "from": {
+    "x": 100,
+    "y": 30
+   },
+   "to": {
+    "x": 370,
+    "y": 30
+   },
+   "bundleId": "b:b0eb03f0a5bc094a"
+  },
+  {
+   "wireId": "w001",
+   "from": {
+    "x": 370,
+    "y": 30
+   },
+   "to": {
+    "x": 370,
+    "y": 130
+   },
+   "bundleId": "b:b0eb03f0a5bc094a"
+  },
+  {
+   "wireId": "w002",
+   "from": {
+    "x": 100,
+    "y": 80
+   },
+   "to": {
+    "x": 210,
+    "y": 80
+   },
+   "bundleId": "b:3f46eb9da1abfc0d"
+  },
+  {
+   "wireId": "w003",
+   "from": {
+    "x": 210,
+    "y": 80
+   },
+   "to": {
+    "x": 210,
+    "y": 100
+   },
+   "bundleId": "b:3f46eb9da1abfc0d"
+  },
+  {
+   "wireId": "w004",
+   "from": {
+    "x": 210,
+    "y": 100
+   },
+   "to": {
+    "x": 220,
+    "y": 100
+   },
+   "bundleId": "b:3f46eb9da1abfc0d"
+  },
+  {
+   "wireId": "w005",
+   "from": {
+    "x": 210,
+    "y": 100
+   },
+   "to": {
+    "x": 210,
+    "y": 220
+   },
+   "bundleId": "b:3f46eb9da1abfc0d"
+  },
+  {
+   "wireId": "w006",
+   "from": {
+    "x": 260,
+    "y": 110
+   },
+   "to": {
+    "x": 360,
+    "y": 110
+   },
+   "bundleId": "b:3179c8b4c29d549f"
+  },
+  {
+   "wireId": "w007",
+   "from": {
+    "x": 360,
+    "y": 110
+   },
+   "to": {
+    "x": 380,
+    "y": 110
+   },
+   "bundleId": "b:3179c8b4c29d549f"
+  },
+  {
+   "wireId": "w008",
+   "from": {
+    "x": 360,
+    "y": 110
+   },
+   "to": {
+    "x": 360,
+    "y": 170
+   },
+   "bundleId": "b:3179c8b4c29d549f"
+  },
+  {
+   "wireId": "w009",
+   "from": {
+    "x": 100,
+    "y": 120
+   },
+   "to": {
+    "x": 200,
+    "y": 120
+   },
+   "bundleId": "b:73bb114785d21bac"
+  },
+  {
+   "wireId": "w010",
+   "from": {
+    "x": 200,
+    "y": 120
+   },
+   "to": {
+    "x": 220,
+    "y": 120
+   },
+   "bundleId": "b:73bb114785d21bac"
+  },
+  {
+   "wireId": "w011",
+   "from": {
+    "x": 200,
+    "y": 120
+   },
+   "to": {
+    "x": 200,
+    "y": 240
+   },
+   "bundleId": "b:73bb114785d21bac"
+  },
+  {
+   "wireId": "w012",
+   "from": {
+    "x": 420,
+    "y": 120
+   },
+   "to": {
+    "x": 640,
+    "y": 120
+   },
+   "bundleId": "b:20762baf820d2ee4"
+  },
+  {
+   "wireId": "w013",
+   "from": {
+    "x": 370,
+    "y": 130
+   },
+   "to": {
+    "x": 380,
+    "y": 130
+   },
+   "bundleId": "b:b0eb03f0a5bc094a"
+  },
+  {
+   "wireId": "w014",
+   "from": {
+    "x": 370,
+    "y": 130
+   },
+   "to": {
+    "x": 370,
+    "y": 190
+   },
+   "bundleId": "b:b0eb03f0a5bc094a"
+  },
+  {
+   "wireId": "w015",
+   "from": {
+    "x": 360,
+    "y": 170
+   },
+   "to": {
+    "x": 390,
+    "y": 170
+   },
+   "bundleId": "b:3179c8b4c29d549f"
+  },
+  {
+   "wireId": "w016",
+   "from": {
+    "x": 420,
+    "y": 180
+   },
+   "to": {
+    "x": 500,
+    "y": 180
+   },
+   "bundleId": "b:70586beab53a8035"
+  },
+  {
+   "wireId": "w017",
+   "from": {
+    "x": 500,
+    "y": 180
+   },
+   "to": {
+    "x": 500,
+    "y": 200
+   },
+   "bundleId": "b:70586beab53a8035"
+  },
+  {
+   "wireId": "w018",
+   "from": {
+    "x": 370,
+    "y": 190
+   },
+   "to": {
+    "x": 390,
+    "y": 190
+   },
+   "bundleId": "b:b0eb03f0a5bc094a"
+  },
+  {
+   "wireId": "w019",
+   "from": {
+    "x": 500,
+    "y": 200
+   },
+   "to": {
+    "x": 510,
+    "y": 200
+   },
+   "bundleId": "b:70586beab53a8035"
+  },
+  {
+   "wireId": "w020",
+   "from": {
+    "x": 540,
+    "y": 210
+   },
+   "to": {
+    "x": 550,
+    "y": 210
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w021",
+   "from": {
+    "x": 550,
+    "y": 210
+   },
+   "to": {
+    "x": 550,
+    "y": 320
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w022",
+   "from": {
+    "x": 210,
+    "y": 220
+   },
+   "to": {
+    "x": 390,
+    "y": 220
+   },
+   "bundleId": "b:3f46eb9da1abfc0d"
+  },
+  {
+   "wireId": "w023",
+   "from": {
+    "x": 500,
+    "y": 220
+   },
+   "to": {
+    "x": 510,
+    "y": 220
+   },
+   "bundleId": "b:27223d2b93385686"
+  },
+  {
+   "wireId": "w024",
+   "from": {
+    "x": 500,
+    "y": 220
+   },
+   "to": {
+    "x": 500,
+    "y": 230
+   },
+   "bundleId": "b:27223d2b93385686"
+  },
+  {
+   "wireId": "w025",
+   "from": {
+    "x": 420,
+    "y": 230
+   },
+   "to": {
+    "x": 500,
+    "y": 230
+   },
+   "bundleId": "b:27223d2b93385686"
+  },
+  {
+   "wireId": "w026",
+   "from": {
+    "x": 200,
+    "y": 240
+   },
+   "to": {
+    "x": 390,
+    "y": 240
+   },
+   "bundleId": "b:73bb114785d21bac"
+  },
+  {
+   "wireId": "w027",
+   "from": {
+    "x": 100,
+    "y": 260
+   },
+   "to": {
+    "x": 210,
+    "y": 260
+   },
+   "bundleId": "b:e48d22d07fe53f33"
+  },
+  {
+   "wireId": "w028",
+   "from": {
+    "x": 210,
+    "y": 260
+   },
+   "to": {
+    "x": 210,
+    "y": 280
+   },
+   "bundleId": "b:e48d22d07fe53f33"
+  },
+  {
+   "wireId": "w029",
+   "from": {
+    "x": 210,
+    "y": 280
+   },
+   "to": {
+    "x": 220,
+    "y": 280
+   },
+   "bundleId": "b:e48d22d07fe53f33"
+  },
+  {
+   "wireId": "w030",
+   "from": {
+    "x": 210,
+    "y": 280
+   },
+   "to": {
+    "x": 210,
+    "y": 400
+   },
+   "bundleId": "b:e48d22d07fe53f33"
+  },
+  {
+   "wireId": "w031",
+   "from": {
+    "x": 260,
+    "y": 290
+   },
+   "to": {
+    "x": 360,
+    "y": 290
+   },
+   "bundleId": "b:81bf8f24a18bca3f"
+  },
+  {
+   "wireId": "w032",
+   "from": {
+    "x": 360,
+    "y": 290
+   },
+   "to": {
+    "x": 380,
+    "y": 290
+   },
+   "bundleId": "b:81bf8f24a18bca3f"
+  },
+  {
+   "wireId": "w033",
+   "from": {
+    "x": 360,
+    "y": 290
+   },
+   "to": {
+    "x": 360,
+    "y": 350
+   },
+   "bundleId": "b:81bf8f24a18bca3f"
+  },
+  {
+   "wireId": "w034",
+   "from": {
+    "x": 100,
+    "y": 300
+   },
+   "to": {
+    "x": 200,
+    "y": 300
+   },
+   "bundleId": "b:b5fda04fa3134daa"
+  },
+  {
+   "wireId": "w035",
+   "from": {
+    "x": 200,
+    "y": 300
+   },
+   "to": {
+    "x": 220,
+    "y": 300
+   },
+   "bundleId": "b:b5fda04fa3134daa"
+  },
+  {
+   "wireId": "w036",
+   "from": {
+    "x": 200,
+    "y": 300
+   },
+   "to": {
+    "x": 200,
+    "y": 420
+   },
+   "bundleId": "b:b5fda04fa3134daa"
+  },
+  {
+   "wireId": "w037",
+   "from": {
+    "x": 420,
+    "y": 300
+   },
+   "to": {
+    "x": 640,
+    "y": 300
+   },
+   "bundleId": "b:9b2c9d9a44d17f5d"
+  },
+  {
+   "wireId": "w038",
+   "from": {
+    "x": 370,
+    "y": 310
+   },
+   "to": {
+    "x": 380,
+    "y": 310
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w039",
+   "from": {
+    "x": 370,
+    "y": 310
+   },
+   "to": {
+    "x": 370,
+    "y": 320
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w040",
+   "from": {
+    "x": 370,
+    "y": 320
+   },
+   "to": {
+    "x": 380,
+    "y": 320
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w041",
+   "from": {
+    "x": 380,
+    "y": 320
+   },
+   "to": {
+    "x": 550,
+    "y": 320
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w042",
+   "from": {
+    "x": 380,
+    "y": 320
+   },
+   "to": {
+    "x": 380,
+    "y": 370
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w043",
+   "from": {
+    "x": 360,
+    "y": 350
+   },
+   "to": {
+    "x": 390,
+    "y": 350
+   },
+   "bundleId": "b:81bf8f24a18bca3f"
+  },
+  {
+   "wireId": "w044",
+   "from": {
+    "x": 420,
+    "y": 360
+   },
+   "to": {
+    "x": 500,
+    "y": 360
+   },
+   "bundleId": "b:7ab1340678c803cb"
+  },
+  {
+   "wireId": "w045",
+   "from": {
+    "x": 500,
+    "y": 360
+   },
+   "to": {
+    "x": 500,
+    "y": 380
+   },
+   "bundleId": "b:7ab1340678c803cb"
+  },
+  {
+   "wireId": "w046",
+   "from": {
+    "x": 380,
+    "y": 370
+   },
+   "to": {
+    "x": 390,
+    "y": 370
+   },
+   "bundleId": "b:6bdd369b3515e7a4"
+  },
+  {
+   "wireId": "w047",
+   "from": {
+    "x": 500,
+    "y": 380
+   },
+   "to": {
+    "x": 510,
+    "y": 380
+   },
+   "bundleId": "b:7ab1340678c803cb"
+  },
+  {
+   "wireId": "w048",
+   "from": {
+    "x": 540,
+    "y": 390
+   },
+   "to": {
+    "x": 550,
+    "y": 390
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w049",
+   "from": {
+    "x": 550,
+    "y": 390
+   },
+   "to": {
+    "x": 550,
+    "y": 500
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w050",
+   "from": {
+    "x": 210,
+    "y": 400
+   },
+   "to": {
+    "x": 390,
+    "y": 400
+   },
+   "bundleId": "b:e48d22d07fe53f33"
+  },
+  {
+   "wireId": "w051",
+   "from": {
+    "x": 500,
+    "y": 400
+   },
+   "to": {
+    "x": 510,
+    "y": 400
+   },
+   "bundleId": "b:ccda3c6e70e988b3"
+  },
+  {
+   "wireId": "w052",
+   "from": {
+    "x": 500,
+    "y": 400
+   },
+   "to": {
+    "x": 500,
+    "y": 410
+   },
+   "bundleId": "b:ccda3c6e70e988b3"
+  },
+  {
+   "wireId": "w053",
+   "from": {
+    "x": 420,
+    "y": 410
+   },
+   "to": {
+    "x": 500,
+    "y": 410
+   },
+   "bundleId": "b:ccda3c6e70e988b3"
+  },
+  {
+   "wireId": "w054",
+   "from": {
+    "x": 200,
+    "y": 420
+   },
+   "to": {
+    "x": 390,
+    "y": 420
+   },
+   "bundleId": "b:b5fda04fa3134daa"
+  },
+  {
+   "wireId": "w055",
+   "from": {
+    "x": 100,
+    "y": 440
+   },
+   "to": {
+    "x": 210,
+    "y": 440
+   },
+   "bundleId": "b:067257afd1ac5e2d"
+  },
+  {
+   "wireId": "w056",
+   "from": {
+    "x": 210,
+    "y": 440
+   },
+   "to": {
+    "x": 210,
+    "y": 460
+   },
+   "bundleId": "b:067257afd1ac5e2d"
+  },
+  {
+   "wireId": "w057",
+   "from": {
+    "x": 210,
+    "y": 460
+   },
+   "to": {
+    "x": 220,
+    "y": 460
+   },
+   "bundleId": "b:067257afd1ac5e2d"
+  },
+  {
+   "wireId": "w058",
+   "from": {
+    "x": 210,
+    "y": 460
+   },
+   "to": {
+    "x": 210,
+    "y": 580
+   },
+   "bundleId": "b:067257afd1ac5e2d"
+  },
+  {
+   "wireId": "w059",
+   "from": {
+    "x": 260,
+    "y": 470
+   },
+   "to": {
+    "x": 360,
+    "y": 470
+   },
+   "bundleId": "b:c99534bb2227fa2a"
+  },
+  {
+   "wireId": "w060",
+   "from": {
+    "x": 360,
+    "y": 470
+   },
+   "to": {
+    "x": 380,
+    "y": 470
+   },
+   "bundleId": "b:c99534bb2227fa2a"
+  },
+  {
+   "wireId": "w061",
+   "from": {
+    "x": 360,
+    "y": 470
+   },
+   "to": {
+    "x": 360,
+    "y": 530
+   },
+   "bundleId": "b:c99534bb2227fa2a"
+  },
+  {
+   "wireId": "w062",
+   "from": {
+    "x": 100,
+    "y": 480
+   },
+   "to": {
+    "x": 200,
+    "y": 480
+   },
+   "bundleId": "b:ecb5d8f55fbe2ac8"
+  },
+  {
+   "wireId": "w063",
+   "from": {
+    "x": 200,
+    "y": 480
+   },
+   "to": {
+    "x": 220,
+    "y": 480
+   },
+   "bundleId": "b:ecb5d8f55fbe2ac8"
+  },
+  {
+   "wireId": "w064",
+   "from": {
+    "x": 200,
+    "y": 480
+   },
+   "to": {
+    "x": 200,
+    "y": 600
+   },
+   "bundleId": "b:ecb5d8f55fbe2ac8"
+  },
+  {
+   "wireId": "w065",
+   "from": {
+    "x": 420,
+    "y": 480
+   },
+   "to": {
+    "x": 640,
+    "y": 480
+   },
+   "bundleId": "b:866bee67ad245b3d"
+  },
+  {
+   "wireId": "w066",
+   "from": {
+    "x": 370,
+    "y": 490
+   },
+   "to": {
+    "x": 380,
+    "y": 490
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w067",
+   "from": {
+    "x": 370,
+    "y": 490
+   },
+   "to": {
+    "x": 370,
+    "y": 500
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w068",
+   "from": {
+    "x": 370,
+    "y": 500
+   },
+   "to": {
+    "x": 380,
+    "y": 500
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w069",
+   "from": {
+    "x": 380,
+    "y": 500
+   },
+   "to": {
+    "x": 550,
+    "y": 500
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w070",
+   "from": {
+    "x": 380,
+    "y": 500
+   },
+   "to": {
+    "x": 380,
+    "y": 550
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w071",
+   "from": {
+    "x": 360,
+    "y": 530
+   },
+   "to": {
+    "x": 390,
+    "y": 530
+   },
+   "bundleId": "b:c99534bb2227fa2a"
+  },
+  {
+   "wireId": "w072",
+   "from": {
+    "x": 420,
+    "y": 540
+   },
+   "to": {
+    "x": 500,
+    "y": 540
+   },
+   "bundleId": "b:77788967218bf018"
+  },
+  {
+   "wireId": "w073",
+   "from": {
+    "x": 500,
+    "y": 540
+   },
+   "to": {
+    "x": 500,
+    "y": 560
+   },
+   "bundleId": "b:77788967218bf018"
+  },
+  {
+   "wireId": "w074",
+   "from": {
+    "x": 380,
+    "y": 550
+   },
+   "to": {
+    "x": 390,
+    "y": 550
+   },
+   "bundleId": "b:b3c5a558965929ad"
+  },
+  {
+   "wireId": "w075",
+   "from": {
+    "x": 500,
+    "y": 560
+   },
+   "to": {
+    "x": 510,
+    "y": 560
+   },
+   "bundleId": "b:77788967218bf018"
+  },
+  {
+   "wireId": "w076",
+   "from": {
+    "x": 540,
+    "y": 570
+   },
+   "to": {
+    "x": 550,
+    "y": 570
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w077",
+   "from": {
+    "x": 550,
+    "y": 570
+   },
+   "to": {
+    "x": 550,
+    "y": 680
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w078",
+   "from": {
+    "x": 210,
+    "y": 580
+   },
+   "to": {
+    "x": 390,
+    "y": 580
+   },
+   "bundleId": "b:067257afd1ac5e2d"
+  },
+  {
+   "wireId": "w079",
+   "from": {
+    "x": 500,
+    "y": 580
+   },
+   "to": {
+    "x": 510,
+    "y": 580
+   },
+   "bundleId": "b:d51e91cfc75a9a3b"
+  },
+  {
+   "wireId": "w080",
+   "from": {
+    "x": 500,
+    "y": 580
+   },
+   "to": {
+    "x": 500,
+    "y": 590
+   },
+   "bundleId": "b:d51e91cfc75a9a3b"
+  },
+  {
+   "wireId": "w081",
+   "from": {
+    "x": 420,
+    "y": 590
+   },
+   "to": {
+    "x": 500,
+    "y": 590
+   },
+   "bundleId": "b:d51e91cfc75a9a3b"
+  },
+  {
+   "wireId": "w082",
+   "from": {
+    "x": 200,
+    "y": 600
+   },
+   "to": {
+    "x": 390,
+    "y": 600
+   },
+   "bundleId": "b:ecb5d8f55fbe2ac8"
+  },
+  {
+   "wireId": "w083",
+   "from": {
+    "x": 100,
+    "y": 620
+   },
+   "to": {
+    "x": 210,
+    "y": 620
+   },
+   "bundleId": "b:6ef515f213344f34"
+  },
+  {
+   "wireId": "w084",
+   "from": {
+    "x": 210,
+    "y": 620
+   },
+   "to": {
+    "x": 210,
+    "y": 640
+   },
+   "bundleId": "b:6ef515f213344f34"
+  },
+  {
+   "wireId": "w085",
+   "from": {
+    "x": 210,
+    "y": 640
+   },
+   "to": {
+    "x": 220,
+    "y": 640
+   },
+   "bundleId": "b:6ef515f213344f34"
+  },
+  {
+   "wireId": "w086",
+   "from": {
+    "x": 210,
+    "y": 640
+   },
+   "to": {
+    "x": 210,
+    "y": 760
+   },
+   "bundleId": "b:6ef515f213344f34"
+  },
+  {
+   "wireId": "w087",
+   "from": {
+    "x": 260,
+    "y": 650
+   },
+   "to": {
+    "x": 360,
+    "y": 650
+   },
+   "bundleId": "b:42721030f407b4f9"
+  },
+  {
+   "wireId": "w088",
+   "from": {
+    "x": 360,
+    "y": 650
+   },
+   "to": {
+    "x": 380,
+    "y": 650
+   },
+   "bundleId": "b:42721030f407b4f9"
+  },
+  {
+   "wireId": "w089",
+   "from": {
+    "x": 360,
+    "y": 650
+   },
+   "to": {
+    "x": 360,
+    "y": 710
+   },
+   "bundleId": "b:42721030f407b4f9"
+  },
+  {
+   "wireId": "w090",
+   "from": {
+    "x": 100,
+    "y": 660
+   },
+   "to": {
+    "x": 200,
+    "y": 660
+   },
+   "bundleId": "b:3b94f708e1ad5346"
+  },
+  {
+   "wireId": "w091",
+   "from": {
+    "x": 200,
+    "y": 660
+   },
+   "to": {
+    "x": 220,
+    "y": 660
+   },
+   "bundleId": "b:3b94f708e1ad5346"
+  },
+  {
+   "wireId": "w092",
+   "from": {
+    "x": 200,
+    "y": 660
+   },
+   "to": {
+    "x": 200,
+    "y": 780
+   },
+   "bundleId": "b:3b94f708e1ad5346"
+  },
+  {
+   "wireId": "w093",
+   "from": {
+    "x": 420,
+    "y": 660
+   },
+   "to": {
+    "x": 640,
+    "y": 660
+   },
+   "bundleId": "b:6eb59959f4d28e35"
+  },
+  {
+   "wireId": "w094",
+   "from": {
+    "x": 370,
+    "y": 670
+   },
+   "to": {
+    "x": 380,
+    "y": 670
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w095",
+   "from": {
+    "x": 370,
+    "y": 670
+   },
+   "to": {
+    "x": 370,
+    "y": 680
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w096",
+   "from": {
+    "x": 370,
+    "y": 680
+   },
+   "to": {
+    "x": 380,
+    "y": 680
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w097",
+   "from": {
+    "x": 380,
+    "y": 680
+   },
+   "to": {
+    "x": 550,
+    "y": 680
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w098",
+   "from": {
+    "x": 380,
+    "y": 680
+   },
+   "to": {
+    "x": 380,
+    "y": 730
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w099",
+   "from": {
+    "x": 360,
+    "y": 710
+   },
+   "to": {
+    "x": 390,
+    "y": 710
+   },
+   "bundleId": "b:42721030f407b4f9"
+  },
+  {
+   "wireId": "w100",
+   "from": {
+    "x": 420,
+    "y": 720
+   },
+   "to": {
+    "x": 500,
+    "y": 720
+   },
+   "bundleId": "b:39e7f17fb0e289c8"
+  },
+  {
+   "wireId": "w101",
+   "from": {
+    "x": 500,
+    "y": 720
+   },
+   "to": {
+    "x": 500,
+    "y": 740
+   },
+   "bundleId": "b:39e7f17fb0e289c8"
+  },
+  {
+   "wireId": "w102",
+   "from": {
+    "x": 380,
+    "y": 730
+   },
+   "to": {
+    "x": 390,
+    "y": 730
+   },
+   "bundleId": "b:9be996115ec41684"
+  },
+  {
+   "wireId": "w103",
+   "from": {
+    "x": 500,
+    "y": 740
+   },
+   "to": {
+    "x": 510,
+    "y": 740
+   },
+   "bundleId": "b:39e7f17fb0e289c8"
+  },
+  {
+   "wireId": "w104",
+   "from": {
+    "x": 540,
+    "y": 750
+   },
+   "to": {
+    "x": 640,
+    "y": 750
+   },
+   "bundleId": "b:cd2414a76aeb9acc"
+  },
+  {
+   "wireId": "w105",
+   "from": {
+    "x": 210,
+    "y": 760
+   },
+   "to": {
+    "x": 390,
+    "y": 760
+   },
+   "bundleId": "b:6ef515f213344f34"
+  },
+  {
+   "wireId": "w106",
+   "from": {
+    "x": 500,
+    "y": 760
+   },
+   "to": {
+    "x": 510,
+    "y": 760
+   },
+   "bundleId": "b:36edc54a9472bbb4"
+  },
+  {
+   "wireId": "w107",
+   "from": {
+    "x": 500,
+    "y": 760
+   },
+   "to": {
+    "x": 500,
+    "y": 770
+   },
+   "bundleId": "b:36edc54a9472bbb4"
+  },
+  {
+   "wireId": "w108",
+   "from": {
+    "x": 420,
+    "y": 770
+   },
+   "to": {
+    "x": 500,
+    "y": 770
+   },
+   "bundleId": "b:36edc54a9472bbb4"
+  },
+  {
+   "wireId": "w109",
+   "from": {
+    "x": 200,
+    "y": 780
+   },
+   "to": {
+    "x": 390,
+    "y": 780
+   },
+   "bundleId": "b:3b94f708e1ad5346"
+  }
+ ],
+ "wireBundles": [
+  {
+   "bundleId": "b:067257afd1ac5e2d",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 220,
+    "y": 460
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 440
+    },
+    {
+     "x": 210,
+     "y": 440
+    },
+    {
+     "x": 210,
+     "y": 460
+    },
+    {
+     "x": 220,
+     "y": 460
+    },
+    {
+     "x": 210,
+     "y": 580
+    },
+    {
+     "x": 390,
+     "y": 580
+    }
+   ],
+   "wireIds": [
+    "w055",
+    "w056",
+    "w057",
+    "w058",
+    "w078"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:1daa5111c8579d31"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:20762baf820d2ee4",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 420,
+    "y": 120
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 120
+    },
+    {
+     "x": 640,
+     "y": 120
+    }
+   ],
+   "wireIds": [
+    "w012"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:f949b858d1ea47f9"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:27223d2b93385686",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 220
+   },
+   "points": [
+    {
+     "x": 500,
+     "y": 220
+    },
+    {
+     "x": 510,
+     "y": 220
+    },
+    {
+     "x": 420,
+     "y": 230
+    },
+    {
+     "x": 500,
+     "y": 230
+    }
+   ],
+   "wireIds": [
+    "w023",
+    "w024",
+    "w025"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:ebae912bc0491aee"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:3179c8b4c29d549f",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 380,
+    "y": 110
+   },
+   "points": [
+    {
+     "x": 260,
+     "y": 110
+    },
+    {
+     "x": 360,
+     "y": 110
+    },
+    {
+     "x": 380,
+     "y": 110
+    },
+    {
+     "x": 360,
+     "y": 170
+    },
+    {
+     "x": 390,
+     "y": 170
+    }
+   ],
+   "wireIds": [
+    "w006",
+    "w007",
+    "w008",
+    "w015"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:b57a7b60b6ff5087"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:36edc54a9472bbb4",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 760
+   },
+   "points": [
+    {
+     "x": 500,
+     "y": 760
+    },
+    {
+     "x": 510,
+     "y": 760
+    },
+    {
+     "x": 420,
+     "y": 770
+    },
+    {
+     "x": 500,
+     "y": 770
+    }
+   ],
+   "wireIds": [
+    "w106",
+    "w107",
+    "w108"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:e78d0279ad1abbf8"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:39e7f17fb0e289c8",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 740
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 720
+    },
+    {
+     "x": 500,
+     "y": 720
+    },
+    {
+     "x": 500,
+     "y": 740
+    },
+    {
+     "x": 510,
+     "y": 740
+    }
+   ],
+   "wireIds": [
+    "w100",
+    "w101",
+    "w103"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:e14d2675e477d271"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:3b94f708e1ad5346",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 220,
+    "y": 660
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 660
+    },
+    {
+     "x": 200,
+     "y": 660
+    },
+    {
+     "x": 220,
+     "y": 660
+    },
+    {
+     "x": 200,
+     "y": 780
+    },
+    {
+     "x": 390,
+     "y": 780
+    }
+   ],
+   "wireIds": [
+    "w090",
+    "w091",
+    "w092",
+    "w109"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:3361a03aa40b5c4a"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:3f46eb9da1abfc0d",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 220,
+    "y": 100
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 80
+    },
+    {
+     "x": 210,
+     "y": 80
+    },
+    {
+     "x": 210,
+     "y": 100
+    },
+    {
+     "x": 220,
+     "y": 100
+    },
+    {
+     "x": 210,
+     "y": 220
+    },
+    {
+     "x": 390,
+     "y": 220
+    }
+   ],
+   "wireIds": [
+    "w002",
+    "w003",
+    "w004",
+    "w005",
+    "w022"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:ced0bf5322fe1b0b"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:42721030f407b4f9",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 390,
+    "y": 710
+   },
+   "points": [
+    {
+     "x": 260,
+     "y": 650
+    },
+    {
+     "x": 360,
+     "y": 650
+    },
+    {
+     "x": 380,
+     "y": 650
+    },
+    {
+     "x": 360,
+     "y": 710
+    },
+    {
+     "x": 390,
+     "y": 710
+    }
+   ],
+   "wireIds": [
+    "w087",
+    "w088",
+    "w089",
+    "w099"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:57a6464730ef85f2"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:6bdd369b3515e7a4",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 540,
+    "y": 210
+   },
+   "points": [
+    {
+     "x": 540,
+     "y": 210
+    },
+    {
+     "x": 550,
+     "y": 210
+    },
+    {
+     "x": 370,
+     "y": 310
+    },
+    {
+     "x": 380,
+     "y": 310
+    },
+    {
+     "x": 370,
+     "y": 320
+    },
+    {
+     "x": 380,
+     "y": 320
+    },
+    {
+     "x": 550,
+     "y": 320
+    },
+    {
+     "x": 380,
+     "y": 370
+    },
+    {
+     "x": 390,
+     "y": 370
+    }
+   ],
+   "wireIds": [
+    "w020",
+    "w021",
+    "w038",
+    "w039",
+    "w040",
+    "w041",
+    "w042",
+    "w046"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:25eec39c670b726f"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:6eb59959f4d28e35",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 640,
+    "y": 660
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 660
+    },
+    {
+     "x": 640,
+     "y": 660
+    }
+   ],
+   "wireIds": [
+    "w093"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:33b8d500a65d8d2c"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:6ef515f213344f34",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 220,
+    "y": 640
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 620
+    },
+    {
+     "x": 210,
+     "y": 620
+    },
+    {
+     "x": 210,
+     "y": 640
+    },
+    {
+     "x": 220,
+     "y": 640
+    },
+    {
+     "x": 210,
+     "y": 760
+    },
+    {
+     "x": 390,
+     "y": 760
+    }
+   ],
+   "wireIds": [
+    "w083",
+    "w084",
+    "w085",
+    "w086",
+    "w105"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:7ee4235b40d1ed8a"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:70586beab53a8035",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 200
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 180
+    },
+    {
+     "x": 500,
+     "y": 180
+    },
+    {
+     "x": 500,
+     "y": 200
+    },
+    {
+     "x": 510,
+     "y": 200
+    }
+   ],
+   "wireIds": [
+    "w016",
+    "w017",
+    "w019"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:da5c4ed298e623bc"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:73bb114785d21bac",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 220,
+    "y": 120
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 120
+    },
+    {
+     "x": 200,
+     "y": 120
+    },
+    {
+     "x": 220,
+     "y": 120
+    },
+    {
+     "x": 200,
+     "y": 240
+    },
+    {
+     "x": 390,
+     "y": 240
+    }
+   ],
+   "wireIds": [
+    "w009",
+    "w010",
+    "w011",
+    "w026"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:b47e759e2e8233e8"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:77788967218bf018",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 560
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 540
+    },
+    {
+     "x": 500,
+     "y": 540
+    },
+    {
+     "x": 500,
+     "y": 560
+    },
+    {
+     "x": 510,
+     "y": 560
+    }
+   ],
+   "wireIds": [
+    "w072",
+    "w073",
+    "w075"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:08a5aaaf0eea5190"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:7ab1340678c803cb",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 380
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 360
+    },
+    {
+     "x": 500,
+     "y": 360
+    },
+    {
+     "x": 500,
+     "y": 380
+    },
+    {
+     "x": 510,
+     "y": 380
+    }
+   ],
+   "wireIds": [
+    "w044",
+    "w045",
+    "w047"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:50f12aaea64ff428"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:81bf8f24a18bca3f",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 380,
+    "y": 290
+   },
+   "points": [
+    {
+     "x": 260,
+     "y": 290
+    },
+    {
+     "x": 360,
+     "y": 290
+    },
+    {
+     "x": 380,
+     "y": 290
+    },
+    {
+     "x": 360,
+     "y": 350
+    },
+    {
+     "x": 390,
+     "y": 350
+    }
+   ],
+   "wireIds": [
+    "w031",
+    "w032",
+    "w033",
+    "w043"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:5fe45e4be0337ef8"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:866bee67ad245b3d",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 640,
+    "y": 480
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 480
+    },
+    {
+     "x": 640,
+     "y": 480
+    }
+   ],
+   "wireIds": [
+    "w065"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:eacf319af0fbd200"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:9b2c9d9a44d17f5d",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 420,
+    "y": 300
+   },
+   "points": [
+    {
+     "x": 420,
+     "y": 300
+    },
+    {
+     "x": 640,
+     "y": 300
+    }
+   ],
+   "wireIds": [
+    "w037"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:c0712fab6020d8a0"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:9be996115ec41684",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 390,
+    "y": 730
+   },
+   "points": [
+    {
+     "x": 540,
+     "y": 570
+    },
+    {
+     "x": 550,
+     "y": 570
+    },
+    {
+     "x": 370,
+     "y": 670
+    },
+    {
+     "x": 380,
+     "y": 670
+    },
+    {
+     "x": 370,
+     "y": 680
+    },
+    {
+     "x": 380,
+     "y": 680
+    },
+    {
+     "x": 550,
+     "y": 680
+    },
+    {
+     "x": 380,
+     "y": 730
+    },
+    {
+     "x": 390,
+     "y": 730
+    }
+   ],
+   "wireIds": [
+    "w076",
+    "w077",
+    "w094",
+    "w095",
+    "w096",
+    "w097",
+    "w098",
+    "w102"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:fc7d466106ff9fea"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:b0eb03f0a5bc094a",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 100,
+    "y": 30
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 30
+    },
+    {
+     "x": 370,
+     "y": 30
+    },
+    {
+     "x": 370,
+     "y": 130
+    },
+    {
+     "x": 380,
+     "y": 130
+    },
+    {
+     "x": 370,
+     "y": 190
+    },
+    {
+     "x": 390,
+     "y": 190
+    }
+   ],
+   "wireIds": [
+    "w000",
+    "w001",
+    "w013",
+    "w014",
+    "w018"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:080790795b8dd0d2"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:b3c5a558965929ad",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 390,
+    "y": 550
+   },
+   "points": [
+    {
+     "x": 540,
+     "y": 390
+    },
+    {
+     "x": 550,
+     "y": 390
+    },
+    {
+     "x": 370,
+     "y": 490
+    },
+    {
+     "x": 380,
+     "y": 490
+    },
+    {
+     "x": 370,
+     "y": 500
+    },
+    {
+     "x": 380,
+     "y": 500
+    },
+    {
+     "x": 550,
+     "y": 500
+    },
+    {
+     "x": 380,
+     "y": 550
+    },
+    {
+     "x": 390,
+     "y": 550
+    }
+   ],
+   "wireIds": [
+    "w048",
+    "w049",
+    "w066",
+    "w067",
+    "w068",
+    "w069",
+    "w070",
+    "w074"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:0bc1edc7574c219d"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:b5fda04fa3134daa",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 100,
+    "y": 300
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 300
+    },
+    {
+     "x": 200,
+     "y": 300
+    },
+    {
+     "x": 220,
+     "y": 300
+    },
+    {
+     "x": 200,
+     "y": 420
+    },
+    {
+     "x": 390,
+     "y": 420
+    }
+   ],
+   "wireIds": [
+    "w034",
+    "w035",
+    "w036",
+    "w054"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:b17d8206932ef19f"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:c99534bb2227fa2a",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 390,
+    "y": 530
+   },
+   "points": [
+    {
+     "x": 260,
+     "y": 470
+    },
+    {
+     "x": 360,
+     "y": 470
+    },
+    {
+     "x": 380,
+     "y": 470
+    },
+    {
+     "x": 360,
+     "y": 530
+    },
+    {
+     "x": 390,
+     "y": 530
+    }
+   ],
+   "wireIds": [
+    "w059",
+    "w060",
+    "w061",
+    "w071"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:1c94faea9743e9ee"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:ccda3c6e70e988b3",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 400
+   },
+   "points": [
+    {
+     "x": 500,
+     "y": 400
+    },
+    {
+     "x": 510,
+     "y": 400
+    },
+    {
+     "x": 420,
+     "y": 410
+    },
+    {
+     "x": 500,
+     "y": 410
+    }
+   ],
+   "wireIds": [
+    "w051",
+    "w052",
+    "w053"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:1eb687168dd69ae8"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:cd2414a76aeb9acc",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 540,
+    "y": 750
+   },
+   "points": [
+    {
+     "x": 540,
+     "y": 750
+    },
+    {
+     "x": 640,
+     "y": 750
+    }
+   ],
+   "wireIds": [
+    "w104"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:9f3d8c09881ad36b"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:d51e91cfc75a9a3b",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 510,
+    "y": 580
+   },
+   "points": [
+    {
+     "x": 500,
+     "y": 580
+    },
+    {
+     "x": 510,
+     "y": 580
+    },
+    {
+     "x": 420,
+     "y": 590
+    },
+    {
+     "x": 500,
+     "y": 590
+    }
+   ],
+   "wireIds": [
+    "w079",
+    "w080",
+    "w081"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:3cf2dcf5fbe17d8e"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:e48d22d07fe53f33",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 100,
+    "y": 260
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 260
+    },
+    {
+     "x": 210,
+     "y": 260
+    },
+    {
+     "x": 210,
+     "y": 280
+    },
+    {
+     "x": 220,
+     "y": 280
+    },
+    {
+     "x": 210,
+     "y": 400
+    },
+    {
+     "x": 390,
+     "y": 400
+    }
+   ],
+   "wireIds": [
+    "w027",
+    "w028",
+    "w029",
+    "w030",
+    "w050"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:fec301cff94bfabf"
+    }
+   ]
+  },
+  {
+   "bundleId": "b:ecb5d8f55fbe2ac8",
+   "valid": true,
+   "width": 1,
+   "widthDeterminant": {
+    "x": 220,
+    "y": 480
+   },
+   "points": [
+    {
+     "x": 100,
+     "y": 480
+    },
+    {
+     "x": 200,
+     "y": 480
+    },
+    {
+     "x": 220,
+     "y": 480
+    },
+    {
+     "x": 200,
+     "y": 600
+    },
+    {
+     "x": 390,
+     "y": 600
+    }
+   ],
+   "wireIds": [
+    "w062",
+    "w063",
+    "w064",
+    "w082"
+   ],
+   "bitNets": [
+    {
+     "bit": 0,
+     "netId": "n:24f52d45003a4c04"
+    }
+   ]
+  }
+ ],
+ "bitNets": [
+  {
+   "netId": "n:080790795b8dd0d2",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:b0eb03f0a5bc094a",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_30",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 30
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c420_120",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 130
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_180",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 190
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:08a5aaaf0eea5190",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:77788967218bf018",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_540",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 540
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_570",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 560
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:0bc1edc7574c219d",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:b3c5a558965929ad",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_480",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 490
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_540",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 550
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c540_390",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 540,
+      "y": 390
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:1c94faea9743e9ee",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:c99534bb2227fa2a",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c260_470",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 260,
+      "y": 470
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c420_480",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 470
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_540",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 530
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:1daa5111c8579d31",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:067257afd1ac5e2d",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_440",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 440
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_470",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 460
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_590",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 580
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:1eb687168dd69ae8",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:ccda3c6e70e988b3",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_410",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 410
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_390",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 400
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:24f52d45003a4c04",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:ecb5d8f55fbe2ac8",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_480",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 480
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_470",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 480
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_590",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 600
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:25eec39c670b726f",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:6bdd369b3515e7a4",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_300",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 310
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_360",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 370
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c540_210",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 540,
+      "y": 210
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:3361a03aa40b5c4a",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:3b94f708e1ad5346",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_660",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 660
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_650",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 660
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_770",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 780
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:33b8d500a65d8d2c",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:6eb59959f4d28e35",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_660",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 660
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c640_660",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 640,
+      "y": 660
+     },
+     "semanticRole": "circuitOutput",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:3cf2dcf5fbe17d8e",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:d51e91cfc75a9a3b",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_590",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 590
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_570",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 580
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:50f12aaea64ff428",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:7ab1340678c803cb",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_360",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 360
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_390",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 380
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:57a6464730ef85f2",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:42721030f407b4f9",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c260_650",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 260,
+      "y": 650
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c420_660",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 650
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_720",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 710
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:5fe45e4be0337ef8",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:81bf8f24a18bca3f",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c260_290",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 260,
+      "y": 290
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c420_300",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 290
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_360",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 350
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:7ee4235b40d1ed8a",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:6ef515f213344f34",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_620",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 620
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_650",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 640
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_770",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 760
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:9f3d8c09881ad36b",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:cd2414a76aeb9acc",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c540_750",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 540,
+      "y": 750
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c640_750",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 640,
+      "y": 750
+     },
+     "semanticRole": "circuitOutput",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:b17d8206932ef19f",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:b5fda04fa3134daa",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_300",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 300
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_290",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 300
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_410",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 420
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:b47e759e2e8233e8",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:73bb114785d21bac",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_120",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 120
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_110",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 120
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_230",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 240
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:b57a7b60b6ff5087",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:3179c8b4c29d549f",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c260_110",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 260,
+      "y": 110
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c420_120",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 110
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_180",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 170
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:c0712fab6020d8a0",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:9b2c9d9a44d17f5d",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_300",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 300
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c640_300",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 640,
+      "y": 300
+     },
+     "semanticRole": "circuitOutput",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:ced0bf5322fe1b0b",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:3f46eb9da1abfc0d",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_80",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 80
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_110",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 100
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_230",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 220
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:da5c4ed298e623bc",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:70586beab53a8035",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_180",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 180
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_210",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 200
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:e14d2675e477d271",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:39e7f17fb0e289c8",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_720",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 720
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_750",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 740
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:e78d0279ad1abbf8",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:36edc54a9472bbb4",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_770",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 770
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_750",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 760
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:eacf319af0fbd200",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:866bee67ad245b3d",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_480",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 480
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c640_480",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 640,
+      "y": 480
+     },
+     "semanticRole": "circuitOutput",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:ebae912bc0491aee",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:27223d2b93385686",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_230",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 230
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c540_210",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 510,
+      "y": 220
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:f949b858d1ea47f9",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:20762baf820d2ee4",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_120",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 420,
+      "y": 120
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    },
+    {
+     "componentId": "c640_120",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 640,
+      "y": 120
+     },
+     "semanticRole": "circuitOutput",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 2
+  },
+  {
+   "netId": "n:fc7d466106ff9fea",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:9be996115ec41684",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c420_660",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 380,
+      "y": 670
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_720",
+     "endIndex": 2,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 730
+     },
+     "semanticRole": "input[1]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c540_570",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 540,
+      "y": 570
+     },
+     "semanticRole": "output",
+     "direction": "output"
+    }
+   ],
+   "contactCount": 3
+  },
+  {
+   "netId": "n:fec301cff94bfabf",
+   "kind": "runtime-wire-thread",
+   "slices": [
+    {
+     "bundleId": "b:e48d22d07fe53f33",
+     "bit": 0
+    }
+   ],
+   "contacts": [
+    {
+     "componentId": "c100_260",
+     "endIndex": 0,
+     "bit": 0,
+     "location": {
+      "x": 100,
+      "y": 260
+     },
+     "semanticRole": "circuitInput",
+     "direction": "output"
+    },
+    {
+     "componentId": "c260_290",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 220,
+      "y": 280
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    },
+    {
+     "componentId": "c420_410",
+     "endIndex": 1,
+     "bit": 0,
+     "location": {
+      "x": 390,
+      "y": 400
+     },
+     "semanticRole": "input[0]",
+     "direction": "input"
+    }
+   ],
+   "contactCount": 3
+  }
+ ],
+ "stateElements": [],
+ "tunnels": [],
+ "spatialAdjacency": [],
+ "widthIncompatibilities": []
+}

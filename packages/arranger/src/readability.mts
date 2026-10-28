@@ -4,10 +4,9 @@
 // over in a Logisim schematic; `score` weighs them into one number, lower is
 // clearer. Arranging uses it twice: to choose among candidate layouts, and to
 // keep a layout only when it reads better than the drawing it replaces.
-import type { Point } from "./py.mts";
-import { attr, estimatedGeometry, loc, netKey } from "./schematic-layout.mts";
+import { attr, netKey } from "./circuit.mts";
+import type { Point } from "./circuit.mts";
 import type { Bounds, Component, Focus, Wire } from "./types.mts";
-import { parseXml } from "./xml.mts";
 
 export interface Readability {
   // parts other than Tunnels, and Tunnels
@@ -431,77 +430,3 @@ export const READABILITY_NAMES: Record<Metric, string> = {
   crossings: "交叉",
   bends: "拐弯",
 };
-
-// The observation an arranged file should load as: the parts the layout
-// moved where it put them, the parts it wrote (Tunnels, Constants) estimated
-// from their attributes, and its wires. For scoring a candidate before the
-// host has seen it.
-export function predictedFocus(
-  xml: string,
-  circuit: string,
-  before: Focus,
-  placement: ReadonlyMap<string, Point>,
-): Focus {
-  const element = parseXml(xml)
-    .findall("circuit")
-    .find((c) => c.get("name") === circuit);
-  if (!element) return { ...before, components: [], wires: [] };
-  const free = new Map<string, ReturnType<typeof element.findall>>();
-  for (const el of element.findall("comp")) {
-    const [x, y] = loc(el.get("loc"));
-    const k = `${x},${y},${el.get("name")}`;
-    if (!free.has(k)) free.set(k, []);
-    free.get(k)!.push(el);
-  }
-  const components: Component[] = [];
-  for (const c of before.components) {
-    const [dx, dy] = placement.get(c.componentId) ?? [0, 0];
-    const k = `${c.location.x + dx},${c.location.y + dy},${c.factoryName}`;
-    if (!free.get(k)?.length) continue;
-    free.get(k)!.shift();
-    const move = <T extends { x: number; y: number }>(v: T): T => ({
-      ...v,
-      x: v.x + dx,
-      y: v.y + dy,
-    });
-    components.push({
-      ...c,
-      location: move(c.location),
-      bounds: move(c.bounds),
-      ...(c.visualBounds ? { visualBounds: move(c.visualBounds) } : {}),
-      ends: c.ends.map((e) => ({ ...e, location: move(e.location) })),
-    });
-  }
-  let n = 0;
-  for (const elements of free.values())
-    for (const el of elements) {
-      const [x, y] = loc(el.get("loc"));
-      const [[box]] = estimatedGeometry(el, x, y);
-      const bounds = {
-        x: box[0],
-        y: box[1],
-        width: box[2] - box[0],
-        height: box[3] - box[1],
-      };
-      components.push({
-        componentId: `predicted-${n++}`,
-        factoryName: el.get("name") ?? "",
-        location: { x, y },
-        bounds,
-        visualBounds: bounds,
-        attributes: el
-          .findall("a")
-          .map((a) => ({
-            name: a.get("name") ?? "",
-            value: a.get("val") ?? "",
-          })),
-        ends: [{ index: 0, location: { x, y }, direction: "inout" }],
-      });
-    }
-  const wires: Wire[] = element.findall("wire").map((w) => {
-    const [ax, ay] = loc(w.get("from"));
-    const [bx, by] = loc(w.get("to"));
-    return { from: { x: ax, y: ay }, to: { x: bx, y: by } };
-  });
-  return { ...before, components, wires, wireBundles: [] };
-}

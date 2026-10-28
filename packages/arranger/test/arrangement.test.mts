@@ -215,20 +215,21 @@ describe("verifyArrangement", () => {
       circuit: "half",
       focus: clone(HALF),
     });
-    const before = result.xml.slice(
-      result.xml.indexOf('<circuit name="half">'),
-    );
-    const pin = before.match(
+    const start = result.xml.indexOf('<circuit name="half">');
+    const half = result.xml.slice(start);
+    const pin = half.match(
       /<comp lib="\d+" loc="\((\d+),(\d+)\)" name="Pin">[\s\S]*?<\/comp>/,
     )!;
     assert.ok(pin, "fixture has a Pin in half");
-    result.xml = result.xml.replace(
-      pin[0],
-      pin[0].replace(
-        `(${pin[1]},${pin[2]})`,
-        `(${pin[1]},${Number(pin[2]) + 10})`,
-      ),
-    );
+    result.xml =
+      result.xml.slice(0, start) +
+      half.replace(
+        pin[0],
+        pin[0].replace(
+          `(${pin[1]},${pin[2]})`,
+          `(${pin[1]},${Number(pin[2]) + 10})`,
+        ),
+      );
     rejects(
       () => verifyArrangement(result, moved(result)),
       "ARRANGE_INTERFACE_CHANGED",
@@ -237,29 +238,71 @@ describe("verifyArrangement", () => {
 });
 
 // Gate-level circuits as a scripted model first draws them: parts where it
-// placed them, wires routed one connection at a time.
+// placed them, wires routed one connection at a time. Each must come out at
+// least as clear as the previous engine drew it (its score here).
+const SMALL: Record<string, number> = {
+  "full-adder": 24.3,
+  mux2: 11.6,
+  mux4: 73.9,
+  decoder: 77.6,
+  adder4: 102.3,
+  counter: 48.2,
+};
+
+async function arranged(name: string) {
+  const xml = file(`${name}.circ`);
+  const drawn = observation(`${name}.focus.json`);
+  const result = await arrange({ xml, circuit: "main", focus: clone(drawn) });
+  return { xml, drawn, result, after: readability(result.predicted!) };
+}
+
+// The wires of the arranged main definition.
+function wiresOf(xml: string): [number, number, number, number][] {
+  const body = xml.slice(xml.indexOf('<circuit name="main">'));
+  return [
+    ...body
+      .slice(0, body.indexOf("</circuit>"))
+      .matchAll(/<wire from="\((-?\d+),(-?\d+)\)" to="\((-?\d+),(-?\d+)\)"\/>/g),
+  ].map((m) => m.slice(1).map(Number) as [number, number, number, number]);
+}
+
+// For each output Pin label, the part driving it.
+function driverOf(focus: Focus, label: string) {
+  const labelOf = (c: Focus["components"][number]) =>
+    c.attributes.find((a) => a.name === "label")?.standard;
+  const pin = focus.components.find(
+    (c) => c.factoryName === "Pin" && labelOf(c) === label,
+  )!;
+  const net = pin.ends[0].netBits![0].netId;
+  return focus.components.find(
+    (c) =>
+      c.factoryName !== "Pin" &&
+      c.ends.some(
+        (e) => e.direction === "output" && e.netBits?.[0]?.netId === net,
+      ),
+  )!;
+}
+
 describe("signal-flow layout", () => {
-  for (const name of ["full-adder", "mux4"])
-    it(`draws ${name} inputs left, gates in columns, outputs right`, async () => {
-      const xml = file(`${name}.circ`);
-      const drawn = observation(`${name}.focus.json`);
-      const result = await arrange({
-        xml,
-        circuit: "main",
-        focus: clone(drawn),
-      });
-      assert.equal(result.report.engine, "flow");
+  for (const [name, most] of Object.entries(SMALL))
+    it(`draws ${name} from inputs on the left, at most ${most}`, async () => {
+      const { xml, drawn, result, after } = await arranged(name);
+      assert.equal(result.report.engine, "elk");
       const parts = result.predicted!.components;
       const output = (c: (typeof parts)[number]) =>
         c.attributes.some((a) => a.name === "output" && a.standard === "true");
       const pins = parts.filter((c) => c.factoryName === "Pin");
-      const gates = parts.filter((c) => c.factoryName !== "Pin");
+      const gates = parts.filter(
+        (c) => c.factoryName !== "Pin" && c.factoryName !== "Tunnel",
+      );
+      // inputs left of every gate, each output right of what drives it
       const left = Math.min(...gates.map((c) => c.bounds.x));
-      const right = Math.max(...gates.map((c) => c.bounds.x + c.bounds.width));
       for (const pin of pins)
-        if (output(pin)) assert.ok(pin.bounds.x > right, pin.componentId);
-        else assert.ok(pin.bounds.x + pin.bounds.width < left, pin.componentId);
-      const after = readability(result.predicted!);
+        if (output(pin)) {
+          const label = pin.attributes.find((a) => a.name === "label")!.standard!;
+          const driver = driverOf(result.predicted!, label);
+          assert.ok(pin.bounds.x > driver.bounds.x + driver.bounds.width, label);
+        } else assert.ok(pin.bounds.x + pin.bounds.width < left, pin.componentId);
       for (const measure of [
         "overlaps",
         "labelOverlaps",
@@ -270,12 +313,43 @@ describe("signal-flow layout", () => {
         "pinsOffSide",
       ] as const)
         assert.equal(after[measure], 0, measure);
+      assert.ok(after.score <= most, `score ${after.score}`);
       assert.ok(after.score < readability(clone(drawn)).score / 2);
+      // a wire ends where another meets it, never on its middle ('+' and T
+      // junctions are split, or Logisim would not join them as drawn)
+      const wires = wiresOf(result.xml);
+      for (const [x1, y1, x2, y2] of wires)
+        for (const [px, py] of [
+          [x1, y1],
+          [x2, y2],
+        ])
+          for (const [a, b, c, d] of wires) {
+            const inside =
+              a === c
+                ? px === a && py > Math.min(b, d) && py < Math.max(b, d)
+                : py === b && px > Math.min(a, c) && px < Math.max(a, c);
+            assert.ok(!inside, `wire end ${px},${py} on (${a},${b})-(${c},${d})`);
+          }
       const again = await arrange({
         xml,
         circuit: "main",
         focus: clone(drawn),
       });
       assert.equal(again.xml, result.xml);
+    });
+
+  it("crosses fewer decoder inputs than the previous engine (16)", async () => {
+    const { after } = await arranged("decoder");
+    assert.ok(after.crossings < 16, `crossings ${after.crossings}`);
+  });
+
+  for (const name of ["adder4", "ripple-fa"])
+    it(`lays the ${name} carry chain out left to right, not in a column`, async () => {
+      const { result } = await arranged(name);
+      const xs = ["S0", "S1", "S2", "S3"].map(
+        (s) => driverOf(result.predicted!, s).location.x,
+      );
+      for (let i = 1; i < xs.length; i++)
+        assert.ok(xs[i] > xs[i - 1], `sum drivers at x ${xs}`);
     });
 });
