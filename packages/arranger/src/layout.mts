@@ -33,7 +33,8 @@ import type { Box, Point, Report } from "./circuit.mts";
 import { FACING_TOWARD, footprint, newLabel, portId, STEP } from "./model.mts";
 import type { Model, Net, Side, Terminal, Unit } from "./model.mts";
 import type { Component } from "./types.mts";
-import { addPolyline, conflicts, netTree, pointKey } from "./wiring.mts";
+import { compactX } from "./compaction.mts";
+import { addPolyline, conflicts, netTree, pointKey, runsOf } from "./wiring.mts";
 import type { Obstacle, PortMark, Units } from "./wiring.mts";
 
 export interface Satellite {
@@ -638,6 +639,45 @@ interface Laid {
   rails: number;
 }
 
+// The air taken out of a laid-out row, across and then down, without
+// changing what crosses what (compaction.mts). ELK makes a layer as wide as
+// its widest node and spreads a layer's nodes to straighten edges, so a big
+// row is mostly empty.
+function compactRow(laid: Laid, shapes: Map<Unit, Shape>): void {
+  const units = [...laid.at.keys()];
+  const nets = [...laid.routes.keys()];
+  for (const across of [true, false]) {
+    const flip = (p: Point): Point => (across ? p : [p[1], p[0]]);
+    const parts = units.map((u) => {
+      const shape = shapes.get(u)!;
+      const [x, y] = laid.at.get(u)!;
+      const [x0, y0, x1, y1] = shape.box;
+      const [a, b] = [flip([x, y]), flip([x + x1 - x0, y + y1 - y0])];
+      return {
+        boxes: [[a[0], a[1], b[0], b[1]] as const],
+        ports: [...shape.anchors.values()].map(([px, py]) => flip([x + px - x0, y + py - y0])),
+      };
+    });
+    const owner: Net[] = [];
+    const wires: [Point, Point, boolean][] = [];
+    for (const net of nets) {
+      const copper: Units = new Set();
+      for (const line of laid.routes.get(net)!) addPolyline(copper, line);
+      for (const [a, b] of runsOf(copper)) {
+        owner.push(net);
+        wires.push([flip(a), flip(b), false]);
+      }
+    }
+    const [shift, moved] = compactX(parts, wires, { partGap: 30, wireGap: 20 });
+    units.forEach((u, i) => {
+      const [x, y] = laid.at.get(u)!;
+      laid.at.set(u, across ? [x + shift[i], y] : [x, y + shift[i]]);
+    });
+    laid.routes = new Map(nets.map((n) => [n, []]));
+    moved.forEach(([a, b], k) => laid.routes.get(owner[k])!.push([flip(a), flip(b)]));
+  }
+}
+
 const unitsOf = (blocks: Block[]): Unit[] =>
   blocks.flatMap((b) => (isUnit(b) ? [b] : unitsOf(b.children)));
 
@@ -645,7 +685,6 @@ const unitsOf = (blocks: Block[]): Unit[] =>
 // `wired` ones are kept. `hint` (positions relative to the parent) feeds the
 // interactive strategies; without it the original drawing does.
 async function runElk(
-  model: Model,
   shapes: Map<Unit, Shape>,
   blocks: Block[],
   rank: Map<Unit, number>,
@@ -667,7 +706,7 @@ async function runElk(
   delete inner["elk.json.edgeCoords"];
   if (hierarchical) options["elk.hierarchyHandling"] = "INCLUDE_CHILDREN";
   // where each net meets each unit, by the point its edge attaches at
-  const portPoint = (net: Net, t: Terminal): Point => {
+  const portPoint = (t: Terminal): Point => {
     const shape = shapes.get(t.unit)!;
     const anchor = shape.anchors.get(t);
     if (anchor) return anchor;
@@ -702,8 +741,8 @@ async function runElk(
     const position = pinPosition(u);
     if (position) nodeOptions["elk.position"] = `(${position[0]},${position[1]})`;
     const ports: NonNullable<ElkNode["ports"]> = [];
-    for (const [net, t] of terminalsOf.get(u) ?? []) {
-      const p = portPoint(net, t);
+    for (const [, t] of terminalsOf.get(u) ?? []) {
+      const p = portPoint(t);
       const key = `${u.id}|${p[0]},${p[1]}`;
       if (portOf.has(key)) continue;
       const id = `${u.id}.${ports.length}`;
@@ -768,12 +807,12 @@ async function runElk(
       byRank.find((t) => t.direction === "output") ??
       byRank.find((t) => t.direction === "inout") ??
       byRank[0];
-    const p = portPoint(net, driver);
+    const p = portPoint(driver);
     const source = portOf.get(`${driver.unit.id}|${p[0]},${p[1]}`)!;
     const sinks: [Terminal, string][] = [];
     for (const t of byRank) {
       if (t === driver) continue;
-      const q = portPoint(net, t);
+      const q = portPoint(t);
       const target = portOf.get(`${t.unit.id}|${q[0]},${q[1]}`)!;
       if (target === source || sinks.some(([, s]) => s === target)) continue;
       sinks.push([t, target]);
@@ -1079,14 +1118,15 @@ export async function drawModel(
       if (hinted.length) {
         // Tunnels say little about where a part belongs, so the row is laid
         // out first as if every net were a wire, and that order kept
-        const first = await runElk(model, shapes, blocks, inRow, [...wired, ...hinted], new Set(), variant, null, false);
+        const first = await runElk(shapes, blocks, inRow, [...wired, ...hinted], new Set(), variant, null, false);
         if ("failed" in first) return first;
         elkMs += first.ms;
         hint = first.relative;
         pass = { name: variant.name, options: INTERACTIVE };
       }
-      const laid = await runElk(model, shapes, blocks, inRow, wired, new Set(wired), pass, hint, rails);
+      const laid = await runElk(shapes, blocks, inRow, wired, new Set(wired), pass, hint, rails);
       if ("failed" in laid) return laid;
+      if (!blocks.some((b) => !isUnit(b))) compactRow(laid, shapes);
       elkMs += laid.ms;
       laidRows.push(laid);
     }

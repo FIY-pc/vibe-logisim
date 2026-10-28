@@ -4,10 +4,9 @@
 // over in a Logisim schematic; `score` weighs them into one number, lower is
 // clearer. Arranging uses it twice: to choose among candidate layouts, and to
 // keep a layout only when it reads better than the drawing it replaces.
-import { attr, estimatedGeometry, loc, netKey } from "./circuit.mts";
+import { attr, netKey } from "./circuit.mts";
 import type { Point } from "./circuit.mts";
 import type { Bounds, Component, Focus, Wire } from "./types.mts";
-import { parseXml } from "./xml.mts";
 
 export interface Readability {
   // parts other than Tunnels, and Tunnels

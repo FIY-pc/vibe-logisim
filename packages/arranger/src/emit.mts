@@ -6,8 +6,6 @@
 // Text. A net that keeps a name because it reaches something that stays
 // gets a Tunnel (or its constant) on that side too, where its copper ends.
 import {
-  attr,
-  attrOf,
   estimatedGeometry,
   netKey,
   repointPins,
@@ -32,9 +30,6 @@ export interface Emitted {
   report: Report;
 }
 
-const HEADING_FONT = "SansSerif bold 16";
-const STAGE_FONT = "SansSerif bold 20";
-export const headingFont = (stage: boolean) => (stage ? STAGE_FONT : HEADING_FONT);
 const fontSize = (font: string) => Number(font.match(/(\d+)\s*$/)?.[1] ?? 12);
 
 // Appends `child` with the indentation the definition already uses.
@@ -121,7 +116,7 @@ function attachments(model: Model): Attachment[] {
     return a;
   };
   const wires = model.keptWires;
-  wires.forEach((w, i) => parent.set(`w${i}`, `w${i}`));
+  wires.forEach((_w, i) => parent.set(`w${i}`, `w${i}`));
   const touching = (p: Point) =>
     wires
       .map((w, i) => [w, i] as const)

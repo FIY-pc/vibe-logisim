@@ -49,6 +49,8 @@ export type KeepOrder = readonly [
 
 export interface CompactOptions {
   partGap?: number;
+  // between anything else: wire runs, wire ends, bodies
+  wireGap?: number;
   grid?: number;
   keepOrder?: Iterable<KeepOrder>;
   minWidth?: number;
@@ -301,7 +303,7 @@ export function compactX(
     const gb = group.get(b[5]) as string;
     if (ga === gb || a[1] >= b[0]) return;
     const gap = b[0] - a[1];
-    const want = a[4] === "box" && b[4] === "box" ? partGap : grid;
+    const want = a[4] === "box" && b[4] === "box" ? partGap : options.wireGap ?? grid;
     tighten(ga, gb, gap - Math.min(want, gap));
   });
   for (const [[i, xi], [j, xj]] of options.keepOrder ?? []) {

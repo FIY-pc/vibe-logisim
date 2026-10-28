@@ -453,6 +453,8 @@ export function buildModel(
       if (!sources.length) continue;
       const others = ports.filter((p) => !CONSTANT_SOURCES.includes(p.part.factoryName));
       if (others.some((p) => p.end.direction === "output")) continue;
+      // a part that stays keeps the constant that drives it
+      if (others.some((p) => fixed.has(p.part.componentId))) continue;
       const value = (c: Component) =>
         c.factoryName === "Constant"
           ? `${attr(c, "value")}`.toLowerCase()
