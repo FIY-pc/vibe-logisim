@@ -1153,7 +1153,7 @@ console.log(
   assert.equal(errors.length, reported, "a stale read is not an error");
   (globalThis as any).__command = host;
   console.log(
-    "PASS: a picture or connection read refused as stale re-reads the workspace instead of reporting an error",
+    "PASS: a picture or connection read refused as stale reads the document again instead of reporting an error",
   );
 }
 {
