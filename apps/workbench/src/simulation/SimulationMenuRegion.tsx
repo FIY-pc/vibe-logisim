@@ -49,7 +49,8 @@ export function SimulationMenuRegion() {
         run &&
         !status.live &&
         docs.some(
-          (item) => item.id === run.documentId && item.revision === run.revision,
+          (item) =>
+            item.id === run.documentId && item.revision === run.revision,
         )
           ? () => navigation.returnToSimulation(view)
           : undefined

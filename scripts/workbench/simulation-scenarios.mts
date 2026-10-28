@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
-import { sameRun, simulationClient, type Stream } from "./simulation-client.mts";
+import {
+  sameRun,
+  simulationClient,
+  type Stream,
+} from "./simulation-client.mts";
 type Command = (request: any) => Promise<any>;
 export async function verifySimulation(
   command: Command,

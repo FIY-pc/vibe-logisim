@@ -40,7 +40,9 @@ export interface Mirror {
 }
 
 export const sameRun = (a: RunInfo | null, b: RunInfo | null) =>
-  Boolean(a && b && a.documentId === b.documentId && a.startedAt === b.startedAt);
+  Boolean(
+    a && b && a.documentId === b.documentId && a.startedAt === b.startedAt,
+  );
 
 export function simulationClient(command: Transport, stream: Stream) {
   const mirror: Mirror = {

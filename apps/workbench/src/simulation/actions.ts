@@ -182,9 +182,7 @@ export function createSimulationActions(stores: Stores) {
 
   /** Ends the run, whatever the window shows. */
   const stop = async (): Promise<boolean> =>
-    Boolean(
-      await request<{ stopped: boolean }>({ op: "simulationStop" }),
-    );
+    Boolean(await request<{ stopped: boolean }>({ op: "simulationStop" }));
 
   /** Runs one control action as the released version does: the first one
    * starts a run, later ones share it. Toggles are the run's: it reads its
@@ -260,8 +258,7 @@ export function createSimulationActions(stores: Stores) {
   };
 
   /** The button held down, and whether its press landed. */
-  let holding: { componentId: string; pressed: Promise<boolean> } | null =
-    null;
+  let holding: { componentId: string; pressed: Promise<boolean> } | null = null;
 
   /** Holds a button down; a press that starts the run first waits for it. */
   const press = (view: View, component: Component) => {
@@ -333,8 +330,7 @@ export function createSimulationActions(stores: Stores) {
   const toggleWatch = (view: View, key: string) => {
     if (!live(state(), view)) return;
     const list = watched();
-    if (list.includes(key))
-      void sendTrace(list.filter((item) => item !== key));
+    if (list.includes(key)) void sendTrace(list.filter((item) => item !== key));
     else if (list.length >= WATCH_LIMIT)
       toast(`最多同时观察 ${WATCH_LIMIT} 个端口`);
     else void sendTrace([...list, key]);
@@ -526,8 +522,8 @@ export function createSimulationActions(stores: Stores) {
     return true;
   };
 
-  /** A run this page has not shown yet: its first frame decides where the
-   * page shows it (a reloaded page goes back into the instance it showed). */
+  /** A run this page did not start (it was reloaded during the run): its
+   * first frame takes the page to the circuit and instance the run shows. */
   let adopting: RunInfo | null = null;
 
   /** Folds one run event into the store. Each subscription starts with the
@@ -535,6 +531,7 @@ export function createSimulationActions(stores: Stores) {
   const onEvent = (event: SimulationEvent) => {
     const current = state();
     if (event.kind === "run") {
+      const mine = starting !== null;
       starting = null;
       const { run } = current;
       if (
@@ -543,7 +540,7 @@ export function createSimulationActions(stores: Stores) {
         run.startedAt === event.run.startedAt
       )
         return;
-      adopting = event.run;
+      adopting = mine ? null : event.run;
       patch({
         run: event.run,
         frame: null,
@@ -603,24 +600,23 @@ export function createSimulationActions(stores: Stores) {
 
   /** Keeps the run on the instance the page shows: entering an instance,
    * going up, or showing the root circuit again moves the view, and the run
-   * follows. The first frame a page gets moves the page instead. */
+   * follows. A run the page did not start moves the page instead, once. */
   const follow = () => {
     const view = currentView(stores);
     const current = state();
     const { run, frame } = current;
     if (!run || !frame || !view.doc || !view.circuit) return;
+    const adopt = adopting === run;
+    adopting = null;
     if (run.documentId !== view.doc.id || run.revision !== view.doc.revision)
       return;
-    if (adopting === run) {
-      adopting = null;
-      if (
-        !view.instance.length &&
-        view.circuit.name === run.rootCircuit &&
-        frame.instancePath.length
-      ) {
-        editor.getState().showInstance(frame.circuit, frame.instancePath);
-        return;
-      }
+    if (
+      adopt &&
+      (view.circuit.name !== frame.circuit ||
+        view.instance.join("/") !== frame.instancePath.join("/"))
+    ) {
+      editor.getState().showInstance(frame.circuit, frame.instancePath);
+      return;
     }
     if (live(current, view) || !ofView(current, view)) return;
     release();

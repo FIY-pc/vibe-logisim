@@ -101,8 +101,14 @@ try {
   assert.equal(clock().frequency, 7.5);
   await run.act({ kind: "toggle-propagation" });
   assert.equal(clock().automatic, true);
-  assert.equal((await run.act({ kind: "toggle-clock" })).frame?.clock.running, true);
-  assert.equal((await run.act({ kind: "toggle-clock" })).frame?.clock.running, false);
+  assert.equal(
+    (await run.act({ kind: "toggle-clock" })).frame?.clock.running,
+    true,
+  );
+  assert.equal(
+    (await run.act({ kind: "toggle-clock" })).frame?.clock.running,
+    false,
+  );
   // The runtime decides each toggle from its own state, so toggles sent at
   // once both count, without a frame in between.
   const toggles = await Promise.all([

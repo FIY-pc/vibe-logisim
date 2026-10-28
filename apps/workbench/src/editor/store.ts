@@ -149,7 +149,8 @@ export function createEditorStore() {
     placement: { current: null },
     setCircuitName: (name) =>
       set((state) => ({
-        circuitName: typeof name === "function" ? name(state.circuitName) : name,
+        circuitName:
+          typeof name === "function" ? name(state.circuitName) : name,
         instance: [],
       })),
     showInstance: (circuitName, instance) => set({ circuitName, instance }),

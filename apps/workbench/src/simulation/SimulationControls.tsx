@@ -101,9 +101,7 @@ export function SimulationMenu({
           <span>{state}</span>
         </MenuLabel>
         {onReturnToSimulation && (
-          <MenuItem onSelect={onReturnToSimulation}>
-            返回运行电路
-          </MenuItem>
+          <MenuItem onSelect={onReturnToSimulation}>返回运行电路</MenuItem>
         )}
         {!active && action("启动仿真", "start")}
         {action(

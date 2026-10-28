@@ -3,7 +3,11 @@ import type { DocumentView as Document } from "../../apps/workbench/src/generate
 import type { FrameEvent } from "../../apps/workbench/src/generated/FrameEvent.ts";
 import type { RunInfo } from "../../apps/workbench/src/generated/RunInfo.ts";
 import { eventStream } from "./event-stream.mts";
-import { sameRun, simulationClient, type Stream } from "./simulation-client.mts";
+import {
+  sameRun,
+  simulationClient,
+  type Stream,
+} from "./simulation-client.mts";
 type Command = (request: any) => Promise<any>;
 
 /** The frames of `run` in a stream's events, from its `run` event on. */

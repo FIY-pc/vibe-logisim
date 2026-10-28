@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
 import { courseSizeProject } from "./fixtures/course-size.mts";
-import { sameRun, simulationClient, type Stream } from "./simulation-client.mts";
+import {
+  sameRun,
+  simulationClient,
+  type Stream,
+} from "./simulation-client.mts";
 import { documentViews } from "./document-views.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with what they changed; scripts work with whole views. */
