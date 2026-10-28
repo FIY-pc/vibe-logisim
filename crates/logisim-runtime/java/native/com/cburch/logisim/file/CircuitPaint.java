@@ -6,10 +6,21 @@ import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.data.Location;
 import java.awt.Color;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.RenderingHints;
+import java.awt.font.TextLayout;
+import java.awt.geom.Arc2D;
+import java.awt.geom.QuadCurve2D;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The live picture of a run's view, recorded as vector ops
@@ -51,6 +62,43 @@ final class CircuitPaint {
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setColor(Color.BLACK);
         return g;
+    }
+
+    /** A font attribute as Logisim writes it: "family style size". */
+    private static final Pattern FONT = Pattern.compile("val=\"([^\"<>]{1,80}? (?:plain|bold|italic|bolditalic) [0-9]{1,3})\"");
+
+    /**
+     * Records text in each font the project names, and a few curves. On a fresh
+     * runtime the first painting spends about a third of a run's start opening
+     * font files, measuring and outlining text and setting up curves; a run does
+     * this beside its project load instead.
+     */
+    static void warmUp(File project) {
+        Set<Font> fonts = new LinkedHashSet<>();
+        fonts.add(new Font("SansSerif", Font.PLAIN, 12));
+        fonts.add(new Font("SansSerif", Font.BOLD, 12));
+        // The first family the platform lacks has Java register every installed
+        // font; some runtimes' default label font is "Sans Serif".
+        fonts.add(new Font("Sans Serif", Font.PLAIN, 12));
+        try {
+            Matcher m = FONT.matcher(new String(Files.readAllBytes(project.toPath()), StandardCharsets.UTF_8));
+            while (m.find() && fonts.size() < 64) fonts.add(Font.decode(m.group(1)));
+        } catch (Exception ignored) {
+            // The defaults alone still help.
+        }
+        RecordingGraphics2D g = graphics(new RecordingGraphics2D.Recording());
+        for (Font font : fonts) {
+            g.setFont(font);
+            g.drawString("Ag0 中", 0, 12);
+            g.getFontMetrics().stringWidth("Ag0");
+            TextLayout layout = new TextLayout("Ag0 中", font, g.getFontRenderContext());
+            layout.getBounds();
+            layout.draw(g, 0, 12);
+        }
+        g.draw(new QuadCurve2D.Double(0, 0, 4, 8, 8, 0));
+        g.rotate(Math.PI / 2);
+        g.fill(new Arc2D.Double(0, 0, 8, 8, 0, 90, Arc2D.PIE));
+        g.dispose();
     }
 
     private static ComponentDrawContext context(CircuitSessionView view, CircuitState state, Graphics g) {

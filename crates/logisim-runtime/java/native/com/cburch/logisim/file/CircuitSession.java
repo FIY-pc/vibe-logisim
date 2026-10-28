@@ -443,6 +443,19 @@ public final class CircuitSession {
             verifyLoop(Paths.get(args[1]).toAbsolutePath().normalize(), args[2], parser, protocol);
             return;
         }
+        // The first frame's fonts, text and XML writing load beside the project.
+        Document warm = parser.newDocument();
+        warm.appendChild(warm.createElement("warm"));
+        Thread warmUp = new Thread(() -> {
+            try {
+                CircuitPaint.warmUp(new File(args[0]));
+                xml(warm);
+            } catch (Throwable ignored) {
+                // Only time is lost.
+            }
+        }, "warm-up");
+        warmUp.setDaemon(true);
+        warmUp.start();
         List<String> loaderMessages = new ArrayList<>();
         CircuitSession session;
         try {

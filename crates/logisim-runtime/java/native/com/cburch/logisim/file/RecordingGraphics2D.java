@@ -122,7 +122,7 @@ final class RecordingGraphics2D extends Graphics2D {
     private static RenderingHints defaultHints;
     private static final Map<Image, String> IMAGES = new WeakHashMap<>();
 
-    private static RenderingHints defaultHints() {
+    private static synchronized RenderingHints defaultHints() {
         if (defaultHints == null) {
             Graphics2D g = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB).createGraphics();
             defaultHints = (RenderingHints) g.getRenderingHints().clone();
