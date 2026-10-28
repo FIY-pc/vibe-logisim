@@ -661,13 +661,13 @@ function compactRow(laid: Laid, shapes: Map<Unit, Shape>): void {
         ports: [...shape.anchors.values()].map(([px, py]) => flip([x + px - x0, y + py - y0])),
       };
     });
-    const owner: Net[] = [];
+    const segmentNet: Net[] = [];
     const wires: [Point, Point, boolean][] = [];
     for (const net of nets) {
       const copper: Units = new Set();
       for (const line of laid.routes.get(net)!) addPolyline(copper, line);
       for (const [a, b] of runsOf(copper)) {
-        owner.push(net);
+        segmentNet.push(net);
         wires.push([flip(a), flip(b), false]);
       }
     }
@@ -677,7 +677,7 @@ function compactRow(laid: Laid, shapes: Map<Unit, Shape>): void {
       laid.at.set(u, across ? [x + shift[i], y] : [x, y + shift[i]]);
     });
     laid.routes = new Map(nets.map((n) => [n, []]));
-    moved.forEach(([a, b], k) => laid.routes.get(owner[k])!.push([flip(a), flip(b)]));
+    moved.forEach(([a, b], k) => laid.routes.get(segmentNet[k])!.push([flip(a), flip(b)]));
   }
 }
 

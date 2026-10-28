@@ -221,9 +221,9 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
       const unit = c && !isText(c) ? model.unitOf.get(c.componentId) : undefined;
       if (!unit)
         throw invalid(`分组引用了不存在、固定或不支持的元件: ${textOf(original)}`);
-      const owner = groupOf.get(unit);
-      if (owner === group) continue;
-      if (owner) throw invalid(`元件或接触组合重复/跨组: ${textOf(original)}`);
+      const holder = groupOf.get(unit);
+      if (holder === group) continue;
+      if (holder) throw invalid(`元件或接触组合重复/跨组: ${textOf(original)}`);
       groupOf.set(unit, group);
       group.units.push(unit);
     }
