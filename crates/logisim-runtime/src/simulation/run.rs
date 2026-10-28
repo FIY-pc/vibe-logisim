@@ -9,7 +9,7 @@ use super::{
         ClockState, ComponentState, EndReason, EndedInfo, Frame, FrameEvent, LiveComponent,
         MemoryPage, RunInfo, SimulationEvent, Timing, TraceDelta, TraceSample, TraceSignal,
     },
-    paint::{PaintEvent, Picture},
+    paint::Picture,
     protocol::{self, Line, RawFrame},
 };
 use crate::process::{StderrCapture, exit_failure};
@@ -164,9 +164,8 @@ struct Latest {
 }
 
 impl Latest {
-    /// Lays a frame over the state; returns the frame as subscribers get it,
-    /// with `paint`, its picture's changes as an event.
-    fn apply(&mut self, raw: RawFrame, paint: PaintEvent) -> FrameEvent {
+    /// Lays a frame over the state; returns the frame as subscribers get it.
+    fn apply(&mut self, raw: RawFrame) -> FrameEvent {
         if raw.full {
             self.components.clear();
         }
@@ -175,7 +174,7 @@ impl Latest {
             self.components.insert(id.clone(), component.clone());
             components.insert(id, component);
         }
-        self.picture.apply(raw.full, raw.paint);
+        let paint = self.picture.apply(raw.full, raw.paint);
         let memory = (raw.full || raw.memory != self.memory)
             .then(|| raw.memory.clone())
             .flatten();
@@ -189,6 +188,11 @@ impl Latest {
         self.clock = Some(raw.clock.clone());
         self.timing = raw.timing;
         self.at = now_ms();
+        if !raw.full && self.picture.worn() {
+            // Subscribers start over with the picture whole and numbered anew.
+            self.picture.renumber();
+            return self.whole(&raw.clock);
+        }
         FrameEvent {
             full: raw.full,
             circuit: raw.circuit,
@@ -380,14 +384,13 @@ impl Run {
     /// subscription taken meanwhile has it either in its whole state or as
     /// its next event.
     fn frame(&self, raw: RawFrame) {
-        let paint = raw.paint.event();
         {
             let mut state = self.lock();
             if self.ended.get().is_some() {
                 return;
             }
             state.last_frame_at = Instant::now();
-            let event = state.latest.apply(raw, paint);
+            let event = state.latest.apply(raw);
             if state.announced {
                 let _ = self
                     .events

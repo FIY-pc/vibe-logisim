@@ -47,6 +47,10 @@ export interface LivePaint {
   /** `[x, y, color]` by `x,y`. */
   dots: Map<string, readonly [number, number, string]>;
   components: Map<string, PaintOp[]>;
+  /** Every op and op list numbered since the picture started, by number: a
+   * component that goes back to a look it had gets the same list. */
+  ops: PaintOp[];
+  lists: PaintOp[][];
   version: number;
 }
 

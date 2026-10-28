@@ -3,9 +3,11 @@
 /**
  * A picture, or what changed in it, as Logisim draws the run's state: wires
  * stroked 3 wide with round ends, junctions 8 across, each component's ops
- * relative to its location (the editor's symbol ops). The ops and op lists
- * are numbered from 0 within the event; components that look alike share a
- * list.
+ * relative to its location (the editor's symbol ops). Ops and op lists are
+ * numbered from 0 when the picture starts (a full frame) and onwards from
+ * there: an event carries the ones numbered since the event before, which
+ * continue the numbers the subscriber has. Components that look alike share
+ * a list.
  */
 export type PaintEvent = { 
 /**
@@ -15,9 +17,13 @@ wires: { [key in string]: Array<number> },
 /**
  * Junctions by color, each as `x, y`.
  */
-dots: { [key in string]: Array<number> }, ops: Array<Array<string | number | Array<number>>>, 
+dots: { [key in string]: Array<number> }, 
 /**
- * Each list as the numbers of its ops.
+ * The ops numbered since the event before.
+ */
+ops: Array<Array<string | number | Array<number>>>, 
+/**
+ * The lists numbered since the event before, each as the numbers of its ops.
  */
 lists: Array<Array<number>>, 
 /**

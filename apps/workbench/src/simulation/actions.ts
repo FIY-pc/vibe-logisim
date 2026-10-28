@@ -63,7 +63,8 @@ const operable = ({ name, attributes }: Component) =>
   (name === "Pin" && attributes.output !== "true");
 
 /** Lays a frame's paint over the picture, or starts one from a whole frame.
- * The maps change in place; a paint with nothing in it keeps the picture. */
+ * The maps and tables change in place; a paint with nothing in it keeps the
+ * picture. */
 function painted(previous: LivePaint | null, event: PaintEvent): LivePaint {
   if (
     previous &&
@@ -72,10 +73,12 @@ function painted(previous: LivePaint | null, event: PaintEvent): LivePaint {
     !Object.keys(event.components).length
   )
     return previous;
-  const paint = previous ?? {
+  const paint: LivePaint = previous ?? {
     wires: new Map(),
     dots: new Map(),
     components: new Map(),
+    ops: [],
+    lists: [],
     version: 0,
   };
   for (const color in event.wires) {
@@ -94,11 +97,12 @@ function painted(previous: LivePaint | null, event: PaintEvent): LivePaint {
     for (let i = 0; i + 1 < xs.length; i += 2)
       paint.dots.set(`${xs[i]},${xs[i + 1]}`, [xs[i], xs[i + 1], color]);
   }
-  const lists = event.lists.map((list) =>
-    list.map((number) => event.ops[number]),
-  );
+  // The event's ops and lists continue the numbers of the picture's.
+  for (const op of event.ops) paint.ops.push(op);
+  for (const list of event.lists)
+    paint.lists.push(list.map((number) => paint.ops[number]));
   for (const id in event.components)
-    paint.components.set(id, lists[event.components[id]]);
+    paint.components.set(id, paint.lists[event.components[id]]);
   return { ...paint, version: paint.version + 1 };
 }
 

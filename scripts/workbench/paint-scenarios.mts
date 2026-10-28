@@ -31,13 +31,18 @@ function framesOf(events: any[], run: RunInfo): FrameEvent[] {
 function picture(frames: FrameEvent[]) {
   const wires = new Map<string, string>(),
     dots = new Map<string, string>(),
-    components = new Map<string, unknown[]>();
+    components = new Map<string, unknown[]>(),
+    ops: unknown[] = [],
+    lists: number[][] = [];
   for (const { full, paint } of frames) {
     if (full) {
       wires.clear();
       dots.clear();
       components.clear();
+      ops.length = lists.length = 0;
     }
+    ops.push(...paint.ops);
+    lists.push(...paint.lists);
     for (const [color, xs] of Object.entries(paint.wires))
       for (let i = 0; i < xs.length; i += 4)
         wires.set(xs.slice(i, i + 4).join(), color);
@@ -47,7 +52,7 @@ function picture(frames: FrameEvent[]) {
     for (const [id, list] of Object.entries(paint.components))
       components.set(
         id,
-        paint.lists[list].map((n) => paint.ops[n]),
+        lists[list].map((n) => ops[n]),
       );
   }
   return { wires, dots, components };
