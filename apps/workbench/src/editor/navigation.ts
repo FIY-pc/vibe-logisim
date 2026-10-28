@@ -90,7 +90,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
   /** Shows what the run shows, in its document. */
   const returnToSimulation = (view: View) => {
     const { run, frame } = simulation.getState();
-    const owner =
+    const runDoc =
       run &&
       documents
         .getState()
@@ -98,9 +98,9 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
           (item) =>
             item.id === run.documentId && item.revision === run.revision,
         );
-    if (!run || !owner) return;
+    if (!run || !runDoc) return;
     editor.getState().navigation.next();
-    documents.getState().setActive(owner.id);
+    documents.getState().setActive(runDoc.id);
     editor
       .getState()
       .showInstance(
@@ -108,7 +108,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
         frame?.instancePath ?? [],
       );
     editing.select(view, []);
-    void command({ op: "activate", id: owner.id }).catch(onError);
+    void command({ op: "activate", id: runDoc.id }).catch(onError);
   };
 
   /** Adds a circuit to the view's document and shows it. */
