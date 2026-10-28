@@ -21,9 +21,6 @@ const ARRANGE_OPTIONS = [
   "keepTunnels",
   "localiseConstants",
   "panelBelowY",
-  "columnGap",
-  "maxLayerSpan",
-  "tunnelSpan",
 ];
 
 export async function arrangeCircuit(
@@ -124,6 +121,6 @@ export async function arrangeCircuit(
     },
     note:
       "连通性已按网表逐端口组核对（含探针等位宽随网络而定的端口，不是仿真）；作为子电路的引脚排列不变；" +
-      "文件里其他电路一个字节都没改；可读性得分越低越清楚。可用 render_circuit 看图，可调整 organization 的功能分组与阅读行序或连线参数后重新整理；不满意可用 undo_edit 撤销。",
+      "文件里其他电路一个字节都没改；可读性得分越低越清楚。可用 render_circuit 看图，可调整 organization 的功能分组与阅读行序后重新整理；不满意可用 undo_edit 撤销。",
   };
 }

@@ -702,6 +702,14 @@ async function runElk(
     ...(big ? { "elk.layered.thoroughness": "7" } : {}),
     ...variant.options,
   };
+  // On nested graphs ELK's interactive strategies do not finish and its
+  // model-order cycle breaking fails on edges between groups
+  if (hierarchical) {
+    for (const key of Object.keys(INTERACTIVE))
+      if (options[key] === "INTERACTIVE") delete options[key];
+    options["elk.layered.cycleBreaking.strategy"] = "GREEDY";
+    options["elk.layered.considerModelOrder.strategy"] = "NONE";
+  }
   const inner = { ...options };
   delete inner["elk.json.edgeCoords"];
   if (hierarchical) options["elk.hierarchyHandling"] = "INCLUDE_CHILDREN";
@@ -1115,7 +1123,8 @@ export async function drawModel(
       const hinted = model.nets.filter((n) => n.kind === "tunnel" && touches(n));
       let hint: Map<string, Point> | null = null;
       let pass = variant;
-      if (hinted.length) {
+      const grouped = blocks.some((b) => !isUnit(b));
+      if (hinted.length && !grouped) {
         // Tunnels say little about where a part belongs, so the row is laid
         // out first as if every net were a wire, and that order kept
         const first = await runElk(shapes, blocks, inRow, [...wired, ...hinted], new Set(), variant, null, false);
@@ -1126,7 +1135,7 @@ export async function drawModel(
       }
       const laid = await runElk(shapes, blocks, inRow, wired, new Set(wired), pass, hint, rails);
       if ("failed" in laid) return laid;
-      if (!blocks.some((b) => !isUnit(b))) compactRow(laid, shapes);
+      if (!grouped) compactRow(laid, shapes);
       elkMs += laid.ms;
       laidRows.push(laid);
     }

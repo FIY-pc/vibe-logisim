@@ -304,7 +304,10 @@ export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
   let model = fresh();
   const tried: Report[] = [];
   let best: { arrangement: Arrangement; score: number } | null = null;
-  const variants = variantsFor(model.units.length);
+  // groups are laid out by ELK's own strategies (see runElk)
+  const variants = variantsFor(model.units.length).filter(
+    (v) => !options.organization || v.name !== "sketch",
+  );
   let first = true;
   for (const variant of variants)
     for (const rails of [true, false]) {
