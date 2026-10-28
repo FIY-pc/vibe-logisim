@@ -18,6 +18,7 @@ import type { Quotation } from "./references";
 import { eventBinding } from "../shared/shortcuts";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
+import type { DocumentChange } from "../generated/DocumentChange";
 import { useChatReferences } from "./ChatReferences";
 import {
   ConversationPicker,
@@ -45,7 +46,8 @@ import { Select } from "../shared/Select";
 import { useAutoSize } from "../shared/useAutoSize";
 export type { Message } from "./ConversationContent";
 
-/** The sidecar's `status` snapshot; the host adds `eventCursor`. */
+/** The sidecar's `status` snapshot; the host adds `eventCursor`. Only
+ * `history` carries the conversation (`messages`). */
 interface RuntimeState {
   eventCursor: number;
   status: string;
@@ -58,7 +60,8 @@ interface RuntimeState {
   customProvider: Partial<ProviderConfiguration> | null;
   services: ProviderConfiguration[];
   defaultServiceId?: string | null;
-  messages: Message[];
+  /** The conversation; only `history` carries it. */
+  messages?: Message[];
   /** The stream retry notice while the model service is busy. */
   transmission?: { phase: string; message: string } | null;
   modelConfigurationError?: { message: string } | null;
@@ -70,7 +73,7 @@ interface Props {
   circuit: string | null;
   onError: (e: unknown) => void;
   /** The AI edited an open document. */
-  onDocument: (d: Document, expectedBaseRevision?: string) => void;
+  onDocument: (change: DocumentChange) => void;
   /** The AI opened or created a document. */
   onOpened: (d: Document) => void;
   /** Files in the project folder changed outside the open documents. */
@@ -227,28 +230,38 @@ export function Chat({
   };
 
   // Events carry a sequence; a snapshot carries the cursor it was taken at.
-  // Events newer than the snapshot are replayed from the buffer after it.
+  // `history` (state and conversation) replays the buffered events newer than
+  // it; `status` (state only) is dropped when a newer status event arrived.
   const cursor = useRef(0),
     snapshotCursor = useRef(0),
+    stateCursor = useRef(0),
     buffered = useRef<{ sequence: number; event: any }[]>([]),
-    applyEvent = useRef<(event: any) => void>(() => {});
+    applyEvent = useRef<(event: any, sequence: number) => void>(() => {});
   const refreshing = useRef<Promise<unknown> | null>(null);
-  const refresh = async (): Promise<RuntimeState> => {
-    const next = await runtime<RuntimeState>("status");
+  const refresh = async (whole = false): Promise<RuntimeState> => {
+    const next = await runtime<RuntimeState>(whole ? "history" : "status");
+    if (!whole) {
+      if (next.eventCursor >= stateCursor.current) {
+        stateCursor.current = next.eventCursor;
+        setState(next);
+      }
+      return next;
+    }
     if (next.eventCursor < snapshotCursor.current) return next;
     if (
       buffered.current.length === 2048 &&
       buffered.current[0].sequence > next.eventCursor + 1
     )
-      return refresh();
+      return refresh(true);
     snapshotCursor.current = next.eventCursor;
     cursor.current = next.eventCursor;
+    stateCursor.current = next.eventCursor;
     setState(next);
     setMessages(next.messages || []);
     for (const item of buffered.current)
       if (item.sequence > cursor.current) {
         cursor.current = item.sequence;
-        applyEvent.current(item.event);
+        applyEvent.current(item.event, item.sequence);
       }
     return next;
   };
@@ -267,14 +280,23 @@ export function Chat({
     )
       setConversations(result.conversations);
   };
-  applyEvent.current = (e) => {
+  applyEvent.current = (e, sequence) => {
     switch (e.type) {
       case "status":
+        // A snapshot taken after this event already holds it.
+        if (sequence <= stateCursor.current) break;
+        stateCursor.current = sequence;
         setState(e);
-        setMessages(e.messages || []);
         break;
       case "history":
         setMessages(e.messages);
+        break;
+      case "message":
+        setMessages((previous) =>
+          previous.some((m) => m.id === e.message.id)
+            ? previous.map((m) => (m.id === e.message.id ? e.message : m))
+            : [...previous, e.message],
+        );
         break;
       case "user-message":
         setMessages((previous) => [
@@ -349,7 +371,7 @@ export function Chat({
         setState((old) => (old ? { ...old, busy: false } : old));
         break;
       case "document-changed":
-        onDocument(e.document, e.expectedBaseRevision);
+        onDocument(e.change);
         break;
       case "document-opened":
         onOpened(e.document);
@@ -374,10 +396,10 @@ export function Chat({
         const missed =
           snapshotCursor.current > 0 && item.sequence > cursor.current + 1;
         cursor.current = item.sequence;
-        applyEvent.current(item.event);
-        // A gap in the sequence: the snapshot repairs what was missed.
+        applyEvent.current(item.event, item.sequence);
+        // A gap in the sequence: the conversation is loaded again.
         if (missed && !refreshing.current)
-          refreshing.current = refresh()
+          refreshing.current = refresh(true)
             .catch(() => {})
             .finally(() => (refreshing.current = null));
       }),
@@ -403,7 +425,7 @@ export function Chat({
       await runtime("bind", { documentId: wanted.documentId });
       bound.current = wanted;
       setBoundTo(wanted);
-      await refresh();
+      await refresh(true);
       await loadConversations();
     }).catch(async (error) => {
       // Another folder's turn is still running; the binding follows its end.
@@ -517,7 +539,7 @@ export function Chat({
     if (!ready || busy) return;
     void act(async () => {
       await runtime("conversations", { action, id });
-      await refresh();
+      await refresh(true);
       await loadConversations();
     });
   };

@@ -9,9 +9,11 @@ import { once } from "node:events";
 import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
-import { verifySimulationViewport } from "./viewport-scenarios.mts";
+import { verifySimulationPaint } from "./paint-scenarios.mts";
+import { sameRun, simulationClient } from "./simulation-client.mts";
 import { agentScript, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
+import { documentViews } from "./document-views.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 // The sidecar reads its model services at start: point them at a scripted model.
@@ -87,10 +89,10 @@ async function stop() {
   await stream?.close();
   child = undefined;
 }
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
-async function command(request: any) {
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
+/** The host's answer as it is. */
+async function post(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -99,7 +101,10 @@ async function command(request: any) {
   const body = await response.json();
   if (body.error)
     throw Object.assign(new Error(body.error.message), body.error);
-  return documentOf(body.result);
+  return body.result;
+}
+async function command(request: any) {
+  return documentOf(await post(request));
 }
 try {
   await start();
@@ -197,34 +202,14 @@ try {
     (await command({ op: "read", id: doc.id })).revision,
     beforeInvalid,
   );
-  const started = await command({
-    op: "simulationAct",
-    documentId: doc.id,
-    revision: doc.revision,
-    target: { kind: "definition", circuit: "main" },
-    command: { kind: "start" },
-  });
-  const live = { sessionId: started.sessionId, viewId: started.viewId };
-  await command({
-    op: "simulationAct",
-    documentId: doc.id,
-    revision: doc.revision,
-    target: { kind: "run", ...live },
-    command: { kind: "input", componentId: input.id, bits: "1" },
-  });
-  const frame = (
-    await stream!.wait(
-      (e) =>
-        e.topic === "simulation" &&
-        e.data?.kind === "state" &&
-        e.data.sessionId === started.sessionId &&
-        e.data.components?.items?.some(
-          (item: any) =>
-            item.id === output.id &&
-            item.ports.some((port: any) => port.bits === "0"),
-        ),
-    )
-  ).data;
+  const client = simulationClient(command, stream!);
+  const run = await client.start(doc, "main");
+  await client.act({ kind: "input", componentId: input.id, bits: "1" });
+  assert.equal(
+    client.bits(output.id),
+    "0",
+    JSON.stringify(client.mirror().components[output.id]),
+  );
   const verify = (vectors: any[]) =>
     command({
       op: "simulate",
@@ -250,33 +235,18 @@ try {
     1,
     "Native rejection must not poison the next verification",
   );
-  const stillLive = await command({ op: "simulationStatus" });
-  assert.equal(
-    stillLive.state.viewId,
-    started.viewId,
+  // Checks run in their own process: the run and its input stay.
+  const afterChecks = await client.act({ kind: "pause" });
+  assert(
+    sameRun(afterChecks.run, run),
     "Verification replaced the user live session",
   );
-  const kept = await command({
-    op: "simulationSnapshot",
-    sessionId: started.sessionId,
-    componentIds: [output.id],
-    trace: false,
-    memory: false,
-  });
-  const outputState = kept.frame.components.find(
-    (item: any) => item.id === output.id,
-  );
-  assert(
-    outputState?.ports.some((port: any) => port.bits === "0"),
+  assert.equal(
+    client.bits(output.id),
+    "0",
     "Verification modified the user input state",
   );
   assert.equal(await readFile(source, "utf8"), saved);
-  assert(
-    frame.components.items
-      .find((item: any) => item.id === output.id)
-      .ports.some((port: any) => port.bits === "0"),
-    JSON.stringify(frame.components),
-  );
   assert.equal(
     (await command({ op: "read", id: doc.id })).revision,
     doc.revision,
@@ -347,22 +317,18 @@ try {
   await assert.rejects(() =>
     command({ op: "close", id, revision: reloaded.revision, discard: true }),
   );
-  await command({
-    op: "simulationAct",
-    documentId: id,
-    revision: undoReload.revision,
-    target: { kind: "definition", circuit: "main" },
-    command: { kind: "start" },
-  });
+  const closing = simulationClient(command, stream!);
+  await closing.start(undoReload, "main");
   await command({
     op: "close",
     id,
     revision: undoReload.revision,
     discard: true,
   });
-  assert.equal((await command({ op: "simulationStatus" })).session, null);
-  await stream!.wait(
-    (e) => e.topic === "simulation" && e.data?.kind === "ended",
+  assert.equal(
+    (await closing.ended())?.reasonCode,
+    "document-closed",
+    "Closing a document ends its run",
   );
   assert.equal(
     (await command({ op: "read", id: reopened.id })).revision,
@@ -371,8 +337,75 @@ try {
   await stop();
   await start();
   assert.equal((await command({ op: "open", path: copyPath })).id, id);
-  await verifySimulationViewport(command);
-  await verifyEditing(command);
+  await verifySimulationPaint(command, stream!, url);
+  await verifyEditing(command, stream!);
+  {
+    // The connection panel reads the nets of the selection with observe's
+    // IDs; an edit answers with the width conflicts of the page it changed.
+    const connected = await command({
+      op: "import",
+      name: "connections.circ",
+      xml: '<?xml version="1.0"?><project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><lib desc="#Gates" name="1"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main"><comp lib="0" name="Pin" loc="(100,100)"/><comp lib="1" name="NOT Gate" loc="(200,100)"/><comp lib="0" name="Pin" loc="(300,100)"><a name="output" val="true"/><a name="facing" val="west"/></comp><wire from="(100,100)" to="(170,100)"/><wire from="(200,100)" to="(300,100)"/></circuit></project>',
+    });
+    const scope = {
+      id: connected.id,
+      revision: connected.revision,
+      circuit: "main",
+    };
+    const at = (x: number) =>
+      connected.circuits[0].components.find((c: any) => c.location.x === x);
+    const { focus } = await command({
+      op: "connections",
+      ...scope,
+      components: [at(200).id],
+      wires: [],
+    });
+    const observed = (await command({ op: "observe", ...scope })).focus;
+    const nativeAt = (x: number) =>
+      observed.components.find((c: any) => c.location.x === x).componentId;
+    assert.deepEqual(
+      focus.components.map((c: any) => [c.componentId, c.partial ?? false]),
+      [
+        [nativeAt(100), true],
+        [nativeAt(200), false],
+        [nativeAt(300), true],
+      ],
+    );
+    const nets = new Set(focus.bitNets.map((n: any) => n.netId));
+    assert.equal(nets.size, 2);
+    assert.deepEqual(
+      focus.bitNets,
+      observed.bitNets
+        .filter((n: any) => nets.has(n.netId))
+        .map((n: any) => ({
+          netId: n.netId,
+          contacts: n.contacts.map((c: any) => ({
+            componentId: c.componentId,
+            endIndex: c.endIndex,
+            bit: c.bit,
+          })),
+        })),
+    );
+    assert.deepEqual(
+      focus.wires.map((w: any) => w.wireId),
+      observed.wires.map((w: any) => w.wireId),
+    );
+    const widened = await post({
+      op: "edit",
+      ...scope,
+      edit: { kind: "attributes", id: at(300).id, values: { width: "8" } },
+    });
+    assert(
+      widened.change.widthErrors.main.length > 0,
+      "Width conflict missing",
+    );
+    const undone = await post({
+      op: "undo",
+      id: connected.id,
+      revision: widened.change.revision,
+    });
+    assert.deepEqual(undone.change.widthErrors, { main: [] });
+  }
   // Files saved by 2.15 builds load on the bundled 2.15 runtime. A relocated
   // product must serve both runtimes from its precompiled bridge classes.
   const legacyPath = path.join(state, "legacy-2.15.circ");
@@ -401,7 +434,7 @@ try {
       ),
       "The product compiled the bridge instead of using its precompiled classes",
     );
-  const retained = await verifySimulation(command, state);
+  const retained = await verifySimulation(command, stream!, state);
   await stop();
   await start();
   assert(

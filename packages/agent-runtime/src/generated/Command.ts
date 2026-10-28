@@ -3,6 +3,7 @@ import type { ButtonValue } from "./ButtonValue.ts";
 import type { TraceKey } from "./TraceKey.ts";
 
 /**
- * What the user asks the run to do.
+ * What the user asks the run to do. Component ids are those of the shown
+ * instance.
  */
-export type Command = { "kind": "start" } | { "kind": "toggle-clock" } | { "kind": "play" } | { "kind": "pause" } | { "kind": "tick" } | { "kind": "reset" } | { "kind": "toggle-propagation" } | { "kind": "step" } | { "kind": "configure", frequency?: number, automatic?: boolean, } | { "kind": "poke", componentId: string, x: number, y: number, } | { "kind": "input", componentId: string, bits: string, } | { "kind": "button", componentId: string, value: ButtonValue, } | { "kind": "pulse", componentId: string, } | { "kind": "trace", signals: Array<TraceKey>, } | { "kind": "trace-stop" } | { "kind": "memory", componentId: string, offset: number, count: number, } | { "kind": "memory-write", componentId: string, offset: number, count: number, address: number, expected: number, value: number, } | { "kind": "viewport", x: number, y: number, width: number, height: number, scale: number, };
+export type Command = { "kind": "toggle-clock" } | { "kind": "play" } | { "kind": "pause" } | { "kind": "tick" } | { "kind": "reset" } | { "kind": "toggle-propagation" } | { "kind": "step" } | { "kind": "configure", frequency?: number, automatic?: boolean, } | { "kind": "poke", componentId: string, x: number, y: number, } | { "kind": "input", componentId: string, bits: string, } | { "kind": "button", componentId: string, value: ButtonValue, } | { "kind": "pulse", componentId: string, } | { "kind": "trace", signals: Array<TraceKey>, } | { "kind": "trace-stop" } | { "kind": "memory", componentId: string, offset: number, count: number, } | { "kind": "memory-write", componentId: string, offset: number, count: number, address: number, expected: number, value: number, };

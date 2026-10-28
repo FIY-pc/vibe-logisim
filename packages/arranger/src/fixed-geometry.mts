@@ -1,6 +1,5 @@
 // Physical fixed copper, independent of electrically merged Tunnel bundles.
-import { PyValueError } from "./py.mts";
-import type { Point } from "./py.mts";
+import type { Point } from "./circuit.mts";
 import type { Focus, Wire, XY } from "./types.mts";
 
 function point(value: XY): Point {
@@ -14,7 +13,7 @@ export function regionSegment(wire: Wire, belowY: number | null): Wire | null {
   const b = point(wire.to);
   if (Math.min(a[1], b[1]) >= belowY) return null;
   if (Math.max(a[1], b[1]) <= belowY) return { ...wire };
-  if (a[0] !== b[0]) throw new PyValueError("固定区域边界遇到非正交导线");
+  if (a[0] !== b[0]) throw new Error("固定区域边界遇到非正交导线");
   const low = b[1] < a[1] ? b : a;
   return {
     ...wire,

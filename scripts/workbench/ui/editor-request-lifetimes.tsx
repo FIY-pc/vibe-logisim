@@ -96,7 +96,7 @@ export async function verifyEditorRequestLifetimes() {
         ],
       };
     }
-    if (request.op === "observe")
+    if (request.op === "observe" || request.op === "connections")
       return {
         focus: {
           components: records[request.id].circuits[0].components.map(
@@ -143,7 +143,11 @@ export async function verifyEditorRequestLifetimes() {
       };
       records[request.id] = next;
       return {
-        view: next,
+        change: {
+          ...next,
+          base: document.revision,
+          order: next.circuits.map((circuit) => circuit.name),
+        },
         revision: next.revision,
         noop: false,
         title: "修改属性",

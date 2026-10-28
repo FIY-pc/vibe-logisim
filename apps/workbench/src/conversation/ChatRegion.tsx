@@ -23,7 +23,7 @@ export function ChatRegion() {
   const visible = useShell(
     (state) => state.right === "chat" && showRight(state),
   );
-  const mergeDocument = useDocuments((state) => state.mergeDocument);
+  const applyChange = useDocuments((state) => state.applyChange);
   const { setNotice, onError } = stores.notices.getState();
   const { navigation } = actions;
   const followConversationReference = useConversationReferences({
@@ -41,7 +41,7 @@ export function ChatRegion() {
       doc={doc}
       circuit={circuit?.name || null}
       onError={onError}
-      onDocument={mergeDocument}
+      onDocument={applyChange}
       onOpened={actions.workspace.showDocument}
       onFilesChanged={async () => {
         await stores.documents.getState().refreshWorkspace(true);

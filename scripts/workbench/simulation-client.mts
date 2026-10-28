@@ -1,192 +1,187 @@
 /**
- * The simulation requests the host accepts, as the checks issue them: one
- * definition target that starts or reuses the root run, and run targets for
- * everything the running view owns.
+ * The interactive run as the checks drive it: requests to the run there is,
+ * and its state as the window keeps it, folded from the page's `simulation`
+ * events. Replies carry no run state; a frame with at least a command's
+ * sequence shows its effect.
  */
-import type { ActResult } from "../../apps/workbench/src/generated/ActResult.ts";
 import type { Command } from "../../apps/workbench/src/generated/Command.ts";
 import type { ComponentState } from "../../apps/workbench/src/generated/ComponentState.ts";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
+import type { EndedInfo } from "../../apps/workbench/src/generated/EndedInfo.ts";
+import type { FrameEvent } from "../../apps/workbench/src/generated/FrameEvent.ts";
+import type { LiveComponent } from "../../apps/workbench/src/generated/LiveComponent.ts";
+import type { MemoryPage } from "../../apps/workbench/src/generated/MemoryPage.ts";
 import type { ObservationRecord } from "../../apps/workbench/src/generated/ObservationRecord.ts";
 import type { ObservationSummary } from "../../apps/workbench/src/generated/ObservationSummary.ts";
-import type { Snapshot } from "../../apps/workbench/src/generated/Snapshot.ts";
-import type { Status } from "../../apps/workbench/src/generated/Status.ts";
+import type { RunInfo } from "../../apps/workbench/src/generated/RunInfo.ts";
+import type { SimulationEvent } from "../../apps/workbench/src/generated/SimulationEvent.ts";
+import type { TraceDelta } from "../../apps/workbench/src/generated/TraceDelta.ts";
+import {
+  componentState,
+  traced,
+} from "../../apps/workbench/src/simulation/simulation.ts";
 
 /** The checks' transport: a request to the host, its result returned as is. */
 export type Transport = (request: Record<string, unknown>) => Promise<any>;
-/** The run a document's circuit is shown in, as a request carries it. */
-export interface Run {
-  sessionId: string;
-  viewId: string;
+/** The page's event stream (`eventStream`). */
+export interface Stream {
+  events: any[];
+  wait(predicate: (event: any) => boolean, from?: number): Promise<any>;
 }
-export interface View {
-  viewId: string;
-  circuit: string;
-  instancePath: string[];
+/** What the window keeps of the run after the events so far. */
+export interface Mirror {
+  run: RunInfo | null;
+  ended: EndedInfo | null;
+  /** The newest frame as it came: its header and what changed. */
+  frame: FrameEvent | null;
+  components: Record<string, LiveComponent>;
+  trace: TraceDelta | null;
+  memory: MemoryPage | null;
 }
 
-export function simulationClient(command: Transport) {
-  const act = (
+export const sameRun = (a: RunInfo | null, b: RunInfo | null) =>
+  Boolean(
+    a && b && a.documentId === b.documentId && a.startedAt === b.startedAt,
+  );
+
+export function simulationClient(command: Transport, stream: Stream) {
+  const mirror: Mirror = {
+    run: null,
+    ended: null,
+    frame: null,
+    components: {},
+    trace: null,
+    memory: null,
+  };
+  const clear = () => ({
+    frame: null,
+    components: {},
+    trace: null,
+    memory: null,
+  });
+  let seen = 0;
+  /** Lays the events not read yet over the mirror, as the window does. */
+  const fold = () => {
+    for (; seen < stream.events.length; seen++) {
+      const { topic, data } = stream.events[seen];
+      if (topic !== "simulation") continue;
+      const event = data as SimulationEvent;
+      if (event.kind === "run") {
+        if (!sameRun(mirror.run, event.run))
+          Object.assign(mirror, clear(), { run: event.run, ended: null });
+      } else if (event.kind === "ended")
+        Object.assign(mirror, clear(), { run: null, ended: event.ended });
+      else if (mirror.run) {
+        const { kind: _, ...frame } = event;
+        if (frame.full) {
+          mirror.components = { ...frame.components };
+          mirror.trace = frame.trace ?? null;
+          mirror.memory = frame.memory ?? null;
+        } else {
+          Object.assign(mirror.components, frame.components);
+          if (frame.trace) mirror.trace = traced(mirror.trace, frame.trace);
+          if (frame.memory) mirror.memory = frame.memory;
+        }
+        mirror.frame = frame;
+      }
+    }
+    return mirror;
+  };
+  /** Waits for events until the mirror holds. */
+  const until = async (holds: (mirror: Mirror) => boolean, what: string) => {
+    while (!holds(fold()))
+      await stream
+        .wait((event) => event.topic === "simulation", seen)
+        .catch(() => {
+          throw new Error(`Timed out waiting for ${what}`);
+        });
+    return mirror;
+  };
+  /** Ends the current run and starts one; resolves once its first frame came. */
+  const start = async (
     document: Document,
-    target: unknown,
-    request: Command,
-    initialFrequency?: number,
-  ) =>
-    command({
-      op: "simulationAct",
+    circuit: string,
+    frequency?: number,
+  ): Promise<RunInfo> => {
+    const run: RunInfo = await command({
+      op: "simulationStart",
       documentId: document.id,
       revision: document.revision,
-      target,
-      command: request,
-      ...(initialFrequency === undefined ? {} : { initialFrequency }),
-    }) as Promise<ActResult>;
-  /** A command to a circuit definition: `start` starts or reuses its root run. */
-  const definition = (
-    document: Document,
-    circuit: string,
-    request: Command,
-    initialFrequency?: number,
-  ) =>
-    act(document, { kind: "definition", circuit }, request, initialFrequency);
-  /** A command to a view of a run. */
-  const run = (document: Document, target: Run, request: Command) =>
-    act(document, { kind: "run", ...target }, request);
-  const started = async (
-    document: Document,
-    circuit: string,
-    initialFrequency?: number,
-  ): Promise<Run> => {
-    const result = await definition(
-      document,
       circuit,
-      { kind: "start" },
-      initialFrequency,
+      ...(frequency === undefined ? {} : { frequency }),
+    });
+    await until(
+      (m) => sameRun(m.run, run) && m.frame !== null,
+      "the run's first frame",
     );
-    if (!result.sessionId || !result.viewId)
-      throw new Error("simulationAct start returned no run");
-    return { sessionId: result.sessionId, viewId: result.viewId };
+    return run;
   };
-  const status = () => command({ op: "simulationStatus" }) as Promise<Status>;
-  const navigate = (target: Run, instancePath: string[]) =>
-    command({
-      op: "simulationNavigate",
-      sessionId: target.sessionId,
-      instancePath,
-    }) as Promise<View>;
-  /** The current or a numbered frame, with memory and waveform on request. */
-  const snapshot = (
-    target: Run,
-    options: {
-      frameSequence?: number;
-      componentIds?: string[];
-      offset?: number;
-      limit?: number;
-      trace?: boolean;
-      memory?: boolean;
-    } = {},
-  ) =>
-    command({
-      op: "simulationSnapshot",
-      sessionId: target.sessionId,
-      ...options,
-    }) as Promise<Snapshot>;
-  /** The newest frame, or a numbered one, with its waveform so far. */
-  const traced = (target: Run, frameSequence?: number) =>
-    command({
-      op: "simulationSnapshot",
-      sessionId: target.sessionId,
-      trace: true,
-      ...(frameSequence === undefined ? {} : { frameSequence }),
-    }) as Promise<Snapshot>;
-  const image = (target: Run, frameSequence: number) =>
-    command({
-      op: "simulationFrameImage",
-      sessionId: target.sessionId,
-      frameSequence,
-    }) as Promise<string>;
-  /** Ends the run a target or a session id names. */
-  const stop = (target: Run | string) =>
-    command({
-      op: "simulationStop",
-      sessionId: typeof target === "string" ? target : target.sessionId,
-    }) as Promise<{
-      stopped: boolean;
-    }>;
-  /** Freezes the shown frame as a kept observation. */
-  const keep = (target: Run, title: string, frameSequence?: number) =>
-    command({
-      op: "observationCapture",
-      sessionId: target.sessionId,
-      viewId: target.viewId,
-      ...(frameSequence === undefined ? {} : { frameSequence }),
-      title,
-    }) as Promise<ObservationRecord>;
+  /** Sends a command; returns its sequence. */
+  const send = async (change: Command): Promise<number> =>
+    (await command({ op: "simulationCommand", command: change }))
+      .commandSequence;
+  /** The mirror once a frame shows the command numbered `sequence`. */
+  const settled = async (sequence: number) => {
+    await until(
+      (m) => !m.run || (m.frame?.commandSequence ?? -1) >= sequence,
+      `a frame after command ${sequence}`,
+    );
+    if (!mirror.run)
+      throw new Error(`The run ended: ${mirror.ended?.reasonCode}`);
+    return mirror;
+  };
+  /** Sends a command and waits for the frame that shows it. */
+  const act = async (change: Command) => settled(await send(change));
+  /** Shows an instance of the run and waits for its first frame. */
+  const navigate = async (instancePath: string[]) =>
+    settled(
+      (await command({ op: "simulationNavigate", instancePath }))
+        .commandSequence,
+    );
+  const stop = (): Promise<{ stopped: boolean }> =>
+    command({ op: "simulationStop" });
+  /** Waits for the end of the run. */
+  const ended = async () => (await until((m) => !m.run, "the run's end")).ended;
+  /** Keeps the run's newest frame. */
+  const keep = (title: string): Promise<ObservationRecord> =>
+    command({ op: "observationCapture", title });
   /** The kept rows of a document, newest first. */
-  const observations = (document: Document) =>
-    command({
-      op: "observationList",
-      id: document.id,
-    }) as Promise<ObservationSummary[]>;
+  const observations = (document: Document): Promise<ObservationSummary[]> =>
+    command({ op: "observationList", id: document.id });
   /** One kept record, read under the document it was kept from. */
   const record = (
     document: Document,
     id: string,
     options: { componentIds?: string[]; offset?: number; limit?: number } = {},
-  ) =>
+  ): Promise<ObservationRecord> =>
     command({
       op: "observationGet",
       id: document.id,
       record: id,
       ...options,
-    }) as Promise<ObservationRecord>;
-  /**
-   * The frame after the command the acknowledgement numbered: frames reach the
-   * host asynchronously, so a snapshot taken right after `act` may still show
-   * the previous one. Status reports the acknowledged command, not the frame,
-   * so the frame itself is checked.
-   */
-  const settled = async (
-    target: Run,
-    acknowledged: ActResult,
-    options: {
-      componentIds?: string[];
-      trace?: boolean;
-      memory?: boolean;
-    } = {},
-  ) => {
-    const wanted = acknowledged.commandSequence ?? 0;
-    for (let attempt = 0; attempt < 500; attempt++) {
-      const current = await snapshot(target, options);
-      if (current.frame.commandSequence >= wanted) return current;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    throw new Error(`no frame after command ${wanted}`);
+    });
+  /** One component of the shown instance in the newest frame. */
+  const component = (id: string): ComponentState => {
+    const live = fold().components[id];
+    if (!live) throw new Error(`No component ${id} in the frame`);
+    return componentState(id, live);
   };
-  /** One component's state in the current frame. */
-  const component = async (
-    target: Run,
-    id: string,
-  ): Promise<ComponentState> => {
-    const { frame } = await snapshot(target, { componentIds: [id], limit: 1 });
-    const state = frame.components.find((c) => c.id === id);
-    if (!state) throw new Error(`no component ${id} in the frame`);
-    return state;
-  };
+  /** A port's value in the newest frame, most significant bit first. */
+  const bits = (id: string, port = 0) => fold().components[id]?.ports[port];
   return {
+    mirror: fold,
+    until,
+    start,
+    send,
+    settled,
     act,
-    definition,
-    run,
-    started,
-    status,
     navigate,
-    snapshot,
-    traced,
-    image,
     stop,
+    ended,
     keep,
     observations,
     record,
-    settled,
     component,
+    bits,
   };
 }

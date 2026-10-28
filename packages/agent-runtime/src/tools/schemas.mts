@@ -310,10 +310,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
           object(
             {
               points: array(
-                object(
-                  { x: int(GRID), y: int(GRID) },
-                  ["x", "y"],
-                ),
+                object({ x: int(GRID), y: int(GRID) }, ["x", "y"]),
                 { minItems: 2, maxItems: 64 },
               ),
             },
@@ -374,7 +371,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "arrange_circuit",
     label: "整理布局与连线",
     description:
-      "Re-lay out one definition: places parts, routes wires and tunnels, keeps every other definition byte-identical and proves the netlist equivalent before applying. Small definitions without options are laid out by signal flow (inputs left, outputs right, gates in columns, every connection a wire). The result is applied only when it reads more clearly than the current drawing (lower readability score: crossings, bends, close parallel wires, wires over bodies or grazing ports, labels on wires, overlaps); otherwise applied is false, the file is unchanged and worse names what would have got worse. For a readable functional layout of a large sheet first read inspect_circuit({layoutContext:{}}) and supply organization: {groups:[{id,label,row,componentIds}], namedLinks?, localSignals?, stages?, annotations?}. Pinned parts, kept tunnels and the panel row are respected. Look at the result with render_circuit and refine the organization rather than the coordinates.",
+      "Re-lay out one definition from its netlist and apply it only if it reads more clearly. Parts go in columns by signal flow (input Pins left in their order, output Pins right, a carry chain stepping left to right); a net reaching several ports of one column gets one trunk with short taps; Tunnels stand at the ports of nets the sheet already draws with Tunnels, of controls reaching a dozen ports, and of connections a wire cannot reach cleanly. Every other definition stays byte-identical and the netlist is proven equivalent before anything is applied. The result is applied only when it reads more clearly than the current drawing (lower readability score: crossings, bends, close parallel wires, wires over bodies or grazing ports, labels on wires, overlaps); otherwise applied is false, the file is unchanged and worse names what would have got worse. To lay a large sheet out by function, first read inspect_circuit({layoutContext:{}}) and supply organization: {groups:[{id,label,row,componentIds}], namedLinks?, localSignals?, stages?, annotations?}: each group becomes a box under its numbered heading (real Text), groups of one row stand side by side in the given order, rows stack from the top, and nets between rows become Tunnels. Pinned parts, kept tunnels and the panel row stay where they are. Look at the result with render_circuit and refine the organization rather than the coordinates.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
@@ -393,28 +390,11 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
         description:
           "Give each consumer of a Constant its own copy on its port (default true).",
       },
-      columnGap: int({
-        minimum: 60,
-        maximum: 1000,
-        description: "Horizontal space between layers in px (default 160).",
-      }),
       panelBelowY: int({
         minimum: -100000,
         maximum: 100000,
         description:
           "Only for sheets with a fixed control panel on top: every part whose top edge is above this y stays in place and cannot be grouped. Omit it otherwise (a panel is detected only on sheets of 40 or more parts); a value below the whole drawing freezes everything.",
-      }),
-      maxLayerSpan: int({
-        minimum: 1,
-        maximum: 64,
-        description:
-          "A named net spanning more layers than this becomes a tunnel (default 8).",
-      }),
-      tunnelSpan: int({
-        minimum: 100,
-        maximum: 5000,
-        description:
-          "Longest wire in px before a net becomes a tunnel; larger keeps more wires.",
       }),
       organization: object(
         {
@@ -433,15 +413,6 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
                   minItems: 1,
                   maxItems: 2048,
                 }),
-                layout: str({
-                  enum: ["flow", "bank"],
-                  description:
-                    "flow: layered logic (default); bank: repeated parallel parts in narrow columns.",
-                }),
-                columns: int({ minimum: 1, maximum: 2 }),
-                role: str({ enum: ["main", "support"] }),
-                bankOrder: str({ enum: ["connected", "given"] }),
-                attachTo: str(),
               },
               ["id", "label", "row", "componentIds"],
             ),
@@ -459,8 +430,6 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
             { maxItems: 256 },
           ),
           localSignals: array(str(), { maxItems: 256 }),
-          maxRowWidth: int({ minimum: 0 }),
-          sharedControls: { type: "boolean" },
           stages: array(
             object(
               {

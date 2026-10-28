@@ -41,6 +41,9 @@ export type FindMode = "component" | "circuit";
 export interface EditorState {
   /** The shown circuit of the active document. A missing name shows the first circuit. */
   circuitName: string;
+  /** The subcircuit instance of the run shown, as component ids from the
+   * run's root circuit; empty for the circuit itself. */
+  instance: string[];
   tool: Tool;
   /** The catalog tool being placed. */
   place: CatalogTool | null;
@@ -87,7 +90,10 @@ export interface EditorState {
   circuitSearchInput: RefObject<HTMLInputElement | null>;
   /** The placement as last rendered, for the rotate shortcut. Not reactive. */
   placement: { current: PlacementState | null };
+  /** Shows a circuit itself, outside any instance. */
   setCircuitName(name: Update<string>): void;
+  /** Shows the instance at `path` of the run, whose circuit is `name`. */
+  showInstance(name: string, path: string[]): void;
   setTool(tool: Update<Tool>): void;
   setPlace(place: Update<CatalogTool | null>): void;
   setCatalog(catalog: Update<CatalogGroup[]>): void;
@@ -115,6 +121,7 @@ export interface EditorState {
 export function createEditorStore() {
   return createStore<EditorState>()((set) => ({
     circuitName: "main",
+    instance: [],
     tool: "select",
     place: null,
     catalog: [],
@@ -140,7 +147,13 @@ export function createEditorStore() {
     searchInput: createRef<HTMLInputElement>(),
     circuitSearchInput: createRef<HTMLInputElement>(),
     placement: { current: null },
-    setCircuitName: field(set, "circuitName"),
+    setCircuitName: (name) =>
+      set((state) => ({
+        circuitName:
+          typeof name === "function" ? name(state.circuitName) : name,
+        instance: [],
+      })),
+    showInstance: (circuitName, instance) => set({ circuitName, instance }),
     setTool: field(set, "tool"),
     setPlace: field(set, "place"),
     setCatalog: field(set, "catalog"),

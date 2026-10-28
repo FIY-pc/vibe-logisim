@@ -17,10 +17,14 @@
 // shifts that satisfy all constraints are found by relaxation. Objects that
 // are attached to each other (a part and its ports, a vertical run and the
 // port it leaves from, collinear runs that meet) move as one group, and so do
-// the parts of a column: parts that share a left edge move by one shift,
-// since a column pulled into a stagger reads worse than the air it saves.
-import { getOr, sortBy } from "./py.mts";
-import type { Point } from "./py.mts";
+// the parts a caller lists in `together`.
+import type { Point } from "./circuit.mts";
+
+function getOr<K, V>(map: Map<K, V>, key: K, make: () => V): V {
+  let value = map.get(key);
+  if (value === undefined) map.set(key, (value = make()));
+  return value;
+}
 
 export const GRID = 10;
 
@@ -44,6 +48,8 @@ export type KeepOrder = readonly [
 
 export interface CompactOptions {
   partGap?: number;
+  // between anything else: wire runs, wire ends, bodies
+  wireGap?: number;
   grid?: number;
   keepOrder?: Iterable<KeepOrder>;
   minWidth?: number;
@@ -245,10 +251,9 @@ export function compactX(
   );
   const slotOf = new Map<number, number>();
   ys.forEach((y, i) => slotOf.set(y, 2 * i));
-  const order = sortBy(
-    objects.map((_o, n) => n),
-    (n) => [objects[n][0], objects[n][1]],
-  );
+  const order = objects
+    .map((_o, n) => n)
+    .sort((m, n) => objects[m][0] - objects[n][0] || objects[m][1] - objects[n][1]);
 
   const sweep = (visit: (m: number, n: number) => void): void => {
     // per height slot: the object reaching furthest right
@@ -297,7 +302,7 @@ export function compactX(
     const gb = group.get(b[5]) as string;
     if (ga === gb || a[1] >= b[0]) return;
     const gap = b[0] - a[1];
-    const want = a[4] === "box" && b[4] === "box" ? partGap : grid;
+    const want = a[4] === "box" && b[4] === "box" ? partGap : options.wireGap ?? grid;
     tighten(ga, gb, gap - Math.min(want, gap));
   });
   for (const [[i, xi], [j, xj]] of options.keepOrder ?? []) {
@@ -343,7 +348,7 @@ export function compactX(
     if (value === undefined) throw new Error(`KeyError: ${g}`);
     return value;
   };
-  const edges = sortBy([...slackOf.values()], (e) => lowestOf(e.gb));
+  const edges = [...slackOf.values()].sort((e, f) => lowestOf(e.gb) - lowestOf(f.gb));
   const shiftOf = (g: string): number => {
     const value = shift.get(g);
     if (value === undefined) throw new Error(`KeyError: ${g}`);
@@ -387,10 +392,9 @@ export function compactX(
   }
   // Ties in the leftmost x keep the order groups were first met in; the
   // original iterated a hash set there.
-  const ordered = sortBy(
-    groups.filter((g) => !fixedGroups.has(g) && (pulls.get(g) ?? []).length),
-    (g) => lowestOf(g),
-  );
+  const ordered = groups
+    .filter((g) => !fixedGroups.has(g) && (pulls.get(g) ?? []).length)
+    .sort((g, h) => lowestOf(g) - lowestOf(h));
   const reversed = [...ordered].reverse();
   for (let pass = 0; pass < 24; pass++) {
     let changed = false;

@@ -153,10 +153,14 @@ export async function verifyConversationTurns() {
         change,
       });
     busy = false;
-    Object.assign(
-      history.find((m) => m.id === turnId),
-      { status, error, elapsedMs: 47_000, ...(change ? { change } : {}) },
-    );
+    const turn = history.find((m) => m.id === turnId);
+    Object.assign(turn, {
+      status,
+      error,
+      elapsedMs: 47_000,
+      ...(change ? { change } : {}),
+    });
+    emit({ type: "message", message: turn });
     for (const m of history)
       if (
         m.type === "activity" &&
@@ -206,7 +210,7 @@ export async function verifyConversationTurns() {
       case "markUndone": {
         const turn = history.find((m) => m.change?.id === args.changeId);
         turn.change = { ...turn.change, undone: true };
-        emitStatus();
+        emit({ type: "message", message: turn });
         return { undone: true };
       }
     }
@@ -440,18 +444,18 @@ export async function verifyConversationTurns() {
     );
     assert.match($(".turn-live")!.textContent!, /正在处理/);
 
-    // ---- a missed event: the snapshot repairs the view --------------------
-    const statusCalls = () =>
-      calls.filter((call) => call.method === "status").length;
-    const before = statusCalls();
+    // ---- a missed event: the conversation is loaded again -----------------
+    const historyCalls = () =>
+      calls.filter((call) => call.method === "history").length;
+    const before = historyCalls();
     await step(() => {
       say("m3", "已把输出");
       say("m3", "引脚改名为", "assistant", true);
       say("m3", " sum。");
     });
     assert(
-      statusCalls() > before,
-      "A gap in the sequence fetches the snapshot",
+      historyCalls() > before,
+      "A gap in the sequence loads the conversation again",
     );
     const answer = $$(".turn .message.assistant").at(-1)!;
     assert.match(answer.textContent!, /已把输出引脚改名为 sum。/);

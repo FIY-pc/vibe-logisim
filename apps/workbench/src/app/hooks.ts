@@ -64,20 +64,16 @@ export const useEditor = <T>(selector: (state: EditorState) => T): T =>
 export const useSimulation = <T>(selector: (state: SimulationState) => T): T =>
   useSelected(useWorkbench().stores.simulation, selector);
 
-/** The store fields the status of the shown circuit is read from, as this
- * render sees them. */
+/** The run and its newest frame as this render sees them: what `live` and
+ * `simulationStatus` read. */
 export function useSimulationState(): Pick<
   SimulationState,
-  "session" | "view" | "displayed" | "lastEnded" | "busy" | "viewBusy" | "frame"
+  "run" | "frame" | "ended"
 > {
-  const session = useSimulation((state) => state.session);
-  const view = useSimulation((state) => state.view);
-  const displayed = useSimulation((state) => state.displayed);
-  const lastEnded = useSimulation((state) => state.lastEnded);
-  const busy = useSimulation((state) => state.busy);
-  const viewBusy = useSimulation((state) => state.viewBusy);
+  const run = useSimulation((state) => state.run);
   const frame = useSimulation((state) => state.frame);
-  return { session, view, displayed, lastEnded, busy, viewBusy, frame };
+  const ended = useSimulation((state) => state.ended);
+  return { run, frame, ended };
 }
 
 /** The view as of this render. */
@@ -85,7 +81,8 @@ export function useView(): View {
   const docs = useDocuments((state) => state.docs);
   const active = useDocuments((state) => state.active);
   const circuitName = useEditor((state) => state.circuitName);
-  return viewOf(docs, active, circuitName);
+  const instance = useEditor((state) => state.instance);
+  return viewOf(docs, active, circuitName, instance);
 }
 
 /** The ids selected in the view of this render. */

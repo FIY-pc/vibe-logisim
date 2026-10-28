@@ -74,7 +74,7 @@ export function createWorkbench(): Workbench {
     workspace: createWorkspaceActions(stores),
     editor: editing,
     simulation,
-    navigation: createNavigation(stores, editing, { simulation }),
+    navigation: createNavigation(stores, editing),
   };
   const workbench: Workbench = {
     stores,

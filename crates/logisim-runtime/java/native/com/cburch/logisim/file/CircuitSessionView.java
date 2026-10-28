@@ -10,12 +10,15 @@ import org.w3c.dom.*;
 final class CircuitSessionView {
     final Circuit root;
     Circuit circuit;
-    String id;
     Map<String, Component> components;
+    /** Counts the instances shown; a frame of a new one carries everything. */
+    long generation;
+    /** The ids of the shown instance's path, as the host named them. */
+    List<String> ids = new ArrayList<>();
     private List<Component> path = new ArrayList<>();
 
     CircuitSessionView(Circuit root, Element init) {
-        this.root = root; circuit = root; id = init.getAttribute("viewId");
+        this.root = root; circuit = root;
         components = bind(circuit, init);
     }
 
@@ -63,17 +66,19 @@ final class CircuitSessionView {
     void navigate(Element request, CircuitState rootState, Runnable beforeSwitch) {
         Circuit target = root;
         List<Component> next = new ArrayList<>();
+        List<String> nextIds = new ArrayList<>();
         NodeList nodes = request.getElementsByTagName("instance");
         if (nodes.getLength() > 64) throw new SessionError("PATH_TOO_DEEP", "Instance path is too deep");
         for (int i = 0; i < nodes.getLength(); i++) {
-            Component c = find(target, (Element)nodes.item(i));
+            Element node = (Element)nodes.item(i);
+            Component c = find(target, node);
             if (!(c.getFactory() instanceof SubcircuitFactory)) throw new SessionError("NOT_SUBCIRCUIT", "Not a subcircuit");
-            next.add(c); target = ((SubcircuitFactory)c.getFactory()).getSubcircuit();
+            next.add(c); nextIds.add(node.getAttribute("id")); target = ((SubcircuitFactory)c.getFactory()).getSubcircuit();
         }
         Map<String, Component> mapped = bind(target, request);
         resolve(rootState, next);
         beforeSwitch.run();
-        path = next; circuit = target; components = mapped; id = request.getAttribute("viewId");
+        path = next; ids = nextIds; circuit = target; components = mapped; generation++;
     }
 
     void checkInput(Component component) {

@@ -111,6 +111,33 @@ describe("grouped organization", () => {
         end.location = { x: end.location.x + dx, y: end.location.y + dy };
     }
     verifyArrangement(result, after);
+    // the headings are real Text the observation sees, clear of every wire
+    // and every other part
+    const predicted = result.predicted!;
+    const headings = predicted.components.filter((c) => {
+      const text = c.attributes.find((a) => a.name === "text");
+      return /^\d\d  /.test(text?.standard ?? text?.value ?? "");
+    });
+    assert.equal(headings.length, 3);
+    for (const h of headings) {
+      const { x, y, width, height } = h.bounds;
+      for (const w of predicted.wires ?? []) {
+        const [x0, x1] = [Math.min(w.from.x, w.to.x), Math.max(w.from.x, w.to.x)];
+        const [y0, y1] = [Math.min(w.from.y, w.to.y), Math.max(w.from.y, w.to.y)];
+        assert.ok(
+          x1 < x || x0 > x + width || y1 < y || y0 > y + height,
+          `heading at ${x},${y} on a wire`,
+        );
+      }
+      for (const c of predicted.components) {
+        if (c === h) continue;
+        const b = c.bounds;
+        assert.ok(
+          b.x + b.width <= x || b.x >= x + width || b.y + b.height <= y || b.y >= y + height,
+          `heading at ${x},${y} on ${c.componentId}`,
+        );
+      }
+    }
   });
 
   it("reports members it could organize", async () => {

@@ -1,10 +1,12 @@
 import { Canvas } from "./Canvas";
 import type { PlacementState } from "./usePlacement";
+import { live } from "../simulation/store";
 import {
   useEditor,
   useNotices,
   useSelection,
   useSimulation,
+  useSimulationState,
   useView,
 } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
@@ -22,25 +24,12 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
   const deleteRequest = useEditor((state) => state.deleteRequest);
   const showGrid = useEditor((state) => state.showGrid);
   const focusTarget = useEditor((state) => state.focusTarget);
-  const session = useSimulation((state) => state.session);
-  const run = useSimulation((state) => state.view);
-  const displayed = useSimulation((state) => state.displayed);
-  const picture = useSimulation((state) => state.picture);
+  const shown = live(useSimulationState(), view);
+  const paint = useSimulation((state) => state.paint);
   const pending = useSimulation((state) => state.pending);
   const pressed = useSimulation((state) => state.pressed);
   const onError = useNotices((state) => state.onError);
   if (!doc || !circuit) return null;
-  const live =
-    session &&
-    run &&
-    displayed &&
-    displayed.sessionId === session.sessionId &&
-    displayed.viewId === run.viewId &&
-    session.documentId === doc.id &&
-    session.revision === doc.revision &&
-    run.circuit === circuit.name
-      ? run
-      : null;
   const { setZoom, setCanvasObservation, setPlace, setSignalView } =
     stores.editor.getState();
   const { editor: editing, simulation: simulating, navigation } = actions;
@@ -54,30 +43,14 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
       setSelection={(s) => editing.inspect(view, s)}
       place={place}
       edit={(change) => editing.edit(view, change)}
-      run={live}
-      picture={
-        live &&
-        session &&
-        picture?.sessionId === session.sessionId &&
-        picture.viewId === live.viewId
-          ? {
-              frameSequence: picture.frameSequence,
-              url: picture.url,
-              image: picture.image,
-            }
-          : null
-      }
-      pending={pending.map((item) => item.componentId)}
-      pressed={pressed?.componentId ?? null}
+      live={shown ? paint : null}
+      pending={shown ? pending.map((item) => item.componentId) : []}
+      pressed={shown ? pressed : null}
       onPoke={(component, point) =>
         void simulating.poke(view, component, point)
       }
       onPress={(component) => simulating.press(view, component)}
       onRelease={() => simulating.release()}
-      onViewport={(viewId, area) => {
-        if (live && session)
-          simulating.viewport(session.sessionId, viewId, area);
-      }}
       onError={onError}
       onStale={() =>
         void stores.documents.getState().refreshWorkspace().catch(onError)

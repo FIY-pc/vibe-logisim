@@ -1,5 +1,6 @@
 import type { EditResult } from "../generated/EditResult";
 import { arrangeCircuit } from "./arrange";
+import { keepSymbols } from "./symbols";
 import { componentLabels, libraryLabels } from "./componentLabels";
 import { command } from "../shared/transport";
 import type { CatalogTool, Document, Edit, XmlNode } from "../shared/types";
@@ -31,15 +32,15 @@ export function createEditorActions(stores: Stores) {
         edit: change,
       }),
     );
-    const next = result.view;
-    documents.getState().mergeDocument(next, doc.revision);
+    documents.getState().applyChange(result.change);
+    const next = documents.getState().docs.find((item) => item.id === doc.id);
     // A field commit keeps its object selected and moved objects stay selected
     // under their new ids, as in Logisim. Late responses and selections the
     // user changed meanwhile are left alone.
     const kept =
       change.kind === "attributes"
         ? originSelection.ids.includes(change.id) &&
-          next.circuits
+          next?.circuits
             .find((item) => item.name === circuit.name)
             ?.components.some((item) => item.id === change.id)
           ? [change.id]
@@ -52,12 +53,11 @@ export function createEditorActions(stores: Stores) {
       editor.getState().selected === originSelection &&
       documents.getState().active === doc.id &&
       navigation.current === originNavigation &&
-      documents.getState().docs.find((item) => item.id === doc.id)?.revision ===
-        result.revision &&
+      next?.revision === result.revision &&
       originSelection.scope === scope
     ) {
       editor.getState().setSelected({
-        scope: `${doc.id}:${next.revision}:${circuit.name}`,
+        scope: `${doc.id}:${result.revision}:${circuit.name}`,
         ids: kept,
       });
     }
@@ -79,8 +79,8 @@ export function createEditorActions(stores: Stores) {
         edit: change,
       }),
     );
-    documents.getState().mergeDocument(result.view, revision);
-    return result.view;
+    documents.getState().applyChange(result.change);
+    return result;
   };
 
   const history = ({ doc }: View, op: "undo" | "redo") => {
@@ -88,9 +88,7 @@ export function createEditorActions(stores: Stores) {
       void busy(() =>
         command<EditResult>({ op, id: doc.id, revision: doc.revision }),
       )
-        .then((result) =>
-          documents.getState().mergeDocument(result.view, doc.revision),
-        )
+        .then((result) => documents.getState().applyChange(result.change))
         .catch(onError);
   };
 
@@ -152,7 +150,7 @@ export function createEditorActions(stores: Stores) {
           edit: { kind: "replace", xml: arranged.xml, title: "整理布局" },
         }),
       );
-      documents.getState().mergeDocument(result.view, revision);
+      documents.getState().applyChange(result.change);
       const better = changes(comparison.better);
       notices
         .getState()
@@ -230,9 +228,7 @@ export function createEditorActions(stores: Stores) {
         edit: { kind: "replace", xml: source.xml, title: "编辑源文件" },
       }),
     )
-      .then((result) =>
-        documents.getState().mergeDocument(result.view, source.revision),
-      )
+      .then((result) => documents.getState().applyChange(result.change))
       .then(() => editor.getState().setSource(null))
       .catch((error) =>
         editor.getState().setSource((current) =>
@@ -244,6 +240,14 @@ export function createEditorActions(stores: Stores) {
             : current,
         ),
       );
+
+  /** Drops the recorded pictures of documents that closed. Returns the stop. */
+  const watchSymbols = () =>
+    reaction(
+      [documents],
+      () => [documents.getState().docs],
+      ([docs]) => keepSymbols(docs.map((doc) => doc.id)),
+    );
 
   /** Loads the component catalog of each shown circuit. Returns the stop. */
   const watchCatalog = () =>
@@ -312,6 +316,7 @@ export function createEditorActions(stores: Stores) {
     readSource,
     applySource,
     watchCatalog,
+    watchSymbols,
   };
 }
 export type EditorActions = ReturnType<typeof createEditorActions>;

@@ -78,6 +78,8 @@ globalThis.DOMRect=dom.window.DOMRect;
 globalThis.ResizeObserver=class{constructor(fn){this.fn=fn}observe(){this.fn([{contentRect:{width:600,height:400}}])}unobserve(){}disconnect(){}};
 // Radix measures form controls through window's animation frames.
 dom.window.requestAnimationFrame=globalThis.requestAnimationFrame;dom.window.cancelAnimationFrame=globalThis.cancelAnimationFrame;
+// The editor picture paints through Canvas2D, which jsdom does not have.
+dom.window.HTMLCanvasElement.prototype.getContext=()=>null;
 HTMLElement.prototype.scrollIntoView=()=>{};HTMLElement.prototype.setPointerCapture=()=>{};HTMLElement.prototype.releasePointerCapture=()=>{};HTMLElement.prototype.hasPointerCapture=()=>false;
 HTMLDialogElement.prototype.showModal=function(){this.open=true};HTMLDialogElement.prototype.close=function(){this.open=false};
 await import('./scenarios.mjs');

@@ -19,7 +19,6 @@ pub enum Code {
     TracePort,
     TraceLimit,
     TraceChanged,
-    ViewportBudget,
     InstanceNotReady,
     PathTooDeep,
     NotSubcircuit,
@@ -27,7 +26,6 @@ pub enum Code {
     ComponentAmbiguous,
     ComponentMissing,
     ParentInput,
-    ViewChanged,
     UnknownCircuit,
     SessionEnded,
     StartTimeout,
@@ -35,7 +33,6 @@ pub enum Code {
     RuntimeUnavailable,
     Unresponsive,
     ClockFailure,
-    FrameEvicted,
     Internal,
 }
 
@@ -58,7 +55,6 @@ impl Code {
             Self::TracePort => "这个端口不能加入波形",
             Self::TraceLimit => "波形最多 32 个信号",
             Self::TraceChanged => "波形信号已变化，请重新选择",
-            Self::ViewportBudget => "运行画面未能调整到当前视野",
             Self::InstanceNotReady => "子电路实例还没有运行状态，请稍后重试",
             Self::PathTooDeep => "子电路层级过深",
             Self::NotSubcircuit => "这不是子电路实例",
@@ -66,7 +62,6 @@ impl Code {
             Self::ComponentAmbiguous => "元件定位有歧义，请删除或移开重复元件后重试",
             Self::ComponentMissing => "找不到元件",
             Self::ParentInput => "此输入由父电路驱动，请返回父图调整",
-            Self::ViewChanged => "运行视图已切换，请重新选择对象",
             Self::UnknownCircuit => "电路不存在",
             Self::SessionEnded => "这次运行已经结束，请重新启动仿真",
             Self::StartTimeout => "仿真启动超时，请重试",
@@ -74,7 +69,6 @@ impl Code {
             Self::RuntimeUnavailable => "尚未安装 Logisim 兼容运行时",
             Self::Unresponsive => "运行时未在 20 秒内响应，已停止本次仿真",
             Self::ClockFailure => "仿真运行出错，时钟已暂停；可复位或重新仿真",
-            Self::FrameEvicted => "这一帧已离开缓存，请暂停后重新留存",
             Self::Internal => "仿真操作失败，请重试；详情已记入诊断",
         }
     }

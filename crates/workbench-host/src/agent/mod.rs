@@ -234,7 +234,7 @@ impl Agent {
         let (mut result, cursor) = result
             .map_err(|_| "AI 运行时请求超时".to_string())?
             .map_err(|_| "AI 运行时连接中断".to_string())??;
-        if method == "status"
+        if matches!(method, "status" | "history")
             && let Some(object) = result.as_object_mut()
         {
             object.insert("eventCursor".into(), json!(cursor));

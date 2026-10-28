@@ -187,6 +187,19 @@ impl Host {
             doc.view().map_err(|e| e.to_string())?,
         ))
     }
+    /// The artifact and one circuit of a revision (none when it has no such circuit).
+    async fn snapshot_circuit(
+        &self,
+        id: &str,
+        revision: &str,
+        circuit: &str,
+    ) -> Result<(PathBuf, Option<vibe_circuit_document::Circuit>)> {
+        let workspace = self.workspace.lock().await;
+        let doc = workspace.get(id).map_err(|e| e.to_string())?;
+        doc.check(revision).map_err(|e| e.to_string())?;
+        let view = doc.circuit_view(circuit).map_err(|e| e.to_string())?;
+        Ok((self.materialize(doc)?, view))
+    }
     /// The artifact and one component of a revision, for requests about that part.
     async fn snapshot_component(
         &self,
@@ -316,11 +329,11 @@ impl Host {
         if !writes || unchanged {
             return result;
         }
-        // An edit result nests the document view so it can also carry the
+        // An edit result nests the document change so it can also carry the
         // selection and title; other auto-saving ops return the view itself.
         if meta.effect == Effect::AutoSave {
             let _save = timing::span("save");
-            if let Some(view) = document.get_mut("view") {
+            if let Some(view) = document.get_mut("change") {
                 self.auto_save_edit(view).await;
                 let reported =
                     ["saveError", "referenceWarning"].map(|key| (key, view.get(key).cloned()));
@@ -352,7 +365,7 @@ impl Host {
     /// Ends the run when its document closed or moved to another revision. Runs
     /// after every request, so no path can leave a run of a document that changed.
     async fn reconcile(&self) {
-        let Some(id) = self.simulation.session().map(|session| session.document_id) else {
+        let Some(id) = self.simulation.run().map(|run| run.document_id) else {
             return;
         };
         let revision = {

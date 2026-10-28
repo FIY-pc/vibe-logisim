@@ -10,30 +10,20 @@ export function routeEvents(
   { documents, notices }: Stores,
   { simulation }: Actions,
 ): () => void {
-  let live = true;
-  let version = 0;
   // The first resync only confirms the subscription; the workbench read the
   // workspace when it started. Any later one follows a reconnection or missed
-  // events, so the documents may have changed meanwhile.
+  // events, so the documents may have changed meanwhile. The run needs
+  // nothing: every subscription starts with its whole state.
   let synced = false;
-  const stop = subscribeEvents((event) => {
-    if (event.topic === "simulation") {
-      version++;
+  return subscribeEvents((event) => {
+    if (event.topic === "simulation")
       simulation.onEvent(event.data as SimulationEvent);
-    }
     if (event.topic === "resync") {
       notices
         .getState()
         .setError((previous) =>
           previous === "连接中断，正在重新连接…" ? "" : previous,
         );
-      const requested = ++version;
-      void simulation
-        .refresh()
-        .then(() => {
-          if (!live || requested !== version) return;
-        })
-        .catch(notices.getState().onError);
       if (synced)
         void documents
           .getState()
@@ -52,10 +42,6 @@ export function routeEvents(
       notices.getState().warn(`host:${event.data.message}`, event.data.message);
     if (event.topic === "connection") notices.getState().onError(event.data);
   });
-  return () => {
-    live = false;
-    stop();
-  };
 }
 
 /** Shows the conversation tab whenever no document is open. Returns the stop. */

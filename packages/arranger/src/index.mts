@@ -22,19 +22,15 @@ export type {
 } from "./arrangement.mts";
 export {
   compareReadability,
-  predictedFocus,
   readability,
   READABILITY_NAMES,
   READABILITY_WEIGHTS,
 } from "./readability.mts";
 export type { Readability, ReadabilityComparison } from "./readability.mts";
-export type { GroupSolver } from "./grouped-layout.mts";
-export { solveGroups } from "./layout-solver.mts";
+export { resolveUnknownWidths } from "./circuit.mts";
+export type { Report } from "./circuit.mts";
 export { assertFloatingIsolation } from "./loose-wires.mts";
 export { organizationContext } from "./organization.mts";
-export { PyValueError } from "./py.mts";
-export { resolveUnknownWidths } from "./schematic-layout.mts";
-export type { Report } from "./schematic-layout.mts";
 export { CircuitToolError, ERROR_SCHEMA } from "./tool-errors.mts";
 export type {
   Attribute,

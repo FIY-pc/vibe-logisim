@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { Waveform } from "./Waveform";
 import { tip } from "../shared/Tooltips";
-import { liveRun, watchScope } from "./store";
+import { live } from "./store";
 import { useSimulation, useSimulationState, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 
@@ -12,15 +12,8 @@ export function SimulationDock() {
   const { circuit } = view;
   const state = useSimulationState();
   const trace = useSimulation((simulation) => simulation.trace);
-  const recording = useSimulation((simulation) => simulation.recording);
-  const watches = useSimulation((simulation) => simulation.watches);
-  const live = liveRun(state, view.doc, circuit?.name);
-  if (!live) return null;
-  const watched = state.session
-    ? (watches[watchScope(state.session.sessionId, live.view.instancePath)] ??
-      [])
-    : [];
-  if (!watched.length || !trace?.signals.length) return null;
+  if (!live(state, view) || !trace?.signals.length) return null;
+  const { recording } = trace;
   if (!recording && !trace.samples.length) return null;
   const labels = Object.fromEntries(
     trace.signals.map((signal) => {
@@ -41,8 +34,8 @@ export function SimulationDock() {
           onClick={() =>
             void (
               recording
-                ? actions.simulation.stopTrace(view)
-                : actions.simulation.startTrace(view)
+                ? actions.simulation.stopTrace()
+                : actions.simulation.startTrace()
             ).catch(() => {})
           }
         >

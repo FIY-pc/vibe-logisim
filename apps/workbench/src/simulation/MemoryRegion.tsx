@@ -1,5 +1,5 @@
 import { MemoryPanel } from "./MemoryPanel";
-import { liveRun, simulationStatus } from "./store";
+import { live } from "./store";
 import {
   useDocuments,
   useSimulation,
@@ -23,9 +23,9 @@ export function MemoryRegion() {
       ? circuit.components.find((item) => item.id === memory.id)
       : undefined;
   if (!component) return null;
-  // A RAM belongs to the run: the panel reads it only while this circuit is
-  // the run's shown view, the same condition that lets the canvas take input.
-  const live = liveRun(state, doc, circuit.name);
+  // A RAM belongs to the run: the panel reads it only while the canvas shows
+  // the run, the same condition that lets the canvas take input.
+  const shown = live(state, view);
   const simulating = actions.simulation;
   return (
     <MemoryPanel
@@ -33,12 +33,10 @@ export function MemoryRegion() {
       doc={doc}
       circuit={circuit.name}
       component={component}
-      live={Boolean(live)}
+      live={Boolean(shown)}
       page={page?.componentId === component.id ? page : null}
-      state={
-        simulationStatus(state, doc, circuit.name).running ? "运行中" : "已暂停"
-      }
-      ticks={state.view?.clock.ticks}
+      state={state.frame?.clock.running ? "运行中" : "已暂停"}
+      ticks={state.frame?.clock.ticks}
       designSaved={!doc.dirty}
       start={() => simulating.run(view, "start")}
       readPage={(offset) =>

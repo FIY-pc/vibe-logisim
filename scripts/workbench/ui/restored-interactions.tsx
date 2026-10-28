@@ -86,7 +86,7 @@ export async function verifyRestoredInteractions() {
         conversationId: "conversation",
       };
     }
-    if (request.op === "observe")
+    if (request.op === "observe" || request.op === "connections")
       return {
         focus: {
           components: [
@@ -99,11 +99,6 @@ export async function verifyRestoredInteractions() {
             },
           ],
         },
-      };
-    if (request.op === "render")
-      return {
-        image:
-          "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
       };
     if (request.op === "movePreview") {
       if (delayedPreview)
@@ -435,13 +430,12 @@ export async function verifyRestoredInteractions() {
             edits.push(edit);
           }}
           run={null}
-          picture={null}
+          live={null}
           pending={[]}
           pressed={null}
           onPoke={() => {}}
           onPress={() => {}}
           onRelease={() => {}}
-          onViewport={() => {}}
           onError={(error) => errors.push(error)}
           fitToken={0}
           onOpenMemory={() => {}}
@@ -472,15 +466,18 @@ export async function verifyRestoredInteractions() {
           }),
         ),
       );
+    const selected = () =>
+      Number(
+        container
+          .querySelector('rect[fill="var(--selection-fill)"]')!
+          .getAttribute("x"),
+      );
     await pointer("pointerdown", 0);
+    const before = selected();
     await pointer("pointermove", 30);
     assert(
-      container.querySelector(".move-preview image"),
-      "Moving must display original component artwork",
-    );
-    assert.match(
-      container.querySelector(".move-preview")!.getAttribute("transform")!,
-      /translate\([1-9]/,
+      selected() > before,
+      "The dragged selection follows the pointer before the host answers",
     );
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 125));
@@ -513,10 +510,16 @@ export async function verifyRestoredInteractions() {
     await pointer("pointerup", 70);
     assert.equal(edits.length, 1);
     assert.deepEqual(edits[0].delta, previews[1].delta);
-    assert(!container.querySelector(".move-preview"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    assert(
+      !container.querySelector(".move-wire-preview"),
+      "The planned routing leaves once the move is answered",
+    );
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: native artwork and latest-only connected routing follow drag; geometry planning cannot write before pointer release",
+      "PASS: the selection and latest-only connected routing follow drag; geometry planning cannot write before pointer release",
     );
   } finally {
     await act(async () => root.unmount());

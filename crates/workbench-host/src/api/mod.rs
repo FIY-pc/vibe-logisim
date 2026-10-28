@@ -177,10 +177,10 @@ mod tests {
             parsed,
             Request::Document(DocumentRequest::Read { .. })
         ));
-        let parsed = Request::from_value(serde_json::json!({"op":"simulationStatus"})).unwrap();
+        let parsed = Request::from_value(serde_json::json!({"op":"simulationStop"})).unwrap();
         assert!(matches!(
             parsed,
-            Request::Simulation(SimulationRequest::SimulationStatus)
+            Request::Simulation(SimulationRequest::SimulationStop)
         ));
         let parsed = Request::from_value(
             serde_json::json!({"op":"folderCheckpoint","folder_id":"f","title":"t"}),

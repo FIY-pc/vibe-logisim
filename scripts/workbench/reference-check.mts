@@ -20,7 +20,6 @@ try {
       circuit: "child",
       instancePath: ["instance-1"],
       clock: { enabled: false, frequency: 4 },
-      frameSequence: 7,
       children: [],
     },
   };
@@ -45,7 +44,7 @@ try {
   assert.equal(frozen.label, "before edge");
   assert(frozen.text.includes("0011"));
   assert(frozen.text.includes("instance-1"));
-  assert(frozen.text.includes('"frameSequence":7'));
+  assert(frozen.text.includes('"frequency":4'));
   assert.equal(frozen.image, render);
   await assert.rejects(readReferences(state, "other-folder", [ref.id]));
   await assert.rejects(readReferences(state, "folder", ["../../escape"]));

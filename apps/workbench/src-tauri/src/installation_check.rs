@@ -82,7 +82,7 @@ async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), Stri
     report["frontend"] = json!(true);
     report["stage"] = json!("recovery");
     let status = host
-        .dispatch(DocumentRequest::Status)
+        .dispatch(DocumentRequest::Status { summary: None })
         .await
         .map_err(|error| error.to_string())?;
     if !status["recoveryError"].is_null() {

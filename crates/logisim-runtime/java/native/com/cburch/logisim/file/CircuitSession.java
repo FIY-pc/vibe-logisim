@@ -13,8 +13,6 @@ import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
 import javax.xml.parsers.*;
 import javax.xml.transform.*;
 import javax.xml.transform.dom.DOMSource;
@@ -30,7 +28,6 @@ public final class CircuitSession {
     private int ticks;
     private Element memoryRequest;
     private final CircuitTrace trace = new CircuitTrace();
-    private CircuitFrame.Viewport viewport;
     private boolean running, automatic = true, pending;
     private double frequency = 2, actualFrequency;
     private long version, commandSequence, nextTick, rateStart = System.nanoTime();
@@ -39,6 +36,10 @@ public final class CircuitSession {
     // Buttons pressed through this session, in the state that holds them. They are
     // released before the view changes, while their component IDs still resolve.
     private final Map<Component, CircuitState> held = new LinkedHashMap<>();
+    // What the frames sent last: the instance shown and each component's values.
+    // Only the frame thread reads and writes these, under the session lock.
+    private long sentGeneration = -1;
+    private final Map<String, String> sent = new HashMap<>();
 
     private CircuitSession(LogisimFile file, Element init) {
         circuit = file.getCircuit(init.getAttribute("circuit"));
@@ -46,6 +47,17 @@ public final class CircuitSession {
         project = new Project(file);
         view = new CircuitSessionView(circuit, init);
         reset();
+        // The clock the run starts with, so no command has to set it before the first frame.
+        if (init.hasAttribute("frequency")) setFrequency(init.getAttribute("frequency"));
+    }
+
+    private void setFrequency(String text) {
+        double value;
+        try { value = Double.parseDouble(text); }
+        catch (NumberFormatException error) { value = Double.NaN; }
+        if (!Double.isFinite(value) || value < .25 || value > 4096) throw new SessionError("FREQUENCY_RANGE", "Frequency must be 0.25–4096 ticks/s");
+        frequency = value; nextTick = System.nanoTime() + (long)(1e9 / frequency);
+        rateStart = System.nanoTime(); rateTicks = 0; actualFrequency = 0;
     }
 
     private void reset() {
@@ -98,10 +110,7 @@ public final class CircuitSession {
 
     private void command(Element request) {
         String op = request.getTagName();
-        if (op.equals("view")) { view.navigate(request, state, this::release); trace.clear(); memoryRequest = null; viewport = null; version++; return; }
-        if (request.hasAttribute("viewId") && !view.id.equals(request.getAttribute("viewId")))
-            throw new SessionError("VIEW_CHANGED", "运行视图已切换，请重新选择对象");
-        if (op.equals("viewport")) { viewport = CircuitFrame.Viewport.from(request); version++; return; }
+        if (op.equals("view")) { view.navigate(request, state, this::release); trace.clear(); memoryRequest = null; version++; return; }
         Map<String, Component> components = view.components;
         CircuitState local = view.resolve(state);
         if (op.equals("trace")) {
@@ -117,14 +126,7 @@ public final class CircuitSession {
         else if (op.equals("toggle-clock")) { if (running) running = false; else play(); }
         else if (op.equals("toggle-propagation")) setAutomatic(!automatic);
         else if (op.equals("configure")) {
-            if (request.hasAttribute("frequency")) {
-                double value;
-                try { value = Double.parseDouble(request.getAttribute("frequency")); }
-                catch (NumberFormatException error) { value = Double.NaN; }
-                if (!Double.isFinite(value) || value < .25 || value > 4096) throw new SessionError("FREQUENCY_RANGE", "Frequency must be 0.25–4096 ticks/s");
-                frequency = value; nextTick = System.nanoTime() + (long)(1e9 / frequency);
-                rateStart = System.nanoTime(); rateTicks = 0; actualFrequency = 0;
-            }
+            if (request.hasAttribute("frequency")) setFrequency(request.getAttribute("frequency"));
             if (request.hasAttribute("automatic")) setAutomatic(request.getAttribute("automatic").equals("true"));
         } else if (op.equals("step")) {
             running = false; automatic = false;
@@ -155,6 +157,10 @@ public final class CircuitSession {
             memoryRequest = request;
         } else if (op.equals("input") || op.equals("pulse") || op.equals("button")) {
             Component c = components.get(request.getAttribute("componentId"));
+            // Releasing a button that is not held (another instance is shown, or a
+            // reset already let go of it) has nothing to release.
+            boolean release = op.equals("button") && !request.getAttribute("value").equals("1");
+            if (release && (c == null || !held.containsKey(c))) { version++; return; }
             if (c == null) throw new SessionError("INPUT_NOT_OPERABLE", "Unknown input");
             if (op.equals("pulse") || op.equals("button")) {
                 if (!c.getFactory().getName().equals("Button")) throw new SessionError("INPUT_NOT_OPERABLE", "Not a button");
@@ -184,7 +190,6 @@ public final class CircuitSession {
     }
 
     private void metadata(Element root) {
-        root.setAttribute("viewId", view.id);
         root.setAttribute("circuit", view.circuit.getName());
         root.setAttribute("commandSequence", String.valueOf(commandSequence));
         root.setAttribute("ticks", String.valueOf(ticks));
@@ -198,51 +203,81 @@ public final class CircuitSession {
         if (failureCode != null) root.setAttribute("failureCode", failureCode);
     }
 
-    private BufferedImage sample(Document result) throws Exception {
+    /** A value as the frames carry it: binary digits, most significant first; `-` without width. */
+    private static String bits(Value value) {
+        return value.getWidth() == 0 ? "-" : value.toDisplayString(2).replace(" ", "");
+    }
+
+    /**
+     * Fills a frame: the shown instance, the components whose values changed
+     * since the last frame and the waveform's new samples, or everything when the
+     * frame is full (the first one of an instance).
+     */
+    private CircuitPaint.Recorded sample(Document result) throws Exception {
         Element root = result.getDocumentElement();
         metadata(root);
+        boolean full = view.generation != sentGeneration;
+        if (full) { sentGeneration = view.generation; sent.clear(); }
+        root.setAttribute("full", String.valueOf(full));
+        for (String id : view.ids) {
+            Element instance = result.createElement("instance");
+            instance.setAttribute("id", id);
+            root.appendChild(instance);
+        }
         CircuitState state = view.resolve(this.state);
-        Circuit circuit = view.circuit;
         Map<String, Component> components = view.components;
+        StringBuilder ports = new StringBuilder();
         for (Map.Entry<String, Component> entry : components.entrySet()) {
             Component c = entry.getValue();
+            String control = null, input = null;
+            if (c.getFactory() instanceof Pin && Pin.FACTORY.isInputPin(Instance.getInstanceFor(c))) {
+                control = view.nested() ? "parent-input" : "input";
+                input = bits(Pin.FACTORY.getValue(state.getInstanceState(c)));
+            }
+            if (c.getFactory().getName().equals("Button")) control = "pulse";
+            if (c.getFactory() instanceof Clock) control = "clock";
+            ports.setLength(0);
+            for (int i = 0; i < c.getEnds().size(); i++) {
+                if (i > 0) ports.append('|');
+                ports.append(bits(state.getValue(c.getEnd(i).getLocation())));
+            }
+            String text = ports.toString(), key = control + "\n" + input + "\n" + text;
+            if (key.equals(sent.put(entry.getKey(), key))) continue;
             Element item = result.createElement("component");
             item.setAttribute("id", entry.getKey());
-            if (c.getFactory() instanceof Pin && Pin.FACTORY.isInputPin(Instance.getInstanceFor(c))) {
-                item.setAttribute("control", view.nested() ? "parent-input" : "input");
-                Value value = Pin.FACTORY.getValue(state.getInstanceState(c));
-                Element input = result.createElement("input");
-                input.setAttribute("width", String.valueOf(value.getWidth())); input.setAttribute("bits", value.toDisplayString(2));
-                if (value.isFullyDefined()) input.setAttribute("value", Integer.toUnsignedString(value.toIntValue()));
-                item.appendChild(input);
-            }
-            if (c.getFactory().getName().equals("Button")) item.setAttribute("control", "pulse");
-            if (c.getFactory() instanceof Clock) item.setAttribute("control", "clock");
-            for (int i = 0; i < c.getEnds().size(); i++) {
-                Value v = state.getValue(c.getEnd(i).getLocation());
-                Element port = result.createElement("port");
-                port.setAttribute("index", String.valueOf(i));
-                port.setAttribute("width", String.valueOf(v.getWidth()));
-                port.setAttribute("bits", v.toDisplayString(2));
-                if (v.isFullyDefined()) port.setAttribute("value", Integer.toUnsignedString(v.toIntValue()));
-                item.appendChild(port);
-            }
+            if (control != null) item.setAttribute("control", control);
+            if (input != null) item.setAttribute("input", input);
+            item.setTextContent(text);
             root.appendChild(item);
         }
         if (memoryRequest != null) root.appendChild(StudioMemory.page(components.get(memoryRequest.getAttribute("componentId")), state, memoryRequest, result));
-        root.appendChild(trace.element(result));
-        Element render = result.createElement("render");
-        BufferedImage bitmap = CircuitFrame.draw(circuit, state, viewport, render);
-        root.appendChild(render);
-        return bitmap;
+        Element waveform = trace.element(result, full);
+        if (waveform != null) root.appendChild(waveform);
+        return CircuitPaint.record(view, state);
+    }
+
+    private static final ThreadLocal<Transformer> XML = ThreadLocal.withInitial(() -> {
+        try {
+            Transformer transformer = TransformerFactory.newInstance().newTransformer();
+            transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+            return transformer;
+        } catch (TransformerConfigurationException error) {
+            throw new IllegalStateException(error);
+        }
+    });
+
+    private static String xml(Document result) throws Exception {
+        StringWriter xml = new StringWriter();
+        XML.get().transform(new DOMSource(result), new StreamResult(xml));
+        return xml.toString();
+    }
+
+    private static void print(PrintStream protocol, String line) {
+        synchronized (protocol) { protocol.println(line); protocol.flush(); }
     }
 
     private static void send(Document result, PrintStream protocol) throws Exception {
-        Transformer transformer = TransformerFactory.newInstance().newTransformer();
-        transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-        StringWriter xml = new StringWriter();
-        transformer.transform(new DOMSource(result), new StreamResult(xml));
-        synchronized (protocol) { protocol.println(xml); protocol.flush(); }
+        print(protocol, xml(result));
     }
 
     private void startWorkers(PrintStream protocol) {
@@ -271,24 +306,29 @@ public final class CircuitSession {
         clock.setDaemon(true); clock.start();
         Thread frames = new Thread(() -> {
             long rendered = -1;
+            CircuitPaint paint = new CircuitPaint();
             try {
                 DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
                 while (true) {
-                    Document result = null; BufferedImage bitmap = null;
-                    long started = System.nanoTime(), captured = started;
+                    Document result = null; CircuitPaint.Recorded recorded = null;
+                    long started = 0, captured = 0;
                     synchronized (this) {
                         if (version != rendered) {
+                            // The time the frame holds the circuit, not the wait for the clock to let go.
+                            started = System.nanoTime();
                             result = builder.newDocument(); result.appendChild(result.createElement("frame"));
-                            bitmap = sample(result); rendered = version; captured = System.nanoTime();
+                            recorded = sample(result); rendered = version; captured = System.nanoTime();
                         }
                     }
                     if (result != null) {
-                        // Encoding and protocol output do not hold the live circuit lock.
-                        ByteArrayOutputStream png = new ByteArrayOutputStream(); ImageIO.write(bitmap, "png", png);
-                        ((Element)result.getElementsByTagName("render").item(0)).setTextContent(Base64.getEncoder().encodeToString(png.toByteArray()));
-                        result.getDocumentElement().setAttribute("captureMs", String.valueOf((captured - started) / 1e6));
-                        result.getDocumentElement().setAttribute("encodeMs", String.valueOf((System.nanoTime() - captured) / 1e6));
-                        send(result, protocol);
+                        // What changed, its JSON and the XML do not hold the live circuit lock.
+                        Element picture = result.createElement("paint");
+                        picture.setTextContent(paint.delta(recorded, result.getDocumentElement().getAttribute("full").equals("true")));
+                        result.getDocumentElement().appendChild(picture);
+                        String xml = xml(result), root = "<frame";
+                        // The timing covers the serialization, so it joins the root tag afterwards.
+                        print(protocol, root + " captureMs=\"" + (captured - started) / 1e6 + "\" encodeMs=\""
+                            + (System.nanoTime() - captured) / 1e6 + "\"" + xml.substring(root.length()));
                     }
                     Thread.sleep(16);
                 }
@@ -390,8 +430,9 @@ public final class CircuitSession {
 
     public static void main(String[] args) throws Exception {
         System.setProperty("java.awt.headless", "true");
-        ImageIO.setUseCache(false);
-        PrintStream protocol = System.out; System.setOut(System.err);
+        // The host reads UTF-8 whatever the platform's encoding (labels, messages).
+        PrintStream protocol = new PrintStream(new BufferedOutputStream(new FileOutputStream(FileDescriptor.out), 1 << 16), false, "UTF-8");
+        System.setOut(System.err);
         DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
         f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
@@ -402,6 +443,19 @@ public final class CircuitSession {
             verifyLoop(Paths.get(args[1]).toAbsolutePath().normalize(), args[2], parser, protocol);
             return;
         }
+        // The first frame's fonts, text and XML writing load beside the project.
+        Document warm = parser.newDocument();
+        warm.appendChild(warm.createElement("warm"));
+        Thread warmUp = new Thread(() -> {
+            try {
+                CircuitPaint.warmUp(new File(args[0]));
+                xml(warm);
+            } catch (Throwable ignored) {
+                // Only time is lost.
+            }
+        }, "warm-up");
+        warmUp.setDaemon(true);
+        warmUp.start();
         List<String> loaderMessages = new ArrayList<>();
         CircuitSession session;
         try {
@@ -429,8 +483,7 @@ public final class CircuitSession {
             Element ack = result.createElement("ack"); result.appendChild(ack);
             try {
                 Element request = parser.parse(new ByteArrayInputStream(line.getBytes("UTF-8"))).getDocumentElement();
-                // Acks are paired with their command by this ID, never by order.
-                if (request.hasAttribute("requestId")) ack.setAttribute("requestId", request.getAttribute("requestId"));
+                // One ack per line, in the order the lines came: the host pairs them by order.
                 synchronized (session) {
                     session.commandSequence++;
                     session.command(request);

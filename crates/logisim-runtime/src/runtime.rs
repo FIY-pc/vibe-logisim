@@ -31,7 +31,7 @@ pub enum RuntimeKind {
 
 /// The `source` attribute of the root `<project>` element, which names the
 /// Logisim build that last saved the file.
-fn source_version(bytes: &[u8]) -> Option<String> {
+pub(crate) fn source_version(bytes: &[u8]) -> Option<String> {
     let find =
         |haystack: &[u8], needle: &[u8]| haystack.windows(needle.len()).position(|w| w == needle);
     let start = find(bytes, b"<project")?;
@@ -110,9 +110,11 @@ impl RuntimeFacts {
     /// attributes that ITA 2.16 rejects or reads differently (for example
     /// level-triggered flip-flops), so their files run on the matching runtime.
     pub fn runtime_for(&self, source: &[u8]) -> Result<(PathBuf, RuntimeKind)> {
-        if self.0.runtime.is_none()
-            && source_version(source).is_some_and(|v| v.starts_with("2.15."))
-        {
+        self.runtime_for_version(source_version(source).as_deref())
+    }
+    /// `runtime_for` given the file's `source` version.
+    pub fn runtime_for_version(&self, version: Option<&str>) -> Result<(PathBuf, RuntimeKind)> {
+        if self.0.runtime.is_none() && version.is_some_and(|v| v.starts_with("2.15.")) {
             return self
                 .legacy_runtime()
                 .map(|path| (path, RuntimeKind::Legacy))

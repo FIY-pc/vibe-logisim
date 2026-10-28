@@ -1,13 +1,11 @@
-//! The current simulation run. A new run replaces the current one only once it
-//! shows its first frame; a start that fails leaves the current run alone.
+//! The run, if there is one. A start ends the current run, starts the new one
+//! and announces it once it shows its first frame. Every subscriber gets the
+//! run's whole state first and then each of its frames in order.
 use super::{
     error::{Code, SimError},
-    model::{
-        ActResult, ButtonValue, Command, ComponentDelta, EndReason, EndedInfo, Frame,
-        NavigateResult, SessionInfo, SimulationEvent, Snapshot, StateEvent, Status, TraceMark,
-    },
+    model::{Command, EndReason, EndedInfo, Frame, RunInfo, SimulationEvent, TraceDelta},
     protocol,
-    session::{Deadlines, Ended, Io, OnEnd, Process, Session, View, now_ms},
+    run::{Deadlines, Ended, Events, Io, OnEnd, Process, Run, now_ms},
 };
 use crate::{
     process::{StderrCapture, java_path},
@@ -15,23 +13,24 @@ use crate::{
     xml,
 };
 use std::{
+    collections::VecDeque,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, atomic::Ordering},
+    sync::{Arc, Mutex, MutexGuard, Weak},
     time::Duration,
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{Child, ChildStdin, ChildStdout},
-    sync::{
-        mpsc::{self, error::TryRecvError},
-        watch,
-    },
+    sync::broadcast,
 };
 use vibe_circuit_document::{DocumentView, digest};
 use xmltree::Element;
 
-/// The deepest subcircuit path a view may have.
+/// The deepest subcircuit path an instance may have.
 const MAX_DEPTH: usize = 64;
+/// Events a subscriber may fall behind by before it starts over with the
+/// whole state.
+const BACKLOG: usize = 256;
 
 /// A document as of one revision: the file the runtime opens and its parsed view.
 pub struct RunDocument {
@@ -39,29 +38,9 @@ pub struct RunDocument {
     pub view: DocumentView,
 }
 
-/// What a command addresses.
-pub enum Target {
-    /// A view of a run, as of the document revision the caller shows.
-    Run {
-        session_id: String,
-        view_id: String,
-        revision: String,
-    },
-    /// A circuit definition. Commands that start runs start one rooted here.
-    Definition {
-        document: RunDocument,
-        circuit: String,
-    },
-}
-
-enum Lifecycle {
-    Session(Arc<Session>),
-    Ended(EndedInfo),
-}
-
 /// The process that runs circuit checks: the same class and protocol as a run,
 /// started with `--verify` so it serves requests instead of holding a run.
-/// Checks never become the current run and never touch its clock.
+/// Checks never become the run and never touch its clock.
 struct Check {
     child: Child,
     input: ChildStdin,
@@ -71,13 +50,6 @@ struct Check {
     _stderr: StderrCapture,
 }
 
-#[derive(Default)]
-struct Inner {
-    current: Option<Arc<Session>>,
-    last_ended: Option<EndedInfo>,
-    subscribers: Vec<mpsc::UnboundedSender<Lifecycle>>,
-}
-
 enum Spawner {
     Java,
     /// Tests: builds the process side from the start file.
@@ -85,43 +57,78 @@ enum Spawner {
     Fake(Box<dyn Fn(&Path) -> Io + Send + Sync>),
 }
 
+#[derive(Default)]
+struct Current {
+    run: Option<Arc<Run>>,
+    last_ended: Option<EndedInfo>,
+}
+
 struct Shared {
     launcher: Launcher,
     spawner: Spawner,
     deadlines: Deadlines,
-    /// Held by starts only: starts queue in order and nothing else waits on them.
-    gate: tokio::sync::Mutex<()>,
+    /// Held by starts only: one process starts at a time.
+    starts: tokio::sync::Mutex<()>,
     /// Checks run one at a time on their own process.
     checks: tokio::sync::Mutex<Option<Check>>,
-    inner: Mutex<Inner>,
+    /// Locked before a run's own state, never after.
+    current: Mutex<Current>,
+    events: Events,
 }
 
 impl Shared {
-    fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> MutexGuard<'_, Current> {
+        self.current.lock().unwrap_or_else(|e| e.into_inner())
     }
-    /// Called by a session once it ended.
-    fn ended(&self, session: &Session) {
-        let Some(ended) = session.ended() else {
+    /// Called by a run once it ended: the run's last event.
+    fn ended(&self, run: &Run) {
+        let Some(ended) = run.ended() else {
             return;
         };
         let removed = {
-            let mut inner = self.lock();
-            let removed = inner
-                .current
-                .take_if(|current| current.info.session_id == session.info.session_id);
+            let mut current = self.lock();
             // A run that never started (a failed start) leaves no trace.
-            if session.announced.load(Ordering::SeqCst) {
-                inner.last_ended = Some(ended.info.clone());
-                inner.subscribers.retain(|subscriber| {
-                    subscriber
-                        .send(Lifecycle::Ended(ended.info.clone()))
-                        .is_ok()
-                });
+            let removed = current
+                .run
+                .take_if(|current| std::ptr::eq(Arc::as_ptr(current), run));
+            if removed.is_some() {
+                current.last_ended = Some(ended.info.clone());
+                let _ = self.events.send(Arc::new(SimulationEvent::Ended {
+                    ended: ended.info.clone(),
+                }));
             }
             removed
         };
         drop(removed);
+    }
+    /// The events a new subscriber starts with: the run's start and whole
+    /// state, or how the last run ended. Taken under the run's lock, so that
+    /// the subscription gets every later frame and none twice.
+    fn subscribe(self: &Arc<Self>) -> Subscription {
+        let current = self.lock();
+        let (initial, events) = match &current.run {
+            Some(run) => {
+                let (whole, events) = run.whole(|| self.events.subscribe());
+                (whole.into_iter().flatten().collect(), events)
+            }
+            None => (
+                current
+                    .last_ended
+                    .iter()
+                    .map(|ended| {
+                        Arc::new(SimulationEvent::Ended {
+                            ended: ended.clone(),
+                        })
+                    })
+                    .collect(),
+                self.events.subscribe(),
+            ),
+        };
+        Subscription {
+            registry: Arc::downgrade(self),
+            initial,
+            events,
+        }
     }
 }
 
@@ -129,9 +136,9 @@ impl Shared {
 struct InitFile(PathBuf);
 
 impl InitFile {
-    fn write(state: &Path, session_id: &str, xml: &str) -> Result<Self, SimError> {
+    fn write(state: &Path, xml: &str) -> Result<Self, SimError> {
         let folder = state.join("simulation");
-        let path = folder.join(format!("{session_id}.xml"));
+        let path = folder.join(format!("{}.xml", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&folder)
             .and_then(|()| std::fs::write(&path, xml))
             .map_err(|error| failed(format!("{}: {error}", path.display())))?;
@@ -152,8 +159,6 @@ fn failed(detail: impl Into<String>) -> SimError {
 /// Why a run that ended before its first frame did not start.
 fn start_error(ended: &Ended) -> SimError {
     let error = match &ended.cause {
-        Some(cause) if cause.code == Code::ViewportBudget => SimError::new(Code::StartFailed)
-            .with_message("仿真未启动：画面范围超过限制，请调整电路范围后重试"),
         Some(cause) if cause.code != Code::Internal => cause.clone(),
         _ => SimError::new(Code::StartFailed),
     };
@@ -171,49 +176,17 @@ fn frequency_in_range(frequency: f64) -> Result<(), SimError> {
     }
 }
 
-/// What the run looked like when a command needed no runtime round trip.
-fn current_result(session: &Session) -> ActResult {
-    let state = session.run_state();
-    ActResult {
-        session_id: Some(session.info.session_id.clone()),
-        view_id: Some(
-            state
-                .as_ref()
-                .map_or_else(|| session.root.id.clone(), |state| state.view_id.clone()),
-        ),
-        command_sequence: state.as_ref().map(|state| state.command_sequence),
-        clock: state.map(|state| state.clock),
-        applied: true,
-        ..ActResult::default()
-    }
-}
-
-async fn apply(session: &Session, view_id: &str, command: &Command) -> Result<ActResult, SimError> {
-    let (request_id, meta) = session
-        .send(|request_id| protocol::command_line(request_id, view_id, command))
-        .await?;
-    Ok(ActResult {
-        session_id: Some(session.info.session_id.clone()),
-        view_id: Some(meta.view_id),
-        request_id: Some(request_id),
-        command_sequence: Some(meta.command_sequence),
-        started: false,
-        applied: true,
-        clock: Some(meta.clock),
-        initial_frequency: None,
-    })
-}
-
-/// Switches the run to a new view of the instance at `instance_path`.
-async fn show(session: &Session, instance_path: Vec<String>) -> Result<NavigateResult, SimError> {
+/// The line that shows the instance at `instance_path`, component ids from
+/// the run's root circuit; an empty path is the root.
+fn view_line(run: &Run, instance_path: &[String]) -> Result<String, SimError> {
     if instance_path.len() > MAX_DEPTH {
         return Err(Code::PathTooDeep.into());
     }
-    let circuits = session.circuits();
+    let circuits = run.circuits();
     let definition = |name: &str| circuits.iter().find(|circuit| circuit.name == name);
-    let mut circuit = definition(&session.root.circuit).ok_or(Code::UnknownCircuit)?;
+    let mut circuit = definition(&run.info.root_circuit).ok_or(Code::UnknownCircuit)?;
     let mut instances = Vec::with_capacity(instance_path.len());
-    for id in &instance_path {
+    for id in instance_path {
         let instance = circuit
             .components
             .iter()
@@ -226,32 +199,10 @@ async fn show(session: &Session, instance_path: Vec<String>) -> Result<NavigateR
             .ok_or(Code::NotSubcircuit)?;
         instances.push(instance);
     }
-    let view = View {
-        id: uuid::Uuid::new_v4().to_string(),
-        circuit: circuit.name.clone(),
-        instance_path,
-    };
-    // Known before the runtime acknowledges it, so its frames resolve.
-    session.register(view.clone());
-    session
-        .send(|request_id| {
-            protocol::view_line(
-                request_id,
-                &view.circuit,
-                &view.id,
-                &instances,
-                &circuit.components,
-            )
-        })
-        .await?;
-    Ok(NavigateResult {
-        view_id: view.id,
-        circuit: view.circuit,
-        instance_path: view.instance_path,
-    })
+    protocol::view_line(&circuit.name, &instances, &circuit.components)
 }
 
-/// Owns the current run. Clones share it.
+/// Owns the run. Clones share it.
 #[derive(Clone)]
 pub struct SimulationRegistry(Arc<Shared>);
 
@@ -265,160 +216,42 @@ impl SimulationRegistry {
             launcher,
             spawner,
             deadlines,
-            gate: tokio::sync::Mutex::new(()),
+            starts: tokio::sync::Mutex::new(()),
             checks: tokio::sync::Mutex::new(None),
-            inner: Mutex::new(Inner::default()),
+            current: Mutex::new(Current::default()),
+            events: broadcast::channel(BACKLOG).0,
         }))
     }
 
-    /// The current run, unless it ended.
-    fn current(&self) -> Option<Arc<Session>> {
-        let current = self.0.lock().current.clone();
-        current.filter(|session| session.ended().is_none())
+    /// The run, unless it ended.
+    fn current(&self) -> Option<Arc<Run>> {
+        let current = self.0.lock().run.clone();
+        current.filter(|run| run.ended().is_none())
     }
 
-    fn live(&self, session_id: &str) -> Option<Arc<Session>> {
-        self.current()
-            .filter(|session| session.info.session_id == session_id)
+    pub fn run(&self) -> Option<RunInfo> {
+        self.current().map(|run| run.info.clone())
     }
 
-    /// Applies a command. Sent for a definition, a command that starts runs
-    /// first starts a run of it, or uses the current run when that one is of
-    /// the same circuit and revision (back at its root view); other commands
-    /// for a definition do nothing. A run that is gone or of another revision
-    /// refuses commands that start runs and ignores the others.
-    pub async fn act(
-        &self,
-        target: Target,
-        command: Command,
-        initial_frequency: Option<f64>,
-    ) -> Result<ActResult, SimError> {
-        if let Command::Configure {
-            frequency: Some(frequency),
-            ..
-        } = command
-        {
-            frequency_in_range(frequency)?;
-        }
-        match target {
-            Target::Run {
-                session_id,
-                view_id,
-                revision,
-            } => {
-                let session = self
-                    .live(&session_id)
-                    .filter(|session| session.info.revision == revision);
-                let Some(session) = session else {
-                    return if command.starts_run() {
-                        Err(Code::SessionEnded.into())
-                    } else {
-                        Ok(ActResult::default())
-                    };
-                };
-                if command == Command::Start {
-                    return Ok(current_result(&session));
-                }
-                let release = matches!(
-                    command,
-                    Command::Button {
-                        value: ButtonValue::Released,
-                        ..
-                    }
-                );
-                match apply(&session, &view_id, &command).await {
-                    // The run ended meanwhile, or (for a release) left the view
-                    // whose buttons the runtime already released.
-                    Err(error)
-                        if (error.code == Code::SessionEnded && !command.starts_run())
-                            || (error.code == Code::ViewChanged && release) =>
-                    {
-                        Ok(ActResult::default())
-                    }
-                    result => result,
-                }
-            }
-            Target::Definition { document, circuit } => {
-                if !command.starts_run() {
-                    // A frequency set before a run applies when the next one starts.
-                    let initial_frequency = match command {
-                        Command::Configure { frequency, .. } => frequency.or(initial_frequency),
-                        _ => None,
-                    };
-                    return Ok(ActResult {
-                        initial_frequency,
-                        ..ActResult::default()
-                    });
-                }
-                if let Some(frequency) = initial_frequency {
-                    frequency_in_range(frequency)?;
-                }
-                let (session, view_id, started) = self.run_of(document, &circuit).await?;
-                let mut result = None;
-                if started && let Some(frequency) = initial_frequency {
-                    let configure = Command::Configure {
-                        frequency: Some(frequency),
-                        automatic: None,
-                    };
-                    result = Some(apply(&session, &view_id, &configure).await?);
-                }
-                // Propagation is on from the start, so a cold toggle would turn it off.
-                if command != Command::Start && !(started && command == Command::TogglePropagation)
-                {
-                    result = Some(apply(&session, &view_id, &command).await?);
-                }
-                let mut result = result.unwrap_or_else(|| current_result(&session));
-                result.started = started;
-                Ok(result)
-            }
-        }
-    }
-
-    /// The run a definition command goes to, the root view to address and
-    /// whether the run was started for it. A run of the same circuit and
-    /// revision that shows a subcircuit instance returns to its root with its
-    /// state kept, as the circuit on screen is that root.
-    async fn run_of(
+    /// Starts a run of `circuit` of the document, its clock at `frequency`
+    /// (2 Hz otherwise), and ends the current run first. Returns once the run
+    /// showed its first frame; subscribers have its whole state by then.
+    pub async fn start(
         &self,
         document: RunDocument,
         circuit: &str,
-    ) -> Result<(Arc<Session>, String, bool), SimError> {
-        let _gate = self.0.gate.lock().await;
-        if let Some(session) = self.current().filter(|session| {
-            session.info.document_id == document.view.id
-                && session.info.revision == document.view.revision
-                && session.root.circuit == circuit
-        }) {
-            let view = session.current_view();
-            if view.instance_path.is_empty() {
-                return Ok((session, view.id, false));
-            }
-            match show(&session, Vec::new()).await {
-                Ok(root) => return Ok((session, root.view_id, false)),
-                // It ended meanwhile: start a new one below.
-                Err(error) if error.code == Code::SessionEnded => {}
-                Err(error) => return Err(error),
-            }
+        frequency: Option<f64>,
+    ) -> Result<RunInfo, SimError> {
+        if let Some(frequency) = frequency {
+            frequency_in_range(frequency)?;
         }
-        let session = self.start(document, circuit).await?;
-        let view_id = session.root.id.clone();
-        Ok((session, view_id, true))
-    }
-
-    async fn start(&self, document: RunDocument, circuit: &str) -> Result<Arc<Session>, SimError> {
         let RunDocument { artifact, view } = document;
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let root = View {
-            id: uuid::Uuid::new_v4().to_string(),
-            circuit: circuit.into(),
-            instance_path: Vec::new(),
-        };
         let definition = view
             .circuits
             .iter()
             .find(|candidate| candidate.name == circuit)
             .ok_or(Code::UnknownCircuit)?;
-        let init = protocol::init_document(circuit, &root.id, &definition.components)?;
+        let init = protocol::init_document(circuit, frequency, &definition.components)?;
         let source = tokio::fs::read(&artifact)
             .await
             .map_err(|error| failed(format!("{}: {error}", artifact.display())))?;
@@ -428,10 +261,14 @@ impl SimulationRegistry {
             .facts()
             .runtime_for(&source)
             .map_err(|message| SimError::new(Code::RuntimeUnavailable).with_message(message))?;
-        let init = InitFile::write(self.0.launcher.state(), &session_id, &init)?;
+        let _start = self.0.starts.lock().await;
+        let current = self.0.lock().run.clone();
+        if let Some(current) = current {
+            current.end(EndReason::Replaced, None, None);
+        }
+        let init = InitFile::write(self.0.launcher.state(), &init)?;
         let io = self.spawn(&runtime, &artifact, &init.0).await?;
-        let info = SessionInfo {
-            session_id,
+        let info = RunInfo {
             document_id: view.id,
             document_name: view.name,
             document_path: view.path,
@@ -441,34 +278,36 @@ impl SimulationRegistry {
             started_at: now_ms(),
         };
         let registry = Arc::downgrade(&self.0);
-        let on_end: OnEnd = Box::new(move |session| {
+        let on_end: OnEnd = Box::new(move |run| {
             if let Some(registry) = registry.upgrade() {
-                registry.ended(session);
+                registry.ended(run);
             }
         });
-        let session = Session::spawn(info, root, view.circuits, io, self.0.deadlines, on_end);
-        let ready = session.first_frame().await;
+        let run = Run::spawn(
+            info,
+            view.circuits,
+            io,
+            self.0.deadlines,
+            self.0.events.clone(),
+            on_end,
+        );
+        let ready = run.first_frame().await;
         drop(init);
-        if !ready && session.ended().is_none() {
+        if !ready && run.ended().is_none() {
             let detail = "no frame before the start deadline".to_owned();
-            session.end(EndReason::Failed, None, Some(detail));
+            run.end(EndReason::Failed, None, Some(detail));
             return Err(Code::StartTimeout.into());
         }
-        let previous = {
-            let mut inner = self.0.lock();
-            if let Some(ended) = session.ended() {
-                return Err(start_error(ended));
+        {
+            let mut current = self.0.lock();
+            if run.announce() {
+                current.run = Some(run.clone());
+                return Ok(run.info.clone());
             }
-            session.announced.store(true, Ordering::SeqCst);
-            inner
-                .subscribers
-                .retain(|subscriber| subscriber.send(Lifecycle::Session(session.clone())).is_ok());
-            inner.current.replace(session.clone())
-        };
-        if let Some(previous) = previous {
-            previous.end(EndReason::Replaced, None, None);
         }
-        Ok(session)
+        Err(run
+            .ended()
+            .map_or_else(|| Code::StartFailed.into(), start_error))
     }
 
     async fn spawn(&self, runtime: &Path, artifact: &Path, init: &Path) -> Result<Io, SimError> {
@@ -504,98 +343,66 @@ impl SimulationRegistry {
         }
     }
 
+    /// Sends a command to the run; returns the run's command sequence after
+    /// it. A frame with at least that sequence shows its effect.
+    pub async fn command(&self, command: Command) -> Result<u64, SimError> {
+        if let Command::Configure {
+            frequency: Some(frequency),
+            ..
+        } = command
+        {
+            frequency_in_range(frequency)?;
+        }
+        let line = protocol::command_line(&command)?;
+        let run = self.current().ok_or(Code::SessionEnded)?;
+        run.send(line).await
+    }
+
     /// Shows a subcircuit instance of the run: `instance_path` holds component
-    /// ids from the root circuit; an empty path returns to the root. Every call
-    /// makes a new view: the runtime releases held buttons, clears the
-    /// waveform and the shown memory page, and renders the default viewport.
-    pub async fn navigate(
-        &self,
-        session_id: &str,
-        instance_path: Vec<String>,
-    ) -> Result<NavigateResult, SimError> {
-        let session = self.live(session_id).ok_or(Code::SessionEnded)?;
-        show(&session, instance_path).await
+    /// ids from the root circuit; an empty path returns to the root. The
+    /// runtime releases held buttons, clears the waveform and the shown memory
+    /// page, and its next frame is full. Returns the command sequence after it.
+    pub async fn navigate(&self, instance_path: Vec<String>) -> Result<u64, SimError> {
+        let run = self.current().ok_or(Code::SessionEnded)?;
+        let line = view_line(&run, &instance_path)?;
+        run.send(line).await
     }
 
-    /// Ends the run because the user stopped it. False when it already ended.
-    pub fn stop(&self, session_id: &str) -> bool {
-        self.end(session_id, EndReason::Stopped)
+    /// Ends the run because the user stopped it. False when there is none.
+    pub fn stop(&self) -> bool {
+        self.end(EndReason::Stopped)
     }
 
-    pub fn end(&self, session_id: &str, reason: EndReason) -> bool {
-        self.live(session_id)
-            .is_some_and(|session| session.end(reason, None, None))
+    pub fn end(&self, reason: EndReason) -> bool {
+        self.current()
+            .is_some_and(|run| run.end(reason, None, None))
     }
 
     /// Ends the run when its document closed (`revision_of` gives None for its
     /// id) or moved to another revision. Call after every revision change and
     /// after a start, since a start can finish after the document changed.
     pub fn reconcile(&self, revision_of: impl FnOnce(&str) -> Option<String>) -> bool {
-        let Some(session) = self.current() else {
+        let Some(run) = self.current() else {
             return false;
         };
-        let reason = match revision_of(&session.info.document_id) {
+        let reason = match revision_of(&run.info.document_id) {
             None => EndReason::DocumentClosed,
-            Some(revision) if revision != session.info.revision => EndReason::RevisionChanged,
+            Some(revision) if revision != run.info.revision => EndReason::RevisionChanged,
             Some(_) => return false,
         };
-        session.end(reason, None, None)
+        run.end(reason, None, None)
     }
 
-    pub fn session(&self) -> Option<SessionInfo> {
-        self.current().map(|session| session.info.clone())
+    /// The run's newest state in Logisim's long form, with its waveform.
+    pub fn frame(&self) -> Option<(RunInfo, Frame, TraceDelta)> {
+        let run = self.current()?;
+        let (frame, trace) = run.record()?;
+        Some((run.info.clone(), frame, trace))
     }
 
-    /// Served from memory; never waits for a runtime.
-    pub fn status(&self) -> Status {
-        let last_ended = self.0.lock().last_ended.clone();
-        let current = self.current();
-        Status {
-            session: current.as_ref().map(|session| session.info.clone()),
-            state: current.and_then(|session| session.run_state()),
-            last_ended,
-        }
-    }
-
-    /// A kept frame of the run, the newest by default, with its waveform on request.
-    pub fn snapshot(
-        &self,
-        session_id: &str,
-        frame_sequence: Option<u64>,
-        trace: bool,
-    ) -> Result<Snapshot, SimError> {
-        let session = self.live(session_id).ok_or(Code::SessionEnded)?;
-        let (frame, trace) = session.snapshot(frame_sequence, trace)?;
-        Ok(Snapshot {
-            session: session.info.clone(),
-            frame: Frame::clone(&frame),
-            trace,
-        })
-    }
-
-    /// The PNG of a kept frame. The newest two are always kept.
-    pub fn frame_image(
-        &self,
-        session_id: &str,
-        frame_sequence: u64,
-    ) -> Result<Arc<Vec<u8>>, SimError> {
-        self.live(session_id)
-            .ok_or(Code::SessionEnded)?
-            .image(frame_sequence)
-    }
-
-    /// Events from now on, starting with the current run if there is one.
+    /// The run's events: its whole state first, then every frame and its end.
     pub fn subscribe(&self) -> Subscription {
-        let (sender, lifecycle) = mpsc::unbounded_channel();
-        let mut inner = self.0.lock();
-        if let Some(current) = &inner.current {
-            let _ = sender.send(Lifecycle::Session(current.clone()));
-        }
-        inner.subscribers.push(sender);
-        Subscription {
-            lifecycle,
-            follow: None,
-        }
+        self.0.subscribe()
     }
 
     /// Runs one bounded check on a circuit snapshot and returns its result
@@ -716,138 +523,37 @@ impl SimulationRegistry {
     pub async fn shutdown(&self) {
         // The check process is killed with its handle, not kept alive by it.
         self.0.checks.lock().await.take();
-        let current = self.0.lock().current.clone();
-        if let Some(session) = current {
-            session.end(EndReason::Stopped, None, None);
-            let _ = tokio::time::timeout(Duration::from_secs(2), session.exit()).await;
+        let current = self.0.lock().run.clone();
+        if let Some(run) = current {
+            run.end(EndReason::Stopped, None, None);
+            let _ = tokio::time::timeout(Duration::from_secs(2), run.exit()).await;
         }
     }
 }
 
-struct Follow {
-    session: Arc<Session>,
-    frames: watch::Receiver<u64>,
-    last: Option<Arc<Frame>>,
-    trace: Option<TraceMark>,
-}
-
-/// Simulation events for one listener, in order. Frames do not queue: a slow
-/// listener gets the newest frame, with the components changed since the last
-/// one it got.
+/// Simulation events for one listener, in order. A listener that falls
+/// behind by more than the backlog starts over with the whole state.
 pub struct Subscription {
-    lifecycle: mpsc::UnboundedReceiver<Lifecycle>,
-    follow: Option<Follow>,
+    registry: Weak<Shared>,
+    initial: VecDeque<Arc<SimulationEvent>>,
+    events: broadcast::Receiver<Arc<SimulationEvent>>,
 }
 
 impl Subscription {
     /// The next event; None once the registry is gone.
-    pub async fn next(&mut self) -> Option<SimulationEvent> {
-        enum Wake {
-            Lifecycle(Option<Lifecycle>),
-            Frame(bool),
-        }
+    pub async fn next(&mut self) -> Option<Arc<SimulationEvent>> {
         loop {
-            match self.lifecycle.try_recv() {
-                Ok(event) => return Some(self.lifecycle_event(event)),
-                Err(TryRecvError::Disconnected) => return None,
-                Err(TryRecvError::Empty) => {}
-            }
-            if let Some(event) = self.state() {
+            if let Some(event) = self.initial.pop_front() {
                 return Some(event);
             }
-            let Self { lifecycle, follow } = self;
-            let wake = match follow {
-                Some(follow) => tokio::select! {
-                    biased;
-                    event = lifecycle.recv() => Wake::Lifecycle(event),
-                    changed = follow.frames.changed() => Wake::Frame(changed.is_ok()),
-                },
-                None => Wake::Lifecycle(lifecycle.recv().await),
-            };
-            match wake {
-                Wake::Lifecycle(Some(event)) => return Some(self.lifecycle_event(event)),
-                Wake::Lifecycle(None) => return None,
-                Wake::Frame(true) => {}
-                Wake::Frame(false) => self.follow = None,
-            }
-        }
-    }
-
-    fn lifecycle_event(&mut self, event: Lifecycle) -> SimulationEvent {
-        match event {
-            Lifecycle::Session(session) => {
-                let info = session.info.clone();
-                self.follow = Some(Follow {
-                    frames: session.frames(),
-                    session,
-                    last: None,
-                    trace: None,
-                });
-                SimulationEvent::Session { session: info }
-            }
-            Lifecycle::Ended(ended) => {
-                if self
-                    .follow
-                    .as_ref()
-                    .is_some_and(|follow| follow.session.info.session_id == ended.session_id)
-                {
-                    self.follow = None;
+            match self.events.recv().await {
+                Ok(event) => return Some(event),
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    *self = self.registry.upgrade()?.subscribe();
                 }
-                SimulationEvent::Ended { ended }
+                Err(broadcast::error::RecvError::Closed) => return None,
             }
         }
-    }
-
-    /// The newest frame of the followed run, if this listener has not had it.
-    fn state(&mut self) -> Option<SimulationEvent> {
-        let follow = self.follow.as_mut()?;
-        follow.frames.borrow_and_update();
-        if follow.session.ended().is_some() {
-            return None;
-        }
-        let (frame, trace) = follow.session.latest(follow.trace.as_ref())?;
-        let last = follow.last.as_deref();
-        if last.is_some_and(|last| last.frame_sequence == frame.frame_sequence) {
-            return None;
-        }
-        // Components are compared by position within one view.
-        let last = last.filter(|last| {
-            last.view_id == frame.view_id && last.components.len() == frame.components.len()
-        });
-        let items = match last {
-            None => frame.components.clone(),
-            Some(last) => frame
-                .components
-                .iter()
-                .zip(&last.components)
-                .filter(|(now, before)| !Arc::ptr_eq(now, before) && now != before)
-                .map(|(now, _)| now.clone())
-                .collect(),
-        };
-        let memory = match last {
-            Some(last) if last.memory == frame.memory => None,
-            _ => frame.memory.clone(),
-        };
-        let event = StateEvent {
-            session_id: follow.session.info.session_id.clone(),
-            view_id: frame.view_id.clone(),
-            circuit: frame.circuit.clone(),
-            instance_path: frame.instance_path.clone(),
-            frame_sequence: frame.frame_sequence,
-            command_sequence: frame.command_sequence,
-            clock: frame.clock.clone(),
-            components: ComponentDelta {
-                full: last.is_none(),
-                items,
-            },
-            trace,
-            memory,
-            image: frame.image,
-            timing: frame.timing,
-        };
-        follow.trace = Some(frame.trace.clone());
-        follow.last = Some(frame);
-        Some(SimulationEvent::State(Box::new(event)))
     }
 }
 
@@ -856,22 +562,24 @@ mod tests {
     use super::*;
     use crate::{
         runtime::RuntimeFacts,
-        simulation::session::tests::{Fake, ack, attribute, fake, frame, request_id},
+        simulation::{
+            model::FrameEvent,
+            protocol::tests::frame_line,
+            run::tests::{Fake, WAIT, ack, attribute, fake},
+        },
     };
-    use tokio::{task::JoinHandle, time::timeout};
+    use tokio::{sync::mpsc, task::JoinHandle, time::timeout};
     use vibe_circuit_document::Document;
 
-    const WAIT: Duration = Duration::from_secs(60);
     const CIRCUIT: &str = concat!(
         r##"<project source="2.16.1.4" version="1.0"><lib desc="#Wiring" name="0"/><main name="main"/>"##,
         r#"<circuit name="main"><comp lib="0" loc="(100,100)" name="Pin"/><comp loc="(300,200)" name="cell"/></circuit>"#,
         r#"<circuit name="cell"><comp lib="0" loc="(100,100)" name="Pin"/></circuit></project>"#,
     );
 
-    /// One started runtime process: its start file, root view and the fake end.
+    /// One started runtime process: its start file and its fake end.
     struct Spawned {
-        init: PathBuf,
-        view: String,
+        init: String,
         fake: Fake,
     }
 
@@ -895,9 +603,8 @@ mod tests {
             let (sender, spawned) = mpsc::unbounded_channel();
             let spawner = Spawner::Fake(Box::new(move |init: &Path| {
                 let (io, fake) = fake();
-                let view = attribute(&std::fs::read_to_string(init).unwrap(), "viewId");
-                let init = init.to_owned();
-                sender.send(Spawned { init, view, fake }).unwrap();
+                let init = std::fs::read_to_string(init).unwrap();
+                sender.send(Spawned { init, fake }).unwrap();
                 io
             }));
             let document = Document::from_bytes(
@@ -915,543 +622,271 @@ mod tests {
                 _dir: dir,
             }
         }
-        fn definition(&self, circuit: &str) -> Target {
-            Target::Definition {
-                document: RunDocument {
-                    artifact: self.artifact.clone(),
-                    view: self.document.view().unwrap(),
-                },
-                circuit: circuit.into(),
-            }
-        }
-        fn run(&self, result: &ActResult) -> Target {
-            Target::Run {
-                session_id: result.session_id.clone().unwrap(),
-                view_id: result.view_id.clone().unwrap(),
-                revision: self.document.view().unwrap().revision,
-            }
-        }
-        fn act(
+        fn start(
             &self,
-            target: Target,
-            command: Command,
+            circuit: &str,
             frequency: Option<f64>,
-        ) -> JoinHandle<Result<ActResult, SimError>> {
+        ) -> JoinHandle<Result<RunInfo, SimError>> {
             let registry = self.registry.clone();
-            tokio::spawn(async move { registry.act(target, command, frequency).await })
+            let document = RunDocument {
+                artifact: self.artifact.clone(),
+                view: self.document.view().unwrap(),
+            };
+            let circuit = circuit.to_owned();
+            tokio::spawn(async move { registry.start(document, &circuit, frequency).await })
         }
         async fn spawned(&mut self) -> Spawned {
             timeout(WAIT, self.spawned.recv()).await.unwrap().unwrap()
         }
-        /// Starts a run of `circuit` that has shown one frame.
-        async fn start(&mut self, circuit: &str) -> (ActResult, Spawned) {
-            let act = self.act(self.definition(circuit), Command::Start, None);
+        /// Starts a run of `circuit` that has shown its first frame.
+        async fn started(&mut self, circuit: &str) -> Fake {
+            let start = self.start(circuit, None);
             let mut spawned = self.spawned().await;
-            assert!(spawned.fake.line(&frame(&spawned.view, 1)).await);
-            (timeout(WAIT, act).await.unwrap().unwrap().unwrap(), spawned)
+            assert!(spawned.fake.line(&frame_line(true, 1)).await);
+            timeout(WAIT, start).await.unwrap().unwrap().unwrap();
+            spawned.fake
         }
-        async fn frame_sequence(&self, sequence: u64) {
-            timeout(WAIT, async {
-                while self
-                    .registry
-                    .status()
-                    .state
-                    .is_none_or(|state| state.frame_sequence < sequence)
-                {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            })
-            .await
-            .unwrap();
+        /// The id of the component of `circuit` named `name`.
+        fn id(&self, circuit: &str, name: &str) -> String {
+            let view = self.document.view().unwrap();
+            let circuit = view.circuits.iter().find(|c| c.name == circuit).unwrap();
+            let component = circuit.components.iter().find(|c| c.name == name);
+            component.unwrap().id.clone()
         }
     }
 
-    async fn next(events: &mut Subscription) -> SimulationEvent {
+    async fn next(events: &mut Subscription) -> Arc<SimulationEvent> {
         timeout(WAIT, events.next()).await.unwrap().unwrap()
     }
 
-    fn refusal(request_id: u64, code: &str) -> String {
-        format!(
-            r#"<ack requestId="{request_id}" error="com.cburch.logisim.file.SessionError: x" code="{code}" message="x"/>"#
-        )
+    fn frame(event: &Arc<SimulationEvent>) -> &FrameEvent {
+        match &**event {
+            SimulationEvent::Frame(frame) => frame,
+            _ => panic!("not a frame"),
+        }
+    }
+
+    fn started(event: &Arc<SimulationEvent>) -> &RunInfo {
+        match &**event {
+            SimulationEvent::Run { run } => run,
+            _ => panic!("not a run"),
+        }
+    }
+
+    fn ended(event: &Arc<SimulationEvent>) -> EndReason {
+        match &**event {
+            SimulationEvent::Ended { ended } => ended.reason_code,
+            _ => panic!("not an end"),
+        }
+    }
+
+    async fn refused(start: JoinHandle<Result<RunInfo, SimError>>) -> SimError {
+        timeout(WAIT, start).await.unwrap().unwrap().unwrap_err()
     }
 
     #[tokio::test]
-    async fn a_start_replaces_the_current_run_only_after_its_first_frame() {
+    async fn subscribers_get_the_whole_state_then_each_frame() {
         let mut h = Harness::new(Deadlines::default());
-        let mut events = h.registry.subscribe();
-        // A tick on a definition starts a run, sets the frequency chosen before, then ticks.
-        let act = h.act(h.definition("main"), Command::Tick, Some(8.0));
+        let mut early = h.registry.subscribe();
+        // The frequency chosen before the run is in its start file.
+        let start = h.start("main", Some(8.0));
         let mut a = h.spawned().await;
-        assert!(a.fake.line(&frame(&a.view, 1)).await);
-        let configure = a.fake.command().await;
-        assert!(
-            configure.starts_with("<configure ") && configure.contains(r#" frequency="8""#),
-            "{configure}"
-        );
-        assert!(a.fake.line(&ack(request_id(&configure), &a.view, 1)).await);
-        let tick = a.fake.command().await;
-        assert!(
-            tick.starts_with(&format!(
-                r#"<tick requestId="{}" viewId="{}""#,
-                request_id(&tick),
-                a.view
-            )),
-            "{tick}"
-        );
-        assert!(a.fake.line(&ack(request_id(&tick), &a.view, 2)).await);
-        let first = timeout(WAIT, act).await.unwrap().unwrap().unwrap();
-        assert!(first.started && first.applied);
-        assert_eq!(first.command_sequence, Some(2));
-        assert!(!a.init.exists());
-        let SimulationEvent::Session { session } = next(&mut events).await else {
-            panic!("no session event")
-        };
-        assert_eq!(Some(&session.session_id), first.session_id.as_ref());
-        let SimulationEvent::State(state) = next(&mut events).await else {
-            panic!("no state event")
-        };
-        assert!(state.components.full && state.trace.is_some_and(|trace| trace.full));
-
-        // The current run stays until the new one shows its first frame.
-        let act = h.act(h.definition("cell"), Command::Start, None);
+        assert_eq!(attribute(&a.init, "frequency"), "8");
+        assert!(a.fake.line(&frame_line(true, 1)).await);
+        let run = timeout(WAIT, start).await.unwrap().unwrap().unwrap();
+        assert_eq!(h.registry.run().unwrap().started_at, run.started_at);
+        assert_eq!(started(&next(&mut early).await).root_circuit, "main");
+        let first = next(&mut early).await;
+        let first = frame(&first);
+        assert!(first.full && first.command_sequence == 1);
+        assert_eq!(first.components.len(), 2);
+        assert_eq!(first.paint.wires.len(), 1);
+        // Later frames carry what changed.
+        assert!(a.fake.line(&frame_line(false, 2)).await);
+        let second = next(&mut early).await;
+        let second = frame(&second);
+        assert!(!second.full && second.command_sequence == 2);
+        assert_eq!(second.components.keys().collect::<Vec<_>>(), ["b"]);
+        // A new subscriber, such as a reloaded page, starts with the whole state.
+        let mut late = h.registry.subscribe();
+        started(&next(&mut late).await);
+        let whole = next(&mut late).await;
+        let whole = frame(&whole);
+        assert!(whole.full && whole.command_sequence == 2);
+        assert_eq!(whole.components["a"].input.as_deref(), Some("1"));
+        assert_eq!(whole.components["b"].ports, ["00000011", "-"]);
+        assert_eq!(whole.paint.wires.keys().collect::<Vec<_>>(), ["#006400"]);
+        assert!(whole.trace.as_ref().is_some_and(|trace| trace.full));
+        // A start ends the current run first; subscribers see its end, then the new run.
+        let start = h.start("cell", None);
         let mut b = h.spawned().await;
-        assert_ne!(a.init, b.init);
-        assert_eq!(h.registry.session().unwrap().session_id, session.session_id);
-        assert!(b.fake.line(&frame(&b.view, 1)).await);
-        let second = timeout(WAIT, act).await.unwrap().unwrap().unwrap();
-        assert!(second.started && second.applied && second.request_id.is_none());
-        let SimulationEvent::Session { session: successor } = next(&mut events).await else {
-            panic!("no session event")
-        };
-        assert_eq!(Some(&successor.session_id), second.session_id.as_ref());
-        let SimulationEvent::Ended { ended } = next(&mut events).await else {
-            panic!("no ended event")
-        };
-        assert_eq!(ended.session_id, session.session_id);
-        assert_eq!(ended.reason_code, EndReason::Replaced);
         timeout(WAIT, &mut a.fake.killed).await.unwrap().unwrap();
-        assert_eq!(
-            h.registry.status().last_ended.unwrap().reason_code,
-            EndReason::Replaced
-        );
-        // The replaced run refuses what would start a run and ignores the rest.
-        let refused = h
-            .registry
-            .act(h.run(&first), Command::Tick, None)
-            .await
-            .unwrap_err();
-        assert_eq!(refused.code, Code::SessionEnded);
-        assert!(
-            !h.registry
-                .act(h.run(&first), Command::Pause, None)
-                .await
-                .unwrap()
-                .applied
-        );
+        assert!(b.fake.line(&frame_line(true, 1)).await);
+        timeout(WAIT, start).await.unwrap().unwrap().unwrap();
+        for events in [&mut early, &mut late] {
+            assert_eq!(ended(&next(events).await), EndReason::Replaced);
+            assert_eq!(started(&next(events).await).root_circuit, "cell");
+            assert!(frame(&next(events).await).full);
+        }
+        // After the run ends, a new subscriber learns how.
+        assert!(h.registry.stop());
+        assert!(!h.registry.stop());
+        let mut after = h.registry.subscribe();
+        assert_eq!(ended(&next(&mut after).await), EndReason::Stopped);
+        assert_eq!(ended(&next(&mut early).await), EndReason::Stopped);
     }
 
     #[tokio::test]
-    async fn a_failed_start_keeps_the_current_run_and_says_why() {
+    async fn failed_starts_say_why() {
         let mut h = Harness::new(Deadlines {
             first_frame: Duration::from_millis(300),
             ..Deadlines::default()
         });
-        let (first, _a) = h.start("main").await;
+        let _a = h.started("main").await;
+        // Refused before anything starts: the current run goes on.
+        assert_eq!(
+            refused(h.start("nowhere", None)).await.code,
+            Code::UnknownCircuit
+        );
+        assert_eq!(
+            refused(h.start("main", Some(0.1))).await.code,
+            Code::FrequencyRange
+        );
+        assert!(h.registry.run().is_some());
         let mut events = h.registry.subscribe();
-        assert!(matches!(
-            next(&mut events).await,
-            SimulationEvent::Session { .. }
-        ));
-        assert!(matches!(next(&mut events).await, SimulationEvent::State(_)));
+        started(&next(&mut events).await);
+        frame(&next(&mut events).await);
 
-        // The runtime could not open the circuit and said so.
-        let act = h.act(h.definition("cell"), Command::Start, None);
-        let mut b = h.spawned().await;
-        let line = r#"<start-error error="com.cburch.logisim.file.SessionError: Unknown circuit" code="UNKNOWN_CIRCUIT" message="Unknown circuit"/>"#;
-        assert!(b.fake.line(line).await);
-        let error = timeout(WAIT, act).await.unwrap().unwrap().unwrap_err();
-        assert_eq!(error.code, Code::UnknownCircuit);
-        timeout(WAIT, &mut b.fake.killed).await.unwrap().unwrap();
-
-        // The process went away without a frame.
-        let act = h.act(h.definition("cell"), Command::Start, None);
-        let mut c = h.spawned().await;
-        c.fake.close();
-        let error = timeout(WAIT, act).await.unwrap().unwrap().unwrap_err();
+        // The runtime cannot open the circuit.
+        let start = h.start("main", None);
+        let mut spawned = h.spawned().await;
+        let line = r#"<start-error error="com.cburch.logisim.file.SessionError: x" code="UNKNOWN_CIRCUIT" message="x"/>"#;
+        assert!(spawned.fake.line(line).await);
+        assert_eq!(refused(start).await.code, Code::UnknownCircuit);
+        // The process exits first.
+        let start = h.start("main", None);
+        h.spawned().await.fake.close();
+        let error = refused(start).await;
         assert_eq!(error.code, Code::StartFailed);
         assert!(error.detail().is_some());
-
-        // The first picture was over the budget.
-        let act = h.act(h.definition("cell"), Command::Start, None);
-        let mut d = h.spawned().await;
-        let line = r#"<frame-error failure="java.lang.IllegalArgumentException: x" failureCode="VIEWPORT_BUDGET"/>"#;
-        assert!(d.fake.line(line).await);
-        let error = timeout(WAIT, act).await.unwrap().unwrap().unwrap_err();
-        assert_eq!(error.code, Code::StartFailed);
-        assert_eq!(
-            error.message,
-            "仿真未启动：画面范围超过限制，请调整电路范围后重试"
-        );
-
+        // Its first frame fails.
+        let start = h.start("main", None);
+        let mut spawned = h.spawned().await;
+        let line = r#"<frame-error failure="java.lang.Error: x" failureCode="CLOCK_FAILURE"/>"#;
+        assert!(spawned.fake.line(line).await);
+        assert_eq!(refused(start).await.code, Code::ClockFailure);
         // No frame in time.
-        let act = h.act(h.definition("cell"), Command::Start, None);
-        let mut e = h.spawned().await;
-        let error = timeout(WAIT, act).await.unwrap().unwrap().unwrap_err();
-        assert_eq!(error.code, Code::StartTimeout);
-        timeout(WAIT, &mut e.fake.killed).await.unwrap().unwrap();
-
-        // An unknown circuit fails before any process starts.
-        let error = h
-            .registry
-            .act(h.definition("nowhere"), Command::Start, None)
+        let start = h.start("main", None);
+        let mut spawned = h.spawned().await;
+        assert_eq!(refused(start).await.code, Code::StartTimeout);
+        timeout(WAIT, &mut spawned.fake.killed)
             .await
-            .unwrap_err();
-        assert_eq!(error.code, Code::UnknownCircuit);
-        assert!(h.spawned.try_recv().is_err());
+            .unwrap()
+            .unwrap();
 
-        // The first run carries on; nobody heard of the others.
-        assert_eq!(
-            h.registry.session().unwrap().session_id,
-            first.session_id.unwrap()
-        );
-        assert!(h.registry.status().last_ended.is_none());
-        assert!(
-            timeout(Duration::from_millis(100), events.next())
-                .await
-                .is_err()
-        );
+        // Only the run that had started ended for subscribers.
+        assert_eq!(ended(&next(&mut events).await), EndReason::Replaced);
+        assert!(h.registry.run().is_none());
+        let quiet = timeout(Duration::from_millis(50), events.next()).await;
+        assert!(quiet.is_err());
     }
 
     #[tokio::test]
-    async fn definitions_start_one_run_and_ignore_other_commands() {
+    async fn commands_and_navigation_go_to_the_run() {
         let mut h = Harness::new(Deadlines::default());
-        let configure = |frequency| Command::Configure {
-            frequency: Some(frequency),
+        let none = h.registry.command(Command::Tick).await.unwrap_err();
+        assert_eq!(none.code, Code::SessionEnded);
+        let none = h.registry.navigate(Vec::new()).await.unwrap_err();
+        assert_eq!(none.code, Code::SessionEnded);
+        let mut fake = h.started("main").await;
+        let registry = h.registry.clone();
+        let tick = tokio::spawn(async move { registry.command(Command::Tick).await });
+        assert_eq!(fake.command().await, "<tick/>");
+        assert!(fake.line(&ack(2)).await);
+        assert_eq!(timeout(WAIT, tick).await.unwrap().unwrap().unwrap(), 2);
+        let configure = Command::Configure {
+            frequency: Some(0.1),
             automatic: None,
         };
-        let result = h
-            .registry
-            .act(h.definition("main"), configure(16.0), None)
-            .await
-            .unwrap();
-        assert_eq!(
-            (result.applied, result.initial_frequency),
-            (false, Some(16.0))
-        );
-        let result = h
-            .registry
-            .act(h.definition("main"), Command::Pause, Some(16.0))
-            .await
-            .unwrap();
-        assert!(!result.applied && result.session_id.is_none());
-        for frequency in [0.1, 5000.0, f64::NAN] {
-            let error = h
-                .registry
-                .act(h.definition("main"), configure(frequency), None)
-                .await
-                .unwrap_err();
-            assert_eq!(error.code, Code::FrequencyRange);
-            let error = h
-                .registry
-                .act(h.definition("main"), Command::Tick, Some(frequency))
-                .await
-                .unwrap_err();
-            assert_eq!(error.code, Code::FrequencyRange);
-        }
-        assert!(h.spawned.try_recv().is_err());
-
-        // Two quick inputs on one definition share one run.
-        let input = |bits: &str| Command::Input {
-            component_id: "c0".into(),
-            bits: bits.into(),
-        };
-        let one = h.act(h.definition("main"), input("1"), None);
-        let two = h.act(h.definition("main"), input("0"), None);
-        let mut a = h.spawned().await;
-        assert!(a.fake.line(&frame(&a.view, 1)).await);
-        for _ in 0..2 {
-            let command = a.fake.command().await;
-            assert!(command.starts_with("<input "), "{command}");
-            assert!(
-                a.fake
-                    .line(&ack(request_id(&command), &a.view, request_id(&command)))
-                    .await
-            );
-        }
-        let one = timeout(WAIT, one).await.unwrap().unwrap().unwrap();
-        let two = timeout(WAIT, two).await.unwrap().unwrap().unwrap();
-        assert_eq!(one.session_id, two.session_id);
-        assert_ne!(one.started, two.started);
-        assert!(h.spawned.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn releases_never_fail_and_ended_runs_start_nothing() {
-        let mut h = Harness::new(Deadlines::default());
-        let (first, mut a) = h.start("main").await;
-        let button = |value| Command::Button {
-            component_id: "c0".into(),
-            value,
-        };
-        // The runtime already released the buttons of a view it left.
-        let act = h.act(h.run(&first), button(ButtonValue::Released), None);
-        let command = a.fake.command().await;
+        let error = h.registry.command(configure).await.unwrap_err();
+        assert_eq!(error.code, Code::FrequencyRange);
+        // Instances are named by component ids from the root circuit.
+        let cell = h.id("main", "cell");
+        let registry = h.registry.clone();
+        let path = vec![cell.clone()];
+        let navigate = tokio::spawn(async move { registry.navigate(path).await });
+        let line = fake.command().await;
         assert!(
-            command.starts_with("<button ") && command.contains(r#" value="0""#),
-            "{command}"
+            line.starts_with(r#"<view circuit="cell"><instance id=""#),
+            "{line}"
         );
-        assert!(
-            a.fake
-                .line(&refusal(request_id(&command), "VIEW_CHANGED"))
-                .await
-        );
-        assert!(!timeout(WAIT, act).await.unwrap().unwrap().unwrap().applied);
-        // Other refusals reach the caller.
-        let act = h.act(h.run(&first), button(ButtonValue::Pressed), None);
-        let command = a.fake.command().await;
-        assert!(
-            a.fake
-                .line(&refusal(request_id(&command), "INPUT_NOT_OPERABLE"))
-                .await
-        );
-        let error = timeout(WAIT, act).await.unwrap().unwrap().unwrap_err();
-        assert_eq!(error.code, Code::InputNotOperable);
-        // A start on the live run is answered without the runtime.
-        let again = h
-            .registry
-            .act(h.run(&first), Command::Start, None)
-            .await
-            .unwrap();
-        assert_eq!(
-            (&again.session_id, again.started, again.applied),
-            (&first.session_id, false, true)
-        );
-        // Another revision of the document.
-        let stale = Target::Run {
-            session_id: first.session_id.clone().unwrap(),
-            view_id: first.view_id.clone().unwrap(),
-            revision: "another".into(),
-        };
-        let error = h
-            .registry
-            .act(stale, Command::Step, None)
-            .await
-            .unwrap_err();
-        assert_eq!(error.code, Code::SessionEnded);
-
-        let session_id = first.session_id.as_deref().unwrap();
-        assert!(h.registry.stop(session_id));
-        assert!(!h.registry.stop(session_id));
-        timeout(WAIT, &mut a.fake.killed).await.unwrap().unwrap();
-        let release = h
-            .registry
-            .act(h.run(&first), button(ButtonValue::Released), None)
-            .await;
-        assert!(!release.unwrap().applied);
-        let press = h
-            .registry
-            .act(h.run(&first), button(ButtonValue::Pressed), None)
-            .await;
-        assert_eq!(press.unwrap_err().code, Code::SessionEnded);
-        let status = h.registry.status();
-        assert!(status.session.is_none() && status.state.is_none());
-        assert_eq!(status.last_ended.unwrap().reason_code, EndReason::Stopped);
-        assert_eq!(
-            h.registry
-                .snapshot(session_id, None, false)
-                .unwrap_err()
-                .code,
-            Code::SessionEnded
-        );
-    }
-
-    #[tokio::test]
-    async fn navigation_moves_the_run_into_an_instance() {
-        let mut h = Harness::new(Deadlines::default());
-        let (first, mut a) = h.start("main").await;
-        let session_id = first.session_id.clone().unwrap();
-        let view = h.document.view().unwrap();
-        let pin = view.circuits[0].components[0].id.clone();
-        let cell = view.circuits[0].components[1].id.clone();
+        assert_eq!(attribute(&line, "id"), cell);
+        assert!(fake.line(&ack(3)).await);
+        assert_eq!(timeout(WAIT, navigate).await.unwrap().unwrap().unwrap(), 3);
         let refused = |path: Vec<String>| {
             let registry = h.registry.clone();
-            let session_id = session_id.clone();
-            async move { registry.navigate(&session_id, path).await.unwrap_err().code }
+            async move { registry.navigate(path).await.unwrap_err().code }
         };
-        assert_eq!(refused(vec![pin]).await, Code::NotSubcircuit);
         assert_eq!(
-            refused(vec!["missing".into()]).await,
-            Code::ComponentMissing
+            refused(vec![h.id("main", "Pin")]).await,
+            Code::NotSubcircuit
         );
+        assert_eq!(refused(vec!["c0".into()]).await, Code::ComponentMissing);
         assert_eq!(refused(vec![cell.clone(); 65]).await, Code::PathTooDeep);
-
-        let registry = h.registry.clone();
-        let (id, path) = (session_id.clone(), vec![cell.clone()]);
-        let navigate = tokio::spawn(async move { registry.navigate(&id, path).await });
-        let line = a.fake.command().await;
-        assert!(
-            line.starts_with(r#"<view circuit="cell" viewId=""#),
-            "{line}"
-        );
-        let inner_pin = &view
-            .circuits
-            .iter()
-            .find(|c| c.name == "cell")
-            .unwrap()
-            .components[0]
-            .id;
-        assert!(
-            line.contains(&format!(
-                r#"<instance factory="cell" x="300" y="200"/><component id="{inner_pin}" factory="Pin" x="100" y="100"/></view>"#
-            )),
-            "{line}"
-        );
-        let inner = attribute(&line, "viewId");
-        // Frames of the root view may still follow the switch.
-        assert!(a.fake.line(&ack(request_id(&line), &inner, 1)).await);
-        assert!(
-            a.fake
-                .line(&frame(&first.view_id.clone().unwrap(), 2))
-                .await
-        );
-        assert!(a.fake.line(&frame(&inner, 3)).await);
-        let result = timeout(WAIT, navigate).await.unwrap().unwrap().unwrap();
-        assert_eq!(
-            (result.view_id.as_str(), result.circuit.as_str()),
-            (inner.as_str(), "cell")
-        );
-        assert_eq!(result.instance_path, std::slice::from_ref(&cell));
-        h.frame_sequence(3).await;
-        let state = h.registry.status().state.unwrap();
-        assert_eq!(
-            (state.view_id, state.instance_path),
-            (inner.clone(), vec![cell.clone()])
-        );
-        let snapshot = h.registry.snapshot(&session_id, None, false).unwrap();
-        assert_eq!(
-            (
-                snapshot.frame.circuit.as_str(),
-                snapshot.frame.instance_path.as_slice()
-            ),
-            ("main", [cell].as_slice())
-        );
-        assert_eq!(
-            h.registry
-                .snapshot(&session_id, Some(2), false)
-                .unwrap()
-                .frame
-                .instance_path
-                .len(),
-            0
-        );
-        let image = h.registry.frame_image(&session_id, 3).unwrap();
-        assert!(!image.is_empty());
-
-        // A command for the root circuit's definition returns the run to its
-        // root instead of starting a new one, so its state is kept.
-        let act = h.act(h.definition("main"), Command::Tick, None);
-        let line = a.fake.command().await;
-        assert!(
-            line.starts_with(r#"<view circuit="main" viewId=""#),
-            "{line}"
-        );
-        let root = attribute(&line, "viewId");
-        assert_ne!(Some(&root), first.view_id.as_ref());
-        assert!(a.fake.line(&ack(request_id(&line), &root, 4)).await);
-        let tick = a.fake.command().await;
-        assert!(
-            tick.starts_with("<tick ") && tick.contains(&format!(r#" viewId="{root}""#)),
-            "{tick}"
-        );
-        assert!(a.fake.line(&ack(request_id(&tick), &root, 5)).await);
-        let result = timeout(WAIT, act).await.unwrap().unwrap().unwrap();
-        assert_eq!(
-            (result.session_id.as_deref(), result.view_id.as_deref()),
-            (Some(session_id.as_str()), Some(root.as_str()))
-        );
-        assert!(result.applied && !result.started);
-        assert!(h.spawned.try_recv().is_err());
-
-        h.registry.shutdown().await;
-        timeout(WAIT, &mut a.fake.killed).await.unwrap().unwrap();
-        assert_eq!(
-            h.registry.status().last_ended.unwrap().reason_code,
-            EndReason::Stopped
-        );
+        assert!(h.registry.stop());
+        let ended = h.registry.command(Command::Tick).await.unwrap_err();
+        assert_eq!(ended.code, Code::SessionEnded);
     }
 
     #[tokio::test]
-    async fn listeners_get_the_newest_frame_with_what_changed() {
+    async fn reconcile_ends_runs_of_closed_or_changed_documents() {
         let mut h = Harness::new(Deadlines::default());
         let mut events = h.registry.subscribe();
-        let (_, mut a) = h.start("main").await;
-        assert!(matches!(
-            next(&mut events).await,
-            SimulationEvent::Session { .. }
-        ));
-        let SimulationEvent::State(state) = next(&mut events).await else {
-            panic!("no state event")
-        };
-        assert!(state.components.full);
-        assert_eq!(state.components.items.len(), 2);
-        // A slow listener sees only the newest of fifty frames, with the one component that changed.
-        for sequence in 2..=51 {
-            let mut line = frame(&a.view, sequence);
-            if sequence == 51 {
-                line = line.replace(r#"bits="0000 x01x""#, r#"bits="0000 0011" value="3""#);
+        assert!(!h.registry.reconcile(|_| None));
+        let _a = h.started("main").await;
+        let view = h.document.view().unwrap();
+        assert!(!h.registry.reconcile(|_| Some(view.revision.clone())));
+        assert!(h.registry.reconcile(|_| Some("another".into())));
+        let _b = h.started("main").await;
+        assert!(h.registry.reconcile(|id| (id != view.id).then(String::new)));
+        let mut reasons = Vec::new();
+        for _ in 0..6 {
+            if let SimulationEvent::Ended { ended } = &*next(&mut events).await {
+                reasons.push(ended.reason_code);
             }
-            assert!(a.fake.line(&line).await);
         }
-        h.frame_sequence(51).await;
-        let SimulationEvent::State(state) = next(&mut events).await else {
-            panic!("no state event")
-        };
-        assert_eq!(state.frame_sequence, 51);
-        assert!(!state.components.full);
-        let changed: Vec<_> = state
-            .components
-            .items
-            .iter()
-            .map(|item| item.id.as_str())
-            .collect();
-        assert_eq!(changed, ["b"]);
-        assert!(state.trace.is_none());
-        assert!(
-            timeout(Duration::from_millis(100), events.next())
-                .await
-                .is_err()
-        );
-
-        // An edit ends the run once; a closed document ends the next one.
-        let revision = h.document.view().unwrap().revision;
-        assert!(!h.registry.reconcile(|_| Some(revision.clone())));
-        assert!(h.registry.reconcile(|_| Some("edited".into())));
-        assert!(!h.registry.reconcile(|_| Some("edited again".into())));
-        let SimulationEvent::Ended { ended } = next(&mut events).await else {
-            panic!("no ended event")
-        };
-        assert_eq!(ended.reason_code, EndReason::RevisionChanged);
         assert_eq!(
-            ended.message.as_deref(),
-            Some("电路已修改，运行状态已结束。重新启动将建立全新状态。")
+            reasons,
+            [EndReason::RevisionChanged, EndReason::DocumentClosed]
         );
-        timeout(WAIT, &mut a.fake.killed).await.unwrap().unwrap();
-        let (_, _b) = h.start("main").await;
-        assert!(matches!(
-            next(&mut events).await,
-            SimulationEvent::Session { .. }
-        ));
-        assert!(h.registry.reconcile(|_| None));
-        let event = match next(&mut events).await {
-            SimulationEvent::State(_) => next(&mut events).await,
-            event => event,
-        };
-        let SimulationEvent::Ended { ended } = event else {
-            panic!("no ended event")
-        };
-        assert_eq!(ended.reason_code, EndReason::DocumentClosed);
-        assert!(ended.message.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_subscriber_that_falls_behind_starts_over_with_the_whole_state() {
+        let mut h = Harness::new(Deadlines::default());
+        let mut fake = h.started("main").await;
+        let mut events = h.registry.subscribe();
+        let total = BACKLOG as u64 + 50;
+        for sequence in 2..=total {
+            assert!(fake.line(&frame_line(false, sequence)).await);
+        }
+        timeout(WAIT, async {
+            while h
+                .registry
+                .frame()
+                .is_none_or(|(_, frame, _)| frame.command_sequence < total)
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        started(&next(&mut events).await);
+        assert_eq!(frame(&next(&mut events).await).command_sequence, 1);
+        started(&next(&mut events).await);
+        let whole = next(&mut events).await;
+        assert!(frame(&whole).full);
+        assert_eq!(frame(&whole).command_sequence, total);
     }
 
     const SMOKE: &str = r##"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
@@ -1485,9 +920,26 @@ mod tests {
         Some(component.ports.first()?.signal.bits.clone())
     }
 
-    /// Runs the real runtimes: an input starts the run and the output follows,
-    /// then a tick, a step, a refused poke and a stop; a circuit the runtime
-    /// cannot open reports why. Needs a JDK and both runtimes in `.workbench-cache`.
+    /// The newest frame once it shows the command with `sequence`.
+    async fn frame_after(registry: &SimulationRegistry, sequence: u64) -> Frame {
+        timeout(WAIT, async {
+            loop {
+                if let Some((_, frame, _)) = registry.frame()
+                    && frame.command_sequence >= sequence
+                {
+                    break frame;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    /// Runs the real runtimes: a run starts at 4 Hz, an input drives the
+    /// output, then a tick, a step, a refused poke and a stop; a circuit the
+    /// runtime cannot open reports why. Needs a JDK and both runtimes in
+    /// `.workbench-cache`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "starts JVMs"]
     async fn runtime_smoke() {
@@ -1529,80 +981,75 @@ mod tests {
             );
             let mut events = registry.subscribe();
             let started = std::time::Instant::now();
-            let target = Target::Definition {
-                document: RunDocument {
-                    artifact,
-                    view: view.clone(),
-                },
-                circuit: "main".into(),
+            let document = RunDocument {
+                artifact,
+                view: view.clone(),
             };
+            let run = registry.start(document, "main", Some(4.0)).await.unwrap();
+            let start_ms = started.elapsed().as_millis();
             let command = Command::Input {
                 component_id: input.clone(),
                 bits: "1".into(),
             };
-            let result = registry.act(target, command, Some(4.0)).await.unwrap();
-            let start_ms = started.elapsed().as_millis();
-            assert!(result.started && result.applied);
-            let session_id = result.session_id.clone().unwrap();
-            let runtime = registry.session().unwrap().runtime;
-            let run = |result: &ActResult| Target::Run {
-                session_id: session_id.clone(),
-                view_id: result.view_id.clone().unwrap(),
-                revision: view.revision.clone(),
-            };
-            // The output follows the input in a later frame.
+            registry.command(command).await.unwrap();
+            // The first frame has the whole picture; the output follows the
+            // input in a later one and the wire to it takes its color.
+            let mut first = None;
+            let mut wire = None;
+            let mut value = None;
             let followed = timeout(WAIT, async {
                 loop {
-                    if let Some(SimulationEvent::State(state)) = events.next().await
-                        && let Some(item) =
-                            state.components.items.iter().find(|item| item.id == output)
-                        && item.ports[0].signal.bits == "1"
+                    let event = events.next().await.unwrap();
+                    let SimulationEvent::Frame(frame) = &*event else {
+                        continue;
+                    };
+                    if first.is_none() {
+                        assert!(frame.full);
+                        first = Some(frame.paint.clone());
+                    }
+                    if let Some((color, _)) = frame
+                        .paint
+                        .wires
+                        .iter()
+                        .find(|(_, wires)| wires.chunks(4).any(|w| w == [100, 100, 200, 100]))
                     {
-                        break state.frame_sequence;
+                        wire = Some(color.clone());
+                    }
+                    if let Some(component) = frame.components.get(&output) {
+                        value = component.ports.first().cloned();
+                    }
+                    if value.as_deref() == Some("1") {
+                        break frame.command_sequence;
                     }
                 }
             })
             .await
             .unwrap();
-            let tick = registry
-                .act(run(&result), Command::Tick, None)
-                .await
-                .unwrap();
-            let clock = tick.clock.clone().unwrap();
+            let first = first.unwrap();
+            let wires: usize = first.wires.values().map(|w| w.len() / 4).sum();
+            assert_eq!((wires, first.components.len()), (2, 4));
+            assert_eq!(wire.as_deref(), Some("#00d200"));
+            let tick = registry.command(Command::Tick).await.unwrap();
+            let clock = frame_after(&registry, tick).await.clock;
             assert_eq!((clock.ticks, clock.frequency), (1, 4.0));
-            let step = registry.act(run(&tick), Command::Step, None).await.unwrap();
-            assert!(step.applied && step.command_sequence > tick.command_sequence);
+            let step = registry.command(Command::Step).await.unwrap();
+            assert!(step > tick);
             let poke = Command::Poke {
                 component_id: output.clone(),
                 x: 200,
                 y: 100,
             };
-            let refused = registry.act(run(&step), poke, None).await.unwrap_err();
+            let refused = registry.command(poke).await.unwrap_err();
             assert_eq!(refused.code, Code::InputNotOperable);
             assert_eq!(refused.message, "请选择这次运行中的可操作输入");
-            // The frames keep up with the commands.
-            let latest = timeout(WAIT, async {
-                loop {
-                    let snapshot = registry.snapshot(&session_id, None, true).unwrap();
-                    if snapshot.frame.command_sequence >= step.command_sequence.unwrap() {
-                        break snapshot;
-                    }
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                }
-            })
-            .await
-            .unwrap();
-            let png = registry
-                .frame_image(&session_id, latest.frame.frame_sequence)
-                .unwrap();
-            assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
-            assert_eq!(port(&latest.frame, &output).as_deref(), Some("1"));
-            let clock_value = port(&latest.frame, &clock_output);
-            assert!(registry.stop(&session_id));
+            let latest = frame_after(&registry, step).await;
+            assert_eq!(port(&latest, &output).as_deref(), Some("1"));
+            let clock_value = port(&latest, &clock_output);
+            assert!(registry.stop());
             let ended = timeout(WAIT, async {
                 loop {
-                    if let Some(SimulationEvent::Ended { ended }) = events.next().await {
-                        break ended;
+                    if let SimulationEvent::Ended { ended } = &*events.next().await.unwrap() {
+                        break ended.clone();
                     }
                 }
             })
@@ -1610,14 +1057,12 @@ mod tests {
             .unwrap();
             assert_eq!(ended.reason_code, EndReason::Stopped);
             println!(
-                "source {source}: runtime {runtime:?}, started and applied the input in {start_ms} ms, \
-                 output 1 at frame {followed}, ticks {}, clock output {clock_value:?}, \
-                 frame {} of {}x{} px ({} PNG bytes), run ended {:?}",
+                "source {source}: runtime {:?}, started in {start_ms} ms, output 1 at command \
+                 {followed}, ticks {}, clock output {clock_value:?}, first picture {} bytes, \
+                 run ended {:?}",
+                run.runtime,
                 clock.ticks,
-                latest.frame.frame_sequence,
-                latest.frame.image.width,
-                latest.frame.image.height,
-                png.len(),
+                serde_json::to_string(&first).unwrap().len(),
                 ended.reason_code,
             );
         }
@@ -1634,16 +1079,13 @@ mod tests {
             true,
         )
         .unwrap();
-        let target = Target::Definition {
-            document: RunDocument {
-                artifact,
-                view: document.view().unwrap(),
-            },
-            circuit: "elsewhere".into(),
+        let document = RunDocument {
+            artifact,
+            view: document.view().unwrap(),
         };
         let started = std::time::Instant::now();
         let error = registry
-            .act(target, Command::Start, None)
+            .start(document, "elsewhere", None)
             .await
             .unwrap_err();
         assert_eq!(error.code, Code::UnknownCircuit);
@@ -1654,6 +1096,6 @@ mod tests {
             started.elapsed().as_millis(),
             error.detail()
         );
-        assert!(registry.session().is_none());
+        assert!(registry.run().is_none());
     }
 }

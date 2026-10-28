@@ -1,6 +1,7 @@
 use crate::Host;
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 use vibe_logisim_runtime::simulation::{SimulationEvent, Subscription};
 /// Pushed to the window as `{topic, data}`.
@@ -9,8 +10,8 @@ use vibe_logisim_runtime::simulation::{SimulationEvent, Subscription};
 pub enum Event {
     /// `{sequence, event}` from the AI runtime.
     Agent(Value),
-    /// A run's session, frames and end, in order.
-    Simulation(SimulationEvent),
+    /// The run's start and whole state, then its frames and end, in order.
+    Simulation(Arc<SimulationEvent>),
     /// Snapshots may be stale; read them again.
     Resync(()),
     /// Open documents changed outside a window command (read again from
@@ -27,7 +28,7 @@ pub struct Events {
     initial: bool,
     stopping: watch::Receiver<bool>,
     events: broadcast::Receiver<Event>,
-    /// This listener's own frames: component deltas are per subscriber.
+    /// The run's events; each listener starts with its whole state.
     simulation: Option<Subscription>,
 }
 impl Host {

@@ -6,9 +6,18 @@
 import type { Request } from "../generated/Request.ts";
 import type { HostError } from "../generated/HostError.ts";
 import type { DocumentView } from "../generated/DocumentView.ts";
+import type { DocumentChange } from "../generated/DocumentChange.ts";
+import type { DocumentSummary } from "../generated/DocumentSummary.ts";
 import type { EditResult } from "../generated/EditResult.ts";
 
-export type { Request, HostError, DocumentView, EditResult };
+export type {
+  Request,
+  HostError,
+  DocumentView,
+  DocumentChange,
+  DocumentSummary,
+  EditResult,
+};
 
 /** The open folder (`vibe_circuit_document::Folder`); not exported by ts-rs. */
 export interface HostFolder {
@@ -17,9 +26,10 @@ export interface HostFolder {
   path: string;
   name: string;
 }
-/** What `{"op":"status"}` returns. */
+/** What `{"op":"status","summary":true}` returns; the sidecar never reads
+ * whole views through status. */
 export interface HostStatus {
-  documents: DocumentView[];
+  documents: DocumentSummary[];
   active: string | null;
   recoveryError: string | null;
   folder: HostFolder | null;

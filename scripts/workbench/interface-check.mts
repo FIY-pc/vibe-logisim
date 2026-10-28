@@ -5,7 +5,9 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { simulationClient } from "./simulation-client.mts";
+import { eventStream } from "./event-stream.mts";
+import { sameRun, simulationClient } from "./simulation-client.mts";
+import { documentViews } from "./document-views.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-interface-"));
 let child: ChildProcess | undefined;
@@ -20,9 +22,8 @@ const source = `<project source="2.7.1" version="1.0"><lib desc="#Wiring" name="
 <circuit name="main">${parent(100, "A")}${parent(260, "B")}</circuit>
 <circuit name="rotated">${pin(600, 450, "inR")}<comp name="child" loc="(600,300)"><a name="facing" val="north"/></comp>${pin(600, 200, "outR", true)}${wire("600,450", "600,360")}${wire("600,300", "600,200")}</circuit>
 <circuit name="child"><a name="appearance" val="custom"/><appear><rect x="30" y="40" width="60" height="20" fill="none" stroke="#000000" stroke-width="2"/><circ-port x="26" y="46" width="8" height="8" pin="100,100"/><circ-port x="85" y="45" width="10" height="10" pin="280,100"/><circ-anchor x="87" y="47" width="6" height="6" facing="east"/></appear>${pin(100, 100, "input")}<comp lib="1" name="NOT Gate" loc="(200,100)"><a name="width" val="4"/></comp>${pin(280, 100, "output", true)}${wire("100,100", "170,100")}${wire("200,100", "280,100")}</circuit></project>`;
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
@@ -97,8 +98,9 @@ try {
   };
   await simulate("main", { inA: 0, inB: 3 }, { outA: 15, outB: 12 });
   await simulate("rotated", { inR: 5 }, { outR: 10 });
-  const client = simulationClient(command);
-  const running = await client.started(doc, "main");
+  const events = await eventStream(url);
+  const client = simulationClient(command, events);
+  const running = await client.start(doc, "main");
   const noop = draft();
   const nochange = await preview(noop);
   assert.equal(nochange.changed, false);
@@ -144,11 +146,11 @@ try {
     1,
   );
   await unchanged();
-  assert.equal(
-    (await client.status()).state?.viewId,
-    running.viewId,
+  assert(
+    sameRun((await client.act({ kind: "pause" })).run, running),
     "Interface previews must not replace the live simulation",
   );
+  await events.close();
   const image = await command({
     op: "interfaceRender",
     ...scope(),

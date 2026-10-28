@@ -739,6 +739,18 @@ button.primary:active:where(:not(:disabled)) {
   touch-action: none;
   outline: none;
 }
+.canvas > svg,
+.canvas > canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.canvas > canvas,
+.canvas > .canvas-grid {
+  pointer-events: none;
+}
 .tool-wire {
   cursor: crosshair;
 }

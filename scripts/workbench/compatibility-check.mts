@@ -13,12 +13,17 @@ import {
   signalTrace,
   wireSignal,
 } from "../../apps/workbench/src/editor/connectivity.ts";
+import { applyDocumentChange } from "../../packages/agent-runtime/src/protocol/document-change.ts";
+import { eventStream } from "./event-stream.mts";
+import { sameRun, simulationClient } from "./simulation-client.mts";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-compatibility-"));
 let child: ChildProcess | undefined;
 let url = "",
   logs = "";
+let stream: Awaited<ReturnType<typeof eventStream>> | undefined;
+let client: ReturnType<typeof simulationClient>;
 const measurements: Record<string, number[]> = {};
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function measured<T>(name: string, work: () => Promise<T>): Promise<T> {
@@ -63,36 +68,9 @@ async function open(name: string, xml: string) {
   await writeFile(file, xml);
   return command({ op: "open", path: file });
 }
-/** Starts or reuses a circuit's run; the released version's start did both. */
-async function start(doc: any, circuit = "main") {
-  const result = await command({
-    op: "simulationAct",
-    documentId: doc.id,
-    revision: doc.revision,
-    target: { kind: "definition", circuit },
-    command: { kind: "start" },
-  });
-  assert(result.sessionId && result.viewId, JSON.stringify(result));
-  return {
-    sessionId: result.sessionId as string,
-    viewId: result.viewId as string,
-  };
-}
-/** Drives the run's current view. */
-const drive = (
-  doc: any,
-  run: { sessionId: string; viewId: string },
-  request: any,
-) =>
-  command({
-    op: "simulationAct",
-    documentId: doc.id,
-    revision: doc.revision,
-    target: { kind: "run", ...run },
-    command: request,
-  });
-const halt = (run: { sessionId: string }) =>
-  command({ op: "simulationStop", sessionId: run.sessionId });
+/** Ends the current run and starts one of the circuit. */
+const start = (doc: any, circuit = "main") => client.start(doc, circuit);
+const halt = () => client.stop();
 async function evaluate(doc: any, invert: boolean) {
   const result = await command({
     op: "simulate",
@@ -150,6 +128,8 @@ try {
     }
     assert(url, logs || "Host did not start");
   });
+  stream = await eventStream(url);
+  client = simulationClient(command, stream);
   const local = await open(
     "custom.circ",
     project(shell("inverter") + inverter("inverter")),
@@ -274,16 +254,12 @@ try {
     String(-Number(eastInput.attributes.x)),
     "Template preview ignored rotation attributes",
   );
-  const nestedRun = await start(local);
-  const nested = await command({
-    op: "simulationNavigate",
-    sessionId: nestedRun.sessionId,
-    instancePath: [
-      local.circuits[0].components.find((c: any) => c.name === "inverter").id,
-    ],
-  });
-  assert.equal(nested.circuit, "inverter", JSON.stringify(nested));
-  await halt(nestedRun);
+  await start(local);
+  const nested = await client.navigate([
+    local.circuits[0].components.find((c: any) => c.name === "inverter").id,
+  ]);
+  assert.equal(nested.frame?.circuit, "inverter");
+  await halt();
   assert.equal(
     await readFile(path.join(state, "custom.circ"), "utf8"),
     project(shell("inverter") + inverter("inverter")),
@@ -323,7 +299,8 @@ try {
   );
   await render(external);
   await evaluate(external, true);
-  await halt(await start(external));
+  await start(external);
+  await halt();
   const direct = await open(
     "direct.circ",
     project(
@@ -335,52 +312,27 @@ try {
   const directOutput = direct.circuits[0].components.find(
     (component: any) => component.attributes.label === "output",
   );
-  /** The output pin in the run's newest frame, or the first one after `after`. */
-  const outputValue = async (
-    run: { sessionId: string; viewId: string },
-    after = 0,
-  ) => {
-    for (let attempt = 0; attempt < 500; attempt++) {
-      const snapshot = await command({
-        op: "simulationSnapshot",
-        sessionId: run.sessionId,
-        componentIds: [directOutput.id],
-        trace: false,
-        memory: false,
-      });
-      if (snapshot.frame.commandSequence >= after)
-        return {
-          frameSequence: snapshot.frame.frameSequence as number,
-          bits: snapshot.frame.components
-            .find((item: any) => item.id === directOutput.id)
-            .ports.find((port: any) => port.index === 0).bits as string,
-        };
-      await sleep(10);
-    }
-    throw new Error(`no frame after command ${after}`);
-  };
   const originalSimulation = await start(direct);
   /** Drives the input low and keeps the frame it settled in. */
-  const settledOutput = async (run: { sessionId: string; viewId: string }) => {
-    const acknowledged = await drive(direct, run, {
+  const settledOutput = async () => {
+    await client.act({
       kind: "input",
       componentId: direct.circuits[0].components.find(
         (c: any) => c.attributes.label === "input",
       ).id,
       bits: "0",
     });
-    const output = await outputValue(run, acknowledged.commandSequence);
-    const captured = await command({
-      op: "observationCapture",
-      sessionId: run.sessionId,
-      viewId: run.viewId,
-      frameSequence: output.frameSequence,
-      title: "Synthetic library check",
-    });
-    assert.equal(captured.viewId, run.viewId);
-    return output.bits;
+    const bits = client.bits(directOutput.id);
+    const captured = await client.keep("Synthetic library check");
+    assert.equal(
+      captured.frame.components.find((c) => c.id === directOutput.id)?.ports[0]
+        .bits,
+      bits,
+      "A capture keeps the frame the page shows",
+    );
+    return bits;
   };
-  assert.equal(await settledOutput(originalSimulation), "1");
+  assert.equal(await settledOutput(), "1");
   const beforeLibraryChange = await command({
     op: "observe",
     ...scope(direct),
@@ -418,32 +370,24 @@ try {
     ),
   );
   await evaluate(direct, false);
-  const unchangedSimulation = (await command({ op: "simulationStatus" })).state;
-  assert.equal(unchangedSimulation.viewId, originalSimulation.viewId);
+  const unchangedSimulation = await client.act({ kind: "pause" });
+  assert(
+    sameRun(unchangedSimulation.run, originalSimulation),
+    "External checks replaced the run",
+  );
   assert.equal(
-    (await outputValue(originalSimulation)).bits,
+    client.bits(directOutput.id),
     "1",
-    "External checks reset the user's transient simulation",
+    "A run keeps the library it started with, whatever checks ran since",
   );
-  const reusedSimulation = await start(direct);
+  await halt();
+  await start(direct);
   assert.equal(
-    reusedSimulation.viewId,
-    originalSimulation.viewId,
-    "A start reuses the run of the same circuit and revision",
-  );
-  assert.equal(
-    (await outputValue(reusedSimulation)).bits,
-    "1",
-    "Reusing a run keeps the library it started with",
-  );
-  await halt(reusedSimulation);
-  const restartedSimulation = await start(direct);
-  assert.equal(
-    await settledOutput(restartedSimulation),
+    await settledOutput(),
     "0",
     "A new run must load the changed library",
   );
-  await halt(restartedSimulation);
+  await halt();
   await writeFile(
     path.join(state, "library", "leaf.circ"),
     project(inverter("inverter").replace('to="(170,100)"', 'to="(170,110)"')),
@@ -457,18 +401,13 @@ try {
     project(inverter("inverter")),
   );
   await evaluate(direct, true);
-  const stoppedAndStarted = await start(direct);
-  assert.notEqual(
-    stoppedAndStarted.viewId,
-    restartedSimulation.viewId,
-    "A start after a stop makes a new run",
-  );
+  await start(direct);
   assert.equal(
-    await settledOutput(stoppedAndStarted),
+    await settledOutput(),
     "1",
     "Stop/start retained the previous library",
   );
-  await halt(stoppedAndStarted);
+  await halt();
   const originalPath = path.join(state, "direct.circ");
   const originalBytes = await readFile(originalPath);
   await mkdir(path.join(state, "exported", "nested"), { recursive: true });
@@ -496,6 +435,101 @@ try {
   console.log(
     "Custom appearance, local subcircuit navigation, relative and nested external libraries: passed",
   );
+
+  // The worker applies each new revision to the project it holds. After
+  // edits of every kind, including pins of a subcircuit whose instances
+  // follow them, it observes exactly what a whole load of the file does.
+  const pair = `<circuit name="pair">${pin(100, 100, "a")}<comp lib="1" name="NOT Gate" loc="(200,100)"/>${pin(280, 100, "y", true)}${wire(100, 100, 170, 100)}${wire(200, 100, 280, 100)}</circuit>`;
+  let live = await open(
+    "revisions.circ",
+    project(
+      `<circuit name="main">${pin(100, 100, "input")}<comp name="pair" loc="(300,100)"/><comp name="pair" loc="(300,300)"/><comp name="inverter" loc="(300,500)"/><comp lib="1" name="NOT Gate" loc="(500,100)"/>${pin(600, 100, "output", true)}${wire(100, 100, 240, 100)}${wire(300, 100, 470, 100)}${wire(500, 100, 600, 100)}</circuit>` +
+        pair +
+        inverter("inverter"),
+    ),
+  );
+  const part = (circuit: string, name: string) =>
+    live.circuits
+      .find((c: any) => c.name === circuit)
+      .components.find(
+        (c: any) => c.name === name || c.attributes.label === name,
+      ).id;
+  const observeAll = async () => {
+    const result: Record<string, any> = {};
+    for (const circuit of ["main", "pair", "inverter"]) {
+      const observed = await command({
+        op: "observe",
+        ...scope(live, circuit),
+      });
+      // Text is measured once per loaded project, which can widen the
+      // bounds other circuits report; the rest must match.
+      for (const summary of observed.project.circuits) delete summary.bounds;
+      result[circuit] = observed;
+    }
+    return result;
+  };
+  const step = async (circuit: string, edit: any) => {
+    const { change } = await command({
+      op: "edit",
+      ...scope(live, circuit),
+      edit,
+    });
+    live = applyDocumentChange(live, change)!;
+    await observeAll();
+  };
+  await observeAll();
+  await step("inverter", {
+    kind: "attributes",
+    id: part("inverter", "input"),
+    values: { label: "in" },
+  });
+  await step("main", {
+    kind: "move",
+    ids: [part("main", "NOT Gate")],
+    delta: { x: 10, y: 0 },
+  });
+  await step("main", {
+    kind: "wire",
+    points: [
+      { x: 700, y: 200 },
+      { x: 760, y: 200 },
+    ],
+  });
+  await step("main", {
+    kind: "place",
+    name: "NOT Gate",
+    library: "1",
+    location: { x: 800, y: 300 },
+    attributes: { label: "extra" },
+  });
+  await step("main", { kind: "delete", ids: [part("main", "output")] });
+  await step("pair", {
+    kind: "place",
+    name: "Pin",
+    library: "0",
+    location: { x: 100, y: 200 },
+    attributes: { label: "b" },
+  });
+  await step("pair", { kind: "delete", ids: [part("pair", "a")] });
+  for (const verb of ["undo", "undo", "redo"]) {
+    const { change } = await command({
+      op: verb,
+      id: live.id,
+      revision: live.revision,
+    });
+    live = applyDocumentChange(live, change)!;
+  }
+  const applied = await observeAll();
+  // Three unrelated files take the worker's places; the same revision then loads whole.
+  for (let n = 0; n < 3; n++) {
+    const other = await open(
+      `unrelated-${n}.circ`,
+      project(`<circuit name="main">${pin(100, 100, `x${n}`)}</circuit>`),
+    );
+    await command({ op: "observe", ...scope(other) });
+  }
+  assert.deepEqual(await observeAll(), applied);
+  console.log("Revisions applied in place observe like a whole load: passed");
 
   const columns = 32,
     rows = 32;
@@ -533,20 +567,19 @@ try {
     );
   for (let i = 0; i < 5; i++)
     await measured("large_viewport_render_1200x800", () => render(large));
-  const run = await measured("large_simulation_start", () => start(large));
+  await measured("large_simulation_start", () => start(large));
   const input = large.circuits[0].components.find(
     (c: any) => c.attributes.label === "in_0",
   );
   for (let i = 0; i < 5; i++)
     await measured("large_input_ack", () =>
-      drive(large, run, {
+      client.send({
         kind: "input",
         componentId: input.id,
         bits: String(i % 2),
       }),
     );
-  assert(run.sessionId);
-  await halt(run);
+  await halt();
   console.log(
     JSON.stringify(
       {
@@ -570,6 +603,7 @@ try {
     ),
   );
 } finally {
+  await stream?.close();
   if (child && child.exitCode === null) {
     const stopped = once(child, "exit");
     if (process.platform === "win32") {

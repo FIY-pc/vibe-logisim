@@ -5,7 +5,9 @@ import { once } from "node:events";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { simulationClient } from "./simulation-client.mts";
+import { eventStream } from "./event-stream.mts";
+import { sameRun, simulationClient } from "./simulation-client.mts";
+import { documentViews } from "./document-views.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-history-"));
 let child: ChildProcess | undefined,
@@ -58,9 +60,8 @@ async function stop() {
   } else child.kill();
   await exited;
 }
-/** Edits, undo and redo answer with an edit result; scripts work with the view. */
-const documentOf = (result: any) =>
-  result && result.view ? result.view : result;
+/** Edits, undo and redo answer with what they changed; scripts work with whole views. */
+const documentOf = documentViews();
 async function command(request: any) {
   const response = await fetch(url + "/api/command", {
     method: "POST",
@@ -87,8 +88,9 @@ try {
   assert.equal(list.entries[0].baseline, true);
   assert.equal(list.entries[0].saved, true);
   const baseline = list.entries[0].id;
-  const client = simulationClient(command);
-  const live = await client.started(doc, "child");
+  const events = await eventStream(url);
+  const client = simulationClient(command, events);
+  const live = await client.start(doc, "child");
   const xml = source
     .replace(/<comp lib="1" name="NOT Gate".*?<\/comp>/, " ")
     .replace(
@@ -103,7 +105,11 @@ try {
   });
   assert.equal(originalRun.passed, 1);
   assert.equal((await command({ op: "read", id: doc.id })).revision, initial);
-  assert.equal((await client.status()).state?.viewId, live.viewId);
+  assert(
+    sameRun((await client.act({ kind: "pause" })).run, live),
+    "A check replaced the run",
+  );
+  await events.close();
   assert.equal(await readFile(file, "utf8"), source);
   doc = await command({
     op: "edit",

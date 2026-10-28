@@ -1,12 +1,40 @@
+import type { ComponentState } from "../generated/ComponentState";
+import type { LiveComponent } from "../generated/LiveComponent";
 import type { PortState } from "../generated/PortState";
 import type { Signal } from "../generated/Signal";
 import type { TraceDelta } from "../generated/TraceDelta";
-import type { Bounds } from "../shared/types";
 
-/** A view of the run: the instance the canvas shows while it shows the run. */
-export interface Displayed {
-  sessionId: string;
-  viewId: string;
+/** A frame value in Logisim's long form: digits grouped by four, the number
+ * when every bit is defined. `-` is a port without width. */
+export function signalOf(bits: string): Signal {
+  if (bits === "-") return { width: 0, bits };
+  const width = bits.length;
+  let grouped = "";
+  for (let index = 0; index < width; index++) {
+    if (index > 0 && (width - index) % 4 === 0) grouped += " ";
+    grouped += bits[index];
+  }
+  return width <= 32 && /^[01]+$/.test(bits)
+    ? { width, bits: grouped, value: Number.parseInt(bits, 2) }
+    : { width, bits: grouped };
+}
+
+/** A component of a frame in the long form the inspector reads. */
+export function componentState(
+  id: string,
+  component: LiveComponent,
+): ComponentState {
+  return {
+    id,
+    ...(component.control ? { control: component.control } : {}),
+    ...(component.input === undefined
+      ? {}
+      : { input: signalOf(component.input) }),
+    ports: component.ports.map((bits, index) => ({
+      index,
+      ...signalOf(bits),
+    })),
+  };
 }
 
 /** A waveform delta applied to the kept samples: a new id starts over, a full
@@ -44,26 +72,4 @@ export function formatSignal(port: PortState | Signal | undefined): string {
         .toString(16)
         .toUpperCase()
         .padStart(Math.ceil(port.width / 4), "0")}`;
-}
-
-/** The region and scale a run should draw for the canvas viewport, so the
- * picture stays sharp at any zoom without exceeding the runtime's budget. */
-export function liveViewport(
-  view: { x: number; y: number; scale: number },
-  size: { width: number; height: number },
-): Bounds & { scale: number } {
-  const ratio = Math.min(window.devicePixelRatio || 1, 3);
-  const margin = 64 / view.scale;
-  const x = Math.floor(view.x - margin);
-  const y = Math.floor(view.y - margin);
-  const width = Math.ceil(size.width / view.scale + 2 * margin) + 1;
-  const height = Math.ceil(size.height / view.scale + 2 * margin) + 1;
-  const scale = Math.min(
-    view.scale * ratio,
-    32,
-    4095 / width,
-    4095 / height,
-    Math.sqrt(7_900_000 / (width * height)),
-  );
-  return { x, y, width, height, scale };
 }

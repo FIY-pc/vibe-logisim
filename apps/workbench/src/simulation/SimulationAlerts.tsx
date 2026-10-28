@@ -1,19 +1,18 @@
-import { liveRun } from "./store";
+import { live } from "./store";
 import { useSimulationState, useView } from "../app/hooks";
 
 /** The shown simulation's failure and oscillation alerts. */
 export function SimulationAlerts() {
-  const view = useView();
-  const state = useSimulationState();
-  const live = liveRun(state, view.doc, view.circuit?.name);
+  const shown = live(useSimulationState(), useView());
+  const clock = shown?.frame.clock;
   return (
     <>
-      {live?.view.clock.failure && (
+      {clock?.failure && (
         <p className="dialog-error" role="alert">
-          {live.view.clock.failure.message}
+          {clock.failure.message}
         </p>
       )}
-      {live?.view.clock.oscillating && (
+      {clock?.oscillating && (
         <p className="dialog-error" role="alert">
           电路发生振荡，时钟已暂停
         </p>

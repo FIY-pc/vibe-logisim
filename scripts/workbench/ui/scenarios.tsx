@@ -14,6 +14,7 @@ import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { App } from "../../../apps/workbench/src/App";
 import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
+import { recordWidthErrors } from "../../../apps/workbench/src/editor/symbols";
 import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
 import { ShortcutSettings } from "../../../apps/workbench/src/shell/ShortcutSettings";
 import {
@@ -42,9 +43,7 @@ const calls: any[] = [];
 const subscribers = new Set<any>();
 let sequence = 0,
   runtimeDoc = "A",
-  askGate: any = null,
-  navGate: any = null;
-(globalThis as any).__simState = null;
+  askGate: any = null;
 const defer = () => {
   let resolve: any;
   const promise = new Promise((r) => (resolve = r));
@@ -69,6 +68,14 @@ const doc = (id: string) => ({
     id === "B"
       ? [circuit("B-main"), circuit("ancestor")]
       : [circuit("main"), circuit("ancestor")],
+});
+/** What an edit of `d` from revision `base` reports: its fields, every
+ * circuit name, and no changed circuit. */
+const change = (d: any, base: string) => ({
+  ...d,
+  base,
+  order: d.circuits.map((c: any) => c.name),
+  circuits: [],
 });
 const state = () => ({
   eventCursor: sequence,
@@ -136,7 +143,7 @@ const state = () => ({
     };
   if (request.op === "sourceStatus") return { state: "unchanged" };
   if (request.op === "catalog") return { children: [] };
-  if (request.op === "observe")
+  if (request.op === "observe" || request.op === "connections")
     return { focus: observedFocus || { components: [] } };
   if (request.op === "template" && templateHandler)
     return templateHandler(request);
@@ -153,22 +160,6 @@ const state = () => ({
         },
       ],
     };
-  if (request.op === "render")
-    return {
-      image:
-        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-    };
-  if (request.op === "simulationFrameImage")
-    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-  if (request.op === "simulationNavigate") {
-    if (navGate) return navGate.promise;
-    const child = request.instancePath.length > 0;
-    return {
-      viewId: child ? "view-child" : "view",
-      circuit: child ? "child" : "main",
-      instancePath: request.instancePath,
-    };
-  }
   return null;
 };
 const emit = (event: any) => {
@@ -206,7 +197,6 @@ const input = async (value: string) => {
   });
 };
 const errors: any[] = [];
-let stales = 0;
 const changed: any[] = [];
 const chat = (d: any, visible = true) => (
   <Workbench>
@@ -255,7 +245,7 @@ await render(chat(doc("A"), false));
 await act(async () => {
   agent({
     type: "document-changed",
-    document: { ...doc("A"), revision: "r2" },
+    change: change({ ...doc("A"), revision: "r2" }, "r1"),
   });
 });
 assert.equal(changed.at(-1).revision, "r2");
@@ -300,7 +290,7 @@ await click(
 await act(async () =>
   agent({
     type: "document-changed",
-    document: { ...doc("A"), revision: "r2", dirty: true },
+    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r1"),
   }),
 );
 assert.ok(document.querySelector(".file-title .dirty-dot"));
@@ -326,13 +316,16 @@ const saveTransport = (globalThis as any).__command;
 await act(async () =>
   agent({
     type: "document-changed",
-    document: {
-      ...doc("A"),
-      revision: "r2",
-      path: "/fixture/A.circ",
-      dirty: true,
-      saveError: "磁盘暂不可写",
-    },
+    change: change(
+      {
+        ...doc("A"),
+        revision: "r2",
+        path: "/fixture/A.circ",
+        dirty: true,
+        saveError: "磁盘暂不可写",
+      },
+      "r1",
+    ),
   }),
 );
 assert(
@@ -379,8 +372,7 @@ await clickMenuItem("保存");
 await act(async () =>
   agent({
     type: "document-changed",
-    expectedBaseRevision: "r2",
-    document: latestMutationDocument,
+    change: change(latestMutationDocument, "r2"),
   }),
 );
 await act(async () => {
@@ -408,8 +400,10 @@ assert.equal(
 await act(async () =>
   agent({
     type: "document-changed",
-    expectedBaseRevision: "r2",
-    document: { ...doc("A"), revision: "r-delayed-agent", dirty: false },
+    change: change(
+      { ...doc("A"), revision: "r-delayed-agent", dirty: false },
+      "r2",
+    ),
   }),
 );
 await settle();
@@ -423,90 +417,11 @@ assert(document.querySelector(".file-title .dirty-dot"));
 await act(async () =>
   agent({
     type: "document-changed",
-    document: { ...doc("A"), revision: "r2", dirty: true },
+    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r3"),
   }),
 );
 console.log(
   "PASS: late save and agent mutation results refresh current status without overwriting newer document state",
-);
-const simSession = {
-  sessionId: "sim",
-  documentId: "A",
-  documentName: "A.circ",
-  documentPath: null,
-  revision: "r2",
-  rootCircuit: "main",
-  runtime: "current",
-  startedAt: 0,
-};
-const simClock = {
-  ticks: 0,
-  running: false,
-  automatic: true,
-  pending: false,
-  frequency: 2,
-  actualFrequency: 0,
-  oscillating: false,
-};
-const simImage = {
-  width: 1,
-  height: 1,
-  bounds: { x: 0, y: 0, width: 1, height: 1 },
-  scale: 1,
-};
-const simState = (
-  viewId: string,
-  circuit: string,
-  instancePath: string[],
-  frameSequence: number,
-) => ({
-  kind: "state",
-  ...simSession,
-  viewId,
-  circuit,
-  instancePath,
-  frameSequence,
-  commandSequence: frameSequence,
-  clock: simClock,
-  components: { full: true, items: [] },
-  image: simImage,
-  timing: { captureMs: 0, encodeMs: 0 },
-});
-await act(async () => {
-  emit({ topic: "simulation", data: { kind: "session", session: simSession } });
-  emit({
-    topic: "simulation",
-    data: simState("view", "main", [], 1),
-  });
-});
-await settle();
-// The run enters an instance while the user stays on the root circuit, then
-// switches document with the navigation back to the root still in flight.
-navGate = defer();
-await act(async () =>
-  emit({
-    topic: "simulation",
-    data: simState("view-child", "child", ["child"], 2),
-  }),
-);
-await settle();
-await click(
-  [...document.querySelectorAll(".document-item")].find((n) =>
-    n.textContent?.includes("B.circ"),
-  )!,
-);
-await act(async () => {
-  navGate.resolve({ viewId: "late", circuit: "ancestor", instancePath: [] });
-  await navGate.promise;
-});
-await settle();
-navGate = null;
-assert.equal(
-  document.querySelector(".breadcrumbs strong")!.textContent,
-  "B-main",
-);
-console.log(
-  "PASS: late simulation navigation does not change the newly active document circuit",
 );
 const appKey = async (key: string, extra: KeyboardEventInit = {}) =>
   act(async () =>
@@ -569,7 +484,7 @@ await settle();
 assert.ok(
   calls
     .slice(beforeClock)
-    .some((c) => c.op === "simulationAct" && c.command?.kind === "start"),
+    .some((c) => c.op === "simulationStart" && c.circuit === "ancestor"),
 );
 console.log("PASS: the clock shortcut starts a run of the shown circuit");
 
@@ -659,7 +574,9 @@ await settle();
 assert.equal(statusReads, 3);
 const changedC = { ...doc("C"), revision: "r-new", dirty: true };
 auditDocs = auditDocs.map((d) => (d.id === "C" ? changedC : d));
-await act(async () => agent({ type: "document-changed", document: changedC }));
+await act(async () =>
+  agent({ type: "document-changed", change: change(changedC, "r1") }),
+);
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 auditStatusGate = null;
 await act(async () => {
@@ -731,76 +648,51 @@ const canvas = (d: any) => (
       edits.push(e);
     }}
     run={null}
-    picture={null}
+    live={null}
     pending={[]}
     pressed={null}
     onPoke={() => {}}
     onPress={() => {}}
     onRelease={() => {}}
-    onViewport={() => {}}
     onError={(e: any) => errors.push(e)}
-    onStale={() => stales++}
     fitToken={0}
     onOpenMemory={() => {}}
     onEnterCircuit={() => {}}
   />
 );
 await render(canvas(cd));
-const canvasEl = document.querySelector(".canvas")!;
+// Points at circuit (x, 100) through the view the canvas shows (600px wide).
 const pointer = async (type: string, x: number) => {
+  const [vx, vy, vw] = document
+    .querySelector(".canvas svg[viewBox]")!
+    .getAttribute("viewBox")!
+    .split(" ")
+    .map(Number);
+  const scale = 600 / vw;
   await act(async () =>
     document.querySelector(".canvas")!.dispatchEvent(
       new MouseEvent(type, {
         bubbles: true,
         button: 0,
-        clientX: x,
-        clientY: 140,
+        clientX: (x - vx) * scale,
+        clientY: (100 - vy) * scale,
       }),
     ),
   );
 };
-await pointer("pointerdown", 140);
-await pointer("pointermove", 160);
-await pointer("pointerup", 160);
+await pointer("pointerdown", 100);
+await pointer("pointermove", 120);
+await pointer("pointerup", 120);
 assert.equal(edits.length, 1);
 assert.equal(edits[0].kind, "move");
 edits = [];
-await pointer("pointerdown", 140);
-await pointer("pointermove", 160);
+await pointer("pointerdown", 100);
+await pointer("pointermove", 120);
 await render(canvas({ ...cd, revision: "r2" }));
-await pointer("pointerup", 160);
+await pointer("pointerup", 120);
 assert.equal(edits.length, 0);
 console.log(
   "PASS: revision change cancels in-flight canvas drag instead of editing new revision",
-);
-
-// A picture or connection read refused as stale re-reads the workspace instead of raising an error.
-const hostBeforeStale = (globalThis as any).__command;
-(globalThis as any).__command = async (request: any) => {
-  if (
-    (request.op === "render" || request.op === "observe") &&
-    request.revision === "r3"
-  )
-    throw {
-      code: "STALE_REVISION",
-      message: "电路已改变，请重新读取后再修改",
-      retryable: false,
-    };
-  return hostBeforeStale(request);
-};
-const errorsBeforeStale = errors.length,
-  stalesBefore = stales;
-await render(canvas({ ...cd, revision: "r3" }));
-// The picture waits up to 80 ms for the view to settle; the connections follow it.
-await act(async () => {
-  await new Promise((r) => setTimeout(r, 150));
-});
-await settle();
-assert.equal(errors.length, errorsBeforeStale);
-assert.ok(stales > stalesBefore);
-(globalThis as any).__command = hostBeforeStale;
-console.log(
-  "PASS: stale picture and connection reads re-read the workspace instead of raising an error",
 );
 
 // Native template requests and placement commits must carry the same facing.
@@ -834,15 +726,13 @@ function PlacementHarness({ token }: { token: number }) {
         edits.push(e);
       }}
       run={null}
-      picture={null}
+      live={null}
       pending={[]}
       pressed={null}
       onPoke={() => {}}
       onPress={() => {}}
       onRelease={() => {}}
-      onViewport={() => {}}
       onError={(e) => errors.push(e)}
-      onStale={() => stales++}
       fitToken={0}
       onOpenMemory={() => {}}
       onEnterCircuit={() => {}}
@@ -937,15 +827,13 @@ function QueueHarness() {
           throw new Error("Unexpected structural edit before placement");
         }}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
-        onStale={() => stales++}
         fitToken={0}
         onOpenMemory={() => {}}
         onEnterCircuit={() => {}}
@@ -1154,15 +1042,13 @@ function TraceHarness() {
           edits.push(e);
         }}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
-        onStale={() => stales++}
         fitToken={0}
         onOpenMemory={() => {}}
         onEnterCircuit={() => {}}
@@ -1212,6 +1098,102 @@ observedFocus = null;
 console.log(
   "PASS: Ctrl-click uses native bit connectivity without wiring, Alt-left restores camera and selection",
 );
+{
+  // Pictures and connections the host refuses as stale re-read the workspace.
+  const host = (globalThis as any).__command;
+  const refused: string[] = [];
+  let stales = 0;
+  (globalThis as any).__command = async (request: any) => {
+    if (
+      (request.op === "symbols" || request.op === "connections") &&
+      request.revision === "r3"
+    ) {
+      refused.push(request.op);
+      throw {
+        code: "STALE_REVISION",
+        message: "电路已改变，请重新读取后再修改",
+        retryable: false,
+      };
+    }
+    return host(request);
+  };
+  // Read from the workspace: no edit reported its width conflicts.
+  const staleDoc = {
+    ...cd,
+    revision: "r3",
+    circuits: cd.circuits.map((c: any) => ({ ...c })),
+  };
+  const reported = errors.length;
+  function StaleHarness() {
+    const [selection, setSelection] = useState<string[]>([]);
+    return (
+      <Canvas
+        doc={staleDoc as any}
+        circuit={staleDoc.circuits[0]}
+        tool="select"
+        selection={selection}
+        setSelection={setSelection}
+        place={null}
+        placement={noPlacement}
+        onPlace={async () => staleDoc as any}
+        onCancelPlace={() => {}}
+        edit={async () => {}}
+        run={null}
+        live={null}
+        pending={[]}
+        pressed={null}
+        onPoke={() => {}}
+        onPress={() => {}}
+        onRelease={() => {}}
+        onError={(e) => errors.push(e)}
+        onStale={() => stales++}
+        fitToken={0}
+        onOpenMemory={() => {}}
+        onEnterCircuit={() => {}}
+      />
+    );
+  }
+  await render(<StaleHarness />);
+  await pointer("pointerdown", 100);
+  await pointer("pointerup", 100);
+  await settle();
+  assert.deepEqual(refused, ["symbols", "connections"]);
+  assert.equal(stales, 2);
+  assert.equal(errors.length, reported, "a stale read is not an error");
+  (globalThis as any).__command = host;
+  console.log(
+    "PASS: a picture or connection read refused as stale re-reads the workspace instead of reporting an error",
+  );
+}
+{
+  // An edit answers with the width conflicts of the circuits it changed, so
+  // the canvas draws the new revision without another request; a circuit
+  // read from the workspace asks once.
+  const host = (globalThis as any).__command;
+  const asked: string[] = [];
+  (globalThis as any).__command = async (request: any) => {
+    if (request.op === "symbols") asked.push(request.revision);
+    return host(request);
+  };
+  const read = {
+    ...cd,
+    revision: "w1",
+    circuits: cd.circuits.map((c: any) => ({ ...c })),
+  };
+  await render(canvas(read));
+  const edited = {
+    ...cd,
+    revision: "w2",
+    circuits: read.circuits.map((c: any) => ({ ...c, wires: [...c.wires] })),
+  };
+  recordWidthErrors(edited.circuits, { main: [[100, 100]] });
+  await render(canvas(edited));
+  assert.deepEqual(asked, ["w1"]);
+  (globalThis as any).__command = host;
+  console.log(
+    "PASS: an edit's answer brings its width conflicts; the canvas sends no request for the new revision",
+  );
+}
 assert.equal(loadBindings({ palette: "a" }).palette, "A");
 assert.match(bindingProblem("grid", "Mod+S", defaultBindings)!, /保存/);
 assert.match(bindingProblem("grid", "Mod+Shift+S", defaultBindings)!, /另存为/);

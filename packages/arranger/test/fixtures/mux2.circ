@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <lib desc="#Gates" name="1"/>
+  <lib desc="#Plexers" name="2"/>
+  <lib desc="#Arithmetic" name="3"/>
+  <lib desc="#Memory" name="4"/>
+  <lib desc="#I/O" name="5"/>
+  <main name="main"/>
+  <options/>
+  <mappings/>
+  <toolbar/>
+  <circuit name="main">
+    <a name="circuit" val="main"/>
+    <comp lib="0" loc="(100,100)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="A"/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="labelloc" val="north"/>
+      <a name="output" val="false"/>
+      <a name="pull" val="none"/>
+      <a name="tristate" val="true"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="0" loc="(100,200)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="B"/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="labelloc" val="north"/>
+      <a name="output" val="false"/>
+      <a name="pull" val="none"/>
+      <a name="tristate" val="true"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="0" loc="(100,300)" name="Pin">
+      <a name="facing" val="east"/>
+      <a name="label" val="S"/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="labelloc" val="north"/>
+      <a name="output" val="false"/>
+      <a name="pull" val="none"/>
+      <a name="tristate" val="true"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="1" loc="(200,300)" name="NOT Gate">
+      <a name="facing" val="east"/>
+      <a name="label" val=""/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="out" val="01"/>
+      <a name="size" val="20"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="1" loc="(320,120)" name="AND Gate">
+      <a name="facing" val="east"/>
+      <a name="inputs" val="2"/>
+      <a name="label" val=""/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="negate0" val="false"/>
+      <a name="negate1" val="false"/>
+      <a name="out" val="01"/>
+      <a name="size" val="30"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="1" loc="(320,220)" name="AND Gate">
+      <a name="facing" val="east"/>
+      <a name="inputs" val="2"/>
+      <a name="label" val=""/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="negate0" val="false"/>
+      <a name="negate1" val="false"/>
+      <a name="out" val="01"/>
+      <a name="size" val="30"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="1" loc="(440,170)" name="OR Gate">
+      <a name="facing" val="east"/>
+      <a name="inputs" val="2"/>
+      <a name="label" val=""/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="negate0" val="false"/>
+      <a name="negate1" val="false"/>
+      <a name="out" val="01"/>
+      <a name="size" val="30"/>
+      <a name="width" val="1"/>
+    </comp>
+    <comp lib="0" loc="(540,170)" name="Pin">
+      <a name="facing" val="west"/>
+      <a name="label" val="Y"/>
+      <a name="labelcolor" val="#000000"/>
+      <a name="labelfont" val="Dialog plain 12"/>
+      <a name="labelloc" val="north"/>
+      <a name="output" val="true"/>
+      <a name="pull" val="none"/>
+      <a name="tristate" val="true"/>
+      <a name="width" val="1"/>
+    </comp>
+    <wire from="(100,100)" to="(280,100)"/>
+    <wire from="(280,100)" to="(280,110)"/>
+    <wire from="(280,110)" to="(290,110)"/>
+    <wire from="(100,300)" to="(170,300)"/>
+    <wire from="(170,300)" to="(180,300)"/>
+    <wire from="(200,300)" to="(280,300)"/>
+    <wire from="(280,300)" to="(280,130)"/>
+    <wire from="(280,130)" to="(290,130)"/>
+    <wire from="(100,200)" to="(270,200)"/>
+    <wire from="(270,200)" to="(270,210)"/>
+    <wire from="(270,210)" to="(290,210)"/>
+    <wire from="(170,300)" to="(170,230)"/>
+    <wire from="(170,230)" to="(290,230)"/>
+    <wire from="(320,120)" to="(400,120)"/>
+    <wire from="(400,120)" to="(400,160)"/>
+    <wire from="(400,160)" to="(410,160)"/>
+    <wire from="(320,220)" to="(400,220)"/>
+    <wire from="(400,220)" to="(400,180)"/>
+    <wire from="(400,180)" to="(410,180)"/>
+    <wire from="(440,170)" to="(540,170)"/>
+  </circuit>
+</project>
