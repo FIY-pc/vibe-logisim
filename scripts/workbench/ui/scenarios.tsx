@@ -43,9 +43,7 @@ const calls: any[] = [];
 const subscribers = new Set<any>();
 let sequence = 0,
   runtimeDoc = "A",
-  askGate: any = null,
-  navGate: any = null;
-(globalThis as any).__simState = null;
+  askGate: any = null;
 const defer = () => {
   let resolve: any;
   const promise = new Promise((r) => (resolve = r));
@@ -162,15 +160,6 @@ const state = () => ({
         },
       ],
     };
-  if (request.op === "simulationNavigate") {
-    if (navGate) return navGate.promise;
-    const child = request.instancePath.length > 0;
-    return {
-      viewId: child ? "view-child" : "view",
-      circuit: child ? "child" : "main",
-      instancePath: request.instancePath,
-    };
-  }
   return null;
 };
 const emit = (event: any) => {
@@ -434,86 +423,6 @@ await act(async () =>
 console.log(
   "PASS: late save and agent mutation results refresh current status without overwriting newer document state",
 );
-const simSession = {
-  sessionId: "sim",
-  documentId: "A",
-  documentName: "A.circ",
-  documentPath: null,
-  revision: "r2",
-  rootCircuit: "main",
-  runtime: "current",
-  startedAt: 0,
-};
-const simClock = {
-  ticks: 0,
-  running: false,
-  automatic: true,
-  pending: false,
-  frequency: 2,
-  actualFrequency: 0,
-  oscillating: false,
-};
-const simState = (
-  viewId: string,
-  circuit: string,
-  instancePath: string[],
-  frameSequence: number,
-) => ({
-  kind: "state",
-  ...simSession,
-  viewId,
-  circuit,
-  instancePath,
-  frameSequence,
-  commandSequence: frameSequence,
-  clock: simClock,
-  components: { full: true, items: [] },
-  paint: {
-    full: true,
-    wires: {},
-    dots: {},
-    ops: [],
-    lists: [],
-    components: {},
-  },
-  timing: { captureMs: 0, encodeMs: 0 },
-});
-await act(async () => {
-  emit({ topic: "simulation", data: { kind: "session", session: simSession } });
-  emit({
-    topic: "simulation",
-    data: simState("view", "main", [], 1),
-  });
-});
-await settle();
-// The run enters an instance while the user stays on the root circuit, then
-// switches document with the navigation back to the root still in flight.
-navGate = defer();
-await act(async () =>
-  emit({
-    topic: "simulation",
-    data: simState("view-child", "child", ["child"], 2),
-  }),
-);
-await settle();
-await click(
-  [...document.querySelectorAll(".document-item")].find((n) =>
-    n.textContent?.includes("B.circ"),
-  )!,
-);
-await act(async () => {
-  navGate.resolve({ viewId: "late", circuit: "ancestor", instancePath: [] });
-  await navGate.promise;
-});
-await settle();
-navGate = null;
-assert.equal(
-  document.querySelector(".breadcrumbs strong")!.textContent,
-  "B-main",
-);
-console.log(
-  "PASS: late simulation navigation does not change the newly active document circuit",
-);
 const appKey = async (key: string, extra: KeyboardEventInit = {}) =>
   act(async () =>
     document.body.dispatchEvent(
@@ -575,7 +484,7 @@ await settle();
 assert.ok(
   calls
     .slice(beforeClock)
-    .some((c) => c.op === "simulationAct" && c.command?.kind === "start"),
+    .some((c) => c.op === "simulationStart" && c.circuit === "ancestor"),
 );
 console.log("PASS: the clock shortcut starts a run of the shown circuit");
 

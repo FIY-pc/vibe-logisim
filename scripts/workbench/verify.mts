@@ -10,6 +10,7 @@ import { eventStream } from "./event-stream.mts";
 import { verifySimulation } from "./simulation-scenarios.mts";
 import { verifyEditing } from "./editing-scenarios.mts";
 import { verifySimulationPaint } from "./paint-scenarios.mts";
+import { sameRun, simulationClient } from "./simulation-client.mts";
 import { placeTwoParts, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 import { documentViews } from "./document-views.mts";
@@ -201,34 +202,14 @@ try {
     (await command({ op: "read", id: doc.id })).revision,
     beforeInvalid,
   );
-  const started = await command({
-    op: "simulationAct",
-    documentId: doc.id,
-    revision: doc.revision,
-    target: { kind: "definition", circuit: "main" },
-    command: { kind: "start" },
-  });
-  const live = { sessionId: started.sessionId, viewId: started.viewId };
-  await command({
-    op: "simulationAct",
-    documentId: doc.id,
-    revision: doc.revision,
-    target: { kind: "run", ...live },
-    command: { kind: "input", componentId: input.id, bits: "1" },
-  });
-  const frame = (
-    await stream!.wait(
-      (e) =>
-        e.topic === "simulation" &&
-        e.data?.kind === "state" &&
-        e.data.sessionId === started.sessionId &&
-        e.data.components?.items?.some(
-          (item: any) =>
-            item.id === output.id &&
-            item.ports.some((port: any) => port.bits === "0"),
-        ),
-    )
-  ).data;
+  const client = simulationClient(command, stream!);
+  const run = await client.start(doc, "main");
+  await client.act({ kind: "input", componentId: input.id, bits: "1" });
+  assert.equal(
+    client.bits(output.id),
+    "0",
+    JSON.stringify(client.mirror().components[output.id]),
+  );
   const verify = (vectors: any[]) =>
     command({
       op: "simulate",
@@ -254,33 +235,18 @@ try {
     1,
     "Native rejection must not poison the next verification",
   );
-  const stillLive = await command({ op: "simulationStatus" });
-  assert.equal(
-    stillLive.state.viewId,
-    started.viewId,
+  // Checks run in their own process: the run and its input stay.
+  const afterChecks = await client.act({ kind: "pause" });
+  assert(
+    sameRun(afterChecks.run, run),
     "Verification replaced the user live session",
   );
-  const kept = await command({
-    op: "simulationSnapshot",
-    sessionId: started.sessionId,
-    componentIds: [output.id],
-    trace: false,
-    memory: false,
-  });
-  const outputState = kept.frame.components.find(
-    (item: any) => item.id === output.id,
-  );
-  assert(
-    outputState?.ports.some((port: any) => port.bits === "0"),
+  assert.equal(
+    client.bits(output.id),
+    "0",
     "Verification modified the user input state",
   );
   assert.equal(await readFile(source, "utf8"), saved);
-  assert(
-    frame.components.items
-      .find((item: any) => item.id === output.id)
-      .ports.some((port: any) => port.bits === "0"),
-    JSON.stringify(frame.components),
-  );
   assert.equal(
     (await command({ op: "read", id: doc.id })).revision,
     doc.revision,
@@ -351,22 +317,18 @@ try {
   await assert.rejects(() =>
     command({ op: "close", id, revision: reloaded.revision, discard: true }),
   );
-  await command({
-    op: "simulationAct",
-    documentId: id,
-    revision: undoReload.revision,
-    target: { kind: "definition", circuit: "main" },
-    command: { kind: "start" },
-  });
+  const closing = simulationClient(command, stream!);
+  await closing.start(undoReload, "main");
   await command({
     op: "close",
     id,
     revision: undoReload.revision,
     discard: true,
   });
-  assert.equal((await command({ op: "simulationStatus" })).session, null);
-  await stream!.wait(
-    (e) => e.topic === "simulation" && e.data?.kind === "ended",
+  assert.equal(
+    (await closing.ended())?.reasonCode,
+    "document-closed",
+    "Closing a document ends its run",
   );
   assert.equal(
     (await command({ op: "read", id: reopened.id })).revision,
@@ -375,8 +337,8 @@ try {
   await stop();
   await start();
   assert.equal((await command({ op: "open", path: copyPath })).id, id);
-  await verifySimulationPaint(command, stream!);
-  await verifyEditing(command);
+  await verifySimulationPaint(command, stream!, url);
+  await verifyEditing(command, stream!);
   {
     // The connection panel reads the nets of the selection with observe's
     // IDs; an edit answers with the width conflicts of the page it changed.
@@ -472,7 +434,7 @@ try {
       ),
       "The product compiled the bridge instead of using its precompiled classes",
     );
-  const retained = await verifySimulation(command, state);
+  const retained = await verifySimulation(command, stream!, state);
   await stop();
   await start();
   assert(
