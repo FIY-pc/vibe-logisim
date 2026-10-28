@@ -17,8 +17,7 @@
 // shifts that satisfy all constraints are found by relaxation. Objects that
 // are attached to each other (a part and its ports, a vertical run and the
 // port it leaves from, collinear runs that meet) move as one group, and so do
-// the parts of a column: parts that share a left edge move by one shift,
-// since a column pulled into a stagger reads worse than the air it saves.
+// the parts a caller lists in `together`.
 import type { Point } from "./circuit.mts";
 
 function getOr<K, V>(map: Map<K, V>, key: K, make: () => V): V {

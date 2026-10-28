@@ -530,9 +530,10 @@ export function shapeUnit(model: Model, unit: Unit): Shape {
 }
 
 // Units in the order ELK should meet them: input Pins, then the signal flow
-// with storage outputs that close a loop treated as feedback, then output
-// Pins. ELK breaks cycles against this order, so a register's output wire
-// goes back around to the logic before it, the way a counter is drawn.
+// with a storage output that closes a loop to logic drawn before it treated
+// as feedback, then output Pins. ELK breaks cycles against this order, so a
+// register's output wire goes back around to the logic before it, the way a
+// counter is drawn, and the stages of a pipeline stay in their order.
 export function flowOrder(model: Model): Unit[] {
   const units = model.units;
   const links: [Unit, Unit][] = [];
@@ -570,7 +571,9 @@ export function flowOrder(model: Model): Unit[] {
     const k = `${a.id}>${b.id}`;
     if (seenLink.has(k)) continue;
     seenLink.add(k);
-    if (stores(a) && reaches(b, a)) continue;
+    // a loop through storage is broken where the drawing goes back: a
+    // pipeline register keeps its place between the stages it joins
+    if (stores(a) && reaches(b, a) && b.box[0] <= a.box[0]) continue;
     indegree.set(b, indegree.get(b)! + 1);
     if (!successors.has(a)) successors.set(a, []);
     successors.get(a)!.push(b);
@@ -1304,7 +1307,8 @@ export async function drawModel(
         const span = Math.max(...points.map((p) => Math.abs(p[0] - driver[0]) + Math.abs(p[1] - driver[1])));
         if (span > TUNNEL_SPAN(net.width) * (net.labels.length ? 1 : 2)) long.push(net);
       }
-    if (!blamed.size && !long.length) {
+    // a long wire is a preference, not a clash: the last round keeps them
+    if (!blamed.size && (!long.length || round >= MAX_ROUNDS)) {
       const order = pinOrderChanged(model, shift);
       if (order) return { failed: order };
       const xs: number[] = [];
