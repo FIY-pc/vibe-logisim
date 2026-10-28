@@ -39,14 +39,12 @@ pub enum ErrorCode {
     ComponentAmbiguous,
     ComponentMissing,
     ParentInput,
-    ViewChanged,
     UnknownCircuit,
     SessionEnded,
     StartTimeout,
     StartFailed,
     Unresponsive,
     ClockFailure,
-    FrameEvicted,
     // General
     InvalidInput,
     NotAllowed,
@@ -129,7 +127,6 @@ impl From<vibe_logisim_runtime::simulation::Code> for ErrorCode {
             C::ComponentAmbiguous => Self::ComponentAmbiguous,
             C::ComponentMissing => Self::ComponentMissing,
             C::ParentInput => Self::ParentInput,
-            C::ViewChanged => Self::ViewChanged,
             C::UnknownCircuit => Self::UnknownCircuit,
             C::SessionEnded => Self::SessionEnded,
             C::StartTimeout => Self::StartTimeout,
@@ -137,7 +134,6 @@ impl From<vibe_logisim_runtime::simulation::Code> for ErrorCode {
             C::RuntimeUnavailable => Self::RuntimeUnavailable,
             C::Unresponsive => Self::Unresponsive,
             C::ClockFailure => Self::ClockFailure,
-            C::FrameEvicted => Self::FrameEvicted,
             C::Internal => Self::Internal,
         }
     }

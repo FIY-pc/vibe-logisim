@@ -5,7 +5,8 @@ import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { simulationClient } from "./simulation-client.mts";
+import { eventStream } from "./event-stream.mts";
+import { sameRun, simulationClient } from "./simulation-client.mts";
 import { documentViews } from "./document-views.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-interface-"));
@@ -97,8 +98,9 @@ try {
   };
   await simulate("main", { inA: 0, inB: 3 }, { outA: 15, outB: 12 });
   await simulate("rotated", { inR: 5 }, { outR: 10 });
-  const client = simulationClient(command);
-  const running = await client.started(doc, "main");
+  const events = await eventStream(url);
+  const client = simulationClient(command, events);
+  const running = await client.start(doc, "main");
   const noop = draft();
   const nochange = await preview(noop);
   assert.equal(nochange.changed, false);
@@ -144,11 +146,11 @@ try {
     1,
   );
   await unchanged();
-  assert.equal(
-    (await client.status()).state?.viewId,
-    running.viewId,
+  assert(
+    sameRun((await client.act({ kind: "pause" })).run, running),
     "Interface previews must not replace the live simulation",
   );
+  await events.close();
   const image = await command({
     op: "interfaceRender",
     ...scope(),

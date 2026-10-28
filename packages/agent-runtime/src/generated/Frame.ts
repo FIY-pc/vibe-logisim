@@ -5,25 +5,17 @@ import type { MemoryPage } from "./MemoryPage.ts";
 import type { Timing } from "./Timing.ts";
 
 /**
- * One frame as the runtime produced it, numbered by the host.
+ * The run's newest state in Logisim's long form, as a kept observation stores it.
  */
 export type Frame = { 
 /**
- * Strictly increasing within a session, across views.
+ * The number of commands the runtime had taken.
  */
-frameSequence: number, 
+commandSequence: number, circuit: string, 
 /**
- * The number of commands the runtime had processed.
+ * Subcircuit instance ids from the root circuit to the shown instance.
  */
-commandSequence: number, viewId: string, circuit: string, 
-/**
- * Subcircuit instance ids from the root circuit to this view.
- */
-instancePath: Array<string>, clock: ClockState, 
-/**
- * Unchanged components are shared with the previous frame of the view.
- */
-components: Array<ComponentState>, memory?: MemoryPage, timing: Timing, 
+instancePath: Array<string>, clock: ClockState, components: Array<ComponentState>, memory?: MemoryPage, timing: Timing, 
 /**
  * Milliseconds since the Unix epoch.
  */

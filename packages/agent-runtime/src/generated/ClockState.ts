@@ -2,7 +2,7 @@
 import type { SimError } from "./SimError.ts";
 
 /**
- * The clock and propagation as of one frame or acknowledgement.
+ * The clock and propagation as of one frame.
  */
 export type ClockState = { ticks: number, running: boolean, automatic: boolean, pending: boolean, frequency: number, actualFrequency: number, oscillating: boolean, 
 /**

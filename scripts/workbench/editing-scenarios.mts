@@ -4,15 +4,19 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
 import { courseSizeProject } from "./fixtures/course-size.mts";
-import { simulationClient } from "./simulation-client.mts";
+import {
+  sameRun,
+  simulationClient,
+  type Stream,
+} from "./simulation-client.mts";
 import { documentViews } from "./document-views.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with what they changed; scripts work with whole views. */
 const documentOf = documentViews();
 
 // Independently constructed circuits. Expected behavior is checked through real native stimuli.
-export async function verifyEditing(command: Command) {
-  const client = simulationClient(command);
+export async function verifyEditing(command: Command, stream: Stream) {
+  const client = simulationClient(command, stream);
   const project = (body: string) =>
     `<?xml version="1.0"?><project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main">${body}</circuit></project>`;
   const pin = (
@@ -48,37 +52,19 @@ export async function verifyEditing(command: Command) {
     bits: string,
     outputs: string[],
   ) => {
-    const ids = outputs.map((label) => component(doc, label));
-    const acknowledged = await client.definition(doc, "main", {
+    const run = client.mirror().run;
+    if (run?.documentId !== doc.id || run.revision !== doc.revision)
+      await client.start(doc, "main");
+    await client.act({
       kind: "input",
       componentId: component(doc, input),
       bits,
     });
-    assert(acknowledged.sessionId && acknowledged.viewId);
-    const run = {
-      sessionId: acknowledged.sessionId,
-      viewId: acknowledged.viewId,
-    };
-    // Frames arrive as the runtime settles, after the acknowledgement.
-    for (let attempt = 0; ; attempt++) {
-      const { frame } = await client.settled(run, acknowledged, {
-        componentIds: ids,
-      });
-      const actual = outputs.map(
-        (label) =>
-          frame.components
-            .find((c) => c.id === component(doc, label))
-            ?.ports.find((port) => port.index === 0)?.bits,
-      );
-      if (actual.every((b) => b === bits)) return;
-      if (attempt === 99)
-        assert.deepEqual(
-          actual,
-          outputs.map(() => bits),
-          "Moving changed the circuit behavior",
-        );
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
+    assert.deepEqual(
+      outputs.map((label) => client.bits(component(doc, label))),
+      outputs.map(() => bits),
+      "Moving changed the circuit behavior",
+    );
   };
   let fanout = await open(
     pin("input", 100, 100, false, 4) +
@@ -89,7 +75,7 @@ export async function verifyEditing(command: Command) {
   );
   await signal(fanout, "input", "1010", ["out", "branch"]);
   const original = fanout.revision;
-  const simulationBeforePreview = (await client.status()).state?.viewId;
+  const runBeforePreview = client.mirror().run;
   const preview = await command({
     op: "movePreview",
     id: fanout.id,
@@ -103,9 +89,8 @@ export async function verifyEditing(command: Command) {
     fanout,
     "Dragging a preview must preserve document revision, source and undo",
   );
-  assert.equal(
-    (await client.status()).state?.viewId,
-    simulationBeforePreview,
+  assert(
+    sameRun((await client.act({ kind: "pause" })).run, runBeforePreview),
     "Movement previews must not replace the live simulation",
   );
   const beforeWires = fanout.circuits[0].wires;
@@ -249,7 +234,7 @@ export async function verifyEditing(command: Command) {
   await signal(crossing, "a", "1", ["outA"]);
   await signal(crossing, "b", "0", ["outB"]);
   await signal(crossing, "a", "1", ["outA"]);
-  await client.stop((await client.status()).session!.sessionId);
+  await client.stop();
   console.log(
     "Verified native routing: multi-bit fanout and T junction; shared port; moving a wire; independent crossings; short rejection; one-step undo.",
   );

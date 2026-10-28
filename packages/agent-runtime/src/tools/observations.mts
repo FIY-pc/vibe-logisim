@@ -62,7 +62,6 @@ export async function readObservation(
       circuit: frame.circuit,
       instancePath: frame.instancePath,
       clock: frame.clock,
-      frameSequence: frame.frameSequence,
       components: frame.components,
       ...(frame.memory ? { memory: frame.memory } : {}),
     },

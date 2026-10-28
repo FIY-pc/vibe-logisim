@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { desktop } from "./transport";
 export interface WorkbenchEvent {
   topic: "agent" | "simulation" | "resync" | "warning" | "connection";
@@ -15,23 +15,20 @@ export function subscribeEvents(listener: Listener): () => void {
   listeners.add(listener);
   if (!disconnect) {
     if (desktop()) {
+      // One channel per page: the host starts a fresh subscription for it, so
+      // a reloaded page begins with the run's whole state, as the browser's
+      // event stream does.
       let closed = false;
-      let unlisten: (() => void) | undefined;
+      const channel = new Channel<WorkbenchEvent>();
+      channel.onmessage = (event) => {
+        if (!closed) emit(event);
+      };
       disconnect = () => {
         closed = true;
-        unlisten?.();
       };
-      void listen<WorkbenchEvent>("workbench-event", (event) =>
-        emit(event.payload),
-      )
-        .then((stop) => {
-          if (closed) {
-            stop();
-            return;
-          }
-          unlisten = stop;
-          connected = true;
-          emit({ topic: "resync", data: null });
+      invoke("events", { channel })
+        .then(() => {
+          if (!closed) connected = true;
         })
         .catch((error) => {
           if (!closed) emit({ topic: "connection", data: String(error) });

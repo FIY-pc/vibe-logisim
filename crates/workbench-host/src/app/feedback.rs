@@ -236,7 +236,7 @@ fn validated_report(report: Value) -> Result<Vec<u8>> {
 impl Host {
     pub(crate) async fn diagnostics(&self) -> Value {
         let native = self.native.lock().await;
-        json!({"schema":1,"appVersion":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"nativeRuntimeAvailable":native.runtime().is_ok(),"simulationActive":self.simulation.session().is_some(),"recoveryIssue":self.recovery_error.is_some(),"runtimeVersion":native.observed_version(),"failures":self.failures.lock().await.report()})
+        json!({"schema":1,"appVersion":env!("CARGO_PKG_VERSION"),"platform":std::env::consts::OS,"architecture":std::env::consts::ARCH,"nativeRuntimeAvailable":native.runtime().is_ok(),"simulationActive":self.simulation.run().is_some(),"recoveryIssue":self.recovery_error.is_some(),"runtimeVersion":native.observed_version(),"failures":self.failures.lock().await.report()})
     }
     pub(crate) fn diagnostics_export(
         &self,

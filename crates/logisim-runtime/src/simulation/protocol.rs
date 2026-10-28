@@ -1,10 +1,10 @@
 //! The line protocol of the CircuitSession process: one XML document per line.
-//! Commands carry a `requestId` that the process echoes on its ack.
+//! The process answers every command line with one ack, in order.
 use super::{
     error::{Code, SimError},
     model::{
-        ButtonValue, ClockState, Command, ComponentState, Control, MemoryPage, MemoryStorage,
-        PortState, Signal, Timing, TraceSample, TraceSignal,
+        ButtonValue, ClockState, Command, Control, LiveComponent, MemoryPage, MemoryStorage,
+        Timing, TraceDelta, TraceSample, TraceSignal,
     },
     paint::RawPaint,
 };
@@ -16,39 +16,26 @@ use quick_xml::{
 use std::{borrow::Cow, fmt::Write as _, str::FromStr};
 use vibe_circuit_document::Component;
 
-/// Metadata on every ack and frame.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct AckMeta {
-    pub view_id: String,
+/// One frame as the runtime sent it.
+pub(crate) struct RawFrame {
+    pub full: bool,
     pub circuit: String,
+    pub instance_path: Vec<String>,
     pub command_sequence: u64,
     pub clock: ClockState,
-}
-
-pub(crate) struct RawTrace {
-    pub id: String,
-    pub recording: bool,
-    pub total: u64,
-    pub signals: Vec<TraceSignal>,
-    /// Only samples not yet known to the reader.
-    pub samples: Vec<TraceSample>,
-}
-
-pub(crate) struct RawFrame {
-    pub meta: AckMeta,
     pub timing: Timing,
-    pub components: Vec<ComponentState>,
+    /// The components whose values changed, all of them when full.
+    pub components: Vec<(String, LiveComponent)>,
     pub memory: Option<MemoryPage>,
-    pub trace: RawTrace,
-    /// What the view's picture changed, or all of it.
+    /// Present when the waveform changed, always when full.
+    pub trace: Option<TraceDelta>,
+    /// What the picture changed, or all of it when full.
     pub paint: RawPaint,
 }
 
 pub(crate) enum Line {
-    Ack {
-        request_id: Option<u64>,
-        result: Result<AckMeta, SimError>,
-    },
+    /// The command sequence after the command, or why it was refused.
+    Ack(Result<u64, SimError>),
     Frame(Box<RawFrame>),
     /// The frame thread failed; the process no longer renders.
     FrameError(SimError),
@@ -84,11 +71,6 @@ impl<'a> Attrs<'a> {
             .parse()
             .map_err(|_| format!("invalid {name}"))
     }
-    fn optional<T: FromStr>(&self, name: &str) -> Result<Option<T>, String> {
-        self.get(name)
-            .map(|value| value.parse().map_err(|_| format!("invalid {name}")))
-            .transpose()
-    }
     fn flag(&self, name: &str) -> Result<bool, String> {
         match self.text(name)? {
             "true" => Ok(true),
@@ -96,39 +78,26 @@ impl<'a> Attrs<'a> {
             _ => Err(format!("invalid {name}")),
         }
     }
-    fn meta(&self) -> Result<AckMeta, String> {
-        Ok(AckMeta {
-            view_id: self.text("viewId")?.into(),
-            circuit: self.text("circuit")?.into(),
-            command_sequence: self.number("commandSequence")?,
-            clock: ClockState {
-                ticks: self.number("ticks")?,
-                running: self.flag("running")?,
-                automatic: self.flag("automatic")?,
-                pending: self.flag("pending")?,
-                frequency: self.number("frequency")?,
-                actual_frequency: self.number("actualFrequency")?,
-                oscillating: self.flag("oscillating")?,
-                failure: self.failure(),
-            },
+    fn clock(&self) -> Result<ClockState, String> {
+        Ok(ClockState {
+            ticks: self.number("ticks")?,
+            running: self.flag("running")?,
+            automatic: self.flag("automatic")?,
+            pending: self.flag("pending")?,
+            frequency: self.number("frequency")?,
+            actual_frequency: self.number("actualFrequency")?,
+            oscillating: self.flag("oscillating")?,
+            failure: self.failure(),
         })
     }
     fn failure(&self) -> Option<SimError> {
         self.get("failure")
             .map(|failure| SimError::from_java(self.get("failureCode"), None, failure))
     }
-    fn signal(&self) -> Result<Signal, String> {
-        Ok(Signal {
-            width: self.number("width")?,
-            bits: self.text("bits")?.into(),
-            value: self.optional("value")?,
-        })
-    }
 }
 
-/// Parses one output line. `known` is the waveform id and sample count the
-/// reader already has; samples below it are skipped.
-pub(crate) fn parse(line: &str, known: Option<(&str, u64)>) -> Result<Line, String> {
+/// Parses one output line.
+pub(crate) fn parse(line: &str) -> Result<Line, String> {
     let mut reader = Reader::from_str(line);
     let (root, empty) = loop {
         match reader.read_event().map_err(|e| e.to_string())? {
@@ -141,18 +110,14 @@ pub(crate) fn parse(line: &str, known: Option<(&str, u64)>) -> Result<Line, Stri
     };
     let attrs = Attrs::of(&root)?;
     match root.name().0 {
-        "ack" => {
-            let request_id = attrs.optional("requestId")?;
-            let result = match attrs.get("error") {
-                Some(error) => Err(SimError::from_java(
-                    attrs.get("code"),
-                    attrs.get("message"),
-                    error,
-                )),
-                None => Ok(attrs.meta()?),
-            };
-            Ok(Line::Ack { request_id, result })
-        }
+        "ack" => Ok(Line::Ack(match attrs.get("error") {
+            Some(error) => Err(SimError::from_java(
+                attrs.get("code"),
+                attrs.get("message"),
+                error,
+            )),
+            None => Ok(attrs.number("commandSequence")?),
+        })),
         "frame-error" => Ok(Line::FrameError(attrs.failure().unwrap_or_else(|| {
             SimError::new(Code::Internal).with_detail("frame error without failure")
         }))),
@@ -162,12 +127,22 @@ pub(crate) fn parse(line: &str, known: Option<(&str, u64)>) -> Result<Line, Stri
             attrs.text("error")?,
         ))),
         "frame" if !empty => {
-            let meta = attrs.meta()?;
-            let timing = Timing {
-                capture_ms: attrs.number("captureMs")?,
-                encode_ms: attrs.number("encodeMs")?,
+            let frame = RawFrame {
+                full: attrs.flag("full")?,
+                circuit: attrs.text("circuit")?.into(),
+                instance_path: Vec::new(),
+                command_sequence: attrs.number("commandSequence")?,
+                clock: attrs.clock()?,
+                timing: Timing {
+                    capture_ms: attrs.number("captureMs")?,
+                    encode_ms: attrs.number("encodeMs")?,
+                },
+                components: Vec::new(),
+                memory: None,
+                trace: None,
+                paint: RawPaint::default(),
             };
-            frame(&mut reader, meta, timing, known).map(|frame| Line::Frame(Box::new(frame)))
+            parts(&mut reader, frame).map(|frame| Line::Frame(Box::new(frame)))
         }
         name => Err(format!("unexpected element {name}")),
     }
@@ -176,61 +151,59 @@ pub(crate) fn parse(line: &str, known: Option<(&str, u64)>) -> Result<Line, Stri
 /// Where the parser is inside a frame.
 enum Open {
     Frame,
-    Component(ComponentState),
+    Component {
+        id: String,
+        live: LiveComponent,
+        text: String,
+    },
     Memory(MemoryPage),
     Trace,
     Sample {
         sample: TraceSample,
-        keep: bool,
         text: String,
     },
-    Paint {
-        full: bool,
-        text: String,
-    },
+    Paint(String),
     Other,
 }
 
-#[derive(Default)]
-struct Parts {
-    components: Vec<ComponentState>,
-    memory: Option<MemoryPage>,
-    trace: Option<RawTrace>,
-    paint: Option<RawPaint>,
-}
-
-impl Parts {
-    fn close(&mut self, open: Open) -> Result<(), String> {
-        match open {
-            Open::Component(component) => self.components.push(component),
-            Open::Memory(page) => self.memory = Some(page),
-            Open::Sample {
-                mut sample,
-                keep: true,
-                text,
-            } => {
-                let trace = self.trace.as_mut().ok_or("sample outside trace")?;
-                sample.values = text.split('|').map(str::to_owned).collect();
-                if sample.values.len() != trace.signals.len() {
-                    return Err("sample does not match signals".into());
-                }
-                trace.samples.push(sample);
+impl Open {
+    fn text(&mut self) -> Option<&mut String> {
+        match self {
+            Self::Component { text, .. } | Self::Sample { text, .. } | Self::Paint(text) => {
+                Some(text)
             }
-            Open::Paint { full, text } => self.paint = Some(RawPaint::parse(full, &text)?),
-            Open::Frame | Open::Trace | Open::Sample { .. } | Open::Other => {}
+            _ => None,
         }
-        Ok(())
     }
 }
 
-fn frame(
-    reader: &mut Reader<&[u8]>,
-    meta: AckMeta,
-    timing: Timing,
-    known: Option<(&str, u64)>,
-) -> Result<RawFrame, String> {
+/// Closes an element of a frame.
+fn close(frame: &mut RawFrame, open: Open) -> Result<(), String> {
+    match open {
+        Open::Component { id, mut live, text } => {
+            if !text.is_empty() {
+                live.ports = text.split('|').map(str::to_owned).collect();
+            }
+            frame.components.push((id, live));
+        }
+        Open::Memory(page) => frame.memory = Some(page),
+        Open::Sample { mut sample, text } => {
+            let trace = frame.trace.as_mut().ok_or("sample outside trace")?;
+            sample.values = text.split('|').map(str::to_owned).collect();
+            if trace.full && sample.values.len() != trace.signals.len() {
+                return Err("sample does not match signals".into());
+            }
+            trace.samples.push(sample);
+        }
+        Open::Paint(text) => frame.paint = RawPaint::parse(&text)?,
+        Open::Frame | Open::Trace | Open::Other => {}
+    }
+    Ok(())
+}
+
+fn parts(reader: &mut Reader<&[u8]>, mut frame: RawFrame) -> Result<RawFrame, String> {
     let mut stack = vec![Open::Frame];
-    let mut parts = Parts::default();
+    let mut painted = false;
     loop {
         let (element, empty) = match reader.read_event().map_err(|e| e.to_string())? {
             Event::Start(element) => (element, false),
@@ -238,14 +211,12 @@ fn frame(
             Event::End(_) => match stack.pop() {
                 Some(Open::Frame) | None => break,
                 Some(open) => {
-                    parts.close(open)?;
+                    close(&mut frame, open)?;
                     continue;
                 }
             },
             Event::Text(text) => {
-                if let Some(Open::Sample { text: buffer, .. } | Open::Paint { text: buffer, .. }) =
-                    stack.last_mut()
-                {
+                if let Some(buffer) = stack.last_mut().and_then(Open::text) {
                     buffer.push_str(&text.xml10_content());
                 }
                 continue;
@@ -266,9 +237,7 @@ fn frame(
                         _ => return Err("unknown entity".into()),
                     }
                 };
-                if let Some(Open::Sample { text: buffer, .. } | Open::Paint { text: buffer, .. }) =
-                    stack.last_mut()
-                {
+                if let Some(buffer) = stack.last_mut().and_then(Open::text) {
                     buffer.push(resolved);
                 }
                 continue;
@@ -278,32 +247,28 @@ fn frame(
         };
         let attrs = Attrs::of(&element)?;
         let open = match (stack.last_mut(), element.name().0) {
-            (Some(Open::Frame), "component") => Open::Component(ComponentState {
+            (Some(Open::Frame), "instance") => {
+                frame.instance_path.push(attrs.text("id")?.into());
+                Open::Other
+            }
+            (Some(Open::Frame), "component") => Open::Component {
                 id: attrs.text("id")?.into(),
-                control: attrs
-                    .get("control")
-                    .map(|control| match control {
-                        "input" => Ok(Control::Input),
-                        "parent-input" => Ok(Control::ParentInput),
-                        "pulse" => Ok(Control::Pulse),
-                        "clock" => Ok(Control::Clock),
-                        _ => Err("invalid control"),
-                    })
-                    .transpose()?,
-                input: None,
-                ports: Vec::new(),
-            }),
-            (Some(Open::Component(component)), "input") => {
-                component.input = Some(attrs.signal()?);
-                Open::Other
-            }
-            (Some(Open::Component(component)), "port") => {
-                component.ports.push(PortState {
-                    index: attrs.number("index")?,
-                    signal: attrs.signal()?,
-                });
-                Open::Other
-            }
+                live: LiveComponent {
+                    control: attrs
+                        .get("control")
+                        .map(|control| match control {
+                            "input" => Ok(Control::Input),
+                            "parent-input" => Ok(Control::ParentInput),
+                            "pulse" => Ok(Control::Pulse),
+                            "clock" => Ok(Control::Clock),
+                            _ => Err("invalid control"),
+                        })
+                        .transpose()?,
+                    input: attrs.get("input").map(str::to_owned),
+                    ports: Vec::new(),
+                },
+                text: String::new(),
+            },
             (Some(Open::Frame), "memory") => Open::Memory(MemoryPage {
                 component_id: attrs.text("componentId")?.into(),
                 offset: attrs.number("offset")?,
@@ -321,17 +286,19 @@ fn frame(
                 Open::Other
             }
             (Some(Open::Frame), "trace") => {
-                parts.trace = Some(RawTrace {
+                frame.trace = Some(TraceDelta {
                     id: attrs.text("id")?.into(),
                     recording: attrs.flag("recording")?,
                     total: attrs.number("total")?,
+                    dropped: attrs.number("dropped")?,
+                    full: attrs.flag("full")?,
                     signals: Vec::new(),
                     samples: Vec::new(),
                 });
                 Open::Trace
             }
             (Some(Open::Trace), "signal") => {
-                let trace = parts.trace.as_mut().ok_or("signal outside trace")?;
+                let trace = frame.trace.as_mut().ok_or("signal outside trace")?;
                 let id = attrs.text("key")?;
                 let (component, port) = id.rsplit_once(':').ok_or("invalid signal key")?;
                 trace.signals.push(TraceSignal {
@@ -342,40 +309,31 @@ fn frame(
                 });
                 Open::Other
             }
-            (Some(Open::Trace), "sample") => {
-                let trace = parts.trace.as_ref().ok_or("sample outside trace")?;
-                let sample: u64 = attrs.number("sequence")?;
-                Open::Sample {
-                    keep: known.is_none_or(|(id, next)| id != trace.id || sample >= next),
-                    sample: TraceSample {
-                        sample,
-                        tick: attrs.number("tick")?,
-                        cause: attrs.text("cause")?.into(),
-                        values: Vec::new(),
-                    },
-                    text: String::new(),
-                }
-            }
-            (Some(Open::Frame), "paint") => Open::Paint {
-                full: attrs.flag("full")?,
+            (Some(Open::Trace), "sample") => Open::Sample {
+                sample: TraceSample {
+                    sample: attrs.number("sequence")?,
+                    tick: attrs.number("tick")?,
+                    cause: attrs.text("cause")?.into(),
+                    values: Vec::new(),
+                },
                 text: String::new(),
             },
+            (Some(Open::Frame), "paint") => {
+                painted = true;
+                Open::Paint(String::new())
+            }
             _ => Open::Other,
         };
         if empty {
-            parts.close(open)?;
+            close(&mut frame, open)?;
         } else {
             stack.push(open);
         }
     }
-    Ok(RawFrame {
-        meta,
-        timing,
-        components: parts.components,
-        memory: parts.memory,
-        trace: parts.trace.ok_or("frame without trace")?,
-        paint: parts.paint.ok_or("frame without paint")?,
-    })
+    if !painted {
+        return Err("frame without paint".into());
+    }
+    Ok(frame)
 }
 
 /// Escapes an attribute value; fails on characters XML 1.0 cannot carry.
@@ -426,68 +384,57 @@ impl Element {
     }
 }
 
-fn located(tag: &str, component: &Component, id: bool) -> Result<String, SimError> {
-    let mut element = Element::new(tag);
-    if id {
-        element = element.attr("id", &component.id)?;
-    }
-    Ok(element
+/// `<tag id factory x y/>`: how the runtime finds a component of a circuit.
+fn located(tag: &str, component: &Component) -> Result<String, SimError> {
+    Ok(Element::new(tag)
+        .attr("id", &component.id)?
         .attr("factory", &component.name)?
         .attr("x", &component.location.x.to_string())?
         .attr("y", &component.location.y.to_string())?
         .empty())
 }
 
-/// The file the process reads at start: the root circuit and how its
-/// component ids address components.
+/// The file the process reads at start: the root circuit, the clock frequency
+/// and how its component ids address components.
 pub(crate) fn init_document(
     circuit: &str,
-    view_id: &str,
+    frequency: Option<f64>,
     components: &[Component],
 ) -> Result<String, SimError> {
     let children = components
         .iter()
-        .map(|component| located("component", component, true))
+        .map(|component| located("component", component))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Element::new("session")
-        .attr("circuit", circuit)?
-        .attr("viewId", view_id)?
-        .children(&children, "session"))
+    let mut session = Element::new("session").attr("circuit", circuit)?;
+    if let Some(frequency) = frequency {
+        session = session.attr("frequency", &frequency.to_string())?;
+    }
+    Ok(session.children(&children, "session"))
 }
 
-/// Switches the process to a subcircuit instance; `instances` is the path from the root.
+/// Shows a subcircuit instance: `instances` is the path from the root, and
+/// `components` the components of the instance's circuit.
 pub(crate) fn view_line(
-    request_id: u64,
     circuit: &str,
-    view_id: &str,
     instances: &[&Component],
     components: &[Component],
 ) -> Result<String, SimError> {
     let mut children = instances
         .iter()
-        .map(|instance| located("instance", instance, false))
+        .map(|instance| located("instance", instance))
         .collect::<Result<Vec<_>, _>>()?;
     for component in components {
-        children.push(located("component", component, true)?);
+        children.push(located("component", component)?);
     }
     Ok(Element::new("view")
         .attr("circuit", circuit)?
-        .attr("viewId", view_id)?
-        .attr("requestId", &request_id.to_string())?
         .children(&children, "view")
         + "\n")
 }
 
-/// One command line. `start` has none: a run starts by launching the process.
-pub(crate) fn command_line(
-    request_id: u64,
-    view_id: &str,
-    command: &Command,
-) -> Result<String, SimError> {
+/// One command line.
+pub(crate) fn command_line(command: &Command) -> Result<String, SimError> {
     let op = match command {
-        Command::Start => {
-            return Err(SimError::new(Code::Internal).with_detail("start is not a runtime command"));
-        }
         Command::ToggleClock => "toggle-clock",
         Command::Play => "play",
         Command::Pause => "pause",
@@ -505,9 +452,7 @@ pub(crate) fn command_line(
         Command::Memory { .. } => "memory",
         Command::MemoryWrite { .. } => "memory-write",
     };
-    let mut line = Element::new(op)
-        .attr("requestId", &request_id.to_string())?
-        .attr("viewId", view_id)?;
+    let mut line = Element::new(op);
     match command {
         Command::Configure {
             frequency,
@@ -590,47 +535,70 @@ pub(crate) fn command_line(
 pub(crate) mod tests {
     use super::*;
 
-    const META: &str = r#"viewId="v1" circuit="main" commandSequence="3" ticks="7" running="true" automatic="true" pending="false" frequency="2.0" actualFrequency="1.98" oscillating="false""#;
+    const CLOCK: &str = r#"ticks="7" running="true" automatic="true" pending="false" frequency="2.0" actualFrequency="1.98" oscillating="false""#;
 
-    pub(crate) fn frame_line(view: &str, sequence: u64, trace: &str) -> String {
+    /// A frame of the root instance: full ones carry both components and the
+    /// whole waveform, later ones only `b` with a new value.
+    pub(crate) fn frame_line(full: bool, sequence: u64) -> String {
+        let (components, trace, wires) = if full {
+            (
+                r#"<component id="a" control="input" input="1">1</component><component id="b">0000x01x|-</component>"#,
+                r#"<trace id="t0" recording="false" total="0" dropped="0" full="true"/>"#,
+                r##"[[0,0,10,0,"#00d200"]]"##,
+            )
+        } else {
+            (
+                r#"<component id="b">00000011|-</component>"#,
+                "",
+                r##"[[0,0,10,0,"#006400"]]"##,
+            )
+        };
         format!(
-            r##"<frame viewId="{view}" circuit="main" commandSequence="{sequence}" ticks="{sequence}" running="true" automatic="true" pending="false" frequency="2.0" actualFrequency="0.0" oscillating="false" captureMs="1.5" encodeMs="2.5"><component id="a" control="input"><input width="1" bits="1" value="1"/><port index="0" width="1" bits="1" value="1"/></component><component id="b"><port index="0" width="8" bits="0000 x01x"/></component>{trace}<paint full="false">{{"wires":[[0,0,10,0,"#00d200"]],"dots":[],"components":{{"a":[["C","#006400"],["T","1 &lt; 2",0,0]]}}}}</paint></frame>"##
+            r##"<frame captureMs="1.5" encodeMs="2.5" circuit="main" commandSequence="{sequence}" {CLOCK} full="{full}">{components}{trace}<paint>{{"wires":{wires},"dots":[],"components":{{"a":[["C","#006400"],["T","1 &lt; 2",0,0]]}}}}</paint></frame>"##
         )
     }
 
     #[test]
     fn frames_acks_and_errors_parse() {
-        let trace = r#"<trace id="t1" recording="true" total="3" dropped="0"><signal key="a:0" width="1"/><signal key="b:0" width="8"/><sample sequence="0" tick="0" cause="start">0|0000 0000</sample><sample sequence="1" tick="1" cause="tick">1|0000 0001</sample><sample sequence="2" tick="2" cause="input">1|0000 x01x</sample></trace>"#;
-        let Line::Frame(frame) = parse(&frame_line("v1", 4, trace), Some(("t1", 2))).unwrap()
-        else {
+        let line = r##"<frame captureMs="1.5" encodeMs="2.5" circuit="cell" commandSequence="4" ticks="7" running="true" automatic="true" pending="false" frequency="2.0" actualFrequency="0.0" oscillating="false" full="false"><instance id="c1"/><instance id="c2"/><component id="a" control="input" input="1">1</component><component id="b">0000x01x|-</component><component id="c"/><trace id="t1" recording="true" total="3" dropped="0" full="false"><sample sequence="2" tick="2" cause="input">1|0000 x01x</sample></trace><paint>{"wires":[[0,0,10,0,"#00d200"]],"dots":[],"components":{"a":[["C","#006400"],["T","1 &lt; 2",0,0]]}}</paint></frame>"##;
+        let Line::Frame(frame) = parse(line).unwrap() else {
             panic!("not a frame")
         };
-        assert_eq!(frame.meta.command_sequence, 4);
-        assert!(frame.meta.clock.running);
-        assert_eq!(frame.components.len(), 2);
-        assert_eq!(frame.components[0].control, Some(Control::Input));
-        assert_eq!(frame.components[0].input.as_ref().unwrap().value, Some(1));
-        assert_eq!(frame.components[1].ports[0].signal.bits, "0000 x01x");
-        assert_eq!(frame.components[1].ports[0].signal.value, None);
-        assert_eq!(frame.trace.signals[1].component_id, "b");
-        // Samples the reader already has are skipped.
-        assert_eq!(frame.trace.samples.len(), 1);
-        assert_eq!(frame.trace.samples[0].values, ["1", "0000 x01x"]);
-        assert!(!frame.paint.full);
+        assert!(!frame.full);
+        assert_eq!(
+            (frame.circuit.as_str(), frame.command_sequence),
+            ("cell", 4)
+        );
+        assert_eq!(frame.instance_path, ["c1", "c2"]);
+        assert!(frame.clock.running);
+        assert_eq!(frame.components.len(), 3);
+        let (id, a) = &frame.components[0];
+        assert_eq!(
+            (id.as_str(), a.control, a.input.as_deref()),
+            ("a", Some(Control::Input), Some("1"))
+        );
+        assert_eq!(frame.components[1].1.ports, ["0000x01x", "-"]);
+        assert!(frame.components[2].1.ports.is_empty());
+        let trace = frame.trace.unwrap();
+        assert!(!trace.full && trace.signals.is_empty());
+        assert_eq!(trace.samples[0].values, ["1", "0000 x01x"]);
         assert_eq!(frame.paint.wires, [([0, 0, 10, 0], 0x00d2_00ff)]);
         assert_eq!(frame.paint.components[0].0, "a");
         assert_eq!(frame.timing.encode_ms, 2.5);
+        let Line::Frame(frame) = parse(&frame_line(true, 1)).unwrap() else {
+            panic!("not a frame")
+        };
+        assert!(frame.full && frame.trace.unwrap().full);
 
-        let Line::Ack { request_id, result } =
-            parse(&format!(r#"<ack requestId="9" {META}/>"#), None).unwrap()
-        else {
+        let Line::Ack(result) = parse(&format!(
+            r#"<ack circuit="main" commandSequence="9" {CLOCK}/>"#
+        ))
+        .unwrap() else {
             panic!("not an ack")
         };
-        assert_eq!(request_id, Some(9));
-        assert_eq!(result.unwrap().clock.ticks, 7);
-
-        let line = r#"<ack requestId="10" error="com.cburch.logisim.file.SessionError: Click outside component" code="INPUT_OUTSIDE" message="Click outside component"/>"#;
-        let Line::Ack { result, .. } = parse(line, None).unwrap() else {
+        assert_eq!(result.unwrap(), 9);
+        let line = r#"<ack error="com.cburch.logisim.file.SessionError: Click outside component" code="INPUT_OUTSIDE" message="Click outside component"/>"#;
+        let Line::Ack(result) = parse(line).unwrap() else {
             panic!("not an ack")
         };
         let error = result.unwrap_err();
@@ -638,12 +606,11 @@ pub(crate) mod tests {
         assert_eq!(error.message, "请点在输入元件上");
 
         let line = format!(
-            r#"<ack {META} failure="java.lang.IllegalStateException: x&#10;y" failureCode="CLOCK_FAILURE"/>"#
+            r#"<frame-error circuit="main" commandSequence="1" {CLOCK} failure="java.lang.IllegalStateException: x&#10;y" failureCode="CLOCK_FAILURE"/>"#
         );
-        let Line::Ack { result, .. } = parse(&line, None).unwrap() else {
-            panic!("not an ack")
+        let Line::FrameError(failure) = parse(&line).unwrap() else {
+            panic!("not a frame error")
         };
-        let failure = result.unwrap().clock.failure.unwrap();
         assert_eq!(failure.code, Code::ClockFailure);
         assert_eq!(
             failure.detail(),
@@ -651,7 +618,7 @@ pub(crate) mod tests {
         );
 
         let line = r#"<start-error error="com.cburch.logisim.file.SessionError: Unknown circuit" code="UNKNOWN_CIRCUIT" message="Unknown circuit"/>"#;
-        let Line::StartError(error) = parse(line, None).unwrap() else {
+        let Line::StartError(error) = parse(line).unwrap() else {
             panic!("not a start error")
         };
         assert_eq!(error.code, Code::UnknownCircuit);
@@ -659,29 +626,28 @@ pub(crate) mod tests {
         for invalid in [
             "",
             "garbage",
-            "<ack requestId=\"x\"/>",
-            &format!(r#"<ack {META}"#),
-            &frame_line("v1", 1, "").replace(r#" ticks="1""#, ""),
-            &frame_line("v1", 1, ""),
+            "<ack commandSequence=\"x\"/>",
+            &format!(r#"<ack {CLOCK}"#),
+            &frame_line(false, 1).replace(r#" ticks="7""#, ""),
+            &frame_line(false, 1).replace(r#" full="false""#, ""),
+            &frame_line(false, 1)
+                .replace("<paint>", "<x>")
+                .replace("</paint>", "</x>"),
         ] {
-            assert!(parse(invalid, None).is_err(), "{invalid}");
+            assert!(parse(invalid).is_err(), "{invalid}");
         }
     }
 
     #[test]
     fn commands_escape_values_and_reject_what_xml_cannot_carry() {
-        let line = command_line(
-            5,
-            "v&1",
-            &Command::Input {
-                component_id: "id\"<'\n".into(),
-                bits: "01x".into(),
-            },
-        )
+        let line = command_line(&Command::Input {
+            component_id: "id\"<'\n".into(),
+            bits: "01x".into(),
+        })
         .unwrap();
         assert_eq!(
             line,
-            "<input requestId=\"5\" viewId=\"v&amp;1\" componentId=\"id&quot;&lt;&apos;&#10;\" bits=\"01x\"/>\n"
+            "<input componentId=\"id&quot;&lt;&apos;&#10;\" bits=\"01x\"/>\n"
         );
         let mut reader = Reader::from_str(line.trim_end());
         let Event::Empty(element) = reader.read_event().unwrap() else {
@@ -691,56 +657,37 @@ pub(crate) mod tests {
             Attrs::of(&element).unwrap().get("componentId"),
             Some("id\"<'\n")
         );
-        let error = command_line(
-            1,
-            "v",
-            &Command::Input {
-                component_id: "a".into(),
-                bits: "012".into(),
-            },
-        )
+        let error = command_line(&Command::Input {
+            component_id: "a".into(),
+            bits: "012".into(),
+        })
         .unwrap_err();
         assert_eq!(error.code, Code::InputFormat);
-        let error = command_line(
-            1,
-            "v",
-            &Command::Pulse {
-                component_id: "a\u{1}".into(),
-            },
-        )
+        let error = command_line(&Command::Pulse {
+            component_id: "a\u{1}".into(),
+        })
         .unwrap_err();
         assert_eq!(error.code, Code::Internal);
-        let error = command_line(
-            1,
-            "v",
-            &Command::Trace {
-                signals: vec![crate::simulation::model::TraceKey {
-                    component_id: "a:b".into(),
-                    port: 0,
-                }],
-            },
-        )
+        let error = command_line(&Command::Trace {
+            signals: vec![crate::simulation::model::TraceKey {
+                component_id: "a:b".into(),
+                port: 0,
+            }],
+        })
         .unwrap_err();
         assert_eq!(error.code, Code::TracePort);
         assert_eq!(
-            command_line(
-                2,
-                "v",
-                &Command::MemoryWrite {
-                    component_id: "ram".into(),
-                    offset: 0,
-                    count: 16,
-                    address: 3,
-                    expected: 0,
-                    value: 255
-                }
-            )
+            command_line(&Command::MemoryWrite {
+                component_id: "ram".into(),
+                offset: 0,
+                count: 16,
+                address: 3,
+                expected: 0,
+                value: 255
+            })
             .unwrap(),
-            "<memory-write requestId=\"2\" viewId=\"v\" componentId=\"ram\" offset=\"0\" count=\"16\" address=\"3\" expected=\"0\" value=\"ff\"/>\n"
+            "<memory-write componentId=\"ram\" offset=\"0\" count=\"16\" address=\"3\" expected=\"0\" value=\"ff\"/>\n"
         );
-        assert_eq!(
-            command_line(3, "v", &Command::Start).unwrap_err().code,
-            Code::Internal
-        );
+        assert_eq!(command_line(&Command::Tick).unwrap(), "<tick/>\n");
     }
 }

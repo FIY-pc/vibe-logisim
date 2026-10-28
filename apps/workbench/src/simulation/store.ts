@@ -1,16 +1,14 @@
 import { createStore } from "zustand/vanilla";
-import type { ComponentState } from "../generated/ComponentState";
+import type { ClockState } from "../generated/ClockState";
 import type { EndedInfo } from "../generated/EndedInfo";
+import type { LiveComponent } from "../generated/LiveComponent";
 import type { MemoryPage } from "../generated/MemoryPage";
 import type { ObservationRecord } from "../generated/ObservationRecord";
-import type { PaintDelta } from "../generated/PaintDelta";
-import type { RunState } from "../generated/RunState";
-import type { SessionInfo } from "../generated/SessionInfo";
+import type { PaintEvent } from "../generated/PaintEvent";
+import type { RunInfo } from "../generated/RunInfo";
 import type { TraceDelta } from "../generated/TraceDelta";
-import type { Displayed } from "./simulation";
+import type { View } from "../app/view";
 import { field, type Update } from "../shared/setter";
-
-export type { Displayed } from "./simulation";
 
 /** The memory component whose panel is open: its id survives the revisions a
  * ROM write makes, so the panel stays on it. */
@@ -27,253 +25,179 @@ export interface ObservationsTarget {
   initial?: string;
 }
 
-/** An input the user operated whose effect the canvas does not show yet. It
- * clears once a frame has processed its command, or when the view changes. */
+/** An input the user operated whose effect no frame shows yet. It clears
+ * once a frame has taken its command (`sequence`), or when the command
+ * failed. */
 export interface PendingInput {
   key: number;
   componentId: string;
-  /** The view scope and navigation the input was made in. */
-  scope: string;
-  navigation: number;
-  /** Set once the run accepted the command. */
-  sessionId?: string;
   sequence?: number;
 }
 
 /** One op of a component's picture (the editor's symbol ops). */
-export type PaintOp = PaintDelta["ops"][number];
+export type PaintOp = PaintEvent["ops"][number];
 
-/** The picture of a run's view as the runtime drew it: wires and junctions
- * by geometry with their color, each component's ops by id. The `paint` of
- * the run's state events is laid over it in place, in the order they come;
- * a new object with the next `version` marks each change. */
+/** The run's picture of the instance it shows: wires and junctions by
+ * geometry with their color, each component's ops by id. Each frame's paint
+ * is laid over it in place; a new object with the next `version` marks each
+ * change. */
 export interface LivePaint {
-  sessionId: string;
-  viewId: string;
   /** `[x1, y1, x2, y2, color]` by `x1,y1,x2,y2`. */
   wires: Map<string, readonly [number, number, number, number, string]>;
   /** `[x, y, color]` by `x,y`. */
   dots: Map<string, readonly [number, number, string]>;
-  /** The ops and op lists the run sent, by number. */
+  components: Map<string, PaintOp[]>;
+  /** Every op and op list numbered since the picture started, by number: a
+   * component that goes back to a look it had gets the same list. */
   ops: PaintOp[];
   lists: PaintOp[][];
-  /** Each component's list. */
-  components: Map<string, PaintOp[]>;
   version: number;
 }
 
+/** What the newest frame shows, and the clock as of it. */
+export interface FrameHeader {
+  circuit: string;
+  instancePath: string[];
+  /** The number of commands the run had taken. */
+  commandSequence: number;
+  clock: ClockState;
+}
+
+/** The run as the `simulation` events describe it, which only `onEvent`
+ * writes, and the window's own state around it. */
 export interface SimulationState {
   /** The run, whichever document and circuit it belongs to. */
-  session: SessionInfo | null;
-  /** How the last run ended, until a new one starts. */
-  lastEnded: EndedInfo | null;
-  /** The run's current view and its latest clock. */
-  view: RunState | null;
-  /** The view of the run the canvas shows. Only that view shows live values
-   * and takes input; the definition never inherits them. */
-  displayed: Displayed | null;
-  /** The components of the run's current view as of the newest frame, by id. */
-  components: Record<string, ComponentState>;
-  /** The newest frame of the run. */
-  frame: {
-    viewId: string;
-    frameSequence: number;
-    commandSequence: number;
-  } | null;
-  /** The picture of the view the run last painted. */
+  run: RunInfo | null;
+  frame: FrameHeader | null;
+  /** The shown instance's components as of the newest frame, by id. */
+  components: Record<string, LiveComponent>;
   paint: LivePaint | null;
-  /** The waveform of the run's current view. A new id starts a new one. */
+  /** The waveform of the shown instance. A new id starts a new one. */
   trace: TraceDelta | null;
-  /** Whether the run is recording the watched ports; stopping keeps the
-   * samples on screen. */
-  recording: boolean;
-  /** The page of a RAM the run's current view reports. */
+  /** The RAM page the run reports. */
   page: MemoryPage | null;
-  /** The memory component whose panel is open. */
-  memory: MemoryTarget | null;
+  /** How the last run ended, until a new one starts. */
+  ended: EndedInfo | null;
+  /** Why the last request failed, until the next one succeeds. */
+  error: string;
   pending: PendingInput[];
   /** The button held down on the canvas or in the inspector. */
-  pressed: { componentId: string; scope: string } | null;
-  /** A run starting or stopping for the circuit it was requested from. */
-  busy: {
-    action: "start" | "stop";
-    documentId: string;
-    circuit: string;
-  } | null;
-  /** The run is switching to another instance. */
-  viewBusy: boolean;
-  /** Why the last command failed, until the next one succeeds. */
-  error: string;
+  pressed: string | null;
   /** The clock frequency a new run starts with. */
   frequency: number;
-  /** Watched ports (`componentId:port`), by run and instance: a new run or
-   * instance starts with an empty waveform, the way the released version did. */
-  watches: Record<string, string[]>;
+  /** The memory component whose panel is open. */
+  memory: MemoryTarget | null;
   /** The last kept observation, offered in a notice. */
   lastCapture: ObservationRecord | null;
   /** The observations dialog, when open. */
   observations: ObservationsTarget | null;
-  setSession(session: Update<SessionInfo | null>): void;
-  setLastEnded(ended: Update<EndedInfo | null>): void;
-  setView(view: Update<RunState | null>): void;
-  setDisplayed(displayed: Update<Displayed | null>): void;
-  setComponents(components: Update<Record<string, ComponentState>>): void;
-  setFrame(frame: Update<SimulationState["frame"]>): void;
-  setPaint(paint: Update<LivePaint | null>): void;
-  setTrace(trace: Update<TraceDelta | null>): void;
-  setRecording(recording: Update<boolean>): void;
-  setPage(page: Update<MemoryPage | null>): void;
   setMemory(memory: Update<MemoryTarget | null>): void;
-  setPending(pending: Update<PendingInput[]>): void;
-  setPressed(pressed: Update<SimulationState["pressed"]>): void;
-  setBusy(busy: Update<SimulationState["busy"]>): void;
-  setViewBusy(busy: Update<boolean>): void;
-  setError(error: Update<string>): void;
-  setFrequency(frequency: Update<number>): void;
-  setWatches(watches: Update<Record<string, string[]>>): void;
   setLastCapture(record: Update<ObservationRecord | null>): void;
   setObservations(target: Update<ObservationsTarget | null>): void;
 }
 
 export function createSimulationStore() {
   return createStore<SimulationState>()((set) => ({
-    session: null,
-    lastEnded: null,
-    view: null,
-    displayed: null,
-    components: {},
+    run: null,
     frame: null,
+    components: {},
     paint: null,
     trace: null,
-    recording: false,
     page: null,
-    memory: null,
+    ended: null,
+    error: "",
     pending: [],
     pressed: null,
-    busy: null,
-    viewBusy: false,
-    error: "",
     frequency: 2,
-    watches: {},
+    memory: null,
     lastCapture: null,
     observations: null,
-    setSession: field(set, "session"),
-    setLastEnded: field(set, "lastEnded"),
-    setView: field(set, "view"),
-    setDisplayed: field(set, "displayed"),
-    setComponents: field(set, "components"),
-    setFrame: field(set, "frame"),
-    setPaint: field(set, "paint"),
-    setTrace: field(set, "trace"),
-    setRecording: field(set, "recording"),
-    setPage: field(set, "page"),
     setMemory: field(set, "memory"),
-    setPending: field(set, "pending"),
-    setPressed: field(set, "pressed"),
-    setBusy: field(set, "busy"),
-    setViewBusy: field(set, "viewBusy"),
-    setError: field(set, "error"),
-    setFrequency: field(set, "frequency"),
-    setWatches: field(set, "watches"),
     setLastCapture: field(set, "lastCapture"),
     setObservations: field(set, "observations"),
   }));
 }
 
-/** The watch list key of a run view: watches belong to one instance of one run. */
-export const watchScope = (sessionId: string, instancePath: string[]) =>
-  `${sessionId}|${instancePath.join("/")}`;
+type Shown = Pick<View, "doc" | "circuit" | "instance">;
+const samePath = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((id, index) => id === b[index]);
 
-/** The run view the canvas shows live: the displayed view is the run's
- * current view, of the shown document revision and circuit. */
-export function liveRun(
-  state: Pick<SimulationState, "session" | "view" | "displayed">,
-  doc: { id: string; revision: string } | null,
-  circuit: string | undefined,
-): { session: SessionInfo; view: RunState } | null {
-  const { session, view, displayed } = state;
-  return session &&
-    view &&
-    displayed &&
+/** The run and frame the canvas shows: the run is of the shown document
+ * revision and its newest frame shows the shown circuit and instance. Only
+ * then does the canvas show live values and take input. */
+export function live(
+  { run, frame }: Pick<SimulationState, "run" | "frame">,
+  { doc, circuit, instance }: Shown,
+): { run: RunInfo; frame: FrameHeader } | null {
+  return run &&
+    frame &&
     doc &&
-    session.documentId === doc.id &&
-    session.revision === doc.revision &&
-    displayed.sessionId === session.sessionId &&
-    displayed.viewId === view.viewId &&
-    view.circuit === circuit
-    ? { session, view }
+    circuit &&
+    run.documentId === doc.id &&
+    run.revision === doc.revision &&
+    frame.circuit === circuit.name &&
+    samePath(frame.instancePath, instance)
+    ? { run, frame }
     : null;
 }
 
-/** What the simulation controls show for the shown circuit; as in the
- * released version, `current` means commands act on the existing run rather
- * than starting a new one. */
+/** Whether the run is the shown view's: its root circuit, or one of its
+ * instances, of the shown document revision. Commands then act on it rather
+ * than start another. */
+export function ofView(
+  { run }: Pick<SimulationState, "run">,
+  { doc, circuit, instance }: Shown,
+): boolean {
+  return Boolean(
+    run &&
+    doc &&
+    circuit &&
+    run.documentId === doc.id &&
+    run.revision === doc.revision &&
+    (instance.length > 0 || run.rootCircuit === circuit.name),
+  );
+}
+
+/** What the simulation controls show for the shown view. */
 export interface SimulationStatus {
   /** A run exists, of any document. */
   exists: boolean;
+  /** The run is the view's (`ofView`). */
   current: boolean;
-  /** The canvas shows a frame of the run. */
-  visible: boolean;
+  /** The canvas shows the run (`live`). */
+  live: boolean;
   running: boolean;
   automatic: boolean;
   ticks: number | undefined;
   /** The run's clock frequency. */
   frequency: number | undefined;
-  actualFrequency: number;
   /** The circuit the run started from. */
   circuit: string | undefined;
   /** The run of this document ended because the document changed. */
   stale: boolean;
-  /** A run is starting or stopping for the shown circuit. */
-  busy: boolean;
-  busyAction: "start" | "stop" | null;
-  viewBusy: boolean;
 }
 
 export function simulationStatus(
-  state: Pick<
-    SimulationState,
-    | "session"
-    | "view"
-    | "displayed"
-    | "lastEnded"
-    | "busy"
-    | "viewBusy"
-    | "frame"
-  >,
-  doc: { id: string; revision: string } | null,
-  circuit: string | undefined,
+  state: Pick<SimulationState, "run" | "frame" | "ended">,
+  view: Shown,
 ): SimulationStatus {
-  const { session, view, displayed, lastEnded, busy, frame } = state;
-  const live = liveRun(state, doc, circuit);
-  const current = Boolean(
-    session &&
-    doc &&
-    session.documentId === doc.id &&
-    session.revision === doc.revision &&
-    (live || session.rootCircuit === circuit),
-  );
-  const clock = view?.clock;
+  const { run, frame, ended } = state;
+  const current = ofView(state, view);
+  const clock = frame?.clock;
   return {
-    exists: Boolean(session),
+    exists: Boolean(run),
     current,
-    visible: Boolean(live && frame?.viewId === displayed?.viewId),
+    live: Boolean(live(state, view)),
     running: Boolean(clock?.running),
     automatic: clock?.automatic !== false,
     ticks: clock?.ticks,
-    frequency: session ? clock?.frequency : undefined,
-    actualFrequency: clock?.actualFrequency || 0,
-    circuit: session?.rootCircuit,
+    frequency: run ? clock?.frequency : undefined,
+    circuit: run?.rootCircuit,
     stale: Boolean(
       !current &&
-      doc &&
-      lastEnded?.reasonCode === "revision-changed" &&
-      lastEnded.documentId === doc.id,
+      view.doc &&
+      ended?.reasonCode === "revision-changed" &&
+      ended.documentId === view.doc.id,
     ),
-    busy: Boolean(
-      busy && doc && busy.documentId === doc.id && busy.circuit === circuit,
-    ),
-    busyAction: busy?.action || null,
-    viewBusy: state.viewBusy,
   };
 }

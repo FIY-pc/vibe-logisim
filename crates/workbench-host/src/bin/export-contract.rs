@@ -52,10 +52,6 @@ fn generate(root: &Path) -> Result<()> {
     vibe_workbench_host::ObservationRecord::export_all(&config)?;
     vibe_workbench_host::ObservationSummary::export_all(&config)?;
     vibe_logisim_runtime::simulation::SimulationEvent::export_all(&config)?;
-    vibe_logisim_runtime::simulation::Status::export_all(&config)?;
-    vibe_logisim_runtime::simulation::ActResult::export_all(&config)?;
-    vibe_logisim_runtime::simulation::Snapshot::export_all(&config)?;
-    vibe_logisim_runtime::simulation::NavigateResult::export_all(&config)?;
     vibe_workbench_host::HistoryList::export_all(&config)?;
     vibe_workbench_host::HistoryReview::export_all(&config)?;
     vibe_workbench_host::EditResult::export_all(&config)?;

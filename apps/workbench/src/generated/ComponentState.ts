@@ -3,6 +3,9 @@ import type { Control } from "./Control.ts";
 import type { PortState } from "./PortState.ts";
 import type { Signal } from "./Signal.ts";
 
+/**
+ * A component in Logisim's long form, as a kept observation stores it.
+ */
 export type ComponentState = { id: string, control?: Control, 
 /**
  * The value an input pin drives, as set by the user.

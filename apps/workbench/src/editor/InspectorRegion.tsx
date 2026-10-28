@@ -1,13 +1,15 @@
 import { Inspector } from "./Inspector";
 import { PlacementInspector } from "./PlacementInspector";
 import { documentComponent } from "./connectivity";
-import { liveRun, watchScope } from "../simulation/store";
+import { live } from "../simulation/store";
+import { componentState } from "../simulation/simulation";
 import type { PlacementState } from "./usePlacement";
 import {
   useEditor,
   useNotices,
   useSelection,
   useSimulation,
+  useSimulationState,
   useView,
 } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
@@ -22,11 +24,9 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
   const selection = useSelection();
   const place = useEditor((state) => state.place);
   const canvasObservation = useEditor((state) => state.canvasObservation);
-  const session = useSimulation((state) => state.session);
-  const run = useSimulation((state) => state.view);
+  const shown = live(useSimulationState(), view);
   const components = useSimulation((state) => state.components);
-  const displayed = useSimulation((state) => state.displayed);
-  const watches = useSimulation((state) => state.watches);
+  const trace = useSimulation((state) => state.trace);
   const onError = useNotices((state) => state.onError);
   const { editor: editing, simulation: simulating } = actions;
   if (place)
@@ -45,10 +45,6 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
             documentComponent(circuit, component)?.id === selection[0],
         ) || null
       : null;
-  const live =
-    session && run && displayed
-      ? liveRun({ session, view: run, displayed }, doc, circuit.name)
-      : null;
   const selected =
     selection.length === 1
       ? (circuit.components.find(
@@ -56,9 +52,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
         ) ?? null)
       : null;
   const nativeId = connectionComponent?.componentId || selection[0];
-  const watching = live
-    ? (watches[watchScope(session!.sessionId, live.view.instancePath)] ?? [])
-    : [];
+  const component = shown ? components[nativeId] : undefined;
   return (
     <Inspector
       doc={doc!}
@@ -68,8 +62,8 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
       onOpenMemory={(id) => simulating.openMemory(view, id)}
       onNarrow={(ids) => editing.select(view, ids)}
       edit={(change) => editing.edit(view, change)}
-      live={live ? components[nativeId] || null : null}
-      watched={watching}
+      live={component ? componentState(nativeId, component) : null}
+      watched={shown ? (trace?.signals.map((signal) => signal.id) ?? []) : []}
       onInput={async (bits) => {
         if (selected) await simulating.setInput(view, selected, bits);
       }}

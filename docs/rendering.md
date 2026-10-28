@@ -92,21 +92,23 @@ VIBE_WORKBENCH_RESOURCES="$PWD" VIBE_VERIFY_HOST="$PWD/target/release/vibe-workb
 
 运行中画面上的一切都来自运行时，窗口不推算任何值：
 
-- Java（`CircuitSession` 的帧线程，`CircuitPaint`）：状态变了才采一帧，至多 16 ms 一次。持锁期间用 `RecordingGraphics2D` 录两样：导线和交点（经 `circuit` 包里的桥类 `WirePaint` 调包私有的 `CircuitWires.draw`，按 Logisim 自己的规则上色：值的颜色、线宽冲突 `#ff7b00`、整张网络无效时的灰），和每个元件（`ComponentDrawContext` 的 printView=false、`showState`、`showColor`，每个元件在自己的 `g.create()` 上，坐标相对元件位置，指令和 `symbols` 的完全相同，真实电路回答连接问题，所以没有 `U`）。和上次发出的逐根线、逐个点、逐个元件的指令串比较，只把变了的放进帧：`<paint full="true|false">{"wires":[[x1,y1,x2,y2,color],…],"dots":[[x,y,color],…],"components":{id:[op,…],…}}</paint>`，切换视图后的第一帧是全量。`captureMs` 是持锁录制的时间，`encodeMs` 是比较、拼 JSON 和 XML 的时间。
-- 宿主（`logisim-runtime` 的 `simulation/paint.rs`）：会话把每帧的增量叠在同一视图上一帧的画面上，每帧一份不可变的快照（`Arc<Paint>`，AI 读的 `Snapshot`/`Frame` 不带）。每个订阅者拿到的 `StateEvent.paint` 是它上次拿到的画面和最新画面的差，所以慢的订阅者跳过的帧不丢东西：导线和交点按颜色分组成坐标数组；元件的样子在几种之间来回（隧道随值变色、寄存器显示的值），同种元件也常长得一样，所以每条指令、每个指令列表对每个订阅者只发一次并编号，变了的元件只发它的列表编号。一个订阅者累计收到 4 MB 指令后，下一帧全量并重新编号。
-- 窗口（`simulation/actions.ts` 的 `overlay`）：每个 `state` 事件的 `paint` 按顺序叠进这个视图的 `LivePaint`（导线、交点按坐标的 Map，元件 id 到指令列表），全量的从头来；画布显示这次运行的视图时，`CanvasRegion` 把它作为 `Frame.live` 交给 `paintFrame`。画面覆盖整个电路，平移缩放只重画，不发请求，边缘不会露出静态图。`pending`/`pressed` 的标记、操作输入的命中仍在 SVG 层和编辑器的包围盒上。
+- Java（`CircuitSession` 的帧线程，`CircuitPaint`）：状态变了才采一帧，至多 16 ms 一次。持锁期间用 `RecordingGraphics2D` 录两样：导线和交点（经 `circuit` 包里的桥类 `WirePaint` 调包私有的 `CircuitWires.draw`，按 Logisim 自己的规则上色：值的颜色、线宽冲突 `#ff7b00`、整张网络无效时的灰），和每个元件（`ComponentDrawContext` 的 printView=false、`showState`、`showColor`，每个元件在自己的 `g.create()` 上，坐标相对元件位置，指令和 `symbols` 的完全相同，真实电路回答连接问题，所以没有 `U`）。和上次发出的逐根线、逐个点、逐个元件的指令串比较，只把变了的放进帧：`<paint>{"wires":[[x1,y1,x2,y2,color],…],"dots":[[x,y,color],…],"components":{id:[op,…],…}}</paint>`。帧的 `full` 属性标出全量帧：启动后的第一帧、每次 `view` 换实例后的第一帧，画面、元件值、波形都从头给。`captureMs` 是持锁录制的时间，`encodeMs` 是比较、拼 JSON 和 XML 的时间。
+- 宿主（`logisim-runtime` 的 `simulation/run.rs`、`paint.rs`）：run 把每帧叠进自己唯一的一份最新状态（元件端口值、画面、波形、存储器页），再把这一帧转成 `frame` 事件广播：导线和交点按颜色分组成坐标数组，变了的元件只发它的指令列表编号。run 的画面给每条指令、每个指令列表编一次号（全量帧从 0 起，之后接着编），事件只带上一个事件之后新编号的，所以同种元件长得一样只发一份列表，元件变回以前的样子（隧道随值变色、寄存器显示的值）只发一个编号。整幅带着所有还记得的编号；编号攒到开始编号时画面的三倍以上，run 把画面从头重编，这一帧作为全量帧发出。订阅（包括页面重载后的新订阅）先拿到由最新状态拼出的整幅（`run` + 全量 `frame`），之后按序拿 Java 的每一帧；落后太多的订阅从整幅重来。
+- 窗口（`simulation/actions.ts` 的 `onEvent`）：每个 `frame` 事件的 `paint` 按顺序叠进 `paint`（导线、交点按坐标的 Map，元件 id 到指令列表，接着编号的指令表和列表表），全量的从头来；同一个编号始终是同一个数组，`paint.ts` 编译过的列表不用重编；`live(state, view)`（run 的文档、修订、电路、实例路径和画布显示的一致）成立时，`CanvasRegion` 把它作为 `Frame.live` 交给 `paintFrame`。画面覆盖整个电路，平移缩放只重画，不发请求，边缘不会露出静态图。`pending`/`pressed` 的标记、操作输入的命中仍在 SVG 层和编辑器的包围盒上。
 - 运行画面是 Logisim 画布的样子，不是打印视图：带形状的门画出全部输入线，引脚、探针、寄存器、显示器画出值。（改之前的 PNG 帧用了 printView=true，`getShowState()` = `!printView && showState`，所以运行帧从来没画出过值：导线全黑、引脚没有数字。）
 - 留存观察（`observationCapture`）带上窗口画布当时的 PNG（`imageData`，就是用户看到的那层，不含 SVG 标记），宿主限 8 MB、校验后存在记录旁边；没带图的记录，`observationImage` 报「这条观察没有留存画面」。
 
-数字（调试宿主 + Vite 开发构建，Chrome 1600×1000、dpr 1.5，课程工程 713 件的流水线页）：
+数字（调试宿主 + Vite 开发构建，Chrome 1600×1000、dpr 1.5，课程工程 713 件的流水线页，Java 25）：
 
-- 第一帧：`paint` 79 KB（999 根线、33 个点、713 个元件共 1184 条指令、367 个列表）；整个 `state` 事件 168 KB，其余是 713 个元件的端口值（`components`）。新进程的第一帧录制 250–270 ms（类加载），之后的全量帧 10 ms；从点「启动仿真」到画面出现 0.7 s（含起 JVM），第一帧到了以后画进 canvas 5 ms。
-- 每个时钟周期（2 Hz）：`paint` 6–9 KB（上升沿 5–8 KB、下降沿约 1 KB）。256 Hz 时每秒约 47 帧，每帧 `paint` p50 5 KB（235 KB/s）。
-- Java 每帧录制 `captureMs` p50 2.5、p90 3.3、偶发最大 13 ms；`encodeMs` p50 1.4 ms。
-- 窗口每帧重画：100% p50 0.5 ms、最大 1.8 ms；适合视图（18%，713 件全在画面里）p50 2.3–2.6 ms、最大 3.2 ms。运行中平移 61 帧 p50 0.5 ms，缩放 60 次 p50 2.1 ms，期间没有请求。
+- 启动：机器空闲时从按下「启动仿真」到画面画进 canvas 0.70–0.79 s（含起 JVM；只算 JVM 0.68–0.73 s，打包带的 Java 21 0.81 s；另有重负载程序在跑时 0.8–1.3 s）。JVM 里载入工程约 0.44 s；字体、文字排版和 XML 输出和载入工程并行预热，第一帧录制从 0.3–0.4 s 降到约 0.1 s。
+- 整幅（启动后、订阅、重载、换实例回到根电路）：110 KB，其中 `paint` 77 KB（999 根线、约 1220 条指令、385 个列表），端口值 33 KB；进 ALU 子电路实例的第一帧 17 KB，点下到收到 111 ms。
+- 每个时钟周期（2 Hz）：下降沿的事件 4 KB（`paint` 0.7 KB，端口值 3 KB）；程序在跑时上升沿 15–30 KB（`paint` 5–10 KB，端口值 10–21 KB）；程序停下后每个事件约 4 KB。256 Hz 时每秒约 50 个事件、177 KB/s；4096 Hz 从复位跑程序时每秒 34 个事件、295 KB/s，前 3000 个 tick 里重编号两次（各一个 111 KB 的全量帧）。
+- 按钮按下到画出 21–54 ms，点时钟 36 ms，RAM 写一个字 57 ms。
+- Java 每帧录制 `captureMs` p50 2.5、偶发最大 13 ms；`encodeMs` p50 1.4 ms。
+- 窗口每帧重画：100% p50 0.3–0.7 ms；整页在画面里（8%）p50 2.6 ms。运行中平移缩放 32 次手势 36 次重画、p50 0.6 ms，没有请求。
 
 ## 还没做
 
-- 运行中每帧的 `state` 事件里，`components`（每个变了的元件的端口值）现在是大头：256 Hz 时每帧 p50 61 KB，`paint` 只有 5 KB。窗口只在连接面板、输入和波形里用到端口值，可以按需读。
+- 程序在跑时，上升沿事件的大头是端口值（10–21 KB，画面 5–10 KB）。窗口只在连接面板、输入和波形里用到端口值，可以按需读，或者把值写短（现在每位一个字符）。
 - 选中对象一直留着时，每次编辑之后为新修订再读一次 `connections`（小请求，在回复之后，不挡画面）。
 - 外部 jar 内容变了而 `<lib>` 没变时 `paletteIdentity` 不变，窗口不会丢那份缓存（宿主会重启 worker）；画不出的种类也一直缓存到调色板变化。

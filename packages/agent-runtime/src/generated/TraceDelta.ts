@@ -5,7 +5,7 @@ import type { TraceSignal } from "./TraceSignal.ts";
 /**
  * Waveform samples. A new `id` starts a new waveform. When `full`, `signals`
  * is set and `samples` holds every kept sample; otherwise `signals` is empty
- * and `samples` holds only those since the last delivery.
+ * and `samples` holds only those taken since the previous frame.
  */
 export type TraceDelta = { id: string, recording: boolean, 
 /**

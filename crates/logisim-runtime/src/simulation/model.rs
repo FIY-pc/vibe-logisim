@@ -1,15 +1,14 @@
 //! The simulation contract: requests the host accepts and what it reports back.
-use super::{error::SimError, paint::PaintDelta};
+use super::{error::SimError, paint::PaintEvent};
 use crate::runtime::RuntimeKind;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf};
 use ts_rs::TS;
 
-/// One run of one root circuit of one document revision.
+/// The run: one root circuit of one document revision.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-pub struct SessionInfo {
-    pub session_id: String,
+pub struct RunInfo {
     pub document_id: String,
     pub document_name: String,
     pub document_path: Option<PathBuf>,
@@ -21,7 +20,7 @@ pub struct SessionInfo {
     pub started_at: u64,
 }
 
-/// The clock and propagation as of one frame or acknowledgement.
+/// The clock and propagation as of one frame.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ClockState {
@@ -50,6 +49,23 @@ pub enum Control {
     Clock,
 }
 
+/// A component as frames carry it. Values are Logisim's binary text without
+/// spaces, most significant bit first: `0`, `1`, `x` unknown, `E` error, and
+/// `-` for a port without width.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveComponent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub control: Option<Control>,
+    /// The value an input pin drives, as set by the user.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub input: Option<String>,
+    /// One value per port, in port order.
+    pub ports: Vec<String>,
+}
+
 /// A value as Logisim displays it: binary digits grouped by four, `x` for
 /// unknown bits. `value` is present when every bit is defined.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
@@ -62,6 +78,35 @@ pub struct Signal {
     pub value: Option<u32>,
 }
 
+impl Signal {
+    /// The long form of a frame value.
+    pub fn of(bits: &str) -> Self {
+        if bits == "-" {
+            return Self {
+                width: 0,
+                bits: bits.into(),
+                value: None,
+            };
+        }
+        let width = bits.chars().count();
+        let mut grouped = String::with_capacity(width + width / 4);
+        for (index, bit) in bits.chars().enumerate() {
+            if index > 0 && (width - index).is_multiple_of(4) {
+                grouped.push(' ');
+            }
+            grouped.push(bit);
+        }
+        let value = (width <= 32 && bits.bytes().all(|bit| bit == b'0' || bit == b'1'))
+            .then(|| u32::from_str_radix(bits, 2).ok())
+            .flatten();
+        Self {
+            width: width as u32,
+            bits: grouped,
+            value,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PortState {
@@ -70,6 +115,7 @@ pub struct PortState {
     pub signal: Signal,
 }
 
+/// A component in Logisim's long form, as a kept observation stores it.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentState {
@@ -82,6 +128,23 @@ pub struct ComponentState {
     #[ts(optional)]
     pub input: Option<Signal>,
     pub ports: Vec<PortState>,
+}
+
+impl ComponentState {
+    pub fn of(id: &str, live: &LiveComponent) -> Self {
+        Self {
+            id: id.into(),
+            control: live.control,
+            input: live.input.as_deref().map(Signal::of),
+            ports: (0..)
+                .zip(&live.ports)
+                .map(|(index, bits)| PortState {
+                    index,
+                    signal: Signal::of(bits),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Where a memory's contents live: the design's stored words, or the run's.
@@ -110,7 +173,7 @@ fn runtime_storage() -> MemoryStorage {
 }
 
 /// Runtime cost of one frame, in milliseconds.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Timing {
     pub capture_ms: f64,
@@ -143,7 +206,7 @@ pub struct TraceSample {
 
 /// Waveform samples. A new `id` starts a new waveform. When `full`, `signals`
 /// is set and `samples` holds every kept sample; otherwise `signals` is empty
-/// and `samples` holds only those since the last delivery.
+/// and `samples` holds only those taken since the previous frame.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TraceDelta {
@@ -160,23 +223,45 @@ pub struct TraceDelta {
     pub samples: Vec<TraceSample>,
 }
 
-/// One frame as the runtime produced it, numbered by the host.
+/// One frame of the run. A `full` frame carries the whole state of the shown
+/// instance (the first frame of the run and of every instance shown, and the
+/// first frame a subscription gets); otherwise each part carries only what
+/// changed since the previous frame: components, the memory page and the
+/// waveform when they changed, and the picture's changes.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameEvent {
+    pub full: bool,
+    pub circuit: String,
+    /// Subcircuit instance ids from the root circuit to the shown instance.
+    pub instance_path: Vec<String>,
+    /// The number of commands the runtime had taken.
+    #[ts(type = "number")]
+    pub command_sequence: u64,
+    pub clock: ClockState,
+    pub components: BTreeMap<String, LiveComponent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub memory: Option<MemoryPage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub trace: Option<TraceDelta>,
+    pub paint: PaintEvent,
+    pub timing: Timing,
+}
+
+/// The run's newest state in Logisim's long form, as a kept observation stores it.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
-    /// Strictly increasing within a session, across views.
-    #[ts(type = "number")]
-    pub frame_sequence: u64,
-    /// The number of commands the runtime had processed.
+    /// The number of commands the runtime had taken.
     #[ts(type = "number")]
     pub command_sequence: u64,
-    pub view_id: String,
     pub circuit: String,
-    /// Subcircuit instance ids from the root circuit to this view.
+    /// Subcircuit instance ids from the root circuit to the shown instance.
     pub instance_path: Vec<String>,
     pub clock: ClockState,
-    /// Unchanged components are shared with the previous frame of the view.
-    pub components: Vec<Arc<ComponentState>>,
+    pub components: Vec<ComponentState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub memory: Option<MemoryPage>,
@@ -184,66 +269,20 @@ pub struct Frame {
     /// Milliseconds since the Unix epoch.
     #[ts(type = "number")]
     pub at: u64,
-    #[serde(skip)]
-    pub(crate) trace: TraceMark,
 }
 
 impl Frame {
     /// Keeps at most `limit` components, in order, optionally only those with
-    /// an id in `ids`. Components stay shared with the frame they came from.
+    /// an id in `ids`.
     pub fn page(&mut self, ids: Option<&[String]>, offset: usize, limit: usize) {
-        let kept = self
-            .components
-            .iter()
+        let components = std::mem::take(&mut self.components);
+        self.components = components
+            .into_iter()
             .filter(|component| ids.is_none_or(|ids| ids.contains(&component.id)))
             .skip(offset)
             .take(limit)
-            .cloned()
             .collect();
-        self.components = kept;
     }
-}
-
-/// The waveform as of one frame.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct TraceMark {
-    pub id: String,
-    pub total: u64,
-    pub recording: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ComponentDelta {
-    /// `items` is every component of the view, not only the changed ones.
-    pub full: bool,
-    pub items: Vec<Arc<ComponentState>>,
-}
-
-/// A frame for one subscriber: components and picture changed since its last
-/// delivery. `memory` is set on full deliveries and when the shown page changed.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct StateEvent {
-    pub session_id: String,
-    pub view_id: String,
-    pub circuit: String,
-    pub instance_path: Vec<String>,
-    #[ts(type = "number")]
-    pub frame_sequence: u64,
-    #[ts(type = "number")]
-    pub command_sequence: u64,
-    pub clock: ClockState,
-    pub components: ComponentDelta,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub trace: Option<TraceDelta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub memory: Option<MemoryPage>,
-    pub paint: PaintDelta,
-    pub timing: Timing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
@@ -276,7 +315,6 @@ impl EndReason {
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EndedInfo {
-    pub session_id: String,
     pub document_id: String,
     pub root_circuit: String,
     pub reason_code: EndReason,
@@ -291,13 +329,14 @@ pub struct EndedInfo {
     pub detail: Option<String>,
 }
 
-/// Events in order: a session's `session` precedes its states, and its
-/// `ended` is its last event. A replaced run ends after its successor starts.
+/// Events in order: `run` starts a run, its frames follow, and `ended` is its
+/// last event. A subscription starts with the current run and a full frame
+/// (or how the last run ended when none is running).
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SimulationEvent {
-    Session { session: SessionInfo },
-    State(Box<StateEvent>),
+    Run { run: RunInfo },
+    Frame(Box<FrameEvent>),
     Ended { ended: EndedInfo },
 }
 
@@ -316,7 +355,8 @@ pub struct TraceKey {
     pub port: u32,
 }
 
-/// What the user asks the run to do.
+/// What the user asks the run to do. Component ids are those of the shown
+/// instance.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(
     tag = "kind",
@@ -324,7 +364,7 @@ pub struct TraceKey {
     rename_all_fields = "camelCase"
 )]
 pub enum Command {
-    Start,
+    /// Pauses a running clock, or runs a paused one, as the run is now.
     ToggleClock,
     Play,
     Pause,
@@ -351,6 +391,7 @@ pub enum Command {
         component_id: String,
         bits: String,
     },
+    /// Releasing a button that is not held does nothing.
     Button {
         component_id: String,
         value: ButtonValue,
@@ -359,6 +400,7 @@ pub enum Command {
     Pulse {
         component_id: String,
     },
+    /// Records these signals from now on; an empty list records nothing.
     Trace {
         signals: Vec<TraceKey>,
     },
@@ -380,105 +422,24 @@ pub enum Command {
     },
 }
 
-impl Command {
-    /// Commands that start a run when a circuit definition is on screen.
-    pub fn starts_run(&self) -> bool {
-        matches!(
-            self,
-            Self::Start
-                | Self::ToggleClock
-                | Self::TogglePropagation
-                | Self::Play
-                | Self::Tick
-                | Self::Step
-                | Self::Poke { .. }
-                | Self::Input { .. }
-                | Self::Pulse { .. }
-                | Self::Button {
-                    value: ButtonValue::Pressed,
-                    ..
-                }
-        )
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_values_read_in_the_long_form() {
+        assert_eq!(
+            Signal::of("00001x1x"),
+            Signal {
+                width: 8,
+                bits: "0000 1x1x".into(),
+                value: None
+            }
+        );
+        assert_eq!(Signal::of("110011").bits, "11 0011");
+        assert_eq!(Signal::of("110011").value, Some(51));
+        assert_eq!(Signal::of("1").value, Some(1));
+        assert_eq!(Signal::of("-").width, 0);
+        assert_eq!(Signal::of(&"1".repeat(32)).value, Some(u32::MAX));
     }
-}
-
-/// What a command addresses: the view of a run, or a circuit definition.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
-#[serde(
-    tag = "kind",
-    rename_all = "kebab-case",
-    rename_all_fields = "camelCase"
-)]
-pub enum RunTarget {
-    Run { session_id: String, view_id: String },
-    Definition { circuit: String },
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ActResult {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub session_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub view_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional, as = "Option<f64>")]
-    pub request_id: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional, as = "Option<f64>")]
-    pub command_sequence: Option<u64>,
-    /// This command started the run.
-    pub started: bool,
-    /// The run received the command.
-    pub applied: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub clock: Option<ClockState>,
-    /// The frequency to pass with the next start.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub initial_frequency: Option<f64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct NavigateResult {
-    pub view_id: String,
-    pub circuit: String,
-    pub instance_path: Vec<String>,
-}
-
-/// The current view of the run and its latest clock.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct RunState {
-    pub view_id: String,
-    pub circuit: String,
-    pub instance_path: Vec<String>,
-    #[ts(type = "number")]
-    pub frame_sequence: u64,
-    #[ts(type = "number")]
-    pub command_sequence: u64,
-    pub clock: ClockState,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct Status {
-    pub session: Option<SessionInfo>,
-    pub state: Option<RunState>,
-    pub last_ended: Option<EndedInfo>,
-}
-
-/// A kept frame of the current run, with its waveform up to that frame.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct Snapshot {
-    pub session: SessionInfo,
-    pub frame: Frame,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub trace: Option<TraceDelta>,
 }

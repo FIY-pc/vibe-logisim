@@ -21,7 +21,7 @@ export function SimulationTransportRegion() {
   const shortcuts = useSettings((settings) => settings.labels);
   const onError = useNotices((notices) => notices.onError);
   if (!doc || !circuit) return null;
-  const status = simulationStatus(state, doc, circuit.name);
+  const status = simulationStatus(state, view);
   const simulation = actions.simulation;
   return (
     <SimulationTransport
