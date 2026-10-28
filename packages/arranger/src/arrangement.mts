@@ -7,75 +7,40 @@
 // not know Logisim's rules. Arranging is a single deterministic compilation
 // step with a structural proof:
 //
-//   classify nets -> layered placement -> ordered global routing -> emit
-//   (arrange) -> native re-observation (the caller) -> netlist equivalence
-//   (every {port} group sharing a net is identical before/after, ports of
-//   unknown width such as Probes included; constants, Grounds and Powers
-//   compared per driven port) -> same instance for every circuit that uses
-//   this one -> nothing else in the file changed (verifyArrangement).
+//   netlist model -> layered placement and routing (ELK) -> emit (arrange)
+//   -> native re-observation (the caller) -> netlist equivalence (every
+//   {port} group sharing a net is identical before/after, ports of unknown
+//   width such as Probes included; constants, Grounds and Powers compared
+//   per driven port) -> same instance for every circuit that uses this one
+//   -> nothing else in the file changed (verifyArrangement).
 //
-// This optional operation realizes the caller's organization and geometric
-// parameters. Direct file editing and other layout strategies remain
-// available.
-import { regionSegment } from "./fixed-geometry.mts";
-import { flowIneligible, flowLayout, flowVariants } from "./flow-layout.mts";
-import { GroupedPlacement } from "./grouped-layout.mts";
-import type { GroupSolver } from "./grouped-layout.mts";
-import { solveGroups } from "./layout-solver.mts";
-import { assertFloatingIsolation, looseWireGeometry } from "./loose-wires.mts";
-import {
-  annotateGroups,
-  layoutOptions,
-  normalizeOrganization,
-} from "./organization.mts";
-import {
-  getOr,
-  item,
-  pyEq,
-  pyInt,
-  PyValueError,
-  pyStr,
-  sortBy,
-  sorted,
-  StopIteration,
-  strCmp,
-  strip,
-  toInt,
-  truthy,
-} from "./py.mts";
-import type { Point } from "./py.mts";
+// This optional operation realizes the caller's organization. Direct file
+// editing and other layout strategies remain available.
 import {
   attr,
   CONSTANT_SOURCES,
   interfaceSignature,
   loc,
   resolveUnknownWidths,
-  SchematicLayout,
-  TUNNEL_SPAN,
-} from "./schematic-layout.mts";
-import type { Report } from "./schematic-layout.mts";
-import { predictedFocus, readability } from "./readability.mts";
+} from "./circuit.mts";
+import type { Point, Report } from "./circuit.mts";
+import { emit } from "./emit.mts";
+import { regionSegment } from "./fixed-geometry.mts";
+import { drawModel, flowOrder, variantsFor } from "./layout.mts";
+import { assertFloatingIsolation, looseWireGeometry } from "./loose-wires.mts";
+import { arrangeOptions, buildModel } from "./model.mts";
+import { organizationReport, organizationRows } from "./organization.mts";
+import { readability } from "./readability.mts";
 import type { Readability } from "./readability.mts";
 import { CircuitToolError } from "./tool-errors.mts";
 import type { Focus, Wire } from "./types.mts";
 import { circuitSpan, parseXml, serialize } from "./xml.mts";
 import type { XmlElement } from "./xml.mts";
 
-function hasOwn(value: object, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-// dict.get(key) on a JSON object.
-function getKey(value: Report, key: string, fallback: unknown = null): any {
-  return hasOwn(value, key) ? value[key] : fallback;
-}
-
-// The integers of a coordinate attribute, as re.findall(r"-?\d+") reads them.
-function numbers(text: string | null): number[] {
-  if (text === null)
-    throw new TypeError("expected string or bytes-like object, got 'NoneType'");
-  return (text.match(/-?[0-9]+/g) ?? []).map(pyInt);
-}
+const hasOwn = (value: object, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
+const strCmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 // The definitions of the two files read last, parsed once: checking an
 // arrangement reads the file before and after it many times. Shared, so
@@ -91,7 +56,7 @@ function circuitElement(xml: string, circuit: string): XmlElement {
     if (parsed.size > 2) parsed.delete(parsed.keys().next().value!);
   }
   const element = circuits.get(circuit);
-  if (element === undefined) throw new StopIteration();
+  if (element === undefined) throw new Error(`circuit "${circuit}" not found in the file`);
   return element;
 }
 
@@ -194,7 +159,7 @@ export function netlistSignature(
       if (!bits.length) continue;
       // ordered (bit, thread) vector: same threads in another bit order is another net
       const key = JSON.stringify(
-        sortBy(bits, (b) => b.bit).map((b) => [b.bit, b.netId]),
+        [...bits].sort((a, b) => a.bit - b.bit).map((b) => [b.bit, b.netId]),
       );
       if (CONSTANT_SOURCES.includes(comp.factoryName)) {
         // a Ground or Power drives its fixed value like a Constant
@@ -202,14 +167,11 @@ export function netlistSignature(
           comp.factoryName === "Constant"
             ? attr(comp, "value")
             : comp.factoryName;
-        const entry: [string, unknown] = [pyStr(val).toLowerCase(), e.width];
+        const entry: [string, unknown] = [String(val).toLowerCase(), e.width];
         const set = constDriven.get(key) ?? new Map();
         constDriven.set(key, set.set(JSON.stringify(entry), entry));
       } else if (comp.factoryName !== "Tunnel") {
-        const entry: [unknown, number] = [
-          item(ident, comp.componentId),
-          e.index,
-        ];
+        const entry: [unknown, number] = [ident.get(comp.componentId), e.index];
         const set = groups.get(key) ?? new Map();
         groups.set(key, set.set(JSON.stringify(entry), entry));
       }
@@ -246,16 +208,18 @@ export function copperPreserved(
     const b = wire.to;
     if (a.y === b.y) return [`h${a.y}`, a.x <= b.x ? [a.x, b.x] : [b.x, a.x]];
     if (a.x === b.x) return [`v${a.x}`, a.y <= b.y ? [a.y, b.y] : [b.y, a.y]];
-    throw new PyValueError("非正交导线");
+    throw new Error("非正交导线");
   };
   for (const wire of observed) {
     const [key, interval] = segment(wire);
-    getOr(lines, key, () => []).push(interval);
+    if (!lines.has(key)) lines.set(key, []);
+    lines.get(key)!.push(interval);
   }
   for (const wire of required) {
     const [key, interval] = segment(wire);
     let [start, end] = interval;
-    for (const [lo, hi] of sorted(lines.get(key) ?? [])) {
+    const spans = [...(lines.get(key) ?? [])].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    for (const [lo, hi] of spans) {
       if (lo > start) break;
       start = Math.max(start, hi);
       if (start >= end) break;
@@ -286,7 +250,7 @@ export function protectedNodes(
     const node = shared.clone();
     for (const child of node.iter()) {
       child.tail = null;
-      if (child.text !== null && !strip(child.text)) child.text = null;
+      if (child.text !== null && !child.text.trim()) child.text = null;
     }
     nodes.push(serialize(node, true));
   }
@@ -302,11 +266,8 @@ export interface ArrangeRequest {
   // nothing else is changed. Keep it for verifyArrangement.
   focus: Focus;
   // The arrangement arguments: organization, pinnedComponentIds, keepTunnels,
-  // localiseConstants, panelBelowY, columnGap, maxLayerSpan, tunnelSpan.
-  // Other keys are ignored.
+  // localiseConstants, panelBelowY. Other keys are ignored.
   options?: Report;
-  // The group solver an organization is laid out with (default solveGroups).
-  solve?: GroupSolver;
 }
 
 export interface Arrangement {
@@ -322,153 +283,79 @@ export interface Arrangement {
   // Copper kept in place: fixed region, loose wires and their anchors.
   keptWires: Wire[];
   panelBelowY: number | null;
-  // Source parts kept in place: pinned, loose-wire anchors and panel.
+  // Source parts kept in place: pinned, loose-wire anchors, panel, frames.
   fixedComponentIds: Set<string>;
-  // The observation the arranged file should load as (predictedFocus or the
-  // flow layout's own), for choosing a layout before the host sees it.
-  // Callers that rebuild an arrangement from a worker's message omit it.
+  // The observation the arranged file should load as, for choosing a layout
+  // before the host sees it. Callers that rebuild an arrangement from a
+  // worker's message omit it.
   predicted?: Focus;
 }
 
-// Options that ask for what only the column engine does.
-const COLUMN_OPTIONS = [
-  "organization",
-  "pinnedComponentIds",
-  "keepTunnels",
-  "panelBelowY",
-  "columnGap",
-  "maxLayerSpan",
-  "tunnelSpan",
-];
-
-// Rearranges one definition. A small definition arranged without column
-// options is laid out by signal flow (FLOW_VARIANTS) and by the column
-// engine, and the layout predicted to read best is returned
-// (report.candidates lists them all); anything else goes to the column
-// engine. An explicit
-// organization the engine cannot realize is an INVALID_LAYOUT_ORGANIZATION
-// error the caller can correct.
+// Rearranges one definition. It is laid out a few ways (more for a small
+// definition) and the layout predicted to read best is returned;
+// report.candidates lists them all. An explicit organization the engine
+// cannot realize is an INVALID_LAYOUT_ORGANIZATION error the caller can
+// correct.
 export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
   const { xml, circuit, focus } = request;
-  const options = request.options ?? {};
   resolveUnknownWidths(focus);
-  const asked = COLUMN_OPTIONS.filter((k) => {
-    const value = getKey(options, k);
-    return value !== null && !(Array.isArray(value) && !value.length);
-  });
-  if (asked.length || flowIneligible(focus) !== null) {
-    const columns = await columnArrangement(request);
-    columns.report.engine = "columns";
-    return columns;
-  }
-  const candidates: Arrangement[] = [];
+  const options = arrangeOptions(request.options ?? {});
+  const fresh = () => buildModel(xml, circuit, focus, options);
+  let model = fresh();
   const tried: Report[] = [];
-  const parts = focus.components.filter((c) => c.factoryName !== "Tunnel");
-  for (const variant of flowVariants(parts.length)) {
-    const flow = await flowLayout(xml, circuit, focus, variant);
-    if ("skipped" in flow) {
-      tried.push({
-        engine: "flow",
-        variant: variant.name,
-        skipped: flow.skipped,
-      });
-      continue;
+  let best: { arrangement: Arrangement; score: number } | null = null;
+  const variants = variantsFor(model.units.length);
+  let first = true;
+  for (const variant of variants)
+    for (const rails of [true, false]) {
+      if (!first) model = fresh();
+      first = false;
+      const rows = options.organization
+        ? organizationRows(model, options.organization)
+        : [flowOrder(model)];
+      const drawing = await drawModel(model, variant, rows, rails);
+      if ("failed" in drawing) {
+        tried.push({
+          variant: rails ? variant.name : `${variant.name}, no rails`,
+          skipped: drawing.failed,
+        });
+        continue;
+      }
+      const emitted = emit(model, drawing);
+      if (options.organization)
+        Object.assign(emitted.report, organizationReport(options.organization, drawing));
+      const score = readability(emitted.predicted).score;
+      tried.push({ variant: drawing.variant, score });
+      if (!best || score < best.score)
+        best = {
+          score,
+          arrangement: {
+            circuit,
+            source: xml,
+            focus,
+            xml: emitted.xml,
+            report: emitted.report,
+            placement: emitted.placement,
+            keptWires: model.keptWires,
+            panelBelowY: model.panelBelowY,
+            fixedComponentIds: new Set(model.fixed.keys()),
+            predicted: emitted.predicted,
+          },
+        };
+      // without rails to draw, the drawing without them is this one
+      if (!drawing.rails) break;
     }
-    candidates.push({
-      circuit,
-      source: xml,
-      focus,
-      xml: flow.xml,
-      report: flow.report,
-      placement: flow.placement,
-      keptWires: [],
-      panelBelowY: null,
-      fixedComponentIds: new Set(),
-      predicted: flow.predicted,
-    });
-  }
-  try {
-    const columns = await columnArrangement(request);
-    columns.report.engine = "columns";
-    candidates.push(columns);
-  } catch (error) {
-    if (!candidates.length) throw error;
-    tried.push({
-      engine: "columns",
-      skipped: error instanceof Error ? error.message : String(error),
-    });
-  }
-  let best: Arrangement | null = null;
-  let bestScore = Infinity;
-  for (const candidate of candidates) {
-    const { score } = readability(candidate.predicted!);
-    tried.push({
-      engine: candidate.report.engine,
-      ...(candidate.report.variant
-        ? { variant: candidate.report.variant }
-        : {}),
-      score,
-    });
-    if (score < bestScore) [best, bestScore] = [candidate, score];
-  }
-  best!.report.candidates = tried;
-  return best!;
-}
-
-// The column engine: stages, groups, tunnels for long spans, panels.
-async function columnArrangement(
-  request: ArrangeRequest,
-): Promise<Arrangement> {
-  const { xml, circuit, focus } = request;
-  const options = request.options ?? {};
-  const organization = getKey(options, "organization");
-  const layoutArgs = layoutOptions(options);
-  if (organization !== null)
-    layoutArgs.placementStrategy = new GroupedPlacement(
-      normalizeOrganization(organization),
-      request.solve ?? solveGroups,
+  if (!best)
+    throw new CircuitToolError(
+      "ARRANGE_FAILED",
+      `没有找到能成立的布局：${tried.map((t) => t.skipped).join("；")}`,
+      {
+        hint: "这是布局引擎的缺陷，请把该电路反馈给维护者；可以先用 pinnedComponentIds 固定出问题的元件后重试。",
+        context: { candidates: tried },
+      },
     );
-  const layout = new SchematicLayout(xml, circuit, focus, layoutArgs);
-  if (getKey(options, "columnGap") !== null)
-    layout.columnGap = toInt(options.columnGap);
-  if (getKey(options, "maxLayerSpan") !== null)
-    layout.maxLayerSpan = toInt(options.maxLayerSpan);
-  // px from driver to consumer above which a named 1-consumer net is
-  // tunnelled (default TUNNEL_SPAN[1]); the fan-out steps scale with it
-  if (getKey(options, "tunnelSpan") !== null)
-    layout.tunnelSpanScale = toInt(options.tunnelSpan) / item(TUNNEL_SPAN, 1);
-  let after: string;
-  try {
-    after = await layout.emit();
-  } catch (error) {
-    if (organization === null || !(error instanceof PyValueError)) throw error;
-    throw new CircuitToolError("INVALID_LAYOUT_ORGANIZATION", error.message, {
-      hint: "按相同保护/常量选项重新读取 layoutContext，完整分组列出的元件；不要分组固定对象、Tunnel 或拆开接触组合。",
-    });
-  }
-  if (organization !== null)
-    after = annotateGroups(
-      after,
-      circuit,
-      layout.report.layoutGroups,
-      getKey(layout.report, "layoutStages", []),
-    );
-  return {
-    circuit,
-    source: xml,
-    focus,
-    xml: after,
-    report: layout.report,
-    placement: layout.placement,
-    keptWires: layout.keptWires,
-    panelBelowY: layout.panelBelowY,
-    fixedComponentIds: new Set(
-      focus.components
-        .filter((c) => layout.isPanel(c))
-        .map((c) => c.componentId),
-    ),
-    predicted: predictedFocus(after, circuit, focus, layout.placement),
-  };
+  best.arrangement.report.candidates = tried;
+  return best.arrangement;
 }
 
 export interface ArrangementChecks {
@@ -509,7 +396,7 @@ export function verifyArrangement(
   try {
     assertFloatingIsolation(before, after);
   } catch (error) {
-    if (!(error instanceof PyValueError)) throw error;
+    if (error instanceof CircuitToolError || !(error instanceof Error)) throw error;
     throw new CircuitToolError("ARRANGE_PROTECTED_CHANGED", error.message);
   }
   const origOf = new Map<string, Placed>();
@@ -536,7 +423,7 @@ export function verifyArrangement(
     .filter(([key]) => !beforeSig.has(key))
     .map(([, group]) => group);
   const invalid = (after.wireBundles ?? [])
-    .filter((b) => !truthy(hasOwn(b, "valid") ? b.valid : true))
+    .filter((b) => !(hasOwn(b, "valid") ? b.valid : true))
     .map((b) => b.bundleId);
   if (lost.length || gained.length || invalid.length) {
     // Name the groups so the caller knows WHICH net changed (label,
@@ -546,10 +433,10 @@ export function verifyArrangement(
     );
     const describe = (group: NetGroup): Report => {
       const items: Report[] = [];
-      for (const [identKey, port] of sortBy(group.ports, (p) => pyStr(p))) {
+      for (const [identKey, port] of [...group.ports].sort((a, b) => strCmp(JSON.stringify(a), JSON.stringify(b)))) {
         const known =
           typeof identKey === "number" ? nameOf.get(identKey) : undefined;
-        const [at, factory] = known ?? [[null, null], pyStr(identKey)];
+        const [at, factory] = known ?? [[null, null], JSON.stringify(identKey)];
         const comp = before.components.find(
           (c) =>
             c.location.x === at[0] &&
@@ -582,8 +469,8 @@ export function verifyArrangement(
       }
       return {
         ports: items.slice(0, 8),
-        tunnelLabels: sorted(labels).slice(0, 4),
-        constants: sorted(group.constants),
+        tunnelLabels: [...labels].sort().slice(0, 4),
+        constants: canonical(group.constants),
       };
     };
     throw new CircuitToolError(
@@ -608,13 +495,11 @@ export function verifyArrangement(
     circuit,
     (p) => (origOf.get(placedKey(p, "Pin")) ?? [[null, null], null])[0],
   );
-  if (!pyEq(interfaceBefore, interfaceAfter)) {
-    const pins = sortBy(
-      before.components
-        .filter((c) => c.factoryName === "Pin")
-        .map((c) => ({ componentId: c.componentId, label: attr(c, "label") })),
-      (p) => p.componentId,
-    );
+  if (!sameJson(interfaceBefore, interfaceAfter)) {
+    const pins = before.components
+      .filter((c) => c.factoryName === "Pin")
+      .map((c) => ({ componentId: c.componentId, label: attr(c, "label") }))
+      .sort((a, b) => strCmp(a.componentId, b.componentId));
     throw new CircuitToolError(
       "ARRANGE_INTERFACE_CHANGED",
       "整理会改变这个电路作为子电路时的引脚排列（使用它的电路里端口会对不上），已丢弃。",
@@ -651,7 +536,7 @@ export function verifyArrangement(
       if (c.bounds.y < belowY)
         fixed.push([c.factoryName, `(${c.location.x},${c.location.y})`]);
   if (
-    !pyEq(
+    !sameJson(
       protectedNodes(beforeXml, circuit, fixed),
       protectedNodes(afterXml, circuit, fixed),
     )
@@ -664,7 +549,7 @@ export function verifyArrangement(
   const originalRegion: Wire[] = [];
   for (const node of circuitElement(beforeXml, circuit).findall("wire")) {
     const [from, to] = ["from", "to"].map((key) => {
-      const [x, y] = numbers(node.get(key));
+      const [x, y] = loc(node.get(key));
       return { x, y };
     });
     const clipped = regionSegment({ from, to }, belowY);

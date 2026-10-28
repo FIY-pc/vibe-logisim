@@ -1,7 +1,5 @@
 // Circuit tool failures: a stable code, a message for the model, an optional
-// hint and context. CircuitToolError is a ValueError, as callers that wrap
-// engine failures rely on.
-import { PyValueError } from "./py.mts";
+// hint and context.
 
 export const ERROR_SCHEMA = "vibe-logisim.circuit-plugin.error/v1";
 
@@ -14,7 +12,7 @@ export interface CircuitToolErrorOptions {
   context?: Record<string, unknown> | null;
 }
 
-export class CircuitToolError extends PyValueError {
+export class CircuitToolError extends Error {
   readonly code: string;
   readonly retryable: boolean;
   readonly hint: string | null;
