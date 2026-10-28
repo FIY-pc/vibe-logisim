@@ -310,10 +310,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
           object(
             {
               points: array(
-                object(
-                  { x: int(GRID), y: int(GRID) },
-                  ["x", "y"],
-                ),
+                object({ x: int(GRID), y: int(GRID) }, ["x", "y"]),
                 { minItems: 2, maxItems: 64 },
               ),
             },
@@ -378,10 +375,27 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
-      keepTunnels: array(str({ maxLength: 128 }), { maxItems: 256 }),
-      pinnedComponentIds: array(str({ maxLength: 64 }), { maxItems: 2048 }),
-      localiseConstants: { type: "boolean" },
-      panelBelowY: int({ minimum: -100000, maximum: 100000 }),
+      keepTunnels: array(str({ maxLength: 128 }), {
+        maxItems: 256,
+        description:
+          "Tunnel labels to keep as tunnels instead of wiring their nets.",
+      }),
+      pinnedComponentIds: array(str({ maxLength: 64 }), {
+        maxItems: 2048,
+        description:
+          "Parts that stay where they are; they cannot be in a group. Interface pins are ordinary parts: leave them unpinned to let the layout place them.",
+      }),
+      localiseConstants: {
+        type: "boolean",
+        description:
+          "Give each consumer of a Constant its own copy on its port (default true).",
+      },
+      panelBelowY: int({
+        minimum: -100000,
+        maximum: 100000,
+        description:
+          "Only for sheets with a fixed control panel on top: every part whose top edge is above this y stays in place and cannot be grouped. Omit it otherwise (a panel is detected only on sheets of 40 or more parts); a value below the whole drawing freezes everything.",
+      }),
       organization: object(
         {
           groups: array(

@@ -6,12 +6,16 @@
  * Document resolution: `path` (folder-relative) → the open document with
  * that absolute path, else the host opens it (and the UI is told). No path →
  * the document last opened or created by a tool this turn, else the document
- * the user was looking at when they asked.
+ * the user was looking at when they asked. An open document whose file
+ * changed underneath it (a shell command or write_file rewrote it, the user
+ * saved it from another program) is read again first unless it has unsaved
+ * changes, so the tools always work on the file as it is.
  */
 import * as path from "node:path";
 import { CircuitToolError } from "./errors.mts";
 import { observationView, type ObservationView } from "./observe.mts";
 import type { Edit } from "../generated/Edit.ts";
+import type { SourceStatus } from "../generated/SourceStatus.ts";
 import type {
   DocumentSummary,
   DocumentView,
@@ -28,7 +32,12 @@ import {
 } from "../protocol/document-change.ts";
 
 /** Edits the host applies together as one change. */
-const BATCHED = new Set<Edit["kind"]>(["wire", "place", "delete", "attributes"]);
+const BATCHED = new Set<Edit["kind"]>([
+  "wire",
+  "place",
+  "delete",
+  "attributes",
+]);
 
 export interface ToolContextOptions {
   host: HostClient;
@@ -123,7 +132,8 @@ export class ToolContext {
   /**
    * The document a tool works on. With `relative`, an open document at that
    * path or a freshly opened one (then the UI shows it); without, the current
-   * document. Always re-read from the host so the revision is fresh.
+   * document. Always re-read from the host so the revision is fresh, and
+   * read again from its file when that changed (see `fromFile`).
    */
   async resolveDocument(relative?: string | null): Promise<DocumentView> {
     const status = await this.status();
@@ -132,7 +142,7 @@ export class ToolContext {
       const open = status.documents.find((d) => d.path === target);
       if (open) {
         this.currentDocumentId = open.id;
-        return this.view(open);
+        return this.fromFile(open);
       }
       const view = await this.host.call<DocumentView>({
         op: "open",
@@ -150,7 +160,43 @@ export class ToolContext {
         hint: "给出 path 打开文件夹里的 .circ，或用 create_circuit 新建。",
       });
     this.currentDocumentId = current.id;
-    return this.view(current);
+    return this.fromFile(current);
+  }
+
+  /**
+   * An open document as its file is: when the file changed underneath it
+   * (write_file, a shell command, another program) and it has no unsaved
+   * changes, the host reads it again (the previous content stays in undo
+   * history) and the UI is told the whole document changed. A document with
+   * unsaved changes is used as it is; the UI shows the user the file notice.
+   */
+  private async fromFile(open: DocumentSummary): Promise<DocumentView> {
+    const view = await this.view(open);
+    if (!view.path || view.dirty) return view;
+    const source = await this.host.call<SourceStatus>({
+      op: "sourceStatus",
+      id: view.id,
+    });
+    if (source.state !== "modified") return view;
+    const reloaded = await this.host.call<DocumentView>({
+      op: "reload",
+      id: view.id,
+      revision: view.revision,
+      source_revision: source.revision,
+      discard: false,
+    });
+    this.views.set(reloaded.id, reloaded);
+    const { circuits, ...fields } = reloaded;
+    this.emit({
+      type: "document-changed",
+      change: {
+        ...fields,
+        base: view.revision,
+        order: circuits.map((c) => c.name),
+        circuits,
+      },
+    });
+    return reloaded;
   }
 
   /** The definition a tool works on: the named one, else the user's current one, else main. */

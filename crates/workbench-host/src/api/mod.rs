@@ -215,6 +215,9 @@ mod tests {
             Request::from_value(serde_json::json!({"op":"save","id":"a","revision":"r"})).unwrap();
         assert_eq!(save.meta().effect, Effect::Write);
         assert!(save.meta().agent);
+        let reload = Request::from_value(serde_json::json!({"op":"reload","id":"a","revision":"r","source_revision":"s","discard":false})).unwrap();
+        assert!(reload.meta().agent);
+        assert_eq!(reload.meta().history.unwrap().title, "读取磁盘版本");
         let preview = Request::from_value(serde_json::json!({"op":"movePreview","id":"a","revision":"r","circuit":"main","ids":[],"delta":{"x":0,"y":0}})).unwrap();
         assert_eq!(preview.meta().effect, Effect::Read);
         assert!(!preview.meta().agent);

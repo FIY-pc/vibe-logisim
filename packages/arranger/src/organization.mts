@@ -114,7 +114,10 @@ export function organizationContext(
     });
   }
   const fixedBy = (reason: string) =>
-    [...model.fixed].filter(([, r]) => r === reason).map(([id]) => id).sort();
+    [...model.fixed]
+      .filter(([, r]) => r === reason)
+      .map(([id]) => id)
+      .sort();
   return {
     components,
     annotations,
@@ -144,6 +147,30 @@ interface Group {
 
 const textOf = (value: unknown): string =>
   typeof value === "string" ? value : JSON.stringify(value);
+
+// Why a listed part cannot be a group member: it is not on the sheet, it is
+// a Tunnel, or it stays where it is (and for what reason).
+function refusal(model: Model, c: Component | undefined): string {
+  if (!c) return "不存在（元件 ID 以当前 inspect_circuit 的结果为准）";
+  if (c.factoryName === "Tunnel") return "是隧道：隧道随它的网络布置，不分组";
+  const why = model.fixed.get(c.componentId);
+  switch (why) {
+    case "pinned":
+      return "在 pinnedComponentIds 里，原地不动的元件不分组";
+    case "panel":
+      return `在固定的面板里（panelBelowY=${model.panelBelowY}：上边缘在这条线之上的元件原地不动），要布局它就去掉 panelBelowY 或把它改小`;
+    case "loose wires":
+      return "连着松散导线，原地不动，不分组";
+    case "frame":
+      return "在闭合的边框里，原地不动，不分组";
+    case "touches a fixed part":
+      return "和原地不动的元件直接相连，一起原地不动，不分组";
+    case undefined:
+      return "不支持分组";
+    default:
+      return `原地不动（${why}），不分组`;
+  }
+}
 
 function headingOf(text: string, font: string): Heading {
   const box = textBox(0, 0, text, font, "left");
@@ -177,19 +204,20 @@ function detach(model: Model, c: Component): void {
   model.unitOf.delete(c.componentId);
   unit.box = [...unit.parts, ...unit.captions]
     .map(footprint)
-    .reduce(
-      (a, b): Box => [
-        Math.min(a[0], b[0]),
-        Math.min(a[1], b[1]),
-        Math.max(a[2], b[2]),
-        Math.max(a[3], b[3]),
-      ],
-    );
+    .reduce((a, b): Box => [
+      Math.min(a[0], b[0]),
+      Math.min(a[1], b[1]),
+      Math.max(a[2], b[2]),
+      Math.max(a[3], b[3]),
+    ]);
 }
 
 // The rows of blocks that realize the organization on this model. Raises
 // INVALID_LAYOUT_ORGANIZATION, naming the problem, when it cannot be.
-export function organizationRows(model: Model, organization: Report): Block[][] {
+export function organizationRows(
+  model: Model,
+  organization: Report,
+): Block[][] {
   const given = (organization.groups ?? []) as Report[];
   if (!Array.isArray(given) || !given.length)
     throw invalid("分块布局需要至少一个显式分组");
@@ -212,15 +240,19 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
       componentIds: Array.isArray(g.componentIds) ? g.componentIds : [],
       container: { id: `group:${id}`, heading: null, children: [] },
     };
-    if (!Array.isArray(g.componentIds)) throw invalid(`分组缺少 componentIds: ${id}`);
+    if (!Array.isArray(g.componentIds))
+      throw invalid(`分组缺少 componentIds: ${id}`);
     for (const original of group.componentIds) {
       if (seen.has(original)) throw invalid(`重复元件: ${textOf(original)}`);
       seen.add(original);
       const c = model.byId.get(original as string);
       if (c && isText(c) && !model.fixed.has(c.componentId)) continue;
-      const unit = c && !isText(c) ? model.unitOf.get(c.componentId) : undefined;
+      const unit =
+        c && !isText(c) ? model.unitOf.get(c.componentId) : undefined;
       if (!unit)
-        throw invalid(`分组引用了不存在、固定或不支持的元件: ${textOf(original)}`);
+        throw invalid(
+          `分组引用的元件 ${textOf(original)} ${refusal(model, c)}`,
+        );
       const holder = groupOf.get(unit);
       if (holder === group) continue;
       if (holder) throw invalid(`元件或接触组合重复/跨组: ${textOf(original)}`);
@@ -233,14 +265,16 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
   const missing = model.units
     .filter((u) => !groupOf.has(u))
     .map((u) => hostOf(u).componentId);
-  if (missing.length) throw invalid("分组遗漏元件: " + missing.sort().join(", "));
+  if (missing.length)
+    throw invalid("分组遗漏元件: " + missing.sort().join(", "));
 
   // named links: a connection drawn with Tunnels of the given name
   const sourceLabels = new Map<string, string>();
   for (const t of model.tunnels) {
     const label = attr(t, "label");
     const net = t.ends[0]?.netBits?.length ? t.ends[0] : null;
-    if (label && net) sourceLabels.set(label.toLowerCase(), JSON.stringify(net.netBits));
+    if (label && net)
+      sourceLabels.set(label.toLowerCase(), JSON.stringify(net.netBits));
   }
   const requested = new Map<string, string>();
   for (const link of (organization.namedLinks ?? []) as Report[]) {
@@ -248,11 +282,16 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
     const net = model.netOfPort.get(`${link?.componentId}:${link?.port}`);
     if (!net) throw invalid(`命名连接引用未知端口: ${JSON.stringify(port)}`);
     const label = String(link.label ?? "").trim();
-    if (!label || net.constant) throw invalid(`不能命名该连接: ${JSON.stringify(port)}`);
+    if (!label || net.constant)
+      throw invalid(`不能命名该连接: ${JSON.stringify(port)}`);
     if (net.labels.length && !net.labels.includes(label))
       throw invalid(`不能改写已有信号名称: ${label}`);
     const key = label.toLowerCase();
-    if (!net.labels.length && (sourceLabels.has(key) || (requested.has(key) && requested.get(key) !== net.key)))
+    if (
+      !net.labels.length &&
+      (sourceLabels.has(key) ||
+        (requested.has(key) && requested.get(key) !== net.key))
+    )
       throw invalid(`信号名称已被其他网络使用: ${label}`);
     requested.set(key, net.key);
   }
@@ -275,7 +314,8 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
       continue;
     }
     const group = groups.find((g) => g.id === textOf(entry.groupId));
-    if (!group) throw invalid(`标题引用未知分组: ${textOf(entry.groupId ?? null)}`);
+    if (!group)
+      throw invalid(`标题引用未知分组: ${textOf(entry.groupId ?? null)}`);
     if (headed.has(group)) throw invalid(`分组标题重复: ${group.id}`);
     detach(model, c);
     headed.set(group, c);
@@ -286,7 +326,8 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
     group.container.heading = source
       ? sourceHeading(source)
       : headingOf(
-          (numbered ? `${String(group.order + 1).padStart(2, "0")}  ` : "") + group.label,
+          (numbered ? `${String(group.order + 1).padStart(2, "0")}  ` : "") +
+            group.label,
           GROUP_FONT,
         );
     group.container.children = group.units;
@@ -300,7 +341,10 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
     const id = textOf(s?.id ?? index);
     if (stageIds.has(id)) throw invalid(`重复阶段: ${id}`);
     stageIds.add(id);
-    const names = [...((s?.mainPath ?? []) as unknown[]), ...((s?.groups ?? []) as unknown[])].map(textOf);
+    const names = [
+      ...((s?.mainPath ?? []) as unknown[]),
+      ...((s?.groups ?? []) as unknown[]),
+    ].map(textOf);
     const members: Group[] = [];
     for (const name of names) {
       const group = groups.find((g) => g.id === name);
@@ -311,7 +355,9 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
       members.push(group);
     }
     if (!members.length) throw invalid(`空阶段: ${id}`);
-    const row = Number.isFinite(Number(s.row)) ? Math.trunc(Number(s.row)) : Math.min(...members.map((g) => g.row));
+    const row = Number.isFinite(Number(s.row))
+      ? Math.trunc(Number(s.row))
+      : Math.min(...members.map((g) => g.row));
     blocks.push({
       row,
       block: {
@@ -322,16 +368,22 @@ export function organizationRows(model: Model, organization: Report): Block[][] 
     });
   });
   for (const group of groups)
-    if (!staged.has(group)) blocks.push({ row: group.row, block: group.container });
+    if (!staged.has(group))
+      blocks.push({ row: group.row, block: group.container });
   const rows = [...new Set(blocks.map((b) => b.row))].sort((a, b) => a - b);
   return rows.map((r) => blocks.filter((b) => b.row === r).map((b) => b.block));
 }
 
 // Where the groups and stages ended up, for the report.
-export function organizationReport(organization: Report, drawing: Drawing): Report {
+export function organizationReport(
+  organization: Report,
+  drawing: Drawing,
+): Report {
   const box = (id: string) => {
     const b = drawing.containers.get(id);
-    return b ? { x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1] } : {};
+    return b
+      ? { x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1] }
+      : {};
   };
   return {
     layoutGroups: ((organization.groups ?? []) as Report[]).map((g) => ({

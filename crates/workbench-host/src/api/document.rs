@@ -409,7 +409,8 @@ impl DocumentRequest {
             Self::Activate { .. } | Self::Close { .. } => Meta::new(Write),
             Self::Reload { id, .. } => Meta::new(Write)
                 .stage(Stage::Open)
-                .history(Action::document("reload", "读取磁盘版本", id)),
+                .history(Action::document("reload", "读取磁盘版本", id))
+                .agent(),
             Self::Save { id, .. } => Meta::new(Write)
                 .stage(Stage::Save)
                 .history(Action::document("save", "保存版本", id))

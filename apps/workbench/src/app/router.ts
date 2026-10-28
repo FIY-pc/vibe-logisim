@@ -31,6 +31,13 @@ export function routeEvents(
           .catch(notices.getState().onError);
       synced = true;
     }
+    // The host read open documents again from their files (or closed them
+    // with their files) outside any command of this window.
+    if (event.topic === "documents")
+      void documents
+        .getState()
+        .refreshWorkspace()
+        .catch(notices.getState().onError);
     if (event.topic === "warning")
       notices.getState().warn(`host:${event.data.message}`, event.data.message);
     if (event.topic === "connection") notices.getState().onError(event.data);

@@ -245,21 +245,7 @@ impl Host {
                 self.cancel_file_import(&folder_id, &plan_id).await
             }
             FolderRequest::FolderCheckpoint { folder_id, title } => {
-                let guard = self.folder.lock().await;
-                let folder = guard
-                    .as_ref()
-                    .filter(|f| f.id == folder_id)
-                    .ok_or("工程文件夹已改变，请重新操作")?;
-                // The files are what they are; a history that cannot record
-                // them is reported, not an obstacle to the turn.
-                let recorded = file_history::History::open(&self.state, folder)
-                    .and_then(|mut history| history.checkpoint(folder, &title, None));
-                Ok(match recorded {
-                    Ok(change) => {
-                        json!({"change":change.as_ref().map(file_history::History::entry)})
-                    }
-                    Err(error) => json!({"change":null,"historyWarning":error.to_string()}),
-                })
+                self.checkpoint_folder(&folder_id, &title).await
             }
             FolderRequest::FolderHistory { folder_id } => self.file_history(&folder_id).await,
             FolderRequest::FolderHistoryDetail {

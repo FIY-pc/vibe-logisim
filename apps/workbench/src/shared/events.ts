@@ -1,7 +1,13 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { desktop } from "./transport";
 export interface WorkbenchEvent {
-  topic: "agent" | "simulation" | "resync" | "warning" | "connection";
+  topic:
+    | "agent"
+    | "simulation"
+    | "resync"
+    | "documents"
+    | "warning"
+    | "connection";
   data: any;
 }
 type Listener = (event: WorkbenchEvent) => void;
