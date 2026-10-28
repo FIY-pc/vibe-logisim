@@ -130,8 +130,12 @@ export async function simulateCircuit(
       expected: v.expected ?? {},
     })),
   });
-  const { raw } = await context.observe(document, circuit);
-  const conflicts = widthConflicts(raw.focus);
+  // Width conflicts explain X outputs; a run without failed or unchecked
+  // rows has none to explain.
+  const conflicts =
+    result.failed || result.unchecked
+      ? widthConflicts((await context.observe(document, circuit)).raw.focus)
+      : null;
   return {
     ...context.identity(document, circuit),
     ...result,

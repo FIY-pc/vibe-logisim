@@ -69,24 +69,7 @@ export async function inspectCircuit(
       ),
     };
   }
-  if ("layoutReview" in args) {
-    const options = args.layoutReview;
-    if (
-      options !== undefined &&
-      (options === null ||
-        typeof options !== "object" ||
-        Array.isArray(options) ||
-        Object.keys(options).length)
-    )
-      throw new CircuitToolError(
-        "INVALID_ARGUMENT",
-        "layoutReview 只接受 {}。",
-      );
-    if (!args.circuit)
-      throw new CircuitToolError(
-        "INVALID_ARGUMENT",
-        "layoutReview 需要指定 circuit。",
-      );
+  if (args.layoutReview !== undefined) {
     const { raw } = await context.observe(document, circuit);
     const measures = readability(raw.focus);
     const problems = PROBLEMS.filter((name) => measures[name] > 0).map(
@@ -192,7 +175,6 @@ export async function renderCircuit(
   return {
     ...context.identity(document, circuit),
     viewport: result.viewport,
-    note: "图像按当前内容生成；改动后需要重新查看。",
     modelContentItems: [
       {
         type: "inputImage",

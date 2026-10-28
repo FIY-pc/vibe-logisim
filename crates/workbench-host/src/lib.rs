@@ -420,6 +420,9 @@ impl Host {
             let Some(old) = before.get(id) else {
                 continue;
             };
+            if document.same_view(old) {
+                continue;
+            }
             if reply["change"]["id"].as_str() == Some(id.as_str()) {
                 if from_agent {
                     changes.push(reply["change"].clone());

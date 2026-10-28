@@ -10,7 +10,7 @@ const summary = (context: ToolContext, document: DocumentRef) => ({
   ...context.identity(document, document.main),
   name: document.name,
   main: document.main,
-  // Counts only for definitions this call read; the rest are named only.
+  // Counts for the definitions this call read; the rest are named only.
   circuits: document.order.map((name) => {
     const circuit = document.circuits.find((c) => c.name === name);
     return circuit
@@ -28,7 +28,7 @@ export async function openCircuit(
   context: ToolContext,
   args: Record<string, any>,
 ) {
-  const document = await context.resolveDocument(args.path);
+  const document = await context.resolveDocument(args.path, true);
   const circuit = context.circuitOf(document, args.circuit);
   return {
     ...summary(context, document),

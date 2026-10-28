@@ -109,9 +109,9 @@ pub enum DocumentRequest {
         name: String,
         xml: String,
     },
-    /// A whole document view; with `circuits`, the document's fields and only
-    /// those definitions' content (a `DocumentChange` at the document's
-    /// revision), which is what a tool call needs to address one definition.
+    /// The document's whole view; with `circuits`, its fields and only those
+    /// definitions' content (a `DocumentChange` at the document's revision;
+    /// `[]` for the fields alone), which is what one tool call needs.
     Read {
         id: String,
         #[serde(default)]
@@ -818,13 +818,10 @@ impl Host {
             DocumentRequest::Read { id, circuits } => {
                 let workspace = self.workspace.lock().await;
                 let document = workspace.get(&id)?;
-                let circuits = match circuits {
-                    Some(circuits) => circuits,
-                    None => document.summary().circuits,
-                };
-                Ok(value(
-                    document.view_change(&document.revision(), &circuits)?,
-                )?)
+                match circuits {
+                    Some(circuits) => value(document.view_change(&document.revision(), &circuits)?),
+                    None => value(document.view()?),
+                }
             }
             DocumentRequest::Activate { id } => {
                 let mut w = self.workspace.lock().await;

@@ -627,6 +627,16 @@ impl Document {
         let changed = changed_circuits(&before.source.tree, &self.source.tree);
         self.view_change(&before.revision(), &changed)
     }
+    /// Whether a view of this document shows the same as one of `before`:
+    /// same revision, file, name, saved state and undo/redo availability.
+    pub fn same_view(&self, before: &Document) -> bool {
+        self.source.revision == before.source.revision
+            && self.dirty() == before.dirty()
+            && self.path == before.path
+            && self.name == before.name
+            && self.undo.is_empty() == before.undo.is_empty()
+            && self.redo.is_empty() == before.redo.is_empty()
+    }
     pub fn summary(&self) -> DocumentSummary {
         let tree = &self.source.tree;
         DocumentSummary {

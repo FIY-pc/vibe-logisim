@@ -93,10 +93,7 @@ export async function placeComponent(
     circuit,
     args.components ?? [],
   );
-  const applied = await context.edit(document, circuit, edits);
-  return outcome(context, applied, {
-    note: "已放置；每个元件现在可用 c<x>_<y> 寻址。",
-  });
+  return outcome(context, await context.edit(document, circuit, edits));
 }
 
 export async function setAttributes(
@@ -216,7 +213,6 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
           result: applied.result,
           results: [...first.results, ...applied.results],
           change: applied.change,
-          document: first.document,
         }
       : applied;
     if (before && joined.length) await checkJoins(context, applied, circuit, before, joined);
@@ -224,21 +220,19 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
   const notes = already.length
     ? [`第 ${already.map((i) => i + 1).join("、")} 条连接的两个端口本来就相连，没有画线。`]
     : [];
-  if (!last)
+  if (!last || !first)
     return {
       ...context.identity(current, circuit),
       wiresAdded: 0,
       alreadyConnected: already.length,
       note: notes[0],
     };
-  const removed = args.removeWireIds?.length
-    ? { [circuit]: args.removeWireIds.map(fileWireId) }
-    : {};
-  return outcome(context, first ?? { result: last, results: [], change: current, document }, {
-    ...(args.removeWireIds?.length ? { removed } : {}),
+  return outcome(context, first, {
+    ...(args.removeWireIds?.length
+      ? { removed: { [circuit]: args.removeWireIds.map(fileWireId) } }
+      : {}),
     wiresAdded: paths.length,
-    ...(already.length ? { alreadyConnected: already.length } : {}),
-    note: [...notes, "导线编号按文件顺序；增删导线后请重新读取。"].join(" "),
+    ...(already.length ? { alreadyConnected: already.length, note: notes[0] } : {}),
   });
 }
 
@@ -321,28 +315,31 @@ async function checkJoins(
   );
 }
 
+/** A component id's anchor: `c<x>_<y>`, `m` for a negative coordinate, `_<n>` for a stacked copy. */
+function anchorOf(id: string) {
+  const match = /^c(m?)(\d+)_(m?)(\d+)(?:_\d+)?$/.exec(id);
+  if (!match)
+    throw new CircuitToolError("COMPONENT_NOT_FOUND", "不是元件 id：" + id, {
+      hint: "元件 id 形如 c1300_540。",
+    });
+  const [, xs, x, ys, y] = match;
+  return { x: (xs ? -1 : 1) * Number(x), y: (ys ? -1 : 1) * Number(y) };
+}
+
 export async function moveComponents(
   context: ToolContext,
   args: Record<string, any>,
 ) {
   const edits: Edit[] = [];
   if (args.positions?.length) {
-    const { document, circuit, definition } = await context.definition(args);
+    const { document, circuit } = await context.target(args);
     const byDelta = new Map<
       string,
       { ids: string[]; delta: { x: number; y: number } }
     >();
     for (const p of args.positions) {
-      const part = definition.components.find((c) => c.id === p.componentId);
-      if (!part)
-        throw new CircuitToolError(
-          "COMPONENT_NOT_FOUND",
-          "元件不在当前电路中：" + p.componentId,
-          {
-            hint: "用 inspect_circuit 读取当前元件 id。",
-          },
-        );
-      const delta = { x: p.x - part.location.x, y: p.y - part.location.y };
+      const anchor = anchorOf(p.componentId);
+      const delta = { x: p.x - anchor.x, y: p.y - anchor.y };
       if (!delta.x && !delta.y) continue;
       const key = `${delta.x},${delta.y}`;
       const group = byDelta.get(key) ?? { ids: [], delta };

@@ -6,8 +6,9 @@
  * It holds no document. The host owns the files and the open documents and
  * keeps every open document equal to its file (see
  * `crates/workbench-host/README.md`, Files are the truth); a tool reads the
- * header it needs through `read`, works with that revision, and gets the new
- * revision back in the reply. Nothing is cached between calls.
+ * document's fields through `read {circuits: []}`, works with that revision,
+ * and gets the new revision back in the reply. Nothing is cached between
+ * calls except which document id is open at which path.
  *
  * Document resolution: `path` (folder-relative) → the open document at that
  * absolute path, else the host opens it; no path → the document last opened
@@ -51,10 +52,17 @@ export interface ToolContextOptions {
 }
 
 /**
- * An open document at one revision: the header a tool addresses it by, the
+ * An open document at one revision: the fields a tool addresses it by, the
  * definition order, and the content of the definitions the call asked for.
  */
 export type DocumentRef = DocumentChange;
+
+/** A whole view as a `DocumentRef` holding every definition. */
+const whole = (view: DocumentView): DocumentRef => ({
+  ...view,
+  base: view.revision,
+  order: view.circuits.map((c) => c.name),
+});
 
 /** One native observation plus the document it describes. */
 export interface Observed {
@@ -64,12 +72,11 @@ export interface Observed {
   document: DocumentRef;
 }
 
-/** Edits applied by one tool call: the results, the change they made together, and the document as it was before them. */
+/** Edits applied by one tool call: every reply, the last one and its change (the document at the new revision). */
 export interface Applied {
-  result: EditResult;
+  result: EditResult & EditNotes;
   results: EditResult[];
   change: DocumentChange;
-  document: DocumentRef;
 }
 
 /** An edit reply's notes that the host sets beside the edit result. */
@@ -89,9 +96,8 @@ export class ToolContext {
   /** The definition tools work on when no circuit is given (only meaningful for the user's document). */
   private readonly userCircuit: string | null;
   private readonly userDocumentId: string | null;
-  /** Absolute paths of the documents this turn met, by document id and back. */
+  /** Document ids of the files this turn met, by absolute path. */
   private readonly byPath = new Map<string, string>();
-  private readonly paths = new Map<string, string | null>();
 
   constructor(options: ToolContextOptions) {
     this.host = options.host;
@@ -110,21 +116,17 @@ export class ToolContext {
   }
 
   /**
-   * An open document as it is now: its header and, with `circuits`, those
-   * definitions' content. The host has read the file first (every document
-   * request does), so this is the file's content at its current revision.
+   * An open document as it is now: its fields and those definitions'
+   * content (all of them when `circuits` is omitted). The host has looked at
+   * the file first (every document request does), so this is the file's
+   * content at its current revision.
    */
-  async read(
-    id: string,
-    circuits?: string[],
-  ): Promise<DocumentRef> {
-    const change = await this.host.call<DocumentChange>({
-      op: "read",
-      id,
-      ...(circuits ? { circuits } : {}),
-    });
-    this.remember(change);
-    return change;
+  async read(id: string, circuits?: string[]): Promise<DocumentRef> {
+    const document = circuits
+      ? await this.host.call<DocumentChange>({ op: "read", id, circuits })
+      : whole(await this.host.call<DocumentView>({ op: "read", id }));
+    this.remember(document);
+    return document;
   }
 
   /** Folder-relative path → absolute path inside the folder, or INVALID_ARGUMENT. */
@@ -143,21 +145,28 @@ export class ToolContext {
   }
 
   private remember(document: { id: string; path: string | null }) {
-    this.byPath.set(document.id, document.path ?? "");
-    this.paths.set(document.id, document.path);
+    if (document.path) this.byPath.set(document.path, document.id);
   }
 
   /**
-   * The document a tool works on: with `relative`, an open document at that
-   * path or a freshly opened one; without, the current document.
+   * The document a tool works on: with `relative`, the open document at that
+   * path, else the host opens it; without, the current document. One host
+   * request: the document's fields (with every definition's content when
+   * `all`, or when the file had to be opened).
    */
-  async resolveDocument(relative?: string | null): Promise<DocumentRef> {
+  async resolveDocument(
+    relative?: string | null,
+    all = false,
+  ): Promise<DocumentRef> {
+    const content = all ? undefined : [];
     if (relative) {
       const target = this.absolute(relative);
       const known = this.byPath.get(target);
-      const id = known || (await this.openIdAt(target));
-      this.currentDocumentId = id;
-      return this.read(id);
+      const document =
+        (known && (await this.readOpen(known, content))) ||
+        (await this.open(target));
+      this.currentDocumentId = document.id;
+      return document;
     }
     const id = this.currentDocumentId ?? (await this.status()).active;
     if (!id)
@@ -165,17 +174,26 @@ export class ToolContext {
         hint: "给出 path 打开文件夹里的 .circ，或用 create_circuit 新建。",
       });
     this.currentDocumentId = id;
-    return this.read(id);
+    return this.read(id, content);
   }
 
-  /** The open document at an absolute path, opening it first when it is not open. */
-  async openIdAt(target: string): Promise<string> {
-    const view = await this.host.call<DocumentView>({
-      op: "open",
-      path: target,
-    });
-    this.remember(view);
-    return view.id;
+  /** `read`, or null when the document has been closed since. */
+  private async readOpen(id: string, circuits?: string[]) {
+    try {
+      return await this.read(id, circuits);
+    } catch (error: any) {
+      if (error?.code === "DOCUMENT_NOT_FOUND") return null;
+      throw error;
+    }
+  }
+
+  /** Opens the file at an absolute path (the open document, if it is open) with every definition. */
+  private async open(target: string): Promise<DocumentRef> {
+    const document = whole(
+      await this.host.call<DocumentView>({ op: "open", path: target }),
+    );
+    this.remember(document);
+    return document;
   }
 
   /** The definition a tool works on: the named one, else the user's current one, else main. */
@@ -205,34 +223,12 @@ export class ToolContext {
 
   /**
    * Resolves document and definition together; most tools start here. One
-   * host request: the document's header.
+   * host request: the document's fields.
    */
   async target(args: { path?: string | null; circuit?: string | null }) {
     const document = await this.resolveDocument(args.path);
     const circuit = this.circuitOf(document, args.circuit);
     return { document, circuit };
-  }
-
-  /**
-   * The same, with the definition's content — what a tool needs to address
-   * parts and wires. A second request only when the header had to be read to
-   * name the definition.
-   */
-  async definition(args: { path?: string | null; circuit?: string | null }) {
-    const document = await this.resolveDocument(args.path);
-    const circuit = this.circuitOf(document, args.circuit);
-    if (document.circuits.some((c) => c.name === circuit)) {
-      const definition = document.circuits.find((c) => c.name === circuit)!;
-      return { document, circuit, definition };
-    }
-    const content = await this.read(document.id, [circuit]);
-    const definition = content.circuits.find((c) => c.name === circuit);
-    if (!definition)
-      throw new CircuitToolError(
-        "CIRCUIT_NOT_FOUND",
-        "电路定义不存在：" + circuit,
-      );
-    return { document: content, circuit, definition };
   }
 
   /** The native observation of one definition at the document's current revision. */
@@ -249,15 +245,14 @@ export class ToolContext {
 
   /**
    * Sends edit, undo or redo requests one after another, each on the
-   * revision the previous one made. The host broadcasts what they changed;
-   * the change they made together is returned.
+   * revision the previous one made. The host broadcasts what they changed.
    */
   async send(
     document: DocumentRef,
     requests: ((revision: string) => Request)[],
   ): Promise<Applied> {
     let revision = document.revision;
-    const results: EditResult[] = [];
+    const results: (EditResult & EditNotes)[] = [];
     for (const request of requests) {
       this.assertCurrent();
       const result = await this.host.call<EditResult & EditNotes>(
@@ -267,12 +262,7 @@ export class ToolContext {
       revision = result.revision;
     }
     const last = results[results.length - 1];
-    return {
-      result: last,
-      results,
-      change: { ...last.change, base: document.revision },
-      document,
-    };
+    return { result: last, results, change: last.change };
   }
 
   /**
