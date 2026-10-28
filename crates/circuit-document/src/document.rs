@@ -959,10 +959,7 @@ impl Document {
 
 impl Document {
     pub fn relocate(&mut self, from: &Path, to: &Path) {
-        if let Some(path) = &self.path
-            && let Ok(relative) = path.strip_prefix(from)
-        {
-            let next = to.join(relative);
+        if let Some(next) = self.path.as_deref().and_then(|p| relocated(p, from, to)) {
             self.name = next
                 .file_name()
                 .unwrap_or_default()
@@ -975,6 +972,18 @@ impl Document {
             });
         }
     }
+}
+
+/// Where `path` is after `from` moved to `to`: `to` itself when `path` is
+/// `from` (joining the empty rest would leave a trailing separator, which
+/// the file system then reads as a directory), else `to` joined with the rest.
+pub(crate) fn relocated(path: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
+    let relative = path.strip_prefix(from).ok()?;
+    Some(if relative.as_os_str().is_empty() {
+        to.to_path_buf()
+    } else {
+        to.join(relative)
+    })
 }
 
 impl Document {

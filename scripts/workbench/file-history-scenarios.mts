@@ -34,6 +34,15 @@ export async function verifyFileHistory(
       choices: plan.items.map((item: any) => ({ index: item.index, action })),
     });
   const latest = async () => (await call({ op: "folderHistory" }))[0];
+  /** Runs an edit whose automatic save fails, leaving a document with unsaved changes. */
+  const unsaved = async <T,>(edit: () => Promise<T>) => {
+    await chmod(project, 0o555);
+    try {
+      return await edit();
+    } finally {
+      await chmod(project, 0o755);
+    }
+  };
   let plan = await prepare([path.join(incoming, "bundle")]);
   assert.equal(plan.items[0].conflict, false);
   assert.deepEqual((await apply(plan)).imported, ["bundle"]);
@@ -147,18 +156,18 @@ export async function verifyFileHistory(
   await call({ op: "folderHistory" });
   let doc = await call({ op: "open", path: circuitPath });
   const id = doc.id;
-  await writeFile(circuitPath, source + "\n");
   doc = documentOf(
-    await call({
-      op: "edit",
-      id,
-      revision: doc.revision,
-      circuit: "main",
-      edit: { kind: "renameCircuit", name: "draft" },
-    }),
+    await unsaved(() =>
+      call({
+        op: "edit",
+        id,
+        revision: doc.revision,
+        circuit: "main",
+        edit: { kind: "renameCircuit", name: "draft" },
+      }),
+    ),
   );
   assert(doc.saveError);
-  await writeFile(circuitPath, source);
   await call({
     op: "folderRename",
     from: "history.circ",
@@ -186,22 +195,18 @@ export async function verifyFileHistory(
   assert.equal(doc.id, id);
   assert.equal(doc.main, "imported");
   assert(!doc.dirty);
-  const importedBytes = await readFile(circuitPath);
-  await writeFile(
-    circuitPath,
-    Buffer.concat([importedBytes, Buffer.from("\n")]),
-  );
   doc = documentOf(
-    await call({
-      op: "edit",
-      id,
-      revision: doc.revision,
-      circuit: "imported",
-      edit: { kind: "renameCircuit", name: "new-draft" },
-    }),
+    await unsaved(() =>
+      call({
+        op: "edit",
+        id,
+        revision: doc.revision,
+        circuit: "imported",
+        edit: { kind: "renameCircuit", name: "new-draft" },
+      }),
+    ),
   );
   assert(doc.saveError);
-  await writeFile(circuitPath, importedBytes);
   await assert.rejects(
     call({ op: "folderHistoryUndo", id: overwrite.id }),
     /未保存/,

@@ -114,11 +114,9 @@ impl Host {
                         Err(error) => problem = Some(error.message),
                     }
                 }
-                SourceStatus::Missing if close_missing && !dirty => {
-                    if self.close_clean(&id).await {
-                        closed = true;
-                        continue;
-                    }
+                SourceStatus::Missing if close_missing && !dirty && self.close_clean(&id).await => {
+                    closed = true;
+                    continue;
                 }
                 _ => {}
             }
@@ -229,7 +227,9 @@ impl Host {
         let name = self.workspace.lock().await.get(id).ok()?.name().to_owned();
         Some(HostError::new(
             crate::ErrorCode::InvalidDocument,
-            format!("“{name}”在磁盘上的新内容无法载入：{problem}。改好文件后，电路工具会读到新内容"),
+            format!(
+                "“{name}”在磁盘上的新内容无法载入：{problem}。改好文件后，电路工具会读到新内容"
+            ),
         ))
     }
     pub(crate) fn emit_workspace(&self, workspace: &Workspace) {

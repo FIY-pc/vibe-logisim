@@ -440,11 +440,20 @@ impl Host {
             }
         }
         let opened_or_closed = workspace.documents.len() != before.len()
-            || workspace.documents.keys().any(|id| !before.contains_key(id));
-        let workspace = (from_agent && (opened_or_closed || workspace.active != *active))
-            .then(|| documents::files::WorkspaceChange {
-                documents: workspace.documents.values().map(Document::summary).collect(),
-                active: workspace.active.clone(),
+            || workspace
+                .documents
+                .keys()
+                .any(|id| !before.contains_key(id));
+        let workspace =
+            (from_agent && (opened_or_closed || workspace.active != *active)).then(|| {
+                documents::files::WorkspaceChange {
+                    documents: workspace
+                        .documents
+                        .values()
+                        .map(Document::summary)
+                        .collect(),
+                    active: workspace.active.clone(),
+                }
             });
         (changes, workspace)
     }
