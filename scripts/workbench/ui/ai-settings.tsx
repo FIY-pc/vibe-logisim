@@ -175,10 +175,11 @@ export async function verifyAISettings() {
     assert.equal(document.activeElement?.getAttribute("role"), "option");
     await click(document.activeElement!);
     assert.equal(selected[0].model, "beta");
-    assert.equal(container.querySelector("dialog"), null);
-    assert.equal(
-      document.activeElement,
-      container.querySelector('button[aria-haspopup="dialog"]'),
+    assert.equal(container.querySelector("dialog")?.textContent ?? null, null);
+    assert.ok(
+      document.activeElement ===
+        container.querySelector('button[aria-haspopup="dialog"]'),
+      `focus is on ${document.activeElement?.outerHTML.slice(0, 120)}`,
     );
     await click(container.querySelector('button[aria-haspopup="dialog"]')!);
     await click(button("刷新列表"));
@@ -199,7 +200,7 @@ export async function verifyAISettings() {
         .querySelector("dialog")!
         .dispatchEvent(new Event("cancel", { cancelable: true }));
     });
-    assert.equal(container.querySelector("dialog"), null);
+    assert.equal(container.querySelector("dialog")?.textContent ?? null, null);
     console.log(
       "PASS: settings keep defaults separate from conversation bindings; model picker preserves search, refresh warnings, keyboard navigation and busy state",
     );

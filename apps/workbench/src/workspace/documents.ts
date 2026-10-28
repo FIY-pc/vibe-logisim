@@ -39,9 +39,10 @@ export interface DocumentsState {
   /** Takes a document returned by a mutation. When a later change already
    * replaced the base revision, the workspace is read again instead. */
   mergeDocument(document: Document, expectedBaseRevision?: string): void;
-  /** Takes what an edit, undo or redo changed, with the width conflicts of
-   * the circuits it changed. When the document is no longer at the change's
-   * base revision, the workspace is read again instead. */
+  /** Takes a document change (the window's own edit, undo or redo, or one
+   * the host broadcast), with the width conflicts of the circuits it changed.
+   * When the document is not at the change's base revision, that one document
+   * is read again instead and replaced where it is. */
   applyChange(change: DocumentChange): void;
   /** Adds or replaces a document and activates it. */
   update(document: Document): void;
@@ -70,6 +71,9 @@ export function createDocumentsStore({
 }) {
   // Bumped by every local change to the workspace view.
   let epoch = 0;
+  // The newest read of each document; an older read's answer is dropped.
+  const reads = new Map<string, number>();
+  let readCount = 0;
   return createStore<DocumentsState>()((set, get) => ({
     docs: [],
     active: null,
@@ -165,9 +169,17 @@ export function createDocumentsStore({
       if (!current) return;
       const next = applyDocumentChange(current, change);
       if (!next) {
-        // Another copy of the document is ahead of this view: read that one.
+        // This view missed a change of the document: read that one again.
+        const read = ++readCount;
+        reads.set(change.id, read);
         void command<Document>({ op: "read", id: change.id })
-          .then((view) => get().update(view))
+          .then((view) => {
+            if (reads.get(view.id) !== read) return;
+            reads.delete(view.id);
+            get().setDocs((previous) =>
+              previous.map((item) => (item.id === view.id ? view : item)),
+            );
+          })
           .catch(notices.getState().onError);
         return;
       }

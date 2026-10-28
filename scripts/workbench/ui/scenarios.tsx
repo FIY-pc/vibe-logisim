@@ -142,6 +142,7 @@ const state = () => ({
       recoveryError: null,
     };
   if (request.op === "sourceStatus") return { state: "unchanged" };
+  if (request.op === "read") return doc(request.id);
   if (request.op === "catalog") return { children: [] };
   if (request.op === "observe" || request.op === "connections")
     return { focus: observedFocus || { components: [] } };
@@ -424,9 +425,10 @@ assert.equal(
   "transparent",
 );
 await appKey("/");
-assert.equal(
-  document.activeElement,
-  document.querySelector('input[aria-label="查找电路"]'),
+assert.ok(
+  document.activeElement ===
+    document.querySelector('input[aria-label="查找电路"]'),
+  `focus is on ${document.activeElement?.outerHTML.slice(0, 120)}`,
 );
 await click(
   [...document.querySelectorAll(".circuit-list button")].find(
@@ -447,7 +449,7 @@ await openMenu("更多");
 await clickMenuItem("帮助与反馈");
 await clickMenuItem("立即检查更新");
 assert.match(document.querySelector(".capture-notice")!.textContent!, /开发版/);
-assert.equal(document.querySelector(".error-bar"), null);
+assert.equal(document.querySelector(".error-bar")?.textContent ?? null, null);
 await openMenu("更多");
 await clickMenuItem("帮助与反馈");
 await clickMenuItem("反馈问题…");
@@ -568,7 +570,10 @@ await act(async () => {
 await settle();
 assert.equal(statusReads, 4);
 assert.ok(document.querySelector(".file-title .dirty-dot"));
-assert.equal(document.querySelector('dialog[aria-label="重命名"]'), null);
+assert.equal(
+  document.querySelector('dialog[aria-label="重命名"]')?.textContent ?? null,
+  null,
+);
 
 // Keyboard close is allowed while another clean tab's close is pending.
 closeGates.set("A", defer());
@@ -853,7 +858,11 @@ assert.equal(
   "invalid",
 );
 await setPlacementLabel("Alpha");
-assert.equal(document.querySelector(".placement-inspector [role=alert]"), null);
+assert.equal(
+  document.querySelector(".placement-inspector [role=alert]")?.textContent ??
+    null,
+  null,
+);
 assert.equal(queuedCalls.length, 0);
 await pointer("pointerdown", 200);
 await setPlacementLabel("Beta");
