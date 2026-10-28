@@ -23,8 +23,8 @@ export function SimulationMenuRegion() {
   const shortcuts = useSettings((settings) => settings.labels);
   const onError = useNotices((notices) => notices.onError);
   if (!doc || !circuit) return null;
-  const status = simulationStatus(state, doc, circuit.name);
-  const session = state.session;
+  const status = simulationStatus(state, view);
+  const { run } = state;
   const { simulation, navigation } = actions;
   return (
     <SimulationMenu
@@ -46,14 +46,12 @@ export function SimulationMenuRegion() {
         await simulation.changeFrequency(view, value);
       }}
       onReturnToSimulation={
-        session &&
-        !status.visible &&
+        run &&
+        !status.live &&
         docs.some(
-          (item) =>
-            item.id === session.documentId &&
-            item.revision === session.revision,
+          (item) => item.id === run.documentId && item.revision === run.revision,
         )
-          ? () => navigation.returnToSimulation(view, session)
+          ? () => navigation.returnToSimulation(view)
           : undefined
       }
     />

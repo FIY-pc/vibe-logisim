@@ -2,9 +2,9 @@
 import type { RuntimeKind } from "./RuntimeKind.ts";
 
 /**
- * One run of one root circuit of one document revision.
+ * The run: one root circuit of one document revision.
  */
-export type SessionInfo = { sessionId: string, documentId: string, documentName: string, documentPath: string | null, revision: string, rootCircuit: string, runtime: RuntimeKind, 
+export type RunInfo = { documentId: string, documentName: string, documentPath: string | null, revision: string, rootCircuit: string, runtime: RuntimeKind, 
 /**
  * Milliseconds since the Unix epoch.
  */

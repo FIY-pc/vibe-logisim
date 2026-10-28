@@ -1,8 +1,7 @@
-import { liveRun } from "../simulation/store";
+import { live } from "../simulation/store";
 import { command } from "../shared/transport";
-import type { SessionInfo } from "../generated/SessionInfo";
 import type { Document } from "../shared/types";
-import type { Actions, Stores } from "../app/createWorkbench";
+import type { Stores } from "../app/createWorkbench";
 import type { View } from "../app/view";
 import type { EditorActions } from "./actions";
 
@@ -10,39 +9,52 @@ import type { EditorActions } from "./actions";
  * Moving between documents, circuits, simulation instances and objects,
  * including the circuit changes that move the view. Every navigation bumps
  * the editor's navigation counter, so results requested before it are dropped.
+ * The run follows the instance shown (`simulation/actions.ts`, `follow`).
  */
-export function createNavigation(
-  stores: Stores,
-  editing: EditorActions,
-  actions: Pick<Actions, "simulation">,
-) {
+export function createNavigation(stores: Stores, editing: EditorActions) {
   const { documents, editor, notices, shell, simulation } = stores;
   const onError = (error: unknown) => notices.getState().onError(error);
 
-  /** Shows a circuit of the view's document. Switching to the root circuit
-   * of a run that is inside an instance shows the run again, from its root;
-   * switching anywhere else leaves the run alone. */
+  /** Shows a circuit of the view's document, outside any instance. Showing
+   * the root circuit of a run that is inside an instance takes the run back
+   * to its root. */
   const switchCircuit = (view: View, name: string) => {
     editor.getState().navigation.next();
     editor.getState().setCircuitName(name);
     editing.select(view, []);
     editor.getState().setPlace(null);
-    // The window's own simulation reaction restores the run once the circuit
-    // is shown; nothing to do here but keep this the only place that moves.
   };
 
-  /** Shows the instance of the running simulation at `path`. */
-  const navigateSimulation = async (view: View, path: string[]) => {
-    if (!view.doc || !view.circuit) return;
-    await actions.simulation.navigate(view, path).catch(onError);
+  /** Shows the instance at `path` of the run, whose circuit is `name`. */
+  const showInstance = (view: View, name: string, path: string[]) => {
+    editor.getState().navigation.next();
+    editor.getState().showInstance(name, path);
+    editing.select(view, []);
+    editor.getState().setPlace(null);
   };
 
   /** Opens a subcircuit: inside the running simulation, its instance;
    * otherwise its definition. */
   const enterCircuit = (view: View, name: string, id: string) => {
-    const live = liveRun(simulation.getState(), view.doc, view.circuit?.name);
-    if (live) void navigateSimulation(view, [...live.view.instancePath, id]);
+    if (live(simulation.getState(), view))
+      showInstance(view, name, [...view.instance, id]);
     else switchCircuit(view, name);
+  };
+
+  /** Shows the instance that contains the shown one. */
+  const leaveInstance = (view: View) => {
+    const { run } = simulation.getState();
+    if (!run || !view.doc || !view.instance.length) return;
+    const path = view.instance.slice(0, -1);
+    let name = run.rootCircuit;
+    for (const id of path) {
+      const component = view.doc.circuits
+        .find((circuit) => circuit.name === name)
+        ?.components.find((item) => item.id === id);
+      if (!component) return;
+      name = component.name;
+    }
+    showInstance(view, name, path);
   };
 
   /** Shows an object of the view's document: selected, revealed on the
@@ -75,19 +87,26 @@ export function createNavigation(
     shell.getState().closeDrawers();
   };
 
-  /** Shows the circuit the run is showing, in its document. */
-  const returnToSimulation = (view: View, session: SessionInfo) => {
-    const run = simulation.getState().view;
-    const owner = documents
-      .getState()
-      .docs.find(
-        (item) =>
-          item.id === session.documentId && item.revision === session.revision,
-      );
-    if (!owner || !run) return;
+  /** Shows what the run shows, in its document. */
+  const returnToSimulation = (view: View) => {
+    const { run, frame } = simulation.getState();
+    const owner =
+      run &&
+      documents
+        .getState()
+        .docs.find(
+          (item) =>
+            item.id === run.documentId && item.revision === run.revision,
+        );
+    if (!run || !owner) return;
     editor.getState().navigation.next();
     documents.getState().setActive(owner.id);
-    editor.getState().setCircuitName(run.circuit);
+    editor
+      .getState()
+      .showInstance(
+        frame?.circuit ?? run.rootCircuit,
+        frame?.instancePath ?? [],
+      );
     editing.select(view, []);
     void command({ op: "activate", id: owner.id }).catch(onError);
   };
@@ -128,8 +147,8 @@ export function createNavigation(
 
   return {
     switchCircuit,
-    navigateSimulation,
     enterCircuit,
+    leaveInstance,
     focusObject,
     activateDocument,
     returnToSimulation,

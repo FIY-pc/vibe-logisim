@@ -4,9 +4,9 @@ import type { ObservedSignal } from "./ObservedSignal.ts";
 import type { TraceDelta } from "./TraceDelta.ts";
 
 /**
- * A frame the user kept, frozen from the run's rings (never resampled).
+ * A frame the user kept, frozen from the run's newest state (never resampled).
  */
-export type ObservationRecord = { id: string, documentId: string, documentName: string, documentPath: string | null, revision: string, circuit: string, rootCircuit: string, instancePath: Array<string>, viewId: string, frameSequence: number, 
+export type ObservationRecord = { id: string, documentId: string, documentName: string, documentPath: string | null, revision: string, circuit: string, rootCircuit: string, instancePath: Array<string>, 
 /**
  * Milliseconds since the Unix epoch.
  */

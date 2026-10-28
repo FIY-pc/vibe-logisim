@@ -6,7 +6,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { RunState } from "../generated/RunState";
 import type { SymbolKey } from "../generated/SymbolKey";
 import type {
   CatalogTool,
@@ -48,9 +47,8 @@ interface Props {
   setSelection: (s: string[]) => void;
   place: CatalogTool | null;
   edit: (e: Edit) => Promise<void>;
-  /** The run, when the canvas shows its view rather than the definition. */
-  run: RunState | null;
-  /** The run's picture of that view, as the runtime drew it. */
+  /** The run's picture of the shown instance, as the runtime drew it, when
+   * the canvas shows the run rather than the definition. */
   live: Live | null;
   /** Components of the run whose input the user changed, until a frame shows it. */
   pending: string[];
@@ -117,7 +115,6 @@ export function Canvas({
   setSelection,
   place,
   edit,
-  run,
   live,
   pending,
   pressed,
@@ -453,9 +450,9 @@ export function Canvas({
           : null,
       added: overlay?.wires ?? [],
       ghosts,
-      live: run ? live : null,
+      live,
     };
-  }, [view, size, scene, paintable, overlay, ghosts, run, live]);
+  }, [view, size, scene, paintable, overlay, ghosts, live]);
 
   const visitSignal = (peer: ConnectionPeer, previousSignal = signal) => {
     const component = documentComponent(circuit, peer.component);

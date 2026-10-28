@@ -16,7 +16,7 @@ import java.util.Map;
  * (RecordingGraphics2D) the way Logisim paints its canvas for the run's state:
  * not the print view, so wires take the colors of their values and
  * components show theirs. A frame carries only what changed since the last
- * frame sent, and everything on the first frame of a view:
+ * frame sent, and everything on a full frame (a new instance shown):
  *
  * <pre>
  * {"wires": [[x1, y1, x2, y2, color], …],   each wire as CircuitWires.draw stroked it
@@ -30,22 +30,19 @@ import java.util.Map;
 final class CircuitPaint {
     /** One frame's recording, taken under the session lock. */
     static final class Recorded {
-        final String viewId;
         /** The ops of the wires and junctions, in root space. */
         final String wires;
         /** Each component's ops by id; null where its painting failed. */
         final String[] ids, ops;
 
-        Recorded(String viewId, String wires, String[] ids, String[] ops) {
-            this.viewId = viewId;
+        Recorded(String wires, String[] ids, String[] ops) {
             this.wires = wires;
             this.ids = ids;
             this.ops = ops;
         }
     }
 
-    /** The view whose picture was sent last, and that picture by key. */
-    private String viewId;
+    /** The picture sent last, by key. */
     private final Map<String, String> wires = new HashMap<>(), dots = new HashMap<>(), components = new HashMap<>();
 
     private static RecordingGraphics2D graphics(RecordingGraphics2D.Recording recording) {
@@ -92,19 +89,15 @@ final class CircuitPaint {
             own.dispose();
             i++;
         }
-        return new Recorded(view.id, wires.ops.toString(), ids, ops);
+        return new Recorded(wires.ops.toString(), ids, ops);
     }
 
-    /** Whether the frame of `now` carries the whole picture. */
-    boolean full(Recorded now) {
-        return !now.viewId.equals(viewId);
-    }
-
-    /** The picture JSON of `now` with what changed since the last frame sent; `now` counts as sent. */
-    String delta(Recorded now) {
-        boolean full = full(now);
+    /**
+     * The picture JSON of `now`: everything when {@code full}, otherwise what
+     * changed since the last frame sent. `now` counts as sent.
+     */
+    String delta(Recorded now, boolean full) {
         if (full) {
-            viewId = now.viewId;
             wires.clear();
             dots.clear();
             components.clear();

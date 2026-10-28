@@ -8,9 +8,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use vibe_circuit_document::DocumentView;
-use vibe_logisim_runtime::simulation::{ComponentState, Frame, TraceDelta};
+use vibe_logisim_runtime::simulation::{Code, ComponentState, Frame, SimError, TraceDelta};
 
-/// A frame the user kept, frozen from the run's rings (never resampled).
+/// A frame the user kept, frozen from the run's newest state (never resampled).
 #[derive(Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservationRecord {
@@ -22,9 +22,6 @@ pub struct ObservationRecord {
     pub circuit: String,
     pub root_circuit: String,
     pub instance_path: Vec<String>,
-    pub view_id: String,
-    #[ts(type = "number")]
-    pub frame_sequence: u64,
     /// Milliseconds since the Unix epoch.
     #[ts(type = "number")]
     pub created_at: f64,
@@ -252,31 +249,19 @@ impl Host {
             B64.encode(bytes)
         )))
     }
-    /// Freezes the frame the user saw. Reads the run's rings only: no runtime
-    /// round trip, so the kept state is the one on screen.
-    pub(crate) async fn capture(
-        &self,
-        session_id: &str,
-        view_id: &str,
-        frame_sequence: Option<u64>,
-        title: String,
-        image_data: Option<String>,
-    ) -> Result<Value> {
+    /// Freezes the run's newest frame, the one on screen. Reads what the run
+    /// already delivered: no runtime round trip.
+    pub(crate) async fn capture(&self, title: String, image_data: Option<String>) -> Result<Value> {
         let image = image_data.as_deref().map(png).transpose()?;
-        let snapshot = self
+        let (run, frame, trace) = self
             .simulation
-            .snapshot(session_id, frame_sequence, true)
-            .map_err(HostError::from)?;
-        if snapshot.frame.view_id != view_id {
-            return Err("仿真视图已改变，请重新留存".into());
-        }
-        let (_, view) = self
-            .snapshot_view(&snapshot.session.document_id, &snapshot.session.revision)
-            .await?;
-        let circuit = snapshot.frame.circuit.clone();
-        let signals = signals(&view, &circuit, &snapshot.frame, snapshot.trace.as_ref());
+            .frame()
+            .ok_or_else(|| HostError::from(SimError::new(Code::SessionEnded)))?;
+        let (_, view) = self.snapshot_view(&run.document_id, &run.revision).await?;
+        let circuit = frame.circuit.clone();
+        let signals = signals(&view, &circuit, &frame, Some(&trace));
         let title = if title.trim().is_empty() {
-            format!("{circuit} · {} tick", snapshot.frame.clock.ticks)
+            format!("{circuit} · {} tick", frame.clock.ticks)
         } else {
             title.chars().take(160).collect()
         };
@@ -294,15 +279,13 @@ impl Host {
                 .map(|path| path.to_string_lossy().into_owned()),
             revision: view.revision,
             circuit,
-            root_circuit: snapshot.session.root_circuit,
-            instance_path: snapshot.frame.instance_path.clone(),
-            view_id: view_id.into(),
-            frame_sequence: snapshot.frame.frame_sequence,
+            root_circuit: run.root_circuit,
+            instance_path: frame.instance_path.clone(),
             created_at,
             title,
             signals,
-            trace: snapshot.trace,
-            frame: snapshot.frame,
+            trace: Some(trace),
+            frame,
         };
         let directory = self.observation_directory();
         std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;

@@ -365,7 +365,7 @@ impl Host {
     /// Ends the run when its document closed or moved to another revision. Runs
     /// after every request, so no path can leave a run of a document that changed.
     async fn reconcile(&self) {
-        let Some(id) = self.simulation.session().map(|session| session.document_id) else {
+        let Some(id) = self.simulation.run().map(|run| run.document_id) else {
             return;
         };
         let revision = {

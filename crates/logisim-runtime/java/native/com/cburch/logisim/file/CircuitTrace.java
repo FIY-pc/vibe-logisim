@@ -16,6 +16,10 @@ final class CircuitTrace {
     private String id = UUID.randomUUID().toString();
     private long sequence;
     private boolean recording;
+    /** What the last frame carried: its waveform id, sample count and recording flag. */
+    private String sentId;
+    private long sentSequence;
+    private boolean sentRecording;
     private record Sample(long sequence, int tick, String cause, List<String> values) { }
 
     void configure(String selection, Map<String, Component> available) {
@@ -50,18 +54,29 @@ final class CircuitTrace {
         samples.addLast(new Sample(sequence++, ticks, cause, values));
         if (samples.size() > LIMIT) samples.removeFirst();
     }
-    Element element(Document doc) {
+    /**
+     * The waveform for the next frame: null when nothing changed since the last
+     * one; a new waveform, or any waveform when {@code full}, with its signals
+     * and every kept sample; otherwise only the samples taken since.
+     */
+    Element element(Document doc, boolean full) {
+        boolean whole = full || !id.equals(sentId);
+        if (!whole && sentSequence == sequence && sentRecording == recording) return null;
         Element trace = doc.createElement("trace");
         trace.setAttribute("id", id); trace.setAttribute("recording", String.valueOf(recording));
         trace.setAttribute("total", String.valueOf(sequence));
         trace.setAttribute("dropped", String.valueOf(sequence - samples.size()));
-        for (int i = 0; i < keys.size(); i++) {
+        trace.setAttribute("full", String.valueOf(whole));
+        if (whole) for (int i = 0; i < keys.size(); i++) {
             Element signal = doc.createElement("signal");
             signal.setAttribute("key", keys.get(i));
             signal.setAttribute("width", String.valueOf(components.get(i).getEnd(ports.get(i)).getWidth().getWidth()));
             trace.appendChild(signal);
         }
+        long from = whole ? 0 : sentSequence;
+        sentId = id; sentSequence = sequence; sentRecording = recording;
         for (Sample s : samples) {
+            if (s.sequence < from) continue;
             Element sample = doc.createElement("sample");
             sample.setAttribute("sequence", String.valueOf(s.sequence));
             sample.setAttribute("tick", String.valueOf(s.tick)); sample.setAttribute("cause", s.cause);

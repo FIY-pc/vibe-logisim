@@ -23,7 +23,7 @@ Rendering widgets, conversation history, model services, prompts, tools (sidecar
 let host = Host::new(root, state, runtime)?;          // root = resources dir, state = per-user state dir
 host.respond(request).await -> Result<Reply, HostError>    // request: Request (untagged: Document | Folder | Simulation | Agent | App)
 host.dispatch(request).await -> Result<Value, HostError>   // respond, as a value (in-process callers and tests)
-host.events().await -> Events;  events.next().await -> Option<Event>   // first event is always Resync
+host.events().await -> Events;  events.next().await -> Option<Event>   // Resync, then the run's whole state, then events in order
 host.shutdown().await;
 ```
 
@@ -37,7 +37,7 @@ Request JSON is `{"op": "<name>", ...args}`; the window gets `{result}` or `{err
 | --- | --- |
 | document | status open new import read activate source sourceStatus reload close save saveTarget edit movePreview undo redo observe observeXml symbols connections template properties catalog render simulate trace interfaceRead interfacePreview interfaceApply interfaceRender projectInfo projectExport projectExportTarget historyList historyReview historyPreview historyRestore |
 | folder | folderOpen folderList folderRead folderPreview folderResolve folderCreate folderRename folderTrash folderImportPrepare folderImportApply folderImportCancel folderCheckpoint folderHistory folderHistoryDetail folderHistoryUndo |
-| simulation | simulationAct simulationNavigate simulationStop simulationStatus simulationSnapshot memory memoryWrite observationList observationGet observationImage observationCapture observationRename observationDelete |
+| simulation | simulationStart simulationCommand simulationNavigate simulationStop memory memoryWrite observationList observationGet observationImage observationCapture observationRename observationDelete |
 | agent | agent `{method, args}` → forwarded to the sidecar (see `packages/agent-runtime/README.md`) |
 | app | feedbackStatus feedbackCheck feedbackPreference feedbackDismiss diagnostics diagnosticsExport |
 
@@ -49,11 +49,13 @@ Callable by the AI (`Meta::agent()`): folderRead folderList folderHistory folder
 
 Folder history: create, rename, trash and import are each one entry; `folderCheckpoint` records everything that changed since the folder's last entry (the AI calls it before and after each turn). `folderCreate {checkpoint: false}` leaves its file to the next checkpoint, so an AI turn that creates a file is one entry listing it as added.
 
-`observationCapture {sessionId, viewId, frameSequence?, title, imageData?}` keeps the run's frame and, when the window sends `imageData` (its canvas as a PNG data URL, at most 8 MB), that picture beside the record; `observationImage` of a record kept without one fails with 这条观察没有留存画面. The run's picture itself is not a request: each `state` event carries what changed in it for that listener (`crates/logisim-runtime/README.md`, Run picture).
+The interactive run (`crates/logisim-runtime/README.md`, The run) has four requests, all addressed to the one run there is. `simulationStart {documentId, revision, circuit, frequency?}` ends the current run, starts one of that circuit at that revision and answers its `RunInfo` after the first frame. `simulationCommand {command}` and `simulationNavigate {instancePath}` answer `{commandSequence}` once the runtime took the command (`SESSION_ENDED` when there is no run); `simulationStop` ends the run. Replies never carry run state: the `simulation` events do, and the window counts a command as shown once a frame's `commandSequence` reaches the reply's. None of these changes a document; only `memoryWrite` (a ROM's stored words) does.
 
-Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulation` (session, frames with each listener's own picture delta, end); `resync` (snapshots may be stale, read again); `warning {message}` (a change took effect, something around it failed).
+`observationCapture {title?, imageData?}` keeps the run's newest frame with its waveform and, when the window sends `imageData` (its canvas as a PNG data URL, at most 8 MB), that picture beside the record; `observationImage` of a record kept without one fails with 这条观察没有留存画面.
 
-Transports: dev `POST /api/command`, `GET /api/events` (SSE), origin restricted to the Vite port; production Tauri `invoke("command")` and the `workbench-event` window event (`apps/workbench/src-tauri/src/main.rs`).
+Events (`{topic, data}`): `agent` `{sequence, event}` from the sidecar; `simulation` (`run`, `frame`, `ended`; every subscription starts with the run's whole state); `resync` (snapshots may be stale, read again); `warning {message}` (a change took effect, something around it failed).
+
+Transports: dev `POST /api/command`, `GET /api/events` (SSE), origin restricted to the Vite port; production Tauri `invoke("command")` and `invoke("events", {channel})`, which each page calls once for its own stream; a reloaded page gets a new one, starting with Resync and the run's whole state (`apps/workbench/src-tauri/src/main.rs`).
 
 Environment: `VIBE_WORKBENCH_RESOURCES` (resources root; default: beside the executable), `VIBE_WORKBENCH_STATE` (state dir), `VIBE_WORKBENCH_PORT`, `VIBE_WORKBENCH_DEV_PORT`, `VIBE_WORKBENCH_TIMING=1` (one stderr line per window or AI request with its stages, see `vibe_logisim_runtime::timing`; `timing_label` names a request `op` or `edit.<kind>`); sidecar: `VIBE_LOGISIM_AGENT_ROOT`, `VIBE_LOGISIM_NODE`.
 

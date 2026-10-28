@@ -1,99 +1,54 @@
 use super::{Effect::*, Meta};
 use crate::{Host, Result, app::diagnostics::Stage, documents::history::Action, value};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use vibe_circuit_document::Edit;
-use vibe_logisim_runtime::simulation::{
-    ActResult, Command, MemoryPage, MemoryStorage, RunDocument, Snapshot, Target,
-};
+use vibe_logisim_runtime::simulation::{Command, MemoryPage, MemoryStorage, RunDocument};
 
-/// What a command addresses, as the request carries it: the view of a run, or
-/// the circuit definition on screen.
-#[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
-#[serde(
-    tag = "kind",
-    rename_all = "kebab-case",
-    rename_all_fields = "camelCase"
-)]
-pub enum TargetRequest {
-    Run { session_id: String, view_id: String },
-    Definition { circuit: String },
-}
-
-/// The live run and the frames kept from it.
+/// The interactive run and the frames kept from it.
 ///
-/// There is at most one run at a time. The window drives it with
-/// `simulationAct` and follows it through `simulation` events (`session`, then
-/// `state` deltas carrying what changed in the components and the picture,
-/// then `ended`). None of these requests changes a document: stimulus never
-/// makes a revision and never saves. Only `memoryWrite`, which edits a ROM's
-/// stored contents, does.
+/// There is at most one run. The window drives it with `simulationStart`,
+/// `simulationCommand`, `simulationNavigate` and `simulationStop`, all
+/// addressed to the run there is, and follows it through `simulation` events:
+/// every subscription starts with the run's whole state (`run`, then a full
+/// `frame`), then gets each frame with what changed, then `ended`. Replies
+/// never carry run state. None of these requests changes a document:
+/// stimulus never makes a revision and never saves. Only `memoryWrite`,
+/// which edits a ROM's stored contents, does.
 ///
-/// The agent reads, never drives: `simulationStatus` and `simulationSnapshot`
-/// for the run the user is looking at, and `observationList`,
-/// `observationGet` and `observationImage` for frames the user kept. The isolated test runs behind its vector and trace tools are the
-/// `simulate` and `trace` review requests, which never touch the live run.
+/// The agent reads frames the user kept (`observationList`, `observationGet`,
+/// `observationImage`); it never drives the run. Its vector and trace tools
+/// are the `simulate` and `trace` review requests, which run in a separate
+/// process and never touch the run.
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SimulationRequest {
-    /// Starts, drives or configures a run. With a `definition` target, a
-    /// command that starts runs (start, clock, tick, step, poke, input, pulse,
-    /// button press, propagation toggle) starts a run of that circuit, or
-    /// reuses the current run when it is of the same circuit and revision;
-    /// other commands do nothing. With a `run` target, the command goes to that
-    /// view of the run; a run that ended or is of another revision refuses
-    /// commands that start runs and ignores the rest. `initialFrequency`
-    /// applies when this command starts the run. Returns an `ActResult`.
-    SimulationAct {
+    /// Ends the current run and starts one of `circuit` at `revision`, its
+    /// clock at `frequency` (2 Hz otherwise). Returns the `RunInfo` once the
+    /// run showed its first frame.
+    SimulationStart {
         document_id: String,
         revision: String,
-        target: TargetRequest,
-        command: Command,
+        circuit: String,
         #[serde(default)]
         #[ts(optional)]
-        initial_frequency: Option<f64>,
+        frequency: Option<f64>,
+    },
+    /// Sends a command to the run. Returns `{commandSequence}`: a frame with
+    /// at least that sequence shows its effect.
+    SimulationCommand {
+        command: Command,
     },
     /// Shows a subcircuit instance of the run, keeping its state: the path
     /// holds component ids from the root circuit, and an empty path returns
-    /// to the root. Every call makes a new view, which releases held buttons,
-    /// clears the waveform and the shown memory page, and paints the whole
-    /// view again.
+    /// to the root. Releases held buttons, clears the waveform and the shown
+    /// memory page; the next frame is whole. Returns `{commandSequence}`.
     SimulationNavigate {
-        session_id: String,
         instance_path: Vec<String>,
     },
-    /// Ends the run. Returns `{"stopped": false}` when it already ended.
-    SimulationStop {
-        session_id: String,
-    },
-    /// The current run, its current view and clock, and how the last run
-    /// ended (`Status`). Answered from memory.
-    SimulationStatus,
-    /// A kept frame of the run (the newest unless `frameSequence` names one),
-    /// with component states paged by `componentIds`, `offset` and `limit`
-    /// (at most 4096), the waveform when `trace` is set and the shown memory
-    /// page when `memory` is set. Returns a `Snapshot`.
-    SimulationSnapshot {
-        session_id: String,
-        #[serde(default)]
-        #[ts(optional)]
-        #[ts(type = "number")]
-        frame_sequence: Option<u64>,
-        #[serde(default)]
-        #[ts(optional)]
-        component_ids: Option<Vec<String>>,
-        #[serde(default)]
-        #[ts(optional)]
-        offset: Option<usize>,
-        #[serde(default)]
-        #[ts(optional)]
-        limit: Option<usize>,
-        #[serde(default)]
-        trace: bool,
-        #[serde(default)]
-        memory: bool,
-    },
+    /// Ends the run. Returns `{"stopped": false}` when there was none.
+    SimulationStop,
     /// A page of a ROM's stored contents (`MemoryPage` with `design`
     /// storage), read through the editor worker. A RAM's contents belong to a
     /// run: send the run a `memory` command and read the page from its frames.
@@ -125,7 +80,7 @@ pub enum SimulationRequest {
     },
     /// One kept frame of the document (`ObservationRecord`): its revision,
     /// root circuit, instance path, watched signals, waveform and component
-    /// states, paged like a snapshot.
+    /// states, paged by `componentIds`, `offset` and `limit` (at most 4096).
     ObservationGet {
         id: String,
         record: String,
@@ -144,18 +99,11 @@ pub enum SimulationRequest {
     ObservationImage {
         record: String,
     },
-    /// Keeps the frame the user saw (the newest unless `frameSequence` names
-    /// one) with its waveform, read from what the run already delivered, never
-    /// from the runtime. Fails when the run moved to another view meanwhile.
-    /// `imageData` is the picture the window showed, a PNG data URL of at
-    /// most 8 MB, kept beside the record.
+    /// Keeps the run's newest frame with its waveform, read from what the run
+    /// already delivered, never from the runtime. `imageData` is the picture
+    /// the window showed, a PNG data URL of at most 8 MB, kept beside the
+    /// record.
     ObservationCapture {
-        session_id: String,
-        view_id: String,
-        #[serde(default)]
-        #[ts(optional)]
-        #[ts(type = "number")]
-        frame_sequence: Option<u64>,
         #[serde(default)]
         title: String,
         #[serde(default)]
@@ -171,29 +119,8 @@ pub enum SimulationRequest {
     },
 }
 
-/// Components one snapshot returns at most unless the caller asks for fewer.
+/// Components one kept frame returns at most unless the caller asks for fewer.
 const PAGE: usize = 4096;
-
-/// A kept frame cut to the components asked for; unchanged components stay
-/// shared, so paging costs one filter per request.
-fn paged(
-    snapshot: Snapshot,
-    component_ids: Option<Vec<String>>,
-    offset: Option<usize>,
-    limit: Option<usize>,
-    memory: bool,
-) -> Snapshot {
-    let mut frame = snapshot.frame;
-    page_frame(&mut frame, component_ids, offset, limit);
-    if !memory {
-        frame.memory = None;
-    }
-    Snapshot {
-        session: snapshot.session,
-        trace: snapshot.trace,
-        frame,
-    }
-}
 
 fn page_frame(
     frame: &mut vibe_logisim_runtime::simulation::Frame,
@@ -210,11 +137,10 @@ fn page_frame(
 
 impl SimulationRequest {
     pub(crate) const OPS: &[&str] = &[
-        "simulationAct",
+        "simulationStart",
+        "simulationCommand",
         "simulationNavigate",
         "simulationStop",
-        "simulationStatus",
-        "simulationSnapshot",
         "memory",
         "memoryWrite",
         "observationList",
@@ -226,14 +152,11 @@ impl SimulationRequest {
     ];
     pub(crate) fn meta(&self) -> Meta {
         match self {
-            Self::SimulationAct { .. } | Self::SimulationNavigate { .. } => {
-                Meta::new(Read).stage(Stage::Simulation)
-            }
-            Self::SimulationStop { .. } => Meta::new(Read),
-            // The AI reads the run state the user asks from; it never drives it.
-            Self::SimulationStatus
-            | Self::SimulationSnapshot { .. }
-            | Self::ObservationList { .. }
+            Self::SimulationStart { .. }
+            | Self::SimulationCommand { .. }
+            | Self::SimulationNavigate { .. } => Meta::new(Read).stage(Stage::Simulation),
+            Self::SimulationStop => Meta::new(Read),
+            Self::ObservationList { .. }
             | Self::ObservationGet { .. }
             | Self::ObservationImage { .. } => Meta::new(Read).agent(),
             Self::ObservationCapture { .. }
@@ -250,67 +173,25 @@ impl SimulationRequest {
 impl Host {
     pub(crate) async fn simulation_request(&self, request: SimulationRequest) -> Result<Value> {
         match request {
-            SimulationRequest::SimulationAct {
+            SimulationRequest::SimulationStart {
                 document_id,
                 revision,
-                target,
-                command,
-                initial_frequency,
+                circuit,
+                frequency,
             } => {
-                let target = match target {
-                    TargetRequest::Run {
-                        session_id,
-                        view_id,
-                    } => Target::Run {
-                        session_id,
-                        view_id,
-                        revision,
-                    },
-                    TargetRequest::Definition { circuit } => {
-                        // A command that cannot start a run applies to nothing.
-                        if command.starts_run() {
-                            let (artifact, view) =
-                                self.snapshot_view(&document_id, &revision).await?;
-                            Target::Definition {
-                                document: RunDocument { artifact, view },
-                                circuit,
-                            }
-                        } else {
-                            return value(ActResult::default());
-                        }
-                    }
-                };
-                let result = self
-                    .simulation
-                    .act(target, command, initial_frequency)
-                    .await?;
-                value(result)
+                let (artifact, view) = self.snapshot_view(&document_id, &revision).await?;
+                let document = RunDocument { artifact, view };
+                value(self.simulation.start(document, &circuit, frequency).await?)
             }
-            SimulationRequest::SimulationNavigate {
-                session_id,
-                instance_path,
-            } => {
-                let result = self.simulation.navigate(&session_id, instance_path).await?;
-                value(result)
+            SimulationRequest::SimulationCommand { command } => {
+                let sequence = self.simulation.command(command).await?;
+                value(json!({"commandSequence": sequence}))
             }
-            SimulationRequest::SimulationStop { session_id } => {
-                value(serde_json::json!({"stopped": self.simulation.stop(&session_id)}))
+            SimulationRequest::SimulationNavigate { instance_path } => {
+                let sequence = self.simulation.navigate(instance_path).await?;
+                value(json!({"commandSequence": sequence}))
             }
-            SimulationRequest::SimulationStatus => value(self.simulation.status()),
-            SimulationRequest::SimulationSnapshot {
-                session_id,
-                frame_sequence,
-                component_ids,
-                offset,
-                limit,
-                trace,
-                memory,
-            } => {
-                let snapshot = self
-                    .simulation
-                    .snapshot(&session_id, frame_sequence, trace)?;
-                value(paged(snapshot, component_ids, offset, limit, memory))
-            }
+            SimulationRequest::SimulationStop => value(json!({"stopped": self.simulation.stop()})),
             SimulationRequest::Memory {
                 id,
                 revision,
@@ -350,15 +231,8 @@ impl Host {
                 value(record)
             }
             SimulationRequest::ObservationImage { record } => self.observation_image(&record),
-            SimulationRequest::ObservationCapture {
-                session_id,
-                view_id,
-                frame_sequence,
-                title,
-                image_data,
-            } => {
-                self.capture(&session_id, &view_id, frame_sequence, title, image_data)
-                    .await
+            SimulationRequest::ObservationCapture { title, image_data } => {
+                self.capture(title, image_data).await
             }
             SimulationRequest::ObservationRename { record, title } => {
                 self.rename_observation(&record, &title)

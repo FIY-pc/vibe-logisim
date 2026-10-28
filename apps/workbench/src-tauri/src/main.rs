@@ -1,7 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod installation_check;
-use tauri::{Emitter, Manager};
-use vibe_workbench_host::{Host, HostError, Reply, Request, timing, timing_label};
+use std::sync::Mutex;
+use tauri::{Manager, async_runtime::JoinHandle, ipc::Channel};
+use vibe_workbench_host::{Event, Host, HostError, Reply, Request, timing, timing_label};
 #[tauri::command]
 async fn command(
     host: tauri::State<'_, Host>,
@@ -9,6 +10,35 @@ async fn command(
 ) -> Result<Reply, HostError> {
     let label = timing_label(&request);
     timing::scope(&label, host.respond(Request::from_value(request)?)).await
+}
+/// The page's event stream; a reloaded page asks again and replaces it.
+#[derive(Default)]
+struct Stream(Mutex<Option<JoinHandle<()>>>);
+/// Starts the page's events: a fresh subscription, so it begins with the
+/// run's whole state, exactly as the development server's event stream does.
+#[tauri::command]
+async fn events(
+    host: tauri::State<'_, Host>,
+    stream: tauri::State<'_, Stream>,
+    channel: Channel<Event>,
+) -> Result<(), HostError> {
+    let mut events = host.events().await;
+    let task = tauri::async_runtime::spawn(async move {
+        while let Some(event) = events.next().await {
+            if channel.send(event).is_err() {
+                break;
+            }
+        }
+    });
+    let previous = stream
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .replace(task);
+    if let Some(previous) = previous {
+        previous.abort();
+    }
+    Ok(())
 }
 fn main() {
     tauri::Builder::default()
@@ -47,18 +77,13 @@ fn main() {
             if let Some(check) = check {
                 installation_check::start(app.handle().clone(), host.clone(), root, check);
             }
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let mut events = host.events().await;
-                while let Some(event) = events.next().await {
-                    let _ = handle.emit("workbench-event", event);
-                }
-            });
+            app.manage(Stream::default());
             Ok(())
         })
         .on_page_load(installation_check::page_loaded)
         .invoke_handler(tauri::generate_handler![
             command,
+            events,
             installation_check::installation_ready
         ])
         .build(tauri::generate_context!())

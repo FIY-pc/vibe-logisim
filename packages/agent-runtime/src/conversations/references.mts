@@ -90,7 +90,6 @@ export async function storeReference(
           circuit: frame.circuit,
           instancePath: frame.instancePath,
           clock: frame.clock,
-          frameSequence: frame.frameSequence,
         },
         historical: true,
       }),

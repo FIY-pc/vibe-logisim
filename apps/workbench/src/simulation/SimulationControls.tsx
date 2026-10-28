@@ -32,17 +32,6 @@ interface MenuProps extends SimulationProps {
   onReturnToSimulation?: () => void;
   onError: (error: unknown) => void;
 }
-const pendingLabel = (action: string, active: boolean) => {
-  if (action === "stop") return "结束中…";
-  if (!active || action === "start") return "启动中…";
-  if (action === "reset") return "复位中…";
-  if (action === "tick") return "推进时钟…";
-  if (action === "step") return "传播中…";
-  if (action === "configure" || action === "toggle-propagation")
-    return "更新设置…";
-  return "更新时钟…";
-};
-
 export function SimulationMenu({
   contextKey,
   circuitName,
@@ -76,19 +65,15 @@ export function SimulationMenu({
   ) => (
     <MenuItem
       shortcut={shortcut}
-      disabled={
-        unavailable || status.viewBusy || (target === "stop" && !status.exists)
-      }
+      disabled={unavailable || (target === "stop" && !status.exists)}
       onSelect={() => run(target)}
     >
       {label}
     </MenuItem>
   );
-  const state = status.busy
-    ? pendingLabel(status.busyAction || "", active)
-    : !active
-      ? "尚未开始"
-      : `${running ? "时钟运行" : "时钟暂停"}${automatic ? "" : " · 自动传播已暂停"} · ${status.ticks || 0} tick`;
+  const state = !active
+    ? "尚未开始"
+    : `${running ? "时钟运行" : "时钟暂停"}${automatic ? "" : " · 自动传播已暂停"} · ${status.ticks || 0} tick`;
   const runCircuit = active
     ? rootCircuit || circuitName || "尚未打开电路"
     : circuitName || "尚未打开电路";
@@ -116,10 +101,7 @@ export function SimulationMenu({
           <span>{state}</span>
         </MenuLabel>
         {onReturnToSimulation && (
-          <MenuItem
-            disabled={status.viewBusy || status.busy}
-            onSelect={onReturnToSimulation}
-          >
+          <MenuItem onSelect={onReturnToSimulation}>
             返回运行电路
           </MenuItem>
         )}
@@ -139,7 +121,7 @@ export function SimulationMenu({
         <MenuCheckboxItem
           checked={automatic}
           shortcut={shortcuts.propagation}
-          disabled={disabled || status.viewBusy || !active}
+          disabled={disabled || !active}
           onCheckedChange={() => run("toggle-propagation")}
         >
           自动传播
@@ -165,7 +147,7 @@ export function SimulationMenu({
           仿真设置…
         </MenuItem>
         <MenuItem
-          disabled={!active || disabled || status.viewBusy || !status.exists}
+          disabled={!active || disabled || !status.exists}
           title="清除本次运行的输入和状态，电路设计与留存观察会保留"
           onSelect={() => run("stop")}
         >
@@ -291,37 +273,33 @@ export function SimulationTransport({
   tool,
 }: SimulationProps & { tool: Tool }) {
   const active = status.current;
-  if (!active && !status.busy && !status.stale && tool !== "poke") return null;
+  if (!active && !status.stale && tool !== "poke") return null;
   const running = status.running;
   const automatic = status.automatic;
-  const text = status.busy
-    ? pendingLabel(status.busyAction || "", active)
-    : status.stale
-      ? "电路已改动"
-      : !active
-        ? "未仿真"
-        : !automatic
-          ? "传播已暂停"
-          : running
-            ? "时钟运行"
-            : "交互中";
+  const text = status.stale
+    ? "电路已改动"
+    : !active
+      ? "未仿真"
+      : !automatic
+        ? "传播已暂停"
+        : running
+          ? "时钟运行"
+          : "交互中";
   const dispatch = (action: RunAction) => run(action);
   return (
     <div
       className="runtime-transport"
       role="toolbar"
       aria-label="仿真控制"
-      aria-busy={status.busy}
       data-running={running}
     >
-      {status.busy && <span className="spinner" aria-hidden="true" />}
       <output role="status" aria-live="polite">
         {text}
       </output>
       {status.stale ? (
         <button
           className="runtime-restart"
-          disabled={disabled || status.viewBusy}
+          disabled={disabled}
           onClick={() => dispatch("start")}
         >
           重新仿真
@@ -331,7 +309,7 @@ export function SimulationTransport({
           <button
             aria-label={running ? "暂停时钟" : "运行时钟"}
             {...tip(running ? "暂停时钟" : "运行时钟", shortcuts.clock)}
-            disabled={disabled || status.viewBusy}
+            disabled={disabled}
             onClick={() => dispatch("toggle-clock")}
           >
             {running ? <Pause size={15} /> : <Play size={15} />}
@@ -341,7 +319,7 @@ export function SimulationTransport({
             {...(running
               ? tip("先暂停时钟，再逐步推进")
               : tip("时钟一步", shortcuts.tick))}
-            disabled={disabled || running || status.viewBusy || !active}
+            disabled={disabled || running || !active}
             onClick={() => dispatch("tick")}
           >
             <StepForward size={15} />
@@ -349,7 +327,7 @@ export function SimulationTransport({
           <button
             aria-label="复位仿真"
             {...tip("复位仿真", shortcuts.reset)}
-            disabled={disabled || !active || status.viewBusy}
+            disabled={disabled || !active}
             onClick={() => dispatch("reset")}
           >
             <RotateCcw size={15} />
