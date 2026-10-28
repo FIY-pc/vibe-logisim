@@ -19,6 +19,7 @@ export function startWorkbench({ stores, actions }: Workbench): () => void {
     .catch(stores.notices.getState().onError);
   stops.push(
     actions.editor.watchCatalog(),
+    actions.editor.watchSymbols(),
     routeEvents(stores, actions),
     actions.simulation.start(),
     handleShortcuts(stores, actions),

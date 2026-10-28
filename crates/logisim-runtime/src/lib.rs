@@ -28,6 +28,34 @@ pub struct Viewport {
 }
 type Result<T> = std::result::Result<T, String>;
 
+/// Which component a `symbols` item records.
+#[derive(Clone, Debug)]
+pub enum SymbolSource {
+    /// The circuit's component at this location with this factory name.
+    Placed {
+        location: vibe_circuit_document::Point,
+        factory: String,
+    },
+    /// One made at (0, 0) from tool `name` of library `library` (none: the
+    /// file's circuits) with these attributes, as `template` makes it.
+    Made {
+        library: Option<String>,
+        name: String,
+        attributes: BTreeMap<String, String>,
+    },
+}
+
+/// What a `connections` read starts from (README, Connections).
+#[derive(Clone, Debug, Default)]
+pub struct ConnectionSeeds {
+    /// Components by location and factory name.
+    pub components: Vec<(vibe_circuit_document::Point, String)>,
+    /// Wires by their two ends.
+    pub wires: Vec<(vibe_circuit_document::Point, vibe_circuit_document::Point)>,
+    /// Every component with an end within `radius` of the point.
+    pub point: Option<(vibe_circuit_document::Point, f64)>,
+}
+
 pub fn xml(tag: &str, attrs: &[(&str, String)], children: Vec<Element>) -> Element {
     let mut node = Element::new(tag);
     for (k, v) in attrs {
@@ -349,6 +377,137 @@ impl Native {
         let _check = timing::span("native.json");
         let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
         RawValue::from_string(text).map_err(|e| e.to_string())
+    }
+    /// The vector picture of each item's component, in order, and the points
+    /// of the circuit's wire bundles whose widths disagree, as the JSON the
+    /// worker wrote: `{symbols: [{bounds, ink, ports, ops} | {error}],
+    /// widthErrors: [[x, y]]}` (README, Symbols).
+    pub async fn symbols(
+        &mut self,
+        artifact: &Path,
+        circuit: &str,
+        items: &[SymbolSource],
+    ) -> Result<Box<RawValue>> {
+        let made = items
+            .iter()
+            .any(|item| matches!(item, SymbolSource::Made { .. }));
+        let mut children = if made {
+            self.artifact_libraries(artifact)?
+        } else {
+            vec![]
+        };
+        children.extend(items.iter().map(|item| {
+            match item {
+                SymbolSource::Placed { location, factory } => xml(
+                    "symbol",
+                    &[
+                        ("x", location.x.to_string()),
+                        ("y", location.y.to_string()),
+                        ("factory", factory.clone()),
+                    ],
+                    vec![],
+                ),
+                SymbolSource::Made {
+                    library,
+                    name,
+                    attributes,
+                } => xml(
+                    "symbol",
+                    &[
+                        ("library", library.clone().unwrap_or_default()),
+                        ("tool", name.clone()),
+                    ],
+                    attributes
+                        .iter()
+                        .map(|(name, value)| {
+                            xml(
+                                "set",
+                                &[("name", name.clone()), ("value", value.clone())],
+                                vec![],
+                            )
+                        })
+                        .collect(),
+                ),
+            }
+        }));
+        let bytes = self
+            .request(
+                artifact,
+                xml("symbols", &[("circuit", circuit.into())], children),
+            )
+            .await?;
+        let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+        RawValue::from_string(text).map_err(|e| e.to_string())
+    }
+    /// The connections of chosen objects of one circuit, as the JSON the
+    /// worker wrote: `{focus: {components, wires, wireBundles, bitNets}}`,
+    /// the bit nets the seeds are on with every component end on them and
+    /// the wire bundles and wires they pass through (README, Connections).
+    pub async fn connections(
+        &mut self,
+        artifact: &Path,
+        circuit: &str,
+        seeds: &ConnectionSeeds,
+    ) -> Result<Box<RawValue>> {
+        let mut children = Vec::new();
+        for (location, factory) in &seeds.components {
+            children.push(xml(
+                "component",
+                &[
+                    ("x", location.x.to_string()),
+                    ("y", location.y.to_string()),
+                    ("factory", factory.clone()),
+                ],
+                vec![],
+            ));
+        }
+        for (from, to) in &seeds.wires {
+            children.push(xml(
+                "wire",
+                &[
+                    ("x0", from.x.to_string()),
+                    ("y0", from.y.to_string()),
+                    ("x1", to.x.to_string()),
+                    ("y1", to.y.to_string()),
+                ],
+                vec![],
+            ));
+        }
+        if let Some((at, radius)) = seeds.point {
+            children.push(xml(
+                "point",
+                &[
+                    ("x", at.x.to_string()),
+                    ("y", at.y.to_string()),
+                    ("radius", radius.to_string()),
+                ],
+                vec![],
+            ));
+        }
+        let bytes = self
+            .request(
+                artifact,
+                xml("connections", &[("circuit", circuit.into())], children),
+            )
+            .await?;
+        let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+        RawValue::from_string(text).map_err(|e| e.to_string())
+    }
+    /// The points of each circuit's wire bundles whose widths disagree, in
+    /// the order asked; None for a circuit the file does not have.
+    pub async fn width_errors(
+        &mut self,
+        artifact: &Path,
+        circuits: &[String],
+    ) -> Result<Vec<Option<Vec<[i32; 2]>>>> {
+        let children = circuits
+            .iter()
+            .map(|name| xml("circuit", &[("name", name.clone())], vec![]))
+            .collect();
+        let bytes = self
+            .request(artifact, xml("width-errors", &[], children))
+            .await?;
+        serde_json::from_slice(&bytes).map_err(|e| e.to_string())
     }
     pub async fn catalog(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
         let libraries = self.artifact_libraries(artifact)?;

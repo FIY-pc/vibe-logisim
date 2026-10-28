@@ -8,10 +8,10 @@ use super::{
         ClockState, ComponentState, EndReason, EndedInfo, Frame, RunState, SessionInfo, TraceDelta,
         TraceMark, TraceSample, TraceSignal,
     },
+    paint::Paint,
     protocol::{self, AckMeta, Line, RawFrame, RawTrace},
 };
 use crate::process::{StderrCapture, exit_failure};
-use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
@@ -28,13 +28,11 @@ use tokio::{
 };
 use vibe_circuit_document::Circuit;
 
-/// The longest output line accepted; a frame carries its picture.
-const LINE_LIMIT: u64 = 48_000_000;
+/// The longest output line accepted; the first frame of a view carries its
+/// whole picture as vector ops.
+const LINE_LIMIT: u64 = 16_000_000;
 /// Kept frames.
 const FRAMES: usize = 256;
-/// Kept pictures, by count and by bytes. The newest two are always kept.
-const IMAGES: usize = 8;
-const IMAGE_BYTES: usize = 24_000_000;
 /// Kept waveform samples, as many as the runtime keeps.
 const SAMPLES: usize = 512;
 /// Views remembered, so that late frames of a previous view still resolve.
@@ -196,8 +194,8 @@ struct State {
     last_clock: Option<(u64, ClockState)>,
     sequence: u64,
     frames: VecDeque<Arc<Frame>>,
-    images: VecDeque<(u64, Arc<Vec<u8>>)>,
-    image_bytes: usize,
+    /// The picture as of the newest frame.
+    paint: Arc<Paint>,
     trace: TraceRing,
 }
 
@@ -213,19 +211,8 @@ impl State {
             last_clock: None,
             sequence: 0,
             frames: VecDeque::new(),
-            images: VecDeque::new(),
-            image_bytes: 0,
+            paint: Arc::default(),
             trace: TraceRing::default(),
-        }
-    }
-    fn push_image(&mut self, sequence: u64, png: Arc<Vec<u8>>) {
-        self.image_bytes += png.len();
-        self.images.push_back((sequence, png));
-        while self.images.len() > 2
-            && (self.images.len() > IMAGES || self.image_bytes > IMAGE_BYTES)
-            && let Some((_, old)) = self.images.pop_front()
-        {
-            self.image_bytes -= old.len();
         }
     }
     fn frame(&self, sequence: Option<u64>) -> Result<&Arc<Frame>, SimError> {
@@ -334,8 +321,7 @@ impl Session {
         let pending = {
             let mut state = self.lock();
             state.frames.clear();
-            state.images.clear();
-            state.image_bytes = 0;
+            state.paint = Arc::default();
             state.trace = TraceRing::default();
             std::mem::take(&mut state.pending)
         };
@@ -441,9 +427,8 @@ impl Session {
         &self,
         raw: RawFrame,
         components: Vec<Arc<ComponentState>>,
-        png: Vec<u8>,
+        paint: Arc<Paint>,
     ) -> Option<Arc<Frame>> {
-        let png = Arc::new(png);
         let frame = {
             let mut guard = self.lock();
             let state = &mut *guard;
@@ -468,7 +453,6 @@ impl Session {
                 clock: raw.meta.clock,
                 components,
                 memory: raw.memory,
-                image: raw.image,
                 timing: raw.timing,
                 at: now_ms(),
                 trace: state.trace.mark(),
@@ -477,7 +461,7 @@ impl Session {
             if state.frames.len() > FRAMES {
                 state.frames.pop_front();
             }
-            state.push_image(frame.frame_sequence, png);
+            state.paint = paint;
             state.last_frame_at = Instant::now();
             frame
         };
@@ -506,18 +490,18 @@ impl Session {
         let _ = exited.wait_for(|&exited| exited).await;
     }
 
-    /// The newest frame, with the waveform since `mark` when it changed.
+    /// The newest frame and its picture, with the waveform since `mark` when it changed.
     pub(crate) fn latest(
         &self,
         mark: Option<&TraceMark>,
-    ) -> Option<(Arc<Frame>, Option<TraceDelta>)> {
+    ) -> Option<(Arc<Frame>, Option<TraceDelta>, Arc<Paint>)> {
         let state = self.lock();
         let frame = state.frames.back()?.clone();
         let trace = (state.trace.id == frame.trace.id && mark != Some(&frame.trace)).then(|| {
             let from = mark.filter(|mark| mark.id == frame.trace.id);
             state.trace.delta(from.map(|mark| mark.total), &frame.trace)
         });
-        Some((frame, trace))
+        Some((frame, trace, state.paint.clone()))
     }
 
     pub(crate) fn run_state(&self) -> Option<RunState> {
@@ -552,16 +536,6 @@ impl Session {
         let trace = (trace && state.trace.id == frame.trace.id)
             .then(|| state.trace.delta(None, &frame.trace));
         Ok((frame, trace))
-    }
-
-    /// The PNG of a kept frame.
-    pub(crate) fn image(&self, sequence: u64) -> Result<Arc<Vec<u8>>, SimError> {
-        self.lock()
-            .images
-            .iter()
-            .find(|(kept, _)| *kept == sequence)
-            .map(|(_, png)| png.clone())
-            .ok_or_else(|| Code::FrameEvicted.into())
     }
 
     /// Why the run counts as unresponsive, if it does.
@@ -626,6 +600,8 @@ async fn read(session: Weak<Session>, output: Box<dyn AsyncRead + Send + Unpin>,
     // The runtime repeats its kept samples in every frame; only newer ones are parsed.
     let mut known: Option<TraceMark> = None;
     let mut previous: Option<Arc<Frame>> = None;
+    // The picture as the runtime last described it; each frame carries what changed.
+    let mut paint: Option<Arc<Paint>> = None;
     loop {
         line.clear();
         let read = (&mut output)
@@ -665,20 +641,18 @@ async fn read(session: Weak<Session>, output: Box<dyn AsyncRead + Send + Unpin>,
             }
             Ok(Line::Ack { request_id, result }) => session.route_ack(request_id, result),
             Ok(Line::Frame(mut raw)) => {
-                let png = match B64.decode(std::mem::take(&mut raw.png)) {
-                    Ok(png) => png,
-                    Err(error) => {
-                        let detail = format!("invalid frame image: {error}");
-                        session.end(EndReason::Failed, None, Some(detail));
-                        break;
-                    }
-                };
+                let picture = Paint::apply(
+                    paint.as_ref(),
+                    &raw.meta.view_id,
+                    std::mem::take(&mut raw.paint),
+                );
+                paint = Some(picture.clone());
                 let components = share(
                     std::mem::take(&mut raw.components),
                     previous.as_deref(),
                     &raw.meta.view_id,
                 );
-                if let Some(frame) = session.push_frame(*raw, components, png) {
+                if let Some(frame) = session.push_frame(*raw, components, picture) {
                     known = Some(frame.trace.clone());
                     previous = Some(frame);
                 }
@@ -933,14 +907,10 @@ pub(crate) mod tests {
         assert!(session.snapshot(Some(10_000 - 255), false).is_ok());
         let evicted = session.snapshot(Some(10_000 - 256), false).unwrap_err();
         assert_eq!(evicted.code, Code::FrameEvicted);
-        assert_eq!(
-            *session.image(10_000).unwrap(),
-            B64.decode("iVBORw0KGgo=").unwrap()
-        );
-        assert_eq!(
-            session.image(10_000 - 8).unwrap_err().code,
-            Code::FrameEvicted
-        );
+        // The picture is the frames' paint laid over each other.
+        let (_, _, paint) = session.latest(None).unwrap();
+        let picture = paint.delta(None, &mut Default::default());
+        assert_eq!((picture.wires.len(), picture.components.len()), (1, 1));
         // Unchanged components are shared between frames.
         let (previous, _) = session.snapshot(Some(9_999), false).unwrap();
         assert!(Arc::ptr_eq(&previous.components[1], &latest.components[1]));
@@ -1056,12 +1026,12 @@ pub(crate) mod tests {
 
         let (session, mut fake, ends) = start(Deadlines::default());
         assert!(fake.line(&frame(VIEW, 1)).await);
-        let failure = r#"<frame-error failure="java.lang.IllegalStateException: render" failureCode="VIEWPORT_BUDGET"/>"#;
+        let failure = r#"<frame-error failure="com.cburch.logisim.file.SessionError: x" failureCode="INSTANCE_NOT_READY"/>"#;
         assert!(fake.line(failure).await);
         assert_eq!(ended(&session).await, EndReason::FrameError);
         timeout(WAIT, &mut fake.killed).await.unwrap().unwrap();
         let ended = session.ended().unwrap();
-        assert_eq!(ended.cause.as_ref().unwrap().code, Code::ViewportBudget);
+        assert_eq!(ended.cause.as_ref().unwrap().code, Code::InstanceNotReady);
         assert_eq!(
             ended.info.message.as_deref(),
             Some("运行画面生成失败，已停止本次仿真")
@@ -1085,7 +1055,7 @@ pub(crate) mod tests {
             .await
             .unwrap()
             .unwrap();
-        let (frame, delta) = session.latest(None).unwrap();
+        let (frame, delta, _) = session.latest(None).unwrap();
         let delta = delta.unwrap();
         assert!(delta.full);
         assert_eq!(delta.signals.len(), 1);
@@ -1129,7 +1099,7 @@ pub(crate) mod tests {
             .await
             .unwrap()
             .unwrap();
-        let (frame, delta) = session.latest(Some(&frame.trace)).unwrap();
+        let (frame, delta, _) = session.latest(Some(&frame.trace)).unwrap();
         assert_eq!(
             (frame.trace.id.as_str(), delta.unwrap().samples.len()),
             ("t2", 1)
@@ -1169,27 +1139,5 @@ pub(crate) mod tests {
         let (frame, _) = session.snapshot(None, false).unwrap();
         assert_eq!(frame.instance_path, ["c1"]);
         assert_eq!(session.snapshot(Some(2), false).unwrap().0.view_id, VIEW);
-    }
-
-    #[test]
-    fn pictures_are_kept_by_count_and_bytes_and_the_newest_two_always() {
-        let root = View {
-            id: VIEW.into(),
-            circuit: "main".into(),
-            instance_path: Vec::new(),
-        };
-        let mut state = State::new(root);
-        let kept = |state: &State| state.images.iter().map(|(n, _)| *n).collect::<Vec<_>>();
-        for sequence in 1..=10 {
-            state.push_image(sequence, Arc::new(vec![0; 1000]));
-        }
-        assert_eq!(kept(&state), (3..=10).collect::<Vec<_>>());
-        for sequence in 11..=13 {
-            state.push_image(sequence, Arc::new(vec![0; 13_000_000]));
-        }
-        assert_eq!(kept(&state), [12, 13]);
-        state.push_image(14, Arc::new(vec![0; 1000]));
-        assert_eq!(kept(&state), [13, 14]);
-        assert_eq!(state.image_bytes, 13_001_000);
     }
 }

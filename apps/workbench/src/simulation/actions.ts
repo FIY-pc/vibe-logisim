@@ -20,6 +20,7 @@ import {
   simulationStatus,
   watchScope,
   type MemoryTarget,
+  type LivePaint,
   type PendingInput,
   type SimulationState,
 } from "./store";
@@ -44,8 +45,6 @@ const WATCH_LIMIT = 12;
 const WATCH_SCOPES = 64;
 /** The frequency a new run starts with unless the user set another. */
 const DEFAULT_FREQUENCY = 2;
-/** Decoded pictures kept for refetching (the runtime keeps the newest two). */
-const PICTURES = 32;
 /** How long a RAM page may take to appear in a frame. */
 const PAGE_TIMEOUT = 10_000;
 
@@ -226,7 +225,7 @@ export function createSimulationActions(stores: Stores) {
       displayed: null,
       components: {},
       frame: null,
-      picture: null,
+      paint: null,
       trace: null,
       page: null,
       pressed: null,
@@ -305,7 +304,6 @@ export function createSimulationActions(stores: Stores) {
         trace: null,
         page: null,
         pressed: null,
-        picture: null,
         error: "",
       });
       const shown = currentView(stores);
@@ -346,6 +344,14 @@ export function createSimulationActions(stores: Stores) {
       displayed?.sessionId === session.sessionId &&
       displayed.viewId === run.viewId;
     if (showing && run.circuit === view.circuit.name) return true;
+    // A run already on the root circuit on screen only needs showing; a new
+    // view would cost the runtime a whole picture for the same thing.
+    if (run.instancePath.length === 0 && run.circuit === view.circuit.name) {
+      patch({
+        displayed: { sessionId: session.sessionId, viewId: run.viewId },
+      });
+      return true;
+    }
     const inInstance =
       run.instancePath.length > 0 && session.rootCircuit === view.circuit.name;
     if (run.circuit !== view.circuit.name && !inInstance) return false;
@@ -375,7 +381,6 @@ export function createSimulationActions(stores: Stores) {
     patch({
       components: {},
       frame: null,
-      picture: null,
       trace: null,
       page: null,
       pending: [],
@@ -820,7 +825,25 @@ export function createSimulationActions(stores: Stores) {
 
   const closeMemory = () => patch({ memory: null });
 
-  /** Keeps the frame the canvas shows as an observation and offers it. */
+  /** The picture the canvas shows, on white, as a PNG data URL. */
+  const shownPicture = (): string | undefined => {
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      "canvas.canvas-picture",
+    );
+    if (!canvas?.width || !canvas.height) return undefined;
+    const copy = document.createElement("canvas");
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    const ctx = copy.getContext("2d");
+    if (!ctx) return undefined;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, copy.width, copy.height);
+    ctx.drawImage(canvas, 0, 0);
+    return copy.toDataURL("image/png");
+  };
+
+  /** Keeps the frame the canvas shows, and its picture, as an observation
+   * and offers it. */
   const capture = async (view: View): Promise<ObservationRecord | null> => {
     const { session, frame, displayed, view: run } = state();
     if (!view.doc || !session || !frame || !displayed || !run) return null;
@@ -838,6 +861,7 @@ export function createSimulationActions(stores: Stores) {
           viewId: displayed.viewId,
           frameSequence: frame.frameSequence,
           title: "",
+          imageData: shownPicture(),
         }),
       );
       patch({ lastCapture: record });
@@ -863,67 +887,6 @@ export function createSimulationActions(stores: Stores) {
     return true;
   };
 
-  /** Tells the run the part of its canvas the window shows, so frames keep
-   * to the visible area. Not queued: a pan must not wait for clock commands. */
-  const viewport = (
-    sessionId: string,
-    viewId: string,
-    area: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      scale: number;
-    },
-  ) => {
-    void command({
-      op: "simulationViewport",
-      sessionId,
-      viewId,
-      ...area,
-    }).catch(() => {});
-  };
-
-  /** Fetches and keeps the picture of a frame; the canvas paints it once
-   * decoded, never a half-loaded one. */
-  const pictures = new Map<string, Promise<string>>();
-  const fetchPicture = (sessionId: string, frameSequence: number) => {
-    const key = `${sessionId}:${frameSequence}`;
-    let pending = pictures.get(key);
-    if (!pending) {
-      pending = command<string>({
-        op: "simulationFrameImage",
-        sessionId,
-        frameSequence,
-      });
-      pictures.set(key, pending);
-      while (pictures.size > PICTURES)
-        pictures.delete(pictures.keys().next().value!);
-      pending.catch(() => pictures.delete(key));
-    }
-    void pending
-      .then((url) => {
-        const { frame, view, displayed } = state();
-        if (
-          frame?.frameSequence !== frameSequence ||
-          view?.viewId !== frame.viewId ||
-          displayed?.viewId !== view.viewId
-        )
-          return;
-        patch({
-          picture: {
-            sessionId,
-            viewId: frame.viewId,
-            frameSequence,
-            commandSequence: frame.commandSequence,
-            url,
-            image: frame.image,
-          },
-        });
-      })
-      .catch(() => {});
-  };
-
   /** Folds one run event into the store. */
   const onEvent = (event: SimulationEvent) => {
     const current = state();
@@ -938,6 +901,8 @@ export function createSimulationActions(stores: Stores) {
       return;
     }
     if (event.kind === "ended") {
+      if (current.paint?.sessionId === event.ended.sessionId)
+        patch({ paint: null });
       if (current.session?.sessionId !== event.ended.sessionId) return;
       patch({
         lastEnded: event.ended,
@@ -947,6 +912,7 @@ export function createSimulationActions(stores: Stores) {
       });
       return;
     }
+    overlay(event);
     fold(event);
   };
 
@@ -955,12 +921,64 @@ export function createSimulationActions(stores: Stores) {
     displayed: null,
     components: {},
     frame: null,
-    picture: null,
     trace: null,
     page: null,
     pressed: null,
     pending: [],
   });
+
+  /** Lays a state event's paint over the picture of its view. Each listener
+   * gets what changed since its own last event, and ops and op lists once by
+   * number, so every event counts, in order, even one `fold` drops as older
+   * than a snapshot; a full one starts the picture and the numbering over. */
+  const overlay = ({ sessionId, viewId, paint: delta }: StateEvent) => {
+    const current = state().paint;
+    const changed = [delta.wires, delta.dots, delta.components].some(
+      (map) => Object.keys(map).length,
+    );
+    if (
+      !delta.full &&
+      (current?.sessionId !== sessionId ||
+        current.viewId !== viewId ||
+        !changed)
+    )
+      return;
+    const paint: LivePaint =
+      delta.full || !current
+        ? {
+            sessionId,
+            viewId,
+            wires: new Map(),
+            dots: new Map(),
+            ops: [],
+            lists: [],
+            components: new Map(),
+            version: 0,
+          }
+        : current;
+    for (const color in delta.wires) {
+      const xs = delta.wires[color];
+      for (let i = 0; i + 3 < xs.length; i += 4)
+        paint.wires.set(`${xs[i]},${xs[i + 1]},${xs[i + 2]},${xs[i + 3]}`, [
+          xs[i],
+          xs[i + 1],
+          xs[i + 2],
+          xs[i + 3],
+          color,
+        ]);
+    }
+    for (const color in delta.dots) {
+      const xs = delta.dots[color];
+      for (let i = 0; i + 1 < xs.length; i += 2)
+        paint.dots.set(`${xs[i]},${xs[i + 1]}`, [xs[i], xs[i + 1], color]);
+    }
+    for (const op of delta.ops) paint.ops.push(op);
+    for (const list of delta.lists)
+      paint.lists.push(list.map((number) => paint.ops[number]));
+    for (const id in delta.components)
+      paint.components.set(id, paint.lists[delta.components[id]]);
+    patch({ paint: { ...paint, version: paint.version + 1 } });
+  };
 
   /** Applies a state event: a newer frame replaces the view and clock and
    * carries the components that changed; an older one is dropped. */
@@ -990,7 +1008,6 @@ export function createSimulationActions(stores: Stores) {
         viewId: event.viewId,
         frameSequence: event.frameSequence,
         commandSequence: event.commandSequence,
-        image: event.image,
       },
       trace: event.trace ? traced(current.trace, event.trace) : current.trace,
       recording: event.trace ? event.trace.recording : current.recording,
@@ -1005,7 +1022,6 @@ export function createSimulationActions(stores: Stores) {
         event.commandSequence,
       ),
     });
-    fetchPicture(session.sessionId, event.frameSequence);
   };
 
   /** Pending markers a frame has applied, or that belong to a view the user
@@ -1063,7 +1079,6 @@ export function createSimulationActions(stores: Stores) {
         viewId: frame.viewId,
         frameSequence: frame.frameSequence,
         commandSequence: frame.commandSequence,
-        image: frame.image,
       },
       components: Object.fromEntries(
         frame.components.map((item) => [item.id, item]),
@@ -1072,7 +1087,6 @@ export function createSimulationActions(stores: Stores) {
       recording: snapshot.trace?.recording ?? state().recording,
       page: frame.memory ?? state().page,
     });
-    fetchPicture(session.sessionId, frame.frameSequence);
     const view = currentView(stores);
     if (view.doc && view.circuit) void restore(view).catch(() => {});
   };
@@ -1101,9 +1115,6 @@ export function createSimulationActions(stores: Stores) {
       () => {
         const current = state();
         const shown = currentView(stores);
-        const live = liveRun(current, shown.doc, shown.circuit?.name);
-        // A picture of a view the canvas no longer shows is not its picture.
-        if (!live && current.picture) patch({ picture: null });
         if (!shown.doc || !shown.circuit || current.viewBusy || current.busy)
           return;
         void restore(shown).catch(() => {});
@@ -1142,12 +1153,10 @@ export function createSimulationActions(stores: Stores) {
     writeMemory,
     capture,
     changeFrequency,
-    viewport,
     openMemory,
     closeMemory,
     onEvent,
     refresh,
-    fetchPicture,
     start,
   };
 }

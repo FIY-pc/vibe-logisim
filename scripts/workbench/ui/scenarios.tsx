@@ -14,6 +14,7 @@ import { createRoot } from "react-dom/client";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { App } from "../../../apps/workbench/src/App";
 import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
+import { recordWidthErrors } from "../../../apps/workbench/src/editor/symbols";
 import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
 import { ShortcutSettings } from "../../../apps/workbench/src/shell/ShortcutSettings";
 import {
@@ -144,7 +145,7 @@ const state = () => ({
     };
   if (request.op === "sourceStatus") return { state: "unchanged" };
   if (request.op === "catalog") return { children: [] };
-  if (request.op === "observe")
+  if (request.op === "observe" || request.op === "connections")
     return { focus: observedFocus || { components: [] } };
   if (request.op === "template" && templateHandler)
     return templateHandler(request);
@@ -161,13 +162,6 @@ const state = () => ({
         },
       ],
     };
-  if (request.op === "render")
-    return {
-      image:
-        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
-    };
-  if (request.op === "simulationFrameImage")
-    return "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
   if (request.op === "simulationNavigate") {
     if (navGate) return navGate.promise;
     const child = request.instancePath.length > 0;
@@ -459,12 +453,6 @@ const simClock = {
   actualFrequency: 0,
   oscillating: false,
 };
-const simImage = {
-  width: 1,
-  height: 1,
-  bounds: { x: 0, y: 0, width: 1, height: 1 },
-  scale: 1,
-};
 const simState = (
   viewId: string,
   circuit: string,
@@ -480,7 +468,14 @@ const simState = (
   commandSequence: frameSequence,
   clock: simClock,
   components: { full: true, items: [] },
-  image: simImage,
+  paint: {
+    full: true,
+    wires: {},
+    dots: {},
+    ops: [],
+    lists: [],
+    components: {},
+  },
   timing: { captureMs: 0, encodeMs: 0 },
 });
 await act(async () => {
@@ -744,13 +739,12 @@ const canvas = (d: any) => (
       edits.push(e);
     }}
     run={null}
-    picture={null}
+    live={null}
     pending={[]}
     pressed={null}
     onPoke={() => {}}
     onPress={() => {}}
     onRelease={() => {}}
-    onViewport={() => {}}
     onError={(e: any) => errors.push(e)}
     fitToken={0}
     onOpenMemory={() => {}}
@@ -758,29 +752,35 @@ const canvas = (d: any) => (
   />
 );
 await render(canvas(cd));
-const canvasEl = document.querySelector(".canvas")!;
+// Points at circuit (x, 100) through the view the canvas shows (600px wide).
 const pointer = async (type: string, x: number) => {
+  const [vx, vy, vw] = document
+    .querySelector(".canvas svg[viewBox]")!
+    .getAttribute("viewBox")!
+    .split(" ")
+    .map(Number);
+  const scale = 600 / vw;
   await act(async () =>
     document.querySelector(".canvas")!.dispatchEvent(
       new MouseEvent(type, {
         bubbles: true,
         button: 0,
-        clientX: x,
-        clientY: 140,
+        clientX: (x - vx) * scale,
+        clientY: (100 - vy) * scale,
       }),
     ),
   );
 };
-await pointer("pointerdown", 140);
-await pointer("pointermove", 160);
-await pointer("pointerup", 160);
+await pointer("pointerdown", 100);
+await pointer("pointermove", 120);
+await pointer("pointerup", 120);
 assert.equal(edits.length, 1);
 assert.equal(edits[0].kind, "move");
 edits = [];
-await pointer("pointerdown", 140);
-await pointer("pointermove", 160);
+await pointer("pointerdown", 100);
+await pointer("pointermove", 120);
 await render(canvas({ ...cd, revision: "r2" }));
-await pointer("pointerup", 160);
+await pointer("pointerup", 120);
 assert.equal(edits.length, 0);
 console.log(
   "PASS: revision change cancels in-flight canvas drag instead of editing new revision",
@@ -817,13 +817,12 @@ function PlacementHarness({ token }: { token: number }) {
         edits.push(e);
       }}
       run={null}
-      picture={null}
+      live={null}
       pending={[]}
       pressed={null}
       onPoke={() => {}}
       onPress={() => {}}
       onRelease={() => {}}
-      onViewport={() => {}}
       onError={(e) => errors.push(e)}
       fitToken={0}
       onOpenMemory={() => {}}
@@ -919,13 +918,12 @@ function QueueHarness() {
           throw new Error("Unexpected structural edit before placement");
         }}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         fitToken={0}
         onOpenMemory={() => {}}
@@ -1135,13 +1133,12 @@ function TraceHarness() {
           edits.push(e);
         }}
         run={null}
-        picture={null}
+        live={null}
         pending={[]}
         pressed={null}
         onPoke={() => {}}
         onPress={() => {}}
         onRelease={() => {}}
-        onViewport={() => {}}
         onError={(e) => errors.push(e)}
         fitToken={0}
         onOpenMemory={() => {}}
@@ -1192,6 +1189,102 @@ observedFocus = null;
 console.log(
   "PASS: Ctrl-click uses native bit connectivity without wiring, Alt-left restores camera and selection",
 );
+{
+  // Pictures and connections the host refuses as stale re-read the workspace.
+  const host = (globalThis as any).__command;
+  const refused: string[] = [];
+  let stales = 0;
+  (globalThis as any).__command = async (request: any) => {
+    if (
+      (request.op === "symbols" || request.op === "connections") &&
+      request.revision === "r3"
+    ) {
+      refused.push(request.op);
+      throw {
+        code: "STALE_REVISION",
+        message: "电路已改变，请重新读取后再修改",
+        retryable: false,
+      };
+    }
+    return host(request);
+  };
+  // Read from the workspace: no edit reported its width conflicts.
+  const staleDoc = {
+    ...cd,
+    revision: "r3",
+    circuits: cd.circuits.map((c: any) => ({ ...c })),
+  };
+  const reported = errors.length;
+  function StaleHarness() {
+    const [selection, setSelection] = useState<string[]>([]);
+    return (
+      <Canvas
+        doc={staleDoc as any}
+        circuit={staleDoc.circuits[0]}
+        tool="select"
+        selection={selection}
+        setSelection={setSelection}
+        place={null}
+        placement={noPlacement}
+        onPlace={async () => staleDoc as any}
+        onCancelPlace={() => {}}
+        edit={async () => {}}
+        run={null}
+        live={null}
+        pending={[]}
+        pressed={null}
+        onPoke={() => {}}
+        onPress={() => {}}
+        onRelease={() => {}}
+        onError={(e) => errors.push(e)}
+        onStale={() => stales++}
+        fitToken={0}
+        onOpenMemory={() => {}}
+        onEnterCircuit={() => {}}
+      />
+    );
+  }
+  await render(<StaleHarness />);
+  await pointer("pointerdown", 100);
+  await pointer("pointerup", 100);
+  await settle();
+  assert.deepEqual(refused, ["symbols", "connections"]);
+  assert.equal(stales, 2);
+  assert.equal(errors.length, reported, "a stale read is not an error");
+  (globalThis as any).__command = host;
+  console.log(
+    "PASS: a picture or connection read refused as stale re-reads the workspace instead of reporting an error",
+  );
+}
+{
+  // An edit answers with the width conflicts of the circuits it changed, so
+  // the canvas draws the new revision without another request; a circuit
+  // read from the workspace asks once.
+  const host = (globalThis as any).__command;
+  const asked: string[] = [];
+  (globalThis as any).__command = async (request: any) => {
+    if (request.op === "symbols") asked.push(request.revision);
+    return host(request);
+  };
+  const read = {
+    ...cd,
+    revision: "w1",
+    circuits: cd.circuits.map((c: any) => ({ ...c })),
+  };
+  await render(canvas(read));
+  const edited = {
+    ...cd,
+    revision: "w2",
+    circuits: read.circuits.map((c: any) => ({ ...c, wires: [...c.wires] })),
+  };
+  recordWidthErrors(edited.circuits, { main: [[100, 100]] });
+  await render(canvas(edited));
+  assert.deepEqual(asked, ["w1"]);
+  (globalThis as any).__command = host;
+  console.log(
+    "PASS: an edit's answer brings its width conflicts; the canvas sends no request for the new revision",
+  );
+}
 assert.equal(loadBindings({ palette: "a" }).palette, "A");
 assert.match(bindingProblem("grid", "Mod+S", defaultBindings)!, /保存/);
 assert.match(bindingProblem("grid", "Mod+Shift+S", defaultBindings)!, /另存为/);

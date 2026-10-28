@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
 use vibe_circuit_document::{Document, DocumentChange, Edit, EditOutcome, Point};
-use vibe_logisim_runtime::{Viewport, timing};
+use vibe_logisim_runtime::{ConnectionSeeds, SymbolSource, Viewport, timing};
 
 /// The objects a gesture leaves selected.
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -58,6 +58,27 @@ pub struct MovePreview {
 pub struct ErrorDetail {
     pub code: crate::ErrorCode,
     pub message: String,
+}
+
+/// One kind of component the window draws: a component's library (none or
+/// empty for the file's circuits), name and complete attributes, as the
+/// document has them.
+#[derive(Debug, Clone, Deserialize, Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolKey {
+    #[serde(default)]
+    #[ts(optional)]
+    pub library: Option<String>,
+    pub name: String,
+    pub attributes: BTreeMap<String, String>,
+}
+
+/// A traced click: every component with an end within `radius` of it.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, ts_rs::TS)]
+pub struct ConnectionPoint {
+    pub x: i32,
+    pub y: i32,
+    pub radius: f64,
 }
 
 /// ROM component id and the words loaded into it before a trace.
@@ -162,6 +183,31 @@ pub enum DocumentRequest {
         revision: String,
         circuit: String,
         xml: String,
+    },
+    /// The vector picture of each kind and the circuit's width conflicts
+    /// (`crates/logisim-runtime/README.md`, Symbols), as the worker's JSON.
+    Symbols {
+        id: String,
+        revision: String,
+        circuit: String,
+        symbols: Vec<SymbolKey>,
+    },
+    /// The connections of chosen objects of a circuit, for the canvas's
+    /// connection panel and signal tracing: the bit nets the components and
+    /// wires are on, every component end on them, and the wire
+    /// bundles and wires they pass through (`crates/logisim-runtime/README.md`,
+    /// Connections), as the worker's JSON `{focus}`.
+    Connections {
+        id: String,
+        revision: String,
+        circuit: String,
+        #[serde(default)]
+        components: Vec<String>,
+        #[serde(default)]
+        wires: Vec<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        point: Option<ConnectionPoint>,
     },
     Template {
         id: String,
@@ -326,6 +372,8 @@ impl DocumentRequest {
         "redo",
         "observe",
         "observeXml",
+        "symbols",
+        "connections",
         "template",
         "properties",
         "catalog",
@@ -386,6 +434,8 @@ impl DocumentRequest {
                 Meta::new(Read).stage(Stage::Library).agent()
             }
             Self::Render { .. } => Meta::new(Read).stage(Stage::Render).agent(),
+            Self::Symbols { .. } => Meta::new(Read).stage(Stage::Render),
+            Self::Connections { .. } => Meta::new(Read).stage(Stage::Observe),
             Self::Simulate { .. } | Self::Trace { .. } => {
                 Meta::new(Read).stage(Stage::Verify).agent()
             }
@@ -430,6 +480,57 @@ pub(crate) fn fitted_viewport(observation: &Value) -> Viewport {
             .min(900. / height as f64)
             .clamp(0.05, 2.),
     }
+}
+
+/// Which component records each key: one of the circuit with exactly that
+/// key whose location and name no other component shares (the worker finds
+/// it by those), otherwise one made from the library tool.
+fn symbol_sources(
+    circuit: Option<&vibe_circuit_document::Circuit>,
+    keys: Vec<SymbolKey>,
+) -> Vec<SymbolSource> {
+    use std::collections::HashMap;
+    fn library(value: Option<&str>) -> Option<&str> {
+        value.filter(|library| !library.is_empty())
+    }
+    let components = circuit.map(|c| c.components.as_slice()).unwrap_or_default();
+    let mut stacked: HashMap<(Point, &str), usize> = HashMap::new();
+    for c in components {
+        *stacked.entry((c.location, c.name.as_str())).or_default() += 1;
+    }
+    // A kind: library (none for the file's circuits), name, attributes.
+    type Kind<'a> = (Option<&'a str>, &'a str, &'a BTreeMap<String, String>);
+    let mut placed: HashMap<Kind, Point> = HashMap::new();
+    for c in components {
+        if stacked[&(c.location, c.name.as_str())] == 1 {
+            placed
+                .entry((
+                    library(c.library.as_deref()),
+                    c.name.as_str(),
+                    &c.attributes,
+                ))
+                .or_insert(c.location);
+        }
+    }
+    keys.into_iter()
+        .map(|key| {
+            match placed.get(&(
+                library(key.library.as_deref()),
+                key.name.as_str(),
+                &key.attributes,
+            )) {
+                Some(&location) => SymbolSource::Placed {
+                    location,
+                    factory: key.name,
+                },
+                None => SymbolSource::Made {
+                    library: key.library.filter(|library| !library.is_empty()),
+                    name: key.name,
+                    attributes: key.attributes,
+                },
+            }
+        })
+        .collect()
 }
 
 /// Attribute name/value pairs of the first serialized `<comp>` in a native reply.
@@ -508,6 +609,33 @@ fn serialized_component(reply: &Value) -> Result<&Value> {
 }
 
 impl Host {
+    /// Adds the width conflicts of the circuits an edit, undo or redo changed,
+    /// read from the native runtime at the new revision, so the canvas draws
+    /// them with the change. They are left out when the runtime cannot read
+    /// them; the canvas then asks with its next `symbols`.
+    async fn add_width_errors(&self, result: &mut EditResult) {
+        let change = &mut result.change;
+        if result.noop || change.base == change.revision {
+            return;
+        }
+        let _widths = timing::span("edit.widths");
+        let names: Vec<String> = change.circuits.iter().map(|c| c.name.clone()).collect();
+        if names.is_empty() {
+            change.width_errors = Some(BTreeMap::new());
+            return;
+        }
+        let Ok(path) = self.snapshot(&change.id, &change.revision).await else {
+            return;
+        };
+        let read = self.native.lock().await.width_errors(&path, &names).await;
+        change.width_errors = read.ok().map(|found| {
+            names
+                .into_iter()
+                .zip(found)
+                .filter_map(|(name, points)| Some((name, points?)))
+                .collect()
+        });
+    }
     /// A place or attributes edit as the native runtime resolves it against
     /// the revision the caller saw: canonical name and attribute values,
     /// checked (placement conflicts, invalid values). A placement also
@@ -769,13 +897,11 @@ impl Host {
                     },
                     edit => self.resolve_edit(&id, &revision, &circuit, edit).await?.0,
                 };
-                if let Some(moves) = moves {
-                    value(self.commit_moves(&id, &revision, &circuit, &moves).await?)
+                let mut result = if let Some(moves) = moves {
+                    self.commit_moves(&id, &revision, &circuit, &moves).await?
                 } else if let Edit::Move { ids, delta } = &edit {
-                    let moved = self
-                        .commit_move(&id, &revision, &circuit, ids, *delta)
-                        .await?;
-                    value(moved)
+                    self.commit_move(&id, &revision, &circuit, ids, *delta)
+                        .await?
                 } else {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
@@ -787,10 +913,11 @@ impl Host {
                         let _view = timing::span("edit.view");
                         d.view_change(&revision, &outcome.changed_circuits)?
                     };
-                    drop(w);
-                    let _value = timing::span("edit.value");
-                    value(edit_result(&outcome, change, false))
-                }
+                    edit_result(&outcome, change, false)
+                };
+                self.add_width_errors(&mut result).await;
+                let _value = timing::span("edit.value");
+                value(result)
             }
             DocumentRequest::MovePreview {
                 id,
@@ -812,7 +939,9 @@ impl Host {
                     let change = d.view_change(&revision, &outcome.changed_circuits)?;
                     (outcome, change)
                 };
-                value(undo_result(outcome, change, "撤销"))
+                let mut result = undo_result(outcome, change, "撤销");
+                self.add_width_errors(&mut result).await;
+                value(result)
             }
             DocumentRequest::Redo { id, revision } => {
                 let (outcome, change) = {
@@ -822,7 +951,9 @@ impl Host {
                     let change = d.view_change(&revision, &outcome.changed_circuits)?;
                     (outcome, change)
                 };
-                value(undo_result(outcome, change, "重做"))
+                let mut result = undo_result(outcome, change, "重做");
+                self.add_width_errors(&mut result).await;
+                value(result)
             }
             DocumentRequest::Observe {
                 id,
@@ -853,6 +984,57 @@ impl Host {
                 };
                 let _observe = timing::span("observe");
                 let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::Symbols {
+                id,
+                revision,
+                circuit,
+                symbols,
+            } => {
+                let (path, view) = self.snapshot_circuit(&id, &revision, &circuit).await?;
+                let sources = symbol_sources(view.as_ref(), symbols);
+                let _symbols = timing::span("symbols");
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .symbols(&path, &circuit, &sources)
+                    .await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::Connections {
+                id,
+                revision,
+                circuit,
+                components,
+                wires,
+                point,
+            } => {
+                let (path, view) = self.snapshot_circuit(&id, &revision, &circuit).await?;
+                let view = view.ok_or("找不到电路")?;
+                // The runtime's ids differ from the document's; it finds the
+                // objects by where they are.
+                let seeds = ConnectionSeeds {
+                    components: components
+                        .iter()
+                        .filter_map(|id| view.components.iter().find(|c| &c.id == id))
+                        .map(|c| (c.location, c.name.clone()))
+                        .collect(),
+                    wires: wires
+                        .iter()
+                        .filter_map(|id| view.wires.iter().find(|w| &w.id == id))
+                        .map(|w| (w.from, w.to))
+                        .collect(),
+                    point: point.map(|p| (Point { x: p.x, y: p.y }, p.radius)),
+                };
+                let _connections = timing::span("connections");
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .connections(&path, &circuit, &seeds)
+                    .await?;
                 return Ok(Reply::Text(text));
             }
             DocumentRequest::Template {

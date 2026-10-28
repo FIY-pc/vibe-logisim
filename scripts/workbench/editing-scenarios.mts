@@ -182,7 +182,8 @@ export async function verifyEditing(command: Command) {
   await assert.rejects(
     () => move(short, [component(short, "outA")], -50, 40),
     (e: any) =>
-      e.code === "CONNECTIONS_CHANGED" && /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
+      e.code === "CONNECTIONS_CHANGED" &&
+      /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
   );
   const unchanged = await command({ op: "read", id: short.id });
   assert.equal(unchanged.revision, short.revision);
@@ -196,7 +197,11 @@ export async function verifyEditing(command: Command) {
       circuit: "main",
       edit: {
         kind: "batch",
-        edits: edits.map(([id, x, y]) => ({ kind: "move", ids: [id], delta: { x, y } })),
+        edits: edits.map(([id, x, y]) => ({
+          kind: "move",
+          ids: [id],
+          delta: { x, y },
+        })),
       },
     }).then(documentOf);
   await assert.rejects(
@@ -205,16 +210,22 @@ export async function verifyEditing(command: Command) {
         [component(short, "outB"), 40, 0],
         [component(short, "outA"), -50, 40],
       ]),
-    (e: any) => e.code === "CONNECTIONS_CHANGED" && /^第 2 组移动/.test(e.message),
+    (e: any) =>
+      e.code === "CONNECTIONS_CHANGED" && /^第 2 组移动/.test(e.message),
   );
-  assert.equal((await command({ op: "read", id: short.id })).revision, short.revision);
+  assert.equal(
+    (await command({ op: "read", id: short.id })).revision,
+    short.revision,
+  );
   const spread = await moves(short, [
     [component(short, "outA"), 40, 0],
     [component(short, "outB"), 60, 0],
   ]);
   await signal(spread, "b", "1", ["outB"]);
   assert.equal(
-    documentOf(await command({ op: "undo", id: spread.id, revision: spread.revision })).revision,
+    documentOf(
+      await command({ op: "undo", id: spread.id, revision: spread.revision }),
+    ).revision,
     short.revision,
     "Moves of one call must be one undo step",
   );
@@ -244,8 +255,10 @@ export async function verifyEditing(command: Command) {
   );
 }
 
-/** Milliseconds per request of one repetition, by request. */
+/** Milliseconds per request of one repetition, by request, and derived columns. */
 type Sample = Record<string, number>;
+/** The requests a repetition sends; `total` adds these up. */
+const REQUESTS = ["preview", "edit", "symbols", "observe", "connections"];
 const percentile = (values: number[], p: number) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[
@@ -257,10 +270,8 @@ export function latencyTable(rows: [string, Sample[]][], columns: string[]) {
   const cell = (samples: Sample[], column: string) => {
     const values = samples.map((s) =>
       column === "total"
-        ? Object.values(s).reduce((a, b) => a + b, 0)
-        : column === "drawn"
-          ? s.edit + s.render
-          : s[column],
+        ? REQUESTS.reduce((sum, r) => sum + (s[r] ?? 0), 0)
+        : s[column],
     );
     return values.some((v) => v === undefined || Number.isNaN(v))
       ? "-"
@@ -283,12 +294,23 @@ export function latencyTable(rows: [string, Sample[]][], columns: string[]) {
 
 /**
  * Course-size editing latency, as the window sees it. Opens the synthetic
- * 1 MB project from a folder (so each edit also saves the file) and repeats
- * every edit the way the canvas issues it: the edit, then render and observe
- * of the new revision. Prints p50/p95 per request in milliseconds; `drawn` is
- * the edit plus the render, when the canvas shows the new picture.
+ * 1 MB project from a folder (so each edit also saves the file), asks for the
+ * symbols of every kind on the page the way the canvas does when it opens a
+ * circuit, and then repeats every edit the way the canvas issues it: the edit,
+ * whose answer carries the page's width conflicts, then a `symbols` request
+ * only when the new revision uses kinds the window does not have yet
+ * (`kinds`; `requests` counts the round trips). Selecting a component reads
+ * its connections (`select`: the first read of a revision, `reselect`: another
+ * component of the same revision). Prints p50/p95 per request in
+ * milliseconds; `drawn` is when the canvas can draw the new picture: the
+ * edit's answer, plus the symbols' when a kind was missing. The picture is on
+ * screen one animation frame later.
  */
-export async function measureEditing(command: Command, rounds = 5) {
+export async function measureEditing(
+  command: Command,
+  rounds = 5,
+  circuit = "main",
+) {
   const folder = await mkdtemp(path.join(tmpdir(), "vibe-latency-"));
   const file = path.join(folder, "course-size.circ");
   await writeFile(file, courseSizeProject().xml);
@@ -297,45 +319,108 @@ export async function measureEditing(command: Command, rounds = 5) {
     const result = await command(request);
     return [result, performance.now() - start] as const;
   };
-  const circuit = "main";
   await command({ op: "folderOpen", path: folder });
   const [opened, open] = await timed({ op: "open", path: file });
   let doc: Document = documentOf(opened);
   const scope = () => ({ id: doc.id, revision: doc.revision, circuit });
-  const [first, firstObserve] = await timed({ op: "observe", ...scope() });
-  const page = doc.circuits.find((c) => c.name === circuit)!;
-  const bounds = first.focus.bounds;
-  const free = { x: bounds.x + bounds.width + 100, y: bounds.y + 40 };
-  const viewport = {
-    x: bounds.x,
-    y: bounds.y,
-    width: 1400,
-    height: 900,
-    scale: 1,
+  const page = () => doc.circuits.find((c) => c.name === circuit)!;
+  /** The window's symbol cache: kind → the subcircuit it was drawn from. */
+  const known = new Map<string, unknown>();
+  const kindOf = (c: Document["circuits"][number]["components"][number]) =>
+    JSON.stringify([
+      c.library || "",
+      c.name,
+      Object.keys(c.attributes)
+        .sort()
+        .map((name) => [name, c.attributes[name]]),
+    ]);
+  const definition = (c: { library?: string | null; name: string }) =>
+    c.library ? null : (doc.circuits.find((d) => d.name === c.name) ?? null);
+  /** Asks for the kinds of the page the cache lacks, like the canvas; `all`
+   * asks for every kind, as when the canvas opens the page. */
+  const symbols = async (sample: Sample, all = false) => {
+    const missing = new Map<string, any>();
+    for (const c of page().components) {
+      const kind = kindOf(c);
+      if (missing.has(kind)) continue;
+      if (!all && known.has(kind) && known.get(kind) === definition(c))
+        continue;
+      missing.set(kind, c);
+    }
+    sample.kinds = missing.size;
+    if (!missing.size && !all) {
+      sample.symbols = 0;
+      return null;
+    }
+    const [reply, ms] = await timed({
+      op: "symbols",
+      ...scope(),
+      symbols: [...missing.values()].map((c) => ({
+        library: c.library || undefined,
+        name: c.name,
+        attributes: c.attributes,
+      })),
+    });
+    [...missing].forEach(([kind, c], i) => {
+      assert(
+        reply.symbols[i]?.ops,
+        `No symbol for ${c.name}: ${reply.symbols[i]?.error}`,
+      );
+      known.set(kind, definition(c));
+    });
+    sample.symbols = ms;
+    sample.KB = Buffer.byteLength(JSON.stringify(reply)) / 1024;
+    return reply;
   };
-  const gates = page.components.filter((c) => c.name === "AND Gate");
+  const first: Sample = {};
+  await symbols(first, true);
+  const [observed, firstObserve] = await timed({ op: "observe", ...scope() });
+  const bounds = observed.focus.bounds;
+  const free = { x: bounds.x + bounds.width + 100, y: bounds.y + 40 };
+  const gates = page().components.filter((c) => c.name === "AND Gate");
   let moving = gates[0].location;
   const labelled = gates[1].location;
   const find = (at: { x: number; y: number }) =>
-    doc.circuits
-      .find((c) => c.name === circuit)!
-      .components.find(
-        (c) =>
-          c.name === "AND Gate" &&
-          c.location.x === at.x &&
-          c.location.y === at.y,
-      )!.id;
-  /** Applies an edit, then renders and observes the new revision like the canvas. */
+    page().components.find(
+      (c) =>
+        c.name === "AND Gate" && c.location.x === at.x && c.location.y === at.y,
+    )!.id;
+  /** Applies an edit, then asks for the kinds it brought, like the canvas. */
   const edit = async (change: any, sample: Sample) => {
     const [result, ms] = await timed({ op: "edit", ...scope(), edit: change });
+    assert(
+      Array.isArray(result.change.widthErrors?.[circuit]),
+      "An edit must answer with the width conflicts of the page it changed",
+    );
     doc = documentOf(result);
     sample.edit = ms;
-    sample.render = (await timed({ op: "render", ...scope(), ...viewport }))[1];
-    sample.observe = (await timed({ op: "observe", ...scope() }))[1];
+    await symbols(sample);
+    sample.requests = sample.kinds ? 2 : 1;
+    sample.drawn = sample.edit + (sample.kinds ? sample.symbols : 0);
     return result;
   };
+  /** Selects a component: the connection panel reads its nets. */
+  const select = async (at: { x: number; y: number }) => {
+    const [reply, ms] = await timed({
+      op: "connections",
+      ...scope(),
+      components: [find(at)],
+      wires: [],
+    });
+    assert(
+      reply.focus.components.some((c: any) => !c.partial),
+      "The selected component must be read whole",
+    );
+    return {
+      connections: ms,
+      KB: Buffer.byteLength(JSON.stringify(reply)) / 1024,
+    };
+  };
   const rows: Record<string, Sample[]> = {
+    page: [],
     observe: [],
+    select: [],
+    reselect: [],
     move: [],
     wire: [],
     place: [],
@@ -343,9 +428,14 @@ export async function measureEditing(command: Command, rounds = 5) {
     attributes: [],
   };
   for (let round = 0; round < rounds; round++) {
+    const opening: Sample = {};
+    await symbols(opening, true);
+    rows.page.push(opening);
     rows.observe.push({
       observe: (await timed({ op: "observe", ...scope() }))[1],
     });
+    rows.select.push(await select(moving));
+    rows.reselect.push(await select(labelled));
     const delta = { x: round % 2 ? -10 : 10, y: 0 };
     const move: Sample = {};
     move.preview = (
@@ -395,16 +485,21 @@ export async function measureEditing(command: Command, rounds = 5) {
   }
   console.log(
     `Course-size editing: ${(await command({ op: "source", id: doc.id, revision: doc.revision })).xml.length} bytes, ` +
-      `"${circuit}" ${page.components.length} components and ${page.wires.length} wires; ` +
-      `open ${Math.round(open)} ms, first observe ${Math.round(firstObserve)} ms; ${rounds} rounds, ms p50/p95:`,
+      `"${circuit}" ${page().components.length} components and ${page().wires.length} wires; ` +
+      `open ${Math.round(open)} ms, first symbols ${Math.round(first.symbols)} ms, first observe ${Math.round(firstObserve)} ms; ` +
+      `${rounds} rounds, ms p50/p95 (page = the symbols of every kind on it, as when the canvas opens it):`,
   );
   console.log(
     latencyTable(Object.entries(rows), [
       "preview",
       "edit",
-      "render",
+      "symbols",
+      "kinds",
+      "requests",
+      "KB",
       "drawn",
       "observe",
+      "connections",
       "total",
     ]),
   );

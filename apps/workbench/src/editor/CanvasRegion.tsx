@@ -25,7 +25,7 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
   const session = useSimulation((state) => state.session);
   const run = useSimulation((state) => state.view);
   const displayed = useSimulation((state) => state.displayed);
-  const picture = useSimulation((state) => state.picture);
+  const paint = useSimulation((state) => state.paint);
   const pending = useSimulation((state) => state.pending);
   const pressed = useSimulation((state) => state.pressed);
   const onError = useNotices((state) => state.onError);
@@ -55,16 +55,12 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
       place={place}
       edit={(change) => editing.edit(view, change)}
       run={live}
-      picture={
+      live={
         live &&
         session &&
-        picture?.sessionId === session.sessionId &&
-        picture.viewId === live.viewId
-          ? {
-              frameSequence: picture.frameSequence,
-              url: picture.url,
-              image: picture.image,
-            }
+        paint?.sessionId === session.sessionId &&
+        paint.viewId === live.viewId
+          ? paint
           : null
       }
       pending={pending.map((item) => item.componentId)}
@@ -74,11 +70,10 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
       }
       onPress={(component) => simulating.press(view, component)}
       onRelease={() => simulating.release()}
-      onViewport={(viewId, area) => {
-        if (live && session)
-          simulating.viewport(session.sessionId, viewId, area);
-      }}
       onError={onError}
+      onStale={() =>
+        void stores.documents.getState().refreshWorkspace().catch(onError)
+      }
       fitToken={fitToken}
       zoomRequest={zoomRequest}
       deleteRequest={deleteRequest}

@@ -3,6 +3,7 @@ package com.cburch.logisim.file;
 import com.cburch.logisim.LogisimVersion;
 import com.cburch.logisim.Main;
 import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.CircuitConnections;
 import com.cburch.logisim.circuit.CircuitMutator;
 import com.cburch.logisim.circuit.CircuitTransaction;
 import com.cburch.logisim.circuit.Wire;
@@ -76,6 +77,9 @@ final class LoadedProject {
         if (value.length <= 16_000_000) results.put(key, value);
         return value;
     }
+
+    /** The connection index of each circuit at this revision, built when first read. */
+    final Map<String, CircuitConnections> connections = new HashMap<>();
 
     /** Loads a revision whole. */
     LoadedProject(File path, byte[] bytes) throws Exception {
@@ -191,6 +195,7 @@ final class LoadedProject {
         }
         layout = next;
         results.clear();
+        connections.clear();
         return true;
     }
 

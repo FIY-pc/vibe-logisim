@@ -28,7 +28,7 @@ Desktop state is stored in Tauri's application data directory. Browser developme
 | Compatibility adapter | `crates/logisim-runtime`                | Java process lifecycle, native catalog/properties/geometry, rendering, simulation |
 | Application host      | `crates/workbench-host`                 | Typed commands, document/simulation binding, sidecar callbacks                    |
 | Desktop               | `apps/workbench/src-tauri`              | Window, native dialogs, IPC and application lifecycle                             |
-| Editor UI             | `apps/workbench/src/editor/`            | Selection, placement, wiring, navigation and input feedback                       |
+| Editor UI             | `apps/workbench/src/editor/`            | Editor picture, selection, placement, wiring, navigation, input feedback          |
 | Conversation UI       | `apps/workbench/src/conversation/`      | Model service settings, history, actual streamed events and folder checkpoints    |
 | Runtime adapter       | `packages/agent-runtime`                | Node sidecar, model service access and the tool contract                          |
 | Simulation evidence   | `crates/workbench-host/src/simulation/` | Revision-bound captures, exact watches and persistent observation records         |
@@ -44,7 +44,7 @@ npm run check:contracts
 
 Edit the Rust definitions, then regenerate. Do not edit generated TypeScript or JSON schema by hand. Invalid revisions reject the entire edit. Component and wire selectors are revision-local; obtain new selectors after structural changes.
 
-The host pushes agent events and simulation frames through Tauri events or the browser development SSE connection. Agent snapshots carry an event cursor so reconnecting does not append streamed text twice. Simulation frames use a latest-value channel; slow consumers do not accumulate a frame queue. Host shutdown closes live streams before terminating child processes.
+The host pushes agent events and simulation frames through Tauri events or the browser development SSE connection. Agent snapshots carry an event cursor so reconnecting does not append streamed text twice. Simulation frames use a latest-value channel; slow consumers do not accumulate a frame queue. Each frame carries what changed in the run's picture since the frame that consumer last received (wire and junction colors, the drawing ops of changed components), so a skipped frame loses nothing and the window draws the running circuit without asking for images. Host shutdown closes live streams before terminating child processes.
 
 Simulation belongs to a document revision and root circuit. Entering a subcircuit instance changes the view within that running root. Starting or operating another circuit replaces the transient session. Stimuli do not change source revisions, write source files or enter undo history. RAM edits apply to the selected running instance. ROM edits are structural document changes and remain undoable; they follow the document saving policy. Both reject stale values. Button release only applies to its original live session; leaving or closing a circuit cannot restart a simulation through a delayed release event.
 

@@ -18,7 +18,8 @@ export function applyDocumentChange(
   change: DocumentChange,
 ): DocumentView | null {
   if (!view || view.id !== change.id) return null;
-  const { base, order, circuits: changed, ...fields } = change;
+  // Width conflicts belong to the canvas, not to the view.
+  const { base, order, circuits: changed, widthErrors, ...fields } = change;
   if (view.revision === change.revision) return { ...view, ...fields };
   if (view.revision !== base) return null;
   const circuits = [];
@@ -36,11 +37,25 @@ export function applyDocumentChange(
 export function combineChanges(changes: DocumentChange[]): DocumentChange {
   const last = changes[changes.length - 1];
   const latest = new Map<string, DocumentChange["circuits"][number]>();
+  // Each circuit's conflicts come from the change its content comes from.
+  const widths = new Map<string, [number, number][]>();
   for (const change of changes)
-    for (const circuit of change.circuits) latest.set(circuit.name, circuit);
+    for (const circuit of change.circuits) {
+      latest.set(circuit.name, circuit);
+      const points = change.widthErrors?.[circuit.name];
+      if (points) widths.set(circuit.name, points);
+      else widths.delete(circuit.name);
+    }
+  const circuits = last.order.flatMap((name) => latest.get(name) ?? []);
   return {
     ...last,
     base: changes[0].base,
-    circuits: last.order.flatMap((name) => latest.get(name) ?? []),
+    circuits,
+    widthErrors: Object.fromEntries(
+      circuits.flatMap((c) => {
+        const points = widths.get(c.name);
+        return points ? [[c.name, points]] : [];
+      }),
+    ),
   };
 }

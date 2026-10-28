@@ -6,6 +6,7 @@ use super::{
         ActResult, ButtonValue, Command, ComponentDelta, EndReason, EndedInfo, Frame,
         NavigateResult, SessionInfo, SimulationEvent, Snapshot, StateEvent, Status, TraceMark,
     },
+    paint::{Paint, Sent},
     protocol,
     session::{Deadlines, Ended, Io, OnEnd, Process, Session, View, now_ms},
 };
@@ -152,8 +153,6 @@ fn failed(detail: impl Into<String>) -> SimError {
 /// Why a run that ended before its first frame did not start.
 fn start_error(ended: &Ended) -> SimError {
     let error = match &ended.cause {
-        Some(cause) if cause.code == Code::ViewportBudget => SimError::new(Code::StartFailed)
-            .with_message("仿真未启动：画面范围超过限制，请调整电路范围后重试"),
         Some(cause) if cause.code != Code::Internal => cause.clone(),
         _ => SimError::new(Code::StartFailed),
     };
@@ -507,7 +506,7 @@ impl SimulationRegistry {
     /// Shows a subcircuit instance of the run: `instance_path` holds component
     /// ids from the root circuit; an empty path returns to the root. Every call
     /// makes a new view: the runtime releases held buttons, clears the
-    /// waveform and the shown memory page, and renders the default viewport.
+    /// waveform and the shown memory page, and paints the whole view again.
     pub async fn navigate(
         &self,
         session_id: &str,
@@ -571,17 +570,6 @@ impl SimulationRegistry {
             frame: Frame::clone(&frame),
             trace,
         })
-    }
-
-    /// The PNG of a kept frame. The newest two are always kept.
-    pub fn frame_image(
-        &self,
-        session_id: &str,
-        frame_sequence: u64,
-    ) -> Result<Arc<Vec<u8>>, SimError> {
-        self.live(session_id)
-            .ok_or(Code::SessionEnded)?
-            .image(frame_sequence)
     }
 
     /// Events from now on, starting with the current run if there is one.
@@ -729,6 +717,9 @@ struct Follow {
     frames: watch::Receiver<u64>,
     last: Option<Arc<Frame>>,
     trace: Option<TraceMark>,
+    /// The picture this listener has, and the ops it was sent for it.
+    paint: Option<Arc<Paint>>,
+    sent: Sent,
 }
 
 /// Simulation events for one listener, in order. Frames do not queue: a slow
@@ -782,6 +773,8 @@ impl Subscription {
                     session,
                     last: None,
                     trace: None,
+                    paint: None,
+                    sent: Sent::default(),
                 });
                 SimulationEvent::Session { session: info }
             }
@@ -805,7 +798,7 @@ impl Subscription {
         if follow.session.ended().is_some() {
             return None;
         }
-        let (frame, trace) = follow.session.latest(follow.trace.as_ref())?;
+        let (frame, trace, paint) = follow.session.latest(follow.trace.as_ref())?;
         let last = follow.last.as_deref();
         if last.is_some_and(|last| last.frame_sequence == frame.frame_sequence) {
             return None;
@@ -842,11 +835,12 @@ impl Subscription {
             },
             trace,
             memory,
-            image: frame.image,
+            paint: paint.delta(follow.paint.as_deref(), &mut follow.sent),
             timing: frame.timing,
         };
         follow.trace = Some(frame.trace.clone());
         follow.last = Some(frame);
+        follow.paint = Some(paint);
         Some(SimulationEvent::State(Box::new(event)))
     }
 }
@@ -1082,17 +1076,13 @@ mod tests {
         assert_eq!(error.code, Code::StartFailed);
         assert!(error.detail().is_some());
 
-        // The first picture was over the budget.
+        // The first frame failed: the run says why.
         let act = h.act(h.definition("cell"), Command::Start, None);
         let mut d = h.spawned().await;
-        let line = r#"<frame-error failure="java.lang.IllegalArgumentException: x" failureCode="VIEWPORT_BUDGET"/>"#;
+        let line = r#"<frame-error failure="java.lang.IllegalStateException: x" failureCode="CLOCK_FAILURE"/>"#;
         assert!(d.fake.line(line).await);
         let error = timeout(WAIT, act).await.unwrap().unwrap().unwrap_err();
-        assert_eq!(error.code, Code::StartFailed);
-        assert_eq!(
-            error.message,
-            "仿真未启动：画面范围超过限制，请调整电路范围后重试"
-        );
+        assert_eq!(error.code, Code::ClockFailure);
 
         // No frame in time.
         let act = h.act(h.definition("cell"), Command::Start, None);
@@ -1345,8 +1335,6 @@ mod tests {
                 .len(),
             0
         );
-        let image = h.registry.frame_image(&session_id, 3).unwrap();
-        assert!(!image.is_empty());
 
         // A command for the root circuit's definition returns the run to its
         // root instead of starting a new one, so its state is kept.
@@ -1550,12 +1538,27 @@ mod tests {
                 view_id: result.view_id.clone().unwrap(),
                 revision: view.revision.clone(),
             };
-            // The output follows the input in a later frame.
+            // The output follows the input in a later frame. The first event
+            // has the whole picture; the wire to the output takes its color.
+            let mut first = None;
+            let mut wire = None;
             let followed = timeout(WAIT, async {
                 loop {
-                    if let Some(SimulationEvent::State(state)) = events.next().await
-                        && let Some(item) =
-                            state.components.items.iter().find(|item| item.id == output)
+                    let Some(SimulationEvent::State(state)) = events.next().await else {
+                        continue;
+                    };
+                    if first.is_none() {
+                        first = Some(state.paint.clone());
+                    }
+                    if let Some((color, _)) = state
+                        .paint
+                        .wires
+                        .iter()
+                        .find(|(_, wires)| wires.chunks(4).any(|w| w == [100, 100, 200, 100]))
+                    {
+                        wire = Some(color.clone());
+                    }
+                    if let Some(item) = state.components.items.iter().find(|item| item.id == output)
                         && item.ports[0].signal.bits == "1"
                     {
                         break state.frame_sequence;
@@ -1564,6 +1567,11 @@ mod tests {
             })
             .await
             .unwrap();
+            let first = first.unwrap();
+            assert!(first.full);
+            let wires: usize = first.wires.values().map(|w| w.len() / 4).sum();
+            assert_eq!((wires, first.components.len()), (2, 4));
+            assert_eq!(wire.as_deref(), Some("#00d200"));
             let tick = registry
                 .act(run(&result), Command::Tick, None)
                 .await
@@ -1592,10 +1600,6 @@ mod tests {
             })
             .await
             .unwrap();
-            let png = registry
-                .frame_image(&session_id, latest.frame.frame_sequence)
-                .unwrap();
-            assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
             assert_eq!(port(&latest.frame, &output).as_deref(), Some("1"));
             let clock_value = port(&latest.frame, &clock_output);
             assert!(registry.stop(&session_id));
@@ -1612,12 +1616,9 @@ mod tests {
             println!(
                 "source {source}: runtime {runtime:?}, started and applied the input in {start_ms} ms, \
                  output 1 at frame {followed}, ticks {}, clock output {clock_value:?}, \
-                 frame {} of {}x{} px ({} PNG bytes), run ended {:?}",
+                 first picture {} bytes, run ended {:?}",
                 clock.ticks,
-                latest.frame.frame_sequence,
-                latest.frame.image.width,
-                latest.frame.image.height,
-                png.len(),
+                serde_json::to_string(&first).unwrap().len(),
                 ended.reason_code,
             );
         }

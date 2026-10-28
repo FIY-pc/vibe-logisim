@@ -72,6 +72,14 @@ public final class ExactRuntimeObserver {
     private static final String COURSE_RUNTIME_SHA256 =
         "b2400702fb9e8e4c71c512d7e09678a788039f402be55164209cde4cee8fc996";
     private static boolean courseRuntime;
+
+    /**
+     * Which runtime later answers describe: the course build leaves port
+     * roles it does not verify unnamed (semanticRole).
+     */
+    public static void useRuntime(String runtimeDigest) {
+        courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
+    }
     private static final int COMPACT_SPATIAL_NEIGHBORS_PER_REGION_COMPONENT = 2;
 
     private static final Comparator<Component> COMPONENT_ORDER =
@@ -1315,7 +1323,7 @@ public final class ExactRuntimeObserver {
         return seen;
     }
 
-    private static Map<Component, String> assignComponentIds(Circuit circuit) {
+    static Map<Component, String> assignComponentIds(Circuit circuit) {
         Map<Component, String> result = new IdentityHashMap<Component, String>();
         Map<String, Integer> occupants = new HashMap<String, Integer>();
         for (Component component : sortedComponents(circuit)) {
@@ -1334,13 +1342,13 @@ public final class ExactRuntimeObserver {
         return value < 0 ? "m" + (-value) : Integer.toString(value);
     }
 
-    private static List<Component> sortedComponents(Circuit circuit) {
+    static List<Component> sortedComponents(Circuit circuit) {
         List<Component> result = new ArrayList<Component>(circuit.getNonWires());
         Collections.sort(result, COMPONENT_ORDER);
         return result;
     }
 
-    private static String semanticRole(Component component, int index) {
+    static String semanticRole(Component component, int index) {
         String factoryName = component.getFactory().getName();
         int endCount = component.getEnds().size();
         if (component.getFactory() instanceof Tunnel) return "tunnel:" + componentLabel(component);
@@ -1385,7 +1393,7 @@ public final class ExactRuntimeObserver {
         return Boolean.TRUE.equals(value) || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
-    private static Instance instanceOrNull(Component component) {
+    static Instance instanceOrNull(Component component) {
         try {
             return Instance.getInstanceFor(component);
         } catch (Throwable ignored) {
@@ -1393,7 +1401,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static String componentLabel(Component component) {
+    static String componentLabel(Component component) {
         AttributeSet attributes = component.getAttributeSet();
         if (!attributes.containsAttribute(StdAttr.LABEL)) return null;
         return emptyToNull(attributes.getValue(StdAttr.LABEL));
@@ -1440,7 +1448,7 @@ public final class ExactRuntimeObserver {
         return out.toString();
     }
 
-    private static String safeDisplayName(ComponentFactory factory) {
+    static String safeDisplayName(ComponentFactory factory) {
         try {
             return factory.getDisplayName();
         } catch (Throwable error) {
@@ -1448,7 +1456,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static int width(BitWidth width) {
+    static int width(BitWidth width) {
         return width == null || width == BitWidth.UNKNOWN ? -1 : width.getWidth();
     }
 
@@ -1580,7 +1588,7 @@ public final class ExactRuntimeObserver {
         return new String(out);
     }
 
-    private static String emptyToNull(String value) {
+    static String emptyToNull(String value) {
         return value == null || value.isEmpty() ? null : value;
     }
 
@@ -1671,7 +1679,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static final class Coverage {
+    static final class Coverage {
         int components;
         int componentsInRegion;
         int ends;
@@ -1733,7 +1741,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static final class BundleRecord {
+    static final class BundleRecord {
         final WireBundle bundle;
         String id;
         final List<String> wireIds = new ArrayList<String>();
@@ -1743,7 +1751,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static final class NetRecord {
+    static final class NetRecord {
         final WireThread root;
         final String pointKey;
         String id;
@@ -1755,7 +1763,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static final class NetIndex {
+    static final class NetIndex {
         final Circuit circuit;
         final Map<Component, String> componentIds;
         final Coverage coverage;
@@ -2006,7 +2014,7 @@ public final class ExactRuntimeObserver {
         }
     }
 
-    private static final class Json {
+    static final class Json {
         static void writeCompact(Object value, StringBuilder out) {
             if (value == null) {
                 out.append("null");
@@ -2083,7 +2091,7 @@ public final class ExactRuntimeObserver {
             out.append(']');
         }
 
-        private static void string(String value, StringBuilder out) {
+        static void string(String value, StringBuilder out) {
             out.append('"');
             int plain = 0;
             while (plain < value.length()) {

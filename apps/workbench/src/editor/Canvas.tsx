@@ -1,5 +1,24 @@
-import { useMovePreview } from "./useMovePreview";
-import type { PlacementState } from "./usePlacement";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import type { RunState } from "../generated/RunState";
+import type { SymbolKey } from "../generated/SymbolKey";
+import type {
+  CatalogTool,
+  Circuit,
+  Component,
+  Document,
+  Edit,
+  Point,
+  Tool,
+  XmlNode,
+} from "../shared/types";
+import { CanvasPicture } from "./CanvasPicture";
 import { Connections } from "./Connections";
 import { SelectionConnections } from "./SelectionConnections";
 import {
@@ -13,30 +32,14 @@ import {
   type ConnectionPeer,
   type SignalTarget,
 } from "./connectivity";
-import {
-  useCallback,
-  useId,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import type {
-  XmlNode,
-  Bounds,
-  CatalogTool,
-  Circuit,
-  Component,
-  Document,
-  Edit,
-  Point,
-  Tool,
-} from "../shared/types";
-import type { RunState } from "../generated/RunState";
-import type { FrameImage } from "../generated/FrameImage";
-import { command } from "../shared/transport";
-import { liveViewport } from "../simulation/simulation";
+import { fitView, hitTest, insideBox, type View } from "./geometry";
+import { buildScene, program, type Frame, type Live } from "./paint";
+import { symbolId, templateKey, useSymbols, type SymbolEntry } from "./symbols";
+import { useMovePreview } from "./useMovePreview";
+import { useConnections, type ConnectionSeeds } from "./useConnections";
+import type { PlacementState } from "./usePlacement";
+import { usePlacementQueue } from "./usePlacementQueue";
+
 interface Props {
   doc: Document;
   circuit: Circuit;
@@ -47,8 +50,8 @@ interface Props {
   edit: (e: Edit) => Promise<void>;
   /** The run, when the canvas shows its view rather than the definition. */
   run: RunState | null;
-  /** The decoded picture of the run's frame, and where it was drawn. */
-  picture: { frameSequence: number; url: string; image: FrameImage } | null;
+  /** The run's picture of that view, as the runtime drew it. */
+  live: Live | null;
   /** Components of the run whose input the user changed, until a frame shows it. */
   pending: string[];
   /** The button held down in the run. */
@@ -58,21 +61,14 @@ interface Props {
   onPoke: (component: Component, point: Point) => void;
   onPress: (component: Component) => void;
   onRelease: () => void;
-  onViewport: (
-    viewId: string,
-    area: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      scale: number;
-    },
-  ) => void;
   onError: (e: unknown) => void;
+  /** A picture or connection read was refused because the host's document
+   * moved on (another revision exists); read the workspace again. */
+  onStale?: () => void;
   fitToken: number;
   zoomRequest?: { token: number; factor: number };
-  /** A deletion asked for outside the canvas (the toolbar); committed here so
-   * it gets the same mask as the Delete key. */
+  /** A deletion asked for outside the canvas (the toolbar); committed here
+   * like the Delete key, so the objects leave the picture at once. */
   deleteRequest?: { token: number; ids: string[] };
   onZoomChange?: (zoom: number) => void;
   onObservation?: (observation: {
@@ -90,11 +86,29 @@ interface Props {
   onSignalView?: (view: ReactNode) => void;
   onSignalOpen?: () => void;
 }
+
+/** What a gesture shows changed before the document does. */
+interface Overlay {
+  /** Objects not drawn where they are: moved, deleted or rerouted. */
+  hide: string[];
+  /** Objects drawn displaced by `delta`. */
+  move: string[];
+  delta: Point;
+  /** Wires drawn as if they existed: a committed wire. */
+  wires: { from: Point; to: Point }[];
+  /** The connections the host plans for a move. */
+  lines: { from: Point; to: Point }[];
+}
+const still: Point = { x: 0, y: 0 };
+const none: Frame["ghosts"] = [];
 const snap = (v: number) => Math.round(v / 10) * 10;
 const route = (a: Point, b: Point): Point[] =>
   [a, { x: b.x, y: a.y }, b].filter(
     (p, i, arr) => i === 0 || p.x !== arr[i - 1].x || p.y !== arr[i - 1].y,
   );
+const segments = (points: Point[]) =>
+  points.slice(1).map((to, i) => ({ from: points[i], to }));
+
 export function Canvas({
   doc,
   circuit,
@@ -104,14 +118,14 @@ export function Canvas({
   place,
   edit,
   run,
-  picture: frame,
+  live,
   pending,
   pressed,
   onPoke,
   onPress,
   onRelease,
-  onViewport,
   onError,
+  onStale,
   fitToken,
   zoomRequest,
   deleteRequest,
@@ -129,7 +143,7 @@ export function Canvas({
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [view, setView] = useState({ x: -40, y: -40, scale: 1 });
+  const [view, setView] = useState<View>({ x: -40, y: -40, scale: 1 });
   const lastZoom = useRef(zoomRequest?.token);
   useEffect(() => {
     onZoomChange?.(view.scale);
@@ -153,148 +167,99 @@ export function Canvas({
       };
     });
   }, [zoomRequest, size]);
-  const [image, setImage] = useState<{
-    src: string;
-    bounds: Bounds;
-    revision: string;
-  } | null>(null);
   const template = placement.template;
-  const placementAttributes = placement.attributes;
   const [heldSpace, setHeldSpace] = useState(false);
   const spaceHeld = useRef(false);
-  const queue = useRef<{ key: number; revision: string; edit: Edit }[]>([]);
-  const placing = useRef(false);
-  const queueRevision = useRef<string | null>(null);
-  const lastPlacedRevision = useRef<string | null>(null);
-  const alive = useRef(true);
-  const placeCommand = useRef(onPlace);
-  placeCommand.current = onPlace;
-  const placementSequence = useRef(0);
-  const [previews, setPreviews] = useState<
-    { key: number; point: Point; template: XmlNode; committed: boolean }[]
-  >([]);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      queue.current = [];
-    };
-  }, []);
-  useEffect(() => {
-    if (image?.revision === lastPlacedRevision.current)
-      setPreviews((previous) => previous.filter((item) => !item.committed));
-  }, [image]);
-  const drainPlacements = async () => {
-    if (placing.current) return;
-    placing.current = true;
-    try {
-      while (alive.current && queue.current.length) {
-        const item = queue.current[0];
-        const next = await placeCommand.current(
-          queueRevision.current || item.revision,
-          item.edit,
-        );
-        queueRevision.current = next.revision;
-        lastPlacedRevision.current = next.revision;
-        if (alive.current)
-          setPreviews((previous) =>
-            previous.map((preview) =>
-              preview.key === item.key
-                ? { ...preview, committed: true }
-                : preview,
-            ),
-          );
-        if (queue.current[0] === item) queue.current.shift();
-      }
-    } catch (e) {
-      const remaining = queue.current.length;
-      queue.current = [];
-      if (alive.current) {
-        setPreviews((previous) =>
-          previous.filter((preview) => preview.committed),
-        );
-        onError(
-          `${e instanceof Error ? e.message : String(e)}${remaining > 1 ? `；后续 ${remaining - 1} 个元件未放置` : ""}`,
-        );
-      }
-    } finally {
-      placing.current = false;
-      queueRevision.current = null;
-    }
-  };
-  const enqueuePlacement = (point: Point) => {
-    if (!place || !template || placement.error) return;
-    if (
-      circuit.components.some(
-        (c) =>
-          c.name === place.name &&
-          c.location.x === point.x &&
-          c.location.y === point.y,
-      ) ||
-      queue.current.some(
-        (item) =>
-          item.edit.kind === "place" &&
-          item.edit.name === place.name &&
-          item.edit.location.x === point.x &&
-          item.edit.location.y === point.y,
-      )
-    ) {
-      onError("此位置已有相同元件");
-      return;
-    }
-    const bounds = template.children.find((n) => n.tag === "bounds");
-    if (
-      bounds &&
-      (point.x + Number(bounds.attributes.x) < 0 ||
-        point.y + Number(bounds.attributes.y) < 0)
-    ) {
-      onError("请把整个元件放在坐标原点的右下方");
-      return;
-    }
-    const key = ++placementSequence.current;
-    if (!placing.current && !queue.current.length)
-      queueRevision.current = doc.revision;
-    queue.current.push({
-      key,
-      revision: doc.revision,
-      edit: {
-        kind: "place",
-        name: place.name,
-        library: place.library || null,
-        location: point,
-        attributes: { ...placementAttributes },
+  const stale = () => onStale?.();
+  const { previews, enqueue } = usePlacementQueue({
+    doc,
+    circuit,
+    place,
+    placement,
+    onPlace,
+    onCancelPlace,
+    onError,
+  });
+
+  // The picture: every kind's recorded drawing, asked for once per document.
+  const ghostKey = place ? templateKey(template) : null;
+  const extra = useMemo(() => {
+    const keys = new Map<string, SymbolKey>();
+    for (const key of [
+      ghostKey,
+      ...previews.map((p) => templateKey(p.template)),
+    ])
+      if (key) keys.set(symbolId(key), key);
+    return [...keys.values()];
+  }, [ghostKey, previews]);
+  const symbols = useSymbols(doc, circuit, extra, onError, stale);
+  // A component whose new kind is still being asked for keeps its last picture.
+  const lastDrawn = useRef(
+    new Map<string, { kind: string; entry: SymbolEntry }>(),
+  );
+  const scene = useMemo(() => {
+    const previous = lastDrawn.current;
+    const next = new Map<string, { kind: string; entry: SymbolEntry }>();
+    const built = buildScene(
+      circuit,
+      (component) => {
+        const kind = `${component.library ?? ""}\n${component.name}`;
+        const kept = previous.get(component.id);
+        const entry =
+          symbols.get(component) ??
+          (kept?.kind === kind ? kept.entry : undefined) ??
+          symbols.latest(component);
+        if (entry) next.set(component.id, { kind, entry });
+        return entry;
       },
-    });
-    setPreviews((previous) => [
-      ...previous,
-      { key, point, template, committed: false },
-    ]);
-    if (!placement.repeat) onCancelPlace();
-    void drainPlacements();
-  };
-  const observationScope = `${doc.id}:${doc.revision}:${circuit.name}`;
-  const pictureScope = `${doc.id}:${circuit.name}`;
-  const [observation, setObservation] = useState<{
+      symbols.widthErrors,
+    );
+    lastDrawn.current = next;
+    return built;
+    // `symbols.version` changes with every answer.
+  }, [doc, circuit, symbols.version, symbols.widthErrors]);
+  // The first picture of a circuit waits until all its kinds are known.
+  const shown = useRef(false);
+  if (symbols.ready) shown.current = true;
+
+  const [signal, setSignal] = useState<SignalTarget | null>(null);
+  /** A Ctrl+click: the ports within `radius` of `point`, else object `id`. */
+  const [traceRequest, setTraceRequest] = useState<{
+    point: Point;
+    radius: number;
+    id: string | null;
     scope: string;
-    picture: string;
-    focus: ConnectionFocus | null;
-  }>({ scope: "", picture: "", focus: null });
-  const focus =
-    observation.scope === observationScope ? observation.focus : null;
-  // Until the next revision is observed, the previous geometry keeps hit
-  // testing and port marks working; components match by location and factory.
-  const geometry =
-    observation.picture === pictureScope ? observation.focus : null;
-  const [observationError, setObservationError] = useState("");
+  } | null>(null);
+  // The selection's connections and a traced click's are read; a traced
+  // signal's nets are already in what was read.
+  const seeds = useMemo((): ConnectionSeeds => {
+    const wires = new Set(circuit.wires.map((w) => w.id));
+    const components = new Set(circuit.components.map((c) => c.id));
+    const ids = [...new Set([...selection, traceRequest?.id ?? ""])];
+    const { point, radius } = traceRequest ?? {};
+    return {
+      components: ids.filter((id) => components.has(id)),
+      wires: ids.filter((id) => wires.has(id)),
+      // The runtime takes whole points; a wider radius keeps every port near the click.
+      point:
+        point && radius
+          ? {
+              x: Math.round(point.x),
+              y: Math.round(point.y),
+              radius: radius + 1,
+            }
+          : null,
+    };
+  }, [circuit, selection.join(","), traceRequest]);
+  const observation = useConnections(doc, circuit, seeds, onError, stale);
+  const { scope: observationScope, focus } = observation;
   useEffect(() => {
     onObservation?.({ scope: observationScope, focus });
   }, [onObservation, observationScope, focus]);
-  const observed = useMemo(() => geometry?.components || [], [geometry]);
   const connections = useMemo(
     () => (focus ? connectionIndex(focus) : null),
     [focus],
   );
-  const [signal, setSignal] = useState<SignalTarget | null>(null);
   const internalSelection = useRef<string | null>(null);
   useEffect(() => {
     if (internalSelection.current !== selection.join(",")) setSignal(null);
@@ -305,7 +270,7 @@ export function Canvas({
     setSelection(ids);
   };
   const [signalHistory, setSignalHistory] = useState<
-    { view: typeof view; selection: string[]; signal: SignalTarget | null }[]
+    { view: View; selection: string[]; signal: SignalTarget | null }[]
   >([]);
   useEffect(() => setSignal(null), [place?.library, place?.name]);
   const [wire, setWire] = useState<Point[]>([]);
@@ -316,11 +281,10 @@ export function Canvas({
     start: Point;
     client: Point;
     ids: string[];
-    origin: typeof view;
+    origin: View;
   } | null>(null);
-  const [delta, setDelta] = useState<Point>({ x: 0, y: 0 });
+  const [delta, setDelta] = useState<Point>(still);
   const moving = drag?.mode === "move" && Boolean(delta.x || delta.y);
-  const moveClip = useId().replaceAll(":", "");
   const movePreview = useMovePreview(
     moving
       ? {
@@ -332,25 +296,45 @@ export function Canvas({
         }
       : null,
   );
-  // The preview answers with the routing difference, not a whole picture.
-  const movedSegments = movePreview.wires?.addedWires ?? [];
-  type Overlay = {
-    kind: "move" | "wire" | "delete";
-    delta: Point;
-    /** Parts drawn at their new place, or covered when deleted. */
-    clip: Bounds[];
-    /** Wires drawn at their new place, or covered when deleted. */
-    lines: { from: Point; to: Point; dashed?: boolean }[];
-  };
-  // A committed move, wire or deletion stays drawn until the picture of its
-  // result arrives, so a large file does not show the old state in between.
-  const [settle, setSettle] = useState<
-    (Overlay & { key: number; from: string; resolved: boolean }) | null
+  const dragOverlay = useMemo<Overlay | null>(
+    () =>
+      moving && drag
+        ? {
+            hide: [...drag.ids, ...(movePreview.wires?.removedWires ?? [])],
+            move: drag.ids,
+            delta,
+            wires: [],
+            lines: movePreview.wires?.addedWires ?? [],
+          }
+        : null,
+    [moving, drag, delta, movePreview.wires],
+  );
+  // A committed edit shows its result until the document has it.
+  const [gesture, setGesture] = useState<
+    (Overlay & { key: number; from: string }) | null
   >(null);
-  const settleKey = useRef(0);
-  const shownPicture = useRef("");
-  const [loading, setLoading] = useState(false);
-  const generation = useRef(0);
+  const gestureKey = useRef(0);
+  const overlay =
+    dragOverlay ?? (gesture?.from === doc.revision ? gesture : null);
+  const commit = (change: Edit, result: Overlay) => {
+    const key = ++gestureKey.current;
+    setGesture({ ...result, key, from: doc.revision });
+    const done = () => setGesture((g) => (g?.key === key ? null : g));
+    edit(change).then(done, (e) => {
+      done();
+      onError(e);
+    });
+  };
+  const commitWire = (points: Point[]) =>
+    commit(
+      { kind: "wire", points },
+      { hide: [], move: [], delta: still, wires: segments(points), lines: [] },
+    );
+  const commitDelete = (ids: string[]) =>
+    commit(
+      { kind: "delete", ids },
+      { hide: ids, move: [], delta: still, wires: [], lines: [] },
+    );
   const held = useRef<(() => void) | null>(null);
   const wireGesture = useRef<{ x: number; y: number } | null>(null);
   const releaseHeld = () => {
@@ -368,141 +352,23 @@ export function Canvas({
       window.removeEventListener("blur", release);
     };
   }, []);
-  const live = Boolean(run);
-  const bindings = {
-    id: doc.id,
-    revision: doc.revision,
-    circuit: circuit.name,
-  };
   useEffect(() => {
     if (!container.current) return;
     const ro = new ResizeObserver(([e]) =>
-      setSize({
-        width: Math.max(1, e.contentRect.width),
-        height: Math.max(1, e.contentRect.height),
-      }),
+      setSize({ width: e.contentRect.width, height: e.contentRect.height }),
     );
     ro.observe(container.current);
     return () => ro.disconnect();
   }, []);
-  // A new revision of the circuit on screen is drawn at once and observed
-  // after its picture arrives, so the runtime works on the picture first; the
-  // commit overlay covers the wait. Panning, zooming and another circuit wait
-  // for the view to settle, and a newly shown circuit is observed first
-  // because fitting it needs its bounds.
-  const drawn = useRef({ picture: "", revision: "" });
-  const drawing = useRef<{ scope: string; done: Promise<void> } | null>(null);
-  useEffect(() => {
-    if (live || !size.width || !size.height) {
-      setLoading(false);
-      return;
-    }
-    const ticket = ++generation.current;
-    const region = {
-      x: Math.floor(view.x),
-      y: Math.floor(view.y),
-      width: Math.ceil(size.width / view.scale),
-      height: Math.ceil(size.height / view.scale),
-    };
-    const revised =
-      drawn.current.picture === pictureScope &&
-      drawn.current.revision !== doc.revision;
-    const draw = () => {
-      drawn.current = { picture: pictureScope, revision: doc.revision };
-      setLoading(true);
-      const scale = Math.min(
-        view.scale * (devicePixelRatio || 1),
-        8,
-        Math.sqrt(7_000_000 / (region.width * region.height)),
-      );
-      const done = command<{ image: string }>({
-        op: "render",
-        ...bindings,
-        ...region,
-        scale,
-      })
-        .then((result) => {
-          if (ticket === generation.current)
-            setImage({
-              src: result.image,
-              bounds: region,
-              revision: doc.revision,
-            });
-        })
-        .catch((e) => {
-          if (ticket === generation.current) onError(e);
-        })
-        .finally(() => {
-          if (ticket === generation.current) setLoading(false);
-        });
-      drawing.current = { scope: observationScope, done };
-    };
-    const timer = revised ? undefined : setTimeout(draw, 80);
-    if (revised) draw();
-    return () => {
-      clearTimeout(timer);
-      generation.current++;
-    };
-  }, [
-    doc.id,
-    doc.revision,
-    circuit.name,
-    view.x,
-    view.y,
-    view.scale,
-    size.width,
-    size.height,
-    live,
-  ]);
   useEffect(() => {
     setWire([]);
     wireGesture.current = null;
     setDrag(null);
-    setDelta({ x: 0, y: 0 });
+    setDelta(still);
     releaseRef.current();
-    setObservationError("");
     setSignal(null);
     setSignalHistory([]);
-    // Another revision of the same circuit keeps its picture until the new one arrives.
-    if (shownPicture.current !== pictureScope) {
-      shownPicture.current = pictureScope;
-      setImage(null);
-      setSettle(null);
-    }
-    let live = true;
-    // The render effect ran first: a new revision's picture is on its way.
-    const picture =
-      drawing.current?.scope === observationScope
-        ? drawing.current.done
-        : Promise.resolve();
-    picture
-      .then(() =>
-        live
-          ? command<{ focus: ConnectionFocus }>({ op: "observe", ...bindings })
-          : null,
-      )
-      .then((data) => {
-        if (live && data)
-          setObservation({
-            scope: observationScope,
-            picture: pictureScope,
-            focus: {
-              ...data.focus,
-              wires: data.focus.wires || [],
-              wireBundles: data.focus.wireBundles || [],
-              bitNets: data.focus.bitNets || [],
-            },
-          });
-      })
-      .catch((e) => {
-        if (live) {
-          setObservationError(e instanceof Error ? e.message : String(e));
-          onError(e);
-        }
-      });
-    return () => {
-      live = false;
-    };
+    setTraceRequest(null);
   }, [doc.id, doc.revision, circuit.name]);
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -538,94 +404,59 @@ export function Canvas({
       window.removeEventListener("blur", release);
     };
   }, []);
-  const ghost = template?.children.find((n) => n.tag === "image");
-  const boundsFor = useCallback(
-    (id: string): Bounds => {
-      const c = circuit.components.find((c) => c.id === id);
-      if (c) {
-        const o = observed.find(
-          (o) =>
-            o.location.x === c.location.x &&
-            o.location.y === c.location.y &&
-            o.factoryName === c.name,
-        );
-        return (
-          o?.bounds || {
-            x: c.location.x - 25,
-            y: c.location.y - 15,
-            width: 35,
-            height: 30,
-          }
-        );
-      }
-      const w = circuit.wires.find((w) => w.id === id);
-      if (!w) return { x: 0, y: 0, width: 0, height: 0 };
-      return {
-        x: Math.min(w.from.x, w.to.x),
-        y: Math.min(w.from.y, w.to.y),
-        width: Math.abs(w.to.x - w.from.x),
-        height: Math.abs(w.to.y - w.from.y),
-      };
-    },
-    [circuit, observed],
-  );
-  const overlay: Overlay | null = moving
-    ? {
-        kind: "move",
-        delta,
-        clip: circuit.components
-          .filter((component) => drag.ids.includes(component.id))
-          .map((component) => boundsFor(component.id)),
-        lines: movedSegments.length
-          ? movedSegments
-          : circuit.wires
-              .filter((wire) => drag.ids.includes(wire.id))
-              .map((wire) => ({
-                from: { x: wire.from.x + delta.x, y: wire.from.y + delta.y },
-                to: { x: wire.to.x + delta.x, y: wire.to.y + delta.y },
-                dashed: true,
-              })),
-      }
-    : settle;
-  const commit = (change: Edit, overlay: Overlay) => {
-    const key = ++settleKey.current;
-    setSettle({ ...overlay, key, from: doc.revision, resolved: false });
-    edit(change)
-      .then(() =>
-        setSettle((s) => (s?.key === key ? { ...s, resolved: true } : s)),
-      )
-      .catch((e) => {
-        setSettle((s) => (s?.key === key ? null : s));
-        onError(e);
-      });
+
+  // The frame the canvas paints: the scene, what gestures show changed, ghosts.
+  const ghostOf = (node: XmlNode | null) => {
+    const key = templateKey(node);
+    const entry = key ? (symbols.get(key) ?? symbols.latest(key)) : undefined;
+    return entry?.picture ? program(entry.picture) : null;
   };
-  const wireOverlay = (points: Point[]): Overlay => ({
-    kind: "wire",
-    delta: { x: 0, y: 0 },
-    clip: [],
-    lines: points.slice(1).map((to, i) => ({ from: points[i], to })),
-  });
-  const deleteOverlay = (ids: string[]): Overlay => ({
-    kind: "delete",
-    delta: { x: 0, y: 0 },
-    clip: circuit.components
-      .filter((component) => ids.includes(component.id))
-      .map((component) => boundsFor(component.id)),
-    lines: circuit.wires.filter((wire) => ids.includes(wire.id)),
-  });
-  const lastDelete = useRef(deleteRequest?.token);
-  useEffect(() => {
-    if (!deleteRequest || lastDelete.current === deleteRequest.token) return;
-    lastDelete.current = deleteRequest.token;
-    const { ids } = deleteRequest;
-    if (ids.length) commit({ kind: "delete", ids }, deleteOverlay(ids));
-  }, [deleteRequest]);
-  useEffect(() => {
-    if (!settle?.resolved) return;
-    // The result's picture arrived, or the edit changed nothing.
-    if (image?.revision === doc.revision || doc.revision === settle.from)
-      setSettle(null);
-  }, [settle, image, doc.revision]);
+  const ghostAt = place ? cursor : null;
+  const ghostProgram = place ? ghostOf(template) : null;
+  const ghosts = useMemo(() => {
+    const list: Frame["ghosts"] = [];
+    for (const preview of previews) {
+      const ghost = ghostOf(preview.template);
+      if (ghost)
+        list.push({
+          program: ghost,
+          x: preview.point.x,
+          y: preview.point.y,
+          alpha: 0.65,
+        });
+    }
+    if (ghostAt && ghostProgram)
+      list.push({
+        program: ghostProgram,
+        x: ghostAt.x,
+        y: ghostAt.y,
+        alpha: 0.75,
+      });
+    return list.length ? list : none;
+  }, [previews, ghostAt, ghostProgram, symbols.version]);
+  const paintable = shown.current;
+  const pictureFrame = useMemo<Frame>(() => {
+    const moved = overlay?.move.length ? new Set(overlay.move) : null;
+    return {
+      view,
+      width: size.width,
+      height: size.height,
+      scene: paintable ? scene : null,
+      hidden: new Set(overlay?.hide),
+      moved:
+        moved && overlay
+          ? {
+              delta: overlay.delta,
+              parts: scene.parts.filter((p) => moved.has(p.id)),
+              wires: scene.wires.filter((w) => moved.has(w.id)),
+            }
+          : null,
+      added: overlay?.wires ?? [],
+      ghosts,
+      live: run ? live : null,
+    };
+  }, [view, size, scene, paintable, overlay, ghosts, run, live]);
+
   const visitSignal = (peer: ConnectionPeer, previousSignal = signal) => {
     const component = documentComponent(circuit, peer.component);
     if (!component) return;
@@ -658,7 +489,8 @@ export function Canvas({
     setView(previous.view);
   };
   useEffect(() => {
-    onSignalView?.(
+    const reading = !observation.ready && !observation.error;
+    const panel =
       signal && connections ? (
         <Connections
           index={connections}
@@ -669,16 +501,22 @@ export function Canvas({
         />
       ) : (
         <SelectionConnections
-          focus={focus}
+          focus={reading ? null : focus}
           circuit={circuit}
           selection={selection}
-          error={observationError}
+          error={observation.error}
           onVisit={visitSignal}
           onTrace={(target) => startSignal(target, false)}
           onBack={signalHistory.length ? signalBack : undefined}
         />
-      ),
-    );
+      );
+    // A selection's connections take a moment to read; the panel says so
+    // only when that takes long, and keeps what it showed until then.
+    if (!(signal && connections) && selection.length && reading) {
+      const timer = setTimeout(() => onSignalView?.(panel), 200);
+      return () => clearTimeout(timer);
+    }
+    onSignalView?.(panel);
   }, [
     signal,
     connections,
@@ -688,7 +526,8 @@ export function Canvas({
     onSignalView,
     focus,
     circuit,
-    observationError,
+    observation.ready,
+    observation.error,
   ]);
   useEffect(() => () => onSignalView?.(null), [onSignalView]);
   useEffect(() => {
@@ -725,12 +564,12 @@ export function Canvas({
     ).singleSource;
     if (source && jump) visitSignal(source, previous);
   };
-  const traceAt = (p: Point, id: string | null) => {
-    if (!connections) {
-      onError("正在读取连接，请稍后重试");
+  const traceAt = (p: Point, id: string | null, radius: number) => {
+    if (!connections || !focus) {
+      onError("未读取到此信号的连接信息");
       return;
     }
-    const near = observed
+    const near = focus.components
       .flatMap((component) =>
         component.ends.map((end) => ({
           component,
@@ -738,20 +577,20 @@ export function Canvas({
           distance: Math.hypot(p.x - end.location.x, p.y - end.location.y),
         })),
       )
-      .filter((port) => port.distance <= Math.max(5, 7 / view.scale))
+      .filter((port) => port.distance <= radius)
       .sort((a, b) => a.distance - b.distance)[0];
     if (near) {
       startSignal(portSignal(near.component, near.end));
       return;
     }
-    const component = observed.find(
+    const component = focus.components.find(
       (c) => documentComponent(circuit, c)?.id === id,
     );
     if (component?.ends.length === 1) {
       startSignal(portSignal(component, component.ends[0]));
       return;
     }
-    const wire = focus?.wires.find((w) => documentWire(circuit, w)?.id === id);
+    const wire = focus.wires.find((w) => documentWire(circuit, w)?.id === id);
     if (wire) {
       startSignal(wireSignal(connections, wire));
       return;
@@ -761,35 +600,36 @@ export function Canvas({
       onError("请选择要追踪的端口");
     }
   };
-  const fitted = useRef("");
+  // A trace runs once the connections around the click are read.
   useEffect(() => {
-    const fitScope = `${doc.id}:${circuit.name}:${fitToken}`;
-    if (
-      !size.width ||
-      !size.height ||
-      fitted.current === fitScope ||
-      (circuit.components.length > 0 && !observed.length)
-    )
-      return;
-    fitted.current = fitScope;
-    const points = [
-      ...circuit.components.flatMap((c) => {
-        const b = boundsFor(c.id);
-        return [
-          { x: b.x, y: b.y },
-          { x: b.x + b.width, y: b.y + b.height },
-        ];
-      }),
-      ...circuit.wires.flatMap((w) => [w.from, w.to]),
-    ];
-    if (!points.length) {
-      setView({ x: -40, y: -40, scale: 1 });
+    if (!traceRequest) return;
+    if (traceRequest.scope !== observationScope || observation.error) {
+      setTraceRequest(null);
       return;
     }
-    const minX = Math.min(...points.map((p) => p.x)) - 45,
-      minY = Math.min(...points.map((p) => p.y)) - 45,
-      maxX = Math.max(...points.map((p) => p.x)) + 45,
-      maxY = Math.max(...points.map((p) => p.y)) + 45;
+    if (!observation.ready) return;
+    setTraceRequest(null);
+    traceAt(traceRequest.point, traceRequest.id, traceRequest.radius);
+  }, [traceRequest, observation.ready, observationScope, observation.error]);
+  // A circuit opens fitted; until its view is moved, the fit follows the
+  // canvas size as the layout around it settles.
+  const fitted = useRef<{ scope: string; size: string; view: View } | null>(
+    null,
+  );
+  const shownView = useRef(view);
+  shownView.current = view;
+  useLayoutEffect(() => {
+    const fitScope = `${doc.id}:${circuit.name}:${fitToken}`;
+    const sized = `${size.width}x${size.height}`;
+    const last = fitted.current;
+    if (
+      size.width < 2 ||
+      size.height < 2 ||
+      !symbols.ready ||
+      (last?.scope === fitScope &&
+        (last.size === sized || last.view !== shownView.current))
+    )
+      return;
     const viewport = container.current!.getBoundingClientRect();
     const surface = container.current!.parentElement;
     const toolbar = surface
@@ -804,55 +644,30 @@ export function Canvas({
     const bottom = toolbar
       ? Math.max(0, viewport.bottom - toolbar.top) + 12
       : 0;
-    const availableHeight = Math.max(1, size.height - top - bottom);
-    const scale = Math.min(
-      2,
-      Math.max(
-        0.08,
-        Math.min(size.width / (maxX - minX), availableHeight / (maxY - minY)),
-      ),
-    );
-    setView({
-      x: minX - (size.width / scale - (maxX - minX)) / 2,
-      y: (minY + maxY) / 2 - (top + availableHeight / 2) / scale,
-      scale,
-    });
-  }, [doc.id, circuit.name, fitToken, size, observed, boundsFor]);
+    const next = fitView(scene, size, { top, bottom }) ?? {
+      x: -40,
+      y: -40,
+      scale: 1,
+    };
+    fitted.current = { scope: fitScope, size: sized, view: next };
+    setView(next);
+  }, [doc.id, circuit.name, fitToken, size, symbols.ready, scene]);
   useEffect(() => {
-    if (
-      !focusTarget ||
-      !size.width ||
-      !size.height ||
-      !circuit.components.some((c) => c.id === focusTarget.id)
-    )
-      return;
+    const bounds = focusTarget && scene.bounds.get(focusTarget.id);
+    if (!bounds || !size.width || !size.height) return;
     setSignal(null);
-    const bounds = boundsFor(focusTarget.id);
     setView((previous) => ({
       ...previous,
       x: bounds.x + bounds.width / 2 - size.width / previous.scale / 2,
       y: bounds.y + bounds.height / 2 - size.height / previous.scale / 2,
     }));
-  }, [focusTarget?.id, focusTarget?.token, size.width, size.height, boundsFor]);
-  // The run draws only what the canvas shows, at the canvas's zoom.
-  const reported = useRef("");
+  }, [focusTarget?.id, focusTarget?.token, size.width, size.height, scene]);
+  const lastDelete = useRef(deleteRequest?.token);
   useEffect(() => {
-    if (!run || !size.width || !size.height) return;
-    const timer = setTimeout(() => {
-      const area = liveViewport(
-        { x: view.x, y: view.y, scale: view.scale },
-        size,
-      );
-      const key = `${run.viewId}:${area.x},${area.y},${area.width},${area.height},${area.scale}`;
-      if (reported.current === key) return;
-      reported.current = key;
-      onViewport(run.viewId, area);
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [run, size.width, size.height, view.x, view.y, view.scale, onViewport]);
-  useEffect(() => {
-    if (!run) reported.current = "";
-  }, [run]);
+    if (!deleteRequest || lastDelete.current === deleteRequest.token) return;
+    lastDelete.current = deleteRequest.token;
+    if (deleteRequest.ids.length) commitDelete(deleteRequest.ids);
+  }, [deleteRequest]);
   useEffect(() => {
     if (tool !== "wire") setWire([]);
   }, [tool]);
@@ -872,44 +687,20 @@ export function Canvas({
       cursor && wire.length
         ? [...wire, ...route(wire[wire.length - 1], cursor).slice(1)]
         : wire;
-    if (points.length > 1)
-      commit({ kind: "wire", points }, wireOverlay(points));
+    if (points.length > 1) commitWire(points);
     setWire([]);
   };
-  const hit = (p: Point) => {
-    for (const c of [...circuit.components].reverse()) {
-      const b = boundsFor(c.id);
-      if (
-        p.x >= b.x - 3 &&
-        p.x <= b.x + b.width + 3 &&
-        p.y >= b.y - 3 &&
-        p.y <= b.y + b.height + 3
-      )
-        return c.id;
-    }
-    for (const w of circuit.wires) {
-      const b = boundsFor(w.id);
-      if (
-        p.x >= b.x - 4 &&
-        p.x <= b.x + b.width + 4 &&
-        p.y >= b.y - 4 &&
-        p.y <= b.y + b.height + 4
-      )
-        return w.id;
-    }
-    return null;
-  };
-  // A live canvas paints the run's frame over the static picture, keeping the
-  // static one until the frame is decoded: no blank in between.
-  const picture = frame
-    ? { src: frame.url, bounds: frame.image.bounds, live: true }
-    : image
-      ? { ...image, live: false }
-      : null;
+  const hit = (p: Point) => hitTest(scene, circuit, p);
   const pendingWire =
     wire.length && cursor
       ? [...wire, ...route(wire[wire.length - 1], cursor).slice(1)]
       : wire;
+  const viewBox = `${view.x} ${view.y} ${size.width / view.scale} ${size.height / view.scale}`;
+  const right = view.x + size.width / view.scale,
+    bottom = view.y + size.height / view.scale;
+  const onScreen = (p: Point) =>
+    p.x >= view.x && p.x <= right && p.y >= view.y && p.y <= bottom;
+  const displaced = overlay?.move.length ? new Set(overlay.move) : null;
   return (
     <div
       ref={container}
@@ -938,7 +729,7 @@ export function Canvas({
           setWire([]);
           wireGesture.current = null;
           setDrag(null);
-          setDelta({ x: 0, y: 0 });
+          setDelta(still);
           selectObjects([]);
         }
         if (e.key === "Enter" && wire.length) {
@@ -947,7 +738,7 @@ export function Canvas({
         }
         if ((e.key === "Delete" || e.key === "Backspace") && selection.length) {
           e.preventDefault();
-          commit({ kind: "delete", ids: selection }, deleteOverlay(selection));
+          commitDelete(selection);
         }
       }}
       onPointerDown={(e) => {
@@ -962,7 +753,12 @@ export function Canvas({
             onError("请先按 Esc 结束连线，再追踪信号");
             return;
           }
-          traceAt(point(e, false), target);
+          setTraceRequest({
+            point: point(e, false),
+            radius: Math.max(5, 7 / view.scale),
+            id: target,
+            scope: observationScope,
+          });
           return;
         }
         if (e.button === 1 || tool === "pan" || spaceHeld.current) {
@@ -978,7 +774,7 @@ export function Canvas({
         }
         setSignal(null);
         if (place) {
-          enqueuePlacement(p);
+          enqueue(p);
           return;
         }
         if (tool === "wire") {
@@ -1015,7 +811,7 @@ export function Canvas({
               : [target]
           : [];
         selectObjects(ids);
-        setDelta({ x: 0, y: 0 });
+        setDelta(still);
         e.currentTarget.setPointerCapture(e.pointerId);
         const selectedWire =
           ids.length === 1
@@ -1049,6 +845,9 @@ export function Canvas({
             y: drag.axis === "y" ? 0 : p.y - drag.start.y,
           });
       }}
+      onPointerLeave={() => {
+        if (place && !drag) setCursor(null);
+      }}
       onPointerUp={(e) => {
         const gesture = wireGesture.current;
         wireGesture.current = null;
@@ -1062,37 +861,25 @@ export function Canvas({
             ...wire,
             ...route(wire[wire.length - 1], point(e)).slice(1),
           ];
-          if (points.length > 1)
-            commit({ kind: "wire", points }, wireOverlay(points));
+          if (points.length > 1) commitWire(points);
           setWire([]);
         }
         releaseHeld();
-        if (drag?.mode === "move" && overlay && (delta.x || delta.y))
-          commit({ kind: "move", ids: drag.ids, delta }, overlay);
+        if (drag?.mode === "move" && dragOverlay)
+          commit({ kind: "move", ids: drag.ids, delta }, dragOverlay);
         if (drag?.mode === "box") {
           const p = point(e);
-          const box = {
-            x: Math.min(p.x, drag.start.x),
-            y: Math.min(p.y, drag.start.y),
-            right: Math.max(p.x, drag.start.x),
-            bottom: Math.max(p.y, drag.start.y),
-          };
           selectObjects(
-            [...circuit.components, ...circuit.wires]
-              .filter((item) => {
-                const b = boundsFor(item.id);
-                return (
-                  b.x >= box.x &&
-                  b.y >= box.y &&
-                  b.x + b.width <= box.right &&
-                  b.y + b.height <= box.bottom
-                );
-              })
-              .map((x) => x.id),
+            insideBox(scene, circuit, {
+              x: Math.min(p.x, drag.start.x),
+              y: Math.min(p.y, drag.start.y),
+              right: Math.max(p.x, drag.start.x),
+              bottom: Math.max(p.y, drag.start.y),
+            }),
           );
         }
         setDrag(null);
-        setDelta({ x: 0, y: 0 });
+        setDelta(still);
         if (e.currentTarget.hasPointerCapture(e.pointerId))
           e.currentTarget.releasePointerCapture(e.pointerId);
       }}
@@ -1102,7 +889,7 @@ export function Canvas({
         setWire([]);
         releaseHeld();
         setDrag(null);
-        setDelta({ x: 0, y: 0 });
+        setDelta(still);
       }}
       onDoubleClick={(e) => {
         if (tool === "wire") {
@@ -1117,9 +904,11 @@ export function Canvas({
       }}
     >
       <svg
+        className="canvas-grid"
         width="100%"
         height="100%"
-        viewBox={`${view.x} ${view.y} ${size.width / view.scale} ${size.height / view.scale}`}
+        viewBox={viewBox}
+        aria-hidden="true"
       >
         <defs>
           <pattern
@@ -1138,67 +927,10 @@ export function Canvas({
           height={size.height / view.scale}
           fill={showGrid ? "url(#grid)" : "transparent"}
         />
-        {picture && (
-          <image
-            href={picture.src}
-            {...picture.bounds}
-            preserveAspectRatio="none"
-            opacity={overlay?.kind === "move" ? 0.4 : 1}
-          />
-        )}
-        {overlay?.kind === "move" && picture && (
-          <g
-            className="move-preview"
-            pointerEvents="none"
-            transform={`translate(${overlay.delta.x},${overlay.delta.y})`}
-          >
-            <defs>
-              <clipPath id={moveClip} clipPathUnits="userSpaceOnUse">
-                {overlay.clip.map((bounds) => (
-                  <rect
-                    key={`${bounds.x},${bounds.y}`}
-                    x={bounds.x - 3}
-                    y={bounds.y - 3}
-                    width={bounds.width + 6}
-                    height={bounds.height + 6}
-                  />
-                ))}
-              </clipPath>
-            </defs>
-            <image
-              href={picture.src}
-              {...picture.bounds}
-              preserveAspectRatio="none"
-              clipPath={`url(#${moveClip})`}
-            />
-          </g>
-        )}
-        {overlay?.kind === "delete" && (
-          <g className="delete-cover" pointerEvents="none" fill="var(--paper)">
-            {overlay.clip.map((b) => (
-              <rect
-                key={`${b.x},${b.y}`}
-                x={b.x - 3}
-                y={b.y - 3}
-                width={b.width + 6}
-                height={b.height + 6}
-              />
-            ))}
-            {overlay.lines.map((segment, i) => (
-              <line
-                key={i}
-                x1={segment.from.x}
-                y1={segment.from.y}
-                x2={segment.to.x}
-                y2={segment.to.y}
-                stroke="var(--paper)"
-                strokeWidth={9}
-                strokeLinecap="square"
-              />
-            ))}
-          </g>
-        )}
-        {overlay && overlay.kind !== "delete" && (
+      </svg>
+      <CanvasPicture frame={pictureFrame} />
+      <svg width="100%" height="100%" viewBox={viewBox}>
+        {overlay && overlay.lines.length > 0 && (
           <g
             className="move-wire-preview"
             pointerEvents="none"
@@ -1213,7 +945,6 @@ export function Canvas({
                 y1={segment.from.y}
                 x2={segment.to.x}
                 y2={segment.to.y}
-                strokeDasharray={segment.dashed ? "4 3" : undefined}
               />
             ))}
           </g>
@@ -1244,34 +975,21 @@ export function Canvas({
                 pointerEvents="none"
               />
             ))}
-        {previews.map((preview) => {
-          const ghost = preview.template.children.find(
-            (n) => n.tag === "image",
-          );
-          return (
-            <g
-              key={preview.key}
-              data-placement-state={preview.committed ? "committed" : "pending"}
-              transform={`translate(${preview.point.x} ${preview.point.y})`}
-              opacity={0.65}
-              pointerEvents="none"
-            >
-              {ghost?.text ? (
-                <image
-                  href={ghost.text}
-                  x={Number(ghost.attributes.x)}
-                  y={Number(ghost.attributes.y)}
-                  width={Number(ghost.attributes.width)}
-                  height={Number(ghost.attributes.height)}
-                />
-              ) : (
-                <circle r={5} fill="var(--accent)" />
-              )}
-            </g>
-          );
-        })}
+        {previews.map((preview) => (
+          <g
+            key={preview.key}
+            data-placement-state={preview.committed ? "committed" : "pending"}
+            transform={`translate(${preview.point.x} ${preview.point.y})`}
+            pointerEvents="none"
+          >
+            {!ghostOf(preview.template) && (
+              <circle r={5} fill="var(--accent)" opacity={0.65} />
+            )}
+          </g>
+        ))}
         {[...new Set(pressed ? [pressed, ...pending] : pending)].map((id) => {
-          const b = boundsFor(id);
+          const b = scene.bounds.get(id);
+          if (!b) return null;
           return (
             <rect
               key={`operated-${id}`}
@@ -1295,8 +1013,9 @@ export function Canvas({
           );
         })}
         {selection.map((id) => {
-          const b = boundsFor(id);
-          const offset = drag?.mode === "move" ? delta : { x: 0, y: 0 };
+          const b = scene.bounds.get(id);
+          if (!b) return null;
+          const offset = displaced?.has(id) ? overlay!.delta : still;
           return (
             <rect
               key={id}
@@ -1312,19 +1031,19 @@ export function Canvas({
           );
         })}
         {tool === "wire" &&
-          observed.flatMap((c) =>
-            c.ends.map((p) => (
+          scene.ports
+            .filter(onScreen)
+            .map((p, i) => (
               <circle
-                key={c.componentId + ":" + p.index}
-                cx={p.location.x}
-                cy={p.location.y}
+                key={i}
+                cx={p.x}
+                cy={p.y}
                 r={3 / view.scale}
                 fill="var(--paper)"
                 stroke="var(--accent)"
                 strokeWidth={1 / view.scale}
               />
-            )),
-          )}
+            ))}
         {pendingWire.length > 0 && (
           <polyline
             points={pendingWire.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -1333,16 +1052,9 @@ export function Canvas({
             strokeWidth={2 / view.scale}
           />
         )}
-        {place && cursor && ghost?.text && (
-          <g opacity=".75" transform={`translate(${cursor.x},${cursor.y})`}>
-            <image
-              href={ghost.text}
-              x={Number(ghost.attributes.x)}
-              y={Number(ghost.attributes.y)}
-              width={Number(ghost.attributes.width)}
-              height={Number(ghost.attributes.height)}
-            />
-            {template?.children
+        {place && cursor && template && (
+          <g transform={`translate(${cursor.x},${cursor.y})`}>
+            {template.children
               .filter((n) => n.tag === "port")
               .map((p, i) => (
                 <circle
@@ -1371,7 +1083,6 @@ export function Canvas({
         {moving && movePreview.error && (
           <span role="status">{movePreview.error}</span>
         )}
-        {loading && <span role="status">正在绘制…</span>}
       </div>
     </div>
   );

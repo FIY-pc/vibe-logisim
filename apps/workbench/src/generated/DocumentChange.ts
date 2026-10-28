@@ -9,4 +9,10 @@ import type { Library } from "./Library.ts";
  * file order, so a circuit missing from `order` was removed. Applied to the
  * view at `base` it gives the view at `revision`.
  */
-export type DocumentChange = { id: string, name: string, path: string | null, base: string, revision: string, paletteIdentity: string, dirty: boolean, canUndo: boolean, canRedo: boolean, main: string, order: Array<string>, circuits: Array<Circuit>, libraries: Array<Library>, };
+export type DocumentChange = { id: string, name: string, path: string | null, base: string, revision: string, paletteIdentity: string, dirty: boolean, canUndo: boolean, canRedo: boolean, main: string, order: Array<string>, circuits: Array<Circuit>, libraries: Array<Library>, 
+/**
+ * The points of each of `circuits` whose wire bundle widths disagree,
+ * as the native runtime reads the new revision (the canvas draws those
+ * wires in the conflict color); absent when they were not read.
+ */
+widthErrors?: { [key in string]: Array<[number, number]> }, };

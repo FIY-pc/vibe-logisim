@@ -1,5 +1,5 @@
 //! The simulation contract: requests the host accepts and what it reports back.
-use super::error::SimError;
+use super::{error::SimError, paint::PaintDelta};
 use crate::runtime::RuntimeKind;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
@@ -109,25 +109,6 @@ fn runtime_storage() -> MemoryStorage {
     MemoryStorage::Runtime
 }
 
-/// World coordinates of a picture.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
-pub struct Bounds {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-/// Size and placement of a frame picture; the bytes are fetched separately.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
-pub struct FrameImage {
-    /// Pixels.
-    pub width: u32,
-    pub height: u32,
-    pub bounds: Bounds,
-    pub scale: f64,
-}
-
 /// Runtime cost of one frame, in milliseconds.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -199,7 +180,6 @@ pub struct Frame {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub memory: Option<MemoryPage>,
-    pub image: FrameImage,
     pub timing: Timing,
     /// Milliseconds since the Unix epoch.
     #[ts(type = "number")]
@@ -241,8 +221,8 @@ pub struct ComponentDelta {
     pub items: Vec<Arc<ComponentState>>,
 }
 
-/// A frame for one subscriber: components changed since its last delivery.
-/// `memory` is set on full deliveries and when the shown page changed.
+/// A frame for one subscriber: components and picture changed since its last
+/// delivery. `memory` is set on full deliveries and when the shown page changed.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct StateEvent {
@@ -262,7 +242,7 @@ pub struct StateEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub memory: Option<MemoryPage>,
-    pub image: FrameImage,
+    pub paint: PaintDelta,
     pub timing: Timing,
 }
 
@@ -397,14 +377,6 @@ pub enum Command {
         address: u32,
         expected: u32,
         value: u32,
-    },
-    /// Render the world rectangle at `scale` pixels per unit.
-    Viewport {
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-        scale: f64,
     },
 }
 
