@@ -22,6 +22,7 @@ use std::{
 /// Deeper nesting than any circuit file uses; bounds recursion over the tree.
 const MAX_DEPTH: usize = 256;
 
+#[derive(Clone)]
 pub(crate) struct Tree {
     text: String,
     nodes: Vec<Node>,
@@ -31,6 +32,7 @@ pub(crate) struct Tree {
     unit: String,
 }
 
+#[derive(Clone)]
 struct Node {
     tag: Range<usize>,
     span: Range<usize>,
@@ -42,6 +44,7 @@ struct Node {
     children: Vec<usize>,
 }
 
+#[derive(Clone)]
 struct Attr {
     name: Range<usize>,
     /// Raw value between the quotes.
@@ -296,6 +299,11 @@ impl Tree {
 
     pub(crate) fn source(&self, n: usize) -> &str {
         &self.text[self.nodes[n].span.clone()]
+    }
+
+    /// The element's start tag, attributes included.
+    pub(crate) fn open_tag(&self, n: usize) -> &str {
+        &self.text[self.nodes[n].span.start..self.nodes[n].open_end]
     }
 
     /// Start of the whitespace directly before the element.

@@ -16,17 +16,17 @@ fn stale() -> Error {
     Error::InvalidCommand("对象已失效".into())
 }
 
-struct Comp {
-    node: usize,
-    id: String,
-    name: String,
-    library: Option<String>,
-    location: Point,
+pub(crate) struct Comp {
+    pub(crate) node: usize,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) library: Option<String>,
+    pub(crate) location: Point,
 }
 
-struct Line {
-    node: usize,
-    segment: Segment,
+pub(crate) struct Line {
+    pub(crate) node: usize,
+    pub(crate) segment: Segment,
 }
 
 /// One circuit's components and wires, in file order.
@@ -74,6 +74,16 @@ impl<'t> Sheet<'t> {
             wires,
             wiring,
         })
+    }
+
+    /// The components' element and id, in file order.
+    pub(crate) fn components(&self) -> impl Iterator<Item = (usize, &str)> {
+        self.comps.iter().map(|c| (c.node, c.id.as_str()))
+    }
+
+    /// The wires' ends, in file order.
+    pub(crate) fn segments(&self) -> impl Iterator<Item = (Point, Point)> {
+        self.wires.iter().map(|w| (w.segment.from, w.segment.to))
     }
 
     pub(crate) fn view(self) -> Circuit {
@@ -356,7 +366,7 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
                 None => out.append(node, &[comp]),
             }
         }
-        Edit::Move { ids, delta } => shift(&Sheet::new(tree, node)?, &ids, delta, None, &mut out)?,
+        Edit::Move { ids, delta } => shift(&Sheet::new(tree, node)?, &ids, delta, &mut out)?,
         Edit::Delete { ids } => delete(&Sheet::new(tree, node)?, &ids, &mut out)?,
         Edit::Attributes { id, values } => {
             set_attributes(&Sheet::new(tree, node)?, id, &values, &mut out)?
@@ -365,22 +375,6 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
             unreachable!("the document merges replacements and applies batches item by item")
         }
     }
-    finish(out)
-}
-
-/// A move that keeps the wires on the moved components' native `ports`
-/// attached; `fixed` are the ports of the components that stay.
-pub(crate) fn move_connected(
-    tree: &Tree,
-    circuit: &str,
-    ids: &[String],
-    delta: Point,
-    ports: Vec<Point>,
-    fixed: &[Point],
-) -> Result<Option<String>> {
-    let sheet = Sheet::new(tree, find(tree, circuit)?)?;
-    let mut out = Splices::new(tree);
-    shift(&sheet, ids, delta, Some((ports, fixed)), &mut out)?;
     finish(out)
 }
 
@@ -427,11 +421,10 @@ fn wire(sheet: &Sheet, points: &[Point], out: &mut Splices<'_>) -> Result<()> {
     Ok(())
 }
 
-fn shift(
+pub(crate) fn shift(
     sheet: &Sheet,
     ids: &[String],
     delta: Point,
-    attached: Option<(Vec<Point>, &[Point])>,
     out: &mut Splices<'_>,
 ) -> Result<()> {
     let (comps, wires) = sheet.resolve(ids)?;
@@ -465,216 +458,113 @@ fn shift(
         ends.extend([moved.from, moved.to]);
         plan.wires[k] = vec![moved];
     }
-    if let Some((ports, fixed)) = attached {
-        ends.extend(reroute(sheet, &wires, delta, ports, fixed, &mut plan)?);
-    }
     plan.split(&ends);
     plan.write(sheet, out);
     Ok(())
 }
 
-/// The reroute: a wire with one end on a moved port follows it, keeping its
-/// other end and its direction where it meets the moved port. It takes the
-/// first shape that touches nothing it would join: one bend at the end that
-/// stays, one bend at the moved end, else a jog at the first free column (or
-/// row) from the moved end; with none free it keeps the first and the caller's
-/// connectivity check decides. Neighbouring wires of a moved part so fan out
-/// instead of folding onto one column. A moved port that
-/// is also a junction of wires that stay keeps those wires and gets a bend
-/// from its old place to its new one. Returns the ends the reroute creates;
-/// an end a wire keeps also keeps its junction as it was.
-fn reroute(
-    sheet: &Sheet,
-    selected: &BTreeSet<usize>,
+/// A move with the wires the native side's `MoveGesture` returned: the
+/// selection translated, the named wires out, the segments in after the
+/// circuit's last wire.
+pub(crate) fn translate(
+    tree: &Tree,
+    circuit: &str,
+    ids: &[String],
     delta: Point,
-    mut ports: Vec<Point>,
-    fixed: &[Point],
-    plan: &mut Plan,
-) -> Result<Vec<Point>> {
-    // Every port where it will be: what a rerouted wire must not run into.
-    let mut blocking: Vec<Point> = fixed.to_vec();
-    for &p in &ports {
-        blocking.push(p.translated(delta)?);
-    }
-    let still: Vec<(usize, Segment)> = sheet
-        .wires
-        .iter()
-        .enumerate()
-        .filter(|(k, _)| !selected.contains(k))
-        .map(|(k, w)| (k, w.segment))
-        .collect();
-    // Selected wires move with the selection, including contacts along their length.
-    for &k in selected {
-        let wire = sheet.wires[k].segment;
-        ports.extend([wire.from, wire.to]);
-        ports.extend(fixed.iter().copied().filter(|&p| wire.touches(p)));
-        for (_, other) in &still {
-            ports.extend(
-                [other.from, other.to]
-                    .into_iter()
-                    .filter(|&p| wire.touches(p)),
-            );
+    wires: &crate::WireEdit,
+) -> Result<Option<String>> {
+    let sheet = Sheet::new(tree, find(tree, circuit)?)?;
+    let mut out = Splices::new(tree);
+    shift(&sheet, ids, delta, &mut out)?;
+    // A component id in `removed` would mean the caller and this revision
+    // disagree about what is there.
+    let mut gone: BTreeSet<usize> = BTreeSet::new();
+    for id in &wires.removed {
+        match (sheet.resolve(std::slice::from_ref(id))?, &ids) {
+            ((comps, _), _) if !comps.is_empty() => return Err(stale()),
+            ((_, found), _) => gone.extend(found),
         }
     }
-    ports.sort_by_key(|p| (p.x, p.y));
-    ports.dedup();
-    // Shared ports and junctions on wires that stay keep their position.
-    let anchored: Vec<Point> = ports
-        .iter()
-        .copied()
-        .filter(|&p| {
-            fixed.contains(&p)
-                || still.iter().any(|&(k, w)| {
-                    w.touches(p)
-                        && (w.inside(p)
-                            || still.iter().any(|&(j, other)| {
-                                j != k && (w.inside(other.from) || w.inside(other.to))
-                            })
-                            || fixed.iter().any(|&q| w.inside(q)))
-                })
-        })
-        .collect();
-    let moves = |p: Point| ports.contains(&p) && !anchored.contains(&p);
-    let mut ends = Vec::new();
-    for &(k, wire) in &still {
-        let (from_moves, to_moves) = (moves(wire.from), moves(wire.to));
-        let from = if from_moves {
-            wire.from.translated(delta)?
-        } else {
-            wire.from
-        };
-        let to = if to_moves {
-            wire.to.translated(delta)?
-        } else {
-            wire.to
-        };
-        if (from, to) == (wire.from, wire.to) {
-            continue;
-        }
-        let pieces = if from_moves && to_moves {
-            vec![Segment { from, to }]
-        } else {
-            let (fixed_end, moved_end) = if to_moves { (from, to) } else { (to, from) };
-            let others: Vec<Segment> = plan
-                .wires
-                .iter()
-                .enumerate()
-                .filter(|&(j, _)| j != k)
-                .flat_map(|(_, pieces)| pieces.iter().copied())
-                .chain(plan.added.iter().copied())
-                .collect();
-            let shapes = shapes(fixed_end, moved_end, wire.from.x == wire.to.x);
-            let mut chosen = shapes
-                .iter()
-                .find(|shape| clear(shape, [fixed_end, moved_end], &others, &blocking))
-                .unwrap_or(&shapes[0])
-                .clone();
-            // Written in the wire's own direction.
-            if !to_moves {
-                chosen.reverse();
-                for piece in &mut chosen {
-                    *piece = Segment {
-                        from: piece.to,
-                        to: piece.from,
-                    };
-                }
-            }
-            chosen
-        };
-        let pieces: Vec<Segment> = pieces.into_iter().filter(|s| s.from != s.to).collect();
-        ends.extend(
-            pieces
-                .iter()
-                .flat_map(|s| [s.from, s.to])
-                .filter(|&p| p != wire.from && p != wire.to),
-        );
-        plan.wires[k] = pieces;
+    for &k in &gone {
+        out.remove(sheet.wires[k].node);
     }
-    for port in anchored {
-        let to = port.translated(delta)?;
-        let corner = Point { x: to.x, y: port.y };
-        for piece in [
-            Segment {
-                from: port,
-                to: corner,
-            },
-            Segment { from: corner, to },
-        ] {
-            if piece.from != piece.to {
-                ends.extend([piece.from, piece.to]);
-                plan.added.push(piece);
-            }
+    let mut added: Vec<Segment> = Vec::new();
+    for &(from, to) in &wires.added {
+        let segment = Segment { from, to };
+        if !sheet.wires.iter().any(|w| w.segment.same(&segment))
+            && !added.iter().any(|s| s.same(&segment))
+        {
+            added.push(segment);
         }
     }
-    Ok(ends)
+    if !added.is_empty() {
+        let elements: Vec<Element> = added.iter().map(wire_element).collect();
+        let last = sheet
+            .wires
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(k, _)| !gone.contains(k))
+            .map(|(_, w)| w.node);
+        match last {
+            Some(last) => out.insert_after(last, &elements),
+            None => out.append(sheet.node, &elements),
+        }
+    }
+    finish(out)
 }
 
-/// Candidate shapes from `fixed` to `moved` for a wire that ran vertically
-/// (or horizontally), keeping that direction at the moved end: one bend at the
-/// fixed end, one at the moved end, then jogs from the moved end outwards.
-fn shapes(fixed: Point, moved: Point, vertical: bool) -> Vec<Vec<Segment>> {
-    let seg = |from, to| Segment { from, to };
-    let flip = |p: Point| {
-        if vertical {
-            Point { x: p.y, y: p.x }
-        } else {
-            p
-        }
-    };
-    // Work as if the wire were horizontal: x runs along it.
-    let (f, m) = (flip(fixed), flip(moved));
-    let mut out = vec![
-        vec![(f, Point { x: f.x, y: m.y }), (Point { x: f.x, y: m.y }, m)],
-        vec![(f, Point { x: m.x, y: f.y }), (Point { x: m.x, y: f.y }, m)],
-    ];
-    let step = if f.x < m.x { -10 } else { 10 };
-    let mut x = m.x + step;
-    while (f.x < m.x && x > f.x) || (f.x > m.x && x < f.x) {
-        let (a, b) = (Point { x, y: f.y }, Point { x, y: m.y });
-        out.push(vec![(f, a), (a, b), (b, m)]);
-        x += step;
-    }
-    out.into_iter()
-        .map(|shape| {
-            shape
-                .into_iter()
-                .map(|(a, b)| seg(flip(a), flip(b)))
-                .filter(|s| s.from != s.to)
-                .collect()
-        })
-        .collect()
-}
-
-/// Whether a rerouted wire touches nothing it would join, away from its own
-/// two ends: no port or wire end on it, no corner of it on a wire, no run
-/// along a wire.
-fn clear(pieces: &[Segment], ends: [Point; 2], wires: &[Segment], ports: &[Point]) -> bool {
-    let own = |p: &Point| ends.contains(p);
-    let along = |a: &Segment, b: &Segment| {
-        let (ah, bh) = (a.from.y == a.to.y, b.from.y == b.to.y);
-        if ah != bh || (ah && a.from.y != b.from.y) || (!ah && a.from.x != b.from.x) {
-            return false;
-        }
-        let span = |s: &Segment| {
-            if ah {
-                (s.from.x.min(s.to.x), s.from.x.max(s.to.x))
-            } else {
-                (s.from.y.min(s.to.y), s.from.y.max(s.to.y))
+/// The ids the selection has after a move: the components at their new
+/// anchors and the wires along for it, then the wires the move added.
+pub(crate) fn moved(
+    before: &Tree,
+    after: &Tree,
+    circuit: &str,
+    ids: &[String],
+    delta: Point,
+    added: &[(Point, Point)],
+) -> Result<(Vec<String>, Vec<String>)> {
+    let old = Sheet::new(before, find(before, circuit)?)?;
+    let new = Sheet::new(after, find(after, circuit)?)?;
+    let (comps, wires) = old.resolve(ids)?;
+    let mut picked: HashSet<usize> = HashSet::new();
+    let mut components = Vec::new();
+    for &i in &comps {
+        let c = &old.comps[i];
+        let at = c.location.translated(delta)?;
+        let mut found = None;
+        for (j, other) in new.comps.iter().enumerate() {
+            if picked.contains(&j) || other.name != c.name || other.location != at {
+                continue;
             }
-        };
-        let ((a0, a1), (b0, b1)) = (span(a), span(b));
-        a0.max(b0) < a1.min(b1)
-    };
-    pieces.iter().all(|piece| {
-        !ports.iter().any(|p| !own(p) && piece.touches(*p))
-            && wires.iter().all(|w| {
-                ![w.from, w.to].iter().any(|p| !own(p) && piece.touches(*p))
-                    && ![piece.from, piece.to]
-                        .iter()
-                        .any(|p| !own(p) && w.touches(*p))
-                    && !along(piece, w)
-            })
-    })
+            if fingerprint(old.tree, c.node) == fingerprint(new.tree, other.node) {
+                found = Some(j);
+                break;
+            }
+        }
+        let j = found.ok_or_else(stale)?;
+        picked.insert(j);
+        components.push(new.comps[j].id.clone());
+    }
+    let mut moved_wires = Vec::new();
+    for &k in &wires {
+        let wanted = old.wires[k].segment.translated(delta)?;
+        let j = new
+            .wires
+            .iter()
+            .position(|w| w.segment.same(&wanted))
+            .ok_or_else(stale)?;
+        moved_wires.push(format!("w{j}"));
+    }
+    for &(from, to) in added {
+        let wanted = Segment { from, to };
+        if let Some(j) = new.wires.iter().position(|w| w.segment.same(&wanted))
+            && !moved_wires.contains(&format!("w{j}"))
+        {
+            moved_wires.push(format!("w{j}"));
+        }
+    }
+    Ok((components, moved_wires))
 }
 
 fn delete(sheet: &Sheet, ids: &[String], out: &mut Splices<'_>) -> Result<()> {

@@ -242,8 +242,17 @@ fn plan_move_on(
     let _route = timing::span("move.route");
     let revision = doc.revision();
     let mut candidate = doc;
+    // The wires a moved part keeps are the native side's answer; this path
+    // has none yet, so it translates the selection alone.
+    let _ = (ports, fixed_ports);
     candidate
-        .move_connected(&revision, circuit, ids.to_vec(), delta, ports, fixed_ports)
+        .translate(
+            &revision,
+            circuit,
+            ids,
+            delta,
+            vibe_circuit_document::WireEdit::default(),
+        )
         .map_err(|e| e.to_string())?;
     Ok(MovePlan {
         candidate,

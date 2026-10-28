@@ -491,6 +491,12 @@ impl Document {
             _ => Ok(self.bytes().to_vec()),
         }
     }
+    /// This revision, for the native side: bytes, ids and the difference to a
+    /// later revision without either file being written.
+    pub fn snapshot(&self) -> crate::Revision {
+        crate::Revision::new(&self.id, &self.name, self.path.as_deref(), &self.source)
+    }
+    /// The content digest: the revision name the window and the AI use.
     pub fn revision(&self) -> String {
         self.source.revision.clone()
     }
@@ -729,7 +735,18 @@ impl Document {
                         }
                     }
                     Edit::Attributes { id, .. } => outcome.components.push(id),
-                    Edit::Move { ids, .. } => outcome.components.extend(ids),
+                    Edit::Move { ids, delta } => {
+                        let (components, wires) = editing::moved(
+                            &previous.tree,
+                            &self.source.tree,
+                            circuit,
+                            &ids,
+                            delta,
+                            &[],
+                        )?;
+                        outcome.components.extend(components);
+                        outcome.wires.extend(wires);
+                    }
                     _ => {}
                 }
             }
@@ -951,32 +968,44 @@ impl Document {
 }
 
 impl Document {
-    /// Move the selected objects and preserve wires attached to native ports in one undo step.
-    pub fn move_connected(
+    /// A move with the wire edits the native side's `MoveGesture` returned:
+    /// one undo step "移动 N 个对象", selecting what moved.
+    pub fn translate(
         &mut self,
         expected: &str,
         circuit: &str,
-        ids: Vec<String>,
+        ids: &[String],
         delta: Point,
-        ports: Vec<Point>,
-        fixed_ports: Vec<Point>,
-    ) -> Result<()> {
+        wires: crate::WireEdit,
+    ) -> Result<EditOutcome> {
         self.check(expected)?;
         let title = format!("移动 {} 个对象", ids.len());
-        match editing::move_connected(&self.source.tree, circuit, &ids, delta, ports, &fixed_ports)?
-        {
-            Some(text) => self
-                .change(
-                    text.into_bytes(),
-                    EditOutcome {
-                        title,
-                        circuit: circuit.to_string(),
-                        ..EditOutcome::default()
-                    },
-                )
-                .map(|_| ()),
-            None => Ok(()),
+        let outcome = EditOutcome {
+            title,
+            circuit: circuit.to_string(),
+            ..EditOutcome::default()
+        };
+        let before = self.source.tree.clone();
+        let Some(text) = editing::translate(&self.source.tree, circuit, ids, delta, &wires)? else {
+            return Ok(outcome);
+        };
+        let previous = self.source.revision.clone();
+        let mut outcome = self.change(text.into_bytes(), outcome)?;
+        outcome.changed_circuits = changed_circuits(&before, &self.source.tree);
+        if outcome.changed_circuits.is_empty() && self.source.revision == previous {
+            return Ok(outcome);
         }
+        let (components, moved_wires) = editing::moved(
+            &before,
+            &self.source.tree,
+            circuit,
+            ids,
+            delta,
+            &wires.added,
+        )?;
+        outcome.components = components;
+        outcome.wires = moved_wires;
+        Ok(outcome)
     }
 }
 

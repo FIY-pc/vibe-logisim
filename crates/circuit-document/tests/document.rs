@@ -443,3 +443,59 @@ fn palette_identity_ignores_edits_but_follows_libraries() {
     .unwrap();
     assert_ne!(d.palette_identity(), original);
 }
+
+#[test]
+fn a_revision_reports_the_changed_circuits_and_their_new_ids() {
+    let xml = r##"<project source="2.7.1" version="1.0">
+  <lib desc="#Wiring" name="0"/>
+  <main name="main"/>
+  <circuit name="main">
+    <wire from="(100,100)" to="(200,100)"/>
+    <comp lib="0" loc="(100,100)" name="Pin"/>
+  </circuit>
+  <circuit name="child">
+    <comp lib="0" loc="(40,60)" name="Pin"/>
+  </circuit>
+</project>
+"##;
+    let open =
+        || Document::from_bytes("main.circ".into(), None, xml.as_bytes().to_vec(), false).unwrap();
+    let mut d = open();
+    let before = d.snapshot();
+    let edit = d
+        .edit(
+            &d.revision(),
+            "main",
+            Edit::Move {
+                ids: vec!["c100_100".into()],
+                delta: Point { x: 0, y: 20 },
+            },
+        )
+        .unwrap();
+    assert_eq!(edit.components, ["c100_120"]);
+    let changes = before.changes(&d.snapshot()).expect("in place");
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].name, "main");
+    assert_eq!(changes[0].removed, ["c100_100"]);
+    assert_eq!(changes[0].added.len(), 1);
+    assert_eq!(changes[0].added[0].0, "c100_120");
+    assert_eq!(changes[0].wires.len(), 1);
+    // A new circuit is read once, when the project loads, so it cannot be
+    // applied in place.
+    let mut d = open();
+    let before = d.snapshot();
+    let wide = xml.replace(
+        "  <circuit name=\"child\">",
+        "  <circuit name=\"extra\">\n  </circuit>\n  <circuit name=\"child\">",
+    );
+    d.edit(
+        &d.revision(),
+        "main",
+        Edit::Replace {
+            xml: wide,
+            title: None,
+        },
+    )
+    .unwrap();
+    assert!(before.changes(&d.snapshot()).is_none());
+}
