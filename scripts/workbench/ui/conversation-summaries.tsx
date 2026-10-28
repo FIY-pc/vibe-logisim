@@ -96,8 +96,6 @@ export async function verifyConversationSummaries() {
             selection={[]}
             quotation={null}
             onQuoted={() => {}}
-            onDocument={() => {}}
-            onOpened={() => {}}
             onFilesChanged={async () => {}}
             onError={(error) => errors.push(error)}
           />

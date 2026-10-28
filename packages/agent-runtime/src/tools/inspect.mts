@@ -4,7 +4,7 @@
  * is placed). All answers are identified by document, revision and circuit so
  * the model can tell stale pages from current ones.
  */
-import { organizationContext } from "@vibe-logisim/arranger";
+import { organizationContext, readability } from "@vibe-logisim/arranger";
 import { CircuitToolError } from "./errors.mts";
 import {
   inspectKind,
@@ -12,8 +12,7 @@ import {
   type AttributeOptions,
   type ObservationView,
 } from "./observe.mts";
-import { layoutReview, reviewOptions } from "./layout-review.mts";
-import type { ToolContext } from "./context.mts";
+import type { DocumentRef, ToolContext } from "./context.mts";
 
 const DETAIL_KEYS = [
   "componentIds",
@@ -22,10 +21,21 @@ const DETAIL_KEYS = [
   "includeWires",
   "wireOffset",
   "wireLimit",
-  "includeNets",
-  "netFormat",
   "layoutReview",
 ];
+
+/** The readability measures that are not zero, worst first. */
+const PROBLEMS = [
+  "overlaps",
+  "wireOverBody",
+  "portGrazes",
+  "labelsOnWires",
+  "closeParallels",
+  "pinsOffSide",
+  "labelOverlaps",
+  "crossings",
+  "bends",
+] as const;
 
 export async function inspectCircuit(
   context: ToolContext,
@@ -59,27 +69,44 @@ export async function inspectCircuit(
       ),
     };
   }
-  const review = reviewOptions({ ...args, circuit });
-  if (review) {
-    const { raw } = await context.observe(document, circuit);
-    const digest = raw.artifactSha256 ?? raw.revision?.artifactSha256 ?? null;
-    if (review.artifactSha256 && digest && review.artifactSha256 !== digest)
+  if ("layoutReview" in args) {
+    const options = args.layoutReview;
+    if (
+      options !== undefined &&
+      (options === null ||
+        typeof options !== "object" ||
+        Array.isArray(options) ||
+        Object.keys(options).length)
+    )
       throw new CircuitToolError(
-        "STALE_ARTIFACT",
-        "图面已改变，不能续接旧版布局问题；重新从 layoutReview:{} 开始。",
-        { retryable: true },
+        "INVALID_ARGUMENT",
+        "layoutReview 只接受 {}。",
       );
-    const children = new Set<string>(
-      (raw.focus.components || [])
-        .map((c: any) => c.subcircuit)
-        .filter((name: unknown) => typeof name === "string"),
+    if (!args.circuit)
+      throw new CircuitToolError(
+        "INVALID_ARGUMENT",
+        "layoutReview 需要指定 circuit。",
+      );
+    const { raw } = await context.observe(document, circuit);
+    const measures = readability(raw.focus);
+    const problems = PROBLEMS.filter((name) => measures[name] > 0).map(
+      (name) => ({ measure: name, count: measures[name] }),
     );
     return {
       ...identity,
       authority: "exact-runtime",
-      artifactSha256: digest,
-      childDefinitions: [...children].sort(),
-      layoutReview: layoutReview(raw.focus, review.issueOffset),
+      artifactSha256:
+        raw.artifactSha256 ?? raw.revision?.artifactSha256 ?? null,
+      childDefinitions: [
+        ...new Set(
+          (raw.focus.components || [])
+            .map((c: any) => c.subcircuit)
+            .filter((name: unknown) => typeof name === "string"),
+        ),
+      ].sort(),
+      // Lower reads more easily; arranging keeps a layout only when this drops.
+      readability: measures,
+      problems,
     };
   }
   const { view } = await context.observe(document, circuit);
@@ -103,7 +130,7 @@ export async function inspectCircuit(
  */
 async function attributeOptions(
   context: ToolContext,
-  document: { id: string; revision: string },
+  document: DocumentRef,
   circuit: string,
   view: ObservationView,
   ids: string[],
@@ -234,7 +261,7 @@ export function templateGeometry(reply: any) {
  */
 export function libraryResolver(
   context: ToolContext,
-  document: { id: string; revision: string },
+  document: DocumentRef,
   circuit: string,
 ) {
   let catalog: Promise<any> | null = null;
@@ -286,7 +313,7 @@ export function libraryResolver(
 
 export const resolveLibrary = (
   context: ToolContext,
-  document: { id: string; revision: string },
+  document: DocumentRef,
   circuit: string,
   tool: string,
   library: string | null | undefined,

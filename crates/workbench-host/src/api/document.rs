@@ -109,8 +109,14 @@ pub enum DocumentRequest {
         name: String,
         xml: String,
     },
+    /// A whole document view; with `circuits`, the document's fields and only
+    /// those definitions' content (a `DocumentChange` at the document's
+    /// revision), which is what a tool call needs to address one definition.
     Read {
         id: String,
+        #[serde(default)]
+        #[ts(optional)]
+        circuits: Option<Vec<String>>,
     },
     Activate {
         id: String,
@@ -809,7 +815,17 @@ impl Host {
                     false,
                 )?)?)
             }
-            DocumentRequest::Read { id } => value(self.workspace.lock().await.get(&id)?.view()?),
+            DocumentRequest::Read { id, circuits } => {
+                let workspace = self.workspace.lock().await;
+                let document = workspace.get(&id)?;
+                let circuits = match circuits {
+                    Some(circuits) => circuits,
+                    None => document.summary().circuits,
+                };
+                Ok(value(
+                    document.view_change(&document.revision(), &circuits)?,
+                )?)
+            }
             DocumentRequest::Activate { id } => {
                 let mut w = self.workspace.lock().await;
                 w.get(&id)?;
@@ -827,7 +843,12 @@ impl Host {
                 )
             }
             DocumentRequest::SourceStatus { id } => {
-                value(self.workspace.lock().await.get(&id)?.source_status())
+                // The entry look already read the file when it moved.
+                let known = self.source_state(&id);
+                match known {
+                    Some(status) => value(status),
+                    None => value(self.workspace.lock().await.get(&id)?.source_status()),
+                }
             }
             DocumentRequest::Reload {
                 id,

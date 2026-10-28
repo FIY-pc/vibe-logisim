@@ -129,7 +129,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "inspect_circuit",
     label: "查看电路",
     description:
-      "Read one definition as the native Logisim runtime loads it. Use one view per call: no filter for the overview (bounds, counts, first component page, pins, tunnels, state elements, width conflicts); componentIds for full details of named parts (ports with positions, widths, directions and bit nets); componentDirectory for a byte-budgeted page of all parts continued by cursor; portConnections for what the listed ports connect to; includeWires (+wireOffset/wireLimit) for wire geometry; layoutContext for the organization inventory arrange_circuit needs; layoutReview for native geometry problems and reading paths. Component ids are anchor positions c<x>_<y> (m for negative, _2 for a second part on the same anchor); wire ids and cursors belong to the revision they came from.",
+      "Read one definition as the native Logisim runtime loads it. One view per call: no filter for the overview (bounds, counts, first component page, pins, tunnels, state elements, width conflicts); componentIds for details of named parts (ports with positions, widths, directions, bit nets); componentDirectory for a byte-budgeted page of all parts continued by cursor; portConnections for what the listed ports connect to; includeWires (+wireOffset/wireLimit) for wire geometry; layoutContext for the organization inventory arrange_circuit takes; layoutReview for readability measures. Component ids are anchor positions c<x>_<y> (m for negative, _2 for a second part on the same anchor); wire ids and cursors belong to the revision they came from.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
@@ -154,9 +154,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
       ),
       includeWires: { type: "boolean" },
       wireOffset: int({ minimum: 0 }),
-      wireLimit: int({ minimum: 1, maximum: 512 }),
-      includeNets: { type: "boolean" },
-      netFormat: str({ enum: ["groups", "bits"] }),
+      wireLimit: int({ minimum: 1, maximum: 256 }),
       layoutContext: object(
         {
           pinnedComponentIds: array(str({ maxLength: 64 }), { maxItems: 2048 }),
@@ -170,9 +168,9 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
             "Compact layout inventory and net graph for planning an organization. Supply {} for defaults; use the same options when arranging. Not combined with other filters.",
         },
       ),
-      layoutReview: object({ issueOffset: int({ minimum: 0 }) }, [], {
+      layoutReview: object({}, [], {
         description:
-          "Read-only native geometry review of this definition: suspected overlaps (24 per page via issueOffset) and signal reading paths. Does not arrange or review child definitions.",
+          "This definition's readability measures as the native runtime loads it (lower reads more easily) and the measures that are not zero. Supply {}.",
       }),
     }),
   },

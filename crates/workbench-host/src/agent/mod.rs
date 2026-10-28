@@ -16,6 +16,15 @@ use tokio::{
     sync::{Mutex, oneshot},
 };
 
+tokio::task_local! {
+    /// Set while the host answers a request of the AI runtime.
+    static FROM_AGENT: ();
+}
+/// Whether the request being answered comes from the AI runtime.
+pub(crate) fn from_agent() -> bool {
+    FROM_AGENT.try_with(|_| ()).is_ok()
+}
+
 /// The answer to a host call from the sidecar; the result goes out as the
 /// host gave it, so an observation is not parsed and written again.
 #[derive(serde::Serialize)]
@@ -136,7 +145,19 @@ impl Agent {
                             let label = format!("agent.{}", timing_label(&message["request"]));
                             let result = match Request::from_value(message["request"].clone()) {
                                 Ok(request) if request.meta().agent => {
-                                    timing::scope(&label, host.respond(request)).await
+                                    // Every document request names its document `id`.
+                                    let document = matches!(request, Request::Document(_))
+                                        .then(|| message["request"]["id"].as_str())
+                                        .flatten();
+                                    timing::scope(&label, async {
+                                        if let Some(id) = document
+                                            && let Some(error) = host.unloaded_file(id).await
+                                        {
+                                            return Err(error);
+                                        }
+                                        FROM_AGENT.scope((), host.respond(request)).await
+                                    })
+                                    .await
                                 }
                                 Ok(_) => Err(HostError::new(ErrorCode::NotAllowed, OUTSIDE)),
                                 Err(error) => Err(HostError::new(ErrorCode::InvalidInput, OUTSIDE)

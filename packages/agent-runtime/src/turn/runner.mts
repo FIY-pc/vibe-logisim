@@ -764,6 +764,7 @@ export class TurnRunner extends EventEmitter {
         assertCurrent,
         userDocumentId: request.documentId,
         userCircuit: request.circuit,
+        documents: status.documents,
       });
       const tools = [
         ...fileTools({

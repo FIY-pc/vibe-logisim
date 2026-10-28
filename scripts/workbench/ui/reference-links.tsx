@@ -203,8 +203,6 @@ export async function verifyReferenceLinks() {
           selection={[]}
           quotation={null}
           onQuoted={() => {}}
-          onDocument={() => {}}
-          onOpened={() => {}}
           onFilesChanged={async () => {}}
           onError={(error) => errors.push(error)}
           onFollowReference={(href, message) =>
@@ -236,8 +234,6 @@ export async function verifyReferenceLinks() {
           selection={[]}
           quotation={null}
           onQuoted={() => {}}
-          onDocument={() => {}}
-          onOpened={() => {}}
           onFilesChanged={async () => {}}
           onError={(error) => errors.push(error)}
         />

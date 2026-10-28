@@ -1,6 +1,6 @@
-# Using the arranger
+# 整理器（arrange_circuit）
 
-Read the current tool schema for exact arguments. This reference explains choices, not a required sequence for all circuit work.
+具体参数以工具说明为准；这里只说明它做什么、组织参数的含义。
 
 ## What it does on its own
 
@@ -25,6 +25,6 @@ Call `arrange_circuit` on that same revision with `organization.groups`. Assign 
 
 Before the result is applied, native connectivity, external interfaces and protected structures are checked. These checks preserve the source's electrical relationships; they do not prove the source implements the assignment.
 
-## Afterwards
+## 应用之后
 
-View the result with `render_circuit`, including dense regions. When a region reads badly, name the problem and choose a change: different groups or rows, a pinned part, a named link, or a direct edit. The result is already in the file when `applied` is true; `undo_edit` restores the previous layout. Continue editing the file instead of overwriting it with an older generated file.
+`applied: true` 时结果已经写进文件；`undo_edit` 撤销回上一次布局。之后继续在这个文件上改，不要用旧的生成文件整体覆盖它。

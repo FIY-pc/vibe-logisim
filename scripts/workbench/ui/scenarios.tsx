@@ -167,6 +167,8 @@ const emit = (event: any) => {
 };
 const agent = (event: any) =>
   emit({ topic: "agent", data: { sequence: ++sequence, event } });
+/** A document change the host broadcast, as `router.ts` applies it. */
+const hostChange = (change: any) => emit({ topic: "change", data: change });
 let root = createRoot(document.getElementById("root")!);
 const settle = async () => {
   await act(async () => {
@@ -197,7 +199,6 @@ const input = async (value: string) => {
   });
 };
 const errors: any[] = [];
-const changed: any[] = [];
 const chat = (d: any, visible = true) => (
   <Workbench>
     <Chat
@@ -208,8 +209,6 @@ const chat = (d: any, visible = true) => (
       selection={[]}
       quotation={null}
       onQuoted={() => {}}
-      onDocument={(d: any) => changed.push(d)}
-      onOpened={() => {}}
       onFilesChanged={async () => {}}
       onError={(e: any) => errors.push(e)}
     />
@@ -241,15 +240,6 @@ assert.equal(
 console.log(
   "PASS: delayed send acknowledgement preserves subsequently typed draft",
 );
-await render(chat(doc("A"), false));
-await act(async () => {
-  agent({
-    type: "document-changed",
-    change: change({ ...doc("A"), revision: "r2" }, "r1"),
-  });
-});
-assert.equal(changed.at(-1).revision, "r2");
-console.log("PASS: hidden conversation continues receiving document changes");
 localStorage.setItem("vibe.draft:B:chat-B", "B own draft");
 await input("A to submit");
 askGate = defer();
@@ -288,10 +278,7 @@ await click(
   )!,
 );
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r1"),
-  }),
+  hostChange(change({ ...doc("A"), revision: "r2", dirty: true }, "r1")),
 );
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 await click(
@@ -314,9 +301,8 @@ const saveTransport = (globalThis as any).__command;
       })
     : saveTransport(request);
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change(
+  hostChange(
+    change(
       {
         ...doc("A"),
         revision: "r2",
@@ -326,7 +312,7 @@ await act(async () =>
       },
       "r1",
     ),
-  }),
+  ),
 );
 assert(
   document.body.textContent?.includes("修改已保留，写回文件失败：磁盘暂不可写"),
@@ -345,6 +331,7 @@ console.log(
 );
 const mutationGate = defer();
 let mutationRefreshes = 0;
+let documentReads = 0;
 const latestMutationDocument = {
   ...doc("A"),
   path: "/fixture/A.circ",
@@ -365,15 +352,16 @@ const latestMutationDocument = {
       recoveryError: null,
     };
   }
+  if (request.op === "read") {
+    documentReads++;
+    return { ...doc(request.id), revision: "r-delayed-agent" };
+  }
   return saveTransport(request);
 };
 await openMenu("更多");
 await clickMenuItem("保存");
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change(latestMutationDocument, "r2"),
-  }),
+  hostChange(change(latestMutationDocument, "r2")),
 );
 await act(async () => {
   mutationGate.resolve({
@@ -398,30 +386,26 @@ assert.equal(
   "r1",
 );
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change(
-      { ...doc("A"), revision: "r-delayed-agent", dirty: false },
-      "r2",
-    ),
-  }),
+  hostChange(
+    change({ ...doc("A"), revision: "r-delayed-agent", dirty: false }, "r2"),
+  ),
 );
 await settle();
+// The host's change is a change like the window's own: applied or, if this
+// view is past its base, answered by reading that one document.
+assert.equal(documentReads, 1, "A document is read on its own");
 assert.equal(
   mutationRefreshes,
-  2,
-  "A late agent response carries its original revision and must take the same refresh path",
+  1,
+  "A host change whose base this view passed reads the document, not the workspace",
 );
-assert(document.querySelector(".file-title .dirty-dot"));
+assert(!document.querySelector(".file-title .dirty-dot"));
 (globalThis as any).__command = saveTransport;
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r3"),
-  }),
+  hostChange(change({ ...doc("A"), revision: "r2", dirty: true }, "r3")),
 );
 console.log(
-  "PASS: late save and agent mutation results refresh current status without overwriting newer document state",
+  "PASS: a late save reply and a host change from a passed base refresh current state without overwriting newer document state",
 );
 const appKey = async (key: string, extra: KeyboardEventInit = {}) =>
   act(async () =>
@@ -574,9 +558,7 @@ await settle();
 assert.equal(statusReads, 3);
 const changedC = { ...doc("C"), revision: "r-new", dirty: true };
 auditDocs = auditDocs.map((d) => (d.id === "C" ? changedC : d));
-await act(async () =>
-  agent({ type: "document-changed", change: change(changedC, "r1") }),
-);
+await act(async () => hostChange(change(changedC, "r1")));
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 auditStatusGate = null;
 await act(async () => {

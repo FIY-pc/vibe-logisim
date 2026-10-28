@@ -107,7 +107,7 @@ export async function arrangeCircuit(
     { kind: "replace", xml: outcome.xml, title: "整理布局" },
   ]);
   return {
-    ...context.identity(applied.view, circuit),
+    ...context.identity(applied.change, circuit),
     title: applied.result.title,
     applied: true,
     arrangement: outcome.report,

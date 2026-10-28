@@ -20,13 +20,14 @@
 
 1. **人编辑。** 窗口动作构造 `{op, …}` → `Host::dispatch` → `Document::edit`（带调用方读到的修订）→ 自动保存到源文件 → 记录历史 → 返回只含改动电路的 `change` 和 `selection` → 窗口把它并进打开的文档 → 画布在下一帧用缓存的元件符号重画（缺的种类发一次 `symbols`，见 [rendering.md](rendering.md)）。提交的连线、删除、移动在回复到达前先画出手势本身的结果，其余不预测。
 2. **观察。** 宿主为每个修订落一份不可变 artifact → `Native::observe` 交给 Java 读取端口、位网、边界 → JSON 按 artifact 摘要缓存。连通面板、信号追踪、整理和 AI 的连接检查来自这份观察；画面、命中测试和端口标记用 `symbols` 录下的包围盒和端口，不等观察。
-3. **AI 回合。** 窗口 `agent{method:"ask"}` → 宿主 → sidecar 标准输入 → `TurnRunner` 流式调用模型 → 工具以 `{kind:"host"}` 发宿主请求，走和人编辑完全相同的 `dispatch` → 事件以 `{kind:"event"}` 回到宿主 → 窗口 `agent` 主题。每回合开始和结束各记一次文件夹检查点，窗口收到 `files-changed`，用户可整回合撤销。
+3. **AI 回合。** 窗口 `agent{method:"ask"}` → 宿主 → sidecar 标准输入 → `TurnRunner` 流式调用模型 → 工具以 `{kind:"host"}` 发宿主请求，走和人编辑完全相同的 `dispatch`；sidecar 不留文档，每个工具调用问宿主要它需要的那个定义。宿主把每个变化作为 `change` 事件广播，窗口按修订叠上（AI 的这次编辑也一样）→ 对话事件回窗口 `agent` 主题。每回合开始和结束各记一次文件夹检查点，窗口收到 `files-changed`，用户可整回合撤销。
 4. **仿真。** 窗口 `simulationStart`/`simulationCommand`/`simulationNavigate`/`simulationStop` → `SimulationRegistry` 里唯一的 run → 一个 Java 进程（运行状态只在这里）。回复只有 `commandSequence` 或错误；Java 的帧经 run 叠进最新状态后，作为 `Event::Simulation` 推给每个页面的订阅（订阅先拿整幅）→ 窗口 store。每次请求后宿主 `reconcile`：文档关闭或修订变化即结束运行。
 
 ## 全局规则，各在一处实现
 
 - 对象 ID 是位置：元件 `c<x>_<y>`（负号写 `m`，同锚点第二个加 `_2`），导线 `w<n>` 按文件顺序。由 `circuit-document` 定义，窗口、AI 和脚本都照此寻址。
 - 每个修改请求带调用方读到的修订，不匹配整条拒绝（`StaleRevision`），没有部分生效。`circuit-document` 检查，宿主透传。
+- 磁盘文件为真：文档是它的缓存。宿主在每个文档/文件夹请求前 stat 打开的文档（变了才读，见 `crates/workbench-host/src/documents/files.rs`），干净文档就地重载并广播，有未保存改动的文档绝不覆盖；窗口不轮询。
 - 写操作串行、成功后自动保存（源文件在打开的文件夹内时）、记录文档历史、落恢复记录；全在 `Host::dispatch`。
 - 仿真寿命绑定修订：`Host::reconcile`。
 - AI 能调用哪些操作：`api/*.rs` 里每个 op 的 `Meta::agent()`，其余一律 `NotAllowed`。

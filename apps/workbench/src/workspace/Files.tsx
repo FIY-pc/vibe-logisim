@@ -306,8 +306,8 @@ export function Files({
     return subscribeEvents((event) => {
       if (
         event.topic === "resync" ||
-        (event.topic === "agent" &&
-          ["files-changed", "document-opened"].includes(event.data.event.type))
+        event.topic === "workspace" ||
+        (event.topic === "agent" && event.data.event.type === "files-changed")
       )
         void latestRefresh.current().catch(onError);
     });

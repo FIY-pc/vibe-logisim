@@ -207,8 +207,6 @@ async function verifyDocumentReferenceBinding() {
             selection={[]}
             quotation={quote ? quotation(id) : null}
             onQuoted={() => {}}
-            onDocument={() => {}}
-            onOpened={() => {}}
             onFilesChanged={async () => {}}
             onError={(e) => errors.push(e)}
           />

@@ -1,23 +1,25 @@
 /**
- * What every circuit tool needs from the turn it runs in: the host, the open
+ * What every circuit tool gets from the turn it runs in: the host, the open
  * folder, a way to emit UI events, and the "current document" the tools fall
  * back to when no path is given. One ToolContext lives for one turn.
  *
- * Document resolution: `path` (folder-relative) → the open document with
- * that absolute path, else the host opens it (and the UI is told). No path →
- * the document last opened or created by a tool this turn, else the document
- * the user was looking at when they asked. An open document whose file
- * changed underneath it (a shell command or write_file rewrote it, the user
- * saved it from another program) is read again first unless it has unsaved
- * changes, so the tools always work on the file as it is.
+ * It holds no document. The host owns the files and the open documents and
+ * keeps every open document equal to its file (see
+ * `crates/workbench-host/README.md`, Files are the truth); a tool reads the
+ * header it needs through `read`, works with that revision, and gets the new
+ * revision back in the reply. Nothing is cached between calls.
+ *
+ * Document resolution: `path` (folder-relative) → the open document at that
+ * absolute path, else the host opens it; no path → the document last opened
+ * or created by a tool this turn, else the document the user was looking at
+ * when they asked.
  */
 import * as path from "node:path";
 import { CircuitToolError } from "./errors.mts";
 import { observationView, type ObservationView } from "./observe.mts";
 import type { Edit } from "../generated/Edit.ts";
-import type { SourceStatus } from "../generated/SourceStatus.ts";
 import type {
-  DocumentSummary,
+  DocumentChange,
   DocumentView,
   EditResult,
   HostClient,
@@ -26,10 +28,6 @@ import type {
   Request,
 } from "../protocol/host.mts";
 import type { RuntimeEvent } from "../protocol/messages.mts";
-import {
-  applyDocumentChange,
-  combineChanges,
-} from "../protocol/document-change.ts";
 
 /** Edits the host applies together as one change. */
 const BATCHED = new Set<Edit["kind"]>([
@@ -48,14 +46,15 @@ export interface ToolContextOptions {
   /** The document and definition the user was looking at when they asked, if any. */
   userDocumentId: string | null;
   userCircuit: string | null;
+  /** The open documents at the start of the turn, so a path they cover is not opened again. */
+  documents?: { id: string; path: string | null }[];
 }
 
-/** What a tool needs to address a document at one revision. */
-export interface DocumentRef {
-  id: string;
-  path: string | null;
-  revision: string;
-}
+/**
+ * An open document at one revision: the header a tool addresses it by, the
+ * definition order, and the content of the definitions the call asked for.
+ */
+export type DocumentRef = DocumentChange;
 
 /** One native observation plus the document it describes. */
 export interface Observed {
@@ -65,11 +64,19 @@ export interface Observed {
   document: DocumentRef;
 }
 
-/** Edits applied by one tool call: the results, and the whole view after the last. */
+/** Edits applied by one tool call: the results, the change they made together, and the document as it was before them. */
 export interface Applied {
   result: EditResult;
   results: EditResult[];
-  view: DocumentView;
+  change: DocumentChange;
+  document: DocumentRef;
+}
+
+/** An edit reply's notes that the host sets beside the edit result. */
+export interface EditNotes {
+  saveError?: string;
+  historyWarning?: string;
+  referenceWarning?: string;
 }
 
 export class ToolContext {
@@ -82,10 +89,9 @@ export class ToolContext {
   /** The definition tools work on when no circuit is given (only meaningful for the user's document). */
   private readonly userCircuit: string | null;
   private readonly userDocumentId: string | null;
-  /** The whole view of each document this turn worked on, at the revision it
-   * last saw. Edits take their changes into it, so a tool reads a whole view
-   * again only after the document changed outside the turn. */
-  private readonly views = new Map<string, DocumentView>();
+  /** Absolute paths of the documents this turn met, by document id and back. */
+  private readonly byPath = new Map<string, string>();
+  private readonly paths = new Map<string, string | null>();
 
   constructor(options: ToolContextOptions) {
     this.host = options.host;
@@ -95,6 +101,7 @@ export class ToolContext {
     this.userDocumentId = options.userDocumentId;
     this.userCircuit = options.userCircuit;
     this.currentDocumentId = options.userDocumentId;
+    for (const document of options.documents ?? []) this.remember(document);
   }
 
   /** The open documents without their circuits' content, the active one and the folder. */
@@ -102,16 +109,22 @@ export class ToolContext {
     return this.host.call<HostStatus>({ op: "status", summary: true });
   }
 
-  /** The whole view of an open document at its current revision. */
-  private async view(document: DocumentSummary): Promise<DocumentView> {
-    const known = this.views.get(document.id);
-    if (known?.revision === document.revision) return known;
-    const view = await this.host.call<DocumentView>({
+  /**
+   * An open document as it is now: its header and, with `circuits`, those
+   * definitions' content. The host has read the file first (every document
+   * request does), so this is the file's content at its current revision.
+   */
+  async read(
+    id: string,
+    circuits?: string[],
+  ): Promise<DocumentRef> {
+    const change = await this.host.call<DocumentChange>({
       op: "read",
-      id: document.id,
+      id,
+      ...(circuits ? { circuits } : {}),
     });
-    this.views.set(view.id, view);
-    return view;
+    this.remember(change);
+    return change;
   }
 
   /** Folder-relative path → absolute path inside the folder, or INVALID_ARGUMENT. */
@@ -129,106 +142,97 @@ export class ToolContext {
     return target;
   }
 
+  private remember(document: { id: string; path: string | null }) {
+    this.byPath.set(document.id, document.path ?? "");
+    this.paths.set(document.id, document.path);
+  }
+
   /**
-   * The document a tool works on. With `relative`, an open document at that
-   * path or a freshly opened one (then the UI shows it); without, the current
-   * document. Always re-read from the host so the revision is fresh, and
-   * read again from its file when that changed (see `fromFile`).
+   * The document a tool works on: with `relative`, an open document at that
+   * path or a freshly opened one; without, the current document.
    */
-  async resolveDocument(relative?: string | null): Promise<DocumentView> {
-    const status = await this.status();
+  async resolveDocument(relative?: string | null): Promise<DocumentRef> {
     if (relative) {
       const target = this.absolute(relative);
-      const open = status.documents.find((d) => d.path === target);
-      if (open) {
-        this.currentDocumentId = open.id;
-        return this.fromFile(open);
-      }
-      const view = await this.host.call<DocumentView>({
-        op: "open",
-        path: target,
-      });
-      this.views.set(view.id, view);
-      this.currentDocumentId = view.id;
-      this.emit({ type: "document-opened", document: view });
-      return view;
+      const known = this.byPath.get(target);
+      const id = known || (await this.openIdAt(target));
+      this.currentDocumentId = id;
+      return this.read(id);
     }
-    const id = this.currentDocumentId ?? status.active;
-    const current = id ? status.documents.find((d) => d.id === id) : undefined;
-    if (!current)
+    const id = this.currentDocumentId ?? (await this.status()).active;
+    if (!id)
       throw new CircuitToolError("NO_DOCUMENT_OPEN", "当前没有打开的电路文件", {
         hint: "给出 path 打开文件夹里的 .circ，或用 create_circuit 新建。",
       });
-    this.currentDocumentId = current.id;
-    return this.fromFile(current);
+    this.currentDocumentId = id;
+    return this.read(id);
   }
 
-  /**
-   * An open document as its file is: when the file changed underneath it
-   * (write_file, a shell command, another program) and it has no unsaved
-   * changes, the host reads it again (the previous content stays in undo
-   * history) and the UI is told the whole document changed. A document with
-   * unsaved changes is used as it is; the UI shows the user the file notice.
-   */
-  private async fromFile(open: DocumentSummary): Promise<DocumentView> {
-    const view = await this.view(open);
-    if (!view.path || view.dirty) return view;
-    const source = await this.host.call<SourceStatus>({
-      op: "sourceStatus",
-      id: view.id,
+  /** The open document at an absolute path, opening it first when it is not open. */
+  async openIdAt(target: string): Promise<string> {
+    const view = await this.host.call<DocumentView>({
+      op: "open",
+      path: target,
     });
-    if (source.state !== "modified") return view;
-    const reloaded = await this.host.call<DocumentView>({
-      op: "reload",
-      id: view.id,
-      revision: view.revision,
-      source_revision: source.revision,
-      discard: false,
-    });
-    this.views.set(reloaded.id, reloaded);
-    const { circuits, ...fields } = reloaded;
-    this.emit({
-      type: "document-changed",
-      change: {
-        ...fields,
-        base: view.revision,
-        order: circuits.map((c) => c.name),
-        circuits,
-      },
-    });
-    return reloaded;
+    this.remember(view);
+    return view.id;
   }
 
   /** The definition a tool works on: the named one, else the user's current one, else main. */
-  circuitOf(view: DocumentView, name?: string | null): string {
+  circuitOf(document: DocumentRef, name?: string | null): string {
     const circuit =
       name ||
-      (view.id === this.userDocumentId && this.userCircuit
+      (document.id === this.userDocumentId && this.userCircuit
         ? this.userCircuit
         : null) ||
-      view.main ||
+      document.main ||
       null;
     if (!circuit)
       throw new CircuitToolError("NO_CIRCUIT_OPEN", "当前文件没有电路定义", {
         hint: "用 define_circuit 添加定义，或指定 circuit。",
       });
-    if (!view.circuits.some((c) => c.name === circuit))
+    if (!document.order.includes(circuit))
       throw new CircuitToolError(
         "CIRCUIT_NOT_FOUND",
         "电路定义不存在：" + circuit,
         {
-          hint: "可用的定义：" + view.circuits.map((c) => c.name).join("、"),
-          context: { availableCircuits: view.circuits.map((c) => c.name) },
+          hint: "可用的定义：" + document.order.join("、"),
+          context: { availableCircuits: document.order },
         },
       );
     return circuit;
   }
 
-  /** Resolves document and definition together; most tools start here. */
+  /**
+   * Resolves document and definition together; most tools start here. One
+   * host request: the document's header.
+   */
   async target(args: { path?: string | null; circuit?: string | null }) {
     const document = await this.resolveDocument(args.path);
     const circuit = this.circuitOf(document, args.circuit);
     return { document, circuit };
+  }
+
+  /**
+   * The same, with the definition's content — what a tool needs to address
+   * parts and wires. A second request only when the header had to be read to
+   * name the definition.
+   */
+  async definition(args: { path?: string | null; circuit?: string | null }) {
+    const document = await this.resolveDocument(args.path);
+    const circuit = this.circuitOf(document, args.circuit);
+    if (document.circuits.some((c) => c.name === circuit)) {
+      const definition = document.circuits.find((c) => c.name === circuit)!;
+      return { document, circuit, definition };
+    }
+    const content = await this.read(document.id, [circuit]);
+    const definition = content.circuits.find((c) => c.name === circuit);
+    if (!definition)
+      throw new CircuitToolError(
+        "CIRCUIT_NOT_FOUND",
+        "电路定义不存在：" + circuit,
+      );
+    return { document: content, circuit, definition };
   }
 
   /** The native observation of one definition at the document's current revision. */
@@ -245,45 +249,38 @@ export class ToolContext {
 
   /**
    * Sends edit, undo or redo requests one after another, each on the
-   * revision the previous one made, and tells the UI once what they changed
-   * together. Returns the results and the whole view after the last.
+   * revision the previous one made. The host broadcasts what they changed;
+   * the change they made together is returned.
    */
   async send(
     document: DocumentRef,
     requests: ((revision: string) => Request)[],
   ): Promise<Applied> {
     let revision = document.revision;
-    let view = this.views.get(document.id);
     const results: EditResult[] = [];
-    try {
-      for (const request of requests) {
-        this.assertCurrent();
-        const result = await this.host.call<EditResult>(request(revision));
-        results.push(result);
-        revision = result.revision;
-        view = applyDocumentChange(view, result.change) ?? undefined;
-      }
-    } finally {
-      if (results.length)
-        this.emit({
-          type: "document-changed",
-          change: combineChanges(results.map((r) => r.change)),
-        });
+    for (const request of requests) {
+      this.assertCurrent();
+      const result = await this.host.call<EditResult & EditNotes>(
+        request(revision),
+      );
+      results.push(result);
+      revision = result.revision;
     }
-    if (!view)
-      view = await this.host.call<DocumentView>({
-        op: "read",
-        id: document.id,
-      });
-    if (view.revision === revision) this.views.set(view.id, view);
-    return { result: results[results.length - 1], results, view };
+    const last = results[results.length - 1];
+    return {
+      result: last,
+      results,
+      change: { ...last.change, base: document.revision },
+      document,
+    };
   }
 
   /**
    * Applies edits. Wire, place, delete and attribute edits go to the host as
    * one batch (one undo step, one native load), and so do moves by different
    * offsets (one undo step, nothing moved when one is refused); anything else
-   * is applied one after another. `noop` edits are reported, not hidden.
+   * is applied one after another. Edits that change nothing are reported on
+   * the result, not raised.
    */
   async edit(
     document: DocumentRef,
@@ -298,7 +295,7 @@ export class ToolContext {
       edits.length > 1 &&
       (edits.every((e) => BATCHED.has(e.kind)) ||
         edits.every((e) => e.kind === "move"));
-    const applied = await this.send(
+    return this.send(
       document,
       (batch ? [{ kind: "batch", edits } as Edit] : edits).map(
         (edit) => (revision) => ({
@@ -310,15 +307,10 @@ export class ToolContext {
         }),
       ),
     );
-    if (applied.results.every((r) => r.noop))
-      throw new CircuitToolError("NO_CHANGE", "修改没有改变任何内容", {
-        hint: "确认元件 id、属性和位置来自同一次检查的当前内容。",
-      });
-    return applied;
   }
 
   /** The identity every tool result starts with. */
-  identity(document: DocumentRef, circuit: string) {
+  identity(document: { id: string; path: string | null; revision: string }, circuit: string) {
     return {
       documentId: document.id,
       path: document.path

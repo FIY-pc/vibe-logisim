@@ -166,8 +166,6 @@ export async function verifyRestoredInteractions() {
           selection={[]}
           quotation={null}
           onQuoted={() => {}}
-          onDocument={() => {}}
-          onOpened={() => {}}
           onFilesChanged={async () => {}}
           onError={(error) => errors.push(error)}
         />

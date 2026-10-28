@@ -41,7 +41,7 @@ export function SourceNotices() {
               {desktop() ? "另存为…" : "下载副本"}
             </button>
             {sourceStatus.state === "unreadable" && (
-              <button onClick={recheck}>重试</button>
+              <button onClick={() => void recheck()}>重试</button>
             )}
           </div>
         )}

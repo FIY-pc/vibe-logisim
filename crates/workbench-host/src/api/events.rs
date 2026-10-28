@@ -1,4 +1,7 @@
-use crate::Host;
+use crate::{
+    Host,
+    documents::{SourceChange, WorkspaceChange},
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -14,9 +17,15 @@ pub enum Event {
     Simulation(Arc<SimulationEvent>),
     /// Snapshots may be stale; read them again.
     Resync(()),
-    /// Open documents changed outside a window command (read again from
-    /// their files, or closed with them); read the workspace again.
-    Documents(()),
+    /// A document changed: a `DocumentChange`, to apply to the view at its
+    /// `base`. Sent for every change except the one an edit's reply already
+    /// carries to the window that asked (the AI's edits, files read again,
+    /// folder operations).
+    Change(Value),
+    /// An open document's file state changed (`SourceStatus`).
+    Source(SourceChange),
+    /// Documents were opened or closed outside a window command.
+    Workspace(WorkspaceChange),
     /// A change took effect but something around it failed.
     Warning(Warning),
 }
