@@ -4,7 +4,7 @@ The `.circ` document as data: open, edit, undo, save, restore, with no UI, Java,
 
 ## Owns
 
-- Parsing and re-serialising `.circ` XML while keeping unknown nodes and attributes intact (`splice.rs`, `patch.rs`: edits are byte-range splices on the original text, never a full re-emit).
+- Parsing and re-serialising `.circ` XML while keeping unknown nodes and attributes intact (`splice.rs`, `patch.rs`: edits are byte-range splices on the original text, never a full re-emit). The index of an edited text is the old one with only the changed range parsed again (`Tree::reindex`: the innermost element that holds the change, its affected children re-parsed, everything after shifted), and only the components and wires parsed anew are checked again; a change outside the root's content or one that does not parse falls back to a whole index. On the 1 MB synthetic page (`scripts/workbench/editing-latency.mts`) a wire edit's apply (splice, digest, index, checks) takes about 3 ms instead of 15.
 - Object identity, and the only ids in the product: component ids `c<x>_<y>` from the anchor point (`m` for a minus sign, `_2`, `_3`… for stacked copies on the same anchor), wire ids `w<n>` by file order. The native side and the window use these, not ids of their own (a circuit's `connections`, `symbols`, observations, edit selections). A part that did not move keeps its id across unrelated edits; a moved part keeps its id too when nothing else takes its anchor, since the id names what the file says.
 - Revisions: `Document::revision()` is the content digest; every mutating call takes the caller's expected revision and fails with `StaleRevision` instead of applying partially.
 - Edits (`Edit` enum in `document.rs`): wire, place, move, delete, attributes, addCircuit, renameCircuit, deleteCircuit, setMain, replace `{xml, title?}` (the whole file; `title` names the undo step, "整理布局" for an arrangement, else "替换电路内容"), and batch `{edits}`: wire, place, delete and attributes edits applied in order on one circuit as one change and one undo step ("放置 3 个元件"), selecting what each placed or drew. The JSON schema of this enum is exported for the AI runtime (`edit_schema()`).
@@ -73,7 +73,7 @@ pub enum Error { InvalidDocument, InvalidCommand, StaleRevision, ExternalChange,
 
 ## Status
 
-Done and stable. 17 unit tests plus `tests/{document,fidelity,folder}.rs` (`cargo test -p vibe-circuit-document`). The fidelity tests round-trip real course files byte-for-byte outside the edited range.
+Done and stable. Unit tests in `patch.rs` and `splice.rs` (an incremental index equals a whole one, error for error, over 20 000 random splices of a sample with comments, CDATA and entities) plus `tests/{document,fidelity,folder}.rs` (`cargo test -p vibe-circuit-document`). The fidelity tests round-trip real course files byte-for-byte outside the edited range.
 
 ## Remaining tasks
 

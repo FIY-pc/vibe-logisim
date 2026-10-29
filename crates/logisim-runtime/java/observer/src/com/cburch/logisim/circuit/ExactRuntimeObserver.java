@@ -522,7 +522,7 @@ public final class ExactRuntimeObserver {
         ));
         unknowns.add(obj(
             "code", "REVISION_LOCAL_IDENTITIES",
-            "claim", "Component, bundle and net IDs are bound to this artifact revision; no cross-revision identity map is asserted."
+            "claim", "Component and wire IDs are the document's at this revision; bundle and net IDs are bound to this revision; no cross-revision identity map is asserted."
         ));
         unknowns.add(obj(
             "code", "PARTIAL_PORT_SEMANTICS",

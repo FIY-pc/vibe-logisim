@@ -39,7 +39,7 @@ const BODY = 25;
 const MARGIN = 200;
 const EXPANSIONS = 600_000;
 
-/** `w3` as the host names loaded segments. */
+/** `w3`: a file wire's id. */
 export function fileWireId(id: string): string {
   const match = /^w(\d+)$/.exec(id);
   if (!match)
