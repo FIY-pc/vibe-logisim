@@ -101,13 +101,13 @@ export async function arrangeCircuit(
         (comparison.worse.length
           ? `；${named(comparison.worse).join("、")}会变多`
           : "") +
-        "），没有应用，文件没有改动。要改就针对具体问题用 move_components 或 connect 调整，或给 organization 后再整理。",
+        "），没有应用，文件没有改动。",
     };
   const applied = await context.edit(document, circuit, [
     { kind: "replace", xml: outcome.xml, title: "整理布局" },
   ]);
   return {
-    ...context.identity(applied.view, circuit),
+    ...context.identity(applied.change, circuit),
     title: applied.result.title,
     applied: true,
     arrangement: outcome.report,
@@ -121,6 +121,6 @@ export async function arrangeCircuit(
     },
     note:
       "连通性已按网表逐端口组核对（含探针等位宽随网络而定的端口，不是仿真）；作为子电路的引脚排列不变；" +
-      "文件里其他电路一个字节都没改；可读性得分越低越清楚。可用 render_circuit 看图，可调整 organization 的功能分组与阅读行序后重新整理；不满意可用 undo_edit 撤销。",
+      "文件里其他电路一个字节都没改；可读性得分越低越清楚。",
   };
 }

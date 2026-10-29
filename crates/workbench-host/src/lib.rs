@@ -23,7 +23,9 @@ use serde_json::{Value, json};
 pub use simulation::{ObservationRecord, ObservationSummary};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use vibe_circuit_document::{DocumentView, Revision, Workspace, history::DocumentHistory};
+use vibe_circuit_document::{
+    Document, DocumentView, Revision, Workspace, history::DocumentHistory,
+};
 pub use vibe_logisim_runtime::timing;
 use vibe_logisim_runtime::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
 
@@ -59,6 +61,8 @@ pub struct Host {
     history: Arc<DocumentHistory>,
     /// Digests of library files, by path, length and modification time.
     digests: Arc<std::sync::Mutex<documents::history::Digests>>,
+    /// What the host last saw of each open document's file.
+    stamps: Arc<std::sync::Mutex<documents::files::Stamps>>,
     // The OS releases this lease after a crash; no stale PID files to delete.
     _lease: Arc<std::fs::File>,
 }
@@ -157,6 +161,7 @@ impl Host {
             folder: Arc::new(Mutex::new(folder)),
             history: Arc::new(DocumentHistory::new(state.join("document-history"))),
             digests: Arc::default(),
+            stamps: Arc::default(),
             workspace: Arc::new(Mutex::new(workspace)),
             native: Arc::new(Mutex::new(Native::with_launcher(launcher))),
             state,
@@ -230,9 +235,24 @@ impl Host {
         let reply = self.respond(request);
         Box::pin(async move { reply.await?.into_value() })
     }
-    /// Runs one request with the rules its op declares: writes wait for each
-    /// other, record history, write documents back and persist the workspace.
+    /// Runs one request with the rules its op declares. A document or folder
+    /// request first brings the open documents in line with their files, and
+    /// a folder operation that changed files does so again after it.
     async fn apply(&self, request: Request, meta: &api::Meta) -> Result<Reply> {
+        let files = matches!(request, Request::Document(_) | Request::Folder(_));
+        let folder_write = matches!(request, Request::Folder(_)) && meta.effect != Effect::Read;
+        if files {
+            self.follow_files(false).await;
+        }
+        let reply = self.apply_gated(request, meta).await;
+        if folder_write {
+            self.follow_files(true).await;
+        }
+        reply
+    }
+    /// Writes wait for each other, record history, write documents back,
+    /// persist the workspace and broadcast what they changed.
+    async fn apply_gated(&self, request: Request, meta: &api::Meta) -> Result<Reply> {
         let writes = meta.effect != Effect::Read;
         if writes && let Some(error) = &self.recovery_error {
             return Err(HostError::new(ErrorCode::RecoveryFailed, error.clone()));
@@ -253,6 +273,12 @@ impl Host {
         let revision_before = match (meta.effect, target) {
             (Effect::AutoSave, Some(id)) => self.revision(id).await,
             _ => None,
+        };
+        let before = if writes {
+            let workspace = self.workspace.lock().await;
+            Some((workspace.documents.clone(), workspace.active.clone()))
+        } else {
+            None
         };
         let mut result = match request {
             Request::Document(r) => self.document_request(r).await,
@@ -302,8 +328,79 @@ impl Host {
             }
         }
         let _persist = timing::span("persist");
-        self.persist(&mut *self.workspace.lock().await).await;
+        let mut workspace = self.workspace.lock().await;
+        self.persist(&mut workspace).await;
+        self.restamp(&workspace);
+        let broadcast = before.map(|(documents, active)| {
+            self.broadcast(&workspace, &documents, &active, target, document)
+        });
+        drop(_persist);
+        drop(workspace);
+        if let Some((changes, workspace)) = broadcast {
+            for change in changes {
+                self.emit(Event::Change(change));
+            }
+            if let Some(active) = workspace {
+                self.emit(Event::Workspace(active));
+            }
+        }
         result
+    }
+    /// What a write changed, for the window: each document's change, and for
+    /// the AI's requests also the documents opened or closed. The reply's own
+    /// change is broadcast only for the AI, since the window that asked
+    /// already has it. Returns the changes and, when they should follow, the
+    /// workspace event.
+    fn broadcast(
+        &self,
+        workspace: &Workspace,
+        before: &BTreeMap<String, Document>,
+        active: &Option<String>,
+        target: Option<&str>,
+        reply: &Value,
+    ) -> (Vec<Value>, Option<documents::files::WorkspaceChange>) {
+        let from_agent = agent::from_agent();
+        let mut changes = Vec::new();
+        for (id, document) in &workspace.documents {
+            let Some(old) = before.get(id) else {
+                continue;
+            };
+            if document.same_view(old) {
+                continue;
+            }
+            if reply["change"]["id"].as_str() == Some(id.as_str()) {
+                if from_agent {
+                    changes.push(reply["change"].clone());
+                }
+                continue;
+            }
+            // The window's own write reaches it in its reply.
+            if !from_agent && target == Some(id.as_str()) {
+                continue;
+            }
+            if let Ok(change) = document.change_since(old)
+                && let Ok(change) = value(change)
+            {
+                changes.push(change);
+            }
+        }
+        let opened_or_closed = workspace.documents.len() != before.len()
+            || workspace
+                .documents
+                .keys()
+                .any(|id| !before.contains_key(id));
+        let workspace =
+            (from_agent && (opened_or_closed || workspace.active != *active)).then(|| {
+                documents::files::WorkspaceChange {
+                    documents: workspace
+                        .documents
+                        .values()
+                        .map(Document::summary)
+                        .collect(),
+                    active: workspace.active.clone(),
+                }
+            });
+        (changes, workspace)
     }
     /// Ends the run when its document closed or moved to another revision. Runs
     /// after every request, so no path can leave a run of a document that changed.

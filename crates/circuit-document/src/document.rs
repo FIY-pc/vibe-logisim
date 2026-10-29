@@ -177,7 +177,7 @@ pub struct DocumentSummary {
     pub circuits: Vec<String>,
 }
 /// Source state is separate from the draft revision: saving/reloading requires both.
-#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum SourceStatus {
     Untitled,
@@ -603,7 +603,14 @@ impl Document {
             },
         }
     }
-    pub fn reload(&mut self, expected: &str, source_revision: &str, discard: bool) -> Result<()> {
+    /// Replaces the content with the source file's (the draft stays in undo
+    /// history) and returns the circuits that changed, as `edit` does.
+    pub fn reload(
+        &mut self,
+        expected: &str,
+        source_revision: &str,
+        discard: bool,
+    ) -> Result<Vec<String>> {
         self.check(expected)?;
         if self.dirty() && !discard {
             return Err(Error::InvalidCommand("还有未保存的修改".into()));
@@ -618,10 +625,17 @@ impl Document {
             return Err(Error::ExternalChange);
         }
         // Validate before changing anything; keep the draft in undo history.
-        self.replace(bytes)?;
+        let previous = self.source.clone();
+        self.change(
+            bytes,
+            EditOutcome {
+                title: "读取磁盘版本".into(),
+                ..EditOutcome::default()
+            },
+        )?;
         self.saved_digest = Some(revision);
         self.record(Op::Saved(self.saved_digest.clone()));
-        Ok(())
+        Ok(changed_circuits(&previous.tree, &self.source.tree))
     }
     pub fn view(&self) -> Result<DocumentView> {
         let tree = &self.source.tree;
@@ -673,6 +687,22 @@ impl Document {
             libraries: self.libraries(),
             width_errors: None,
         })
+    }
+    /// The view change from `before`, an earlier state of this document, to
+    /// this one: its fields now and the circuits whose content differs.
+    pub fn change_since(&self, before: &Document) -> Result<DocumentChange> {
+        let changed = changed_circuits(&before.source.tree, &self.source.tree);
+        self.view_change(&before.revision(), &changed)
+    }
+    /// Whether a view of this document shows the same as one of `before`:
+    /// same revision, file, name, saved state and undo/redo availability.
+    pub fn same_view(&self, before: &Document) -> bool {
+        self.source.revision == before.source.revision
+            && self.dirty() == before.dirty()
+            && self.path == before.path
+            && self.name == before.name
+            && self.undo.is_empty() == before.undo.is_empty()
+            && self.redo.is_empty() == before.redo.is_empty()
     }
     pub fn summary(&self) -> DocumentSummary {
         let tree = &self.source.tree;
@@ -851,9 +881,6 @@ impl Document {
         self.redo.clear();
         Ok(outcome)
     }
-    fn replace(&mut self, bytes: Vec<u8>) -> Result<()> {
-        self.change(bytes, EditOutcome::default()).map(|_| ())
-    }
     pub fn undo(&mut self, expected: &str) -> Result<EditOutcome> {
         self.check(expected)?;
         let Some(step) = self.undo.last() else {
@@ -1003,10 +1030,7 @@ impl Document {
 
 impl Document {
     pub fn relocate(&mut self, from: &Path, to: &Path) {
-        if let Some(path) = &self.path
-            && let Ok(relative) = path.strip_prefix(from)
-        {
-            let next = to.join(relative);
+        if let Some(next) = self.path.as_deref().and_then(|p| relocated(p, from, to)) {
             self.name = next
                 .file_name()
                 .unwrap_or_default()
@@ -1019,6 +1043,18 @@ impl Document {
             });
         }
     }
+}
+
+/// Where `path` is after `from` moved to `to`: `to` itself when `path` is
+/// `from` (joining the empty rest would leave a trailing separator, which
+/// the file system then reads as a directory), else `to` joined with the rest.
+pub(crate) fn relocated(path: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
+    let relative = path.strip_prefix(from).ok()?;
+    Some(if relative.as_os_str().is_empty() {
+        to.to_path_buf()
+    } else {
+        to.join(relative)
+    })
 }
 
 impl Document {

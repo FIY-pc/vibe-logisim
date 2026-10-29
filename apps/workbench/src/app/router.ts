@@ -31,12 +31,19 @@ export function routeEvents(
           .catch(notices.getState().onError);
       synced = true;
     }
-    // The host read open documents again from their files (or closed them
-    // with their files) outside any command of this window.
-    if (event.topic === "documents")
+    // A document changed: an AI edit, an undo, a reload from disk, or any
+    // other request that changed one of the open documents.
+    if (event.topic === "change") documents.getState().applyChange(event.data);
+    // An open document's file changed, could not be loaded, or is gone.
+    if (event.topic === "source")
+      documents
+        .getState()
+        .setSourceStatus(event.data.id, event.data.status);
+    // Documents were opened or closed outside this window's commands.
+    if (event.topic === "workspace")
       void documents
         .getState()
-        .refreshWorkspace()
+        .setWorkspace(event.data)
         .catch(notices.getState().onError);
     if (event.topic === "warning")
       notices.getState().warn(`host:${event.data.message}`, event.data.message);

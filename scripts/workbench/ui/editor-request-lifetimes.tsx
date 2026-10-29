@@ -287,14 +287,15 @@ export async function verifyEditorRequestLifetimes() {
     await settle();
     sourceGate = null;
     assert.equal(
-      container.querySelector('dialog[aria-label="编辑源文件"]'),
+      container.querySelector('dialog[aria-label="编辑源文件"]')?.textContent ??
+        null,
       null,
     );
     assert.match(
       container.querySelector(".file-title")!.textContent!,
       /B.circ/,
     );
-    assert.equal(container.querySelector(".error-bar"), null);
+    assert.equal(container.querySelector(".error-bar")?.textContent ?? null, null);
     await fromMenu("编辑源文件…");
     const dialog = container.querySelector('dialog[aria-label="编辑源文件"]')!;
     assert.ok(dialog);
@@ -316,11 +317,12 @@ export async function verifyEditorRequestLifetimes() {
     await settle();
     sourceGate = null;
     assert.equal(
-      container.querySelector('dialog[aria-label="编辑源文件"]'),
+      container.querySelector('dialog[aria-label="编辑源文件"]')?.textContent ??
+        null,
       null,
     );
     assert.equal(
-      container.querySelector(".error-bar"),
+      container.querySelector(".error-bar")?.textContent ?? null,
       null,
       "a read failure for the document left behind must not be attributed to B",
     );

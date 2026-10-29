@@ -29,20 +29,20 @@ assert.match(linux, /Shell cwd is \/tmp\/workspace/);
 assert.ok(linux.includes(SANDBOX_REFERENCE), "the sandbox path is named");
 assert.match(windows, /No shell is available/);
 assert.doesNotMatch(windows, /Shell cwd/);
-// The skill is readable at the path the prompt gives and at the sandbox path.
-const skillPath = linux.match(/path (\S+SKILL\.md)/)?.[1];
-assert.ok(skillPath, "the prompt names the skill file");
-assert.equal(
-  await resolveFile("/nonexistent-folder", skillPath),
-  path.join(referenceRoot, "skills/circuit-organization/SKILL.md"),
-);
+// The references are readable at the sandbox path the prompt gives.
+assert.ok(linux.includes("index.md"), "the prompt names the reference index");
 assert.equal(
   await resolveFile(
     "/nonexistent-folder",
-    SANDBOX_REFERENCE + "/skills/circuit-organization/SKILL.md",
+    SANDBOX_REFERENCE + "/index.md",
   ),
-  path.join(referenceRoot, "skills/circuit-organization/SKILL.md"),
+  path.join(referenceRoot, "index.md"),
 );
+for (const name of ["digital-design.md", "java-runtime.md", "arrangement.md"])
+  assert.equal(
+    await resolveFile("/nonexistent-folder", SANDBOX_REFERENCE + "/" + name),
+    path.join(referenceRoot, name),
+  );
 await assert.rejects(
   resolveFile("/nonexistent-folder", SANDBOX_REFERENCE + "/../escape"),
 );

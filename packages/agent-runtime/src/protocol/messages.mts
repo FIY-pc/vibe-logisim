@@ -5,7 +5,6 @@
  */
 import type { Request } from "../generated/Request.ts";
 import type { HostError } from "../generated/HostError.ts";
-import type { DocumentChange } from "../generated/DocumentChange.ts";
 
 /** Host → sidecar. */
 export type HostMessage =
@@ -101,10 +100,6 @@ export type RuntimeEvent =
       status: string;
       error: string | null;
     }
-  /** A tool edited an open document: what its edits changed, from the revision before its first edit. */
-  | { type: "document-changed"; change: DocumentChange }
-  /** A tool opened or created a document; the UI shows it. */
-  | { type: "document-opened"; document: unknown }
   /** The turn's folder checkpoint recorded changed files; the UI offers 撤销 via folderHistoryUndo. */
   | {
       type: "files-changed";

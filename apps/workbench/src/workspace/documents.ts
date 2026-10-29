@@ -2,7 +2,8 @@ import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ProjectFolder } from "./Files";
 import type { SourceStatus } from "../generated/SourceStatus";
 import type { DocumentChange } from "../generated/DocumentChange";
-import { applyDocumentChange } from "../../../../packages/agent-runtime/src/protocol/document-change.ts";
+import type { DocumentSummary } from "../generated/DocumentSummary";
+import { applyDocumentChange } from "../shared/document-change";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import type { EditorState } from "../editor/store";
@@ -25,10 +26,8 @@ export interface DocumentsState {
   active: string | null;
   /** The last failed automatic save per document, kept while it stays dirty. */
   saveFailures: Record<string, string>;
-  /** The last check of the active document's source file, for one revision. */
-  sourceStatus: { id: string; revision: string; status: SourceStatus } | null;
-  /** Changes whenever the active document's source file should be checked now. */
-  sourceCheck: number;
+  /** What the host last said about each document's file, by document id. */
+  sourceStatuses: Record<string, SourceStatus>;
   /** Replaces the documents; shows their history and reference warnings once each. */
   setDocs(docs: Update<Document[]>): void;
   setActive(id: string | null): void;
@@ -40,25 +39,29 @@ export interface DocumentsState {
   /** Takes a document returned by a mutation. When a later change already
    * replaced the base revision, the workspace is read again instead. */
   mergeDocument(document: Document, expectedBaseRevision?: string): void;
-  /** Takes what an edit, undo or redo changed, with the width conflicts of
-   * the circuits it changed. When the document is no longer at the change's
-   * base revision, the workspace is read again instead. */
+  /** Takes a document change (the window's own edit, undo or redo, or one
+   * the host broadcast), with the width conflicts of the circuits it changed.
+   * When the document is not at the change's base revision, that one document
+   * is read again instead and replaced where it is. */
   applyChange(change: DocumentChange): void;
+  /** Reads one document again and replaces it where it is, for a view the
+   * host said is behind; an older read's answer is dropped. */
+  reread(id: string): void;
   /** Adds or replaces a document and activates it. */
   update(document: Document): void;
-  setSourceStatus(record: DocumentsState["sourceStatus"]): void;
-  /** Checks the active document's source file again now. */
-  recheck(): void;
+  /** Takes the documents the host opened or closed outside a command of this
+   * window: adds, removes and reads the open one, without reading the rest. */
+  setWorkspace(change: { documents: DocumentSummary[]; active: string | null }): Promise<void>;
+  setSourceStatus(id: string, status: SourceStatus): void;
+  /** Asks the host about the active document's file now. */
+  recheck(): Promise<void>;
 }
 
-/** The source file status of `doc`, if the last check was for its revision. */
+/** The host's last word on `doc`'s file. */
 export const sourceStatusOf = (
-  { sourceStatus }: DocumentsState,
+  { sourceStatuses }: DocumentsState,
   doc: Document | null,
-) =>
-  sourceStatus?.id === doc?.id && sourceStatus?.revision === doc?.revision
-    ? sourceStatus?.status
-    : undefined;
+) => (doc ? sourceStatuses[doc.id] : undefined);
 
 export function createDocumentsStore({
   notices,
@@ -71,12 +74,14 @@ export function createDocumentsStore({
 }) {
   // Bumped by every local change to the workspace view.
   let epoch = 0;
+  // The newest read of each document; an older read's answer is dropped.
+  const reads = new Map<string, number>();
+  let readCount = 0;
   return createStore<DocumentsState>()((set, get) => ({
     docs: [],
     active: null,
     saveFailures: {},
-    sourceStatus: null,
-    sourceCheck: 0,
+    sourceStatuses: {},
     setDocs: (value) => {
       epoch++;
       const next = typeof value === "function" ? value(get().docs) : value;
@@ -167,8 +172,8 @@ export function createDocumentsStore({
       if (!current) return;
       const next = applyDocumentChange(current, change);
       if (!next) {
-        // A later host event may arrive before this mutation response. Hashes have no ordering.
-        void get().refreshWorkspace().catch(notices.getState().onError);
+        // This view missed a change of the document: read that one again.
+        get().reread(change.id);
         return;
       }
       // The new view holds the change's circuit objects.
@@ -176,6 +181,19 @@ export function createDocumentsStore({
       get().setDocs((previous) =>
         previous.map((item) => (item.id === change.id ? next : item)),
       );
+    },
+    reread: (id) => {
+      const read = ++readCount;
+      reads.set(id, read);
+      void command<Document>({ op: "read", id })
+        .then((view) => {
+          if (reads.get(view.id) !== read) return;
+          reads.delete(view.id);
+          get().setDocs((previous) =>
+            previous.map((item) => (item.id === view.id ? view : item)),
+          );
+        })
+        .catch(notices.getState().onError);
     },
     update: (document) => {
       get().setDocs((old) =>
@@ -185,7 +203,57 @@ export function createDocumentsStore({
       );
       get().setActive(document.id);
     },
-    setSourceStatus: (sourceStatus) => set({ sourceStatus }),
-    recheck: () => set((state) => ({ sourceCheck: state.sourceCheck + 1 })),
+    setWorkspace: async ({ documents: summaries, active }) => {
+      const { docs } = get();
+      const kept = docs.filter((doc) =>
+        summaries.some((summary) => summary.id === doc.id),
+      );
+      const added = summaries.filter(
+        (summary) => !docs.some((doc) => doc.id === summary.id),
+      );
+      const addedViews = await Promise.all(
+        added.map((summary) => command<Document>({ op: "read", id: summary.id })),
+      );
+      // Documents the window already shows keep their content; a change that
+      // moved one arrives as a `change` event, from the same host.
+      const next = [...kept, ...addedViews];
+      get().setDocs(next);
+      const shown = next.some((doc) => doc.id === active)
+        ? active
+        : next[0]?.id ?? null;
+      if (shown !== get().active) {
+        get().setActive(shown);
+        editor
+          .getState()
+          .setCircuitName(next.find((doc) => doc.id === shown)?.main || "main");
+        editor.getState().setPlace(null);
+      }
+      set((state) => ({
+        sourceStatuses: Object.fromEntries(
+          Object.entries(state.sourceStatuses).filter(([id]) =>
+            next.some((doc) => doc.id === id),
+          ),
+        ),
+      }));
+    },
+    setSourceStatus: (id, status) =>
+      set((state) => ({
+        sourceStatuses: { ...state.sourceStatuses, [id]: status },
+      })),
+    recheck: async () => {
+      const doc = get().docs.find((item) => item.id === get().active);
+      if (!doc) return;
+      try {
+        get().setSourceStatus(
+          doc.id,
+          await command<SourceStatus>({ op: "sourceStatus", id: doc.id }),
+        );
+      } catch (error) {
+        get().setSourceStatus(doc.id, {
+          state: "unreadable",
+          message: String(error),
+        });
+      }
+    },
   }));
 }

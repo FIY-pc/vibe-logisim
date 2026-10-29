@@ -12,7 +12,7 @@ import {
   signalTrace,
   wireSignal,
 } from "../../apps/workbench/src/editor/connectivity.ts";
-import { applyDocumentChange } from "../../packages/agent-runtime/src/protocol/document-change.ts";
+import { applyDocumentChange } from "../../apps/workbench/src/shared/document-change.ts";
 import { eventStream } from "./event-stream.mts";
 import { sameRun, simulationClient } from "./simulation-client.mts";
 

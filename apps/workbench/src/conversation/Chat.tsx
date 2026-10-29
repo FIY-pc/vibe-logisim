@@ -18,7 +18,6 @@ import type { Quotation } from "./references";
 import { eventBinding } from "../shared/shortcuts";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
-import type { DocumentChange } from "../generated/DocumentChange";
 import { useChatReferences } from "./ChatReferences";
 import {
   ConversationPicker,
@@ -72,10 +71,6 @@ interface Props {
   folder: ProjectFolder | null;
   circuit: string | null;
   onError: (e: unknown) => void;
-  /** The AI edited an open document. */
-  onDocument: (change: DocumentChange) => void;
-  /** The AI opened or created a document. */
-  onOpened: (d: Document) => void;
   /** Files in the project folder changed outside the open documents. */
   onFilesChanged: () => Promise<void>;
   selection: string[];
@@ -163,8 +158,6 @@ export function Chat({
   folder,
   circuit,
   onError,
-  onDocument,
-  onOpened,
   onFilesChanged,
   selection,
   quotation,
@@ -369,12 +362,6 @@ export function Chat({
       case "runtime-error":
         setRuntimeError(e.message);
         setState((old) => (old ? { ...old, busy: false } : old));
-        break;
-      case "document-changed":
-        onDocument(e.change);
-        break;
-      case "document-opened":
-        onOpened(e.document);
         break;
     }
   };

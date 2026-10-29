@@ -241,11 +241,16 @@ try {
   );
   doc = await command({ op: "undo", id: doc.id, revision: doc.revision });
   await unchanged();
+  // A clean document follows its file: the preview against the revision the
+  // window still holds is refused as stale, and the next read has the file.
   await writeFile(file, source + "\n");
-  await assert.rejects(() => preview(changed), /磁盘/);
+  await assert.rejects(() => preview(changed), { code: "STALE_REVISION" });
+  const followed = await command({ op: "read", id: doc.id });
+  assert.notEqual(followed.revision, doc.revision);
+  assert.equal(followed.dirty, false);
   await writeFile(file, source);
   console.log(
-    "Verified native interface editing: three parent instances including rotation; port mapping, preserved bus behavior, readonly preview, live simulation continuity, width/disconnect choice, add/remove, artwork, stale drafts, consumed previews, source guards and single undo.",
+    "Verified native interface editing: three parent instances including rotation; port mapping, preserved bus behavior, readonly preview, live simulation continuity, width/disconnect choice, add/remove, artwork, stale drafts, consumed previews, documents following their files and single undo.",
   );
 } finally {
   if (child && child.exitCode === null) {
