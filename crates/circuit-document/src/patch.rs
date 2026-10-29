@@ -16,16 +16,43 @@ const SMALL: usize = 4096;
 /// A line diff running longer settles for a coarser patch, still exact.
 const DEADLINE: Duration = Duration::from_millis(20);
 
-pub(crate) fn diff(old: &[u8], new: &[u8]) -> Vec<u8> {
-    let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
-    let room = old.len().min(new.len()) - prefix;
-    let suffix = old
+/// Compared a block at a time, so a large file costs a few memory compares.
+const BLOCK: usize = 256;
+
+/// How many leading bytes `a` and `b` share.
+pub(crate) fn common_prefix(a: &[u8], b: &[u8]) -> usize {
+    let n = a.len().min(b.len());
+    let mut at = 0;
+    while at + BLOCK <= n && a[at..at + BLOCK] == b[at..at + BLOCK] {
+        at += BLOCK;
+    }
+    at + a[at..n]
         .iter()
-        .rev()
-        .zip(new.iter().rev())
-        .take(room)
-        .take_while(|(a, b)| a == b)
-        .count();
+        .zip(&b[at..n])
+        .take_while(|(x, y)| x == y)
+        .count()
+}
+
+/// How many trailing bytes `a` and `b` share.
+pub(crate) fn common_suffix(a: &[u8], b: &[u8]) -> usize {
+    let n = a.len().min(b.len());
+    let (a, b) = (&a[a.len() - n..], &b[b.len() - n..]);
+    let mut at = n;
+    while at >= BLOCK && a[at - BLOCK..at] == b[at - BLOCK..at] {
+        at -= BLOCK;
+    }
+    n - at
+        + a[..at]
+            .iter()
+            .rev()
+            .zip(b[..at].iter().rev())
+            .take_while(|(x, y)| x == y)
+            .count()
+}
+
+pub(crate) fn diff(old: &[u8], new: &[u8]) -> Vec<u8> {
+    let prefix = common_prefix(old, new);
+    let suffix = common_suffix(&old[prefix..], &new[prefix..]);
     let (old_end, new_end) = (old.len() - suffix, new.len() - suffix);
     // Hunks as (range in old, range in new).
     let mut hunks: Vec<(Range<usize>, Range<usize>)> = Vec::new();

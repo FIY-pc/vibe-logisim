@@ -85,6 +85,7 @@ public final class CircuitWorker {
             factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);
             factory.setFeature("http://xml.org/sax/features/external-general-entities",false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities",false);
+            TransformerFactory transformers=TransformerFactory.newInstance();
             reply(protocol,"ok",("ready "+com.cburch.logisim.Main.VERSION).getBytes(StandardCharsets.UTF_8));
             BufferedReader reader=new BufferedReader(new InputStreamReader(System.in,StandardCharsets.UTF_8));
             String line;
@@ -150,7 +151,7 @@ public final class CircuitWorker {
                         else if(kind.equals("interface"))CircuitInterface.describe(loaded.file,operation,result);
                         else throw new IllegalArgumentException("不支持的只读操作");
                         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-                        TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result),new StreamResult(bytes));response=bytes.toByteArray();
+                        transformers.newTransformer().transform(new DOMSource(result),new StreamResult(bytes));response=bytes.toByteArray();
                         WorkerTiming.mark(kind);
                     }
                     reply(protocol,"ok",response);

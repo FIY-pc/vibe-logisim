@@ -148,6 +148,20 @@ pub struct DocumentChange {
     #[ts(optional)]
     pub width_errors: Option<BTreeMap<String, Vec<[i32; 2]>>>,
 }
+impl DocumentView {
+    /// As a JSON value. Converted here, where the view types are, so the
+    /// serialization of the circuits runs at this crate's optimization in
+    /// development builds too.
+    pub fn to_json(&self) -> serde_json::Result<serde_json::Value> {
+        serde_json::to_value(self)
+    }
+}
+impl DocumentChange {
+    /// As a JSON value, converted here like `DocumentView::to_json`.
+    pub fn to_json(&self) -> serde_json::Result<serde_json::Value> {
+        serde_json::to_value(self)
+    }
+}
 /// An open document without its circuits' content: what a client checks to
 /// know whether the view it holds is still current.
 #[derive(Clone, Debug, Serialize)]
@@ -258,6 +272,33 @@ impl Source {
             revision,
         })
     }
+    /// Another revision of the same file, indexing again only the region
+    /// where its text differs from this one.
+    pub(crate) fn derive(&self, bytes: Vec<u8>) -> Result<Self> {
+        precheck(&bytes)?;
+        let revision = digest(&bytes);
+        let (text, encoded) = splice::decode(bytes)?;
+        let (tree, parsed) = self.tree.reindex(text)?;
+        match parsed {
+            Some(parsed) => {
+                validate_project(&tree)?;
+                for n in parsed {
+                    let circuit = tree.parent(n);
+                    if circuit.is_some_and(|c| {
+                        tree.parent(c) == Some(tree.root()) && tree.tag(c) == "circuit"
+                    }) {
+                        validate_element(&tree, n)?;
+                    }
+                }
+            }
+            None => validate(&tree)?,
+        }
+        Ok(Self {
+            tree,
+            encoded,
+            revision,
+        })
+    }
     pub(crate) fn bytes(&self) -> &[u8] {
         self.encoded
             .as_deref()
@@ -321,20 +362,40 @@ pub struct Document {
     /// write the whole document again.
     pub(crate) pending: Option<Vec<Op>>,
 }
+// External entities and DTDs have no role in a circuit document: the index
+// rejects any DOCTYPE.
 fn precheck(bytes: &[u8]) -> Result<()> {
     if bytes.len() > MAX_BYTES {
         return Err(Error::InvalidDocument("电路文件超过 32 MB".into()));
     }
-    // External entities / DTD have no role in a circuit document.
-    if bytes
-        .windows(9)
-        .any(|w| w.eq_ignore_ascii_case(b"<!DOCTYPE"))
-    {
-        return Err(Error::InvalidDocument("不支持含 DTD 的电路文件".into()));
-    }
     Ok(())
 }
 fn validate(tree: &Tree) -> Result<()> {
+    validate_project(tree)?;
+    for c in tree.named(tree.root(), "circuit") {
+        for &child in tree.children(c) {
+            validate_element(tree, child)?;
+        }
+    }
+    Ok(())
+}
+/// A component's location and a wire's ends parse as points.
+fn validate_element(tree: &Tree, n: usize) -> Result<()> {
+    match tree.tag(n) {
+        "comp" => {
+            Point::parse(&tree.get(n, "loc"))?;
+        }
+        "wire" => {
+            Point::parse(&tree.get(n, "from"))?;
+            Point::parse(&tree.get(n, "to"))?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+/// A project element with circuits of distinct, non-empty names, and a main
+/// circuit that exists.
+fn validate_project(tree: &Tree) -> Result<()> {
     let root = tree.root();
     if tree.tag(root) != "project" {
         return Err(Error::InvalidDocument("请选择 Logisim .circ 文件".into()));
@@ -344,13 +405,6 @@ fn validate(tree: &Tree) -> Result<()> {
         let name = tree.get(c, "name");
         if name.is_empty() || !names.insert(name) {
             return Err(Error::InvalidDocument("电路名称为空或重复".into()));
-        }
-        for c in tree.named(c, "comp") {
-            Point::parse(&tree.get(c, "loc"))?;
-        }
-        for w in tree.named(c, "wire") {
-            Point::parse(&tree.get(w, "from"))?;
-            Point::parse(&tree.get(w, "to"))?;
         }
     }
     if names.is_empty() {
@@ -697,7 +751,7 @@ impl Document {
             _ => false,
         };
         let old_wires = if wiring {
-            self.circuit_wire_count(circuit)?
+            wire_count(&self.source.tree, circuit)?
         } else {
             0
         };
@@ -719,26 +773,26 @@ impl Document {
         let mut outcome = self.change(text.into_bytes(), outcome)?;
         outcome.changed_circuits = changed_circuits(&previous.tree, &self.source.tree);
         if selecting {
-            let after = self.circuit_view(circuit)?;
+            let tree = &self.source.tree;
             if wiring {
-                let count = after.as_ref().map(|c| c.wires.len()).unwrap_or(0);
+                let count = wire_count(tree, circuit).unwrap_or(0);
                 outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
             }
             let items = match edit {
                 Edit::Batch { edits } => edits,
                 edit => vec![edit],
             };
+            let mut sheet = None;
             for item in items {
                 match item {
                     Edit::Place { location, name, .. } => {
-                        if let Some(component) = after.as_ref().and_then(|c| {
-                            c.components.iter().find(|c| {
-                                c.location.x == location.x
-                                    && c.location.y == location.y
-                                    && c.name == name
-                            })
-                        }) {
-                            outcome.components.push(component.id.clone());
+                        let sheet = sheet.get_or_insert_with(|| {
+                            editing::find(tree, circuit)
+                                .and_then(|c| editing::Sheet::new(tree, c))
+                                .ok()
+                        });
+                        if let Some(id) = sheet.as_ref().and_then(|s| s.placed(location, &name)) {
+                            outcome.components.push(id.to_owned());
                         }
                     }
                     Edit::Attributes { id, .. } => outcome.components.push(id),
@@ -759,12 +813,6 @@ impl Document {
         }
         Ok(outcome)
     }
-    fn circuit_wire_count(&self, circuit: &str) -> Result<usize> {
-        let circuit = self
-            .circuit_view(circuit)?
-            .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))?;
-        Ok(circuit.wires.len())
-    }
     /// One circuit's view, without building the others.
     pub fn circuit_view(&self, name: &str) -> Result<Option<Circuit>> {
         let tree = &self.source.tree;
@@ -778,7 +826,7 @@ impl Document {
         if bytes == self.bytes() {
             return Ok(outcome);
         }
-        let source = Arc::new(Source::new(bytes)?);
+        let source = Arc::new(self.source.derive(bytes)?);
         let previous = std::mem::replace(&mut self.source, source);
         let title = if outcome.title.is_empty() {
             "编辑电路".to_string()
@@ -811,7 +859,7 @@ impl Document {
         let Some(step) = self.undo.last() else {
             return Ok(EditOutcome::default());
         };
-        let source = Arc::new(Source::new(step.bytes.to_vec())?);
+        let source = Arc::new(self.source.derive(step.bytes.to_vec())?);
         let step = self.undo.pop().expect("checked above");
         let current = std::mem::replace(&mut self.source, source);
         self.redo.push(Step {
@@ -830,7 +878,7 @@ impl Document {
         let Some(step) = self.redo.last() else {
             return Ok(EditOutcome::default());
         };
-        let source = Arc::new(Source::new(step.bytes.to_vec())?);
+        let source = Arc::new(self.source.derive(step.bytes.to_vec())?);
         let step = self.redo.pop().expect("checked above");
         let current = std::mem::replace(&mut self.source, source);
         self.undo.push(Step {
@@ -991,18 +1039,18 @@ impl Document {
             circuit: circuit.to_string(),
             ..EditOutcome::default()
         };
-        let before = self.source.tree.clone();
-        let Some(text) = editing::translate(&self.source.tree, circuit, ids, delta, &wires)? else {
+        let before = self.source.clone();
+        let Some(text) = editing::translate(&before.tree, circuit, ids, delta, &wires)? else {
             return Ok(outcome);
         };
         let previous = self.source.revision.clone();
         let mut outcome = self.change(text.into_bytes(), outcome)?;
-        outcome.changed_circuits = changed_circuits(&before, &self.source.tree);
+        outcome.changed_circuits = changed_circuits(&before.tree, &self.source.tree);
         if outcome.changed_circuits.is_empty() && self.source.revision == previous {
             return Ok(outcome);
         }
         let (components, moved_wires) =
-            editing::moved(&before, &self.source.tree, circuit, ids, delta)?;
+            editing::moved(&before.tree, &self.source.tree, circuit, ids, delta)?;
         outcome.components = components;
         outcome.wires = moved_wires;
         Ok(outcome)
@@ -1054,7 +1102,7 @@ fn batch(tree: &Tree, circuit: &str, edits: &[Edit]) -> Result<Option<String>> {
         }
         let base = current.as_ref().unwrap_or(tree);
         if let Some(text) = editing::apply(base, circuit, edit.clone())? {
-            current = Some(Tree::index(text)?);
+            current = Some(base.reindex(text)?.0);
         }
     }
     Ok(current.map(|tree| tree.text().to_owned()))
@@ -1078,15 +1126,11 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
         Edit::Move { ids, .. } => format!("移动 {} 个对象", ids.len()),
         Edit::Delete { ids } => format!("删除 {} 个对象", ids.len()),
         Edit::Attributes { id, values } => {
-            let label = doc
-                .circuit_component(circuit, id)
-                .map(|c| {
-                    c.attributes
-                        .get("label")
-                        .filter(|l| !l.is_empty())
-                        .cloned()
-                        .unwrap_or_else(|| c.name.clone())
-                })
+            let tree = &doc.source.tree;
+            let label = editing::find(tree, circuit)
+                .and_then(|c| editing::Sheet::new(tree, c))
+                .ok()
+                .and_then(|sheet| sheet.label(id))
                 .unwrap_or_else(|| id.clone());
             let parts: Vec<String> = values
                 .iter()
@@ -1115,12 +1159,7 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
     }
 }
 
-impl Document {
-    fn circuit_component(&self, circuit: &str, id: &str) -> Option<Component> {
-        self.circuit_view(circuit)
-            .ok()??
-            .components
-            .into_iter()
-            .find(|c| c.id == id)
-    }
+/// How many wires the circuit has.
+fn wire_count(tree: &Tree, circuit: &str) -> Result<usize> {
+    Ok(tree.named(editing::find(tree, circuit)?, "wire").count())
 }

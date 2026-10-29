@@ -15,7 +15,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::PathBuf};
-use vibe_circuit_document::{Document, DocumentChange, Edit, EditOutcome, Point};
+use vibe_circuit_document::{Document, DocumentChange, DocumentView, Edit, EditOutcome, Point};
 use vibe_logisim_runtime::{ConnectionSeeds, SymbolSource, Viewport, timing};
 
 /// The objects a gesture leaves selected.
@@ -572,6 +572,20 @@ fn undo_result(outcome: EditOutcome, change: DocumentChange, verb: &str) -> Edit
     result
 }
 
+/// The result as a value, its change (the bulk: the changed circuits)
+/// converted by the document crate.
+fn edit_value(mut result: EditResult) -> Result<Value> {
+    let change = result.change.to_json().map_err(|e| e.to_string())?;
+    result.change.circuits.clear();
+    let mut value = value(result)?;
+    value["change"] = change;
+    Ok(value)
+}
+
+pub(crate) fn view_value(view: DocumentView) -> Result<Value> {
+    Ok(view.to_json().map_err(|e| e.to_string())?)
+}
+
 fn serialized_component(reply: &Value) -> Result<&Value> {
     Ok(reply["children"]
         .as_array()
@@ -667,7 +681,7 @@ impl Host {
                     .native
                     .lock()
                     .await
-                    .properties(&revision, circuit, &component_id, values)
+                    .properties(&revision, circuit, &component_id, values, false)
                     .await?;
                 let values =
                     component_attributes(serialized_component(&checked)?).ok_or("元件属性缺失")?;
@@ -773,16 +787,18 @@ impl Host {
             DocumentRequest::New { name } => {
                 value(self.workspace.lock().await.insert(Document::new(name))?)
             }
-            DocumentRequest::Open { path } => value(self.workspace.lock().await.open(&path)?),
+            DocumentRequest::Open { path } => view_value(self.workspace.lock().await.open(&path)?),
             DocumentRequest::Import { name, xml } => {
-                value(self.workspace.lock().await.insert(Document::from_bytes(
+                view_value(self.workspace.lock().await.insert(Document::from_bytes(
                     name,
                     None,
                     xml.into_bytes(),
                     false,
                 )?)?)
             }
-            DocumentRequest::Read { id } => value(self.workspace.lock().await.get(&id)?.view()?),
+            DocumentRequest::Read { id } => {
+                view_value(self.workspace.lock().await.get(&id)?.view()?)
+            }
             DocumentRequest::Activate { id } => {
                 let mut w = self.workspace.lock().await;
                 w.get(&id)?;
@@ -811,7 +827,7 @@ impl Host {
                 let mut w = self.workspace.lock().await;
                 let d = w.get_mut(&id)?;
                 d.reload(&revision, &source_revision, discard)?;
-                value(d.view()?)
+                view_value(d.view()?)
             }
             DocumentRequest::Close {
                 id,
@@ -890,7 +906,7 @@ impl Host {
                 };
                 self.add_width_errors(&mut result).await;
                 let _value = timing::span("edit.value");
-                value(result)
+                edit_value(result)
             }
             DocumentRequest::MovePreview {
                 id,
@@ -928,7 +944,7 @@ impl Host {
                 };
                 let mut result = undo_result(outcome, change, "撤销");
                 self.add_width_errors(&mut result).await;
-                value(result)
+                edit_value(result)
             }
             DocumentRequest::Redo { id, revision } => {
                 let (outcome, change) = {
@@ -940,7 +956,7 @@ impl Host {
                 };
                 let mut result = undo_result(outcome, change, "重做");
                 self.add_width_errors(&mut result).await;
-                value(result)
+                edit_value(result)
             }
             DocumentRequest::Observe {
                 id,
@@ -1054,7 +1070,7 @@ impl Host {
                     .native
                     .lock()
                     .await
-                    .properties(&revision, &circuit, &component, BTreeMap::new())
+                    .properties(&revision, &circuit, &component, BTreeMap::new(), true)
                     .await?)
             }
             DocumentRequest::Catalog {

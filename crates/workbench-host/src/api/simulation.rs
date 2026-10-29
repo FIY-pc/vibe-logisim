@@ -320,7 +320,7 @@ impl Host {
                 values: BTreeMap::from([("contents".into(), contents)]),
             },
         )?;
-        value(document.view()?)
+        crate::api::document::view_value(document.view()?)
     }
 }
 

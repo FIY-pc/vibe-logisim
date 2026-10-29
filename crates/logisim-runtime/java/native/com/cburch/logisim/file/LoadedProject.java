@@ -194,6 +194,19 @@ final class LoadedProject {
 
     private static final Method REPAIRS = method("considerRepairs", Document.class, Element.class);
 
+    /** Parses the added elements; made once per thread (a factory is not thread-safe). */
+    private static final ThreadLocal<DocumentBuilderFactory> BUILDERS = ThreadLocal.withInitial(() -> {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            return factory;
+        } catch (javax.xml.parsers.ParserConfigurationException error) {
+            throw new IllegalStateException(error);
+        }
+    });
+
     private static Method method(String name, Class<?>... parameters) {
         try {
             Method method = XmlReader.class.getDeclaredMethod(name, parameters);
@@ -217,11 +230,7 @@ final class LoadedProject {
         } catch (IllegalArgumentException rejected) {
             return false;
         }
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        Document parsed = factory.newDocumentBuilder().parse(new ByteArrayInputStream(text));
+        Document parsed = BUILDERS.get().newDocumentBuilder().parse(new ByteArrayInputStream(text));
         Element root = parsed.getDocumentElement();
         String source = root.getAttribute("source");
         // Before 2.6.3 the reader also rewrites library references across the file.

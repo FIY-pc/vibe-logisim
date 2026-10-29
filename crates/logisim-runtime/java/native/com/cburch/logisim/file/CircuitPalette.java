@@ -180,7 +180,7 @@ public final class CircuitPalette {
         AttributeSet attrs=(AttributeSet)found.getAttributeSet().clone();
         applyOverrides(attrs,request);
         Element root=result.getDocumentElement();
-        attributes(attrs,root,result);
+        if(!request.getAttribute("list").equals("false"))attributes(attrs,root,result);
         Element serialized=child(result,root,"comp");
         serialize(attrs,serialized);
     }
@@ -225,7 +225,8 @@ public final class CircuitPalette {
             }
             index++;
         }
-        attributes(attrs,root,result);
+        // Placing only needs the stored form; listing the choices builds Swing editors.
+        if(!placing)attributes(attrs,root,result);
         Element serialized=child(result,root,"comp");serialized.setAttribute("name",factory.getName());serialized.setAttribute("loc","("+x+","+y+")");
         if(!request.getAttribute("library").isEmpty())serialized.setAttribute("lib",request.getAttribute("library"));
         serialize(attrs,serialized);

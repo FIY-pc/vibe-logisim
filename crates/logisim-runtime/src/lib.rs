@@ -829,13 +829,16 @@ impl Native {
         ))
     }
     /// The attributes of component `component` with `values` applied, as
-    /// the runtime would store them; the circuit is not changed.
+    /// the runtime would store them; the circuit is not changed. With
+    /// `list`, also every attribute with its label and choices (what an
+    /// inspector shows; slower).
     pub async fn properties(
         &mut self,
         revision: &Revision,
         circuit: &str,
         component: &str,
         values: BTreeMap<String, String>,
+        list: bool,
     ) -> Result<Value> {
         let bytes = self
             .request(
@@ -846,6 +849,7 @@ impl Native {
                         ("circuit", circuit.into()),
                         ("component", component.into()),
                         ("strictAttributes", "true".into()),
+                        ("list", list.to_string()),
                     ],
                     values
                         .into_iter()

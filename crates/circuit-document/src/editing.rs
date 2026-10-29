@@ -81,6 +81,31 @@ impl<'t> Sheet<'t> {
         self.comps.iter().map(|c| (c.node, c.id.as_str()))
     }
 
+    /// The id of the component `name` at `location`.
+    pub(crate) fn placed(&self, location: Point, name: &str) -> Option<&str> {
+        self.comps
+            .iter()
+            .find(|c| c.location == location && c.name == name)
+            .map(|c| c.id.as_str())
+    }
+
+    /// The component's label, or its name when it has none.
+    pub(crate) fn label(&self, id: &str) -> Option<String> {
+        let c = self.comps.iter().find(|c| c.id == id)?;
+        let tree = self.tree;
+        // Logisim reads the last `<a>` of a name.
+        let label = tree
+            .named(c.node, "a")
+            .filter(|&a| tree.get(a, "name") == "label")
+            .last()
+            .map(|a| tree.property(a));
+        Some(
+            label
+                .filter(|l| !l.is_empty())
+                .unwrap_or_else(|| c.name.clone()),
+        )
+    }
+
     /// The wires' ends, in file order.
     pub(crate) fn segments(&self) -> impl Iterator<Item = (Point, Point)> {
         self.wires.iter().map(|w| (w.segment.from, w.segment.to))
@@ -245,7 +270,8 @@ fn wire_element(segment: &Segment) -> Element {
         .attr("to", segment.to.xml())
 }
 
-fn find(tree: &Tree, circuit: &str) -> Result<usize> {
+/// The element of the circuit named `circuit`.
+pub(crate) fn find(tree: &Tree, circuit: &str) -> Result<usize> {
     tree.named(tree.root(), "circuit")
         .find(|&c| tree.get(c, "name") == circuit)
         .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))

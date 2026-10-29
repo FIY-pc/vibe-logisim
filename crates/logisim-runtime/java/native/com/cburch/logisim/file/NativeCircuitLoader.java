@@ -66,15 +66,24 @@ public final class NativeCircuitLoader {
         validate(new InputSource(new ByteArrayInputStream(document)));
     }
 
+    /** Made once per thread: a factory is not thread-safe. */
+    private static final ThreadLocal<SAXParserFactory> PARSERS = ThreadLocal.withInitial(() -> {
+        try {
+            SAXParserFactory factory = SAXParserFactory.newInstance();
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            factory.setXIncludeAware(false);
+            return factory;
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
+    });
+
     private static void validate(InputSource source) throws Exception {
-        SAXParserFactory factory = SAXParserFactory.newInstance();
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-        factory.setXIncludeAware(false);
-        SAXParser parser = factory.newSAXParser();
+        SAXParser parser = PARSERS.get().newSAXParser();
         parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         try {
