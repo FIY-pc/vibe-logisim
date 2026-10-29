@@ -85,7 +85,7 @@ export async function verifyEditing(command: Command, stream: Stream) {
     delta: { x: 0, y: 60 },
   });
   assert.deepEqual(
-    await command({ op: "read", id: fanout.id }),
+    documentOf(await command({ op: "read", id: fanout.id })),
     fanout,
     "Dragging a preview must preserve document revision, source and undo",
   );
@@ -170,7 +170,7 @@ export async function verifyEditing(command: Command, stream: Stream) {
       e.code === "CONNECTIONS_CHANGED" &&
       /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
   );
-  const unchanged = await command({ op: "read", id: short.id });
+  const unchanged = documentOf(await command({ op: "read", id: short.id }));
   assert.equal(unchanged.revision, short.revision);
   assert.equal(unchanged.canUndo, false, "Rejected move entered history");
   // Moves by different offsets are one change; a refused one moves nothing.

@@ -14,25 +14,56 @@ import {
   type PortRef,
 } from "./wiring.mts";
 import { libraryResolver } from "./inspect.mts";
-import type { Applied, DocumentRef, ToolContext } from "./context.mts";
+import type {
+  Applied,
+  DocumentRef,
+  EditNotes,
+  ToolContext,
+} from "./context.mts";
 import type { Edit } from "../generated/Edit.ts";
 import type { EditResult } from "../protocol/host.mts";
 
+/**
+ * What one edit changed, said once: the new revision, the history title, the
+ * ids the model can address next (the components and wires the edit placed or
+ * left selected, and the ones it took away), and the host's notes about it
+ * (width conflicts per circuit, a failed save, a history entry that could not
+ * be written).
+ */
 const outcome = (
   context: ToolContext,
-  result: EditResult,
+  applied: Applied,
   extra: Record<string, unknown> = {},
-) => ({
-  ...context.identity(result.change, result.circuit),
-  title: result.title,
-  changedCircuits: result.changedCircuits,
-  selection: result.selection,
-  ...extra,
+) => {
+  const { result, results, change } = applied;
+  return {
+    ...context.identity(change, result.circuit),
+    title: result.title,
+    changedCircuits: result.changedCircuits,
+    ...(result.noop ? { noop: true } : {}),
+    ids: {
+      components: [...new Set(results.flatMap((r) => r.selection.components))],
+      wires: [...new Set(results.flatMap((r) => r.selection.wires))],
+    },
+    ...(change.widthErrors && Object.keys(change.widthErrors).length
+      ? { widthErrors: change.widthErrors }
+      : {}),
+    ...notes(result),
+    ...extra,
+  };
+};
+
+const notes = (result: EditResult & EditNotes) => ({
+  ...(result.saveError ? { saveError: result.saveError } : {}),
+  ...(result.historyWarning ? { historyWarning: result.historyWarning } : {}),
+  ...(result.referenceWarning
+    ? { referenceWarning: result.referenceWarning }
+    : {}),
 });
 
 async function placements(
   context: ToolContext,
-  document: { id: string; revision: string },
+  document: DocumentRef,
   circuit: string,
   components: any[],
 ): Promise<Edit[]> {
@@ -62,11 +93,7 @@ export async function placeComponent(
     circuit,
     args.components ?? [],
   );
-  const { result, results } = await context.edit(document, circuit, edits);
-  return outcome(context, result, {
-    placed: results.flatMap((r) => r.selection.components),
-    note: "已放置；每个元件现在可用 c<x>_<y> 寻址。",
-  });
+  return outcome(context, await context.edit(document, circuit, edits));
 }
 
 export async function setAttributes(
@@ -84,8 +111,7 @@ export async function setAttributes(
     id,
     values: attributes,
   }));
-  const { result } = await context.edit(document, circuit, edits);
-  return outcome(context, result);
+  return outcome(context, await context.edit(document, circuit, edits));
 }
 
 const portName = (p: { component: string; port: number }) =>
@@ -109,9 +135,11 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
   // Removals and placements land first so routing sees the real grid.
   let current: DocumentRef = document;
   let last: EditResult | null = null;
+  let first: Applied | null = null;
   if (prelude.length) {
     const applied = await context.edit(document, circuit, prelude);
-    current = applied.view;
+    first = applied;
+    current = applied.change;
     last = applied.result;
   }
   const paths: Point[][] = [...drawn];
@@ -180,22 +208,31 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
       paths.map((points) => ({ kind: "wire", points }) as Edit),
     );
     last = applied.result;
+    first = first
+      ? {
+          result: applied.result,
+          results: [...first.results, ...applied.results],
+          change: applied.change,
+        }
+      : applied;
     if (before && joined.length) await checkJoins(context, applied, circuit, before, joined);
   }
   const notes = already.length
     ? [`第 ${already.map((i) => i + 1).join("、")} 条连接的两个端口本来就相连，没有画线。`]
     : [];
-  if (!last)
+  if (!last || !first)
     return {
       ...context.identity(current, circuit),
       wiresAdded: 0,
       alreadyConnected: already.length,
       note: notes[0],
     };
-  return outcome(context, last, {
+  return outcome(context, first, {
+    ...(args.removeWireIds?.length
+      ? { removed: { [circuit]: args.removeWireIds.map(fileWireId) } }
+      : {}),
     wiresAdded: paths.length,
-    ...(already.length ? { alreadyConnected: already.length } : {}),
-    note: [...notes, "导线编号按文件顺序；增删导线后请重新读取。"].join(" "),
+    ...(already.length ? { alreadyConnected: already.length, note: notes[0] } : {}),
   });
 }
 
@@ -219,7 +256,7 @@ async function checkJoins(
   before: Map<string, string | null>,
   joined: { from: PortRef; to: PortRef }[],
 ) {
-  const observed = await context.observe(applied.view, circuit);
+  const observed = await context.observe(applied.change, circuit);
   const after = netsOf(portIndex(observed.view.circuit));
   // Nets the requests link, as union-find over the nets before.
   const parent = new Map<string, string>();
@@ -262,10 +299,10 @@ async function checkJoins(
   if (!problem) return;
   // Take the wires of this call back (one batch, or a single wire).
   await context.send(
-    applied.view,
+    applied.change,
     applied.results.map(() => (revision) => ({
       op: "undo",
-      id: applied.view.id,
+      id: applied.change.id,
       revision,
     })),
   );
@@ -278,29 +315,31 @@ async function checkJoins(
   );
 }
 
+/** A component id's anchor: `c<x>_<y>`, `m` for a negative coordinate, `_<n>` for a stacked copy. */
+function anchorOf(id: string) {
+  const match = /^c(m?)(\d+)_(m?)(\d+)(?:_\d+)?$/.exec(id);
+  if (!match)
+    throw new CircuitToolError("COMPONENT_NOT_FOUND", "不是元件 id：" + id, {
+      hint: "元件 id 形如 c1300_540。",
+    });
+  const [, xs, x, ys, y] = match;
+  return { x: (xs ? -1 : 1) * Number(x), y: (ys ? -1 : 1) * Number(y) };
+}
+
 export async function moveComponents(
   context: ToolContext,
   args: Record<string, any>,
 ) {
-  const { document, circuit } = await context.target(args);
   const edits: Edit[] = [];
   if (args.positions?.length) {
-    const definition = document.circuits.find((c) => c.name === circuit)!;
+    const { document, circuit } = await context.target(args);
     const byDelta = new Map<
       string,
       { ids: string[]; delta: { x: number; y: number } }
     >();
     for (const p of args.positions) {
-      const part = definition.components.find((c) => c.id === p.componentId);
-      if (!part)
-        throw new CircuitToolError(
-          "COMPONENT_NOT_FOUND",
-          "元件不在当前电路中：" + p.componentId,
-          {
-            hint: "用 inspect_circuit 读取当前元件 id。",
-          },
-        );
-      const delta = { x: p.x - part.location.x, y: p.y - part.location.y };
+      const anchor = anchorOf(p.componentId);
+      const delta = { x: p.x - anchor.x, y: p.y - anchor.y };
       if (!delta.x && !delta.y) continue;
       const key = `${delta.x},${delta.y}`;
       const group = byDelta.get(key) ?? { ids: [], delta };
@@ -309,19 +348,22 @@ export async function moveComponents(
     }
     for (const group of byDelta.values())
       edits.push({ kind: "move", ids: group.ids, delta: group.delta });
-  } else if (args.componentIds?.length && args.delta) {
-    edits.push({ kind: "move", ids: args.componentIds, delta: args.delta });
-  } else
+    if (!edits.length)
+      throw new CircuitToolError("NO_CHANGE", "所有元件已经在目标位置", {
+        hint: "无需移动。",
+      });
+    return outcome(context, await context.edit(document, circuit, edits), {
+      note: "元件 id 随位置改变：移到 (x,y) 的元件现在是 c<x>_<y>。",
+    });
+  }
+  const { document, circuit } = await context.target(args);
+  if (!args.componentIds?.length || !args.delta)
     throw new CircuitToolError(
       "INVALID_ARGUMENT",
       "移动需要 positions，或者 componentIds 与 delta。",
     );
-  if (!edits.length)
-    throw new CircuitToolError("NO_CHANGE", "所有元件已经在目标位置", {
-      hint: "无需移动。",
-    });
-  const { result } = await context.edit(document, circuit, edits);
-  return outcome(context, result, {
+  edits.push({ kind: "move", ids: args.componentIds, delta: args.delta });
+  return outcome(context, await context.edit(document, circuit, edits), {
     note: "元件 id 随位置改变：移到 (x,y) 的元件现在是 c<x>_<y>。",
   });
 }
@@ -340,8 +382,9 @@ export async function deleteObjects(
       "INVALID_ARGUMENT",
       "请给出要删除的 componentIds 或 wireIds。",
     );
-  const { result } = await context.edit(document, circuit, [
-    { kind: "delete", ids },
-  ]);
-  return outcome(context, result);
+  return outcome(
+    context,
+    await context.edit(document, circuit, [{ kind: "delete", ids }]),
+    { removed: { [circuit]: ids } },
+  );
 }

@@ -4,7 +4,6 @@ import { command, desktop, openPath, savePath } from "../shared/transport";
 import type { Document } from "../shared/types";
 import { chooseFolder, openFolderPath } from "./useFolderPicker";
 import type { Stores } from "../app/createWorkbench";
-import { reaction } from "../app/reaction";
 import type { View } from "../app/view";
 
 const comparable = (path: string) =>
@@ -141,15 +140,13 @@ export function createWorkspaceActions(stores: Stores) {
       target_revision,
     });
     documents.getState().mergeDocument(saved, target.revision);
-    documents.getState().recheck();
     return saved;
   };
 
   const save = ({ doc }: View, saveAs = false) => {
     if (doc)
       void busy(() => saveDocument(doc, saveAs)).catch((e) => {
-        documents.getState().recheck();
-        onError(e);
+            onError(e);
       });
   };
 
@@ -206,7 +203,6 @@ export function createWorkspaceActions(stores: Stores) {
       op: "sourceStatus",
       id: doc.id,
     });
-    documents.getState().recheck();
     if (status.state !== "unchanged" && status.state !== "modified")
       throw new Error(
         status.state === "missing"
@@ -224,7 +220,6 @@ export function createWorkspaceActions(stores: Stores) {
         }),
       );
       documents.getState().mergeDocument(next, doc.revision);
-      documents.getState().recheck();
     };
     if (!doc.dirty) {
       await reload(false);
@@ -257,57 +252,15 @@ export function createWorkspaceActions(stores: Stores) {
       onError,
     );
 
-  /** Checks the active document's source file now, on window focus, and
-   * every 3 s while it has a path. Returns the stop. */
-  const watchSource = () =>
-    reaction(
-      [documents],
-      () => {
-        const { docs, active, sourceCheck } = documents.getState();
-        const doc = docs.find((d) => d.id === active);
-        return [doc?.id, doc?.revision, doc?.path, doc?.dirty, sourceCheck];
-      },
-      () => {
-        const { docs, active } = documents.getState();
-        const doc = docs.find((d) => d.id === active);
-        if (!doc) return;
-        let live = true;
-        let timer: ReturnType<typeof setTimeout>;
-        let checking = false;
-        const { setSourceStatus } = documents.getState();
-        const check = async () => {
-          if (checking || !live) return;
-          checking = true;
-          clearTimeout(timer);
-          try {
-            const status = await command<SourceStatus>({
-              op: "sourceStatus",
-              id: doc.id,
-            });
-            if (live)
-              setSourceStatus({ id: doc.id, revision: doc.revision, status });
-          } catch (e) {
-            if (live)
-              setSourceStatus({
-                id: doc.id,
-                revision: doc.revision,
-                status: { state: "unreadable", message: String(e) },
-              });
-          } finally {
-            checking = false;
-            if (live && doc.path) timer = setTimeout(check, 3000);
-          }
-        };
-        const focus = () => void check();
-        window.addEventListener("focus", focus);
-        void check();
-        return () => {
-          live = false;
-          clearTimeout(timer);
-          window.removeEventListener("focus", focus);
-        };
-      },
-    );
+  /** Asks the host about the active document's file when the window regains
+   * focus. Nothing else: every request the host answers has already looked at
+   * the open documents' files and broadcast what it found (`change`,
+   * `source`), so the window neither polls nor checks after its requests. */
+  const watchSource = () => {
+    const check = () => void documents.getState().recheck();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  };
 
   return {
     showDocument,

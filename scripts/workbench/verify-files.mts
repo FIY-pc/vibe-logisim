@@ -5,6 +5,7 @@ import { verifyFileReferences } from "./file-reference-scenarios.mts";
 import { spawn } from "node:child_process";
 import {
   access,
+  chmod,
   mkdtemp,
   mkdir,
   readFile,
@@ -81,17 +82,29 @@ try {
     path: path.join(project, "source/main.circ"),
   });
   const id = doc.id;
-  // A concurrent disk edit must keep a recoverable draft when automatic saving conflicts.
-  await writeFile(path.join(project, "source/main.circ"), source + "\n");
+  // An edit whose automatic save fails keeps its draft and the file as it was.
+  await chmod(path.join(project, "source"), 0o555);
   doc = await command({
     op: "edit",
     id,
     revision: doc.revision,
     circuit: "main",
     edit: { kind: "renameCircuit", name: "draft" },
-  });
+  }).finally(() => chmod(path.join(project, "source"), 0o755));
   assert(doc.dirty);
   assert(doc.saveError);
+  // A file changed outside while the document has unsaved changes is
+  // reported, neither read over the draft nor overwritten.
+  await writeFile(path.join(project, "source/main.circ"), source + "\n");
+  assert.equal(
+    (await command({ op: "sourceStatus", id })).state,
+    "modified",
+  );
+  assert.equal((await command({ op: "read", id })).revision, doc.revision);
+  assert.equal(
+    await readFile(path.join(project, "source/main.circ"), "utf8"),
+    source + "\n",
+  );
   await writeFile(path.join(project, "source/main.circ"), source);
   await assert.rejects(
     command({ op: "folderTrash", path: "source" }),

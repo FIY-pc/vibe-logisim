@@ -296,17 +296,24 @@ try {
     ),
     path.toNamespacedPath(realpathSync.native(copyPath)),
   );
+  // A clean document follows its file: the next request reads the change in
+  // place, with the content it was showing left in undo history.
   await writeFile(copyPath, saved);
-  const changed = await command({ op: "sourceStatus", id });
-  assert.equal(changed.state, "modified");
-  const reloaded = await command({
-    op: "reload",
-    id,
-    revision: copied.revision,
-    source_revision: changed.revision,
-  });
+  const reloaded = await command({ op: "read", id });
+  assert.notEqual(reloaded.revision, copied.revision);
   assert.equal(reloaded.dirty, false);
   assert.equal(reloaded.id, id);
+  assert.equal(
+    (await readFile(copyPath, "utf8")),
+    saved,
+    "The document was not read from its file",
+  );
+  assert(
+    (await command({ op: "historyList", id })).entries.some(
+      (e: any) => e.title === "读取磁盘版本",
+    ),
+    "The reload is not in the document history",
+  );
   const undoReload = await command({
     op: "undo",
     id,

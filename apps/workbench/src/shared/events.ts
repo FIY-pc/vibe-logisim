@@ -5,7 +5,9 @@ export interface WorkbenchEvent {
     | "agent"
     | "simulation"
     | "resync"
-    | "documents"
+    | "change"
+    | "source"
+    | "workspace"
     | "warning"
     | "connection";
   data: any;

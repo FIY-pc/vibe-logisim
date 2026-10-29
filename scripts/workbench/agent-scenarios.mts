@@ -1,13 +1,13 @@
 /**
  * AI turns through the real sidecar, with a scripted model in place of a
  * model service. First turn: its tool call edits the open file as one undo
- * step, the turn checkpoints the folder, and undoing that checkpoint gives
- * the file back byte for byte. Second turn: it rewrites the open file with
- * write_file and then opens a definition only the file has; the tools read
- * the file again and the UI is told. It then rewrites the file once more
- * without opening it: the turn's checkpoint reads the document again and
- * the window gets a `documents` event. Undoing the turn restores both the
- * file and the open document.
+ * step, the host broadcasts the change, the turn checkpoints the folder, and
+ * undoing that checkpoint gives the file back byte for byte. Second turn: it
+ * rewrites the open file with write_file and then opens a definition only the
+ * file has; the next document request reads the file again, so the tools and
+ * the window both see it. It then rewrites the file once more without opening
+ * it: the turn's checkpoint reads the document again and the window gets the
+ * change. Undoing the turn restores both the file and the open document.
  */
 import assert from "node:assert/strict";
 import { mkdir, readFile } from "node:fs/promises";
@@ -136,11 +136,13 @@ export async function verifyAgentTurn(
     .filter((e) => e.topic === "agent")
     .map((e) => e.data.event);
   assert.equal(done.data.event.status, "completed", JSON.stringify(events));
+  const changes = stream.events
+    .slice(from)
+    .filter((e) => e.topic === "change")
+    .map((e) => e.data);
   assert(
-    events.some(
-      (e) => e.type === "document-changed" && e.change?.id === doc.id,
-    ),
-    "The tool call did not report its edit",
+    changes.some((c) => c.id === doc.id && c.order.includes("main")),
+    "The host did not broadcast the AI's edit",
   );
   const change = events.find((e) => e.type === "files-changed")?.change;
   assert.deepEqual(change?.files, [{ kind: "modified", path: "turn.circ" }]);
@@ -203,18 +205,20 @@ export async function verifyAgentTurn(
     "看到了 2 个定义。",
     "The tools did not read the rewritten file",
   );
-  const reloaded = later.find(
-    (e) => e.type === "document-changed" && e.change?.id === doc.id,
-  );
+  const reloaded = stream.events
+    .slice(start)
+    .filter((e) => e.topic === "change" && e.data.id === doc.id)
+    .map((e) => e.data)
+    .find((c) => c.order.includes("extra"));
   assert.deepEqual(
-    reloaded?.change.order,
+    reloaded?.order,
     ["main", "extra"],
     "The reload did not reach the UI",
   );
-  assert.equal(
-    reloaded?.change.circuits.length,
-    2,
-    "The reload carries the whole document",
+  assert.deepEqual(
+    reloaded?.circuits.map((c: any) => c.name),
+    ["extra"],
+    "The reload carries only the definition the file added",
   );
   assert(
     (await command({ op: "historyList", id: doc.id })).entries.some(
@@ -227,7 +231,14 @@ export async function verifyAgentTurn(
   // The second rewrite was never opened by a tool: the turn's checkpoint
   // read the document again and told the window.
   assert(
-    stream.events.slice(start).some((e) => e.topic === "documents"),
+    stream.events
+      .slice(start)
+      .some(
+        (e) =>
+          e.topic === "change" &&
+          e.data.id === doc.id &&
+          e.data.order.includes("later"),
+      ),
     "The checkpoint's reload did not reach the window",
   );
   assert.deepEqual(

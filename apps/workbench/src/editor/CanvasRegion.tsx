@@ -52,9 +52,7 @@ export function CanvasRegion({ placement }: { placement: PlacementState }) {
       onPress={(component) => simulating.press(view, component)}
       onRelease={() => simulating.release()}
       onError={onError}
-      onStale={() =>
-        void stores.documents.getState().refreshWorkspace().catch(onError)
-      }
+      onStale={() => stores.documents.getState().reread(doc.id)}
       fitToken={fitToken}
       zoomRequest={zoomRequest}
       deleteRequest={deleteRequest}

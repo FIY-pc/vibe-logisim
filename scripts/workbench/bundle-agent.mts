@@ -28,8 +28,7 @@ for (const file of [
   "index.md",
   "digital-design.md",
   "java-runtime.md",
-  "skills/circuit-organization/SKILL.md",
-  "skills/circuit-organization/references/arrangement.md",
+  "arrangement.md",
 ])
   await copy("packages/agent-runtime/circuit-knowledge/" + file);
 await copy("config/runtime-lock.json");

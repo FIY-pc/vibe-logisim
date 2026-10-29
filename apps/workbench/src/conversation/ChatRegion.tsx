@@ -3,7 +3,6 @@ import { useConversationReferences } from "./conversationReferences";
 import { showRight } from "../shell/store";
 import {
   useConversation,
-  useDocuments,
   useFiles,
   useSelection,
   useShell,
@@ -23,7 +22,6 @@ export function ChatRegion() {
   const visible = useShell(
     (state) => state.right === "chat" && showRight(state),
   );
-  const applyChange = useDocuments((state) => state.applyChange);
   const { setNotice, onError } = stores.notices.getState();
   const { navigation } = actions;
   const followConversationReference = useConversationReferences({
@@ -41,12 +39,9 @@ export function ChatRegion() {
       doc={doc}
       circuit={circuit?.name || null}
       onError={onError}
-      onDocument={applyChange}
-      onOpened={actions.workspace.showDocument}
-      onFilesChanged={async () => {
-        await stores.documents.getState().refreshWorkspace(true);
-        stores.files.getState().refreshTree();
-      }}
+      // The host reloads or closes the documents whose files the undo
+      // changed and broadcasts that; only the file tree is read again.
+      onFilesChanged={async () => stores.files.getState().refreshTree()}
       folder={folder}
       selection={selection}
       quotation={quotation}

@@ -237,8 +237,6 @@ export async function verifyConversationTurns() {
             selection={[]}
             quotation={null}
             onQuoted={() => {}}
-            onDocument={() => {}}
-            onOpened={() => {}}
             onFilesChanged={async () => {
               filesChanged += 1;
             }}

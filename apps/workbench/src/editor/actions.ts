@@ -3,6 +3,7 @@ import { arrangeCircuit } from "./arrange";
 import { keepSymbols } from "./symbols";
 import { componentLabels, libraryLabels } from "./componentLabels";
 import { command } from "../shared/transport";
+import { HostError } from "../shared/host-error";
 import type { CatalogTool, Document, Edit, XmlNode } from "../shared/types";
 import type { SourceDraft } from "./store";
 import type { Stores } from "../app/createWorkbench";
@@ -265,12 +266,30 @@ export function createEditorActions(stores: Stores) {
           return;
         }
         let live = true;
-        command<XmlNode>({
-          op: "catalog",
-          id: doc.id,
-          revision: doc.revision,
-          circuit: circuit.name,
-        })
+        let waiting = () => {};
+        const load = (revision: string) =>
+          command<XmlNode>({
+            op: "catalog",
+            id: doc.id,
+            revision,
+            circuit: circuit.name,
+          }).catch((e) => {
+            if (!live || HostError.from(e).code !== "STALE_REVISION") throw e;
+            // The document moved on while asking (an AI edit, a reload from
+            // disk): ask again once this window has the newer revision.
+            return new Promise<XmlNode>((resolve, reject) => {
+              const next = () => {
+                const current = currentView(stores).doc;
+                if (current?.id !== doc.id || current.revision === revision)
+                  return false;
+                waiting();
+                load(current.revision).then(resolve, reject);
+                return true;
+              };
+              if (!next()) waiting = documents.subscribe(next);
+            });
+          });
+        load(doc.revision)
           .then((root) => {
             if (live)
               editor.getState().setCatalog(
@@ -301,6 +320,7 @@ export function createEditorActions(stores: Stores) {
           });
         return () => {
           live = false;
+          waiting();
         };
       },
     );

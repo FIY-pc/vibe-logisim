@@ -134,10 +134,7 @@ impl Workspace {
         self.identities = std::mem::take(&mut self.identities)
             .into_iter()
             .map(|(p, id)| {
-                let path = p
-                    .strip_prefix(from)
-                    .map(|relative| to.join(relative))
-                    .unwrap_or(p);
+                let path = crate::document::relocated(&p, from, to).unwrap_or(p);
                 (path, id)
             })
             .collect();

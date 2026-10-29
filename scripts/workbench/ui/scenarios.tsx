@@ -142,6 +142,7 @@ const state = () => ({
       recoveryError: null,
     };
   if (request.op === "sourceStatus") return { state: "unchanged" };
+  if (request.op === "read") return doc(request.id);
   if (request.op === "catalog") return { children: [] };
   if (request.op === "observe" || request.op === "connections")
     return { focus: observedFocus || { components: [] } };
@@ -167,6 +168,8 @@ const emit = (event: any) => {
 };
 const agent = (event: any) =>
   emit({ topic: "agent", data: { sequence: ++sequence, event } });
+/** A document change the host broadcast, as `router.ts` applies it. */
+const hostChange = (change: any) => emit({ topic: "change", data: change });
 let root = createRoot(document.getElementById("root")!);
 const settle = async () => {
   await act(async () => {
@@ -197,7 +200,6 @@ const input = async (value: string) => {
   });
 };
 const errors: any[] = [];
-const changed: any[] = [];
 const chat = (d: any, visible = true) => (
   <Workbench>
     <Chat
@@ -208,8 +210,6 @@ const chat = (d: any, visible = true) => (
       selection={[]}
       quotation={null}
       onQuoted={() => {}}
-      onDocument={(d: any) => changed.push(d)}
-      onOpened={() => {}}
       onFilesChanged={async () => {}}
       onError={(e: any) => errors.push(e)}
     />
@@ -241,15 +241,6 @@ assert.equal(
 console.log(
   "PASS: delayed send acknowledgement preserves subsequently typed draft",
 );
-await render(chat(doc("A"), false));
-await act(async () => {
-  agent({
-    type: "document-changed",
-    change: change({ ...doc("A"), revision: "r2" }, "r1"),
-  });
-});
-assert.equal(changed.at(-1).revision, "r2");
-console.log("PASS: hidden conversation continues receiving document changes");
 localStorage.setItem("vibe.draft:B:chat-B", "B own draft");
 await input("A to submit");
 askGate = defer();
@@ -288,10 +279,7 @@ await click(
   )!,
 );
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r1"),
-  }),
+  hostChange(change({ ...doc("A"), revision: "r2", dirty: true }, "r1")),
 );
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 await click(
@@ -314,9 +302,8 @@ const saveTransport = (globalThis as any).__command;
       })
     : saveTransport(request);
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change(
+  hostChange(
+    change(
       {
         ...doc("A"),
         revision: "r2",
@@ -326,7 +313,7 @@ await act(async () =>
       },
       "r1",
     ),
-  }),
+  ),
 );
 assert(
   document.body.textContent?.includes("修改已保留，写回文件失败：磁盘暂不可写"),
@@ -345,6 +332,7 @@ console.log(
 );
 const mutationGate = defer();
 let mutationRefreshes = 0;
+let documentReads = 0;
 const latestMutationDocument = {
   ...doc("A"),
   path: "/fixture/A.circ",
@@ -365,15 +353,16 @@ const latestMutationDocument = {
       recoveryError: null,
     };
   }
+  if (request.op === "read") {
+    documentReads++;
+    return { ...doc(request.id), revision: "r-delayed-agent" };
+  }
   return saveTransport(request);
 };
 await openMenu("更多");
 await clickMenuItem("保存");
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change(latestMutationDocument, "r2"),
-  }),
+  hostChange(change(latestMutationDocument, "r2")),
 );
 await act(async () => {
   mutationGate.resolve({
@@ -398,30 +387,26 @@ assert.equal(
   "r1",
 );
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change(
-      { ...doc("A"), revision: "r-delayed-agent", dirty: false },
-      "r2",
-    ),
-  }),
+  hostChange(
+    change({ ...doc("A"), revision: "r-delayed-agent", dirty: false }, "r2"),
+  ),
 );
 await settle();
+// The host's change is a change like the window's own: applied or, if this
+// view is past its base, answered by reading that one document.
+assert.equal(documentReads, 1, "A document is read on its own");
 assert.equal(
   mutationRefreshes,
-  2,
-  "A late agent response carries its original revision and must take the same refresh path",
+  1,
+  "A host change whose base this view passed reads the document, not the workspace",
 );
-assert(document.querySelector(".file-title .dirty-dot"));
+assert(!document.querySelector(".file-title .dirty-dot"));
 (globalThis as any).__command = saveTransport;
 await act(async () =>
-  agent({
-    type: "document-changed",
-    change: change({ ...doc("A"), revision: "r2", dirty: true }, "r3"),
-  }),
+  hostChange(change({ ...doc("A"), revision: "r2", dirty: true }, "r3")),
 );
 console.log(
-  "PASS: late save and agent mutation results refresh current status without overwriting newer document state",
+  "PASS: a late save reply and a host change from a passed base refresh current state without overwriting newer document state",
 );
 const appKey = async (key: string, extra: KeyboardEventInit = {}) =>
   act(async () =>
@@ -440,9 +425,10 @@ assert.equal(
   "transparent",
 );
 await appKey("/");
-assert.equal(
-  document.activeElement,
-  document.querySelector('input[aria-label="查找电路"]'),
+assert.ok(
+  document.activeElement ===
+    document.querySelector('input[aria-label="查找电路"]'),
+  `focus is on ${document.activeElement?.outerHTML.slice(0, 120)}`,
 );
 await click(
   [...document.querySelectorAll(".circuit-list button")].find(
@@ -463,7 +449,7 @@ await openMenu("更多");
 await clickMenuItem("帮助与反馈");
 await clickMenuItem("立即检查更新");
 assert.match(document.querySelector(".capture-notice")!.textContent!, /开发版/);
-assert.equal(document.querySelector(".error-bar"), null);
+assert.equal(document.querySelector(".error-bar")?.textContent ?? null, null);
 await openMenu("更多");
 await clickMenuItem("帮助与反馈");
 await clickMenuItem("反馈问题…");
@@ -574,9 +560,7 @@ await settle();
 assert.equal(statusReads, 3);
 const changedC = { ...doc("C"), revision: "r-new", dirty: true };
 auditDocs = auditDocs.map((d) => (d.id === "C" ? changedC : d));
-await act(async () =>
-  agent({ type: "document-changed", change: change(changedC, "r1") }),
-);
+await act(async () => hostChange(change(changedC, "r1")));
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 auditStatusGate = null;
 await act(async () => {
@@ -586,7 +570,10 @@ await act(async () => {
 await settle();
 assert.equal(statusReads, 4);
 assert.ok(document.querySelector(".file-title .dirty-dot"));
-assert.equal(document.querySelector('dialog[aria-label="重命名"]'), null);
+assert.equal(
+  document.querySelector('dialog[aria-label="重命名"]')?.textContent ?? null,
+  null,
+);
 
 // Keyboard close is allowed while another clean tab's close is pending.
 closeGates.set("A", defer());
@@ -871,7 +858,11 @@ assert.equal(
   "invalid",
 );
 await setPlacementLabel("Alpha");
-assert.equal(document.querySelector(".placement-inspector [role=alert]"), null);
+assert.equal(
+  document.querySelector(".placement-inspector [role=alert]")?.textContent ??
+    null,
+  null,
+);
 assert.equal(queuedCalls.length, 0);
 await pointer("pointerdown", 200);
 await setPlacementLabel("Beta");
@@ -1099,7 +1090,7 @@ console.log(
   "PASS: Ctrl-click uses native bit connectivity without wiring, Alt-left restores camera and selection",
 );
 {
-  // Pictures and connections the host refuses as stale re-read the workspace.
+  // Pictures and connections the host refuses as stale read the document again.
   const host = (globalThis as any).__command;
   const refused: string[] = [];
   let stales = 0;
@@ -1162,7 +1153,7 @@ console.log(
   assert.equal(errors.length, reported, "a stale read is not an error");
   (globalThis as any).__command = host;
   console.log(
-    "PASS: a picture or connection read refused as stale re-reads the workspace instead of reporting an error",
+    "PASS: a picture or connection read refused as stale reads the document again instead of reporting an error",
   );
 }
 {
