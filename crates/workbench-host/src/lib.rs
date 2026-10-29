@@ -9,7 +9,7 @@ mod state_paths_tests;
 use api::Effect;
 pub use api::{
     AgentRequest, AppRequest, DocumentRequest, EditResult, ErrorCode, Event, Events, FolderRequest,
-    HostError, Request, Selection, SimulationRequest, TraceProgramInput, Warning,
+    HostError, MovePreview, Request, Selection, SimulationRequest, TraceProgramInput, Warning,
 };
 use app::{diagnostics, feedback};
 use documents::interfaces;

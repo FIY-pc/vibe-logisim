@@ -366,7 +366,7 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
                 None => out.append(node, &[comp]),
             }
         }
-        Edit::Move { ids, delta } => shift(
+        Edit::Move { ids, delta, .. } => shift(
             &Sheet::new(tree, node)?,
             &ids,
             delta,
@@ -515,15 +515,15 @@ pub(crate) fn translate(
 }
 
 /// The ids the selection has after a move: the components at their new
-/// anchors and the wires along for it (every piece of a moved wire), then
-/// the wires the move added.
+/// anchors and the wires along for it (every piece of a moved wire). As in
+/// Logisim, the wires a move adds to keep its ends connected are not
+/// selected, so the next drag stretches them again.
 pub(crate) fn moved(
     before: &Tree,
     after: &Tree,
     circuit: &str,
     ids: &[String],
     delta: Point,
-    added: &[(Point, Point)],
 ) -> Result<(Vec<String>, Vec<String>)> {
     let old = Sheet::new(before, find(before, circuit)?)?;
     let new = Sheet::new(after, find(after, circuit)?)?;
@@ -564,16 +564,7 @@ pub(crate) fn moved(
             return Err(stale());
         }
     }
-    let mut moved_wires: Vec<String> = chosen.iter().map(|j| format!("w{j}")).collect();
-    for &(from, to) in added {
-        let wanted = Segment { from, to };
-        for (j, w) in new.wires.iter().enumerate() {
-            if on(&wanted, &w.segment) && chosen.insert(j) {
-                moved_wires.push(format!("w{j}"));
-            }
-        }
-    }
-    Ok((components, moved_wires))
+    Ok((components, chosen.iter().map(|j| format!("w{j}")).collect()))
 }
 
 fn delete(sheet: &Sheet, ids: &[String], out: &mut Splices<'_>) -> Result<()> {

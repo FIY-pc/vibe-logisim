@@ -469,6 +469,7 @@ fn a_revision_reports_the_changed_circuits_and_their_new_ids() {
             Edit::Move {
                 ids: vec!["c100_100".into()],
                 delta: Point { x: 0, y: 20 },
+                detach: None,
             },
         )
         .unwrap();

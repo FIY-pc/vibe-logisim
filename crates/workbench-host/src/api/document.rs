@@ -6,6 +6,7 @@ use crate::{
     app::diagnostics::Stage,
     documents::{
         history::Action,
+        movement::Move,
         project_info,
         verification::{ButtonEvent, InputEvent, TestVector, TracePlan, TraceWatch},
     },
@@ -37,6 +38,27 @@ pub struct EditResult {
     pub circuit: String,
     pub changed_circuits: Vec<String>,
     pub selection: Selection,
+    /// Where a move left an end unconnected: the end touched something
+    /// there and Logisim's move gesture found no route back to it (the
+    /// end's place before the move). Empty for other edits.
+    pub unconnected: Vec<Point>,
+}
+
+/// What Logisim's move gesture does when objects move by an offset, on the
+/// revision the drag started from: the wires it takes out, the segments it
+/// adds, and where it leaves an end unconnected (as in `EditResult`). What
+/// the canvas draws while dragging.
+#[derive(Debug, Serialize, ts_rs::TS)]
+pub struct MovePreview {
+    pub removed: Vec<String>,
+    pub added: Vec<Segment>,
+    pub unconnected: Vec<Point>,
+}
+
+#[derive(Debug, Serialize, ts_rs::TS)]
+pub struct Segment {
+    pub from: Point,
+    pub to: Point,
 }
 
 /// One kind of component the window draws: a component's library (none or
@@ -134,6 +156,15 @@ pub enum DocumentRequest {
         revision: String,
         circuit: String,
         edit: Edit,
+    },
+    /// What releasing a drag would do to the wires (see `MovePreview`);
+    /// the release itself is an `edit` move.
+    MovePreview {
+        id: String,
+        revision: String,
+        circuit: String,
+        ids: Vec<String>,
+        delta: Point,
     },
     Undo {
         id: String,
@@ -339,6 +370,7 @@ impl DocumentRequest {
         "save",
         "saveTarget",
         "edit",
+        "movePreview",
         "undo",
         "redo",
         "observe",
@@ -390,6 +422,7 @@ impl DocumentRequest {
                 .stage(Stage::Edit)
                 .history(Action::edit(id, edit))
                 .agent(),
+            Self::MovePreview { .. } => Meta::new(Read),
             Self::Undo { id, .. } => Meta::new(AutoSave)
                 .stage(Stage::Edit)
                 .history(Action::document("undo", "撤销修改", id))
@@ -524,6 +557,7 @@ pub(crate) fn edit_result(outcome: &EditOutcome, change: DocumentChange, noop: b
             components: outcome.components.clone(),
             wires: outcome.wires.clone(),
         },
+        unconnected: Vec::new(),
         change,
     }
 }
@@ -820,15 +854,17 @@ impl Host {
                 circuit,
                 edit,
             } => {
-                let moves: Option<Vec<(Vec<String>, Point)>> = match &edit {
-                    Edit::Batch { edits } if !edits.is_empty() => edits
-                        .iter()
-                        .map(|e| match e {
-                            Edit::Move { ids, delta } => Some((ids.clone(), *delta)),
-                            _ => None,
-                        })
-                        .collect(),
+                let step = |e: &Edit| match e {
+                    Edit::Move { ids, delta, detach } => Some(Move {
+                        ids: ids.clone(),
+                        delta: *delta,
+                        connect: detach != &Some(true),
+                    }),
                     _ => None,
+                };
+                let moves: Option<Vec<Move>> = match &edit {
+                    Edit::Batch { edits } if !edits.is_empty() => edits.iter().map(step).collect(),
+                    edit => step(edit).map(|m| vec![m]),
                 };
                 let edit = match edit {
                     _ if moves.is_some() => edit,
@@ -839,9 +875,6 @@ impl Host {
                 };
                 let mut result = if let Some(moves) = moves {
                     self.commit_moves(&id, &revision, &circuit, &moves).await?
-                } else if let Edit::Move { ids, delta } = edit {
-                    self.commit_moves(&id, &revision, &circuit, &[(ids, delta)])
-                        .await?
                 } else {
                     let mut w = self.workspace.lock().await;
                     let d = w.get_mut(&id)?;
@@ -858,6 +891,32 @@ impl Host {
                 self.add_width_errors(&mut result).await;
                 let _value = timing::span("edit.value");
                 value(result)
+            }
+            DocumentRequest::MovePreview {
+                id,
+                revision,
+                circuit,
+                ids,
+                delta,
+            } => {
+                let start = self.revision_at(&id, &revision).await?;
+                let _preview = timing::span("move.preview");
+                let gesture = self
+                    .native
+                    .lock()
+                    .await
+                    .moves(&start, &circuit, &ids, delta, true)
+                    .await?;
+                value(MovePreview {
+                    removed: gesture.wires.removed,
+                    added: gesture
+                        .wires
+                        .added
+                        .into_iter()
+                        .map(|(from, to)| Segment { from, to })
+                        .collect(),
+                    unconnected: gesture.unconnected,
+                })
             }
             DocumentRequest::Undo { id, revision } => {
                 let (outcome, change) = {

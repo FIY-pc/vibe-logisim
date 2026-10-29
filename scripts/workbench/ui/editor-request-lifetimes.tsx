@@ -154,6 +154,7 @@ export async function verifyEditorRequestLifetimes() {
         circuit: request.circuit,
         changedCircuits: [request.circuit],
         selection: { components: [request.edit.id], wires: [] },
+        unconnected: [],
       };
     }
     if (request.op === "source")

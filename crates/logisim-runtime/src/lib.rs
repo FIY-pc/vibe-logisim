@@ -351,6 +351,16 @@ fn wires(wires: impl Iterator<Item = (Point, Point)>) -> String {
     text
 }
 
+/// What Logisim's move gesture makes of a move: the document wires it takes
+/// out and the segments it adds, at their place after the move, and the
+/// places (before the move) where a moved end touched something it found no
+/// route back to.
+#[derive(Clone, Debug, Default)]
+pub struct MoveResult {
+    pub wires: WireEdit,
+    pub unconnected: Vec<Point>,
+}
+
 pub struct Native {
     launcher: Launcher,
     worker: Option<Worker>,
@@ -673,11 +683,9 @@ impl Native {
         RawValue::from_string(text).map_err(|e| e.to_string())
     }
     /// The wires that keep a move's ends connected, as Logisim's select tool
-    /// finds them when the mouse is released (README, Moves): the document
-    /// wires the move takes out and the segments it adds, at their place
-    /// after the move. `ids` are component and wire ids (`w<k>`); with
-    /// `connect` false the move keeps no connection (Logisim's shift-drag)
-    /// and the answer is empty.
+    /// finds them when the mouse is released (README, Moves). `ids` are
+    /// component and wire ids (`w<k>`); with `connect` false the move keeps
+    /// no connection (Logisim's shift-drag) and the answer is empty.
     pub async fn moves(
         &mut self,
         revision: &Revision,
@@ -685,7 +693,7 @@ impl Native {
         ids: &[String],
         delta: Point,
         connect: bool,
-    ) -> Result<WireEdit> {
+    ) -> Result<MoveResult> {
         let is_wire = |id: &&String| {
             id.strip_prefix('w')
                 .is_some_and(|k| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()))
@@ -717,14 +725,22 @@ impl Native {
         struct Moved {
             remove: Vec<String>,
             add: Vec<[i32; 4]>,
+            unconnected: Vec<[i32; 2]>,
         }
         let moved: Moved = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-        Ok(WireEdit {
-            removed: moved.remove,
-            added: moved
-                .add
+        Ok(MoveResult {
+            wires: WireEdit {
+                removed: moved.remove,
+                added: moved
+                    .add
+                    .into_iter()
+                    .map(|[x0, y0, x1, y1]| (Point { x: x0, y: y0 }, Point { x: x1, y: y1 }))
+                    .collect(),
+            },
+            unconnected: moved
+                .unconnected
                 .into_iter()
-                .map(|[x0, y0, x1, y1]| (Point { x: x0, y: y0 }, Point { x: x1, y: y1 }))
+                .map(|[x, y]| Point { x, y })
                 .collect(),
         })
     }

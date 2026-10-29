@@ -27,6 +27,7 @@ const outcome = (
   title: result.title,
   changedCircuits: result.changedCircuits,
   selection: result.selection,
+  ...(result.unconnected?.length ? { unconnected: result.unconnected } : {}),
   ...extra,
 });
 

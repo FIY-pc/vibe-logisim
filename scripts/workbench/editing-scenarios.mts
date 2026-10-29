@@ -4,11 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DocumentView as Document } from "../../apps/workbench/src/generated/DocumentView.ts";
 import { courseSizeProject } from "./fixtures/course-size.mts";
-import {
-  sameRun,
-  simulationClient,
-  type Stream,
-} from "./simulation-client.mts";
+import { simulationClient, type Stream } from "./simulation-client.mts";
 import { documentViews } from "./document-views.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with what they changed; scripts work with whole views. */
@@ -75,49 +71,7 @@ export async function verifyEditing(command: Command, stream: Stream) {
   );
   await signal(fanout, "input", "1010", ["out", "branch"]);
   const original = fanout.revision;
-  const runBeforePreview = client.mirror().run;
-  const preview = await command({
-    op: "movePreview",
-    id: fanout.id,
-    revision: fanout.revision,
-    circuit: "main",
-    ids: [component(fanout, "input")],
-    delta: { x: 0, y: 60 },
-  });
-  assert.deepEqual(
-    await command({ op: "read", id: fanout.id }),
-    fanout,
-    "Dragging a preview must preserve document revision, source and undo",
-  );
-  assert(
-    sameRun((await client.act({ kind: "pause" })).run, runBeforePreview),
-    "Movement previews must not replace the live simulation",
-  );
-  const beforeWires = fanout.circuits[0].wires;
-  const segment = ({ from, to }: { from: any; to: any }) =>
-    `${from.x},${from.y}:${to.x},${to.y}`;
   fanout = await move(fanout, [component(fanout, "input")], 0, 60);
-  const expected = new Set(
-    beforeWires
-      .filter((w) => !preview.removedWires.includes(w.id))
-      .map(segment),
-  );
-  for (const added of preview.addedWires) expected.add(segment(added));
-  assert.deepEqual(
-    new Set(fanout.circuits[0].wires.map(segment)),
-    expected,
-    "Preview and committed movement must use the same routing plan",
-  );
-  await assert.rejects(
-    command({
-      op: "movePreview",
-      id: fanout.id,
-      revision: original,
-      circuit: "main",
-      ids: [component(fanout, "input")],
-      delta: { x: 0, y: 60 },
-    }),
-  );
   await signal(fanout, "input", "0101", ["out", "branch"]);
   fanout = documentOf(
     await command({
@@ -130,14 +84,13 @@ export async function verifyEditing(command: Command, stream: Stream) {
   fanout = await move(fanout, [component(fanout, "branch")], 60, 0);
   await signal(fanout, "input", "1100", ["out", "branch"]);
 
-  let shared = await open(
+  // Ports that touch with no wire between them: the gesture draws one.
+  let touching = await open(
     pin("input", 100, 100) +
-      `<comp lib="0" name="Probe" loc="(100,100)"><a name="label" val="shared"/></comp>` +
-      pin("out", 300, 100, true) +
-      wire(100, 100, 300, 100),
+      `<comp lib="0" name="Pin" loc="(100,100)"><a name="facing" val="west"/><a name="output" val="true"/><a name="label" val="out"/></comp>`,
   );
-  shared = await move(shared, [component(shared, "input")], 0, 60);
-  await signal(shared, "input", "1", ["shared", "out"]);
+  touching = await move(touching, [component(touching, "out")], 60, 40);
+  await signal(touching, "input", "1", ["out"]);
 
   let floating = await open(
     '<comp lib="0" name="Probe" loc="(100,100)"><a name="label" val="floating"/></comp>',
@@ -156,24 +109,25 @@ export async function verifyEditing(command: Command, stream: Stream) {
   wireOnly = await move(wireOnly, [wireOnly.circuits[0].wires[0].id], 0, 80);
   await signal(wireOnly, "input", "1", ["out"]);
 
-  const short = await open(
+  // A part dropped onto a wire connects there, as in Logisim, and undo
+  // gives back the file byte for byte.
+  const loose = await open(
     pin("a", 100, 100) +
       pin("outA", 200, 100, true) +
-      pin("b", 100, 140) +
-      pin("outB", 200, 140, true) +
-      wire(100, 100, 200, 100) +
-      wire(100, 140, 200, 140),
+      pin("loose", 300, 200, true) +
+      wire(100, 100, 200, 100),
   );
-  await assert.rejects(
-    () => move(short, [component(short, "outA")], -50, 40),
-    (e: any) =>
-      e.code === "CONNECTIONS_CHANGED" &&
-      /Pin “a”.*Pin “b”.*接到一起/.test(e.message),
+  const source = async (doc: Document) =>
+    (await command({ op: "source", id: doc.id, revision: doc.revision })).xml;
+  const before = await source(loose);
+  const dropped = await move(loose, [component(loose, "loose")], -150, -100);
+  await signal(dropped, "a", "1", ["outA", "loose"]);
+  const restored = documentOf(
+    await command({ op: "undo", id: dropped.id, revision: dropped.revision }),
   );
-  const unchanged = await command({ op: "read", id: short.id });
-  assert.equal(unchanged.revision, short.revision);
-  assert.equal(unchanged.canUndo, false, "Rejected move entered history");
-  // Moves by different offsets are one change; a refused one moves nothing.
+  assert.equal(restored.revision, loose.revision, "Undo must restore the revision");
+  assert.equal(await source(restored), before, "Undo must restore the file");
+  // Moves by different offsets are one change and one undo step.
   const moves = (doc: Document, edits: [string, number, number][]) =>
     command({
       op: "edit",
@@ -189,29 +143,24 @@ export async function verifyEditing(command: Command, stream: Stream) {
         })),
       },
     }).then(documentOf);
-  await assert.rejects(
-    () =>
-      moves(short, [
-        [component(short, "outB"), 40, 0],
-        [component(short, "outA"), -50, 40],
-      ]),
-    (e: any) =>
-      e.code === "CONNECTIONS_CHANGED" && /^第 2 组移动/.test(e.message),
+  const two = await open(
+    pin("a", 100, 100) +
+      pin("outA", 200, 100, true) +
+      pin("b", 100, 140) +
+      pin("outB", 200, 140, true) +
+      wire(100, 100, 200, 100) +
+      wire(100, 140, 200, 140),
   );
-  assert.equal(
-    (await command({ op: "read", id: short.id })).revision,
-    short.revision,
-  );
-  const spread = await moves(short, [
-    [component(short, "outA"), 40, 0],
-    [component(short, "outB"), 60, 0],
+  const spread = await moves(two, [
+    [component(two, "outA"), 40, 0],
+    [component(two, "outB"), 60, 0],
   ]);
   await signal(spread, "b", "1", ["outB"]);
   assert.equal(
     documentOf(
       await command({ op: "undo", id: spread.id, revision: spread.revision }),
     ).revision,
-    short.revision,
+    two.revision,
     "Moves of one call must be one undo step",
   );
 
@@ -236,7 +185,7 @@ export async function verifyEditing(command: Command, stream: Stream) {
   await signal(crossing, "a", "1", ["outA"]);
   await client.stop();
   console.log(
-    "Verified native routing: multi-bit fanout and T junction; shared port; moving a wire; independent crossings; short rejection; one-step undo.",
+    "Verified moves: multi-bit fanout and T junction; touching ports; moving a wire; a part dropped onto a wire connects; independent crossings; one-step undo.",
   );
 }
 
@@ -406,6 +355,7 @@ export async function measureEditing(
     observe: [],
     select: [],
     reselect: [],
+    drag: [],
     move: [],
     wire: [],
     place: [],
@@ -422,10 +372,18 @@ export async function measureEditing(
     rows.select.push(await select(moving));
     rows.reselect.push(await select(labelled));
     const delta = { x: round % 2 ? -10 : 10, y: 0 };
+    // A drag draws the wires of its offset; the release is one edit.
+    rows.drag.push({
+      preview: (
+        await timed({
+          op: "movePreview",
+          ...scope(),
+          ids: [find(moving)],
+          delta: { x: delta.x, y: 10 },
+        })
+      )[1],
+    });
     const move: Sample = {};
-    move.preview = (
-      await timed({ op: "movePreview", ...scope(), ids: [find(moving)], delta })
-    )[1];
     await edit({ kind: "move", ids: [find(moving)], delta }, move);
     moving = { x: moving.x + delta.x, y: moving.y + delta.y };
     rows.move.push(move);

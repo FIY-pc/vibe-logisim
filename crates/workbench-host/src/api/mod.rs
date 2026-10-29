@@ -11,7 +11,7 @@ mod folder;
 mod simulation;
 pub use agent::AgentRequest;
 pub use app::AppRequest;
-pub use document::{DocumentRequest, EditResult, Selection, TraceProgramInput};
+pub use document::{DocumentRequest, EditResult, MovePreview, Selection, TraceProgramInput};
 pub use error::{ErrorCode, HostError};
 pub use events::{Event, Events, Warning};
 pub use folder::FolderRequest;

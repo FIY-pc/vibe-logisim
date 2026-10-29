@@ -1,6 +1,5 @@
 import { Inspector } from "./Inspector";
 import { PlacementInspector } from "./PlacementInspector";
-import { documentComponent } from "./connectivity";
 import { live } from "../simulation/store";
 import { componentState } from "../simulation/simulation";
 import type { PlacementState } from "./usePlacement";
@@ -41,8 +40,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
     canvasObservation.scope === scope && selection.length === 1
       ? canvasObservation.focus?.components.find(
           (component) =>
-            !component.partial &&
-            documentComponent(circuit, component)?.id === selection[0],
+            !component.partial && component.componentId === selection[0],
         ) || null
       : null;
   const selected =
@@ -51,8 +49,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
           (component) => component.id === selection[0],
         ) ?? null)
       : null;
-  const nativeId = connectionComponent?.componentId || selection[0];
-  const component = shown ? components[nativeId] : undefined;
+  const component = shown ? components[selection[0]] : undefined;
   return (
     <Inspector
       doc={doc!}
@@ -62,7 +59,7 @@ export function InspectorRegion({ placement }: { placement: PlacementState }) {
       onOpenMemory={(id) => simulating.openMemory(view, id)}
       onNarrow={(ids) => editing.select(view, ids)}
       edit={(change) => editing.edit(view, change)}
-      live={component ? componentState(nativeId, component) : null}
+      live={component ? componentState(selection[0], component) : null}
       watched={shown ? (trace?.signals.map((signal) => signal.id) ?? []) : []}
       onInput={async (bits) => {
         if (selected) await simulating.setInput(view, selected, bits);

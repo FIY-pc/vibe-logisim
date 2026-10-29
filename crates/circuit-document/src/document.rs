@@ -186,9 +186,16 @@ pub enum Edit {
         #[serde(default)]
         attributes: BTreeMap<String, String>,
     },
+    /// Components and wires by an offset. The host keeps what the moved ends
+    /// touch connected the way Logisim's move gesture does; `detach` leaves
+    /// it behind instead (Logisim's shift-drag). The document alone only
+    /// translates.
     Move {
         ids: Vec<String>,
         delta: Point,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        detach: Option<bool>,
     },
     Delete {
         ids: Vec<String>,
@@ -735,14 +742,13 @@ impl Document {
                         }
                     }
                     Edit::Attributes { id, .. } => outcome.components.push(id),
-                    Edit::Move { ids, delta } => {
+                    Edit::Move { ids, delta, .. } => {
                         let (components, wires) = editing::moved(
                             &previous.tree,
                             &self.source.tree,
                             circuit,
                             &ids,
                             delta,
-                            &[],
                         )?;
                         outcome.components.extend(components);
                         outcome.wires.extend(wires);
@@ -995,14 +1001,8 @@ impl Document {
         if outcome.changed_circuits.is_empty() && self.source.revision == previous {
             return Ok(outcome);
         }
-        let (components, moved_wires) = editing::moved(
-            &before,
-            &self.source.tree,
-            circuit,
-            ids,
-            delta,
-            &wires.added,
-        )?;
+        let (components, moved_wires) =
+            editing::moved(&before, &self.source.tree, circuit, ids, delta)?;
         outcome.components = components;
         outcome.wires = moved_wires;
         Ok(outcome)

@@ -353,7 +353,7 @@ public final class CircuitSession {
      *
      * The class that serves a live run also answers bounded vector and trace
      * checks, so one native entry point and one line protocol cover every
-     * simulation. Each request loads its own copy of its artifact: trace program
+     * simulation. Each request loads its own copy of its document: trace program
      * stimuli mutate ROM contents, and no state may carry over to the next
      * check. The reply is {@code ok<TAB>base64(result)} or
      * {@code error<TAB>message}; a rejected circuit ends the process so nothing

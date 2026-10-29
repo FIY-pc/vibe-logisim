@@ -28,9 +28,11 @@ import org.w3c.dom.Element;
  * Request {@code <move circuit dx dy connect components wires/>}: the ids to
  * move, space-separated; connect="false" moves without keeping connections
  * (Logisim's shift-drag). Reply (JSON): {"remove": [wire ids], "add":
- * [[x0, y0, x1, y1], …]}, the document wires the move takes out (a wire that
- * keeps a part comes back as that part in "add") and the segments it adds, at
- * their place after the move.
+ * [[x0, y0, x1, y1], …], "unconnected": [[x, y], …]}: the document wires the
+ * move takes out (a wire that keeps a part comes back as that part in "add"),
+ * the segments it adds, at their place after the move, and where a moved end
+ * touched something the gesture found no route back to (the end's place
+ * before the move; SelectTool marks it there and at the end's new place).
  */
 public final class CircuitMoves {
     private CircuitMoves() {}
@@ -58,7 +60,7 @@ public final class CircuitMoves {
             chosen[k] = true;
         }
         if ("false".equals(request.getAttribute("connect")) || dx == 0 && dy == 0)
-            return new Moved(reply(Collections.emptyList(), Collections.emptyList()), false);
+            return new Moved(reply(Collections.emptyList(), Collections.emptyList(), Collections.emptyList()), false);
         // A native wire that only partly lies on moved wires (two wires in line
         // that the load merged) is split there for the gesture, then put back.
         Set<Wire> partial = new LinkedHashSet<>();
@@ -101,7 +103,7 @@ public final class CircuitMoves {
         ReplacementMap replacements = result.getReplacementMap();
         for (Component component : replacements.getRemovals()) if (component instanceof Wire) removed.add((Wire) component);
         for (Component component : replacements.getAdditions()) if (component instanceof Wire) added.add((Wire) component);
-        return new Moved(document(sheet, chosen, removed, added), !partial.isEmpty());
+        return new Moved(document(sheet, chosen, removed, added, result.getUnconnectedLocations()), !partial.isEmpty());
     }
 
     /** Whether the moved document wires cover a native wire end to end. */
@@ -150,7 +152,8 @@ public final class CircuitMoves {
      * removed native wire overlaps goes, and what is left of it comes back;
      * the added wires come as they are.
      */
-    private static byte[] document(DocumentIds.Sheet sheet, boolean[] chosen, List<Wire> removed, List<Wire> added) {
+    private static byte[] document(DocumentIds.Sheet sheet, boolean[] chosen, List<Wire> removed, List<Wire> added,
+            java.util.Collection<Location> unconnected) {
         Set<Wire> kept = new HashSet<>(removed);
         kept.retainAll(added);
         TreeSet<Integer> affected = new TreeSet<>();
@@ -184,10 +187,10 @@ public final class CircuitMoves {
             if (kept.contains(wire)) continue;
             add.add(new int[] {wire.getEnd0().getX(), wire.getEnd0().getY(), wire.getEnd1().getX(), wire.getEnd1().getY()});
         }
-        return reply(remove, add);
+        return reply(remove, add, unconnected);
     }
 
-    private static byte[] reply(List<String> remove, List<int[]> add) {
+    private static byte[] reply(List<String> remove, List<int[]> add, java.util.Collection<Location> unconnected) {
         StringBuilder out = new StringBuilder(256).append("{\"remove\":[");
         for (int i = 0; i < remove.size(); i++) {
             if (i > 0) out.append(',');
@@ -198,6 +201,13 @@ public final class CircuitMoves {
             if (i > 0) out.append(',');
             int[] w = add.get(i);
             out.append('[').append(w[0]).append(',').append(w[1]).append(',').append(w[2]).append(',').append(w[3]).append(']');
+        }
+        out.append("],\"unconnected\":[");
+        boolean first = true;
+        for (Location at : new TreeSet<Location>(unconnected)) {
+            if (!first) out.append(',');
+            first = false;
+            out.append('[').append(at.getX()).append(',').append(at.getY()).append(']');
         }
         return out.append("]}").toString().getBytes(StandardCharsets.UTF_8);
     }

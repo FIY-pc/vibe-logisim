@@ -45,7 +45,8 @@ export interface ObservationView {
   circuit: CircuitView;
   project: any;
   unknowns: any[];
-  artifactSha256: string | null;
+  /** The document revision the runtime observed. */
+  revision: string | null;
   runtime: { reportedVersion?: string | null; jarSha256?: string | null };
 }
 /** Which document version an inspection describes; cursors are bound to it. */
@@ -108,7 +109,7 @@ export function observationView(document: any): ObservationView {
     },
     project: document.project || {},
     unknowns: document.unknowns || [],
-    artifactSha256: document.revision?.artifactSha256 ?? null,
+    revision: document.revision?.revision ?? null,
     runtime: {
       reportedVersion: document.runtime?.reportedVersion ?? null,
       jarSha256: document.runtime?.jarSha256 ?? null,
@@ -192,7 +193,7 @@ function cursorDigest(
   extra?: unknown,
 ) {
   return sha256(
-    json([kind, identity, view.artifactSha256, view.runtime, extra ?? null]),
+    json([kind, identity, view.revision, view.runtime, extra ?? null]),
   );
 }
 function parseCursor(

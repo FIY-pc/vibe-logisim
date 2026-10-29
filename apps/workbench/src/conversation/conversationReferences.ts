@@ -1,11 +1,6 @@
 import { useRef } from "react";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
-import {
-  documentComponent,
-  documentWire,
-  type ConnectionFocus,
-} from "../editor/connectivity";
 import type { ProjectFolder } from "../workspace/Files";
 import type { PreviewFile } from "../workspace/FilePreview";
 export interface ReferenceContext {
@@ -118,31 +113,10 @@ export async function locateCircuitReference(
   );
   if (!circuit || (!reference.componentId && !reference.wireId))
     throw new Error("电路引用缺少有效的电路或对象");
-  let id = reference.componentId
+  const id = reference.componentId
     ? circuit.components.find((item) => item.id === reference.componentId)?.id
     : circuit.wires.find((item) => item.id === reference.wireId)?.id;
-  if (!id) {
-    const { focus } = await command<{ focus: ConnectionFocus }>({
-      op: "observe",
-      id: doc.id,
-      revision: doc.revision,
-      circuit: circuit.name,
-    });
-    // Native observer IDs are coordinate-derived. Resolve via factory/location
-    // in the named circuit, never by an array index or a matching label alone.
-    if (reference.componentId) {
-      const native = focus.components.filter(
-        (item) => item.componentId === reference.componentId,
-      );
-      if (native.length === 1) id = documentComponent(circuit, native[0])?.id;
-    } else {
-      const native = (focus.wires || []).filter(
-        (item) => item.wireId === reference.wireId,
-      );
-      if (native.length === 1) id = documentWire(circuit, native[0])?.id;
-    }
-  }
-  if (!id) throw new Error("引用的对象不存在，或同位置对象无法唯一确定");
+  if (!id) throw new Error("引用的对象不存在");
   return {
     circuit: circuit.name,
     id,

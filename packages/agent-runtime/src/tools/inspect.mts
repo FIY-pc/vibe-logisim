@@ -62,7 +62,8 @@ export async function inspectCircuit(
   const review = reviewOptions({ ...args, circuit });
   if (review) {
     const { raw } = await context.observe(document, circuit);
-    const digest = raw.artifactSha256 ?? raw.revision?.artifactSha256 ?? null;
+    // The revision digest the runtime observed binds the review's pages.
+    const digest = raw.revision?.revision ?? null;
     if (review.artifactSha256 && digest && review.artifactSha256 !== digest)
       throw new CircuitToolError(
         "STALE_ARTIFACT",

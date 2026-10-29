@@ -220,6 +220,7 @@ fn s4_move_changes_only_moved_and_rerouted_lines() {
         Edit::Move {
             ids: vec!["c260_150".into()],
             delta: p(0, 20),
+            detach: None,
         },
     );
     assert_eq!(
@@ -254,8 +255,9 @@ fn s4_move_changes_only_moved_and_rerouted_lines() {
             r#"+    <comp lib="0" loc="(100,80)" name="Pin">"#
         ]
     );
+    // As in Logisim, the wires added to keep the pin connected are not selected.
     assert_eq!(outcome.components, ["c100_80"]);
-    assert_eq!(outcome.wires, ["w1", "w2"]);
+    assert!(outcome.wires.is_empty());
 }
 
 #[test]
@@ -329,6 +331,7 @@ fn s6_undoing_every_edit_restores_the_original_bytes() {
             Edit::Move {
                 ids: vec!["c260_150".into(), "w1".into()],
                 delta: p(10, 10),
+                detach: None,
             },
         ),
         (
@@ -469,6 +472,7 @@ fn moved_wire_ending_on_a_trunk_splits_it() {
         Edit::Move {
             ids: vec!["w1".into()],
             delta: p(0, 50),
+            detach: None,
         },
     );
     assert_eq!(
@@ -518,7 +522,7 @@ fn rerouted_wire_keeps_the_junction_at_its_other_end() {
         ]
     );
     assert_eq!(outcome.components, ["c100_170"]);
-    assert_eq!(outcome.wires, ["w1"]);
+    assert!(outcome.wires.is_empty());
 }
 
 #[test]
@@ -579,6 +583,7 @@ fn d1_deleting_a_pin_removes_its_appearance_port() {
         Edit::Move {
             ids: vec!["c140_60".into()],
             delta: p(20, 0),
+            detach: None,
         },
     );
     assert_eq!(
