@@ -945,7 +945,7 @@ console.log(
 );
 
 const sourceNative = {
-  componentId: "native-source",
+  componentId: "src",
   factoryName: "Pin",
   selector: { label: "SOURCE" },
   location: { x: 100, y: 100 },
@@ -961,7 +961,7 @@ const sourceNative = {
   ],
 };
 const sinkNative = {
-  componentId: "native-sink",
+  componentId: "sink",
   factoryName: "Pin",
   selector: { label: "SINK" },
   location: { x: 300, y: 100 },
@@ -980,7 +980,7 @@ observedFocus = {
   components: [sourceNative, sinkNative],
   wires: [
     {
-      wireId: "native-wire",
+      wireId: "wire",
       from: { x: 100, y: 100 },
       to: { x: 300, y: 100 },
       bundleId: "bundle",
@@ -991,7 +991,7 @@ observedFocus = {
       bundleId: "bundle",
       valid: true,
       width: 1,
-      wireIds: ["native-wire"],
+      wireIds: ["wire"],
       bitNets: [{ bit: 0, netId: "net" }],
     },
   ],
@@ -999,8 +999,8 @@ observedFocus = {
     {
       netId: "net",
       contacts: [
-        { componentId: "native-source", endIndex: 0, bit: 0 },
-        { componentId: "native-sink", endIndex: 0, bit: 0 },
+        { componentId: "src", endIndex: 0, bit: 0 },
+        { componentId: "sink", endIndex: 0, bit: 0 },
       ],
     },
   ],

@@ -970,10 +970,9 @@ pub fn library_dependencies(file: &Path) -> Result<BTreeMap<PathBuf, String>> {
 fn library_file(directory: Option<&Path>, desc: &str) -> Option<(PathBuf, bool)> {
     let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
         (name, true)
-    } else if let Some(name) = desc.strip_prefix("jar#") {
-        (name.split_once('#').map_or(name, |(file, _)| file), false)
     } else {
-        return None;
+        let name = desc.strip_prefix("jar#")?;
+        (name.split_once('#').map_or(name, |(file, _)| file), false)
     };
     let Some(directory) = directory else {
         return Some((PathBuf::from(name), circuit));

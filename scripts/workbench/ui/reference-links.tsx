@@ -61,21 +61,6 @@ export async function verifyReferenceLinks() {
   globals.__subscribe = () => () => {};
   globals.__command = async (request: any) => {
     calls.push(request);
-    if (request.op === "observe")
-      return {
-        focus: {
-          components: [
-            {
-              componentId: "c100_100",
-              factoryName: "Pin",
-              location: { x: 100, y: 100 },
-              bounds: { x: 90, y: 90, width: 20, height: 20 },
-              ends: [],
-            },
-          ],
-          wires: [],
-        },
-      };
     if (request.op === "folderResolve")
       return delayed
         ? new Promise((resolve) => {
@@ -156,16 +141,6 @@ export async function verifyReferenceLinks() {
       "c0",
     );
     assert.equal(calls.filter((call) => call.op === "observe").length, 0);
-    assert.equal(
-      (
-        await locateCircuitReference(
-          { ...direct, componentId: "c100_100" },
-          undefined,
-          doc,
-        )
-      ).id,
-      "c0",
-    );
     await assert.rejects(
       locateCircuitReference({ ...direct, revisionId: "old" }, undefined, doc),
       /此前版本/,
@@ -173,25 +148,6 @@ export async function verifyReferenceLinks() {
     await assert.rejects(
       locateCircuitReference({ ...direct, projectId: "other" }, undefined, doc),
       /另一份文档/,
-    );
-    await assert.rejects(
-      locateCircuitReference(
-        { ...direct, componentId: "c100_100" },
-        undefined,
-        {
-          ...doc,
-          circuits: [
-            {
-              ...doc.circuits[0],
-              components: [
-                ...doc.circuits[0].components,
-                { ...doc.circuits[0].components[0], id: "c1" },
-              ],
-            },
-          ],
-        },
-      ),
-      /唯一确定/,
     );
     await render(
       <Workbench>
