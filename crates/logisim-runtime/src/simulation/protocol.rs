@@ -394,9 +394,12 @@ fn located(tag: &str, component: &Component) -> Result<String, SimError> {
         .empty())
 }
 
-/// The file the process reads at start: the root circuit, the clock frequency
-/// and how its component ids address components.
+/// What the process reads at start, before the document's bytes: the file's
+/// name and folder (relative libraries resolve there), the root circuit, the
+/// clock frequency and how its component ids address components.
 pub(crate) fn init_document(
+    name: &str,
+    directory: &str,
     circuit: &str,
     frequency: Option<f64>,
     components: &[Component],
@@ -405,7 +408,10 @@ pub(crate) fn init_document(
         .iter()
         .map(|component| located("component", component))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut session = Element::new("session").attr("circuit", circuit)?;
+    let mut session = Element::new("session")
+        .attr("name", name)?
+        .attr("directory", directory)?
+        .attr("circuit", circuit)?;
     if let Some(frequency) = frequency {
         session = session.attr("frequency", &frequency.to_string())?;
     }

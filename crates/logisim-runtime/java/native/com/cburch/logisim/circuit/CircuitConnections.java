@@ -32,11 +32,12 @@ import org.w3c.dom.Node;
  * nets are computed once per loaded revision (ExactRuntimeObserver.NetIndex);
  * a request only picks its part and writes it.
  *
- * Request children: {@code <component x y factory/>} (every component of that
- * factory at that location), {@code <wire x0 y0 x1 y1/>} (the wire between
- * those points, either way round), {@code <point x y radius/>} (every
- * component with an end that close). Reply (JSON): {"focus": {components, wires, wireBundles, bitNets}};
- * crates/logisim-runtime/README.md, Connections, has the fields.
+ * Request children: {@code <component id/>} and {@code <wire id/>} (by the
+ * document's ids; DocumentIds), {@code <point x y radius/>} (every component
+ * with an end that close). Reply (JSON): {"focus": {components, wires,
+ * wireBundles, bitNets}}, components and wires by the document's ids, each
+ * wire as the document has it; crates/logisim-runtime/README.md,
+ * Connections, has the fields.
  */
 public final class CircuitConnections {
     private static final class Contact {
@@ -50,13 +51,11 @@ public final class CircuitConnections {
         }
     }
 
+    private final DocumentIds.Sheet sheet;
     private final Map<Component, String> ids;
     private final ExactRuntimeObserver.NetIndex nets;
     /** Each component's place in observation order. */
     private final Map<Component, Integer> order = new IdentityHashMap<>();
-    private final Map<String, List<Component>> placed = new HashMap<>();
-    private final Map<String, Wire> wires = new HashMap<>();
-    private final Map<String, Wire> wiresById = new HashMap<>();
     private final Map<String, ExactRuntimeObserver.NetRecord> netsById = new HashMap<>();
     private final Map<String, List<Contact>> contacts = new HashMap<>();
     /** The bit net of each bit of each end of each component (null where none). */
@@ -64,18 +63,16 @@ public final class CircuitConnections {
     /** Each component's ends as JSON without their net bits, and the net bits, written when first asked for. */
     private final Map<Component, String[][]> ends = new IdentityHashMap<>();
 
-    private CircuitConnections(Circuit circuit) {
+    private CircuitConnections(Circuit circuit, DocumentIds.Sheet sheet) {
+        this.sheet = sheet;
+        ids = sheet.ids();
         List<Component> sorted = ExactRuntimeObserver.sortedComponents(circuit);
         for (int i = 0; i < sorted.size(); i++) order.put(sorted.get(i), i);
-        ids = ExactRuntimeObserver.assignComponentIds(circuit);
-        com.cburch.logisim.file.WorkerTiming.mark("connections.ids");
         nets = new ExactRuntimeObserver.NetIndex(
-            circuit, ids, new ExactRuntimeObserver.Coverage(), new ArrayList<Object>(), false);
+            circuit, sheet, new ExactRuntimeObserver.Coverage(), new ArrayList<Object>(), false);
         nets.compute();
         com.cburch.logisim.file.WorkerTiming.mark("connections.nets");
         for (Component component : sorted) {
-            placed.computeIfAbsent(place(component.getLocation(), component.getFactory().getName()),
-                k -> new ArrayList<>()).add(component);
             String[][] bits = netsOf(component);
             endNets.put(component, bits);
             for (int end = 0; end < bits.length; end++)
@@ -90,11 +87,6 @@ public final class CircuitConnections {
         for (List<Contact> joined : contacts.values()) joined.sort(byId);
         for (ExactRuntimeObserver.NetRecord net : nets.threadNets.values()) netsById.put(net.id, net);
         for (ExactRuntimeObserver.NetRecord net : nets.pointNets.values()) netsById.put(net.id, net);
-        for (Wire wire : nets.wires) {
-            wiresById.put(nets.wireIds.get(wire), wire);
-            wires.put(span(wire.getEnd0(), wire.getEnd1()), wire);
-            wires.put(span(wire.getEnd1(), wire.getEnd0()), wire);
-        }
     }
 
     /** The nets of a component's end bits, as NetIndex assigns them (its endBitNet). */
@@ -117,18 +109,10 @@ public final class CircuitConnections {
     }
 
     /** The connections of a circuit of the file as it is now. */
-    public static CircuitConnections of(LogisimFile file, String name) {
+    public static CircuitConnections of(LogisimFile file, DocumentIds ids, String name) {
         Circuit circuit = file.getCircuit(name);
         if (circuit == null) throw new IllegalArgumentException("找不到电路");
-        return new CircuitConnections(circuit);
-    }
-
-    private static String place(Location at, String factory) {
-        return at.getX() + "," + at.getY() + "," + factory;
-    }
-
-    private static String span(Location from, Location to) {
-        return from.getX() + "," + from.getY() + "," + to.getX() + "," + to.getY();
+        return new CircuitConnections(circuit, ids.sheet(circuit));
     }
 
     /** The answer to one request: the seeds' nets and what they join. */
@@ -141,22 +125,21 @@ public final class CircuitConnections {
             Element seed = (Element) n;
             switch (seed.getTagName()) {
                 case "component": {
-                    List<Component> found = placed.get(seed.getAttribute("x") + "," + seed.getAttribute("y")
-                        + "," + seed.getAttribute("factory"));
-                    if (found != null) whole.addAll(found);
+                    Component found = sheet.component(seed.getAttribute("id"));
+                    if (found != null) whole.add(found);
                     break;
                 }
                 case "wire": {
-                    Wire wire = wires.get(seed.getAttribute("x0") + "," + seed.getAttribute("y0") + ","
-                        + seed.getAttribute("x1") + "," + seed.getAttribute("y1"));
-                    ExactRuntimeObserver.BundleRecord bundle = wire == null ? null : bundleOf(wire);
-                    if (bundle == null) break;
-                    bundles.add(bundle);
-                    if (bundle.bundle.threads != null)
+                    int k = sheet.wire(seed.getAttribute("id"));
+                    if (k < 0) break;
+                    for (Wire wire : sheet.natives(nets.circuit, k)) {
+                        ExactRuntimeObserver.BundleRecord bundle = nets.bundleOf(wire);
+                        if (bundle == null || !bundles.add(bundle) || bundle.bundle.threads == null) continue;
                         for (WireThread thread : bundle.bundle.threads) {
                             ExactRuntimeObserver.NetRecord net = nets.threadNets.get(thread.find());
                             if (net != null) netIds.add(net.id);
                         }
+                    }
                     break;
                 }
                 case "point": {
@@ -200,22 +183,24 @@ public final class CircuitConnections {
             component(out, listed.get(i), partial.get(listed.get(i)));
         }
         out.append("],\"wires\":[");
-        List<String> wireIds = new ArrayList<>();
-        for (ExactRuntimeObserver.BundleRecord bundle : bundles) wireIds.addAll(bundle.wireIds);
-        Collections.sort(wireIds);
-        for (int i = 0; i < wireIds.size(); i++) {
-            if (i > 0) out.append(',');
-            Wire wire = wiresById.get(wireIds.get(i));
-            ExactRuntimeObserver.BundleRecord bundle = bundleOf(wire);
+        Map<Integer, ExactRuntimeObserver.BundleRecord> wires = new java.util.TreeMap<>();
+        for (ExactRuntimeObserver.BundleRecord bundle : bundles)
+            for (String id : bundle.wireIds) {
+                int k = sheet.wire(id);
+                if (k >= 0) wires.put(k, bundle);
+            }
+        boolean firstWire = true;
+        for (Map.Entry<Integer, ExactRuntimeObserver.BundleRecord> wire : wires.entrySet()) {
+            if (!firstWire) out.append(',');
+            firstWire = false;
             out.append("{\"wireId\":");
-            str(out, wireIds.get(i));
+            str(out, DocumentIds.wireId(wire.getKey()));
             out.append(",\"from\":");
-            point(out, wire.getEnd0());
+            point(out, sheet.from(wire.getKey()));
             out.append(",\"to\":");
-            point(out, wire.getEnd1());
+            point(out, sheet.to(wire.getKey()));
             out.append(",\"bundleId\":");
-            if (bundle == null) out.append("null");
-            else str(out, bundle.id);
+            str(out, wire.getValue().id);
             out.append('}');
         }
         out.append("],\"wireBundles\":[");
@@ -244,11 +229,6 @@ public final class CircuitConnections {
             out.append("]}");
         }
         return out.append("]}}").toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private ExactRuntimeObserver.BundleRecord bundleOf(Wire wire) {
-        WireBundle bundle = nets.circuit.wires.getWireBundle(wire.getEnd0());
-        return bundle == null ? null : nets.bundles.get(bundle.find());
     }
 
     /**

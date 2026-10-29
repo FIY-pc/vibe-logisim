@@ -1,5 +1,8 @@
 package com.cburch.logisim.file;
 
+import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.CircuitConnections;
+import com.cburch.logisim.circuit.CircuitMoves;
 import com.cburch.logisim.circuit.ExactRuntimeObserver;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -13,56 +16,57 @@ import javax.xml.transform.stream.StreamResult;
 import org.w3c.dom.*;
 
 /**
- * The resident runtime: answers read requests on project snapshots, keyed by
- * their digest. It keeps the latest two projects loaded; a snapshot it does
- * not hold is applied in place to the closest of them when only circuit
- * contents differ (LoadedProject.advance), and loaded whole otherwise.
+ * The resident runtime: answers read requests on documents the host sends.
+ * Each request line is base64 of {@code <request document revision>} and,
+ * when the request carries one, a tab and base64 of a text. The request names
+ * the revision it reads; it brings that revision with a {@code <load>} (the
+ * text is the whole file) or a {@code <change base>} from the revision the
+ * worker holds (the text is the added elements; LoadedProject). The worker
+ * keeps the latest three documents loaded. Reply lines are a status, a tab,
+ * base64 of the payload, and the request's timing phases: "ok", "error"
+ * (the payload is the message) or "reload" (the worker does not hold the
+ * base or cannot apply the change in place: send the revision whole).
  */
 public final class CircuitWorker {
-    private final Map<String,LoadedProject> files=new LinkedHashMap<String,LoadedProject>(4,.75f,true) {
-        protected boolean removeEldestEntry(Map.Entry<String,LoadedProject> entry) { return size()>2; }
+    private final Map<String,LoadedProject> documents=new LinkedHashMap<String,LoadedProject>(4,.75f,true) {
+        protected boolean removeEldestEntry(Map.Entry<String,LoadedProject> entry) { return size()>3; }
     };
     private static String digest(byte[] bytes) throws Exception {
         StringBuilder result=new StringBuilder();
         for(byte b:MessageDigest.getInstance("SHA-256").digest(bytes))result.append(String.format("%02x",b&255));
         return result.toString();
     }
-    private LoadedProject load(String path,String expected) throws Exception {
-        LoadedProject cached=files.get(expected);
-        if(cached!=null)return cached;
-        File source=new File(path).getCanonicalFile();
-        byte[] bytes=Files.readAllBytes(source.toPath());
-        if(!digest(bytes).equals(expected))throw new IllegalArgumentException("电路快照已改变");
-        WorkerTiming.mark("digest");
-        LoadedProject project=advance(bytes);
-        if(project!=null) {
-            WorkerTiming.mark("patch");
-        } else {
-            project=new LoadedProject(source,bytes);
-            WorkerTiming.mark("load");
-        }
-        files.put(expected,project);
-        return project;
-    }
-    /** The loaded project closest to this snapshot, moved to it in place; null when none can be. */
-    private LoadedProject advance(byte[] bytes) {
-        FileLayout next;
-        try { next=new FileLayout(bytes); } catch(RuntimeException unscannable) { return null; }
-        String closest=null;int best=-1;
-        for(Map.Entry<String,LoadedProject> entry:files.entrySet()) {
-            int distance=entry.getValue().distance(next);
-            if(distance>=0&&(best<0||distance<best)){best=distance;closest=entry.getKey();}
-        }
-        if(closest==null)return null;
-        LoadedProject project=files.remove(closest);
-        try {
-            if(project.advance(next))return project;
-            files.put(closest,project);
-        } catch(Exception failed) {
-            // Applying stopped part way; the project is dropped and the snapshot loaded whole.
-            System.err.println("in-place update failed: "+failed);
-        }
+    private static Element child(Element parent,String tag) {
+        for(Node n=parent.getFirstChild();n!=null;n=n.getNextSibling())
+            if(n instanceof Element&&((Element)n).getTagName().equals(tag))return (Element)n;
         return null;
+    }
+    /** The project at the request's revision, or null when the host has to send it whole. */
+    private LoadedProject project(Element request,byte[] text) throws Exception {
+        String document=request.getAttribute("document"),revision=request.getAttribute("revision");
+        Element load=child(request,"load"),change=child(request,"change");
+        if(load!=null) {
+            documents.remove(document);
+            LoadedProject loaded=new LoadedProject(document,revision,load,text);
+            WorkerTiming.mark("load");
+            documents.put(document,loaded);
+            return loaded;
+        }
+        LoadedProject held=documents.get(document);
+        if(change!=null) {
+            if(held==null||!held.revision.equals(change.getAttribute("base")))return null;
+            try {
+                if(held.advance(revision,change,text)) {
+                    WorkerTiming.mark("patch");
+                    return held;
+                }
+            } catch(Exception failed) {
+                System.err.println("in-place update failed: "+failed);
+            }
+            documents.remove(document);
+            return null;
+        }
+        return held!=null&&held.revision.equals(revision)?held:null;
     }
     private static void reply(PrintStream protocol,String status,byte[] bytes) {
         String payload=Base64.getEncoder().encodeToString(bytes);
@@ -73,10 +77,8 @@ public final class CircuitWorker {
     public static void main(String[] args) throws Exception {
         PrintStream protocol=System.out;System.setOut(System.err);
         try {
-            Path runtime=Paths.get(args[0]),bundle=Paths.get(args[2]);
+            Path runtime=Paths.get(args[0]);
             if(!digest(Files.readAllBytes(runtime)).equals(args[1]))throw new IllegalArgumentException("运行时已改变");
-            // The bridge's classes do not change while it runs.
-            String bundleDigest=ExactRuntimeObserver.bundleDigest(bundle);
             ExactRuntimeObserver.useRuntime(args[1]);
             CircuitWorker worker=new CircuitWorker();
             DocumentBuilderFactory factory=DocumentBuilderFactory.newInstance();
@@ -89,41 +91,51 @@ public final class CircuitWorker {
             while((line=reader.readLine())!=null) {
                 try {
                     WorkerTiming.begin();
-                    if(line.length()>2_000_000)throw new IllegalArgumentException("请求过长");
-                    Element request=factory.newDocumentBuilder().parse(new ByteArrayInputStream(Base64.getDecoder().decode(line))).getDocumentElement();
+                    if(line.length()>200_000_000)throw new IllegalArgumentException("请求过长");
+                    int tab=line.indexOf('\t');
+                    Element request=factory.newDocumentBuilder().parse(new ByteArrayInputStream(Base64.getDecoder()
+                        .decode(tab<0?line:line.substring(0,tab)))).getDocumentElement();
+                    byte[] text=tab<0?new byte[0]:Base64.getDecoder().decode(line.substring(tab+1));
                     WorkerTiming.mark("request");
                     Element operation=null;
-                    for(Node n=request.getFirstChild();n!=null;n=n.getNextSibling())if(n instanceof Element){operation=(Element)n;break;}
+                    for(Node n=request.getFirstChild();n!=null;n=n.getNextSibling())
+                        if(n instanceof Element&&!((Element)n).getTagName().equals("load")&&!((Element)n).getTagName().equals("change")){operation=(Element)n;break;}
                     if(operation==null)throw new IllegalArgumentException("缺少原生操作");
-                    String artifact=request.getAttribute("artifact"),digest=request.getAttribute("digest");
-                    LoadedProject loaded=worker.load(artifact,digest);
+                    LoadedProject loaded=worker.project(request,text);
+                    if(loaded==null){reply(protocol,"reload",new byte[0]);continue;}
                     String kind=operation.getTagName();byte[] response;
-                    if(kind.equals("observe")||kind.equals("connectivity")) {
-                        String circuit=operation.getAttribute("circuit"),key=kind+"\0"+circuit;
-                        response=loaded.results.get(key);
-                        if(response==null)response=loaded.remember(key,(kind.equals("observe")
-                            ?ExactRuntimeObserver.observeLoaded(loaded.file,loaded.project(),Paths.get(artifact),digest,
-                                circuit,runtime,args[1],bundleDigest,loaded.stdout,loaded.messages)
-                            :ExactRuntimeObserver.connectivityLoaded(loaded.file,circuit)).getBytes(StandardCharsets.UTF_8));
+                    if(kind.equals("observe")) {
+                        String circuit=operation.getAttribute("circuit");
+                        response=loaded.results.get(circuit);
+                        if(response==null)response=loaded.remember(circuit,ExactRuntimeObserver.observeLoaded(loaded.file,
+                            loaded.project(),loaded.ids,loaded.document,loaded.revision,circuit,runtime,args[1],
+                            loaded.stdout,loaded.messages).getBytes(StandardCharsets.UTF_8));
                         WorkerTiming.mark(kind);
                     } else if(kind.equals("connections")) {
                         String circuit=operation.getAttribute("circuit");
-                        com.cburch.logisim.circuit.CircuitConnections index=loaded.connections.get(circuit);
+                        CircuitConnections index=loaded.connections.get(circuit);
                         if(index==null) {
-                            index=com.cburch.logisim.circuit.CircuitConnections.of(loaded.file,circuit);
+                            index=CircuitConnections.of(loaded.file,loaded.ids,circuit);
                             loaded.connections.put(circuit,index);
                             WorkerTiming.mark("connections.index");
                         }
                         response=index.answer(operation);
                         WorkerTiming.mark("connections");
+                    } else if(kind.equals("move")) {
+                        Circuit circuit=loaded.file.getCircuit(operation.getAttribute("circuit"));
+                        if(circuit==null)throw new IllegalArgumentException("找不到电路");
+                        CircuitMoves.Moved moved=CircuitMoves.move(circuit,loaded.ids.sheet(circuit),operation,loaded.moves);
+                        if(moved.disturbed)loaded.changed();
+                        response=moved.reply;
+                        WorkerTiming.mark("move");
                     } else if(kind.equals("width-errors")) {
                         response=CircuitSymbols.widthErrors(loaded.file,operation);
                         WorkerTiming.mark("width-errors");
                     } else if(kind.equals("symbols")) {
-                        response=CircuitSymbols.describe(loaded.file,loaded.project(),operation);
+                        response=CircuitSymbols.describe(loaded.file,loaded.project(),loaded.ids,operation);
                         WorkerTiming.mark("symbols");
                     } else if(kind.equals("render")) {
-                        com.cburch.logisim.circuit.Circuit circuit=loaded.file.getCircuit(operation.getAttribute("circuit"));
+                        Circuit circuit=loaded.file.getCircuit(operation.getAttribute("circuit"));
                         if(circuit==null)throw new IllegalArgumentException("Unknown circuit");
                         response=CircuitRenderer.draw(loaded.project(),circuit,Integer.parseInt(operation.getAttribute("x")),
                             Integer.parseInt(operation.getAttribute("y")),Integer.parseInt(operation.getAttribute("width")),
@@ -133,8 +145,8 @@ public final class CircuitWorker {
                         Document result=factory.newDocumentBuilder().newDocument();result.appendChild(result.createElement("result"));
                         if(kind.equals("component-catalog"))CircuitPalette.catalog(loaded.file,loaded.project(),operation,result);
                         else if(kind.equals("component-template")||kind.equals("place-component"))CircuitPalette.describe(loaded.file,loaded.project(),operation,result);
-                        else if(kind.equals("component-attributes"))CircuitPalette.describeComponent(loaded.file,operation,result);
-                        else if(kind.equals("property")||kind.equals("memory"))CircuitObjects.describe(loaded.file,operation,result);
+                        else if(kind.equals("component-attributes"))CircuitPalette.describeComponent(loaded.file,loaded.ids,operation,result);
+                        else if(kind.equals("property")||kind.equals("memory"))CircuitObjects.describe(loaded.file,loaded.ids,operation,result);
                         else if(kind.equals("interface"))CircuitInterface.describe(loaded.file,operation,result);
                         else throw new IllegalArgumentException("不支持的只读操作");
                         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
@@ -142,7 +154,10 @@ public final class CircuitWorker {
                         WorkerTiming.mark(kind);
                     }
                     reply(protocol,"ok",response);
-                } catch(Exception error) { reply(protocol,"error",String.valueOf(error.getMessage()).getBytes(StandardCharsets.UTF_8)); }
+                } catch(Exception|LinkageError error) {
+                    String message=error.getMessage();
+                    reply(protocol,"error",(message==null||message.isEmpty()?error.toString():message).getBytes(StandardCharsets.UTF_8));
+                }
             }
         } catch(Exception error) {reply(protocol,"error",String.valueOf(error.getMessage()).getBytes(StandardCharsets.UTF_8));}
         System.exit(0);

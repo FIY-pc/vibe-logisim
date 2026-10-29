@@ -483,8 +483,8 @@ fn moved_wire_ending_on_a_trunk_splits_it() {
 
 #[test]
 fn rerouted_wire_keeps_the_junction_at_its_other_end() {
-    // The branch lands inside a trunk, which Logisim splits on load; the file
-    // keeps one wire per run, and a move only moves what the selection names.
+    // The branch lands inside a trunk, which Logisim joins on load; the file
+    // keeps one wire per run, and a move only rewrites the wires it names.
     let tee = r##"<project source="2.7.1" version="1.0">
   <lib desc="#Wiring" name="0"/>
   <main name="main"/>
@@ -521,6 +521,7 @@ fn rerouted_wire_keeps_the_junction_at_its_other_end() {
     assert_eq!(outcome.wires, ["w1"]);
 }
 
+#[test]
 fn a_move_without_wire_edits_leaves_every_wire_alone() {
     let gate = r##"<project source="2.7.1" version="1.0">
   <lib desc="#Wiring" name="0"/>

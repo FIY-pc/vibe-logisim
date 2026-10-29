@@ -12,6 +12,7 @@ use crate::{
     runtime::Launcher,
     xml,
 };
+use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -23,7 +24,7 @@ use tokio::{
     process::{Child, ChildStdin, ChildStdout},
     sync::broadcast,
 };
-use vibe_circuit_document::{DocumentView, digest};
+use vibe_circuit_document::{DocumentView, Revision, digest};
 use xmltree::Element;
 
 /// The deepest subcircuit path an instance may have.
@@ -32,9 +33,9 @@ const MAX_DEPTH: usize = 64;
 /// whole state.
 const BACKLOG: usize = 256;
 
-/// A document as of one revision: the file the runtime opens and its parsed view.
+/// A document as of one revision: what the runtime loads, and its parsed view.
 pub struct RunDocument {
-    pub artifact: PathBuf,
+    pub revision: Revision,
     pub view: DocumentView,
 }
 
@@ -52,9 +53,9 @@ struct Check {
 
 enum Spawner {
     Java,
-    /// Tests: builds the process side from the start file.
+    /// Tests: builds the process side from the start element.
     #[cfg(test)]
-    Fake(Box<dyn Fn(&Path) -> Io + Send + Sync>),
+    Fake(Box<dyn Fn(&str) -> Io + Send + Sync>),
 }
 
 #[derive(Default)]
@@ -132,24 +133,13 @@ impl Shared {
     }
 }
 
-/// The start file the runtime reads before its first frame; removed afterwards.
-struct InitFile(PathBuf);
-
-impl InitFile {
-    fn write(state: &Path, xml: &str) -> Result<Self, SimError> {
-        let folder = state.join("simulation");
-        let path = folder.join(format!("{}.xml", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&folder)
-            .and_then(|()| std::fs::write(&path, xml))
-            .map_err(|error| failed(format!("{}: {error}", path.display())))?;
-        Ok(Self(path))
-    }
-}
-
-impl Drop for InitFile {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
+/// The folder relative libraries of a revision resolve in, as the runtime
+/// reads it; empty for a document without a file.
+fn directory(revision: &Revision) -> String {
+    revision
+        .directory()
+        .map(|d| java_path(d).to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 fn failed(detail: impl Into<String>) -> SimError {
@@ -245,29 +235,31 @@ impl SimulationRegistry {
         if let Some(frequency) = frequency {
             frequency_in_range(frequency)?;
         }
-        let RunDocument { artifact, view } = document;
+        let RunDocument { revision, view } = document;
         let definition = view
             .circuits
             .iter()
             .find(|candidate| candidate.name == circuit)
             .ok_or(Code::UnknownCircuit)?;
-        let init = protocol::init_document(circuit, frequency, &definition.components)?;
-        let source = tokio::fs::read(&artifact)
-            .await
-            .map_err(|error| failed(format!("{}: {error}", artifact.display())))?;
+        let init = protocol::init_document(
+            revision.name(),
+            &directory(&revision),
+            circuit,
+            frequency,
+            &definition.components,
+        )?;
         let (runtime, kind) = self
             .0
             .launcher
             .facts()
-            .runtime_for(&source)
+            .runtime_for_version(revision.source_version().as_deref())
             .map_err(|message| SimError::new(Code::RuntimeUnavailable).with_message(message))?;
         let _start = self.0.starts.lock().await;
         let current = self.0.lock().run.clone();
         if let Some(current) = current {
             current.end(EndReason::Replaced, None, None);
         }
-        let init = InitFile::write(self.0.launcher.state(), &init)?;
-        let io = self.spawn(&runtime, &artifact, &init.0).await?;
+        let io = self.spawn(&runtime, &init, revision.bytes()).await?;
         let info = RunInfo {
             document_id: view.id,
             document_name: view.name,
@@ -292,7 +284,6 @@ impl SimulationRegistry {
             on_end,
         );
         let ready = run.first_frame().await;
-        drop(init);
         if !ready && run.ended().is_none() {
             let detail = "no frame before the start deadline".to_owned();
             run.end(EndReason::Failed, None, Some(detail));
@@ -310,7 +301,9 @@ impl SimulationRegistry {
             .map_or_else(|| Code::StartFailed.into(), start_error))
     }
 
-    async fn spawn(&self, runtime: &Path, artifact: &Path, init: &Path) -> Result<Io, SimError> {
+    /// Starts the run's process; its first line is the start element and the
+    /// document's bytes.
+    async fn spawn(&self, runtime: &Path, init: &str, text: &[u8]) -> Result<Io, SimError> {
         match &self.0.spawner {
             Spawner::Java => {
                 let mut command = self
@@ -319,23 +312,29 @@ impl SimulationRegistry {
                     .command("CircuitSession", runtime)
                     .await
                     .map_err(failed)?;
-                let mut child = command
-                    .arg(java_path(artifact))
-                    .arg(java_path(init))
-                    .spawn()
-                    .map_err(|error| failed(error.to_string()))?;
-                let (Some(input), Some(output), Some(stderr)) =
+                let mut child = command.spawn().map_err(|error| failed(error.to_string()))?;
+                let (Some(mut input), Some(output), Some(stderr)) =
                     (child.stdin.take(), child.stdout.take(), child.stderr.take())
                 else {
                     return Err(failed("the runtime process has no standard streams"));
                 };
+                let stderr = StderrCapture::start(stderr);
+                let mut line = B64.encode(init);
+                line.push('\t');
+                B64.encode_string(text, &mut line);
+                line.push('\n');
+                input
+                    .write_all(line.as_bytes())
+                    .await
+                    .map_err(|error| failed(error.to_string()))?;
+                input
+                    .flush()
+                    .await
+                    .map_err(|error| failed(error.to_string()))?;
                 Ok(Io {
                     input: Box::new(input),
                     output: Box::new(output),
-                    process: Process::Native {
-                        child,
-                        stderr: StderrCapture::start(stderr),
-                    },
+                    process: Process::Native { child, stderr },
                 })
             }
             #[cfg(test)]
@@ -405,23 +404,24 @@ impl SimulationRegistry {
         self.0.subscribe()
     }
 
-    /// Runs one bounded check on a circuit snapshot and returns its result
-    /// document. `operation` is a `simulate` or `trace` element exactly as the
-    /// batch checker reads it.
+    /// Runs one bounded check on a revision and returns its result document.
+    /// `operation` is a `simulate` or `trace` element exactly as the batch
+    /// checker reads it.
     ///
     /// The check process is separate from the current run: the check cannot
     /// stall the run's clock or frames, and an interactive run is never
-    /// replaced or interrupted. Every check loads the artifact afresh inside
+    /// replaced or interrupted. Every check loads the revision afresh inside
     /// that process, because trace program stimuli mutate ROM contents.
-    pub async fn verify(&self, artifact: &Path, operation: Element) -> Result<Element, SimError> {
-        let source = tokio::fs::read(artifact)
-            .await
-            .map_err(|error| failed(format!("{}: {error}", artifact.display())))?;
+    pub async fn verify(
+        &self,
+        revision: &Revision,
+        operation: Element,
+    ) -> Result<Element, SimError> {
         let runtime = self
             .0
             .launcher
             .facts()
-            .runtime_for(&source)
+            .runtime_for_version(revision.source_version().as_deref())
             .map_err(|message| SimError::new(Code::RuntimeUnavailable).with_message(message))?
             .0;
         let runtime_hash = digest(&std::fs::read(&runtime).map_err(|error| {
@@ -430,8 +430,8 @@ impl SimulationRegistry {
         let request = xml(
             "request",
             &[
-                ("artifact", java_path(artifact).to_string_lossy().into()),
-                ("digest", digest(&source)),
+                ("name", revision.name().into()),
+                ("directory", directory(revision)),
             ],
             vec![operation],
         );
@@ -439,7 +439,9 @@ impl SimulationRegistry {
         request
             .write(&mut bytes)
             .map_err(|error| SimError::new(Code::Internal).with_detail(error.to_string()))?;
-        let mut line = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+        let mut line = B64.encode(bytes);
+        line.push('\t');
+        B64.encode_string(revision.bytes(), &mut line);
         line.push('\n');
 
         let mut checks = self.0.checks.lock().await;
@@ -472,9 +474,9 @@ impl SimulationRegistry {
             let (status, payload) = line
                 .split_once('\t')
                 .ok_or_else(|| failed("无效的校验响应"))?;
-            let payload =
-                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, payload)
-                    .map_err(|error| failed(error.to_string()))?;
+            let payload = B64
+                .decode(payload)
+                .map_err(|error| failed(error.to_string()))?;
             if status != "ok" {
                 return Err(SimError::new(Code::Internal)
                     .with_detail(String::from_utf8_lossy(&payload).into_owned()));
@@ -587,7 +589,6 @@ mod tests {
         registry: SimulationRegistry,
         spawned: mpsc::UnboundedReceiver<Spawned>,
         document: Document,
-        artifact: PathBuf,
         _dir: tempfile::TempDir,
     }
 
@@ -596,20 +597,18 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let runtime = dir.path().join("runtime.jar");
             std::fs::write(&runtime, b"").unwrap();
-            let artifact = dir.path().join("test.circ");
-            std::fs::write(&artifact, CIRCUIT).unwrap();
             let facts = RuntimeFacts::new(dir.path().into(), Some(runtime));
             let launcher = Launcher::new(facts, dir.path().join("state"));
             let (sender, spawned) = mpsc::unbounded_channel();
-            let spawner = Spawner::Fake(Box::new(move |init: &Path| {
+            let spawner = Spawner::Fake(Box::new(move |init: &str| {
                 let (io, fake) = fake();
-                let init = std::fs::read_to_string(init).unwrap();
+                let init = init.to_owned();
                 sender.send(Spawned { init, fake }).unwrap();
                 io
             }));
             let document = Document::from_bytes(
                 "test.circ".into(),
-                Some(artifact.clone()),
+                Some(dir.path().join("test.circ")),
                 CIRCUIT.into(),
                 true,
             )
@@ -618,7 +617,6 @@ mod tests {
                 registry: SimulationRegistry::with(launcher, spawner, deadlines),
                 spawned,
                 document,
-                artifact,
                 _dir: dir,
             }
         }
@@ -629,7 +627,7 @@ mod tests {
         ) -> JoinHandle<Result<RunInfo, SimError>> {
             let registry = self.registry.clone();
             let document = RunDocument {
-                artifact: self.artifact.clone(),
+                revision: self.document.snapshot(),
                 view: self.document.view().unwrap(),
             };
             let circuit = circuit.to_owned();
@@ -954,12 +952,10 @@ mod tests {
         ));
         for source in ["2.16.1.4", "2.15.0"] {
             let files = tempfile::tempdir().unwrap();
-            let artifact = files.path().join("smoke.circ");
             let xml = SMOKE.replace("SOURCE", source);
-            std::fs::write(&artifact, &xml).unwrap();
             let document = Document::from_bytes(
                 "smoke.circ".into(),
-                Some(artifact.clone()),
+                Some(files.path().join("smoke.circ")),
                 xml.into(),
                 true,
             )
@@ -982,7 +978,7 @@ mod tests {
             let mut events = registry.subscribe();
             let started = std::time::Instant::now();
             let document = RunDocument {
-                artifact,
+                revision: document.snapshot(),
                 view: view.clone(),
             };
             let run = registry.start(document, "main", Some(4.0)).await.unwrap();
@@ -1067,21 +1063,13 @@ mod tests {
             );
         }
         // A circuit the file does not have: the runtime reports it while starting.
-        let files = tempfile::tempdir().unwrap();
-        let artifact = files.path().join("smoke.circ");
         let xml = SMOKE.replace("SOURCE", "2.16.1.4");
-        std::fs::write(&artifact, &xml).unwrap();
         let shown = xml.replace(r#"name="main""#, r#"name="elsewhere""#);
-        let document = Document::from_bytes(
-            "smoke.circ".into(),
-            Some(artifact.clone()),
-            shown.into(),
-            true,
-        )
-        .unwrap();
+        let loaded = Document::from_bytes("smoke.circ".into(), None, xml.into(), true).unwrap();
+        let shown = Document::from_bytes("smoke.circ".into(), None, shown.into(), true).unwrap();
         let document = RunDocument {
-            artifact,
-            view: document.view().unwrap(),
+            revision: loaded.snapshot(),
+            view: shown.view().unwrap(),
         };
         let started = std::time::Instant::now();
         let error = registry

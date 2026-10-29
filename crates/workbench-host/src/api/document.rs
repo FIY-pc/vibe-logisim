@@ -39,27 +39,6 @@ pub struct EditResult {
     pub selection: Selection,
 }
 
-/// A drag's geometry. A position the release would reject comes back in
-/// `error` so the drag continues and the status line explains why.
-#[derive(Debug, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub struct MovePreview {
-    pub revision: Option<String>,
-    pub delta: Option<Point>,
-    pub removed_wires: Vec<String>,
-    pub added_wires: Vec<vibe_circuit_document::Wire>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub error: Option<ErrorDetail>,
-}
-
-#[derive(Debug, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase")]
-pub struct ErrorDetail {
-    pub code: crate::ErrorCode,
-    pub message: String,
-}
-
 /// One kind of component the window draws: a component's library (none or
 /// empty for the file's circuits), name and complete attributes, as the
 /// document has them.
@@ -155,13 +134,6 @@ pub enum DocumentRequest {
         revision: String,
         circuit: String,
         edit: Edit,
-    },
-    MovePreview {
-        id: String,
-        revision: String,
-        circuit: String,
-        ids: Vec<String>,
-        delta: Point,
     },
     Undo {
         id: String,
@@ -367,7 +339,6 @@ impl DocumentRequest {
         "save",
         "saveTarget",
         "edit",
-        "movePreview",
         "undo",
         "redo",
         "observe",
@@ -419,7 +390,6 @@ impl DocumentRequest {
                 .stage(Stage::Edit)
                 .history(Action::edit(id, edit))
                 .agent(),
-            Self::MovePreview { .. } => Meta::new(Read),
             Self::Undo { id, .. } => Meta::new(AutoSave)
                 .stage(Stage::Edit)
                 .history(Action::document("undo", "撤销修改", id))
@@ -483,9 +453,8 @@ pub(crate) fn fitted_viewport(observation: &Value) -> Viewport {
     }
 }
 
-/// Which component records each key: one of the circuit with exactly that
-/// key whose location and name no other component shares (the worker finds
-/// it by those), otherwise one made from the library tool.
+/// Which component records each key: the first of the circuit with exactly
+/// that key, otherwise one made from the library tool.
 fn symbol_sources(
     circuit: Option<&vibe_circuit_document::Circuit>,
     keys: Vec<SymbolKey>,
@@ -494,24 +463,17 @@ fn symbol_sources(
     fn library(value: Option<&str>) -> Option<&str> {
         value.filter(|library| !library.is_empty())
     }
-    let components = circuit.map(|c| c.components.as_slice()).unwrap_or_default();
-    let mut stacked: HashMap<(Point, &str), usize> = HashMap::new();
-    for c in components {
-        *stacked.entry((c.location, c.name.as_str())).or_default() += 1;
-    }
     // A kind: library (none for the file's circuits), name, attributes.
     type Kind<'a> = (Option<&'a str>, &'a str, &'a BTreeMap<String, String>);
-    let mut placed: HashMap<Kind, Point> = HashMap::new();
-    for c in components {
-        if stacked[&(c.location, c.name.as_str())] == 1 {
-            placed
-                .entry((
-                    library(c.library.as_deref()),
-                    c.name.as_str(),
-                    &c.attributes,
-                ))
-                .or_insert(c.location);
-        }
+    let mut placed: HashMap<Kind, &str> = HashMap::new();
+    for c in circuit.map(|c| c.components.as_slice()).unwrap_or_default() {
+        placed
+            .entry((
+                library(c.library.as_deref()),
+                c.name.as_str(),
+                &c.attributes,
+            ))
+            .or_insert(&c.id);
     }
     keys.into_iter()
         .map(|key| {
@@ -520,10 +482,7 @@ fn symbol_sources(
                 key.name.as_str(),
                 &key.attributes,
             )) {
-                Some(&location) => SymbolSource::Placed {
-                    location,
-                    factory: key.name,
-                },
+                Some(&id) => SymbolSource::Placed { id: id.to_string() },
                 None => SymbolSource::Made {
                     library: key.library.filter(|library| !library.is_empty()),
                     name: key.name,
@@ -554,7 +513,7 @@ fn component_attributes(component: &Value) -> Option<BTreeMap<String, String>> {
 
 /// The edit result: the view change plus the history title and the selection
 /// the canvas restores. `noop` means nothing was written.
-fn edit_result(outcome: &EditOutcome, change: DocumentChange, noop: bool) -> EditResult {
+pub(crate) fn edit_result(outcome: &EditOutcome, change: DocumentChange, noop: bool) -> EditResult {
     EditResult {
         revision: change.revision.clone(),
         noop: noop || outcome.title.is_empty() && outcome.changed_circuits.is_empty(),
@@ -565,29 +524,6 @@ fn edit_result(outcome: &EditOutcome, change: DocumentChange, noop: bool) -> Edi
             components: outcome.components.clone(),
             wires: outcome.wires.clone(),
         },
-        change,
-    }
-}
-
-/// The edit result of a move, which commits a resolved candidate.
-pub(crate) fn edit_result_for_move(
-    circuit: &str,
-    components: Vec<String>,
-    wires: Vec<String>,
-    change: DocumentChange,
-) -> EditResult {
-    let title = if wires.is_empty() {
-        format!("移动 {} 个对象", components.len() + wires.len())
-    } else {
-        format!("移动 {} 个元件、{} 段导线", components.len(), wires.len())
-    };
-    EditResult {
-        revision: change.revision.clone(),
-        noop: false,
-        title,
-        circuit: circuit.to_string(),
-        changed_circuits: vec![circuit.to_string()],
-        selection: Selection { components, wires },
         change,
     }
 }
@@ -625,10 +561,15 @@ impl Host {
             change.width_errors = Some(BTreeMap::new());
             return;
         }
-        let Ok(path) = self.snapshot(&change.id, &change.revision).await else {
+        let Ok(revision) = self.revision_at(&change.id, &change.revision).await else {
             return;
         };
-        let read = self.native.lock().await.width_errors(&path, &names).await;
+        let read = self
+            .native
+            .lock()
+            .await
+            .width_errors(&revision, &names)
+            .await;
         change.width_errors = read.ok().map(|found| {
             names
                 .into_iter()
@@ -655,14 +596,14 @@ impl Host {
                 location,
                 attributes,
             } => {
-                let path = self.snapshot(id, revision).await?;
+                let revision = self.revision_at(id, revision).await?;
                 let _template = timing::span("edit.template");
                 let template = self
                     .native
                     .lock()
                     .await
                     .template(
-                        &path,
+                        &revision,
                         circuit,
                         library.clone(),
                         name,
@@ -686,15 +627,13 @@ impl Host {
                 id: component_id,
                 values,
             } => {
-                let (path, component) = self
-                    .snapshot_component(id, revision, circuit, &component_id)
-                    .await?;
+                let revision = self.revision_at(id, revision).await?;
                 let _properties = timing::span("edit.properties");
                 let checked = self
                     .native
                     .lock()
                     .await
-                    .properties(&path, circuit, &component, values)
+                    .properties(&revision, circuit, &component_id, values)
                     .await?;
                 let values =
                     component_attributes(serialized_component(&checked)?).ok_or("元件属性缺失")?;
@@ -900,8 +839,8 @@ impl Host {
                 };
                 let mut result = if let Some(moves) = moves {
                     self.commit_moves(&id, &revision, &circuit, &moves).await?
-                } else if let Edit::Move { ids, delta } = &edit {
-                    self.commit_move(&id, &revision, &circuit, ids, *delta)
+                } else if let Edit::Move { ids, delta } = edit {
+                    self.commit_moves(&id, &revision, &circuit, &[(ids, delta)])
                         .await?
                 } else {
                     let mut w = self.workspace.lock().await;
@@ -919,18 +858,6 @@ impl Host {
                 self.add_width_errors(&mut result).await;
                 let _value = timing::span("edit.value");
                 value(result)
-            }
-            DocumentRequest::MovePreview {
-                id,
-                revision,
-                circuit,
-                ids,
-                delta,
-            } => {
-                let preview = self
-                    .preview_move(&id, &revision, &circuit, &ids, delta)
-                    .await?;
-                value(preview)
             }
             DocumentRequest::Undo { id, revision } => {
                 let (outcome, change) = {
@@ -961,9 +888,14 @@ impl Host {
                 revision,
                 circuit,
             } => {
-                let p = self.snapshot(&id, &revision).await?;
+                let revision = self.revision_at(&id, &revision).await?;
                 let _observe = timing::span("observe");
-                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .observe_raw(&revision, &circuit)
+                    .await?;
                 return Ok(Reply::Text(text));
             }
             DocumentRequest::ObserveXml {
@@ -972,19 +904,21 @@ impl Host {
                 circuit,
                 xml,
             } => {
-                // Written where the applied revision's file would go, so
-                // applying the same XML afterwards loads nothing new.
-                let p = {
+                // The proposal goes to the runtime as the document's next
+                // revision, so applying the same XML afterwards sends nothing.
+                let proposed = {
                     let w = self.workspace.lock().await;
-                    let proposed = w.get(&id)?.preview(
-                        &revision,
-                        &circuit,
-                        Edit::Replace { xml, title: None },
-                    )?;
-                    self.materialize(&proposed)?
+                    w.get(&id)?
+                        .preview(&revision, &circuit, Edit::Replace { xml, title: None })?
+                        .snapshot()
                 };
                 let _observe = timing::span("observe");
-                let text = self.native.lock().await.observe_raw(&p, &circuit).await?;
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .observe_raw(&proposed, &circuit)
+                    .await?;
                 return Ok(Reply::Text(text));
             }
             DocumentRequest::Symbols {
@@ -993,14 +927,14 @@ impl Host {
                 circuit,
                 symbols,
             } => {
-                let (path, view) = self.snapshot_circuit(&id, &revision, &circuit).await?;
+                let (revision, view) = self.revision_circuit(&id, &revision, &circuit).await?;
                 let sources = symbol_sources(view.as_ref(), symbols);
                 let _symbols = timing::span("symbols");
                 let text = self
                     .native
                     .lock()
                     .await
-                    .symbols(&path, &circuit, &sources)
+                    .symbols(&revision, &circuit, &sources)
                     .await?;
                 return Ok(Reply::Text(text));
             }
@@ -1012,21 +946,10 @@ impl Host {
                 wires,
                 point,
             } => {
-                let (path, view) = self.snapshot_circuit(&id, &revision, &circuit).await?;
-                let view = view.ok_or("找不到电路")?;
-                // The runtime's ids differ from the document's; it finds the
-                // objects by where they are.
+                let revision = self.revision_at(&id, &revision).await?;
                 let seeds = ConnectionSeeds {
-                    components: components
-                        .iter()
-                        .filter_map(|id| view.components.iter().find(|c| &c.id == id))
-                        .map(|c| (c.location, c.name.clone()))
-                        .collect(),
-                    wires: wires
-                        .iter()
-                        .filter_map(|id| view.wires.iter().find(|w| &w.id == id))
-                        .map(|w| (w.from, w.to))
-                        .collect(),
+                    components,
+                    wires,
                     point: point.map(|p| (Point { x: p.x, y: p.y }, p.radius)),
                 };
                 let _connections = timing::span("connections");
@@ -1034,7 +957,7 @@ impl Host {
                     .native
                     .lock()
                     .await
-                    .connections(&path, &circuit, &seeds)
+                    .connections(&revision, &circuit, &seeds)
                     .await?;
                 return Ok(Reply::Text(text));
             }
@@ -1046,13 +969,13 @@ impl Host {
                 name,
                 attributes,
             } => {
-                let path = self.snapshot(&id, &revision).await?;
+                let revision = self.revision_at(&id, &revision).await?;
                 Ok(self
                     .native
                     .lock()
                     .await
                     .template(
-                        &path,
+                        &revision,
                         &circuit,
                         library,
                         name,
@@ -1067,14 +990,12 @@ impl Host {
                 circuit,
                 component,
             } => {
-                let (path, component) = self
-                    .snapshot_component(&id, &revision, &circuit, &component)
-                    .await?;
+                let revision = self.revision_at(&id, &revision).await?;
                 Ok(self
                     .native
                     .lock()
                     .await
-                    .properties(&path, &circuit, &component, BTreeMap::new())
+                    .properties(&revision, &circuit, &component, BTreeMap::new())
                     .await?)
             }
             DocumentRequest::Catalog {
@@ -1082,8 +1003,13 @@ impl Host {
                 revision,
                 circuit,
             } => {
-                let path = self.snapshot(&id, &revision).await?;
-                Ok(self.native.lock().await.catalog(&path, &circuit).await?)
+                let revision = self.revision_at(&id, &revision).await?;
+                Ok(self
+                    .native
+                    .lock()
+                    .await
+                    .catalog(&revision, &circuit)
+                    .await?)
             }
             DocumentRequest::Render {
                 id,
@@ -1095,7 +1021,7 @@ impl Host {
                 height,
                 scale,
             } => {
-                let path = self.snapshot(&id, &revision).await?;
+                let revision = self.revision_at(&id, &revision).await?;
                 let mut native = self.native.lock().await;
                 let viewport = match (x, y, width, height, scale) {
                     (Some(x), Some(y), Some(width), Some(height), Some(scale)) => Viewport {
@@ -1105,10 +1031,10 @@ impl Host {
                         height,
                         scale,
                     },
-                    _ => fitted_viewport(&native.observe(&path, &circuit).await?),
+                    _ => fitted_viewport(&native.observe(&revision, &circuit).await?),
                 };
                 let _render = timing::span("render");
-                let image = native.render(&path, &circuit, viewport).await?;
+                let image = native.render(&revision, &circuit, viewport).await?;
                 Ok(json!({
                     "image": image,
                     "viewport": {

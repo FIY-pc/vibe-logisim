@@ -170,11 +170,11 @@ impl<'t> Sheet<'t> {
 }
 
 /// Component ids name the anchor location, `c<x>_<y>` with `m` for a minus
-/// sign, as the native observer does. Components that share a location are
-/// ordered as the observer orders them, by factory name and then by their
-/// attributes, and the k-th of them (k ≥ 2) gets the suffix `_k`. The file
-/// leaves default values out where the observer counts them, so two parts of
-/// one factory on one spot that differ only there may be ordered differently.
+/// sign. Components that share a location are ordered by factory name and
+/// then by their stored attributes (Java string order), and the k-th of them
+/// (k ≥ 2) gets the suffix `_k`. These are the only component ids: the
+/// native side is told them with every circuit it loads and never makes its
+/// own.
 fn anchor(tree: &Tree, comps: &mut [Comp]) {
     let mut stacks: HashMap<Point, Vec<usize>> = HashMap::new();
     for (i, c) in comps.iter().enumerate() {
@@ -366,7 +366,13 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
                 None => out.append(node, &[comp]),
             }
         }
-        Edit::Move { ids, delta } => shift(&Sheet::new(tree, node)?, &ids, delta, &mut out)?,
+        Edit::Move { ids, delta } => shift(
+            &Sheet::new(tree, node)?,
+            &ids,
+            delta,
+            &crate::WireEdit::default(),
+            &mut out,
+        )?,
         Edit::Delete { ids } => delete(&Sheet::new(tree, node)?, &ids, &mut out)?,
         Edit::Attributes { id, values } => {
             set_attributes(&Sheet::new(tree, node)?, id, &values, &mut out)?
@@ -421,13 +427,22 @@ fn wire(sheet: &Sheet, points: &[Point], out: &mut Splices<'_>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn shift(
+/// A move: the selection translated and the wire edits the native side's
+/// `MoveGesture` gave for it (none for a plain translation): the named wires
+/// out, the segments in after the circuit's last wire. One plan, so the
+/// junction rule splits wires once, at the moved and the added ends.
+fn shift(
     sheet: &Sheet,
     ids: &[String],
     delta: Point,
+    edit: &crate::WireEdit,
     out: &mut Splices<'_>,
 ) -> Result<()> {
     let (comps, wires) = sheet.resolve(ids)?;
+    let mut gone = BTreeSet::new();
+    for id in &edit.removed {
+        gone.insert(sheet.wire(id).ok_or_else(stale)?);
+    }
     if delta == (Point { x: 0, y: 0 }) || (comps.is_empty() && wires.is_empty()) {
         return Ok(());
     }
@@ -458,14 +473,34 @@ pub(crate) fn shift(
         ends.extend([moved.from, moved.to]);
         plan.wires[k] = vec![moved];
     }
+    for &k in &gone {
+        if !wires.contains(&k) {
+            plan.wires[k].clear();
+        }
+    }
+    // Only the moved wires' ends split what they land on: a new branch that
+    // ends inside a wire is a T, which Logisim joins without a split.
+    for &(from, to) in &edit.added {
+        if from != to {
+            plan.added.push(Segment { from, to });
+        }
+    }
     plan.split(&ends);
+    // An added piece that duplicates a wire adds nothing.
+    let mut kept: Vec<Segment> = Vec::new();
+    for piece in std::mem::take(&mut plan.added) {
+        if !plan.wires.iter().flatten().any(|w| w.same(&piece))
+            && !kept.iter().any(|s| s.same(&piece))
+        {
+            kept.push(piece);
+        }
+    }
+    plan.added = kept;
     plan.write(sheet, out);
     Ok(())
 }
 
-/// A move with the wires the native side's `MoveGesture` returned: the
-/// selection translated, the named wires out, the segments in after the
-/// circuit's last wire.
+/// A move with the wire edits the native side's `MoveGesture` returned.
 pub(crate) fn translate(
     tree: &Tree,
     circuit: &str,
@@ -475,47 +510,13 @@ pub(crate) fn translate(
 ) -> Result<Option<String>> {
     let sheet = Sheet::new(tree, find(tree, circuit)?)?;
     let mut out = Splices::new(tree);
-    shift(&sheet, ids, delta, &mut out)?;
-    // A component id in `removed` would mean the caller and this revision
-    // disagree about what is there.
-    let mut gone: BTreeSet<usize> = BTreeSet::new();
-    for id in &wires.removed {
-        match (sheet.resolve(std::slice::from_ref(id))?, &ids) {
-            ((comps, _), _) if !comps.is_empty() => return Err(stale()),
-            ((_, found), _) => gone.extend(found),
-        }
-    }
-    for &k in &gone {
-        out.remove(sheet.wires[k].node);
-    }
-    let mut added: Vec<Segment> = Vec::new();
-    for &(from, to) in &wires.added {
-        let segment = Segment { from, to };
-        if !sheet.wires.iter().any(|w| w.segment.same(&segment))
-            && !added.iter().any(|s| s.same(&segment))
-        {
-            added.push(segment);
-        }
-    }
-    if !added.is_empty() {
-        let elements: Vec<Element> = added.iter().map(wire_element).collect();
-        let last = sheet
-            .wires
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(k, _)| !gone.contains(k))
-            .map(|(_, w)| w.node);
-        match last {
-            Some(last) => out.insert_after(last, &elements),
-            None => out.append(sheet.node, &elements),
-        }
-    }
+    shift(&sheet, ids, delta, wires, &mut out)?;
     finish(out)
 }
 
 /// The ids the selection has after a move: the components at their new
-/// anchors and the wires along for it, then the wires the move added.
+/// anchors and the wires along for it (every piece of a moved wire), then
+/// the wires the move added.
 pub(crate) fn moved(
     before: &Tree,
     after: &Tree,
@@ -546,22 +547,30 @@ pub(crate) fn moved(
         picked.insert(j);
         components.push(new.comps[j].id.clone());
     }
-    let mut moved_wires = Vec::new();
+    let mut chosen: BTreeSet<usize> = BTreeSet::new();
+    let on =
+        |outer: &Segment, inner: &Segment| outer.touches(inner.from) && outer.touches(inner.to);
     for &k in &wires {
         let wanted = old.wires[k].segment.translated(delta)?;
-        let j = new
-            .wires
-            .iter()
-            .position(|w| w.segment.same(&wanted))
-            .ok_or_else(stale)?;
-        moved_wires.push(format!("w{j}"));
+        let before = chosen.len();
+        chosen.extend(
+            new.wires
+                .iter()
+                .enumerate()
+                .filter(|(_, w)| on(&wanted, &w.segment))
+                .map(|(j, _)| j),
+        );
+        if chosen.len() == before {
+            return Err(stale());
+        }
     }
+    let mut moved_wires: Vec<String> = chosen.iter().map(|j| format!("w{j}")).collect();
     for &(from, to) in added {
         let wanted = Segment { from, to };
-        if let Some(j) = new.wires.iter().position(|w| w.segment.same(&wanted))
-            && !moved_wires.contains(&format!("w{j}"))
-        {
-            moved_wires.push(format!("w{j}"));
+        for (j, w) in new.wires.iter().enumerate() {
+            if on(&wanted, &w.segment) && chosen.insert(j) {
+                moved_wires.push(format!("w{j}"));
+            }
         }
     }
     Ok((components, moved_wires))

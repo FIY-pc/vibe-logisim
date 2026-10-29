@@ -3,7 +3,7 @@
 //! per-circuit difference between two revisions.
 
 use crate::{Point, Result, Source, Wire, editing::Sheet, splice::Tree};
-use std::{path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 /// One circuit's ids: component ids in file order, wire ends in file order
 /// (wire `k` is `w<k>`).
@@ -76,11 +76,16 @@ impl Revision {
     pub fn bytes(&self) -> &[u8] {
         self.source.bytes()
     }
-    /// The `desc` of every `<lib>`, in file order.
-    pub fn library_descriptors(&self) -> Vec<String> {
+    /// Every `<lib>`'s name and descriptor, in file order.
+    pub fn libraries(&self) -> Vec<(String, String)> {
         let tree = &self.source.tree;
         tree.named(tree.root(), "lib")
-            .map(|lib| tree.get(lib, "desc").into_owned())
+            .map(|lib| {
+                (
+                    tree.get(lib, "name").into_owned(),
+                    tree.get(lib, "desc").into_owned(),
+                )
+            })
             .collect()
     }
     /// The `source` attribute of the project element (the file's Logisim version).
@@ -103,6 +108,34 @@ impl Revision {
             .find(|&c| tree.get(c, "name") == name)
             .map(|c| ids(tree, c))
             .transpose()
+    }
+    /// The text that brings `changes` (to this revision) to the native side:
+    /// this revision's prolog (declaration and project start tag), then one
+    /// `<circuit>` per change holding the elements it adds, in order. Read
+    /// like the file itself, so the runtime's version repairs apply to them
+    /// as they would in a whole load. None when the project element is empty.
+    pub fn change_text(&self, changes: &[CircuitChange]) -> Option<String> {
+        let tree = &self.source.tree;
+        let prolog = tree.prolog()?;
+        let added: usize = changes
+            .iter()
+            .flat_map(|change| &change.added)
+            .map(|(_, element)| element.len() + 1)
+            .sum();
+        let mut text = String::with_capacity(prolog.len() + added + 24 * changes.len() + 16);
+        text.push_str(prolog);
+        for change in changes {
+            text.push_str("\n<circuit>");
+            for (_, element) in &change.added {
+                text.push('\n');
+                text.push_str(element);
+            }
+            text.push_str("\n</circuit>");
+        }
+        text.push_str("\n</");
+        text.push_str(tree.tag(tree.root()));
+        text.push_str(">\n");
+        Some(text)
     }
     /// What changed between this revision and `next`, per circuit; None when
     /// the two cannot be applied to one loaded project in place.
@@ -165,28 +198,26 @@ fn circuit_change(before: &Tree, after: &Tree, x: usize, y: usize) -> Option<Cir
     }
     let old_sheet = Sheet::new(before, x).ok()?;
     let new_sheet = Sheet::new(after, y).ok()?;
-    let old: Vec<(usize, &str)> = old_sheet.components().collect();
-    let new: Vec<(usize, &str)> = new_sheet.components().collect();
     // A component stays when the same id is still in the circuit with the
     // same element text; anything else is removed and put back by id, which
     // is also how a changed attribute set reaches the loaded circuit.
-    let mut removed = Vec::new();
-    for &(node, id) in &old {
-        let stays = new
-            .iter()
-            .any(|&(other, other_id)| other_id == id && before.source(node) == after.source(other));
-        if !stays {
-            removed.push(id.to_owned());
-        }
-    }
-    let added: Vec<(String, String)> = new
-        .iter()
-        .filter(|&&(node, id)| {
-            !old.iter().any(|&(other, other_id)| {
-                other_id == id && before.source(other) == after.source(node)
-            })
-        })
-        .map(|&(node, id)| (id.to_owned(), after.source(node).to_owned()))
+    let old: HashMap<&str, &str> = old_sheet
+        .components()
+        .map(|(node, id)| (id, before.source(node)))
+        .collect();
+    let new: HashMap<&str, &str> = new_sheet
+        .components()
+        .map(|(node, id)| (id, after.source(node)))
+        .collect();
+    let removed = old_sheet
+        .components()
+        .filter(|&(node, id)| new.get(id) != Some(&before.source(node)))
+        .map(|(_, id)| id.to_owned())
+        .collect();
+    let added: Vec<(String, String)> = new_sheet
+        .components()
+        .filter(|&(node, id)| old.get(id) != Some(&after.source(node)))
+        .map(|(node, id)| (id.to_owned(), after.source(node).to_owned()))
         .collect();
     Some(CircuitChange {
         name,

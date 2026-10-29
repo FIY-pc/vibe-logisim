@@ -197,6 +197,13 @@ impl Tree {
         self.root
     }
 
+    /// The text up to the end of the root's start tag: the declaration,
+    /// whatever precedes the root, and the start tag. None for an empty root.
+    pub(crate) fn prolog(&self) -> Option<&str> {
+        let root = &self.nodes[self.root];
+        (root.open_end != root.span.end).then(|| &self.text[..root.open_end])
+    }
+
     pub(crate) fn tag(&self, n: usize) -> &str {
         &self.text[self.nodes[n].tag.clone()]
     }

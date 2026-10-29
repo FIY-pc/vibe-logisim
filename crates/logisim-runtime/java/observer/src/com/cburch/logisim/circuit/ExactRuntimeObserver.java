@@ -20,7 +20,6 @@ import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.data.BitWidth;
 import com.cburch.logisim.data.Bounds;
 import com.cburch.logisim.data.Location;
-import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.file.LogisimFile;
 import com.cburch.logisim.instance.Instance;
 import com.cburch.logisim.instance.Port;
@@ -31,16 +30,10 @@ import com.cburch.logisim.tools.AddTool;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.Tool;
 
-import java.io.File;
-import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -60,12 +53,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
-import java.util.stream.Stream;
 
 public final class ExactRuntimeObserver {
     private static final String SCHEMA =
         "vibe-logisim.experiment-001.runtime-observation/v0";
-    private static final String CONNECTIVITY_SCHEMA = "vibe-logisim.runtime-connectivity/v0";
     private static final String OBSERVER_VERSION = "spike-1";
     private static final String EXPECTED_RUNTIME_SHA256 =
         "9eb1aae5e87cf0c6e4af845dde00624338c6dce25d945b6482cad017aa6cbb34";
@@ -80,7 +71,6 @@ public final class ExactRuntimeObserver {
     public static void useRuntime(String runtimeDigest) {
         courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
     }
-    private static final int COMPACT_SPATIAL_NEIGHBORS_PER_REGION_COMPONENT = 2;
 
     private static final Comparator<Component> COMPONENT_ORDER =
         Comparator.comparingInt((Component c) -> c.getLocation().getY())
@@ -88,188 +78,49 @@ public final class ExactRuntimeObserver {
             .thenComparing(c -> c.getFactory().getName())
             .thenComparing(c -> attributeFingerprint(c.getAttributeSet()));
 
-    private static final Comparator<Wire> WIRE_ORDER =
-        Comparator.comparingInt((Wire w) -> w.getEnd0().getY())
-            .thenComparingInt(w -> w.getEnd0().getX())
-            .thenComparingInt(w -> w.getEnd1().getY())
-            .thenComparingInt(w -> w.getEnd1().getX());
-
     private final LogisimFile file;
+    private final Project project;
     private final Circuit focus;
-    private final Region region;
-    private final boolean compactMode;
     private final Map<Circuit, Map<Component, String>> idsByCircuit =
         new IdentityHashMap<Circuit, Map<Component, String>>();
+    private final DocumentIds.Sheet sheet;
     private final Map<Component, String> focusIds;
     private final List<Object> unknowns = new ArrayList<Object>();
     private final Coverage coverage = new Coverage();
-    private List<Object> retainedLoaderMessages;
-    /** Supplied by a resident caller: its project and the digests it already knows. */
-    private Project project;
-    private String artifactSha256;
-    private String bundleSha256;
+    private final List<Object> loaderMessages;
 
     private ExactRuntimeObserver(
-        LogisimFile file, Circuit focus, Region region, boolean compactMode
+        LogisimFile file, Project project, DocumentIds ids, Circuit focus, List<Object> loaderMessages
     ) {
         this.file = file;
+        this.project = project;
         this.focus = focus;
-        this.region = region;
-        this.compactMode = compactMode;
-        for (Circuit circuit : file.getCircuits()) {
-            idsByCircuit.put(circuit, assignComponentIds(circuit));
-        }
-        this.focusIds = idsByCircuit.get(focus);
-    }
-
-    public static void main(String[] args) {
-        System.setProperty("java.awt.headless", "true");
-        try {
-            Options options = Options.parse(args);
-
-            Path artifact = new File(options.artifact).getCanonicalFile().toPath();
-            if (!Files.isRegularFile(artifact)) {
-                throw new IllegalArgumentException("missing artifact: " + artifact);
-            }
-            Region region = options.region;
-            if (region != null && (region.width <= 0 || region.height <= 0)) {
-                throw new IllegalArgumentException("region width and height must be positive");
-            }
-
-            Path runtimeJar = requiredPropertyPath("observer.runtime.jar");
-            Path observerSource = optionalPropertyPath("observer.source.path");
-            Path observerBundle = requiredPropertyPath("observer.bundle.path");
-            String runtimeDigest = sha256(runtimeJar);
-            courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
-            if (!courseRuntime && !EXPECTED_RUNTIME_SHA256.equals(runtimeDigest)) {
-                throw new IllegalStateException(
-                    "runtime digest mismatch: expected " + EXPECTED_RUNTIME_SHA256
-                        + " but got " + runtimeDigest
-                );
-            }
-
-            // Coverage-checked load: the runtime's dialog-and-continue reports
-            // (attribute values this runtime defaults, e.g. 2.7.1 Flip-Flop
-            // trigger=high) are kept as messages; openChecked verifies per
-            // circuit that no comp or wire of the source document was dropped,
-            // so continuing is still exact evidence of what the runtime runs.
-            java.util.List<String> loaderWarnings = new java.util.ArrayList<>();
-            ByteArrayOutputStream loaderOutput = new ByteArrayOutputStream();
-            PrintStream originalOut = System.out;
-            LogisimFile file;
-            try {
-                System.setOut(new PrintStream(loaderOutput, true, "UTF-8"));
-                file = com.cburch.logisim.file.NativeCircuitLoader.openChecked(artifact.toFile(), loaderWarnings);
-            } finally {
-                System.setOut(originalOut);
-            }
-            Circuit focus = file.getCircuit(options.circuit);
-            if (focus == null) {
-                throw new IllegalArgumentException("missing circuit: " + options.circuit);
-            }
-
-            ExactRuntimeObserver observer = new ExactRuntimeObserver(
-                file, focus, region, options.compact
-            );
-            if (!loaderWarnings.isEmpty()) {
-                List<Object> retained = new ArrayList<>();
-                for (String message = file.getMessage(); message != null; message = file.getMessage()) {
-                    retained.add(message);
-                }
-                for (String warning : loaderWarnings) {
-                    retained.add("loader: " + warning);
-                }
-                observer.retainedLoaderMessages = retained;
-            }
-            Map<String, Object> document = observer.observe(
-                artifact, runtimeJar, runtimeDigest, observerSource, observerBundle,
-                loaderOutput.toString("UTF-8")
-            );
-            String renderPath = System.getenv("VIBE_OBSERVER_RENDER_PATH");
-            if (renderPath != null && !renderPath.isEmpty()) {
-                document.put("render", render(file, focus, new File(renderPath)));
-            }
-            StringBuilder out = new StringBuilder(256 * 1024);
-            if (options.compact) Json.writeCompact(document, out);
-            else Json.write(document, out, 0);
-            out.append('\n');
-            System.out.print(out.toString());
-            System.exit(0);
-        } catch (Throwable error) {
-            error.printStackTrace(System.err);
-            System.exit(1);
-        }
+        for (Circuit circuit : file.getCircuits()) idsByCircuit.put(circuit, ids.sheet(circuit).ids());
+        this.sheet = ids.sheet(focus);
+        this.focusIds = sheet.ids();
+        this.loaderMessages = loaderMessages;
     }
 
     /**
-     * Same observation contract for the desktop's resident read-only runtime,
-     * which keeps the project (and its Project, so drawing leaves no listeners
-     * behind) and knows the artifact's and the bridge bundle's digests.
+     * One circuit of a loaded revision, named the document's way: components
+     * by their document ids, wires by the document wire over each stretch.
+     * The worker keeps the project (and its Project, so drawing leaves no
+     * listeners behind).
      */
-    public static String observeLoaded(LogisimFile file, Project project, Path artifact,
-            String artifactDigest, String name, Path runtime, String runtimeDigest,
-            String bundleDigest, String stdout, List<Object> messages) throws Exception {
+    public static String observeLoaded(LogisimFile file, Project project, DocumentIds ids,
+            String document, String revision, String name, Path runtime, String runtimeDigest,
+            String stdout, List<Object> messages) throws Exception {
         courseRuntime = COURSE_RUNTIME_SHA256.equals(runtimeDigest);
         if (!courseRuntime && !EXPECTED_RUNTIME_SHA256.equals(runtimeDigest))
             throw new IllegalArgumentException("Unsupported runtime digest");
-        Circuit focus=file.getCircuit(name);
-        if(focus==null)throw new IllegalArgumentException("Unknown circuit: "+name);
-        ExactRuntimeObserver observer=new ExactRuntimeObserver(file,focus,null,false);
-        observer.retainedLoaderMessages=messages;
-        observer.project=project;
-        observer.artifactSha256=artifactDigest;
-        observer.bundleSha256=bundleDigest;
-        phase("ids");
-        Map<String,Object> document=observer.observe(artifact,runtime,runtimeDigest,null,null,stdout);
-        StringBuilder out=new StringBuilder(256*1024);Json.writeCompact(document,out);
-        phase("json");
-        return out.toString();
-    }
-
-    /**
-     * The native connectivity of one circuit, the part of an observation a
-     * connection check compares: every component with its ends and the bit
-     * nets each end joins, and every wire bundle with its points and bit nets.
-     * Nothing is drawn or described, so it costs a fraction of an observation.
-     */
-    public static String connectivityLoaded(LogisimFile file, String name) {
         Circuit focus = file.getCircuit(name);
         if (focus == null) throw new IllegalArgumentException("Unknown circuit: " + name);
-        NetIndex nets = new NetIndex(
-            focus, assignComponentIds(focus), new Coverage(), new ArrayList<Object>(), false
-        );
-        nets.compute();
-        com.cburch.logisim.file.WorkerTiming.mark("connectivity.nets");
-        List<Object> components = new ArrayList<Object>();
-        for (Component component : sortedComponents(focus)) {
-            List<Object> ends = new ArrayList<Object>();
-            for (int index = 0; index < component.getEnds().size(); index++) {
-                EndData end = component.getEnd(index);
-                int width = width(end.getWidth());
-                ends.add(obj(
-                    "index", index,
-                    "location", location(end.getLocation()),
-                    "width", width < 0 ? null : width,
-                    "netBits", nets.netBits(component, index, end)
-                ));
-            }
-            components.add(obj(
-                "location", location(component.getLocation()),
-                "factoryName", component.getFactory().getName(),
-                "ends", ends
-            ));
-        }
-        Map<String, Object> document = obj(
-            "schema", CONNECTIVITY_SCHEMA,
-            "focus", obj(
-                "circuit", focus.getName(),
-                "components", components,
-                "wireBundles", nets.bundlesJson(false)
-            )
-        );
-        StringBuilder out = new StringBuilder(64 * 1024);
-        Json.writeCompact(document, out);
-        com.cburch.logisim.file.WorkerTiming.mark("connectivity.json");
+        ExactRuntimeObserver observer = new ExactRuntimeObserver(file, project, ids, focus, messages);
+        phase("ids");
+        Map<String, Object> result = observer.observe(document, revision, runtime, runtimeDigest, stdout);
+        StringBuilder out = new StringBuilder(256 * 1024);
+        Json.writeCompact(result, out);
+        phase("json");
         return out.toString();
     }
 
@@ -278,44 +129,12 @@ public final class ExactRuntimeObserver {
         com.cburch.logisim.file.WorkerTiming.mark("observe." + name);
     }
 
-    private static Map<String, Object> render(LogisimFile file, Circuit circuit, File output) throws Exception {
-        BufferedImage measure = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D mg = measure.createGraphics();
-        Bounds box = circuit.getBounds(mg).expand(24);
-        mg.dispose();
-        // This bitmap is the overview. The desktop requests native viewport
-        // pixels separately at the actual zoom/DPR. Do not redraw a 24 MP
-        // off-screen surface for every small edit in a long course circuit.
-        double scale = Math.min(2.0, Math.min(2048.0 / Math.max(box.getWidth(), box.getHeight()),
-            Math.sqrt(4_000_000.0 / Math.max(1.0, (double) box.getWidth() * box.getHeight()))));
-        BufferedImage bitmap = new BufferedImage(Math.max(1, (int) Math.ceil(box.getWidth() * scale)),
-            Math.max(1, (int) Math.ceil(box.getHeight() * scale)), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = bitmap.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        g.scale(scale, scale);
-        g.translate(-box.getX(), -box.getY());
-        g.setColor(Color.BLACK);
-        Project project = new Project(file);
-        project.getSimulator().shutDown();
-        ComponentDrawContext context = new ComponentDrawContext(null, circuit,
-            project.getCircuitState(circuit), g, g, true);
-        context.setShowState(false);
-        context.setShowColor(true);
-        circuit.draw(context, null);
-        g.dispose();
-        Files.write(output.toPath(), com.cburch.logisim.file.PngEncoder.encode(bitmap));
-        return obj("bounds", bounds(box), "scale", scale, "authority", "Logisim native Circuit.draw");
-    }
-
     private Map<String, Object> observe(
-        Path artifact, Path runtimeJar, String runtimeDigest, Path observerSource,
-        Path observerBundle,
-        String loaderStdout
+        String document, String revisionId, Path runtimeJar, String runtimeDigest, String loaderStdout
     ) throws Exception {
         measureGeometry();
         phase("geometry");
-        NetIndex nets = new NetIndex(focus, focusIds, coverage, unknowns, true);
+        NetIndex nets = new NetIndex(focus, sheet, coverage, unknowns, true);
         nets.compute();
         phase("nets");
 
@@ -323,7 +142,6 @@ public final class ExactRuntimeObserver {
         phase("components");
         List<Object> states = observeStateElements(nets);
         List<Object> tunnels = observeTunnels(nets);
-        List<Object> spatial = observeSpatialAdjacency();
         phase("tunnels");
         List<Object> circuitSummaries = observeCircuitSummaries();
         phase("summaries");
@@ -340,12 +158,7 @@ public final class ExactRuntimeObserver {
             ));
         }
 
-        List<Object> loaderMessages = retainedLoaderMessages == null ? new ArrayList<Object>() : new ArrayList<Object>(retainedLoaderMessages);
-        for (; retainedLoaderMessages == null;) {
-            String message = file.getMessage();
-            if (message == null) break;
-            loaderMessages.add(message);
-        }
+        List<Object> loaderMessages = new ArrayList<Object>(this.loaderMessages);
         if (!loaderMessages.isEmpty()) {
             unknowns.add(obj(
                 "code", "LOADER_MESSAGES_PRESENT",
@@ -359,10 +172,6 @@ public final class ExactRuntimeObserver {
         Map<String, Object> observer = obj(
             "version", OBSERVER_VERSION,
             "disposition", "disposable measurement spike",
-            "sourcePath", observerSource == null ? null
-                : observerSource.toAbsolutePath().normalize().toString(),
-            "sourceSha256", observerSource == null ? null : sha256(observerSource),
-            "bundleSha256", bundleSha256 != null ? bundleSha256 : sha256Tree(observerBundle),
             "connectivityAuthority",
                 "Logisim-ITA CircuitWires.BundleMap and WireThread from the exact runtime",
             "doesNotInfer", Arrays.asList(
@@ -372,11 +181,7 @@ public final class ExactRuntimeObserver {
                 "circuit correctness"
             )
         );
-        Map<String, Object> revision = obj(
-            "artifactPath", artifact.toString(),
-            "artifactSha256", artifactSha256 != null ? artifactSha256 : sha256(artifact)
-        );
-        phase("hashes");
+        Map<String, Object> revision = obj("document", document, "revision", revisionId);
         Map<String, Object> runtime = obj(
             "reportedVersion", Main.VERSION,
             "jarPath", runtimeJar.toAbsolutePath().normalize().toString(),
@@ -395,7 +200,6 @@ public final class ExactRuntimeObserver {
         Map<String, Object> focusObject = obj(
             "circuit", focus.getName(),
             "bounds", bounds(focus.getBounds()),
-            "region", region == null ? null : region.toJson(),
             "instancePaths", paths,
             "components", components,
             "wires", nets.wiresJson(),
@@ -403,7 +207,6 @@ public final class ExactRuntimeObserver {
             "bitNets", nets.netsJson(),
             "stateElements", states,
             "tunnels", tunnels,
-            "spatialAdjacency", spatial,
             "widthIncompatibilities", widthErrors
         );
 
@@ -419,335 +222,7 @@ public final class ExactRuntimeObserver {
             "coverage", coverage.toJson(),
             "unknowns", unknowns
         );
-        return compactMode ? compactProjection(full) : full;
-    }
-
-    private Map<String, Object> compactProjection(Map<String, Object> full) {
-        if (region == null) {
-            throw new IllegalStateException("compact projection requires a region");
-        }
-
-        Map<String, Object> fullFocus = asObject(full.get("focus"));
-        List<Object> allComponents = asList(fullFocus.get("components"));
-        List<Object> allNets = asList(fullFocus.get("bitNets"));
-        List<Object> allSpatial = asList(fullFocus.get("spatialAdjacency"));
-        Map<String, Map<String, Object>> componentsById =
-            new LinkedHashMap<String, Map<String, Object>>();
-        for (Object value : allComponents) {
-            Map<String, Object> component = asObject(value);
-            componentsById.put((String) component.get("componentId"), component);
-        }
-
-        Set<String> regionIds = new LinkedHashSet<String>();
-        for (Map.Entry<String, Map<String, Object>> entry : componentsById.entrySet()) {
-            if (Boolean.TRUE.equals(entry.getValue().get("inRegion"))) {
-                regionIds.add(entry.getKey());
-            }
-        }
-
-        Set<String> relevantNetIds = new LinkedHashSet<String>();
-        for (String componentId : regionIds) {
-            collectComponentNetIds(componentsById.get(componentId), relevantNetIds);
-        }
-
-        Map<String, Map<String, Object>> netsById =
-            new LinkedHashMap<String, Map<String, Object>>();
-        Set<String> electricalIds = new LinkedHashSet<String>();
-        int relatedContacts = 0;
-        for (Object value : allNets) {
-            Map<String, Object> net = asObject(value);
-            String netId = (String) net.get("netId");
-            netsById.put(netId, net);
-            if (!relevantNetIds.contains(netId)) continue;
-            for (Object contactValue : asList(net.get("contacts"))) {
-                Map<String, Object> contact = asObject(contactValue);
-                electricalIds.add((String) contact.get("componentId"));
-                relatedContacts++;
-            }
-        }
-
-        Set<String> spatialIds = new LinkedHashSet<String>();
-        List<Object> compactSpatial = new ArrayList<Object>();
-        for (Object value : allSpatial) {
-            Map<String, Object> adjacency = asObject(value);
-            String componentId = (String) adjacency.get("componentId");
-            if (!regionIds.contains(componentId)) continue;
-            List<Object> nearest = asList(adjacency.get("nearest"));
-            List<Object> selectedNearest = new ArrayList<Object>();
-            int limit = Math.min(COMPACT_SPATIAL_NEIGHBORS_PER_REGION_COMPONENT, nearest.size());
-            for (int i = 0; i < limit; i++) {
-                Map<String, Object> neighbor = asObject(nearest.get(i));
-                spatialIds.add((String) neighbor.get("componentId"));
-                selectedNearest.add(neighbor);
-            }
-            compactSpatial.add(obj(
-                "componentId", componentId,
-                "nearest", selectedNearest
-            ));
-        }
-
-        Set<String> emittedIds = new LinkedHashSet<String>();
-        emittedIds.addAll(regionIds);
-        emittedIds.addAll(electricalIds);
-        emittedIds.addAll(spatialIds);
-
-        List<Object> compactComponents = new ArrayList<Object>();
-        int omittedPresentationAttributes = 0;
-        int omittedAdjacentNetBits = 0;
-        for (String componentId : sortedStrings(emittedIds)) {
-            Map<String, Object> component = componentsById.get(componentId);
-            if (component == null) continue;
-            List<String> reasons = new ArrayList<String>();
-            if (regionIds.contains(componentId)) reasons.add("region-intersection");
-            if (electricalIds.contains(componentId)) reasons.add("shared-region-bit-net");
-            if (spatialIds.contains(componentId)) reasons.add("spatial-neighbor");
-
-            Map<String, Object> compactAttributes = new LinkedHashMap<String, Object>();
-            for (Object attributeValue : asList(component.get("attributes"))) {
-                Map<String, Object> attribute = asObject(attributeValue);
-                String name = (String) attribute.get("name");
-                if ("labelfont".equals(name) || "labelcolor".equals(name)) {
-                    omittedPresentationAttributes++;
-                    continue;
-                }
-                compactAttributes.put(name, attribute.get("standard"));
-            }
-
-            List<Object> compactEnds = new ArrayList<Object>();
-            for (Object endValue : asList(component.get("ends"))) {
-                Map<String, Object> end = asObject(endValue);
-                List<Object> keptBits = new ArrayList<Object>();
-                int omitted = 0;
-                for (Object bitValue : asList(end.get("netBits"))) {
-                    Map<String, Object> bit = asObject(bitValue);
-                    if (relevantNetIds.contains(bit.get("netId"))) keptBits.add(bit);
-                    else omitted++;
-                }
-                omittedAdjacentNetBits += omitted;
-                Map<String, Object> compactEnd = obj(
-                    "index", end.get("index"),
-                    "location", end.get("location"),
-                    "width", end.get("width"),
-                    "direction", end.get("direction"),
-                    "semanticRole", end.get("semanticRole"),
-                    "runtimeTooltip", end.get("runtimeTooltip"),
-                    "relevantNetBits", keptBits,
-                    "omittedNetBitCount", omitted
-                );
-                for (String key : new String[] { "nativeDirection", "directionSource", "registered" }) {
-                    if (end.containsKey(key)) compactEnd.put(key, end.get(key));
-                }
-                compactEnds.add(compactEnd);
-            }
-
-            compactComponents.add(obj(
-                "componentId", componentId,
-                "inclusionReasons", reasons,
-                "selector", component.get("selector"),
-                "factoryName", component.get("factoryName"),
-                "factoryClass", component.get("factoryClass"),
-                "factoryProvenance", component.get("factoryProvenance"),
-                "location", component.get("location"),
-                "bounds", component.get("bounds"),
-                "inRegion", component.get("inRegion"),
-                "attributes", compactAttributes,
-                "ends", compactEnds,
-                "subcircuit", component.get("subcircuit"),
-                "storage", component.get("storage")
-            ));
-        }
-
-        List<Object> compactNets = new ArrayList<Object>();
-        Set<String> relevantBundleIds = new LinkedHashSet<String>();
-        for (String netId : sortedStrings(relevantNetIds)) {
-            Map<String, Object> net = netsById.get(netId);
-            if (net == null) continue;
-            compactNets.add(net);
-            for (Object sliceValue : asList(net.get("slices"))) {
-                relevantBundleIds.add((String) asObject(sliceValue).get("bundleId"));
-            }
-        }
-
-        List<Object> compactBundles = new ArrayList<Object>();
-        for (Object value : asList(fullFocus.get("wireBundles"))) {
-            Map<String, Object> bundle = asObject(value);
-            if (relevantBundleIds.contains(bundle.get("bundleId"))) compactBundles.add(bundle);
-        }
-        List<Object> compactWires = new ArrayList<Object>();
-        for (Object value : asList(fullFocus.get("wires"))) {
-            Map<String, Object> wire = asObject(value);
-            if (relevantBundleIds.contains(wire.get("bundleId"))) compactWires.add(wire);
-        }
-
-        List<Object> compactStates = new ArrayList<Object>();
-        for (Object value : asList(fullFocus.get("stateElements"))) {
-            Map<String, Object> state = asObject(value);
-            if (!emittedIds.contains(state.get("componentId"))) continue;
-            if (regionIds.contains(state.get("componentId"))
-                || containsRelevantStateNet(state, relevantNetIds)) {
-                compactStates.add(state);
-            }
-        }
-        List<Object> compactTunnels = new ArrayList<Object>();
-        for (Object value : asList(fullFocus.get("tunnels"))) {
-            Map<String, Object> tunnel = asObject(value);
-            if (emittedIds.contains(tunnel.get("componentId"))
-                && containsRelevantBits(asList(tunnel.get("netBits")), relevantNetIds)) {
-                compactTunnels.add(tunnel);
-            }
-        }
-
-        List<Object> compactCircuits = relevantCircuitSummaries(
-            asObject(full.get("project")), asList(fullFocus.get("instancePaths"))
-        );
-        Map<String, Object> fullProject = asObject(full.get("project"));
-        Map<String, Object> compactProject = obj(
-            "name", fullProject.get("name"),
-            "mainCircuit", fullProject.get("mainCircuit"),
-            "runtimeLoaderStdout", fullProject.get("runtimeLoaderStdout"),
-            "loaderMessages", fullProject.get("loaderMessages"),
-            "libraries", fullProject.get("libraries"),
-            "relevantCircuits", compactCircuits
-        );
-
-        List<Object> compactUnknowns = new ArrayList<Object>(asList(full.get("unknowns")));
-        compactUnknowns.add(obj(
-            "code", "COMPACT_ONE_HOP_PROJECTION",
-            "claim", "The public view includes region components, their bit-net contacts, and two nearest spatial neighbors per region component. It does not recursively expand adjacent components' other nets.",
-            "omittedCircuitComponents", allComponents.size() - emittedIds.size(),
-            "omittedCircuitBitNets", allNets.size() - relevantNetIds.size()
-        ));
-        compactUnknowns.add(obj(
-            "code", "PUBLIC_ARTIFACT_TRUST_BOUNDARY",
-            "claim", "Compact mode projects its input; it does not detect or remove private harness or golden circuits. The input artifact must already be public and sanitized."
-        ));
-
-        Map<String, Object> projectionCoverage = obj(
-            "regionComponents", regionIds.size(),
-            "electricalContactComponents", electricalIds.size(),
-            "spatialNeighborComponents", spatialIds.size(),
-            "emittedComponents", emittedIds.size(),
-            "relevantBitNets", compactNets.size(),
-            "relevantNetContacts", relatedContacts,
-            "relevantWireBundles", compactBundles.size(),
-            "relevantWires", compactWires.size(),
-            "relatedStateElements", compactStates.size(),
-            "relatedTunnels", compactTunnels.size(),
-            "omittedComponents", allComponents.size() - emittedIds.size(),
-            "omittedBitNets", allNets.size() - relevantNetIds.size(),
-            "omittedAdjacentNetBits", omittedAdjacentNetBits,
-            "omittedPresentationAttributes", omittedPresentationAttributes,
-            "spatialNeighborLimitPerRegionComponent",
-                COMPACT_SPATIAL_NEIGHBORS_PER_REGION_COMPONENT
-        );
-        Map<String, Object> componentSets = obj(
-            "region", sortedStrings(regionIds),
-            "electricalContacts", sortedStrings(electricalIds),
-            "spatialNeighbors", sortedStrings(spatialIds),
-            "emitted", sortedStrings(emittedIds)
-        );
-        Map<String, Object> projection = obj(
-            "circuit", fullFocus.get("circuit"),
-            "circuitBounds", fullFocus.get("bounds"),
-            "region", fullFocus.get("region"),
-            "selectionRules", Arrays.asList(
-                "all components whose runtime bounds intersect the requested region",
-                "all component contacts on bit-nets touched by region component ends",
-                "up to two closest components by bounds gap for each region component",
-                "only bit-nets touched directly by region component ends"
-            ),
-            "componentSets", componentSets,
-            "components", compactComponents,
-            "bitNets", compactNets,
-            "wireBundles", compactBundles,
-            "wires", compactWires,
-            "stateElements", compactStates,
-            "tunnels", compactTunnels,
-            "spatialAdjacency", compactSpatial,
-            "instancePaths", fullFocus.get("instancePaths"),
-            "widthIncompatibilities", fullFocus.get("widthIncompatibilities")
-        );
-        return obj(
-            "schema", "vibe-logisim.experiment-001.public-projection/v0",
-            "mode", "compact-public",
-            "observer", full.get("observer"),
-            "revision", full.get("revision"),
-            "runtime", full.get("runtime"),
-            "project", compactProject,
-            "projection", projection,
-            "coverage", obj(
-                "sourceLedger", full.get("coverage"),
-                "projection", projectionCoverage
-            ),
-            "unknowns", compactUnknowns
-        );
-    }
-
-    private static List<Object> relevantCircuitSummaries(
-        Map<String, Object> project, List<Object> paths
-    ) {
-        Set<String> names = new LinkedHashSet<String>();
-        for (Object pathValue : paths) {
-            Map<String, Object> path = asObject(pathValue);
-            names.add((String) path.get("root"));
-            for (Object stepValue : asList(path.get("steps"))) {
-                Map<String, Object> step = asObject(stepValue);
-                names.add((String) step.get("parentCircuit"));
-                names.add((String) step.get("targetCircuit"));
-            }
-        }
-        List<Object> result = new ArrayList<Object>();
-        for (Object circuitValue : asList(project.get("circuits"))) {
-            Map<String, Object> circuit = asObject(circuitValue);
-            if (names.contains(circuit.get("name"))) result.add(circuit);
-        }
-        return result;
-    }
-
-    private static void collectComponentNetIds(
-        Map<String, Object> component, Set<String> destination
-    ) {
-        for (Object endValue : asList(component.get("ends"))) {
-            for (Object bitValue : asList(asObject(endValue).get("netBits"))) {
-                destination.add((String) asObject(bitValue).get("netId"));
-            }
-        }
-    }
-
-    private static boolean containsRelevantStateNet(
-        Map<String, Object> state, Set<String> relevantNetIds
-    ) {
-        for (Object portValue : asList(state.get("ports"))) {
-            if (containsRelevantBits(asList(asObject(portValue).get("netBits")), relevantNetIds)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsRelevantBits(
-        List<Object> bits, Set<String> relevantNetIds
-    ) {
-        for (Object bitValue : bits) {
-            if (relevantNetIds.contains(asObject(bitValue).get("netId"))) return true;
-        }
-        return false;
-    }
-
-    private static List<String> sortedStrings(Collection<String> values) {
-        List<String> result = new ArrayList<String>(values);
-        Collections.sort(result);
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asObject(Object value) {
-        return (Map<String, Object>) value;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static List<Object> asList(Object value) {
-        return (List<Object>) value;
+        return full;
     }
 
     /** Some native components cache approximate bounds until their first paint,
@@ -759,11 +234,6 @@ public final class ExactRuntimeObserver {
      */
     private void measureGeometry() {
         Graphics2D g = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics();
-        Project project = this.project;
-        if (project == null) {
-            project = new Project(file);
-            project.getSimulator().shutDown();
-        }
         try {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
@@ -784,8 +254,6 @@ public final class ExactRuntimeObserver {
             coverage.components++;
             String id = focusIds.get(component);
             Bounds componentBounds = component.getBounds();
-            boolean inRegion = region == null || region.intersects(componentBounds);
-            if (inRegion) coverage.componentsInRegion++;
 
             List<Object> ends = new ArrayList<Object>();
             Instance instance = instanceOrNull(component);
@@ -850,7 +318,6 @@ public final class ExactRuntimeObserver {
                 "location", location(component.getLocation()),
                 "bounds", bounds(componentBounds),
                 "visualBounds", bounds(component.getBounds(measurement)),
-                "inRegion", inRegion,
                 "attributes", attributes(component.getAttributeSet()),
                 "ends", ends,
                 "subcircuit", component.getFactory() instanceof SubcircuitFactory
@@ -911,35 +378,6 @@ public final class ExactRuntimeObserver {
                 "width", width(end.getWidth()),
                 "netBits", nets.netBits(component, 0, end),
                 "sameLabelPeers", peers.get(label == null ? "" : label)
-            ));
-        }
-        return result;
-    }
-
-    private List<Object> observeSpatialAdjacency() {
-        if (region == null) return Collections.emptyList();
-        List<Component> all = sortedComponents(focus);
-        List<Object> result = new ArrayList<Object>();
-        for (Component source : all) {
-            if (!region.intersects(source.getBounds())) continue;
-            final Component sourceFinal = source;
-            List<Component> neighbors = new ArrayList<Component>(all);
-            neighbors.remove(source);
-            Collections.sort(neighbors, Comparator
-                .comparingInt((Component other) -> boundsGap(sourceFinal.getBounds(), other.getBounds()))
-                .thenComparing(other -> focusIds.get(other)));
-            List<Object> nearest = new ArrayList<Object>();
-            for (int i = 0; i < Math.min(5, neighbors.size()); i++) {
-                Component other = neighbors.get(i);
-                nearest.add(obj(
-                    "componentId", focusIds.get(other),
-                    "boundsGap", boundsGap(source.getBounds(), other.getBounds()),
-                    "relative", relativePosition(source.getBounds(), other.getBounds())
-                ));
-            }
-            result.add(obj(
-                "componentId", focusIds.get(source),
-                "nearest", nearest
             ));
         }
         return result;
@@ -1323,25 +761,6 @@ public final class ExactRuntimeObserver {
         return seen;
     }
 
-    static Map<Component, String> assignComponentIds(Circuit circuit) {
-        Map<Component, String> result = new IdentityHashMap<Component, String>();
-        Map<String, Integer> occupants = new HashMap<String, Integer>();
-        for (Component component : sortedComponents(circuit)) {
-            String base = locationId(component.getLocation());
-            int seen = occupants.merge(base, 1, Integer::sum);
-            result.put(component, seen == 1 ? base : base + "_" + seen);
-        }
-        return result;
-    }
-
-    private static String locationId(Location location) {
-        return "c" + coordinateToken(location.getX()) + "_" + coordinateToken(location.getY());
-    }
-
-    private static String coordinateToken(int value) {
-        return value < 0 ? "m" + (-value) : Integer.toString(value);
-    }
-
     static List<Component> sortedComponents(Circuit circuit) {
         List<Component> result = new ArrayList<Component>(circuit.getNonWires());
         Collections.sort(result, COMPONENT_ORDER);
@@ -1471,102 +890,6 @@ public final class ExactRuntimeObserver {
         );
     }
 
-    private static int boundsGap(Bounds a, Bounds b) {
-        int ax1 = a.getX();
-        int ay1 = a.getY();
-        int ax2 = ax1 + a.getWidth();
-        int ay2 = ay1 + a.getHeight();
-        int bx1 = b.getX();
-        int by1 = b.getY();
-        int bx2 = bx1 + b.getWidth();
-        int by2 = by1 + b.getHeight();
-        int dx = Math.max(0, Math.max(ax1 - bx2, bx1 - ax2));
-        int dy = Math.max(0, Math.max(ay1 - by2, by1 - ay2));
-        return dx + dy;
-    }
-
-    private static String relativePosition(Bounds source, Bounds other) {
-        int sx = source.getX() + source.getWidth() / 2;
-        int sy = source.getY() + source.getHeight() / 2;
-        int ox = other.getX() + other.getWidth() / 2;
-        int oy = other.getY() + other.getHeight() / 2;
-        int dx = ox - sx;
-        int dy = oy - sy;
-        if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? "left" : "right";
-        if (dy != 0) return dy < 0 ? "above" : "below";
-        return "overlap";
-    }
-
-    private static Path requiredPropertyPath(String name) throws IOException {
-        String value = System.getProperty(name);
-        if (value == null || value.isEmpty()) {
-            throw new IllegalArgumentException("missing system property: " + name);
-        }
-        return new File(value).getCanonicalFile().toPath();
-    }
-
-    private static Path optionalPropertyPath(String name) throws IOException {
-        String value = System.getProperty(name);
-        if (value == null || value.isEmpty()) return null;
-        return new File(value).getCanonicalFile().toPath();
-    }
-
-    private static String sha256(Path path) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] buffer = new byte[64 * 1024];
-        java.io.InputStream input = Files.newInputStream(path);
-        try {
-            for (;;) {
-                int count = input.read(buffer);
-                if (count < 0) break;
-                digest.update(buffer, 0, count);
-            }
-        } finally {
-            input.close();
-        }
-        return hex(digest.digest());
-    }
-
-    /** The digest observations report for a bridge bundle (a class directory or jar). */
-    public static String bundleDigest(Path bundle) throws Exception {
-        return sha256Tree(bundle);
-    }
-
-    private static String sha256Tree(Path root) throws Exception {
-        if (Files.isRegularFile(root)) return sha256(root);
-        if (!Files.isDirectory(root)) {
-            throw new IllegalArgumentException("missing observer bundle: " + root);
-        }
-        List<Path> files = new ArrayList<Path>();
-        Stream<Path> stream = Files.walk(root);
-        try {
-            stream.filter(Files::isRegularFile).forEach(files::add);
-        } finally {
-            stream.close();
-        }
-        Collections.sort(files, Comparator.comparing(path -> root.relativize(path).toString()));
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] zero = new byte[] { 0 };
-        byte[] buffer = new byte[64 * 1024];
-        for (Path file : files) {
-            String relative = root.relativize(file).toString().replace(File.separatorChar, '/');
-            digest.update(relative.getBytes(StandardCharsets.UTF_8));
-            digest.update(zero);
-            java.io.InputStream input = Files.newInputStream(file);
-            try {
-                for (;;) {
-                    int count = input.read(buffer);
-                    if (count < 0) break;
-                    digest.update(buffer, 0, count);
-                }
-            } finally {
-                input.close();
-            }
-            digest.update(zero);
-        }
-        return hex(digest.digest());
-    }
-
     private static String shortHash(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -1609,79 +932,8 @@ public final class ExactRuntimeObserver {
         return result;
     }
 
-    private static final class Options {
-        final boolean compact;
-        final String artifact;
-        final String circuit;
-        final Region region;
-
-        Options(boolean compact, String artifact, String circuit, Region region) {
-            this.compact = compact;
-            this.artifact = artifact;
-            this.circuit = circuit;
-            this.region = region;
-        }
-
-        static Options parse(String[] args) {
-            int offset = 0;
-            boolean compact = false;
-            if (args.length > 0 && "--compact".equals(args[0])) {
-                compact = true;
-                offset = 1;
-            } else if (args.length > 0 && "--full".equals(args[0])) {
-                offset = 1;
-            }
-            int remaining = args.length - offset;
-            if (remaining != 2 && remaining != 6) {
-                throw usage();
-            }
-            Region region = remaining == 6
-                ? new Region(
-                    Integer.parseInt(args[offset + 2]), Integer.parseInt(args[offset + 3]),
-                    Integer.parseInt(args[offset + 4]), Integer.parseInt(args[offset + 5]))
-                : null;
-            if (compact && region == null) {
-                throw new IllegalArgumentException("--compact requires X Y WIDTH HEIGHT");
-            }
-            return new Options(compact, args[offset], args[offset + 1], region);
-        }
-
-        private static IllegalArgumentException usage() {
-            return new IllegalArgumentException(
-                "usage: ExactRuntimeObserver [--full] ARTIFACT.circ CIRCUIT [X Y WIDTH HEIGHT]\n"
-                    + "   or: ExactRuntimeObserver --compact ARTIFACT.circ CIRCUIT X Y WIDTH HEIGHT"
-            );
-        }
-    }
-
-    private static final class Region {
-        final int x;
-        final int y;
-        final int width;
-        final int height;
-
-        Region(int x, int y, int width, int height) {
-            this.x = x;
-            this.y = y;
-            this.width = width;
-            this.height = height;
-        }
-
-        boolean intersects(Bounds bounds) {
-            return bounds.getX() + bounds.getWidth() >= x
-                && bounds.getY() + bounds.getHeight() >= y
-                && bounds.getX() <= x + width
-                && bounds.getY() <= y + height;
-        }
-
-        Map<String, Object> toJson() {
-            return obj("x", x, "y", y, "width", width, "height", height);
-        }
-    }
-
     static final class Coverage {
         int components;
-        int componentsInRegion;
         int ends;
         int mappedEnds;
         int endBits;
@@ -1698,7 +950,6 @@ public final class ExactRuntimeObserver {
         Map<String, Object> toJson() {
             return obj(
                 "components", components,
-                "componentsInRegion", componentsInRegion,
                 "ends", ends,
                 "mappedEnds", mappedEnds,
                 "endBits", endBits,
@@ -1765,6 +1016,7 @@ public final class ExactRuntimeObserver {
 
     static final class NetIndex {
         final Circuit circuit;
+        final DocumentIds.Sheet sheet;
         final Map<Component, String> componentIds;
         final Coverage coverage;
         final List<Object> unknowns;
@@ -1774,32 +1026,33 @@ public final class ExactRuntimeObserver {
             new IdentityHashMap<WireThread, NetRecord>();
         final Map<String, NetRecord> pointNets = new LinkedHashMap<String, NetRecord>();
         final Map<String, String> endBitNet = new HashMap<String, String>();
-        final List<Wire> wires;
-        final Map<Wire, String> wireIds = new IdentityHashMap<Wire, String>();
+        /** The native wires cut at the document's wire ends, named by the document's wires. */
+        final List<DocumentIds.Atom> atoms;
         /** Whether each net lists the component ends it joins. */
         final boolean contacts;
 
         NetIndex(
-            Circuit circuit, Map<Component, String> componentIds,
+            Circuit circuit, DocumentIds.Sheet sheet,
             Coverage coverage, List<Object> unknowns, boolean contacts
         ) {
             this.circuit = circuit;
-            this.componentIds = componentIds;
+            this.sheet = sheet;
+            this.componentIds = sheet.ids();
             this.coverage = coverage;
             this.unknowns = unknowns;
             this.contacts = contacts;
-            // Loaded files may repeat the same interned native Wire. One
-            // selectable object must have one ID and one geometry record.
-            this.wires = new ArrayList<Wire>(new java.util.LinkedHashSet<Wire>(circuit.getWires()));
-            Collections.sort(this.wires, WIRE_ORDER);
-            for (int i = 0; i < this.wires.size(); i++) {
-                wireIds.put(this.wires.get(i), String.format(Locale.ROOT, "w%03d", i));
-            }
+            this.atoms = sheet.atoms(circuit);
+        }
+
+        /** The bundle a native wire is in. */
+        BundleRecord bundleOf(Wire wire) {
+            WireBundle bundle = circuit.wires.getWireBundle(wire.getEnd0());
+            return bundle == null ? null : bundles.get(bundle.find());
         }
 
         void compute() {
             circuit.wires.ensureComputed();
-            for (Wire wire : wires) {
+            for (Wire wire : circuit.getWires()) {
                 collectBundle(circuit.wires.getWireBundle(wire.getEnd0()));
                 collectBundle(circuit.wires.getWireBundle(wire.getEnd1()));
             }
@@ -1812,10 +1065,9 @@ public final class ExactRuntimeObserver {
             for (BundleRecord record : bundles.values()) {
                 record.id = "b:" + shortHash(bundleSignature(record.bundle));
             }
-            for (Wire wire : wires) {
-                WireBundle bundle = circuit.wires.getWireBundle(wire.getEnd0());
-                BundleRecord record = bundles.get(bundle);
-                if (record != null) record.wireIds.add(wireIds.get(wire));
+            for (DocumentIds.Atom atom : atoms) {
+                BundleRecord record = bundleOf(atom.wire);
+                if (record != null && atom.id != null && !record.wireIds.contains(atom.id)) record.wireIds.add(atom.id);
             }
 
             for (BundleRecord bundleRecord : bundles.values()) {
@@ -1908,15 +1160,19 @@ public final class ExactRuntimeObserver {
             return result;
         }
 
+        /**
+         * The wires as the runtime connects them: native wires cut at the
+         * document's wire ends, each with the document wire on it; pieces
+         * meet only at their ends.
+         */
         List<Object> wiresJson() {
             List<Object> result = new ArrayList<Object>();
-            for (Wire wire : wires) {
-                WireBundle bundle = circuit.wires.getWireBundle(wire.getEnd0());
-                BundleRecord record = bundles.get(bundle == null ? null : bundle.find());
+            for (DocumentIds.Atom atom : atoms) {
+                BundleRecord record = bundleOf(atom.wire);
                 result.add(obj(
-                    "wireId", wireIds.get(wire),
-                    "from", location(wire.getEnd0()),
-                    "to", location(wire.getEnd1()),
+                    "wireId", atom.id,
+                    "from", location(atom.from),
+                    "to", location(atom.to),
                     "bundleId", record == null ? null : record.id
                 ));
             }

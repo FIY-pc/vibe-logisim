@@ -12,9 +12,7 @@ import java.awt.RenderingHints;
 import java.awt.font.TextLayout;
 import java.awt.geom.Arc2D;
 import java.awt.geom.QuadCurve2D;
-import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -73,7 +71,7 @@ final class CircuitPaint {
      * font files, measuring and outlining text and setting up curves; a run does
      * this beside its project load instead.
      */
-    static void warmUp(File project) {
+    static void warmUp(byte[] project) {
         Set<Font> fonts = new LinkedHashSet<>();
         fonts.add(new Font("SansSerif", Font.PLAIN, 12));
         fonts.add(new Font("SansSerif", Font.BOLD, 12));
@@ -81,7 +79,7 @@ final class CircuitPaint {
         // font; some runtimes' default label font is "Sans Serif".
         fonts.add(new Font("Sans Serif", Font.PLAIN, 12));
         try {
-            Matcher m = FONT.matcher(new String(Files.readAllBytes(project.toPath()), StandardCharsets.UTF_8));
+            Matcher m = FONT.matcher(new String(project, StandardCharsets.UTF_8));
             while (m.find() && fonts.size() < 64) fonts.add(Font.decode(m.group(1)));
         } catch (Exception ignored) {
             // The defaults alone still help.

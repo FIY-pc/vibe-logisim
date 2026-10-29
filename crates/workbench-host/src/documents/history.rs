@@ -134,7 +134,7 @@ impl Host {
             let path = path.canonicalize().map_err(|e| e.to_string())?;
             dependencies.insert(path.clone(), self.file_digest(&path)?);
             if circuit {
-                dependencies.extend(vibe_logisim_runtime::artifact_dependencies(&path)?);
+                dependencies.extend(vibe_logisim_runtime::library_dependencies(&path)?);
             }
         }
         Ok(dependencies)
@@ -324,11 +324,11 @@ impl Host {
         {
             return Ok(json!({"image":null,"missing":true,"warnings":[]}));
         }
-        let path = self.materialize(doc)?;
+        let revision = doc.snapshot();
         let mut native = self.native.lock().await;
-        let observed = native.observe(&path, circuit).await?;
+        let observed = native.observe(&revision, circuit).await?;
         let viewport = fitted_viewport(&observed);
-        let image = native.render(&path, circuit, viewport).await?;
+        let image = native.render(&revision, circuit, viewport).await?;
         Ok(json!({
             "image":image,
             "missing":false,

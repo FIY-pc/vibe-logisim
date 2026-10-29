@@ -8,23 +8,22 @@ mod simulation;
 mod state_paths_tests;
 use api::Effect;
 pub use api::{
-    AgentRequest, AppRequest, DocumentRequest, EditResult, ErrorCode, ErrorDetail, Event, Events,
-    FolderRequest, HostError, MovePreview, Request, Selection, SimulationRequest,
-    TraceProgramInput, Warning,
+    AgentRequest, AppRequest, DocumentRequest, EditResult, ErrorCode, Event, Events, FolderRequest,
+    HostError, Request, Selection, SimulationRequest, TraceProgramInput, Warning,
 };
 use app::{diagnostics, feedback};
+use documents::interfaces;
 pub use documents::{
     ButtonEvent, HistoryList, HistoryReview, InputEvent, InterfaceImpact, InterfacePreview,
     InterfaceRead, TestVector, TraceWatch,
 };
-use documents::{interfaces, snapshots};
 pub use folder::{ImportAction, ImportChoice};
 use serde::Serialize;
 use serde_json::{Value, json};
 pub use simulation::{ObservationRecord, ObservationSummary};
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use vibe_circuit_document::{Document, DocumentView, Workspace, history::DocumentHistory};
+use vibe_circuit_document::{DocumentView, Revision, Workspace, history::DocumentHistory};
 pub use vibe_logisim_runtime::timing;
 use vibe_logisim_runtime::{Launcher, Native, RuntimeFacts, simulation::SimulationRegistry};
 
@@ -169,88 +168,32 @@ impl Host {
             stopping: tokio::sync::watch::channel(false).0,
         })
     }
-    /// The native artifact of a revision; see `materialize`.
-    async fn snapshot(&self, id: &str, revision: &str) -> Result<PathBuf> {
+    /// A document at the revision the caller saw, as the native side reads it.
+    async fn revision_at(&self, id: &str, revision: &str) -> Result<Revision> {
         let workspace = self.workspace.lock().await;
         let doc = workspace.get(id).map_err(|e| e.to_string())?;
         doc.check(revision).map_err(|e| e.to_string())?;
-        self.materialize(doc)
+        Ok(doc.snapshot())
     }
-    /// The artifact and the view of a revision, for requests that need the
-    /// whole document.
-    async fn snapshot_view(&self, id: &str, revision: &str) -> Result<(PathBuf, DocumentView)> {
+    /// The revision and its view, for requests that need the whole document.
+    async fn revision_view(&self, id: &str, revision: &str) -> Result<(Revision, DocumentView)> {
         let workspace = self.workspace.lock().await;
         let doc = workspace.get(id).map_err(|e| e.to_string())?;
         doc.check(revision).map_err(|e| e.to_string())?;
-        Ok((
-            self.materialize(doc)?,
-            doc.view().map_err(|e| e.to_string())?,
-        ))
+        Ok((doc.snapshot(), doc.view().map_err(|e| e.to_string())?))
     }
-    /// The artifact and one circuit of a revision (none when it has no such circuit).
-    async fn snapshot_circuit(
+    /// The revision and one circuit of it (none when it has no such circuit).
+    async fn revision_circuit(
         &self,
         id: &str,
         revision: &str,
         circuit: &str,
-    ) -> Result<(PathBuf, Option<vibe_circuit_document::Circuit>)> {
+    ) -> Result<(Revision, Option<vibe_circuit_document::Circuit>)> {
         let workspace = self.workspace.lock().await;
         let doc = workspace.get(id).map_err(|e| e.to_string())?;
         doc.check(revision).map_err(|e| e.to_string())?;
         let view = doc.circuit_view(circuit).map_err(|e| e.to_string())?;
-        Ok((self.materialize(doc)?, view))
-    }
-    /// The artifact and one component of a revision, for requests about that part.
-    async fn snapshot_component(
-        &self,
-        id: &str,
-        revision: &str,
-        circuit: &str,
-        component: &str,
-    ) -> Result<(PathBuf, vibe_circuit_document::Component)> {
-        let workspace = self.workspace.lock().await;
-        let doc = workspace.get(id).map_err(|e| e.to_string())?;
-        doc.check(revision).map_err(|e| e.to_string())?;
-        let found = doc
-            .circuit_view(circuit)
-            .map_err(|e| e.to_string())?
-            .and_then(|c| c.components.into_iter().find(|c| c.id == component))
-            .ok_or("请选择元件")?;
-        Ok((self.materialize(doc)?, found))
-    }
-    /// Writes the document where the native runtime can load it: one file per
-    /// revision and source location, written once. Only the newest revisions
-    /// of each document are kept; an older one is written again when needed.
-    fn materialize(&self, doc: &Document) -> Result<PathBuf> {
-        let revision = doc.revision();
-        let documents = self.state.join("snapshots").join(&doc.id);
-        let directory = documents
-            .join(&revision)
-            .join(vibe_circuit_document::digest(
-                doc.path
-                    .as_ref()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_default()
-                    .as_bytes(),
-            ));
-        let path = directory.join("circuit.circ");
-        // Pruning deletes by write time, so a file written for this revision
-        // is the one it needs; an older revision is written again.
-        if path.is_file() {
-            return Ok(path);
-        }
-        let _write = timing::span("materialize.write");
-        std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
-        // A snapshot must resolve external libraries beside the source, not beside the cache.
-        let bytes = doc
-            .bytes_with_absolute_libraries()
-            .map_err(|e| e.to_string())?;
-        use std::io::Write;
-        let mut temp = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
-        temp.write_all(&bytes).map_err(|e| e.to_string())?;
-        temp.persist(&path).map_err(|e| e.to_string())?;
-        snapshots::prune(&documents, &revision);
-        Ok(path)
+        Ok((doc.snapshot(), view))
     }
     /// Answers a request from the window or the AI, in the form the transports send.
     pub fn respond(

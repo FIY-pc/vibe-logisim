@@ -6,13 +6,13 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use vibe_circuit_document::{
-    Document, Edit, SourceStatus, SymbolDraft, digest,
+    Document, Edit, Revision, SourceStatus, SymbolDraft, digest,
     symbol::{self, Symbol},
 };
-use vibe_logisim_runtime::{Native, Viewport, artifact_dependencies, encode_xml, xml};
+use vibe_logisim_runtime::{Native, Viewport, encode_xml};
 use xmltree::Element;
 
 #[derive(Clone, Serialize, ts_rs::TS)]
@@ -74,17 +74,9 @@ fn draft_digest(draft: &SymbolDraft) -> Result<String> {
     }
     Ok(digest(&bytes))
 }
-async fn native_symbol(native: &mut Native, path: &Path, circuit: &str) -> Result<Symbol> {
-    let bytes = native
-        .request(
-            path,
-            xml("interface", &[("circuit", circuit.into())], vec![]),
-        )
-        .await?;
-    Ok(
-        symbol::read(&Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?,
-    )
+async fn native_symbol(native: &mut Native, revision: &Revision, circuit: &str) -> Result<Symbol> {
+    let interface = native.interface(revision, circuit).await?;
+    Ok(symbol::read(&interface).map_err(|e| e.to_string())?)
 }
 fn candidate(doc: &Document, root: &Element) -> Result<Document> {
     let mut result = Document::from_bytes(
@@ -243,11 +235,10 @@ impl Host {
         revision: &str,
         circuit: &str,
     ) -> Result<Value> {
-        let doc = self.interface_document(id, revision).await?;
-        let path = self.materialize(&doc)?;
+        let doc = self.interface_document(id, revision).await?.snapshot();
         let mut native = self.native.lock().await;
-        let symbol = native_symbol(&mut native, &path, circuit).await?;
-        let observation = native.observe(&path, circuit).await?;
+        let symbol = native_symbol(&mut native, &doc, circuit).await?;
+        let observation = native.observe(&doc, circuit).await?;
         let bounds = &observation["focus"]["bounds"];
         let y = bounds["y"].as_i64().unwrap_or(0) + bounds["height"].as_i64().unwrap_or(0);
         drop(native);
@@ -272,10 +263,10 @@ impl Host {
     ) -> Result<Value> {
         let fingerprint = draft_digest(draft)?;
         let doc = self.interface_document(id, revision).await?;
-        let path = self.materialize(&doc)?;
-        let dependencies = artifact_dependencies(&path)?;
+        let dependencies = self.dependencies(&doc)?;
+        let current = doc.snapshot();
         let mut native = self.native.lock().await;
-        let before = native_symbol(&mut native, &path, circuit).await?;
+        let before = native_symbol(&mut native, &current, circuit).await?;
         let mut root = Element::parse(doc.bytes()).map_err(|e| e.to_string())?;
         let updated =
             symbol::write(&mut root, circuit, &before, draft).map_err(|e| e.to_string())?;
@@ -292,15 +283,14 @@ impl Host {
                 names.push(u.circuit.clone());
             }
         }
-        let initial = candidate(&doc, &root)?;
-        let initial_path = self.materialize(&initial)?;
-        let proposed = native_symbol(&mut native, &initial_path, circuit).await?;
+        let initial = candidate(&doc, &root)?.snapshot();
+        let proposed = native_symbol(&mut native, &initial, circuit).await?;
         let mut scenes = BTreeMap::new();
         let mut impacts = Vec::new();
         for name in &names {
-            let old_value = native.observe(&path, name).await?;
+            let old_value = native.observe(&current, name).await?;
             let old = Scene::read(&old_value)?;
-            let after = Scene::read(&native.observe(&initial_path, name).await?)?;
+            let after = Scene::read(&native.observe(&initial, name).await?)?;
             let (components, changes, _) =
                 correspondences(&old, &after, &before, &proposed, circuit, name, &detached)?;
             let bounds_changed = components.iter().any(|component| {
@@ -330,9 +320,9 @@ impl Host {
         if *draft == before.draft {
             final_doc = doc.clone();
         }
-        let final_path = self.materialize(&final_doc)?;
+        let final_revision = final_doc.snapshot();
         for name in &names {
-            let after_value = native.observe(&final_path, name).await?;
+            let after_value = native.observe(&final_revision, name).await?;
             let after = Scene::read(&after_value)?;
             let (old, old_value) = &scenes[name];
             for key in ["invalidBundleEnds", "widthIncompatibilities"] {
@@ -354,11 +344,11 @@ impl Host {
             )
             .map_err(|e| format!("{name}：{e}"))?;
         }
-        let accepted = native_symbol(&mut native, &final_path, circuit).await?;
+        let accepted = native_symbol(&mut native, &final_revision, circuit).await?;
         symbol::assert_accepted(draft, &updated, &accepted).map_err(|e| e.to_string())?;
         drop(native);
         let current = self.interface_document(id, revision).await?;
-        if current.path != doc.path || dependencies != artifact_dependencies(&path)? {
+        if current.path != doc.path || dependencies != self.dependencies(&current)? {
             return Err("文档位置或组件库已改变，请重新预览".into());
         }
         let old_ids: BTreeSet<_> = before.draft.ports.iter().map(|p| p.id.as_str()).collect();
@@ -415,8 +405,7 @@ impl Host {
         {
             return Err("封装草稿或工程已经改变，请重新预览".into());
         }
-        let path = self.materialize(current)?;
-        if prepared.dependencies != artifact_dependencies(&path)? {
+        if prepared.dependencies != self.dependencies(current)? {
             return Err("组件库已改变，请重新预览".into());
         }
         if prepared.result.changed {
@@ -459,16 +448,15 @@ impl Host {
         if prepared.path != current.path {
             return Err("文档位置已改变，请重新预览".into());
         }
-        let current_path = self.materialize(&current)?;
-        if prepared.dependencies != artifact_dependencies(&current_path)? {
+        if prepared.dependencies != self.dependencies(&current)? {
             return Err("组件库已改变，请重新预览".into());
         }
         if !prepared.result.impacts.iter().any(|i| i.circuit == circuit) {
             return Err("预览不包含这个电路".into());
         }
-        let path = self.materialize(&prepared.candidate)?;
+        let candidate = prepared.candidate.snapshot();
         let mut native = self.native.lock().await;
-        let observed = native.observe(&path, circuit).await?;
+        let observed = native.observe(&candidate, circuit).await?;
         let b = &observed["focus"]["bounds"];
         let width = (b["width"].as_u64().unwrap_or(0) + 48).max(160);
         let height = (b["height"].as_u64().unwrap_or(0) + 48).max(100);
@@ -483,6 +471,6 @@ impl Host {
             height: height.try_into().map_err(|_| "预览范围过大")?,
             scale: (1400. / width as f64).min(900. / height as f64).min(2.),
         };
-        Ok(json!({"image":native.render(&path,circuit,viewport).await?,"circuit":circuit}))
+        Ok(json!({"image":native.render(&candidate,circuit,viewport).await?,"circuit":circuit}))
     }
 }

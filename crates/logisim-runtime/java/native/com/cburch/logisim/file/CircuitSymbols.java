@@ -2,6 +2,7 @@ package com.cburch.logisim.file;
 
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitState;
+import com.cburch.logisim.circuit.DocumentIds;
 import com.cburch.logisim.circuit.NativePortSemantics;
 import com.cburch.logisim.circuit.WireWidths;
 import com.cburch.logisim.comp.Component;
@@ -18,7 +19,6 @@ import java.awt.Graphics;
 import java.awt.RenderingHints;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.w3c.dom.Element;
@@ -27,8 +27,8 @@ import org.w3c.dom.Node;
 /**
  * The picture of each kind of component, recorded once from the runtime's own
  * painting (Component.draw) as vector ops the window replays. A kind is drawn
- * from a component of the circuit when the host names one by location and
- * factory, or from one made of its library tool and attributes otherwise. The
+ * from a component of the circuit when the host names one by its document
+ * id, or from one made of its library tool and attributes otherwise. The
  * draw context is CircuitRenderer's (print view, no state, colors on) except
  * for its circuit, which answers every connection question with yes and has the
  * recorder mark what depends on the answer (see RecordingGraphics2D "U").
@@ -54,14 +54,14 @@ final class CircuitSymbols {
         }
     }
 
-    static byte[] describe(LogisimFile file, Project project, Element request) {
+    static byte[] describe(LogisimFile file, Project project, DocumentIds ids, Element request) {
         Circuit circuit = file.getCircuit(request.getAttribute("circuit"));
         if (circuit == null) throw new IllegalArgumentException("找不到电路");
         Probe probe = new Probe();
         CircuitState own = project.getCircuitState(circuit);
         // Components made here are in no circuit; their painting keeps its data off the project.
         CircuitState loose = new CircuitState(project, probe);
-        Map<String, Component> placed = null;
+        DocumentIds.Sheet sheet = ids.sheet(circuit);
         StringBuilder out = new StringBuilder(32 * 1024).append("{\"symbols\":[");
         boolean first = true;
         for (Node n = request.getFirstChild(); n != null; n = n.getNextSibling()) {
@@ -71,12 +71,7 @@ final class CircuitSymbols {
             first = false;
             int start = out.length();
             try {
-                if (item.hasAttribute("factory")) {
-                    if (placed == null) placed = placed(circuit);
-                    Component component = placed.get(item.getAttribute("x") + "," + item.getAttribute("y") + "," + item.getAttribute("factory"));
-                    if (component == null) throw new IllegalArgumentException("元件已改变，请重新读取");
-                    symbol(component, probe, own, out);
-                }
+                if (item.hasAttribute("id")) symbol(DocumentIds.component(sheet, item.getAttribute("id")), probe, own, out);
                 else symbol(create(file, request, item), probe, loose, out);
             } catch (Exception | LinkageError error) {
                 out.setLength(start);
@@ -121,16 +116,6 @@ final class CircuitSymbols {
             out.append('[').append(point.getX()).append(',').append(point.getY()).append(']');
         }
         out.append(']');
-    }
-
-    /** The circuit's components by location and factory name, the first of a stack. */
-    private static Map<String, Component> placed(Circuit circuit) {
-        Map<String, Component> placed = new HashMap<>();
-        for (Component c : circuit.getNonWires()) {
-            Location at = c.getLocation();
-            placed.putIfAbsent(at.getX() + "," + at.getY() + "," + c.getFactory().getName(), c);
-        }
-        return placed;
     }
 
     private static Component create(LogisimFile file, Element request, Element item) {
