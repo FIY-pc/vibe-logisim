@@ -92,7 +92,7 @@ impl Host {
         }
         let id = &doc.id;
         let revision = doc.revision();
-        let artifact = self.materialize(doc)?;
+        let snapshot = doc.snapshot();
         let selected = doc
             .circuit_view(circuit)
             .map_err(|e| e.to_string())?
@@ -115,7 +115,7 @@ impl Host {
         let result = self
             .simulation
             .verify(
-                &artifact,
+                &snapshot,
                 xml("simulate", &[("circuit", circuit.into())], rows),
             )
             .await
@@ -165,7 +165,7 @@ impl Host {
         {
             return Err("时序检查支持 1–10000 tick、1–24 个观察端口及最多 6000 个刺激事件".into());
         }
-        let artifact = self.materialize(doc)?;
+        let snapshot = doc.snapshot();
         let selected = doc
             .circuit_view(circuit)
             .map_err(|e| e.to_string())?
@@ -279,7 +279,7 @@ impl Host {
         let result = self
             .simulation
             .verify(
-                &artifact,
+                &snapshot,
                 xml(
                     "trace",
                     &[("circuit", circuit.into()), ("ticks", ticks.to_string())],

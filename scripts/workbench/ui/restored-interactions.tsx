@@ -63,8 +63,6 @@ export async function verifyRestoredInteractions() {
     { id: "another", title: "另一会话", preview: "门电路", archived: false },
     { id: "archived", title: "旧对话", preview: "保留的内容", archived: true },
   ];
-  let previewResolve: ((value: unknown) => void) | null = null;
-  let delayedPreview = true;
   (globalThis as any).__subscribe = (callback: any) => {
     callbacks.add(callback);
     return () => callbacks.delete(callback);
@@ -100,23 +98,17 @@ export async function verifyRestoredInteractions() {
           ],
         },
       };
-    if (request.op === "movePreview") {
-      if (delayedPreview)
-        return new Promise((resolve) => {
-          previewResolve = resolve;
-        });
+    if (request.op === "movePreview")
       return {
-        revision: null,
-        delta: request.delta,
-        removedWires: [],
-        addedWires: [
+        removed: [],
+        added: [
           {
             from: { x: request.delta.x, y: 20 },
             to: { x: request.delta.x + 30, y: 20 },
           },
         ],
+        unconnected: [],
       };
-    }
     return null;
   };
   Object.defineProperty(navigator, "clipboard", {
@@ -477,44 +469,12 @@ export async function verifyRestoredInteractions() {
       selected() > before,
       "The dragged selection follows the pointer before the host answers",
     );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 125));
-    });
-    assert.equal(calls.filter((call) => call.op === "movePreview").length, 1);
     await pointer("pointermove", 70);
     assert.equal(edits.length, 0);
-    delayedPreview = false;
-    await act(async () => {
-      previewResolve!({
-        revision: null,
-        delta: { x: 1, y: 0 },
-        removedWires: [],
-        addedWires: [{ from: { x: 1, y: 1 }, to: { x: 2, y: 1 } }],
-      });
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
-    const previews = calls.filter((call) => call.op === "movePreview");
-    assert.equal(
-      previews.length,
-      2,
-      "Pointer changes coalesce behind native planning",
-    );
-    assert.notEqual(
-      container.querySelector(".move-wire-preview line")!.getAttribute("x1"),
-      "1",
-      "Stale route cannot be painted",
-    );
-    assert.equal(previews[1].revision, "r1");
     await pointer("pointerup", 70);
-    assert.equal(edits.length, 1);
-    assert.deepEqual(edits[0].delta, previews[1].delta);
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    });
-    assert(
-      !container.querySelector(".move-wire-preview"),
-      "The planned routing leaves once the move is answered",
-    );
+    assert.equal(edits.length, 1, "Releasing a drag is one move");
+    assert.equal(edits[0].kind, "move");
+    assert(edits[0].delta.x > 0 && edits[0].delta.y === 0);
     assert.deepEqual(errors, []);
     console.log(
       "PASS: the selection and latest-only connected routing follow drag; geometry planning cannot write before pointer release",

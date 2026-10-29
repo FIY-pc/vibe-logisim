@@ -73,9 +73,16 @@
       "type": "object"
     },
     {
+      "description": "Components and wires by an offset. The host keeps what the moved ends\ntouch connected the way Logisim's move gesture does; `detach` leaves\nit behind instead (Logisim's shift-drag). The document alone only\ntranslates.",
       "properties": {
         "delta": {
           "$ref": "#/$defs/Point"
+        },
+        "detach": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "ids": {
           "items": {

@@ -45,7 +45,8 @@ export interface ObservationView {
   circuit: CircuitView;
   project: any;
   unknowns: any[];
-  artifactSha256: string | null;
+  /** The document revision the runtime observed. */
+  revision: string | null;
   runtime: { reportedVersion?: string | null; jarSha256?: string | null };
 }
 /** Which document version an inspection describes; cursors are bound to it. */
@@ -108,7 +109,7 @@ export function observationView(document: any): ObservationView {
     },
     project: document.project || {},
     unknowns: document.unknowns || [],
-    artifactSha256: document.revision?.artifactSha256 ?? null,
+    revision: document.revision?.revision ?? null,
     runtime: {
       reportedVersion: document.runtime?.reportedVersion ?? null,
       jarSha256: document.runtime?.jarSha256 ?? null,
@@ -192,7 +193,7 @@ function cursorDigest(
   extra?: unknown,
 ) {
   return sha256(
-    json([kind, identity, view.artifactSha256, view.runtime, extra ?? null]),
+    json([kind, identity, view.revision, view.runtime, extra ?? null]),
   );
 }
 function parseCursor(
@@ -627,13 +628,13 @@ export function wireGeometry(
       "INVALID_ARGUMENT",
       "wireOffset 必须为非负整数，wireLimit 必须在 1–256 之间。",
     );
-  // Ids follow the loaded segments, which is what removeWireIds and reroute
-  // resolve against. The runtime merges collinear wires, so one id can stand
-  // for several file lines; the end points are always the loaded ones.
+  // Each segment carries the id of the file wire it lies on, which is what
+  // removeWireIds and wireIds take; a file wire crossed by other wires' ends
+  // comes as several segments with one id.
   const wires = view.circuit.wires
     .slice(offset, offset + limit)
-    .map((w: any, index: number) => ({
-      id: `w${offset + index}`,
+    .map((w: any) => ({
+      id: w.wireId,
       from: w.from,
       to: w.to,
       bundleId: w.bundleId,
@@ -655,7 +656,7 @@ export function wireGeometry(
         valid: b.valid,
       })),
     scope:
-      "Segments after native loading (overlapping or collinear segments may be merged), one id per loaded segment; removeWireIds takes these ids.",
+      "Wire segments as the runtime connects them: file wires cut where other file wires end. id is the file wire a segment lies on (several segments can share one); removeWireIds and wireIds take these ids.",
   };
 }
 const MAX_SCHEMA_ITEMS = 96;

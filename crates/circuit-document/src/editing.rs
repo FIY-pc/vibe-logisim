@@ -16,17 +16,17 @@ fn stale() -> Error {
     Error::InvalidCommand("对象已失效".into())
 }
 
-struct Comp {
-    node: usize,
-    id: String,
-    name: String,
-    library: Option<String>,
-    location: Point,
+pub(crate) struct Comp {
+    pub(crate) node: usize,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) library: Option<String>,
+    pub(crate) location: Point,
 }
 
-struct Line {
-    node: usize,
-    segment: Segment,
+pub(crate) struct Line {
+    pub(crate) node: usize,
+    pub(crate) segment: Segment,
 }
 
 /// One circuit's components and wires, in file order.
@@ -74,6 +74,41 @@ impl<'t> Sheet<'t> {
             wires,
             wiring,
         })
+    }
+
+    /// The components' element and id, in file order.
+    pub(crate) fn components(&self) -> impl Iterator<Item = (usize, &str)> {
+        self.comps.iter().map(|c| (c.node, c.id.as_str()))
+    }
+
+    /// The id of the component `name` at `location`.
+    pub(crate) fn placed(&self, location: Point, name: &str) -> Option<&str> {
+        self.comps
+            .iter()
+            .find(|c| c.location == location && c.name == name)
+            .map(|c| c.id.as_str())
+    }
+
+    /// The component's label, or its name when it has none.
+    pub(crate) fn label(&self, id: &str) -> Option<String> {
+        let c = self.comps.iter().find(|c| c.id == id)?;
+        let tree = self.tree;
+        // Logisim reads the last `<a>` of a name.
+        let label = tree
+            .named(c.node, "a")
+            .filter(|&a| tree.get(a, "name") == "label")
+            .last()
+            .map(|a| tree.property(a));
+        Some(
+            label
+                .filter(|l| !l.is_empty())
+                .unwrap_or_else(|| c.name.clone()),
+        )
+    }
+
+    /// The wires' ends, in file order.
+    pub(crate) fn segments(&self) -> impl Iterator<Item = (Point, Point)> {
+        self.wires.iter().map(|w| (w.segment.from, w.segment.to))
     }
 
     pub(crate) fn view(self) -> Circuit {
@@ -160,11 +195,11 @@ impl<'t> Sheet<'t> {
 }
 
 /// Component ids name the anchor location, `c<x>_<y>` with `m` for a minus
-/// sign, as the native observer does. Components that share a location are
-/// ordered as the observer orders them, by factory name and then by their
-/// attributes, and the k-th of them (k ≥ 2) gets the suffix `_k`. The file
-/// leaves default values out where the observer counts them, so two parts of
-/// one factory on one spot that differ only there may be ordered differently.
+/// sign. Components that share a location are ordered by factory name and
+/// then by their stored attributes (Java string order), and the k-th of them
+/// (k ≥ 2) gets the suffix `_k`. These are the only component ids: the
+/// native side is told them with every circuit it loads and never makes its
+/// own.
 fn anchor(tree: &Tree, comps: &mut [Comp]) {
     let mut stacks: HashMap<Point, Vec<usize>> = HashMap::new();
     for (i, c) in comps.iter().enumerate() {
@@ -235,7 +270,8 @@ fn wire_element(segment: &Segment) -> Element {
         .attr("to", segment.to.xml())
 }
 
-fn find(tree: &Tree, circuit: &str) -> Result<usize> {
+/// The element of the circuit named `circuit`.
+pub(crate) fn find(tree: &Tree, circuit: &str) -> Result<usize> {
     tree.named(tree.root(), "circuit")
         .find(|&c| tree.get(c, "name") == circuit)
         .ok_or_else(|| Error::InvalidCommand("找不到电路".into()))
@@ -356,7 +392,13 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
                 None => out.append(node, &[comp]),
             }
         }
-        Edit::Move { ids, delta } => shift(&Sheet::new(tree, node)?, &ids, delta, None, &mut out)?,
+        Edit::Move { ids, delta, .. } => shift(
+            &Sheet::new(tree, node)?,
+            &ids,
+            delta,
+            &crate::WireEdit::default(),
+            &mut out,
+        )?,
         Edit::Delete { ids } => delete(&Sheet::new(tree, node)?, &ids, &mut out)?,
         Edit::Attributes { id, values } => {
             set_attributes(&Sheet::new(tree, node)?, id, &values, &mut out)?
@@ -365,22 +407,6 @@ pub(crate) fn apply(tree: &Tree, circuit: &str, edit: Edit) -> Result<Option<Str
             unreachable!("the document merges replacements and applies batches item by item")
         }
     }
-    finish(out)
-}
-
-/// A move that keeps the wires on the moved components' native `ports`
-/// attached; `fixed` are the ports of the components that stay.
-pub(crate) fn move_connected(
-    tree: &Tree,
-    circuit: &str,
-    ids: &[String],
-    delta: Point,
-    ports: Vec<Point>,
-    fixed: &[Point],
-) -> Result<Option<String>> {
-    let sheet = Sheet::new(tree, find(tree, circuit)?)?;
-    let mut out = Splices::new(tree);
-    shift(&sheet, ids, delta, Some((ports, fixed)), &mut out)?;
     finish(out)
 }
 
@@ -427,14 +453,22 @@ fn wire(sheet: &Sheet, points: &[Point], out: &mut Splices<'_>) -> Result<()> {
     Ok(())
 }
 
+/// A move: the selection translated and the wire edits the native side's
+/// `MoveGesture` gave for it (none for a plain translation): the named wires
+/// out, the segments in after the circuit's last wire. One plan, so the
+/// junction rule splits wires once, at the moved and the added ends.
 fn shift(
     sheet: &Sheet,
     ids: &[String],
     delta: Point,
-    attached: Option<(Vec<Point>, &[Point])>,
+    edit: &crate::WireEdit,
     out: &mut Splices<'_>,
 ) -> Result<()> {
     let (comps, wires) = sheet.resolve(ids)?;
+    let mut gone = BTreeSet::new();
+    for id in &edit.removed {
+        gone.insert(sheet.wire(id).ok_or_else(stale)?);
+    }
     if delta == (Point { x: 0, y: 0 }) || (comps.is_empty() && wires.is_empty()) {
         return Ok(());
     }
@@ -465,216 +499,98 @@ fn shift(
         ends.extend([moved.from, moved.to]);
         plan.wires[k] = vec![moved];
     }
-    if let Some((ports, fixed)) = attached {
-        ends.extend(reroute(sheet, &wires, delta, ports, fixed, &mut plan)?);
+    for &k in &gone {
+        if !wires.contains(&k) {
+            plan.wires[k].clear();
+        }
+    }
+    // Only the moved wires' ends split what they land on: a new branch that
+    // ends inside a wire is a T, which Logisim joins without a split.
+    for &(from, to) in &edit.added {
+        if from != to {
+            plan.added.push(Segment { from, to });
+        }
     }
     plan.split(&ends);
+    // An added piece that duplicates a wire adds nothing.
+    let mut kept: Vec<Segment> = Vec::new();
+    for piece in std::mem::take(&mut plan.added) {
+        if !plan.wires.iter().flatten().any(|w| w.same(&piece))
+            && !kept.iter().any(|s| s.same(&piece))
+        {
+            kept.push(piece);
+        }
+    }
+    plan.added = kept;
     plan.write(sheet, out);
     Ok(())
 }
 
-/// The reroute: a wire with one end on a moved port follows it, keeping its
-/// other end and its direction where it meets the moved port. It takes the
-/// first shape that touches nothing it would join: one bend at the end that
-/// stays, one bend at the moved end, else a jog at the first free column (or
-/// row) from the moved end; with none free it keeps the first and the caller's
-/// connectivity check decides. Neighbouring wires of a moved part so fan out
-/// instead of folding onto one column. A moved port that
-/// is also a junction of wires that stay keeps those wires and gets a bend
-/// from its old place to its new one. Returns the ends the reroute creates;
-/// an end a wire keeps also keeps its junction as it was.
-fn reroute(
-    sheet: &Sheet,
-    selected: &BTreeSet<usize>,
+/// A move with the wire edits the native side's `MoveGesture` returned.
+pub(crate) fn translate(
+    tree: &Tree,
+    circuit: &str,
+    ids: &[String],
     delta: Point,
-    mut ports: Vec<Point>,
-    fixed: &[Point],
-    plan: &mut Plan,
-) -> Result<Vec<Point>> {
-    // Every port where it will be: what a rerouted wire must not run into.
-    let mut blocking: Vec<Point> = fixed.to_vec();
-    for &p in &ports {
-        blocking.push(p.translated(delta)?);
-    }
-    let still: Vec<(usize, Segment)> = sheet
-        .wires
-        .iter()
-        .enumerate()
-        .filter(|(k, _)| !selected.contains(k))
-        .map(|(k, w)| (k, w.segment))
-        .collect();
-    // Selected wires move with the selection, including contacts along their length.
-    for &k in selected {
-        let wire = sheet.wires[k].segment;
-        ports.extend([wire.from, wire.to]);
-        ports.extend(fixed.iter().copied().filter(|&p| wire.touches(p)));
-        for (_, other) in &still {
-            ports.extend(
-                [other.from, other.to]
-                    .into_iter()
-                    .filter(|&p| wire.touches(p)),
-            );
+    wires: &crate::WireEdit,
+) -> Result<Option<String>> {
+    let sheet = Sheet::new(tree, find(tree, circuit)?)?;
+    let mut out = Splices::new(tree);
+    shift(&sheet, ids, delta, wires, &mut out)?;
+    finish(out)
+}
+
+/// The ids the selection has after a move: the components at their new
+/// anchors and the wires along for it (every piece of a moved wire). As in
+/// Logisim, the wires a move adds to keep its ends connected are not
+/// selected, so the next drag stretches them again.
+pub(crate) fn moved(
+    before: &Tree,
+    after: &Tree,
+    circuit: &str,
+    ids: &[String],
+    delta: Point,
+) -> Result<(Vec<String>, Vec<String>)> {
+    let old = Sheet::new(before, find(before, circuit)?)?;
+    let new = Sheet::new(after, find(after, circuit)?)?;
+    let (comps, wires) = old.resolve(ids)?;
+    let mut picked: HashSet<usize> = HashSet::new();
+    let mut components = Vec::new();
+    for &i in &comps {
+        let c = &old.comps[i];
+        let at = c.location.translated(delta)?;
+        let mut found = None;
+        for (j, other) in new.comps.iter().enumerate() {
+            if picked.contains(&j) || other.name != c.name || other.location != at {
+                continue;
+            }
+            if fingerprint(old.tree, c.node) == fingerprint(new.tree, other.node) {
+                found = Some(j);
+                break;
+            }
         }
+        let j = found.ok_or_else(stale)?;
+        picked.insert(j);
+        components.push(new.comps[j].id.clone());
     }
-    ports.sort_by_key(|p| (p.x, p.y));
-    ports.dedup();
-    // Shared ports and junctions on wires that stay keep their position.
-    let anchored: Vec<Point> = ports
-        .iter()
-        .copied()
-        .filter(|&p| {
-            fixed.contains(&p)
-                || still.iter().any(|&(k, w)| {
-                    w.touches(p)
-                        && (w.inside(p)
-                            || still.iter().any(|&(j, other)| {
-                                j != k && (w.inside(other.from) || w.inside(other.to))
-                            })
-                            || fixed.iter().any(|&q| w.inside(q)))
-                })
-        })
-        .collect();
-    let moves = |p: Point| ports.contains(&p) && !anchored.contains(&p);
-    let mut ends = Vec::new();
-    for &(k, wire) in &still {
-        let (from_moves, to_moves) = (moves(wire.from), moves(wire.to));
-        let from = if from_moves {
-            wire.from.translated(delta)?
-        } else {
-            wire.from
-        };
-        let to = if to_moves {
-            wire.to.translated(delta)?
-        } else {
-            wire.to
-        };
-        if (from, to) == (wire.from, wire.to) {
-            continue;
-        }
-        let pieces = if from_moves && to_moves {
-            vec![Segment { from, to }]
-        } else {
-            let (fixed_end, moved_end) = if to_moves { (from, to) } else { (to, from) };
-            let others: Vec<Segment> = plan
-                .wires
+    let mut chosen: BTreeSet<usize> = BTreeSet::new();
+    let on =
+        |outer: &Segment, inner: &Segment| outer.touches(inner.from) && outer.touches(inner.to);
+    for &k in &wires {
+        let wanted = old.wires[k].segment.translated(delta)?;
+        let before = chosen.len();
+        chosen.extend(
+            new.wires
                 .iter()
                 .enumerate()
-                .filter(|&(j, _)| j != k)
-                .flat_map(|(_, pieces)| pieces.iter().copied())
-                .chain(plan.added.iter().copied())
-                .collect();
-            let shapes = shapes(fixed_end, moved_end, wire.from.x == wire.to.x);
-            let mut chosen = shapes
-                .iter()
-                .find(|shape| clear(shape, [fixed_end, moved_end], &others, &blocking))
-                .unwrap_or(&shapes[0])
-                .clone();
-            // Written in the wire's own direction.
-            if !to_moves {
-                chosen.reverse();
-                for piece in &mut chosen {
-                    *piece = Segment {
-                        from: piece.to,
-                        to: piece.from,
-                    };
-                }
-            }
-            chosen
-        };
-        let pieces: Vec<Segment> = pieces.into_iter().filter(|s| s.from != s.to).collect();
-        ends.extend(
-            pieces
-                .iter()
-                .flat_map(|s| [s.from, s.to])
-                .filter(|&p| p != wire.from && p != wire.to),
+                .filter(|(_, w)| on(&wanted, &w.segment))
+                .map(|(j, _)| j),
         );
-        plan.wires[k] = pieces;
-    }
-    for port in anchored {
-        let to = port.translated(delta)?;
-        let corner = Point { x: to.x, y: port.y };
-        for piece in [
-            Segment {
-                from: port,
-                to: corner,
-            },
-            Segment { from: corner, to },
-        ] {
-            if piece.from != piece.to {
-                ends.extend([piece.from, piece.to]);
-                plan.added.push(piece);
-            }
+        if chosen.len() == before {
+            return Err(stale());
         }
     }
-    Ok(ends)
-}
-
-/// Candidate shapes from `fixed` to `moved` for a wire that ran vertically
-/// (or horizontally), keeping that direction at the moved end: one bend at the
-/// fixed end, one at the moved end, then jogs from the moved end outwards.
-fn shapes(fixed: Point, moved: Point, vertical: bool) -> Vec<Vec<Segment>> {
-    let seg = |from, to| Segment { from, to };
-    let flip = |p: Point| {
-        if vertical {
-            Point { x: p.y, y: p.x }
-        } else {
-            p
-        }
-    };
-    // Work as if the wire were horizontal: x runs along it.
-    let (f, m) = (flip(fixed), flip(moved));
-    let mut out = vec![
-        vec![(f, Point { x: f.x, y: m.y }), (Point { x: f.x, y: m.y }, m)],
-        vec![(f, Point { x: m.x, y: f.y }), (Point { x: m.x, y: f.y }, m)],
-    ];
-    let step = if f.x < m.x { -10 } else { 10 };
-    let mut x = m.x + step;
-    while (f.x < m.x && x > f.x) || (f.x > m.x && x < f.x) {
-        let (a, b) = (Point { x, y: f.y }, Point { x, y: m.y });
-        out.push(vec![(f, a), (a, b), (b, m)]);
-        x += step;
-    }
-    out.into_iter()
-        .map(|shape| {
-            shape
-                .into_iter()
-                .map(|(a, b)| seg(flip(a), flip(b)))
-                .filter(|s| s.from != s.to)
-                .collect()
-        })
-        .collect()
-}
-
-/// Whether a rerouted wire touches nothing it would join, away from its own
-/// two ends: no port or wire end on it, no corner of it on a wire, no run
-/// along a wire.
-fn clear(pieces: &[Segment], ends: [Point; 2], wires: &[Segment], ports: &[Point]) -> bool {
-    let own = |p: &Point| ends.contains(p);
-    let along = |a: &Segment, b: &Segment| {
-        let (ah, bh) = (a.from.y == a.to.y, b.from.y == b.to.y);
-        if ah != bh || (ah && a.from.y != b.from.y) || (!ah && a.from.x != b.from.x) {
-            return false;
-        }
-        let span = |s: &Segment| {
-            if ah {
-                (s.from.x.min(s.to.x), s.from.x.max(s.to.x))
-            } else {
-                (s.from.y.min(s.to.y), s.from.y.max(s.to.y))
-            }
-        };
-        let ((a0, a1), (b0, b1)) = (span(a), span(b));
-        a0.max(b0) < a1.min(b1)
-    };
-    pieces.iter().all(|piece| {
-        !ports.iter().any(|p| !own(p) && piece.touches(*p))
-            && wires.iter().all(|w| {
-                ![w.from, w.to].iter().any(|p| !own(p) && piece.touches(*p))
-                    && ![piece.from, piece.to]
-                        .iter()
-                        .any(|p| !own(p) && w.touches(*p))
-                    && !along(piece, w)
-            })
-    })
+    Ok((components, chosen.iter().map(|j| format!("w{j}")).collect()))
 }
 
 fn delete(sheet: &Sheet, ids: &[String], out: &mut Splices<'_>) -> Result<()> {

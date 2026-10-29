@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { MovePreview as Preview } from "../generated/MovePreview";
+import type { MovePreview } from "../generated/MovePreview";
 import { command } from "../shared/transport";
 import type { Point } from "../shared/types";
 type Move = {
@@ -9,71 +9,30 @@ type Move = {
   ids: string[];
   delta: Point;
 };
+/** The wires Logisim's move gesture takes out and adds at the drag's offset,
+ * for drawing; the drag never waits for them. One request at a time: when it
+ * returns and the offset has changed, the latest offset is asked. */
 export function useMovePreview(move: Move | null) {
   const key = move ? JSON.stringify(move) : "";
-  const latest = useRef({ key, move });
-  latest.current = { key, move };
-  const live = useRef(false);
-  const running = useRef(false);
-  // The position last sent: a frame that finds it already sent does nothing.
-  const sent = useRef("");
-  const frame = useRef<number | null>(null);
-  const [preview, setPreview] = useState<{
-    key: string;
-    wires: Preview | null;
-    error: string;
-  }>({ key: "", wires: null, error: "" });
-  const request = useRef<() => void>(() => {});
-  request.current = () => {
-    const target = latest.current;
-    if (running.current || !live.current || !target.move) return;
-    if (target.key === sent.current) return;
-    sent.current = target.key;
-    running.current = true;
-    void command<Preview>({ op: "movePreview", ...target.move! })
-      .then((result) => {
-        if (live.current && latest.current.key === target.key)
-          setPreview({
-            key: target.key,
-            wires: result,
-            // A rejected position is a normal part of dragging.
-            error: result.error?.message ?? "",
-          });
-      })
-      .catch((error) => {
-        if (live.current && latest.current.key === target.key)
-          setPreview({
-            key: target.key,
-            wires: null,
-            error: String(error instanceof Error ? error.message : error),
-          });
-      })
+  const latest = useRef(key);
+  latest.current = key;
+  const busy = useRef(false);
+  const [preview, setPreview] = useState({ key: "", wires: null as MovePreview | null });
+  const ask = useRef(() => {});
+  ask.current = () => {
+    const asked = latest.current;
+    if (busy.current || !asked) return;
+    busy.current = true;
+    command<MovePreview>({ op: "movePreview", ...JSON.parse(asked) })
+      .then(
+        (wires) => setPreview({ key: asked, wires }),
+        () => {},
+      )
       .finally(() => {
-        running.current = false;
-        // Coalesce pointer movement while native geometry planning is in flight.
-        if (
-          live.current &&
-          latest.current.key !== target.key &&
-          latest.current.move
-        )
-          request.current();
+        busy.current = false;
+        if (latest.current !== asked) ask.current();
       });
   };
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      live.current = false;
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
-      frame.current = null;
-    };
-  }, []);
-  // At most one request per animation frame; it sends the latest position.
-  useEffect(() => {
-    if (!move || frame.current !== null) return;
-    frame.current = requestAnimationFrame(() => {
-      frame.current = null;
-      request.current();
-    });
-  }, [key]);
-  return key && preview.key === key ? preview : { key, wires: null, error: "" };
+  useEffect(() => ask.current(), [key]);
+  return key && preview.key === key ? preview.wires : null;
 }

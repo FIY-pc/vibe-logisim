@@ -48,6 +48,7 @@ const outcome = (
     ...(change.widthErrors && Object.keys(change.widthErrors).length
       ? { widthErrors: change.widthErrors }
       : {}),
+    ...(result.unconnected?.length ? { unconnected: result.unconnected } : {}),
     ...notes(result),
     ...extra,
   };

@@ -33,7 +33,7 @@ public final class NativeCircuitLoader {
         return path;
     }
 
-    private static Element parseProject(File file) throws Exception {
+    private static Element parseProject(InputSource source) throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -49,7 +49,7 @@ public final class NativeCircuitLoader {
             @Override public void error(SAXParseException error) throws SAXParseException { throw error; }
             @Override public void fatalError(SAXParseException error) throws SAXParseException { throw error; }
         });
-        return parser.parse(file).getDocumentElement();
+        return parser.parse(source).getDocumentElement();
     }
 
     /**
@@ -66,15 +66,24 @@ public final class NativeCircuitLoader {
         validate(new InputSource(new ByteArrayInputStream(document)));
     }
 
+    /** Made once per thread: a factory is not thread-safe. */
+    private static final ThreadLocal<SAXParserFactory> PARSERS = ThreadLocal.withInitial(() -> {
+        try {
+            SAXParserFactory factory = SAXParserFactory.newInstance();
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            factory.setXIncludeAware(false);
+            return factory;
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
+    });
+
     private static void validate(InputSource source) throws Exception {
-        SAXParserFactory factory = SAXParserFactory.newInstance();
-        factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-        factory.setXIncludeAware(false);
-        SAXParser parser = factory.newSAXParser();
+        SAXParser parser = PARSERS.get().newSAXParser();
         parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         try {
@@ -192,9 +201,10 @@ public final class NativeCircuitLoader {
      * warnings; structural loss still fails the load. Files that load without
      * reports are returned exactly as before, unverified.
      */
-    public static LogisimFile openChecked(File file, List<String> warnings) throws Exception {
-        CheckedLoader loader = new CheckedLoader();
-        LogisimFile loaded = loader.open(file);
+    public static LogisimFile openChecked(byte[] text, String name, File directory, List<String> warnings)
+            throws Exception {
+        CheckedLoader loader = new CheckedLoader(directory);
+        LogisimFile loaded = loader.open(text, name);
         warnings.addAll(loader.reported);
         return loaded;
     }
@@ -206,26 +216,46 @@ public final class NativeCircuitLoader {
      */
     static final class CheckedLoader extends Loader {
         final List<String> reported = new ArrayList<>();
+        /** Where the document lives: relative library paths resolve against it. */
+        private final File directory;
 
-        CheckedLoader() { super(null); }
+        CheckedLoader(File directory) {
+            super(null);
+            this.directory = directory;
+        }
 
-        LogisimFile open(File file) throws Exception {
+        /**
+         * Loads a document from its text. `name` is its file name; the
+         * project is named as a load of that file would name it.
+         */
+        LogisimFile open(byte[] text, String name) throws Exception {
             LogisimFile loaded;
             try {
-                // The loader's loadLogisimFile preflights each file it reads, this one included.
-                loaded = openLogisimFile(file);
+                validate(text);
+                WorkerTiming.mark("validate");
+                loaded = LogisimFile.loadSub(new ByteArrayInputStream(text), this);
+                WorkerTiming.mark("logisim");
             } catch (Exception error) {
                 if (reported.isEmpty()) throw error;
                 throw new IllegalStateException("Logisim 无法载入这个文件：" + String.join("；", reported), error);
             }
+            loaded.setName(name.toLowerCase(java.util.Locale.ROOT).endsWith(".circ")
+                ? name.substring(0, name.length() - 5) : name);
             if (!reported.isEmpty()) {
-                String loss = coverageLoss(loaded, file);
+                String loss = coverageLoss(loaded, new InputSource(new ByteArrayInputStream(text)));
                 if (loss != null) {
                     throw new IllegalStateException(
                         "Logisim 无法载入这个文件：" + String.join("；", reported) + "（" + loss + "）");
                 }
+                WorkerTiming.mark("coverage");
             }
             return loaded;
+        }
+
+        /** The directory of the file being read: a nested library's while it loads, the document's otherwise. */
+        @Override File getCurrentDirectory() {
+            File current = super.getCurrentDirectory();
+            return current != null ? current : directory;
         }
 
         @Override public void showError(String description) { reported.add(description); }
@@ -241,7 +271,7 @@ public final class NativeCircuitLoader {
                 LogisimFile loaded = super.loadLogisimFile(source);
                 WorkerTiming.mark("logisim");
                 if (reported.size() > before) {
-                    String loss = coverageLoss(loaded, source);
+                    String loss = coverageLoss(loaded, new InputSource(source.toURI().toASCIIString()));
                     if (loss != null) throw new LoadFailedException(loss);
                     WorkerTiming.mark("coverage");
                 }
@@ -302,8 +332,8 @@ public final class NativeCircuitLoader {
     }
 
     /** Compares per-circuit comp/wire element counts against the loaded file. */
-    private static String coverageLoss(LogisimFile loaded, File file) throws Exception {
-        Element project = parseProject(file);
+    private static String coverageLoss(LogisimFile loaded, InputSource source) throws Exception {
+        Element project = parseProject(source);
         StringBuilder loss = new StringBuilder();
         for (Node node = project.getFirstChild(); node != null; node = node.getNextSibling()) {
             if (!(node instanceof Element) || !node.getNodeName().equals("circuit")) continue;

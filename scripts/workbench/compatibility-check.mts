@@ -8,7 +8,6 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
   connectionIndex,
-  documentComponent,
   portSignal,
   signalTrace,
   wireSignal,
@@ -157,7 +156,12 @@ try {
   const traced = signalTrace(nativeIndex, target.bits, target.origin);
   assert.equal(traced.singleSource?.component.factoryName, "Pin");
   assert.equal(traced.singleSource?.component.selector?.label, "input");
-  assert(documentComponent(local.circuits[0], traced.singleSource!.component));
+  // The runtime names objects by the document's ids.
+  assert(
+    local.circuits[0].components.some(
+      (c: any) => c.id === traced.singleSource!.component.componentId,
+    ),
+  );
   assert(wireSignal(nativeIndex, observed.focus.wires[0]));
   const unknownBit = signalTrace(
     nativeIndex,

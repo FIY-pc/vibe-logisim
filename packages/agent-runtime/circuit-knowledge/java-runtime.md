@@ -4,7 +4,7 @@
 
 ## 已有原生能力
 
-`simulate_circuit` 用真实 Logisim `Pin.setValue` 和 `Propagator.propagate` 运行指定组合输入，每组使用全新状态；`trace_circuit` 用原生时钟推进同一个状态。它们不是 Python/JavaScript 逻辑替身。运行结果的 `execution` 来自执行 JVM，包含实际加载的 `runtimeJarSha256`、`runtimeVersion` 和 `artifactSha256`；宿主核对这些值与请求的文件相符，`runtimeProfile.status=observed` 表示已实际执行。`expected` 来自调用方，只比较指定案例，不证明未覆盖行为。
+`simulate_circuit` 用真实 Logisim `Pin.setValue` 和 `Propagator.propagate` 运行指定组合输入，每组使用全新状态；`trace_circuit` 用原生时钟推进同一个状态。它们不是 Python/JavaScript 逻辑替身，运行的是请求所指修订的文件内容。`expected` 来自调用方，只比较指定案例，不证明未覆盖行为。
 
 要与工作区中的某个运行文件核对，可用 `sha256sum path/to/runtime.jar` 与结果的 `execution.runtimeJarSha256` 比较；扩展名可以是 `.jar` 或含 Java 类的课程 `.exe`。运行环境相同不意味着两个验证器独立：独立检查仍应自行确定期望、覆盖案例，并按需另写脚本。
 

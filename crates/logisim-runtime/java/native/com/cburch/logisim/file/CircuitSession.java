@@ -353,7 +353,7 @@ public final class CircuitSession {
      *
      * The class that serves a live run also answers bounded vector and trace
      * checks, so one native entry point and one line protocol cover every
-     * simulation. Each request loads its own copy of its artifact: trace program
+     * simulation. Each request loads its own copy of its document: trace program
      * stimuli mutate ROM contents, and no state may carry over to the next
      * check. The reply is {@code ok<TAB>base64(result)} or
      * {@code error<TAB>message}; a rejected circuit ends the process so nothing
@@ -364,13 +364,16 @@ public final class CircuitSession {
             reply(protocol, "error", "运行时已改变");
             System.exit(2);
         }
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"), 1 << 16);
         String line;
         while ((line = in.readLine()) != null) {
             try {
-                if (line.length() > 2_000_000) throw new IllegalArgumentException("请求过长");
-                Element request = parser.parse(new ByteArrayInputStream(Base64.getDecoder().decode(line))).getDocumentElement();
-                reply(protocol, "ok", verify(request, runtime, runtimeSha, parser));
+                if (line.length() > 200_000_000) throw new IllegalArgumentException("请求过长");
+                int tab = line.indexOf('\t');
+                if (tab < 0) throw new IllegalArgumentException("校验请求缺少电路文本");
+                Element request = parser.parse(new ByteArrayInputStream(Base64.getDecoder().decode(line.substring(0, tab)))).getDocumentElement();
+                byte[] text = Base64.getDecoder().decode(line.substring(tab + 1));
+                reply(protocol, "ok", verify(request, text, runtimeSha, parser));
             } catch (Throwable error) {
                 error.printStackTrace(System.err);
                 String message = error.getMessage() == null ? error.toString() : error.getMessage();
@@ -381,33 +384,33 @@ public final class CircuitSession {
         System.exit(0);
     }
 
-    private static byte[] verify(Element request, Path runtime, String runtimeSha, DocumentBuilder parser) throws Exception {
-        String artifactText = request.getAttribute("artifact"), artifactSha = request.getAttribute("digest");
-        if (artifactText.isEmpty() || artifactSha.isEmpty()) throw new IllegalArgumentException("缺少电路快照身份");
-        Path artifact = Paths.get(artifactText).toAbsolutePath().normalize();
-        if (!digest(artifact).equals(artifactSha)) throw new IllegalArgumentException("电路快照已改变");
+    /** Checks one document: the request names its file and directory, the text is its bytes. */
+    private static byte[] verify(Element request, byte[] text, String runtimeSha, DocumentBuilder parser) throws Exception {
         Element operation = null;
         for (Node child = request.getFirstChild(); child != null; child = child.getNextSibling())
             if (child instanceof Element) { operation = (Element) child; break; }
         if (operation == null || !(operation.getTagName().equals("simulate") || operation.getTagName().equals("trace")))
             throw new IllegalArgumentException("校验只接受 simulate 或 trace");
         List<String> loaderMessages = new ArrayList<>();
-        LogisimFile file = NativeCircuitLoader.openChecked(artifact.toFile(), loaderMessages);
+        LogisimFile file = NativeCircuitLoader.openChecked(text, request.getAttribute("name"),
+            directory(request), loaderMessages);
         for (String message : loaderMessages) System.err.println("loader: " + message);
         Document result = parser.newDocument();
         Element root = result.createElement("result");
         root.setAttribute("runtimeJarSha256", runtimeSha);
         root.setAttribute("runtimeVersion", String.valueOf(com.cburch.logisim.Main.VERSION));
-        root.setAttribute("artifactSha256", artifactSha);
         result.appendChild(root);
         if (operation.getTagName().equals("simulate")) CircuitWorkbench.simulate(file, operation, result);
         else CircuitWorkbench.trace(file, operation, result);
-        // The result names the snapshot it read, so a caller can tell it ran on the bytes it sent.
-        if (!digest(artifact).equals(artifactSha) || !digest(runtime).equals(runtimeSha))
-            throw new IllegalStateException("原生仿真输入在执行期间发生变化");
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         TransformerFactory.newInstance().newTransformer().transform(new DOMSource(result), new StreamResult(bytes));
         return bytes.toByteArray();
+    }
+
+    /** The folder relative libraries resolve in; none for a document without a file. */
+    private static File directory(Element request) {
+        String directory = request.getAttribute("directory");
+        return directory.isEmpty() ? null : new File(directory);
     }
 
     private static void reply(PrintStream protocol, String status, String message) {
@@ -437,29 +440,39 @@ public final class CircuitSession {
         f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         f.setFeature("http://xml.org/sax/features/external-general-entities", false);
         DocumentBuilder parser = f.newDocumentBuilder();
-        // {artifact} {init}                   a live run
-        // --verify {runtime} {runtime digest} circuit checks
+        // --verify {runtime} {runtime digest} circuit checks, a document per line
+        // (no arguments)                      a live run: the first line is the document
         if (args.length == 3 && args[0].equals("--verify")) {
             verifyLoop(Paths.get(args[1]).toAbsolutePath().normalize(), args[2], parser, protocol);
             return;
         }
-        // The first frame's fonts, text and XML writing load beside the project.
-        Document warm = parser.newDocument();
-        warm.appendChild(warm.createElement("warm"));
-        Thread warmUp = new Thread(() -> {
-            try {
-                CircuitPaint.warmUp(new File(args[0]));
-                xml(warm);
-            } catch (Throwable ignored) {
-                // Only time is lost.
-            }
-        }, "warm-up");
-        warmUp.setDaemon(true);
-        warmUp.start();
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"), 1 << 16);
         List<String> loaderMessages = new ArrayList<>();
         CircuitSession session;
         try {
-            session = new CircuitSession(NativeCircuitLoader.openChecked(new File(args[0]), loaderMessages), parser.parse(new File(args[1])).getDocumentElement());
+            // base64(init) TAB base64(document text); init names the file, its directory and the run.
+            String first = in.readLine();
+            if (first == null) { System.exit(0); return; }
+            int tab = first.indexOf('\t');
+            if (tab < 0) throw new IllegalArgumentException("运行请求缺少电路文本");
+            Element init = parser.parse(new ByteArrayInputStream(Base64.getDecoder().decode(first.substring(0, tab)))).getDocumentElement();
+            byte[] text = Base64.getDecoder().decode(first.substring(tab + 1));
+            first = null;
+            // The first frame's fonts, text and XML writing load beside the project.
+            Document warm = parser.newDocument();
+            warm.appendChild(warm.createElement("warm"));
+            Thread warmUp = new Thread(() -> {
+                try {
+                    CircuitPaint.warmUp(text);
+                    xml(warm);
+                } catch (Throwable ignored) {
+                    // Only time is lost.
+                }
+            }, "warm-up");
+            warmUp.setDaemon(true);
+            warmUp.start();
+            session = new CircuitSession(NativeCircuitLoader.openChecked(text, init.getAttribute("name"),
+                directory(init), loaderMessages), init);
         } catch (Throwable error) {
             // The host learns why the run could not start instead of only seeing the exit.
             error.printStackTrace(System.err);
@@ -476,7 +489,6 @@ public final class CircuitSession {
         }
         for (String message : loaderMessages) System.err.println("loader: " + message);
         session.startWorkers(protocol);
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String line;
         while ((line = in.readLine()) != null) {
             Document result = parser.newDocument();

@@ -8,7 +8,7 @@ use process::{StderrCapture, exit_failure, java_path};
 pub use runtime::{LEGACY_RUNTIME, Launcher, RuntimeFacts, RuntimeKind};
 use serde_json::{Value, json, value::RawValue};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
@@ -16,7 +16,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines},
     process::{Child, ChildStdin},
 };
-use vibe_circuit_document::digest;
+use vibe_circuit_document::{Point, Revision, WireEdit, digest};
 use xmltree::{Element, XMLNode};
 #[derive(Clone, Copy)]
 pub struct Viewport {
@@ -31,11 +31,8 @@ type Result<T> = std::result::Result<T, String>;
 /// Which component a `symbols` item records.
 #[derive(Clone, Debug)]
 pub enum SymbolSource {
-    /// The circuit's component at this location with this factory name.
-    Placed {
-        location: vibe_circuit_document::Point,
-        factory: String,
-    },
+    /// The circuit's component with this id.
+    Placed { id: String },
     /// One made at (0, 0) from tool `name` of library `library` (none: the
     /// file's circuits) with these attributes, as `template` makes it.
     Made {
@@ -48,12 +45,12 @@ pub enum SymbolSource {
 /// What a `connections` read starts from (README, Connections).
 #[derive(Clone, Debug, Default)]
 pub struct ConnectionSeeds {
-    /// Components by location and factory name.
-    pub components: Vec<(vibe_circuit_document::Point, String)>,
-    /// Wires by their two ends.
-    pub wires: Vec<(vibe_circuit_document::Point, vibe_circuit_document::Point)>,
+    /// Component ids.
+    pub components: Vec<String>,
+    /// Wire ids.
+    pub wires: Vec<String>,
     /// Every component with an end within `radius` of the point.
-    pub point: Option<(vibe_circuit_document::Point, f64)>,
+    pub point: Option<(Point, f64)>,
 }
 
 pub fn xml(tag: &str, attrs: &[(&str, String)], children: Vec<Element>) -> Element {
@@ -72,6 +69,37 @@ pub fn encode_xml(node: &Element) -> Result<Vec<u8>> {
 pub fn xml_json(node: &Element) -> Value {
     json!({"tag":node.name,"attributes":node.attributes,"text":node.get_text().map(|s|s.into_owned()),"children":node.children.iter().filter_map(XMLNode::as_element).map(xml_json).collect::<Vec<_>>()})
 }
+
+/// The documents a worker keeps loaded (CircuitWorker).
+const HELD: usize = 3;
+
+/// A worker's answer to one request.
+enum Reply {
+    Ok(Vec<u8>),
+    /// The operation failed; the message says why.
+    Error(String),
+    /// The worker does not hold what the request builds on.
+    Reload,
+}
+
+/// How a request brought its revision to the worker.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sent {
+    /// The worker held it.
+    Held,
+    /// As the change from the revision the worker held.
+    Change,
+    /// Whole.
+    Load,
+}
+
+/// Why a request failed: the operation (the worker carries on) or the
+/// exchange with the process (it is dropped).
+enum Failure {
+    Operation(String),
+    Exchange(String),
+}
+
 struct Worker {
     child: Child,
     stderr: StderrCapture,
@@ -82,9 +110,12 @@ struct Worker {
     /// Set while a reply is owed. A caller dropped mid-request leaves it set, and
     /// the unread reply would be taken by the next request.
     awaiting: bool,
+    /// The revisions the worker holds, least recently used first; it drops
+    /// the least recently used beyond `HELD`, as this list does.
+    held: Vec<Revision>,
 }
 impl Worker {
-    async fn receive(&mut self, starting: bool) -> Result<Vec<u8>> {
+    async fn receive(&mut self, starting: bool) -> Result<Reply> {
         let line = tokio::time::timeout(Duration::from_secs(60), self.lines.next_line())
             .await
             .map_err(|_| "Logisim 响应超时，请重试")?
@@ -110,12 +141,226 @@ impl Worker {
         timing::record_java(phases);
         let _decode = timing::span("native.decode");
         let bytes = B64.decode(payload).map_err(|e| e.to_string())?;
-        if status != "ok" {
-            return Err(String::from_utf8_lossy(&bytes).into_owned());
+        Ok(match status {
+            "ok" => Reply::Ok(bytes),
+            "reload" => Reply::Reload,
+            _ => Reply::Error(String::from_utf8_lossy(&bytes).into_owned()),
+        })
+    }
+
+    /// The request line for `operation` on `revision` (README, Worker
+    /// protocol): nothing more when the worker holds the revision, the change
+    /// from the revision it holds when that is only components and wires of
+    /// circuits, the whole document otherwise or when `whole`.
+    fn line(
+        &self,
+        revision: &Revision,
+        operation: &Element,
+        whole: bool,
+    ) -> Result<(String, Sent)> {
+        let held = self
+            .held
+            .iter()
+            .find(|held| {
+                held.document() == revision.document()
+                    && held.name() == revision.name()
+                    && held.directory() == revision.directory()
+            })
+            .filter(|_| !whole);
+        let (body, text, sent) = match held {
+            Some(held) if held.revision() == revision.revision() => (None, None, Sent::Held),
+            held => match held.and_then(|held| {
+                let changes = held.changes(revision)?;
+                let text = revision.change_text(&changes)?;
+                Some((change(held, &changes), text))
+            }) {
+                Some((body, text)) => (
+                    Some(body),
+                    Some(std::borrow::Cow::Owned(text.into_bytes())),
+                    Sent::Change,
+                ),
+                None => (
+                    Some(load(revision)?),
+                    Some(std::borrow::Cow::Borrowed(revision.bytes())),
+                    Sent::Load,
+                ),
+            },
+        };
+        let mut request = xml(
+            "request",
+            &[
+                ("document", revision.document().into()),
+                ("revision", revision.revision().into()),
+            ],
+            body.into_iter().collect(),
+        );
+        request.children.push(XMLNode::Element(operation.clone()));
+        let mut line = B64.encode(encode_xml(&request)?);
+        if let Some(text) = text {
+            line.push('\t');
+            B64.encode_string(&*text, &mut line);
         }
-        Ok(bytes)
+        line.push('\n');
+        Ok((line, sent))
+    }
+
+    /// Records that the worker holds `revision` now, as its latest document.
+    fn hold(&mut self, revision: &Revision) {
+        self.forget(revision.document());
+        self.held.push(revision.clone());
+        if self.held.len() > HELD {
+            self.held.remove(0);
+        }
+    }
+    fn forget(&mut self, document: &str) {
+        self.held.retain(|held| held.document() != document);
+    }
+
+    /// Answers `operation` on `revision`, loading the revision whole when the
+    /// worker cannot build it from what it holds.
+    async fn answer(
+        &mut self,
+        revision: &Revision,
+        operation: &Element,
+    ) -> std::result::Result<Vec<u8>, Failure> {
+        let mut whole = false;
+        loop {
+            let encode = timing::span("native.encode");
+            let (line, sent) = self
+                .line(revision, operation, whole)
+                .map_err(Failure::Operation)?;
+            drop(encode);
+            self.awaiting = true;
+            let roundtrip = timing::span("native.roundtrip");
+            let reply = async {
+                self.input
+                    .write_all(line.as_bytes())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                self.input.flush().await.map_err(|e| e.to_string())?;
+                self.receive(false).await
+            }
+            .await
+            .map_err(Failure::Exchange)?;
+            drop(roundtrip);
+            self.awaiting = false;
+            match reply {
+                Reply::Ok(bytes) => {
+                    self.hold(revision);
+                    return Ok(bytes);
+                }
+                Reply::Error(message) => {
+                    // A load that failed leaves the worker without the
+                    // document; a change it took or a held revision stays.
+                    if sent == Sent::Load {
+                        self.forget(revision.document());
+                    } else {
+                        self.hold(revision);
+                    }
+                    return Err(Failure::Operation(message));
+                }
+                Reply::Reload if sent != Sent::Load => {
+                    self.forget(revision.document());
+                    whole = true;
+                }
+                Reply::Reload => {
+                    return Err(Failure::Exchange("Logisim 没有载入这个修订".into()));
+                }
+            }
+        }
     }
 }
+
+/// `<load name directory>`: the file's name and folder (relative libraries
+/// resolve there), its `<lib>` names in order, and each circuit's component
+/// ids in element order and wires in file order.
+fn load(revision: &Revision) -> Result<Element> {
+    let mut children: Vec<Element> = revision
+        .libraries()
+        .into_iter()
+        .map(|(name, _)| xml("lib", &[("name", name)], vec![]))
+        .collect();
+    for circuit in revision.circuits().map_err(|e| e.to_string())? {
+        children.push(xml(
+            "circuit",
+            &[
+                ("name", circuit.name),
+                ("components", circuit.components.join(" ")),
+                ("wires", wires(circuit.wires.iter().map(|w| (w.from, w.to)))),
+            ],
+            vec![],
+        ));
+    }
+    Ok(xml(
+        "load",
+        &[
+            ("name", revision.name().into()),
+            (
+                "directory",
+                revision
+                    .directory()
+                    .map(|d| java_path(d).to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            ),
+        ],
+        children,
+    ))
+}
+
+/// `<change base>`: per changed circuit, the component ids that go, the ids
+/// that come (their elements are the request's text) and the wires after it.
+fn change(base: &Revision, changes: &[vibe_circuit_document::CircuitChange]) -> Element {
+    xml(
+        "change",
+        &[("base", base.revision().into())],
+        changes
+            .iter()
+            .map(|change| {
+                xml(
+                    "circuit",
+                    &[
+                        ("name", change.name.clone()),
+                        ("remove", change.removed.join(" ")),
+                        (
+                            "add",
+                            change
+                                .added
+                                .iter()
+                                .map(|(id, _)| id.as_str())
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                        ),
+                        ("wires", wires(change.wires.iter().map(|w| (w.from, w.to)))),
+                    ],
+                    vec![],
+                )
+            })
+            .collect(),
+    )
+}
+
+/// Wires as the worker reads them: `x0,y0,x1,y1` separated by spaces.
+fn wires(wires: impl Iterator<Item = (Point, Point)>) -> String {
+    let mut text = String::new();
+    for (from, to) in wires {
+        if !text.is_empty() {
+            text.push(' ');
+        }
+        text.push_str(&format!("{},{},{},{}", from.x, from.y, to.x, to.y));
+    }
+    text
+}
+
+/// What Logisim's move gesture makes of a move: the document wires it takes
+/// out and the segments it adds, at their place after the move, and the
+/// places (before the move) where a moved end touched something it found no
+/// route back to.
+#[derive(Clone, Debug, Default)]
+pub struct MoveResult {
+    pub wires: WireEdit,
+    pub unconnected: Vec<Point>,
+}
+
 pub struct Native {
     launcher: Launcher,
     worker: Option<Worker>,
@@ -123,15 +368,14 @@ pub struct Native {
     files: KnownFiles,
 }
 
-/// A file as a request last read it. Artifacts never change once written and
-/// libraries rarely do, so a request reads a file again only when its size,
-/// modification time or (on Unix) inode or change time differ.
+/// A library file as a request last read it. Libraries rarely change, so a
+/// request reads one again only when its size, modification time or (on
+/// Unix) inode or change time differ.
 struct Known {
     stamp: Stamp,
     digest: String,
-    /// The top-level libraries and `source` version of a circuit file.
-    libraries: Vec<TopLevelLibrary>,
-    version: Option<String>,
+    /// The `desc` of each top-level `<lib>` of a circuit file.
+    libraries: Vec<String>,
 }
 #[derive(PartialEq, Eq)]
 struct Stamp {
@@ -169,11 +413,10 @@ impl KnownFiles {
                 stamp,
                 digest: digest(&bytes),
                 libraries: if circuit {
-                    top_level_libraries(&bytes)?
+                    library_descriptors(&bytes)?
                 } else {
                     Vec::new()
                 },
-                version: circuit.then(|| runtime::source_version(&bytes)).flatten(),
             };
             if self.0.len() >= 256 {
                 self.0.clear();
@@ -182,38 +425,38 @@ impl KnownFiles {
         }
         Ok(&self.0[path])
     }
-    /// `artifact_dependencies`, reading only files that changed since the last call.
-    fn dependencies(&mut self, artifact: &Path) -> Result<BTreeMap<PathBuf, String>> {
+    /// The library files that the descriptors `descs`, read in `directory`,
+    /// load, with the digest of each, and the libraries of the circuit files
+    /// among them, resolved the way the native loader does. A file that
+    /// cannot be found is recorded as `missing`.
+    fn dependencies(
+        &mut self,
+        directory: Option<&Path>,
+        descs: Vec<String>,
+    ) -> Result<BTreeMap<PathBuf, String>> {
         let mut dependencies = BTreeMap::new();
-        let mut visited = std::collections::BTreeSet::new();
-        let mut pending = vec![artifact.to_path_buf()];
-        while let Some(source) = pending.pop() {
-            let source = source.canonicalize().map_err(|e| e.to_string())?;
-            if !visited.insert(source.clone()) {
-                continue;
-            }
-            if visited.len() > 256 {
-                return Err("外部组件库数量超过限制".into());
-            }
-            let descriptors: Vec<String> = self
-                .get(&source, true)?
-                .libraries
-                .iter()
-                .filter_map(|library| library.desc.clone())
-                .collect();
-            for desc in descriptors {
-                let Some((path, circuit)) = library_file(&source, &desc)? else {
+        let mut visited = BTreeSet::new();
+        let mut pending = vec![(directory.map(Path::to_path_buf), descs)];
+        while let Some((directory, descs)) = pending.pop() {
+            for desc in descs {
+                let Some((path, circuit)) = library_file(directory.as_deref(), &desc) else {
                     continue;
                 };
-                if !path.is_file() {
+                if !path.is_absolute() || !path.is_file() {
+                    // Let the native loader resolve runtime-specific plugin
+                    // aliases and report missing files with its own context.
                     dependencies.insert(path, "missing".into());
                     continue;
                 }
                 let path = path.canonicalize().map_err(|e| e.to_string())?;
                 let known = self.get(&path, circuit)?;
                 dependencies.insert(path.clone(), known.digest.clone());
-                if circuit {
-                    pending.push(path);
+                if circuit && visited.insert(path.clone()) {
+                    if visited.len() > 256 {
+                        return Err("外部组件库数量超过限制".into());
+                    }
+                    let nested = known.libraries.clone();
+                    pending.push((path.parent().map(Path::to_path_buf), nested));
                 }
             }
         }
@@ -275,9 +518,14 @@ impl Native {
                 runtime: runtime.into(),
                 dependencies: BTreeMap::new(),
                 awaiting: false,
+                held: Vec::new(),
             };
             // The handshake names the runtime version: `ready <version>`.
-            let hello = worker.receive(true).await?;
+            let hello = match worker.receive(true).await? {
+                Reply::Ok(hello) => hello,
+                Reply::Error(message) => return Err(message),
+                Reply::Reload => return Err("Logisim 未就绪".into()),
+            };
             let version = hello.strip_prefix(b"ready").ok_or("Logisim 未就绪")?;
             if let Some(version) = runtime::plain_version(&String::from_utf8_lossy(version)) {
                 self.facts().record_version(version.clone());
@@ -287,23 +535,20 @@ impl Native {
         }
         Ok(self.worker.as_mut().unwrap())
     }
-    pub async fn request(&mut self, artifact: &Path, operation: Element) -> Result<Vec<u8>> {
-        let read = timing::span("native.read");
-        let known = self.files.get(artifact, true)?;
-        let (hash, version) = (known.digest.clone(), known.version.clone());
-        let (runtime, _) = self.facts().runtime_for_version(version.as_deref())?;
-        drop(read);
-        let request = xml(
-            "request",
-            &[
-                ("artifact", java_path(artifact).to_string_lossy().into()),
-                ("digest", hash),
-            ],
-            vec![operation],
-        );
-        let line = B64.encode(encode_xml(&request)?) + "\n";
+    /// Answers `operation` on `revision`. The worker is brought to the
+    /// revision on the way, from what it holds or whole, in the same round
+    /// trip; nothing is written to disk.
+    pub async fn request(&mut self, revision: &Revision, operation: Element) -> Result<Vec<u8>> {
+        let (runtime, _) = self
+            .facts()
+            .runtime_for_version(revision.source_version().as_deref())?;
         let scan = timing::span("native.dependencies");
-        let dependencies = self.files.dependencies(artifact)?;
+        let descs = revision
+            .libraries()
+            .into_iter()
+            .map(|(_, desc)| desc)
+            .collect();
+        let dependencies = self.files.dependencies(revision.directory(), descs)?;
         drop(scan);
         // Logisim's LibraryManager also caches external files globally. Drop the
         // process when dependencies change, so geometry and verification cannot
@@ -316,64 +561,37 @@ impl Native {
             self.worker = None;
         }
         let worker = self.worker(&runtime).await?;
-        worker.dependencies = dependencies.clone();
-        worker.awaiting = true;
-        let roundtrip = timing::span("native.roundtrip");
-        let mut result = async {
-            worker
-                .input
-                .write_all(line.as_bytes())
-                .await
-                .map_err(|e| e.to_string())?;
-            worker.input.flush().await.map_err(|e| e.to_string())?;
-            worker.receive(false).await
-        }
-        .await;
-        drop(roundtrip);
-        worker.awaiting = false;
-        if result.is_ok() && !dependencies.is_empty() {
-            let _scan = timing::span("native.dependencies");
-            match self.files.dependencies(artifact) {
-                Ok(after) if after == dependencies => {}
-                Ok(_) => result = Err("操作期间组件库已改变，请重试".into()),
-                Err(error) => result = Err(error),
+        worker.dependencies = dependencies;
+        match worker.answer(revision, &operation).await {
+            Ok(bytes) => Ok(bytes),
+            Err(Failure::Operation(message)) => Err(message),
+            Err(Failure::Exchange(message)) => {
+                self.worker = None;
+                Err(message)
             }
         }
-        if result.is_err() {
-            self.worker = None;
-        }
-        result
     }
     /// The observation of one circuit as the JSON the worker wrote.
-    async fn observe_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
+    async fn observe_bytes(&mut self, revision: &Revision, circuit: &str) -> Result<Vec<u8>> {
         self.request(
-            artifact,
+            revision,
             xml("observe", &[("circuit", circuit.into())], vec![]),
         )
         .await
     }
-    /// The native connectivity of one circuit as the JSON the worker wrote:
-    /// `{schema, focus: {circuit, components: [{location, factoryName,
-    /// ends: [{index, location, width, netBits: [{bit, netId}]}]}],
-    /// wireBundles: [{bundleId, valid, width, widthDeterminant, points,
-    /// bitNets}]}}`, the fields of an observation a connection check compares,
-    /// at a fraction of its cost.
-    pub async fn connectivity_bytes(&mut self, artifact: &Path, circuit: &str) -> Result<Vec<u8>> {
-        self.request(
-            artifact,
-            xml("connectivity", &[("circuit", circuit.into())], vec![]),
-        )
-        .await
-    }
-    pub async fn observe(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
-        let bytes = self.observe_bytes(artifact, circuit).await?;
+    pub async fn observe(&mut self, revision: &Revision, circuit: &str) -> Result<Value> {
+        let bytes = self.observe_bytes(revision, circuit).await?;
         let _parse = timing::span("native.json");
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())
     }
     /// The observation as JSON text, checked but not parsed, for callers that
     /// pass it on whole.
-    pub async fn observe_raw(&mut self, artifact: &Path, circuit: &str) -> Result<Box<RawValue>> {
-        let bytes = self.observe_bytes(artifact, circuit).await?;
+    pub async fn observe_raw(
+        &mut self,
+        revision: &Revision,
+        circuit: &str,
+    ) -> Result<Box<RawValue>> {
+        let bytes = self.observe_bytes(revision, circuit).await?;
         let _check = timing::span("native.json");
         let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
         RawValue::from_string(text).map_err(|e| e.to_string())
@@ -384,29 +602,17 @@ impl Native {
     /// widthErrors: [[x, y]]}` (README, Symbols).
     pub async fn symbols(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuit: &str,
         items: &[SymbolSource],
     ) -> Result<Box<RawValue>> {
         let made = items
             .iter()
             .any(|item| matches!(item, SymbolSource::Made { .. }));
-        let mut children = if made {
-            self.artifact_libraries(artifact)?
-        } else {
-            vec![]
-        };
+        let mut children = if made { libraries(revision) } else { vec![] };
         children.extend(items.iter().map(|item| {
             match item {
-                SymbolSource::Placed { location, factory } => xml(
-                    "symbol",
-                    &[
-                        ("x", location.x.to_string()),
-                        ("y", location.y.to_string()),
-                        ("factory", factory.clone()),
-                    ],
-                    vec![],
-                ),
+                SymbolSource::Placed { id } => xml("symbol", &[("id", id.clone())], vec![]),
                 SymbolSource::Made {
                     library,
                     name,
@@ -432,7 +638,7 @@ impl Native {
         }));
         let bytes = self
             .request(
-                artifact,
+                revision,
                 xml("symbols", &[("circuit", circuit.into())], children),
             )
             .await?;
@@ -445,33 +651,16 @@ impl Native {
     /// the wire bundles and wires they pass through (README, Connections).
     pub async fn connections(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuit: &str,
         seeds: &ConnectionSeeds,
     ) -> Result<Box<RawValue>> {
         let mut children = Vec::new();
-        for (location, factory) in &seeds.components {
-            children.push(xml(
-                "component",
-                &[
-                    ("x", location.x.to_string()),
-                    ("y", location.y.to_string()),
-                    ("factory", factory.clone()),
-                ],
-                vec![],
-            ));
+        for id in &seeds.components {
+            children.push(xml("component", &[("id", id.clone())], vec![]));
         }
-        for (from, to) in &seeds.wires {
-            children.push(xml(
-                "wire",
-                &[
-                    ("x0", from.x.to_string()),
-                    ("y0", from.y.to_string()),
-                    ("x1", to.x.to_string()),
-                    ("y1", to.y.to_string()),
-                ],
-                vec![],
-            ));
+        for id in &seeds.wires {
+            children.push(xml("wire", &[("id", id.clone())], vec![]));
         }
         if let Some((at, radius)) = seeds.point {
             children.push(xml(
@@ -486,18 +675,80 @@ impl Native {
         }
         let bytes = self
             .request(
-                artifact,
+                revision,
                 xml("connections", &[("circuit", circuit.into())], children),
             )
             .await?;
         let text = String::from_utf8(bytes).map_err(|e| e.to_string())?;
         RawValue::from_string(text).map_err(|e| e.to_string())
     }
+    /// The wires that keep a move's ends connected, as Logisim's select tool
+    /// finds them when the mouse is released (README, Moves). `ids` are
+    /// component and wire ids (`w<k>`); with `connect` false the move keeps
+    /// no connection (Logisim's shift-drag) and the answer is empty.
+    pub async fn moves(
+        &mut self,
+        revision: &Revision,
+        circuit: &str,
+        ids: &[String],
+        delta: Point,
+        connect: bool,
+    ) -> Result<MoveResult> {
+        let is_wire = |id: &&String| {
+            id.strip_prefix('w')
+                .is_some_and(|k| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()))
+        };
+        let wires: Vec<&str> = ids.iter().filter(is_wire).map(String::as_str).collect();
+        let components: Vec<&str> = ids
+            .iter()
+            .filter(|id| !is_wire(id))
+            .map(String::as_str)
+            .collect();
+        let bytes = self
+            .request(
+                revision,
+                xml(
+                    "move",
+                    &[
+                        ("circuit", circuit.into()),
+                        ("dx", delta.x.to_string()),
+                        ("dy", delta.y.to_string()),
+                        ("connect", connect.to_string()),
+                        ("components", components.join(" ")),
+                        ("wires", wires.join(" ")),
+                    ],
+                    vec![],
+                ),
+            )
+            .await?;
+        #[derive(serde::Deserialize)]
+        struct Moved {
+            remove: Vec<String>,
+            add: Vec<[i32; 4]>,
+            unconnected: Vec<[i32; 2]>,
+        }
+        let moved: Moved = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        Ok(MoveResult {
+            wires: WireEdit {
+                removed: moved.remove,
+                added: moved
+                    .add
+                    .into_iter()
+                    .map(|[x0, y0, x1, y1]| (Point { x: x0, y: y0 }, Point { x: x1, y: y1 }))
+                    .collect(),
+            },
+            unconnected: moved
+                .unconnected
+                .into_iter()
+                .map(|[x, y]| Point { x, y })
+                .collect(),
+        })
+    }
     /// The points of each circuit's wire bundles whose widths disagree, in
     /// the order asked; None for a circuit the file does not have.
     pub async fn width_errors(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuits: &[String],
     ) -> Result<Vec<Option<Vec<[i32; 2]>>>> {
         let children = circuits
@@ -505,19 +756,29 @@ impl Native {
             .map(|name| xml("circuit", &[("name", name.clone())], vec![]))
             .collect();
         let bytes = self
-            .request(artifact, xml("width-errors", &[], children))
+            .request(revision, xml("width-errors", &[], children))
             .await?;
         serde_json::from_slice(&bytes).map_err(|e| e.to_string())
     }
-    pub async fn catalog(&mut self, artifact: &Path, circuit: &str) -> Result<Value> {
-        let libraries = self.artifact_libraries(artifact)?;
+    /// A circuit's interface as the runtime draws it: the `<interface>`
+    /// element the worker wrote (README, Interfaces).
+    pub async fn interface(&mut self, revision: &Revision, circuit: &str) -> Result<Element> {
         let bytes = self
             .request(
-                artifact,
+                revision,
+                xml("interface", &[("circuit", circuit.into())], vec![]),
+            )
+            .await?;
+        Element::parse(bytes.as_slice()).map_err(|e| e.to_string())
+    }
+    pub async fn catalog(&mut self, revision: &Revision, circuit: &str) -> Result<Value> {
+        let bytes = self
+            .request(
+                revision,
                 xml(
                     "component-catalog",
                     &[("circuit", circuit.into())],
-                    libraries,
+                    libraries(revision),
                 ),
             )
             .await?;
@@ -527,14 +788,14 @@ impl Native {
     }
     pub async fn template(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuit: &str,
         library: Option<String>,
         name: String,
-        location: Option<vibe_circuit_document::Point>,
+        location: Option<Point>,
         attributes: BTreeMap<String, String>,
     ) -> Result<Value> {
-        let mut children = self.artifact_libraries(artifact)?;
+        let mut children = libraries(revision);
         children.extend(
             attributes
                 .into_iter()
@@ -551,7 +812,7 @@ impl Native {
         }
         let bytes = self
             .request(
-                artifact,
+                revision,
                 xml(
                     if location.is_some() {
                         "place-component"
@@ -567,24 +828,28 @@ impl Native {
             &Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?,
         ))
     }
+    /// The attributes of component `component` with `values` applied, as
+    /// the runtime would store them; the circuit is not changed. With
+    /// `list`, also every attribute with its label and choices (what an
+    /// inspector shows; slower).
     pub async fn properties(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuit: &str,
-        component: &vibe_circuit_document::Component,
+        component: &str,
         values: BTreeMap<String, String>,
+        list: bool,
     ) -> Result<Value> {
         let bytes = self
             .request(
-                artifact,
+                revision,
                 xml(
                     "component-attributes",
                     &[
                         ("circuit", circuit.into()),
-                        ("factory", component.name.clone()),
-                        ("x", component.location.x.to_string()),
-                        ("y", component.location.y.to_string()),
+                        ("component", component.into()),
                         ("strictAttributes", "true".into()),
+                        ("list", list.to_string()),
                     ],
                     values
                         .into_iter()
@@ -599,11 +864,13 @@ impl Native {
             &Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?,
         ))
     }
+    /// A page of component `component`'s stored memory, or with `write` the
+    /// `contents` attribute that writing `attrs` into it gives.
     pub async fn memory(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuit: &str,
-        component: &vibe_circuit_document::Component,
+        component: &str,
         attrs: BTreeMap<String, String>,
         write: bool,
     ) -> Result<Value> {
@@ -611,10 +878,8 @@ impl Native {
             if write { "property" } else { "memory" },
             &[
                 ("circuit", circuit.into()),
-                ("componentId", component.id.clone()),
-                ("factory", component.name.clone()),
-                ("x", component.location.x.to_string()),
-                ("y", component.location.y.to_string()),
+                ("component", component.into()),
+                ("componentId", component.into()),
             ],
             vec![],
         );
@@ -623,7 +888,7 @@ impl Native {
             node.attributes
                 .insert("attribute".into(), "contents".into());
         }
-        let bytes = self.request(artifact, node).await?;
+        let bytes = self.request(revision, node).await?;
         let result = Element::parse(bytes.as_slice()).map_err(|e| e.to_string())?;
         if write {
             Ok(json!({"contents": result.get_text().unwrap_or_default()}))
@@ -633,7 +898,7 @@ impl Native {
     }
     pub async fn render(
         &mut self,
-        artifact: &Path,
+        revision: &Revision,
         circuit: &str,
         viewport: Viewport,
     ) -> Result<String> {
@@ -655,7 +920,7 @@ impl Native {
         }
         let bytes = self
             .request(
-                artifact,
+                revision,
                 xml(
                     "render",
                     &[
@@ -672,113 +937,61 @@ impl Native {
             .await?;
         Ok(format!("data:image/png;base64,{}", B64.encode(bytes)))
     }
-    /// The `<library id desc>` elements the palette requests name: every
-    /// top-level `<lib>` of the artifact.
-    fn artifact_libraries(&mut self, artifact: &Path) -> Result<Vec<Element>> {
-        Ok(self
-            .files
-            .get(artifact, true)?
-            .libraries
-            .iter()
-            .map(|library| {
-                xml(
-                    "library",
-                    &[
-                        ("id", library.name.clone().unwrap_or_default()),
-                        ("desc", library.desc.clone().unwrap_or_default()),
-                    ],
-                    vec![],
-                )
-            })
-            .collect())
-    }
     pub async fn shutdown(&mut self) {
         if let Some(mut worker) = self.worker.take() {
             let _ = worker.child.kill().await;
         }
     }
 }
-pub fn artifact_dependencies(artifact: &Path) -> Result<BTreeMap<PathBuf, String>> {
-    fn collect(
-        source: &Path,
-        dependencies: &mut BTreeMap<PathBuf, String>,
-        visited: &mut std::collections::BTreeSet<PathBuf>,
-    ) -> Result<()> {
-        let source = source.canonicalize().map_err(|e| e.to_string())?;
-        if !visited.insert(source.clone()) {
-            return Ok(());
-        }
-        if visited.len() > 256 {
-            return Err("外部组件库数量超过限制".into());
-        }
-        let bytes = std::fs::read(&source).map_err(|e| e.to_string())?;
-        for desc in library_descriptors(&bytes)? {
-            let Some((path, circuit)) = library_file(&source, &desc)? else {
-                continue;
-            };
-            if !path.is_file() {
-                // Let the native loader resolve runtime-specific plugin aliases
-                // and report missing files with its normal error context.
-                dependencies.insert(path, "missing".into());
-                continue;
-            }
-            let path = path.canonicalize().map_err(|e| e.to_string())?;
-            dependencies.insert(
-                path.clone(),
-                digest(&std::fs::read(&path).map_err(|e| e.to_string())?),
-            );
-            if circuit {
-                collect(&path, dependencies, visited)?;
-            }
-        }
-        Ok(())
-    }
-    let mut dependencies = BTreeMap::new();
-    collect(artifact, &mut dependencies, &mut Default::default())?;
-    Ok(dependencies)
+
+/// The `<library id desc>` elements the palette requests name: every
+/// `<lib>` of the revision.
+fn libraries(revision: &Revision) -> Vec<Element> {
+    revision
+        .libraries()
+        .into_iter()
+        .map(|(id, desc)| xml("library", &[("id", id), ("desc", desc)], vec![]))
+        .collect()
 }
-/// The file a library descriptor of `source` names and whether it is a
-/// circuit file; None for built-in libraries. A missing file is returned as
-/// is: the native loader resolves runtime-specific plugin aliases and reports
-/// missing files with its own error context.
-fn library_file(source: &Path, desc: &str) -> Result<Option<(PathBuf, bool)>> {
+
+/// The library files a circuit file on disk loads, with the digest of each,
+/// and theirs in turn; a file that cannot be found is recorded as `missing`.
+pub fn library_dependencies(file: &Path) -> Result<BTreeMap<PathBuf, String>> {
+    let mut files = KnownFiles::default();
+    let file = file.canonicalize().map_err(|e| e.to_string())?;
+    let descs = files.get(&file, true)?.libraries.clone();
+    files.dependencies(file.parent(), descs)
+}
+
+/// The file a library descriptor read in `directory` names and whether it
+/// is a circuit file; None for built-in libraries. A missing file is
+/// returned as is: the native loader resolves runtime-specific plugin
+/// aliases and reports missing files with its own error context.
+fn library_file(directory: Option<&Path>, desc: &str) -> Option<(PathBuf, bool)> {
     let (name, circuit) = if let Some(name) = desc.strip_prefix("file#") {
         (name, true)
-    } else if let Some(name) = desc.strip_prefix("jar#") {
-        (name.split_once('#').map_or(name, |(file, _)| file), false)
     } else {
-        return Ok(None);
+        let name = desc.strip_prefix("jar#")?;
+        (name.split_once('#').map_or(name, |(file, _)| file), false)
     };
-    let directory = source.parent().ok_or("电路目录不可用")?;
+    let Some(directory) = directory else {
+        return Some((PathBuf::from(name), circuit));
+    };
     let path = directory.join(name);
     if path.is_file() {
-        return Ok(Some((path, circuit)));
+        return Some((path, circuit));
     }
     // Match the native loader's basename fallback for moved files.
     let base = name.replace('\\', "/");
-    Ok(Some((
+    Some((
         directory.join(base.rsplit('/').next().unwrap_or(name)),
         circuit,
-    )))
+    ))
 }
 
-/// The `desc` of each top-level `<lib>`.
+/// The `desc` of each top-level `<lib>` of a library file, scanned without
+/// building a tree.
 fn library_descriptors(bytes: &[u8]) -> Result<Vec<String>> {
-    Ok(top_level_libraries(bytes)?
-        .into_iter()
-        .filter_map(|library| library.desc)
-        .collect())
-}
-
-#[derive(Clone)]
-struct TopLevelLibrary {
-    name: Option<String>,
-    desc: Option<String>,
-}
-
-/// The top-level `<lib>` elements. This runs on every worker request on a
-/// file that can be megabytes, so UTF-8 text is scanned without building a tree.
-fn top_level_libraries(bytes: &[u8]) -> Result<Vec<TopLevelLibrary>> {
     use quick_xml::{XmlVersion, events::Event, reader::Reader};
     let Ok(text) = std::str::from_utf8(bytes) else {
         let tree = Element::parse(bytes).map_err(|e| e.to_string())?;
@@ -787,10 +1000,7 @@ fn top_level_libraries(bytes: &[u8]) -> Result<Vec<TopLevelLibrary>> {
             .iter()
             .filter_map(XMLNode::as_element)
             .filter(|e| e.name == "lib")
-            .map(|e| TopLevelLibrary {
-                name: e.attributes.get("name").cloned(),
-                desc: e.attributes.get("desc").cloned(),
-            })
+            .filter_map(|e| e.attributes.get("desc").cloned())
             .collect());
     };
     let mut reader = Reader::from_str(text);
@@ -807,23 +1017,15 @@ fn top_level_libraries(bytes: &[u8]) -> Result<Vec<TopLevelLibrary>> {
             _ => continue,
         };
         if depth == 1 && element.name().as_ref() == "lib" {
-            let mut library = TopLevelLibrary {
-                name: None,
-                desc: None,
-            };
             for attribute in element.attributes() {
                 let attribute = attribute.map_err(|e| e.to_string())?;
-                let slot = match attribute.key.as_ref() {
-                    "name" => &mut library.name,
-                    "desc" => &mut library.desc,
-                    _ => continue,
-                };
-                let value = attribute
-                    .normalized_value(XmlVersion::Implicit1_0)
-                    .map_err(|e| e.to_string())?;
-                *slot = Some(value.into_owned());
+                if attribute.key.as_ref() == "desc" {
+                    let value = attribute
+                        .normalized_value(XmlVersion::Implicit1_0)
+                        .map_err(|e| e.to_string())?;
+                    libraries.push(value.into_owned());
+                }
             }
-            libraries.push(library);
         }
         depth += usize::from(opens);
     }
@@ -832,6 +1034,7 @@ fn top_level_libraries(bytes: &[u8]) -> Result<Vec<TopLevelLibrary>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vibe_circuit_document::{Document, Edit};
 
     const CIRCUIT: &str = r##"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <project source="2.16.1.4" version="1.0">
@@ -843,32 +1046,111 @@ mod tests {
 </project>
 "##;
 
-    /// A caller that goes away while its reply is owed must not hand that reply
-    /// to the next request. Needs a JDK and the runtime in `.workbench-cache`.
-    #[tokio::test]
-    #[ignore = "starts JVMs"]
-    async fn abandoned_request_does_not_shift_replies() {
+    fn native() -> (Native, tempfile::TempDir) {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .canonicalize()
             .unwrap();
         let state = tempfile::tempdir().unwrap();
-        let files = tempfile::tempdir().unwrap();
-        let artifact = files.path().join("main.circ");
-        std::fs::write(&artifact, CIRCUIT).unwrap();
-        let mut native = Native::new(root, state.path().into(), None);
-        native.observe(&artifact, "main").await.unwrap();
+        (Native::new(root, state.path().into(), None), state)
+    }
+
+    /// A caller that goes away while its reply is owed must not hand that reply
+    /// to the next request. Needs a JDK and the runtime in `.workbench-cache`.
+    #[tokio::test]
+    #[ignore = "starts JVMs"]
+    async fn abandoned_request_does_not_shift_replies() {
+        let (mut native, _state) = native();
+        let doc = Document::from_bytes("main.circ".into(), None, CIRCUIT.into(), false).unwrap();
+        let revision = doc.snapshot();
+        native.observe(&revision, "main").await.unwrap();
         // The catalog request is written on the first poll; its XML reply is
         // still owed when the timeout drops the call.
         let catalog = xml("component-catalog", &[("circuit", "main".into())], vec![]);
         let abandoned =
-            tokio::time::timeout(Duration::from_micros(1), native.request(&artifact, catalog))
+            tokio::time::timeout(Duration::from_micros(1), native.request(&revision, catalog))
                 .await;
         assert!(
             abandoned.is_err(),
             "the catalog call should still be waiting"
         );
-        let observed = native.observe(&artifact, "main").await.unwrap();
+        let observed = native.observe(&revision, "main").await.unwrap();
         assert!(observed.is_object(), "{observed}");
+    }
+
+    async fn errors(native: &mut Native, doc: &Document) -> Vec<Option<Vec<[i32; 2]>>> {
+        let revision = doc.snapshot();
+        native
+            .width_errors(&revision, &["main".into()])
+            .await
+            .unwrap()
+    }
+
+    /// The worker follows a document through edits and an undo as changes
+    /// from the revision it holds, and reads each revision as a whole load
+    /// of it would. Needs a JDK and the runtime in `.workbench-cache`.
+    #[tokio::test]
+    #[ignore = "starts JVMs"]
+    async fn held_revision_follows_edits_and_undo() {
+        let (mut native, _state) = native();
+        let mut doc =
+            Document::from_bytes("main.circ".into(), None, CIRCUIT.into(), false).unwrap();
+        assert_eq!(errors(&mut native, &doc).await, [Some(vec![])]);
+        let place = |name: &str, x, y, width: &str| Edit::Place {
+            name: name.into(),
+            library: Some("0".into()),
+            location: Point { x, y },
+            attributes: [("width".to_string(), width.to_string())].into(),
+        };
+        let r = doc.revision();
+        doc.edit(&r, "main", place("Pin", 200, 100, "8")).unwrap();
+        let r = doc.revision();
+        doc.edit(
+            &r,
+            "main",
+            Edit::Wire {
+                points: vec![Point { x: 100, y: 100 }, Point { x: 200, y: 100 }],
+            },
+        )
+        .unwrap();
+        // A 1-bit and an 8-bit pin on one wire disagree about its width.
+        let wired = errors(&mut native, &doc).await;
+        assert_eq!(wired.len(), 1);
+        assert!(!wired[0].as_ref().unwrap().is_empty(), "{wired:?}");
+        let r = doc.revision();
+        doc.undo(&r).unwrap();
+        assert_eq!(errors(&mut native, &doc).await, [Some(vec![])]);
+        let r = doc.revision();
+        doc.redo(&r).unwrap();
+        let again = errors(&mut native, &doc).await;
+        assert_eq!(again, wired);
+        // An attribute edit replaces the component under its id.
+        let r = doc.revision();
+        doc.edit(
+            &r,
+            "main",
+            Edit::Attributes {
+                id: "c200_100".into(),
+                values: [("width".to_string(), "1".to_string())].into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(errors(&mut native, &doc).await, [Some(vec![])]);
+        // The ids the worker answers with are the document's.
+        let revision = doc.snapshot();
+        let seeds = ConnectionSeeds {
+            wires: vec!["w0".into()],
+            ..ConnectionSeeds::default()
+        };
+        let connections = native.connections(&revision, "main", &seeds).await.unwrap();
+        let connections: Value = serde_json::from_str(connections.get()).unwrap();
+        let mut ids: Vec<&str> = connections["focus"]["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["componentId"].as_str().unwrap())
+            .collect();
+        ids.sort();
+        assert_eq!(ids, ["c100_100", "c200_100"]);
     }
 }

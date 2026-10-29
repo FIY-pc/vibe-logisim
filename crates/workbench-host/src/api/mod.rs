@@ -11,9 +11,7 @@ mod folder;
 mod simulation;
 pub use agent::AgentRequest;
 pub use app::AppRequest;
-pub use document::{
-    DocumentRequest, EditResult, ErrorDetail, MovePreview, Selection, TraceProgramInput,
-};
+pub use document::{DocumentRequest, EditResult, MovePreview, Selection, TraceProgramInput};
 pub use error::{ErrorCode, HostError};
 pub use events::{Event, Events, Warning};
 pub use folder::FolderRequest;
@@ -218,9 +216,9 @@ mod tests {
         let reload = Request::from_value(serde_json::json!({"op":"reload","id":"a","revision":"r","source_revision":"s","discard":false})).unwrap();
         assert!(reload.meta().agent);
         assert_eq!(reload.meta().history.unwrap().title, "读取磁盘版本");
-        let preview = Request::from_value(serde_json::json!({"op":"movePreview","id":"a","revision":"r","circuit":"main","ids":[],"delta":{"x":0,"y":0}})).unwrap();
-        assert_eq!(preview.meta().effect, Effect::Read);
-        assert!(!preview.meta().agent);
+        let symbols = Request::from_value(serde_json::json!({"op":"symbols","id":"a","revision":"r","circuit":"main","symbols":[]})).unwrap();
+        assert_eq!(symbols.meta().effect, Effect::Read);
+        assert!(!symbols.meta().agent);
         let create = Request::from_value(
             serde_json::json!({"op":"folderCreate","folder_id":"f","path":"a.circ"}),
         )

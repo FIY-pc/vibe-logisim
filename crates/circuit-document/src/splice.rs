@@ -3,9 +3,13 @@
 //! The index is a pure function of the file text. An edit is a set of
 //! byte-range replacements on that text, so everything outside the elements it
 //! creates, changes or removes keeps its bytes: other circuits, whitespace,
-//! attribute order, comments and the declaration (or its absence).
+//! attribute order, comments and the declaration (or its absence). Indexing
+//! an edited text parses again only the elements in the region that changed.
 
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    patch::{common_prefix, common_suffix},
+};
 use quick_xml::{
     XmlVersion,
     escape::resolve_predefined_entity,
@@ -22,15 +26,26 @@ use std::{
 /// Deeper nesting than any circuit file uses; bounds recursion over the tree.
 const MAX_DEPTH: usize = 256;
 
+/// The parent of the root element.
+const TOP: usize = usize::MAX;
+
+#[derive(Clone)]
 pub(crate) struct Tree {
     text: String,
+    /// Elements in document order.
     nodes: Vec<Node>,
+    /// The elements' attributes, element after element.
+    attrs: Vec<Attr>,
+    /// The elements' children, element after element.
+    kids: Vec<usize>,
     root: usize,
     eol: &'static str,
     close: &'static str,
     unit: String,
 }
 
+#[derive(Clone)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct Node {
     tag: Range<usize>,
     span: Range<usize>,
@@ -38,10 +53,16 @@ struct Node {
     open_end: usize,
     /// Start of the end tag; `span.end` for an empty element.
     close_start: usize,
-    attrs: Vec<Attr>,
-    children: Vec<usize>,
+    /// Range in `Tree::attrs`.
+    attrs: Range<usize>,
+    /// Range in `Tree::kids`.
+    children: Range<usize>,
+    /// `TOP` for the root.
+    parent: usize,
 }
 
+#[derive(Clone)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct Attr {
     name: Range<usize>,
     /// Raw value between the quotes.
@@ -75,85 +96,250 @@ fn line_indent(text: &str, at: usize) -> Option<&str> {
         .then_some(indent)
 }
 
+/// What a parse reads: the whole document, or element content that has to
+/// hold whole elements, inside `parent` at `depth` (the root's children are
+/// at depth 1).
+#[derive(Clone, Copy)]
+enum Scope {
+    Document,
+    Content { parent: usize, depth: usize },
+}
+
+/// The elements in `text[range]`, with offsets into `text`, ids from `base`
+/// and attribute indices from `attr_base`. Children are left unlinked.
+fn parse(
+    text: &str,
+    range: Range<usize>,
+    scope: Scope,
+    base: usize,
+    attr_base: usize,
+) -> Result<(Vec<Node>, Vec<Attr>)> {
+    let (document, top, depth) = match scope {
+        Scope::Document => (true, TOP, 0),
+        Scope::Content { parent, depth } => (false, parent, depth),
+    };
+    let offset = range.start;
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut attrs: Vec<Attr> = Vec::new();
+    let mut open: Vec<usize> = Vec::new();
+    let mut reader = Reader::from_str(&text[range]);
+    loop {
+        let start = offset + reader.buffer_position() as usize;
+        let event = reader
+            .read_event()
+            .map_err(|e| malformed(text, offset + reader.error_position() as usize, e))?;
+        let end = offset + reader.buffer_position() as usize;
+        let empty = matches!(event, Event::Empty(_));
+        match event {
+            Event::Start(e) | Event::Empty(e) => {
+                if document && open.is_empty() && !nodes.is_empty() {
+                    return Err(malformed(text, start, "根元素之后还有元素"));
+                }
+                if depth + open.len() >= MAX_DEPTH {
+                    return Err(malformed(text, start, "元素嵌套过深"));
+                }
+                let first = attr_base + attrs.len();
+                attributes(text, &e, &mut attrs).map_err(|e| malformed(text, start, e))?;
+                nodes.push(Node {
+                    tag: start + 1..start + 1 + e.name().0.len(),
+                    span: start..end,
+                    open_end: end,
+                    close_start: end,
+                    attrs: first..attr_base + attrs.len(),
+                    children: 0..0,
+                    parent: open.last().map_or(top, |&p| base + p),
+                });
+                if !empty {
+                    open.push(nodes.len() - 1);
+                }
+            }
+            Event::End(_) => {
+                let id = open
+                    .pop()
+                    .ok_or_else(|| malformed(text, start, "多余的结束标签"))?;
+                nodes[id].close_start = start;
+                nodes[id].span.end = end;
+            }
+            Event::Text(_) | Event::CData(_) | Event::GeneralRef(_)
+                if document && open.is_empty() =>
+            {
+                if !text.as_bytes()[start..end].iter().all(|&b| is_space(b)) {
+                    return Err(malformed(text, start, "根元素之外有文本"));
+                }
+            }
+            Event::GeneralRef(r) => {
+                let known = match r.resolve_char_ref() {
+                    Ok(Some(_)) => true,
+                    Ok(None) => resolve_predefined_entity(&r).is_some(),
+                    Err(_) => false,
+                };
+                if !known {
+                    return Err(malformed(text, start, format!("未知实体 &{};", &*r)));
+                }
+            }
+            Event::Decl(_) if !document || start != offset => {
+                return Err(malformed(text, start, "XML 声明必须位于文件开头"));
+            }
+            Event::DocType(_) => return Err(invalid("不支持含 DTD 的电路文件")),
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    if let Some(&id) = open.last() {
+        let tag = &text[nodes[id].tag.clone()];
+        return Err(malformed(
+            text,
+            nodes[id].span.start,
+            format!("<{tag}> 没有结束标签"),
+        ));
+    }
+    Ok((nodes, attrs))
+}
+
+/// Sets every element's children from the parent links and returns the
+/// children lists, each in document order.
+fn link(nodes: &mut [Node]) -> Vec<usize> {
+    let mut next = vec![0; nodes.len()];
+    for node in nodes.iter() {
+        if node.parent != TOP {
+            next[node.parent] += 1;
+        }
+    }
+    let mut at = 0;
+    for (node, slot) in nodes.iter_mut().zip(&mut next) {
+        node.children = at..at;
+        at += *slot;
+        *slot = node.children.start;
+    }
+    let mut kids = vec![0; at];
+    for id in 0..nodes.len() {
+        let parent = nodes[id].parent;
+        if parent != TOP {
+            kids[next[parent]] = id;
+            next[parent] += 1;
+            nodes[parent].children.end += 1;
+        }
+    }
+    kids
+}
+
 impl Tree {
     pub(crate) fn index(text: String) -> Result<Self> {
         let bom = if text.starts_with('\u{feff}') { 3 } else { 0 };
-        let mut nodes: Vec<Node> = Vec::new();
-        let mut open: Vec<usize> = Vec::new();
-        let mut root = None;
-        let mut reader = Reader::from_str(&text[bom..]);
+        let (nodes, attrs) = parse(&text, bom..text.len(), Scope::Document, 0, 0)?;
+        if nodes.is_empty() {
+            return Err(invalid("电路文件是空的"));
+        }
+        Ok(Self::assemble(text, nodes, attrs, 0))
+    }
+
+    /// The index of `text`, an edit of this tree's text: the same tree
+    /// `index` gives, parsing again only the elements in the region where
+    /// the two texts differ. Also returns the ids of the elements it parsed;
+    /// `None` when that was all of them.
+    pub(crate) fn reindex(&self, text: String) -> Result<(Self, Option<Range<usize>>)> {
+        match self.spliced(&text) {
+            Some((nodes, attrs, parsed)) => {
+                Ok((Self::assemble(text, nodes, attrs, self.root), Some(parsed)))
+            }
+            None => Ok((Self::index(text)?, None)),
+        }
+    }
+
+    /// The elements and attributes of `text` with the changed region parsed
+    /// again: the children of the innermost element whose content holds the
+    /// change, from the first child the change touches to the last. None
+    /// when the change reaches outside the root's content or the region does
+    /// not parse as whole elements; a whole index then reports why.
+    fn spliced(&self, text: &str) -> Option<(Vec<Node>, Vec<Attr>, Range<usize>)> {
+        let (old, new) = (self.text.as_bytes(), text.as_bytes());
+        let from = common_prefix(old, new);
+        let to = old.len() - common_suffix(&old[from..], &new[from..]);
+        let encloses = |n: usize| {
+            let node = &self.nodes[n];
+            node.open_end < node.span.end && node.open_end <= from && to <= node.close_start
+        };
+        if !encloses(self.root) {
+            return None;
+        }
+        let (mut n, mut depth) = (self.root, 1);
         loop {
-            let start = bom + reader.buffer_position() as usize;
-            let event = reader
-                .read_event()
-                .map_err(|e| malformed(&text, bom + reader.error_position() as usize, e))?;
-            let end = bom + reader.buffer_position() as usize;
-            let empty = matches!(event, Event::Empty(_));
-            match event {
-                Event::Start(e) | Event::Empty(e) => {
-                    let parent = open.last().copied();
-                    if parent.is_none() && root.is_some() {
-                        return Err(malformed(&text, start, "根元素之后还有元素"));
-                    }
-                    if open.len() >= MAX_DEPTH {
-                        return Err(malformed(&text, start, "元素嵌套过深"));
-                    }
-                    let id = nodes.len();
-                    nodes.push(Node {
-                        tag: start + 1..start + 1 + e.name().0.len(),
-                        span: start..end,
-                        open_end: end,
-                        close_start: end,
-                        attrs: attributes(&text, &e).map_err(|e| malformed(&text, start, e))?,
-                        children: Vec::new(),
-                    });
-                    match parent {
-                        Some(p) => nodes[p].children.push(id),
-                        None => root = Some(id),
-                    }
-                    if !empty {
-                        open.push(id);
-                    }
-                }
-                Event::End(_) => {
-                    let id = open
-                        .pop()
-                        .ok_or_else(|| malformed(&text, start, "多余的结束标签"))?;
-                    nodes[id].close_start = start;
-                    nodes[id].span.end = end;
-                }
-                Event::Text(_) | Event::CData(_) | Event::GeneralRef(_) if open.is_empty() => {
-                    if !text.as_bytes()[start..end].iter().all(|&b| is_space(b)) {
-                        return Err(malformed(&text, start, "根元素之外有文本"));
-                    }
-                }
-                Event::GeneralRef(r) => {
-                    let known = match r.resolve_char_ref() {
-                        Ok(Some(_)) => true,
-                        Ok(None) => resolve_predefined_entity(&r).is_some(),
-                        Err(_) => false,
-                    };
-                    if !known {
-                        return Err(malformed(&text, start, format!("未知实体 &{};", &*r)));
-                    }
-                }
-                Event::Decl(_) if start != bom => {
-                    return Err(malformed(&text, start, "XML 声明必须位于文件开头"));
-                }
-                Event::DocType(_) => return Err(invalid("不支持含 DTD 的电路文件")),
-                Event::Eof => break,
-                _ => {}
+            let kids = self.children(n);
+            let i = kids.partition_point(|&c| self.nodes[c].span.start <= from);
+            match i.checked_sub(1).map(|i| kids[i]) {
+                Some(c) if encloses(c) => (n, depth) = (c, depth + 1),
+                _ => break,
             }
         }
-        if let Some(&id) = open.last() {
-            let tag = &text[nodes[id].tag.clone()];
-            return Err(malformed(
-                &text,
-                nodes[id].span.start,
-                format!("<{tag}> 没有结束标签"),
-            ));
+        let kids = self.children(n);
+        let i = kids.partition_point(|&c| self.nodes[c].span.end <= from);
+        let j = kids.partition_point(|&c| self.nodes[c].span.start < to);
+        let a = i
+            .checked_sub(1)
+            .map_or(self.nodes[n].open_end, |i| self.nodes[kids[i]].span.end);
+        let b = kids
+            .get(j)
+            .map_or(self.nodes[n].close_start, |&c| self.nodes[c].span.start);
+        let first = self.nodes.partition_point(|x| x.span.start < a);
+        let last = self.nodes.partition_point(|x| x.span.start < b);
+        let attr_at = |id: usize| {
+            self.nodes
+                .get(id)
+                .map_or(self.attrs.len(), |x| x.attrs.start)
+        };
+        let (attrs_from, attrs_to) = (attr_at(first), attr_at(last));
+        let grow = new.len() as isize - old.len() as isize;
+        let shift = |at: usize| at.wrapping_add_signed(grow);
+        let (fresh, fresh_attrs) = parse(
+            text,
+            a..shift(b),
+            Scope::Content { parent: n, depth },
+            first,
+            attrs_from,
+        )
+        .ok()?;
+        let parsed = first..first + fresh.len();
+        let renumber = fresh.len().wrapping_sub(last - first);
+        let reattr = fresh_attrs.len().wrapping_sub(attrs_to - attrs_from);
+        let mut nodes = Vec::with_capacity(self.nodes.len().wrapping_add(renumber));
+        for node in &self.nodes[..first] {
+            let mut node = node.clone();
+            // The element holding the region, and its ancestors, end later.
+            if node.span.end > a {
+                node.span.end = shift(node.span.end);
+                node.close_start = shift(node.close_start);
+            }
+            nodes.push(node);
         }
-        let root = root.ok_or_else(|| invalid("电路文件是空的"))?;
+        nodes.extend(fresh);
+        nodes.extend(self.nodes[last..].iter().map(|node| Node {
+            tag: shift(node.tag.start)..shift(node.tag.end),
+            span: shift(node.span.start)..shift(node.span.end),
+            open_end: shift(node.open_end),
+            close_start: shift(node.close_start),
+            attrs: node.attrs.start.wrapping_add(reattr)..node.attrs.end.wrapping_add(reattr),
+            children: 0..0,
+            parent: if node.parent != TOP && node.parent >= last {
+                node.parent.wrapping_add(renumber)
+            } else {
+                node.parent
+            },
+        }));
+        let mut attrs = Vec::with_capacity(self.attrs.len().wrapping_add(reattr));
+        attrs.extend_from_slice(&self.attrs[..attrs_from]);
+        attrs.extend(fresh_attrs);
+        attrs.extend(self.attrs[attrs_to..].iter().map(|attr| Attr {
+            name: shift(attr.name.start)..shift(attr.name.end),
+            value: shift(attr.value.start)..shift(attr.value.end),
+            quote: attr.quote,
+        }));
+        Some((nodes, attrs, parsed))
+    }
+
+    /// The tree over parsed elements: children linked, and the file's line
+    /// ending, empty-element style and indentation unit read off them.
+    fn assemble(text: String, mut nodes: Vec<Node>, attrs: Vec<Attr>, root: usize) -> Self {
+        let kids = link(&mut nodes);
         let eol = if text.contains("\r\n") { "\r\n" } else { "\n" };
         let close = nodes
             .iter()
@@ -169,21 +355,24 @@ impl Tree {
             .iter()
             .find_map(|n| {
                 let parent = line_indent(&text, n.span.start)?;
-                let child = line_indent(&text, nodes[*n.children.first()?].span.start)?;
+                let first = *kids[n.children.clone()].first()?;
+                let child = line_indent(&text, nodes[first].span.start)?;
                 child
                     .strip_prefix(parent)
                     .filter(|unit| !unit.is_empty())
                     .map(str::to_owned)
             })
             .unwrap_or_else(|| "  ".into());
-        Ok(Self {
+        Self {
             text,
             nodes,
+            attrs,
+            kids,
             root,
             eol,
             close,
             unit,
-        })
+        }
     }
 
     pub(crate) fn text(&self) -> &str {
@@ -194,25 +383,35 @@ impl Tree {
         self.root
     }
 
+    /// The text up to the end of the root's start tag: the declaration,
+    /// whatever precedes the root, and the start tag. None for an empty root.
+    pub(crate) fn prolog(&self) -> Option<&str> {
+        let root = &self.nodes[self.root];
+        (root.open_end != root.span.end).then(|| &self.text[..root.open_end])
+    }
+
     pub(crate) fn tag(&self, n: usize) -> &str {
         &self.text[self.nodes[n].tag.clone()]
     }
 
+    /// The element's parent; None for the root.
+    pub(crate) fn parent(&self, n: usize) -> Option<usize> {
+        Some(self.nodes[n].parent).filter(|&p| p != TOP)
+    }
+
     pub(crate) fn children(&self, n: usize) -> &[usize] {
-        &self.nodes[n].children
+        &self.kids[self.nodes[n].children.clone()]
     }
 
     pub(crate) fn named<'a>(&'a self, n: usize, tag: &'a str) -> impl Iterator<Item = usize> + 'a {
-        self.nodes[n]
-            .children
+        self.children(n)
             .iter()
             .copied()
             .filter(move |&c| self.tag(c) == tag)
     }
 
     fn find(&self, n: usize, name: &str) -> Option<&Attr> {
-        self.nodes[n]
-            .attrs
+        self.attrs[self.nodes[n].attrs.clone()]
             .iter()
             .find(|a| &self.text[a.name.clone()] == name)
     }
@@ -241,7 +440,7 @@ impl Tree {
         let node = &self.nodes[n];
         let mut out = String::new();
         let mut at = node.open_end;
-        for &c in &node.children {
+        for &c in self.children(n) {
             character_data(&self.text[at..self.nodes[c].span.start], &mut out);
             at = self.nodes[c].span.end;
         }
@@ -250,8 +449,7 @@ impl Tree {
     }
 
     fn attributes(&self, n: usize) -> Vec<(&str, Cow<'_, str>)> {
-        let mut attrs: Vec<_> = self.nodes[n]
-            .attrs
+        let mut attrs: Vec<_> = self.attrs[self.nodes[n].attrs.clone()]
             .iter()
             .map(|a| {
                 (
@@ -278,7 +476,7 @@ impl Tree {
             out.push('"');
         }
         out.push('>');
-        for &c in &self.nodes[n].children {
+        for &c in self.children(n) {
             self.canonical(c, out);
         }
         out.push_str(&escape_text(self.content(n).trim()));
@@ -298,6 +496,11 @@ impl Tree {
         &self.text[self.nodes[n].span.clone()]
     }
 
+    /// The element's start tag, attributes included.
+    pub(crate) fn open_tag(&self, n: usize) -> &str {
+        &self.text[self.nodes[n].span.start..self.nodes[n].open_end]
+    }
+
     /// Start of the whitespace directly before the element.
     fn lead(&self, n: usize) -> usize {
         let start = self.nodes[n].span.start;
@@ -315,7 +518,7 @@ impl Tree {
     }
 }
 
-fn attributes(text: &str, e: &BytesStart) -> std::result::Result<Vec<Attr>, String> {
+fn attributes(text: &str, e: &BytesStart, out: &mut Vec<Attr>) -> std::result::Result<(), String> {
     let base = text.as_ptr() as usize;
     let offset = |s: &str| {
         (s.as_ptr() as usize)
@@ -323,24 +526,23 @@ fn attributes(text: &str, e: &BytesStart) -> std::result::Result<Vec<Attr>, Stri
             .filter(|&at| text.get(at..at + s.len()).is_some())
             .ok_or_else(|| "属性位置无效".to_string())
     };
-    e.attributes()
-        .map(|a| {
-            let a = a.map_err(|e| e.to_string())?;
-            a.normalized_value(XmlVersion::Implicit1_0)
-                .map_err(|e| e.to_string())?;
-            let key = a.key.0;
-            let Cow::Borrowed(value) = a.value else {
-                return Err("属性位置无效".to_string());
-            };
-            let name = offset(key)?;
-            let at = offset(value)?;
-            Ok(Attr {
-                name: name..name + key.len(),
-                value: at..at + value.len(),
-                quote: char::from(text.as_bytes()[at - 1]),
-            })
-        })
-        .collect()
+    for a in e.attributes() {
+        let a = a.map_err(|e| e.to_string())?;
+        a.normalized_value(XmlVersion::Implicit1_0)
+            .map_err(|e| e.to_string())?;
+        let key = a.key.0;
+        let Cow::Borrowed(value) = a.value else {
+            return Err("属性位置无效".to_string());
+        };
+        let name = offset(key)?;
+        let at = offset(value)?;
+        out.push(Attr {
+            name: name..name + key.len(),
+            value: at..at + value.len(),
+            quote: char::from(text.as_bytes()[at - 1]),
+        });
+    }
+    Ok(())
 }
 
 fn normalize(raw: &str) -> Cow<'_, str> {
@@ -650,7 +852,7 @@ impl<'t> Splices<'t> {
     /// Adds elements as the last children of `parent`.
     pub(crate) fn append(&mut self, parent: usize, elements: &[Element]) {
         let tree = self.tree;
-        if let Some(&last) = tree.nodes[parent].children.last() {
+        if let Some(&last) = tree.children(parent).last() {
             return self.insert_after(last, elements);
         }
         let node = &tree.nodes[parent];
@@ -812,4 +1014,77 @@ pub(crate) fn merge(current: &Tree, input: &Tree) -> Result<String> {
         }
     }
     splices.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project source=\"2.7.1\" version=\"1.0\">\n  <lib desc=\"#Wiring\" name=\"0\"/>\n  <main name=\"main\"/>\n  <!-- note -->\n  <circuit name=\"main\">\n    <a name=\"circuit\" val=\"main\"/>\n    <wire from=\"(10,20)\" to=\"(30,20)\"/>\n    <comp lib=\"0\" loc=\"(10,20)\" name=\"Pin\">\n      <a name=\"label\" val=\"a &amp; b\"/>\n      <a name=\"contents\">addr/data: 8 8\n0 1 2 &#x41;<![CDATA[<x>]]>\n</a>\n    </comp>\n    <comp loc='(50,60)' name='Probe'/>\n  </circuit>\n  <circuit name=\"two\">\n    <wire from=\"(0,0)\" to=\"(0,40)\"/>\n  </circuit>\n</project>\n";
+
+    const PIECES: [&str; 14] = [
+        "",
+        "\n    ",
+        "<wire from=\"(1,2)\" to=\"(3,2)\"/>",
+        "<comp loc=\"(5,5)\" name=\"Pin\"><a name=\"x\" val=\"1\"/></comp>",
+        "<circuit name=\"new\"><wire from=\"(0,0)\" to=\"(9,0)\"/></circuit>",
+        "<!-- c -->",
+        "text &lt; more",
+        "\"",
+        "<",
+        "</comp>",
+        "<a name=\"y\">",
+        "&bogus;",
+        " x=\"1\"",
+        "<!DOCTYPE x>",
+    ];
+
+    fn same(a: &Tree, b: &Tree) {
+        assert_eq!(a.text, b.text);
+        assert_eq!(a.nodes, b.nodes);
+        assert_eq!(a.attrs, b.attrs);
+        assert_eq!(a.kids, b.kids);
+        assert_eq!(a.root, b.root);
+        assert_eq!((a.eol, a.close, &a.unit), (b.eol, b.close, &b.unit));
+    }
+
+    #[test]
+    fn reindexing_an_edit_gives_the_whole_index() {
+        let base = Tree::index(SAMPLE.to_owned()).unwrap();
+        let mut seed: u64 = 7;
+        let mut next = |bound: usize| {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) as usize % bound
+        };
+        let (mut incremental, mut checked) = (0, 0);
+        for _ in 0..20000 {
+            let from = next(SAMPLE.len() + 1);
+            let to = (from + next(80)).min(SAMPLE.len());
+            if !SAMPLE.is_char_boundary(from) || !SAMPLE.is_char_boundary(to) {
+                continue;
+            }
+            let text = format!(
+                "{}{}{}",
+                &SAMPLE[..from],
+                PIECES[next(PIECES.len())],
+                &SAMPLE[to..]
+            );
+            let whole = Tree::index(text.clone());
+            match (base.reindex(text), whole) {
+                (Ok((tree, parsed)), Ok(whole)) => {
+                    same(&tree, &whole);
+                    incremental += usize::from(parsed.is_some());
+                    checked += 1;
+                }
+                (Err(a), Err(b)) => assert_eq!(a.to_string(), b.to_string()),
+                (a, b) => panic!("reindex {:?} index {:?}", a.is_ok(), b.is_ok()),
+            }
+        }
+        assert!(
+            checked > 1000 && incremental > checked / 2,
+            "{incremental}/{checked}"
+        );
+    }
 }

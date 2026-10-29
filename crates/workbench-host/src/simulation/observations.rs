@@ -257,7 +257,7 @@ impl Host {
             .simulation
             .frame()
             .ok_or_else(|| HostError::from(SimError::new(Code::SessionEnded)))?;
-        let (_, view) = self.snapshot_view(&run.document_id, &run.revision).await?;
+        let (_, view) = self.revision_view(&run.document_id, &run.revision).await?;
         let circuit = frame.circuit.clone();
         let signals = signals(&view, &circuit, &frame, Some(&trace));
         let title = if title.trim().is_empty() {

@@ -173,21 +173,14 @@ public final class CircuitPalette {
         describe(circuit,project,tool,request,result.getDocumentElement());
     }
     /** Describe or validate an existing instance without replacing unknown source XML. */
-    public static void describeComponent(LogisimFile file,Element request,Document result) throws Exception {
+    public static void describeComponent(LogisimFile file,DocumentIds ids,Element request,Document result) throws Exception {
         Circuit circuit=file.getCircuit(request.getAttribute("circuit"));
         if(circuit==null)throw new IllegalArgumentException("找不到电路");
-        Location location=Location.create(Integer.parseInt(request.getAttribute("x")),Integer.parseInt(request.getAttribute("y")));
-        com.cburch.logisim.comp.Component found=null;
-        for(com.cburch.logisim.comp.Component c:circuit.getNonWires())
-            if(c.getLocation().equals(location)&&c.getFactory().getName().equals(request.getAttribute("factory"))) {
-                if(found!=null)throw new IllegalArgumentException("此位置有多个同名元件，无法确定目标");
-                found=c;
-            }
-        if(found==null)throw new IllegalArgumentException("元件已改变，请重新选择");
+        com.cburch.logisim.comp.Component found=DocumentIds.component(ids.sheet(circuit),request.getAttribute("component"));
         AttributeSet attrs=(AttributeSet)found.getAttributeSet().clone();
         applyOverrides(attrs,request);
         Element root=result.getDocumentElement();
-        attributes(attrs,root,result);
+        if(!request.getAttribute("list").equals("false"))attributes(attrs,root,result);
         Element serialized=child(result,root,"comp");
         serialize(attrs,serialized);
     }
@@ -232,7 +225,8 @@ public final class CircuitPalette {
             }
             index++;
         }
-        attributes(attrs,root,result);
+        // Placing only needs the stored form; listing the choices builds Swing editors.
+        if(!placing)attributes(attrs,root,result);
         Element serialized=child(result,root,"comp");serialized.setAttribute("name",factory.getName());serialized.setAttribute("loc","("+x+","+y+")");
         if(!request.getAttribute("library").isEmpty())serialized.setAttribute("lib",request.getAttribute("library"));
         serialize(attrs,serialized);

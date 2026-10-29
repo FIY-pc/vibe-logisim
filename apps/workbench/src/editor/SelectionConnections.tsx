@@ -5,8 +5,6 @@ import {
   componentName,
   connectedPorts,
   connectionIndex,
-  documentComponent,
-  documentWire,
   portName,
   portSignal,
   type ConnectionFocus,
@@ -49,17 +47,12 @@ export function SelectionConnections({
         {error || "正在读取连接…"}
       </div>
     );
-  const components = focus.components.filter((c) => {
-    if (c.partial) return false;
-    const selected = documentComponent(circuit, c);
-    return selected && selection.includes(selected.id);
-  });
+  const components = focus.components.filter(
+    (c) => !c.partial && selection.includes(c.componentId),
+  );
   const selectedWires = circuit.wires.filter((w) => selection.includes(w.id));
-  const nativeWires = focus.wires.filter((w) => {
-    const selected = documentWire(circuit, w);
-    return selected && selection.includes(selected.id);
-  });
-  const bundles = [...new Set(nativeWires.map((w) => w.bundleId))];
+  const selectedRecords = focus.wires.filter((w) => selection.includes(w.wireId));
+  const bundles = [...new Set(selectedRecords.map((w) => w.bundleId))];
   const group = (target: SignalTarget, key: string) => {
     const peers = connectedPorts(index, target.bits, target.origin);
     return (
@@ -143,7 +136,7 @@ export function SelectionConnections({
         );
       })}
       {((!components.length && !selectedWires.length) ||
-        selectedWires.length > nativeWires.length) && (
+        selectedWires.length > selectedRecords.length) && (
         <p className="connection-empty">未读取到所选对象的连接信息</p>
       )}
     </div>

@@ -270,7 +270,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "move_components",
     label: "调整电路布局",
     description:
-      "Move components to positions, or componentIds by one delta. Wires on moved ports follow; a move that would change what is connected is refused and nothing moves. A moved part's id is its new anchor.",
+      "Move components, either to final positions (positions) or all by one delta (componentIds + delta), as Logisim's select tool moves them: a moved port keeps what it touched connected through wires stretched or added around other parts, and a port dropped onto a wire or another port connects there. A port with no route back is left unconnected; the reply lists those places (before the move) in unconnected. Ids change with the position: a part moved to (x,y) is now c<x>_<y>.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,

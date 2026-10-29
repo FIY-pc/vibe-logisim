@@ -22,8 +22,6 @@ import { Connections } from "./Connections";
 import { SelectionConnections } from "./SelectionConnections";
 import {
   connectionIndex,
-  documentComponent,
-  documentWire,
   portSignal,
   signalTrace,
   wireSignal,
@@ -94,8 +92,10 @@ interface Overlay {
   delta: Point;
   /** Wires drawn as if they existed: a committed wire. */
   wires: { from: Point; to: Point }[];
-  /** The connections the host plans for a move. */
+  /** The wires Logisim's move gesture adds for a drag. */
   lines: { from: Point; to: Point }[];
+  /** Where the drag leaves an end unconnected, before the move. */
+  unconnected: Point[];
 }
 const still: Point = { x: 0, y: 0 };
 const none: Frame["ghosts"] = [];
@@ -281,9 +281,11 @@ export function Canvas({
     origin: View;
   } | null>(null);
   const [delta, setDelta] = useState<Point>(still);
+  // Shift while dragging moves without keeping connections, as in Logisim.
+  const [detach, setDetach] = useState(false);
   const moving = drag?.mode === "move" && Boolean(delta.x || delta.y);
   const movePreview = useMovePreview(
-    moving
+    moving && !detach
       ? {
           id: doc.id,
           revision: doc.revision,
@@ -297,14 +299,15 @@ export function Canvas({
     () =>
       moving && drag
         ? {
-            hide: [...drag.ids, ...(movePreview.wires?.removedWires ?? [])],
+            hide: [...drag.ids, ...(movePreview?.removed ?? [])],
             move: drag.ids,
             delta,
             wires: [],
-            lines: movePreview.wires?.addedWires ?? [],
+            lines: movePreview?.added ?? [],
+            unconnected: movePreview?.unconnected ?? [],
           }
         : null,
-    [moving, drag, delta, movePreview.wires],
+    [moving, drag, delta, movePreview],
   );
   // A committed edit shows its result until the document has it.
   const [gesture, setGesture] = useState<
@@ -325,12 +328,26 @@ export function Canvas({
   const commitWire = (points: Point[]) =>
     commit(
       { kind: "wire", points },
-      { hide: [], move: [], delta: still, wires: segments(points), lines: [] },
+      {
+        hide: [],
+        move: [],
+        delta: still,
+        wires: segments(points),
+        lines: [],
+        unconnected: [],
+      },
     );
   const commitDelete = (ids: string[]) =>
     commit(
       { kind: "delete", ids },
-      { hide: ids, move: [], delta: still, wires: [], lines: [] },
+      {
+        hide: ids,
+        move: [],
+        delta: still,
+        wires: [],
+        lines: [],
+        unconnected: [],
+      },
     );
   const held = useRef<(() => void) | null>(null);
   const wireGesture = useRef<{ x: number; y: number } | null>(null);
@@ -455,7 +472,9 @@ export function Canvas({
   }, [view, size, scene, paintable, overlay, ghosts, live]);
 
   const visitSignal = (peer: ConnectionPeer, previousSignal = signal) => {
-    const component = documentComponent(circuit, peer.component);
+    const component = circuit.components.find(
+      (c) => c.id === peer.component.componentId,
+    );
     if (!component) return;
     setSignalHistory((previous) => [
       ...previous.slice(-39),
@@ -580,14 +599,12 @@ export function Canvas({
       startSignal(portSignal(near.component, near.end));
       return;
     }
-    const component = focus.components.find(
-      (c) => documentComponent(circuit, c)?.id === id,
-    );
+    const component = focus.components.find((c) => c.componentId === id);
     if (component?.ends.length === 1) {
       startSignal(portSignal(component, component.ends[0]));
       return;
     }
-    const wire = focus.wires.find((w) => documentWire(circuit, w)?.id === id);
+    const wire = focus.wires.find((w) => w.wireId === id);
     if (wire) {
       startSignal(wireSignal(connections, wire));
       return;
@@ -836,11 +853,13 @@ export function Canvas({
             x: drag.origin.x - (e.clientX - drag.client.x) / drag.origin.scale,
             y: drag.origin.y - (e.clientY - drag.client.y) / drag.origin.scale,
           });
-        else if (drag)
+        else if (drag) {
           setDelta({
             x: drag.axis === "x" ? 0 : p.x - drag.start.x,
             y: drag.axis === "y" ? 0 : p.y - drag.start.y,
           });
+          setDetach(e.shiftKey);
+        }
       }}
       onPointerLeave={() => {
         if (place && !drag) setCursor(null);
@@ -863,7 +882,17 @@ export function Canvas({
         }
         releaseHeld();
         if (drag?.mode === "move" && dragOverlay)
-          commit({ kind: "move", ids: drag.ids, delta }, dragOverlay);
+          commit(
+            {
+              kind: "move",
+              ids: drag.ids,
+              delta,
+              ...(e.shiftKey ? { detach: true } : {}),
+            },
+            e.shiftKey
+              ? { ...dragOverlay, hide: drag.ids, lines: [], unconnected: [] }
+              : dragOverlay,
+          );
         if (drag?.mode === "box") {
           const p = point(e);
           selectObjects(
@@ -877,6 +906,7 @@ export function Canvas({
         }
         setDrag(null);
         setDelta(still);
+        setDetach(false);
         if (e.currentTarget.hasPointerCapture(e.pointerId))
           e.currentTarget.releasePointerCapture(e.pointerId);
       }}
@@ -944,6 +974,21 @@ export function Canvas({
                 y2={segment.to.y}
               />
             ))}
+          </g>
+        )}
+        {overlay && overlay.unconnected.length > 0 && (
+          <g
+            className="move-unconnected"
+            pointerEvents="none"
+            fill="var(--danger)"
+          >
+            {overlay.unconnected.flatMap((at) =>
+              [at, { x: at.x + overlay.delta.x, y: at.y + overlay.delta.y }].map(
+                (p, i) => (
+                  <circle key={`${at.x},${at.y}:${i}`} cx={p.x} cy={p.y} r={3} />
+                ),
+              ),
+            )}
           </g>
         )}
         {signal &&
@@ -1076,11 +1121,6 @@ export function Canvas({
           />
         )}
       </svg>
-      <div className="canvas-status">
-        {moving && movePreview.error && (
-          <span role="status">{movePreview.error}</span>
-        )}
-      </div>
     </div>
   );
 }

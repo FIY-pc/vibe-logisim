@@ -67,7 +67,7 @@ const whole = (view: DocumentView): DocumentRef => ({
 /** One native observation plus the document it describes. */
 export interface Observed {
   view: ObservationView;
-  /** The raw host `observe` result (focus, project, unknowns, runtime, artifactSha256, coverage). */
+  /** The raw host `observe` result (focus, project, unknowns, runtime, revision, coverage). */
   raw: any;
   document: DocumentRef;
 }
@@ -268,7 +268,7 @@ export class ToolContext {
   /**
    * Applies edits. Wire, place, delete and attribute edits go to the host as
    * one batch (one undo step, one native load), and so do moves by different
-   * offsets (one undo step, nothing moved when one is refused); anything else
+   * offsets (one undo step); anything else
    * is applied one after another. Edits that change nothing are reported on
    * the result, not raised.
    */

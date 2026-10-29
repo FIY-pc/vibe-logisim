@@ -261,25 +261,3 @@ export function wireSignal(
     label: `导线 · ${bundle.width} 位`,
   };
 }
-/** Geometry binds native records to revision-local edit IDs; it never infers a net. */
-export function documentComponent(
-  circuit: Circuit,
-  native: ConnectionComponent,
-) {
-  const found = circuit.components.filter(
-    (c) =>
-      c.name === native.factoryName &&
-      c.location.x === native.location.x &&
-      c.location.y === native.location.y,
-  );
-  return found.length === 1 ? found[0] : null;
-}
-export function documentWire(circuit: Circuit, native: ConnectionWire) {
-  const same = (a: Point, b: Point) => a.x === b.x && a.y === b.y;
-  const found = circuit.wires.filter(
-    (w) =>
-      (same(w.from, native.from) && same(w.to, native.to)) ||
-      (same(w.from, native.to) && same(w.to, native.from)),
-  );
-  return found.length === 1 ? found[0] : null;
-}

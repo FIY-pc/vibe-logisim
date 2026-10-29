@@ -760,19 +760,6 @@ button.primary:active:where(:not(:disabled)) {
 .tool-poke {
   cursor: pointer;
 }
-.canvas-status {
-  position: absolute;
-  bottom: 12px;
-  left: 15px;
-  display: flex;
-  gap: 16px;
-  color: var(--muted);
-  font-size: 11px;
-  pointer-events: none;
-  background: #ffffffce;
-  border-radius: 4px;
-  padding: 4px 6px;
-}
 .right-panel {
   width: 326px;
   flex: none;

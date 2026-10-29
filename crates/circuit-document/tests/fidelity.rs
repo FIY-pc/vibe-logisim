@@ -1,6 +1,6 @@
 //! Edits change only the bytes of the elements they touch.
 use std::collections::BTreeMap;
-use vibe_circuit_document::{Document, Edit, Error, Point};
+use vibe_circuit_document::{Document, Edit, Error, Point, WireEdit};
 
 /// A file in the style Logisim 2.7.1 writes.
 const CLASSIC: &str = r##"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
@@ -220,6 +220,7 @@ fn s4_move_changes_only_moved_and_rerouted_lines() {
         Edit::Move {
             ids: vec!["c260_150".into()],
             delta: p(0, 20),
+            detach: None,
         },
     );
     assert_eq!(
@@ -229,27 +230,34 @@ fn s4_move_changes_only_moved_and_rerouted_lines() {
             r#"+    <comp lib="1" loc="(260,170)" name="AND Gate">"#
         ]
     );
-    // The pin's wire follows it with one bend; the other wire keeps its bytes.
+    // The wire the native side says follows the pin is replaced; the wire it
+    // leaves alone keeps its bytes, and the move selects what moved.
     let mut d = open(CLASSIC);
-    d.move_connected(
-        &d.revision(),
-        "main",
-        vec!["c100_100".into()],
-        p(0, -20),
-        vec![p(100, 100)],
-        vec![p(260, 150)],
-    )
-    .unwrap();
+    let outcome = d
+        .translate(
+            &d.revision(),
+            "main",
+            &["c100_100".into()],
+            p(0, -20),
+            WireEdit {
+                removed: vec!["w0".into()],
+                added: vec![(p(100, 80), p(200, 80)), (p(200, 80), p(200, 100))],
+            },
+        )
+        .unwrap();
     assert_eq!(
         diff(CLASSIC, &text(&d)),
         [
             r#"-    <wire from="(100,100)" to="(200,100)"/>"#,
+            r#"-    <comp lib="0" loc="(100,100)" name="Pin">"#,
             r#"+    <wire from="(100,80)" to="(200,80)"/>"#,
             r#"+    <wire from="(200,80)" to="(200,100)"/>"#,
-            r#"-    <comp lib="0" loc="(100,100)" name="Pin">"#,
             r#"+    <comp lib="0" loc="(100,80)" name="Pin">"#
         ]
     );
+    // As in Logisim, the wires added to keep the pin connected are not selected.
+    assert_eq!(outcome.components, ["c100_80"]);
+    assert!(outcome.wires.is_empty());
 }
 
 #[test]
@@ -323,6 +331,7 @@ fn s6_undoing_every_edit_restores_the_original_bytes() {
             Edit::Move {
                 ids: vec!["c260_150".into(), "w1".into()],
                 delta: p(10, 10),
+                detach: None,
             },
         ),
         (
@@ -463,6 +472,7 @@ fn moved_wire_ending_on_a_trunk_splits_it() {
         Edit::Move {
             ids: vec!["w1".into()],
             delta: p(0, 50),
+            detach: None,
         },
     );
     assert_eq!(
@@ -477,7 +487,8 @@ fn moved_wire_ending_on_a_trunk_splits_it() {
 
 #[test]
 fn rerouted_wire_keeps_the_junction_at_its_other_end() {
-    // The branch ends inside an unsplit trunk, which Logisim connects on load.
+    // The branch lands inside a trunk, which Logisim joins on load; the file
+    // keeps one wire per run, and a move only rewrites the wires it names.
     let tee = r##"<project source="2.7.1" version="1.0">
   <lib desc="#Wiring" name="0"/>
   <main name="main"/>
@@ -489,15 +500,18 @@ fn rerouted_wire_keeps_the_junction_at_its_other_end() {
 </project>
 "##;
     let mut d = open(tee);
-    d.move_connected(
-        &d.revision(),
-        "main",
-        vec!["c100_150".into()],
-        p(0, 20),
-        vec![p(100, 150)],
-        vec![],
-    )
-    .unwrap();
+    let outcome = d
+        .translate(
+            &d.revision(),
+            "main",
+            &["c100_150".into()],
+            p(0, 20),
+            WireEdit {
+                removed: vec!["w1".into()],
+                added: vec![(p(100, 100), p(100, 170))],
+            },
+        )
+        .unwrap();
     assert_eq!(
         diff(tee, &text(&d)),
         [
@@ -507,50 +521,42 @@ fn rerouted_wire_keeps_the_junction_at_its_other_end() {
             r#"+    <comp lib="0" loc="(100,170)" name="Pin"/>"#
         ]
     );
+    assert_eq!(outcome.components, ["c100_170"]);
+    assert!(outcome.wires.is_empty());
 }
 
 #[test]
-fn wires_into_neighbouring_ports_fan_out_when_their_part_moves() {
-    // Two stacked inputs: one bend at either end would fold both wires onto
-    // one column and join them.
+fn a_move_without_wire_edits_leaves_every_wire_alone() {
     let gate = r##"<project source="2.7.1" version="1.0">
   <lib desc="#Wiring" name="0"/>
   <lib desc="#Gates" name="1"/>
   <main name="main"/>
   <circuit name="main">
     <wire from="(100,90)" to="(170,90)"/>
-    <wire from="(100,110)" to="(170,110)"/>
     <comp lib="0" loc="(100,90)" name="Pin"/>
-    <comp lib="0" loc="(100,110)" name="Pin"/>
     <comp lib="1" loc="(200,100)" name="AND Gate"/>
   </circuit>
 </project>
 "##;
     let mut d = open(gate);
-    d.move_connected(
-        &d.revision(),
-        "main",
-        vec!["c200_100".into()],
-        p(0, 40),
-        vec![p(200, 100), p(170, 90), p(170, 110)],
-        vec![p(100, 90), p(100, 110)],
-    )
-    .unwrap();
-    let wires: Vec<String> = text(&d)
-        .lines()
-        .filter(|l| l.contains("<wire"))
-        .map(|l| l.trim().to_owned())
-        .collect();
+    let outcome = d
+        .translate(
+            &d.revision(),
+            "main",
+            &["c200_100".into()],
+            p(0, 40),
+            WireEdit::default(),
+        )
+        .unwrap();
     assert_eq!(
-        wires,
+        diff(gate, &text(&d)),
         [
-            r#"<wire from="(100,90)" to="(160,90)"/>"#,
-            r#"<wire from="(160,90)" to="(160,130)"/>"#,
-            r#"<wire from="(160,130)" to="(170,130)"/>"#,
-            r#"<wire from="(100,110)" to="(100,150)"/>"#,
-            r#"<wire from="(100,150)" to="(170,150)"/>"#,
+            r#"-    <comp lib="1" loc="(200,100)" name="AND Gate"/>"#,
+            r#"+    <comp lib="1" loc="(200,140)" name="AND Gate"/>"#
         ]
     );
+    assert_eq!(outcome.components, ["c200_140"]);
+    assert!(outcome.wires.is_empty());
 }
 
 #[test]
@@ -577,6 +583,7 @@ fn d1_deleting_a_pin_removes_its_appearance_port() {
         Edit::Move {
             ids: vec!["c140_60".into()],
             delta: p(20, 0),
+            detach: None,
         },
     );
     assert_eq!(
@@ -784,13 +791,15 @@ fn replace_keeps_the_bytes_of_unchanged_elements() {
     let mut d = open(CLASSIC);
     let mut candidate = d.clone();
     candidate
-        .move_connected(
+        .translate(
             &candidate.revision(),
             "main",
-            vec!["c100_100".into()],
+            &["c100_100".into()],
             p(0, -20),
-            vec![p(100, 100)],
-            vec![],
+            WireEdit {
+                removed: vec!["w0".into()],
+                added: vec![(p(100, 80), p(200, 80)), (p(200, 80), p(200, 100))],
+            },
         )
         .unwrap();
     edit(

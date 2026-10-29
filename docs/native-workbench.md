@@ -72,7 +72,7 @@ The document title opens file information and a ZIP export containing the curren
 
 `simulate_circuit` evaluates independent input vectors against labeled output pins. `trace_circuit` starts a fresh sequential run with exact watched ports and tick-indexed input events. Both use a separate Java worker and request queue, leaving the visible simulation, source file and undo history untouched. Native errors discard that verification worker. Results carry their source revision; missing expectations remain unchecked, and unknown outputs do not pass numerical assertions.
 
-For selection moves, the host prepares the moved layout and compares Logisim's bit-net partitions before committing one undo step. A move that changes port connectivity is rejected. This check applies to selection movement; free wire drawing and direct source edits use their own edit paths.
+Selection moves are Logisim's: on release its move gesture (`MoveGesture.forceRequest`, as the select tool runs it) decides which wires stretch, appear or go, and the translation with those wire edits is one undo step. A part dropped onto a wire or another port connects there; Shift while dragging moves without keeping connections. Dragging itself waits for no request.
 
 ## Verification
 
@@ -135,6 +135,6 @@ node scripts/workbench/compatibility-check.mts
 
 The script creates and removes its own files. It reports host startup, native observation, 1,200 × 800 viewport rendering, simulation startup and acknowledged input changes. It uses no model service. The first native request may include Java bridge compilation. These are host API and JVM measurements, not webview frame rates or pointer-response measurements.
 
-Static observations are cached only within the immutable artifact and external-dependency set, with at most two 16 MB results for each of two loaded files. Changed external library contents invalidate read and independent-verification workers. A running interactive simulation retains its transient state; explicitly starting it again loads the current library contents in a new process.
+Static observations are cached with the revision the worker holds (the latest four per document, up to three documents), and the worker is brought to each new revision from memory, never through a file. Changed external library contents invalidate read and independent-verification workers. A running interactive simulation retains its transient state; explicitly starting it again loads the current library contents in a new process.
 
 Feedback diagnostics contain version, platform, architecture, runtime/recovery state, the runtime version observed from an actual Java response, and bounded failure categories with counts and timestamps. Failures are counted for the current host session; source paths, raw exception strings and request contents are excluded. The dialog previews the exact JSON before export; replacing a selected target checks its observed digest. Opening the public feedback page requires an explicit save action and does not submit an issue. Release checks read the project’s public Atom feed with an eight-second timeout and a 2 MB limit, retain the automatic-check preference and never download or install an update. Development versions are identified as such instead of being reported as the latest release.

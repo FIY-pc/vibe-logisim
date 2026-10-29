@@ -179,8 +179,8 @@ impl Host {
                 circuit,
                 frequency,
             } => {
-                let (artifact, view) = self.snapshot_view(&document_id, &revision).await?;
-                let document = RunDocument { artifact, view };
+                let (revision, view) = self.revision_view(&document_id, &revision).await?;
+                let document = RunDocument { revision, view };
                 value(self.simulation.start(document, &circuit, frequency).await?)
             }
             SimulationRequest::SimulationCommand { command } => {
@@ -249,11 +249,8 @@ impl Host {
         offset: u32,
         count: u32,
     ) -> Result<Value> {
-        let (path, view) = self.snapshot_view(&id, &revision).await?;
-        let selected = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
+        let (snapshot, view) = self.revision_circuit(&id, &revision, &circuit).await?;
+        view.as_ref()
             .and_then(|c| {
                 c.components
                     .iter()
@@ -265,9 +262,9 @@ impl Host {
             .lock()
             .await
             .memory(
-                &path,
+                &snapshot,
                 &circuit,
-                selected,
+                &component,
                 BTreeMap::from([
                     ("offset".into(), offset.to_string()),
                     ("count".into(), count.to_string()),
@@ -288,11 +285,8 @@ impl Host {
         expected: &str,
         word: &str,
     ) -> Result<Value> {
-        let (path, view) = self.snapshot_view(&id, &revision).await?;
-        let selected = view
-            .circuits
-            .iter()
-            .find(|c| c.name == circuit)
+        let (snapshot, view) = self.revision_circuit(&id, &revision, &circuit).await?;
+        view.as_ref()
             .and_then(|c| {
                 c.components
                     .iter()
@@ -304,9 +298,9 @@ impl Host {
             .lock()
             .await
             .memory(
-                &path,
+                &snapshot,
                 &circuit,
-                selected,
+                &component,
                 BTreeMap::from([
                     ("address".into(), address.to_string()),
                     ("expected".into(), expected.into()),
@@ -326,7 +320,7 @@ impl Host {
                 values: BTreeMap::from([("contents".into(), contents)]),
             },
         )?;
-        value(document.view()?)
+        crate::api::document::view_value(document.view()?)
     }
 }
 

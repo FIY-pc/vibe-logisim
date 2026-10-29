@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     response::{
         IntoResponse, Sse,
         sse::{Event, KeepAlive},
@@ -36,15 +36,24 @@ async fn dispatch(
         };
         let _encode = timing::span("encode");
         match result {
-            Ok(result) => (StatusCode::OK, Json(Answer { result })).into_response(),
+            // Written by serde_json's own (optimized) Display, not code
+            // generated here: a page's view is hundreds of kilobytes.
+            Ok(result) => {
+                let body = match &result {
+                    Reply::Value(value) => format!("{{\"result\":{value}}}"),
+                    Reply::Text(text) => format!("{{\"result\":{}}}", text.get()),
+                };
+                (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "application/json")],
+                    body,
+                )
+                    .into_response()
+            }
             Err(error) => (StatusCode::BAD_REQUEST, Json(json!({"error":error}))).into_response(),
         }
     })
     .await
-}
-#[derive(serde::Serialize)]
-struct Answer {
-    result: Reply,
 }
 async fn events(State(host): State<Host>, headers: HeaderMap) -> axum::response::Response {
     if let Some(origin) = headers.get("origin").and_then(|s| s.to_str().ok())
