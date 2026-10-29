@@ -186,16 +186,16 @@ try {
     circuit: "child",
     candidate: false,
   });
-  // A source conflict cannot silently restore over the externally changed file.
+  // A clean document follows its file: a restore against the revision the
+  // window still holds is refused as stale, and the next read has the file.
   await writeFile(file, xml.replace('val="A"', 'val="external"'));
   await assert.rejects(
     () => command({ op: "historyRestore", ...binding(), entry: baseline }),
-    /磁盘|外部/,
+    { code: "STALE_REVISION" },
   );
-  assert.equal(
-    (await command({ op: "read", id: doc.id })).revision,
-    doc.revision,
-  );
+  const followed = await command({ op: "read", id: doc.id });
+  assert.notEqual(followed.revision, doc.revision);
+  assert.equal(followed.dirty, false);
   // Historical native views must reject changed external libraries, while
   // immutable source comparison survives.
   const library = path.join(state, "parts.circ");
