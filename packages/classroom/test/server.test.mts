@@ -11,7 +11,8 @@ import type { WorkSnapshot } from "../src/types.ts";
 test("classroom lifecycle, role isolation, immutable evidence, AI scope and persistence", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "vibe-classroom-test-"));
   const prompts: string[] = [];
-  let failure: "none" | "json" | "length" | "http" = "none";
+  let failure: "none" | "json" | "length" | "http" | "null" | "filtered" =
+    "none";
   const provider = createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -28,13 +29,22 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
       res.end("not-json");
       return;
     }
+    if (failure === "null") {
+      res.end("null");
+      return;
+    }
     res.setHeader("Content-Type", "application/json");
     res.end(
       JSON.stringify({
         choices: [
           {
             message: { content: "依据提交证据：建议复习进位逻辑。" },
-            finish_reason: failure === "length" ? "length" : "stop",
+            finish_reason:
+              failure === "length"
+                ? "length"
+                : failure === "filtered"
+                  ? "content_filter"
+                  : "stop",
           },
         ],
       }),
@@ -170,6 +180,30 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
     );
     await request(`/classrooms/${c.id}`, "GET", undefined, t2.token, 404);
     await request(`/classrooms/${c.id}`, "GET", undefined, outsider.token, 404);
+    await request(`/classrooms/${c.id}/code`, "POST", {}, s.token, 403);
+    await request(`/classrooms/${c.id}/code`, "POST", {}, t2.token, 404);
+    const replacement = (
+      await request(`/classrooms/${c.id}/code`, "POST", {}, t.token)
+    ).classroom;
+    assert.notEqual(replacement.code, c.code);
+    await request(
+      "/classrooms/join",
+      "POST",
+      { code: c.code },
+      outsider.token,
+      404,
+    );
+    await request(
+      "/classrooms/join",
+      "POST",
+      { code: replacement.code },
+      s.token,
+    );
+    assert.equal(
+      (await request(`/classrooms/${c.id}`, "GET", undefined, t.token)).members
+        .length,
+      2,
+    );
     const snapshot: WorkSnapshot = {
       name: "adder.circ",
       xml: '<project><circuit name="main"/></project>',
@@ -257,7 +291,13 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
       t.token,
       404,
     );
-    for (const mode of ["http", "json", "length"] as const) {
+    for (const mode of [
+      "http",
+      "json",
+      "length",
+      "null",
+      "filtered",
+    ] as const) {
       failure = mode;
       await request(
         `/classrooms/${c.id}/analysis`,

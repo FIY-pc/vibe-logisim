@@ -460,6 +460,16 @@ export function createClassroomServer(options: ServerOptions) {
         });
         return;
       }
+      if (tail === "code" && method === "POST") {
+        teacher(u);
+        run(
+          "UPDATE classrooms SET code=? WHERE id=?",
+          randomBytes(6).toString("hex").toUpperCase(),
+          id,
+        );
+        send(200, { classroom: presentRoom(roomFor(u, id), u) });
+        return;
+      }
       if (!tail && method === "PATCH") {
         teacher(u);
         const b = await readBody(req);
@@ -636,12 +646,14 @@ export function createClassroomServer(options: ServerOptions) {
             .catch(() =>
               fail(502, "课堂 AI 返回了无效数据，请稍后重试"),
             )) as any;
-          const output = result.choices?.[0]?.message?.content;
+          const output = result?.choices?.[0]?.message?.content;
           if (
             typeof output !== "string" ||
             !output.trim() ||
             output.length > 50000 ||
-            result.choices?.[0]?.finish_reason === "length"
+            ![undefined, null, "stop"].includes(
+              result.choices?.[0]?.finish_reason,
+            )
           )
             return fail(502, "AI 分析未完整返回，请缩小分析范围后重试");
           const report: AnalysisReport = {

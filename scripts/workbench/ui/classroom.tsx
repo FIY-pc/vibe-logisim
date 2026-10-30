@@ -263,6 +263,16 @@ export async function verifyClassroomUI() {
     );
     await click("课堂管理");
     await wait(() => Boolean(container.querySelector(".classroom-teacher")));
+    const originalCode = container.querySelector(
+      ".classroom-room-heading code",
+    )?.textContent;
+    await click("更新课堂码");
+    await wait(
+      () =>
+        container.querySelector(".classroom-room-heading code")?.textContent !==
+        originalCode,
+    );
+    await wait(() => !button("更新课堂码").disabled);
     await click("张同学");
     await wait(() =>
       Boolean(container.textContent?.includes("进位为什么不对")),

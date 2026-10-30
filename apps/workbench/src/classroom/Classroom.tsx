@@ -334,6 +334,24 @@ function ClassroomDialog({
                           >
                             <Copy size={14} />
                           </button>
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              void run(async () => {
+                                await api(
+                                  `/classrooms/${selected}/code`,
+                                  "POST",
+                                  {},
+                                );
+                                await refresh();
+                                setNotice(
+                                  "课堂码已更新，旧码已失效；已加入的学生和提交记录保留。",
+                                );
+                              })
+                            }
+                          >
+                            更新课堂码
+                          </button>
                         </p>
                       )}
                     </div>
