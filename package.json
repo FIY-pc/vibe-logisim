@@ -5,13 +5,16 @@
   "workspaces": [
     "apps/workbench",
     "packages/agent-runtime",
-    "packages/arranger"
+    "packages/arranger",
+    "packages/classroom"
   ],
   "scripts": {
     "dev": "node scripts/workbench/dev.mts",
     "desktop": "cd apps/workbench && npm run desktop",
     "build": "cd apps/workbench && npm run build",
-    "check": "tsc -b apps/workbench && tsc -p packages/agent-runtime/tsconfig.json && tsc -p packages/arranger/tsconfig.json && tsc -p scripts/workbench/tsconfig.json",
+    "check": "tsc -b apps/workbench && tsc -p packages/agent-runtime/tsconfig.json && tsc -p packages/arranger/tsconfig.json && tsc -p scripts/workbench/tsconfig.json && tsc -p packages/classroom/tsconfig.json",
+    "classroom": "node packages/classroom/src/main.mts",
+    "test:classroom": "node --test packages/classroom/test/*.test.mts",
     "test:arranger": "cd packages/arranger && npm test",
     "host": "cargo run -p vibe-workbench-host",
     "setup": "node scripts/workbench/setup.mts",

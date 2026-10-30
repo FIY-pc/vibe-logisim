@@ -36,6 +36,9 @@ tmp/
 *.tsbuildinfo
 /.workbench-state/
 /.workbench-cache/
+/.classroom-data/
+*.sqlite-wal
+*.sqlite-shm
 
 # bun writes its own lock file; package-lock.json is the one in use
 bun.lock

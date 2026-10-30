@@ -25,6 +25,7 @@ jobs:
       - run: npm run check
       - run: npm run test:arranger
       - run: npm run test:runtime
+      - run: npm run test:classroom
       - run: npm run test:ui
 
   integration:
@@ -75,6 +76,7 @@ jobs:
           npm run check
           npm run test:arranger
           npm run test:runtime
+          npm run test:classroom
           npm run test:ui
           npm run build
       - name: Verify native simulation, editing and local model transport
