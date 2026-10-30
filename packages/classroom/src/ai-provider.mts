@@ -111,7 +111,9 @@ export function classroomProviders(db: DatabaseSync, database: string) {
       );
     },
     revokeStudent(id: string) {
-      db.prepare("DELETE FROM classroom_provider_tokens WHERE student_id=?").run(id);
+      db.prepare(
+        "DELETE FROM classroom_provider_tokens WHERE student_id=?",
+      ).run(id);
     },
     async proxy(
       req: IncomingMessage,
@@ -197,8 +199,10 @@ export function classroomProviders(db: DatabaseSync, database: string) {
         await pipeline(Readable.fromWeb(response.body as any), res);
       } catch (cause) {
         if (!res.headersSent && !res.destroyed)
-          typeof (cause as any)?.status === "number" && (cause as any).status>=400 && (cause as any).status<500
-            ? error((cause as any).status,(cause as Error).message)
+          typeof (cause as any)?.status === "number" &&
+          (cause as any).status >= 400 &&
+          (cause as any).status < 500
+            ? error((cause as any).status, (cause as Error).message)
             : error(502, "教师模型连接失败或超时，请稍后重试");
         else if (!res.destroyed) res.destroy();
       } finally {

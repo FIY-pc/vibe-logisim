@@ -19,6 +19,7 @@ import {
 } from "./client";
 import { prepareWork, type PreparedWork } from "./sharing";
 import { useSharing } from "./useSharing";
+import { ClassroomAI } from "./ClassroomAI";
 import type {
   Classroom,
   ClassroomDetail,
@@ -373,6 +374,17 @@ function ClassroomDialog({
                       </button>
                     )}
                   </div>
+                  <ClassroomAI
+                    key={`${selected}:${detail.provider?.updatedAt || "none"}`}
+                    classroomId={selected}
+                    provider={detail.provider}
+                    session={session}
+                    busy={busy}
+                    api={api}
+                    run={run}
+                    refresh={refresh}
+                    notify={setNotice}
+                  />
                   {detail.classroom.task && (
                     <section className="classroom-task">
                       <h4>课堂任务</h4>

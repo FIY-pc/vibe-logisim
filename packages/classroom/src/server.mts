@@ -385,7 +385,7 @@ export function createClassroomServer(options: ServerOptions) {
         return;
       }
       if (route === "/api/auth/logout" && method === "POST") {
-        if(u.role==="student") providers.revokeStudent(u.id);
+        if (u.role === "student") providers.revokeStudent(u.id);
         run(
           "DELETE FROM sessions WHERE token=?",
           digest(req.headers.authorization!.slice(7)),

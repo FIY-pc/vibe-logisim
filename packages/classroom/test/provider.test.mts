@@ -5,7 +5,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createClassroomServer } from "../src/server.mts";
-import { modelFor, transport } from "../../agent-runtime/src/models/services.mts";
+import {
+  modelFor,
+  transport,
+} from "../../agent-runtime/src/models/services.mts";
 import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 
 test("teacher AI distribution proxies three protocols, encrypts keys, revokes access and preserves personal services", async () => {
@@ -20,8 +23,12 @@ test("teacher AI distribution proxies three protocols, encrypts keys, revokes ac
       body: JSON.parse(raw),
     });
     res.writeHead(200, { "Content-Type": "text/event-stream" });
-    res.write(`data: ${JSON.stringify({id:"chatcmpl-test",object:"chat.completion.chunk",created:0,model:"model-a",choices:[{index:0,delta:{role:"assistant",content:"hello"},finish_reason:null}]})}\n\n`);
-    res.write(`data: ${JSON.stringify({id:"chatcmpl-test",object:"chat.completion.chunk",created:0,model:"model-a",choices:[{index:0,delta:{},finish_reason:"stop"}]})}\n\n`);
+    res.write(
+      `data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 0, model: "model-a", choices: [{ index: 0, delta: { role: "assistant", content: "hello" }, finish_reason: null }] })}\n\n`,
+    );
+    res.write(
+      `data: ${JSON.stringify({ id: "chatcmpl-test", object: "chat.completion.chunk", created: 0, model: "model-a", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
+    );
     res.end("data: [DONE]\n\n");
   });
   await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
@@ -113,12 +120,27 @@ test("teacher AI distribution proxies three protocols, encrypts keys, revokes ac
     assert.match(await response.text(), /hello/);
     assert.equal(requests[0].headers.authorization, `Bearer ${config.apiKey}`);
     assert.equal(requests[0].path, "/v1/chat/completions");
-    const sdk=await transport("openai-completions");
-    const runtimeConfig={...config,baseUrl:`${base}/api/classrooms/${c.id}/ai/v1`,apiKey:access.apiKey};
-    const stream=await sdk.streamSimple(modelFor(runtimeConfig as any),normalizeContext({messages:[{role:"user",content:"hello",timestamp:Date.now()}]}), {apiKey:access.apiKey,fetch:globalThis.fetch});
-    const reply=await stream.result();
-    assert.equal(reply.stopReason,"stop",reply.errorMessage);
-    assert.ok(reply.content.some((part:any)=>part.type==="text" && part.text==="hello"),"real agent SDK consumes the classroom stream");
+    const sdk = await transport("openai-completions");
+    const runtimeConfig = {
+      ...config,
+      baseUrl: `${base}/api/classrooms/${c.id}/ai/v1`,
+      apiKey: access.apiKey,
+    };
+    const stream = await sdk.streamSimple(
+      modelFor(runtimeConfig as any),
+      normalizeContext({
+        messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+      }),
+      { apiKey: access.apiKey, fetch: globalThis.fetch },
+    );
+    const reply = await stream.result();
+    assert.equal(reply.stopReason, "stop", reply.errorMessage);
+    assert.ok(
+      reply.content.some(
+        (part: any) => part.type === "text" && part.text === "hello",
+      ),
+      "real agent SDK consumes the classroom stream",
+    );
     assert.equal(
       (await proxy(student.token)).status,
       403,
@@ -176,6 +198,20 @@ test("teacher AI distribution proxies three protocols, encrypts keys, revokes ac
     response = await proxy(access.apiKey, "messages");
     assert.equal(response.status, 200);
     await response.text();
+    const models = await call(
+      `/classrooms/${c.id}/ai/v1/models`,
+      access.apiKey,
+    );
+    assert.deepEqual(
+      models.data.map((m: any) => m.id),
+      ["model-a"],
+    );
+    await call("/auth/logout", student.token, {});
+    assert.equal(
+      (await proxy(access.apiKey, "messages")).status,
+      403,
+      "logging out revokes classroom model access",
+    );
   } finally {
     await app.close();
     upstream.closeIdleConnections();

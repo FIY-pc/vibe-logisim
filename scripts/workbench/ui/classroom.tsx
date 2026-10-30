@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { ClassroomEntry } from "../../../apps/workbench/src/classroom/Classroom";
 import { useWorkbench } from "../../../apps/workbench/src/app/provider";
 import { createClassroomServer } from "../../../packages/classroom/src/server.mts";
-import { Workbench } from "./workbench";
+import { Workbench, pickOption } from "./workbench";
 
 export async function verifyClassroomUI() {
   const provider = createServer(async (req, res) => {
@@ -74,6 +74,17 @@ export async function verifyClassroomUI() {
     })
   ).classroom;
   await api("/classrooms/join", student.token, { code: room.code });
+  await api(`/classrooms/${room.id}/ai`, teacher.token, {
+    name: "课堂服务",
+    baseUrl: server + "/fixture/v1",
+    apiKey: "teacher-real-secret",
+    model: "fixture-model",
+    api: "openai-completions",
+    enabled: true,
+    contextWindow: 128000,
+    effort: "none",
+    vision: false,
+  });
   const container = document.createElement("div");
   document.body.append(container);
   let root = createRoot(container);
@@ -104,6 +115,16 @@ export async function verifyClassroomUI() {
     circuits: [{ name: "main", components: [], wires: [] }],
   };
   const image = "data:image/png;base64,iVBORw0KGgo=";
+  const own: any = {
+    id: "personal",
+    name: "个人服务",
+    baseUrl: "https://personal.example/v1",
+    api: "openai-completions",
+    model: "own-model",
+  };
+  const services: any[] = [own];
+  let selected: any = own,
+    receivedProxyKey = "";
   (globalThis as any).__command = async (r: any) => {
     if (r.op === "status") return { folder: { id: folderId } };
     if (r.op === "read") {
@@ -113,17 +134,26 @@ export async function verifyClassroomUI() {
     if (r.op === "source")
       return { xml: '<project><circuit name="main"/></project>' };
     if (r.op === "render") return { image };
-    if (r.op === "agent")
+    if (r.op === "agent") {
+      if (r.method === "configure") {
+        receivedProxyKey = r.args.apiKey;
+        const { apiKey, ...publicConfig } = r.args;
+        services.push({ ...publicConfig, id: "teacher-proxy" });
+      }
+      if (r.method === "bindProvider")
+        selected = services.find((s) => s.id === r.args.id);
       return {
         workspaceKey: "folder-ui",
         conversationId: "conversation-ui",
         busy: agentBusy,
-        customProvider: { apiKey: "must-not-upload" },
+        customProvider: { ...selected, apiKey: "must-not-upload" },
+        services,
         messages: [
           { id: "u1", type: "user", text: "进位为什么不对？" },
           { id: "a1", type: "assistant", text: "检查真值表" },
         ],
       };
+    }
     throw new Error("Unexpected host request " + r.op);
   };
   function Fixture() {
@@ -170,6 +200,19 @@ export async function verifyClassroomUI() {
     );
     await click("课堂管理");
     await wait(() => Boolean(container.querySelector(".classroom-student")));
+    await click("使用教师提供的 AI");
+    await wait(() => selected.id === "teacher-proxy");
+    assert.ok(selected.baseUrl.endsWith(`/classrooms/${room.id}/ai/v1`));
+    assert.notEqual(receivedProxyKey, "teacher-real-secret");
+    await wait(() => !button("刷新可选服务").disabled);
+    await pickOption("个人 AI 服务", "个人服务");
+    await click("使用自己的 AI");
+    await wait(() => selected.id === "personal");
+    assert.ok(
+      services.some((s) => s.id === "personal"),
+      "teacher selection preserves personal services",
+    );
+    await wait(() => !button("预览将共享的内容").disabled);
     assert.equal(
       (await api(`/classrooms/${room.id}`, teacher.token)).members[0].latest,
       null,
@@ -263,6 +306,31 @@ export async function verifyClassroomUI() {
     );
     await click("课堂管理");
     await wait(() => Boolean(container.querySelector(".classroom-teacher")));
+    const providerForm = container.querySelector<HTMLFormElement>(
+      ".classroom-provider-form",
+    )!;
+    const keyField = providerForm.querySelector<HTMLInputElement>(
+      'input[name="apiKey"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(keyField, "updated-teacher-secret");
+      keyField.dispatchEvent(new Event("input", { bubbles: true }));
+      providerForm.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      );
+    });
+    await wait(() =>
+      Boolean(container.textContent?.includes("课堂 AI 配置已保存")),
+    );
+    assert.equal(
+      container.querySelector<HTMLInputElement>(
+        '.classroom-provider-form input[name="apiKey"]',
+      )!.value,
+      "",
+    );
     const originalCode = container.querySelector(
       ".classroom-room-heading code",
     )?.textContent;

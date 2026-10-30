@@ -245,6 +245,15 @@
   border-radius: 6px;
   margin: 12px 0;
 }
+.classroom-provider-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.classroom-provider-form > p,
+.classroom-provider-form > .classroom-actions {
+  grid-column: 1/-1;
+}
 .classroom-report {
   background: var(--panel, #f6f8fb);
   padding: 16px;
