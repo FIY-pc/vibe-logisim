@@ -31,7 +31,9 @@ export async function classroomRequest<T>(
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: signal ?? AbortSignal.timeout(100000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(100000)])
+      : AbortSignal.timeout(100000),
   });
   const result = await response.json();
   if (!response.ok)

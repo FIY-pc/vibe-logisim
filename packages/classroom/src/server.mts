@@ -570,8 +570,16 @@ export function createClassroomServer(options: ServerOptions) {
           evidence.push(s.id);
           // Every member is represented. Detailed evidence is bounded and explicitly marked.
           const detail = JSON.stringify({
-            messages: snapshot.messages.slice(-40),
+            messages: snapshot.messages
+              .slice(-40)
+              .map((m) => ({
+                ...m,
+                text: m.text.slice(0, 2000),
+                truncated: m.text.length > 2000,
+              })),
+            omittedMessages: Math.max(0, snapshot.messages.length - 40),
             xml: snapshot.xml.slice(0, 8000),
+            xmlTruncated: snapshot.xml.length > 8000,
             note: snapshot.note,
           });
           const included = used + detail.length <= 100000;

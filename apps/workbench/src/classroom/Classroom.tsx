@@ -247,6 +247,7 @@ function ClassroomDialog({
               disabled={busy}
               onClick={() =>
                 void run(async () => {
+                  sharing.stop();
                   try {
                     await api("/auth/logout", "POST", {});
                   } finally {
@@ -978,7 +979,9 @@ function Report({ report }: { report: AnalysisReport }) {
         {time(report.createdAt)} · {report.model} · 覆盖{" "}
         {report.coveredStudents}/{report.totalStudents} 位学生
       </p>
-      <Markdown>{report.text}</Markdown>
+      <Markdown skipHtml components={{ img: () => null }}>
+        {report.text}
+      </Markdown>
       <details>
         <summary>使用的提交证据（{report.evidence.length}）</summary>
         {report.evidence.map((id) => (

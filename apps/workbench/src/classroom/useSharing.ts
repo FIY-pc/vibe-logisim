@@ -50,7 +50,11 @@ export function useSharing() {
         }
       } catch (error) {
         if (generation.current === current) {
-          if ((error as { code?: string })?.code === "SHARING_BUSY") {
+          if (
+            ["SHARING_BUSY", "STALE_REVISION"].includes(
+              (error as { code?: string })?.code || "",
+            )
+          ) {
             setStatus("等待当前 AI 回合结束后继续共享");
             return;
           }
