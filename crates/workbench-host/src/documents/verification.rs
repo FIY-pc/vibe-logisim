@@ -87,8 +87,8 @@ impl Host {
         circuit: &str,
         vectors: Vec<TestVector>,
     ) -> Result<Value> {
-        if vectors.is_empty() || vectors.len() > 256 {
-            return Err("请提供 1–256 组测试向量".into());
+        if vectors.is_empty() || vectors.len() > 1024 {
+            return Err("请提供 1–1024 组测试向量".into());
         }
         let id = &doc.id;
         let revision = doc.revision();
