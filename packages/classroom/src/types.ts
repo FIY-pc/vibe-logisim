@@ -71,8 +71,20 @@ export interface AnalysisReport {
   totalStudents: number;
 }
 export interface ClassroomDetail {
+  provider?: ClassroomProvider | null;
   classroom: Classroom;
   members: ClassroomMember[];
   analyses: AnalysisReport[];
   aiAvailable: boolean;
+}
+export interface ClassroomProvider {
+  name: string;
+  baseUrl: string;
+  api: string;
+  model: string;
+  effort: string;
+  contextWindow: number;
+  vision: boolean;
+  enabled: boolean;
+  updatedAt: string;
 }

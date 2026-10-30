@@ -12,6 +12,7 @@ import {
   createHash,
 } from "node:crypto";
 import { promisify } from "node:util";
+import { classroomProviders } from "./ai-provider.mts";
 import type {
   ClassroomUser,
   WorkSnapshot,
@@ -88,6 +89,7 @@ export function createClassroomServer(options: ServerOptions) {
     CREATE INDEX IF NOT EXISTS submissions_member ON submissions(class_id,student_id,created_at DESC);
     CREATE TABLE IF NOT EXISTS analyses(id TEXT PRIMARY KEY, class_id TEXT NOT NULL REFERENCES classrooms(id), report TEXT NOT NULL);
   `);
+  const providers = classroomProviders(db, options.database);
   const get = (sql: string, ...args: string[]) =>
     db.prepare(sql).get(...args) as Row | undefined;
   const all = (sql: string, ...args: string[]) =>
@@ -368,12 +370,22 @@ export function createClassroomServer(options: ServerOptions) {
         send(200, login(u));
         return;
       }
+      const proxy = route.match(
+        /^\/api\/classrooms\/([^/]+)\/ai\/v1\/(?:v1\/)?(chat\/completions|responses|messages|models)$/,
+      );
+      if (proxy) {
+        await providers.proxy(req, res, proxy[1], proxy[2], () =>
+          readBody(req),
+        );
+        return;
+      }
       const u = session(req);
       if (route === "/api/auth/me" && method === "GET") {
         send(200, { user: u });
         return;
       }
       if (route === "/api/auth/logout" && method === "POST") {
+        if(u.role==="student") providers.revokeStudent(u.id);
         run(
           "DELETE FROM sessions WHERE token=?",
           digest(req.headers.authorization!.slice(7)),
@@ -457,7 +469,35 @@ export function createClassroomServer(options: ServerOptions) {
                 ).map((r) => JSON.parse(r.report))
               : [],
           aiAvailable: Boolean(options.ai),
+          provider: providers.visible(id),
         });
+        return;
+      }
+      if (tail === "ai" && method === "POST") {
+        teacher(u);
+        const b = await readBody(req);
+        try {
+          send(200, { provider: providers.save(id, b) });
+        } catch (e) {
+          fail(400, e instanceof Error ? e.message : "AI 配置无效");
+        }
+        return;
+      }
+      if (tail === "ai/access" && method === "POST") {
+        if (u.role !== "student")
+          return fail(403, "仅学生可以领取课堂 AI 凭据");
+        if (c.archived) return fail(409, "课堂已关闭");
+        try {
+          send(200, providers.issue(id, u.id));
+        } catch (e) {
+          fail(409, e instanceof Error ? e.message : "课堂 AI 未开放");
+        }
+        return;
+      }
+      if (tail === "ai/revoke" && method === "POST") {
+        teacher(u);
+        providers.revoke(id);
+        send(200, { ok: true });
         return;
       }
       if (tail === "code" && method === "POST") {

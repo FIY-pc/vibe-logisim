@@ -39,6 +39,7 @@ tmp/
 /.classroom-data/
 *.sqlite-wal
 *.sqlite-shm
+*.ai-key
 
 # bun writes its own lock file; package-lock.json is the one in use
 bun.lock
