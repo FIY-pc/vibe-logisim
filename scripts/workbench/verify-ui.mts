@@ -38,16 +38,19 @@ try {
               "export const command=(v)=>globalThis.__command(v);export const desktop=()=>globalThis.__desktop??false;export const openPath=async()=>null;export const savePath=async()=>null;",
           }));
           builder.onLoad(
-            { filter: /@tauri-apps\/plugin-dialog\/.*\.js$/ },
+            { filter: /@tauri-apps[\\/]plugin-dialog[\\/].*\.js$/ },
             () => ({
               contents:
                 "export const open=async()=>globalThis.__pickedFiles??null;export const save=async()=>globalThis.__saveTarget??null;",
             }),
           );
-          builder.onLoad({ filter: /@tauri-apps\/api\/webview\.js$/ }, () => ({
-            contents:
-              "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{globalThis.__fileDropHandler=handler;return ()=>{if(globalThis.__fileDropHandler===handler)delete globalThis.__fileDropHandler}}});",
-          }));
+          builder.onLoad(
+            { filter: /@tauri-apps[\\/]api[\\/]webview\.js$/ },
+            () => ({
+              contents:
+                "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{globalThis.__fileDropHandler=handler;return ()=>{if(globalThis.__fileDropHandler===handler)delete globalThis.__fileDropHandler}}});",
+            }),
+          );
           builder.onLoad({ filter: /[\\/]shared[\\/]events\.ts$/ }, () => ({
             contents:
               "export const subscribeEvents=(fn)=>globalThis.__subscribe(fn);",
