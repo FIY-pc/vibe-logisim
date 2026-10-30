@@ -478,11 +478,28 @@ export function ProviderSettings(props: SettingsProps) {
                       <span className="ai-settings-badge">此对话</span>
                     )}
                   </strong>
-                  <p>{publicText(service.baseUrl)}</p>
+                  {!service.baseUrl.includes("/api/classrooms/") && (
+                    <p>{publicText(service.baseUrl)}</p>
+                  )}
                   <p>{publicText(service.model)}</p>
-                  {service.baseUrl.includes("/api/classrooms/") && <p className="muted">课堂提供 · 配置由教师管理，使用独立访问凭据</p>}
+                  {service.baseUrl.includes("/api/classrooms/") && (
+                    <p className="muted">
+                      课堂提供 · 配置由教师管理，使用独立访问凭据
+                    </p>
+                  )}
                 </div>
                 <div className="ai-service-actions">
+                  {service.baseUrl.includes("/api/classrooms/") && (
+                    <button
+                      disabled={locked}
+                      onClick={() => {
+                        setConfirmation({ kind: "remove", service });
+                        navigate("confirm");
+                      }}
+                    >
+                      移除
+                    </button>
+                  )}
                   <button
                     disabled={locked}
                     onClick={() => edit(service)}

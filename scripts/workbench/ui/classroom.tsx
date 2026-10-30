@@ -93,13 +93,14 @@ export async function verifyClassroomUI() {
   let tickSharing: (() => void) | undefined;
   let folderId = "folder-ui",
     agentBusy = false,
-    captureReads = 0;
+    captureReads = 0,
+    conversationId = "conversation-ui";
   (globalThis as any).setInterval = (
     callback: () => void,
     delay: number,
     ...args: any[]
   ) => {
-    if (delay === 30000) tickSharing = callback;
+    if (delay === 15000) tickSharing = callback;
     return originalInterval(callback, delay, ...args);
   };
   const doc: any = {
@@ -126,13 +127,18 @@ export async function verifyClassroomUI() {
   let selected: any = own,
     receivedProxyKey = "";
   (globalThis as any).__command = async (r: any) => {
-    if (r.op === "status") return { folder: { id: folderId } };
+    if (r.op === "status") return { folder: { id: folderId, path: "/work" } };
     if (r.op === "read") {
       captureReads++;
       return doc;
     }
     if (r.op === "source")
-      return { xml: '<project><circuit name="main"/></project>' };
+      return {
+        xml:
+          "<project><!--" +
+          "x".repeat(2300000) +
+          '--><circuit name="main"/></project>',
+      };
     if (r.op === "render") return { image };
     if (r.op === "agent") {
       if (r.method === "configure") {
@@ -144,12 +150,19 @@ export async function verifyClassroomUI() {
         selected = services.find((s) => s.id === r.args.id);
       return {
         workspaceKey: "folder-ui",
-        conversationId: "conversation-ui",
+        conversationId,
         busy: agentBusy,
         customProvider: { ...selected, apiKey: "must-not-upload" },
         services,
         messages: [
-          { id: "u1", type: "user", text: "进位为什么不对？" },
+          {
+            id: "u1",
+            type: "user",
+            text:
+              conversationId === "conversation-ui"
+                ? "进位为什么不对？"
+                : "另一段课堂对话",
+          },
           { id: "a1", type: "assistant", text: "检查真值表" },
         ],
       };
@@ -185,6 +198,7 @@ export async function verifyClassroomUI() {
     assert.ok(predicate(), container.textContent || "UI did not settle");
   };
   try {
+    localStorage.removeItem("vibe.classroom.session");
     sessionStorage.setItem(
       "vibe.classroom.session",
       JSON.stringify({ ...student, server }),
@@ -212,40 +226,23 @@ export async function verifyClassroomUI() {
       services.some((s) => s.id === "personal"),
       "teacher selection preserves personal services",
     );
-    await wait(() => !button("预览将共享的内容").disabled);
-    assert.equal(
-      (await api(`/classrooms/${room.id}`, teacher.token)).members[0].latest,
-      null,
-    );
-    await click("预览将共享的内容");
-    await wait(() => Boolean(container.querySelector(".classroom-preview")));
-    assert.ok(container.textContent?.includes("进位为什么不对"));
-    assert.equal(
-      container.querySelector(".classroom-preview img")?.getAttribute("src"),
-      image,
-    );
-    assert.equal(
-      (await api(`/classrooms/${room.id}`, teacher.token)).members[0].latest,
-      null,
-      "preview alone never uploads",
-    );
-    await act(async () =>
-      container
-        .querySelectorAll<HTMLButtonElement>('[role="checkbox"]')[1]
-        .click(),
-    );
-    await click("共享进度");
-    await wait(() => Boolean(container.textContent?.includes("进度已共享")));
+    await wait(() => Boolean(container.textContent?.includes("已自动同步")));
+    assert.ok(!container.textContent?.includes("自报完成"));
+    assert.ok(!container.textContent?.includes("进度说明"));
     const roster = await api(`/classrooms/${room.id}`, teacher.token),
       id = roster.members[0].latest.id;
     const saved = (
       await api(`/classrooms/${room.id}/submissions/${id}`, teacher.token)
     ).submission;
     assert.equal(saved.snapshot.messages.length, 2);
+    assert.ok(
+      saved.snapshot.xml.length > 2 * 1024 * 1024,
+      "realistic CPU circuits exceed the old 2 MB limit",
+    );
     assert.ok(!JSON.stringify(saved).includes("must-not-upload"));
     await wait(() => Boolean(tickSharing));
     await click("关闭课堂管理");
-    assert.ok(button("课堂管理").textContent?.includes("共享中"));
+    assert.ok(button("课堂管理").textContent?.includes("自动同步"));
     await act(async () => {
       tickSharing!();
       await new Promise((r) => setTimeout(r, 40));
@@ -263,7 +260,7 @@ export async function verifyClassroomUI() {
       await new Promise((r) => setTimeout(r, 40));
     });
     assert.ok(
-      button("课堂管理").textContent?.includes("共享中"),
+      button("课堂管理").textContent?.includes("自动同步"),
       "running AI turn waits without disabling sharing",
     );
     agentBusy = false;
@@ -277,6 +274,17 @@ export async function verifyClassroomUI() {
       2,
       "explicit sharing survives closing the dialog",
     );
+    conversationId = "another-conversation";
+    await act(async () => {
+      tickSharing!();
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    assert.equal(
+      (await api(`/classrooms/${room.id}`, teacher.token)).members[0]
+        .submissionCount,
+      3,
+      "new conversations in the same classroom folder sync automatically",
+    );
     const beforeSwitch = captureReads;
     folderId = "other-folder";
     await act(async () => {
@@ -288,9 +296,14 @@ export async function verifyClassroomUI() {
       beforeSwitch,
       "a switched workspace is rejected before reading another document",
     );
-    assert.ok(!button("课堂管理").textContent?.includes("共享中"));
+    await click("课堂管理");
+    await wait(() =>
+      Boolean(container.textContent?.includes("本课堂同步已暂停")),
+    );
+    folderId = "folder-ui";
     await act(async () => root.unmount());
     root = createRoot(container);
+    localStorage.removeItem("vibe.classroom.session");
     sessionStorage.setItem(
       "vibe.classroom.session",
       JSON.stringify({ ...teacher, server }),
@@ -306,6 +319,8 @@ export async function verifyClassroomUI() {
     );
     await click("课堂管理");
     await wait(() => Boolean(container.querySelector(".classroom-teacher")));
+    await wait(() => !button("修改选中配置").disabled);
+    await click("修改选中配置");
     const providerForm = container.querySelector<HTMLFormElement>(
       ".classroom-provider-form",
     )!;
@@ -323,13 +338,31 @@ export async function verifyClassroomUI() {
       );
     });
     await wait(() =>
-      Boolean(container.textContent?.includes("课堂 AI 配置已保存")),
+      Boolean(container.textContent?.includes("模型配置已保存到教师模型库")),
     );
     assert.equal(
-      container.querySelector<HTMLInputElement>(
-        '.classroom-provider-form input[name="apiKey"]',
-      )!.value,
-      "",
+      container.querySelector('.classroom-provider-form input[name="apiKey"]'),
+      null,
+      "successful save closes the credential form",
+    );
+    const classroomForm = container.querySelector<HTMLFormElement>(
+      ".classroom-settings-form",
+    )!;
+    const titleField = classroomForm.querySelector<HTMLInputElement>(
+      'input[name="title"]',
+    )!;
+    titleField.value = "更新后的课堂";
+    await act(async () =>
+      classroomForm.dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true }),
+      ),
+    );
+    await wait(() =>
+      Boolean(container.textContent?.includes("课堂信息已更新")),
+    );
+    assert.equal(
+      (await api(`/classrooms/${room.id}`, teacher.token)).classroom.title,
+      "更新后的课堂",
     );
     const originalCode = container.querySelector(
       ".classroom-room-heading code",
@@ -343,7 +376,7 @@ export async function verifyClassroomUI() {
     await wait(() => !button("更新课堂码").disabled);
     await click("张同学");
     await wait(() =>
-      Boolean(container.textContent?.includes("进位为什么不对")),
+      Boolean(container.textContent?.includes("另一段课堂对话")),
     );
     assert.equal(
       container.querySelector(".classroom-review img")?.getAttribute("src"),
@@ -358,6 +391,7 @@ export async function verifyClassroomUI() {
     );
     await act(async () => root.unmount());
     root = createRoot(container);
+    localStorage.removeItem("vibe.classroom.session");
     sessionStorage.setItem(
       "vibe.classroom.session",
       JSON.stringify({ ...teacher, token: "0".repeat(64), server }),
@@ -384,12 +418,13 @@ export async function verifyClassroomUI() {
       "expired-session recovery does not leave login busy",
     );
     console.log(
-      "PASS: classroom preview requires explicit sharing, strips provider credentials, persists circuit/conversation evidence, and teacher review/AI analysis use the real classroom API",
+      "PASS: automatic classroom sync handles large circuits and conversation switches, excludes provider secrets, supports classroom edits and reusable teacher models, and provides evidence-based AI reports",
     );
   } finally {
     await act(async () => root.unmount());
     container.remove();
     sessionStorage.removeItem("vibe.classroom.session");
+    localStorage.removeItem("vibe.classroom.session");
     (globalThis as any).__command = oldCommand;
     globalThis.setInterval = originalInterval;
     await service.close();

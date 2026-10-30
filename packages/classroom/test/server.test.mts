@@ -242,7 +242,7 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
     await request(
       `/classrooms/${c.id}/submissions`,
       "POST",
-      { id, snapshot: { ...snapshot, progress: 90 } },
+      { id, snapshot: { ...snapshot, revision: "r2" } },
       s.token,
       409,
     );
@@ -328,6 +328,28 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
     assert.ok(prompts[0].includes("进位为什么错误"));
     assert.ok(!prompts[0].includes("student-2"));
     assert.ok(!prompts[0].includes("test-provider-key"));
+    const requestsBefore = prompts.length;
+    const preview = await request(
+      `/classrooms/${c.id}/analysis/preview`,
+      "POST",
+      { studentId: s.user.id },
+      t.token,
+    );
+    assert.equal(preview.cached, true);
+    assert.equal(preview.maxOutputTokens, 1800);
+    assert.ok(preview.estimatedInputTokens > 0);
+    const cached = await request(
+      `/classrooms/${c.id}/analysis`,
+      "POST",
+      { studentId: s.user.id },
+      t.token,
+    );
+    assert.equal(cached.report.id, report.id);
+    assert.equal(
+      prompts.length,
+      requestsBefore,
+      "preview and identical reports do not call the model again",
+    );
     await request(`/classrooms/${c.id}`, "PATCH", { archived: true }, t.token);
     await request(
       `/classrooms/${c.id}/submissions`,

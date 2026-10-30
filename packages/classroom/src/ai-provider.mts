@@ -13,7 +13,9 @@ import {
   validate,
   normaliseBaseUrl,
 } from "../../agent-runtime/src/models/validate.mts";
-import type { ClassroomProvider } from "./types.ts";
+import type { ClassroomProvider, TeacherProvider } from "./types.ts";
+import { publicText } from "../../agent-runtime/src/models/public-fields.mts";
+import { randomUUID } from "node:crypto";
 
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const endpoints: Record<string, string> = {
@@ -23,6 +25,7 @@ const endpoints: Record<string, string> = {
 };
 export function classroomProviders(db: DatabaseSync, database: string) {
   db.exec(`CREATE TABLE IF NOT EXISTS classroom_providers(class_id TEXT PRIMARY KEY REFERENCES classrooms(id),config TEXT NOT NULL,secret TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS teacher_providers(id TEXT PRIMARY KEY,teacher_id TEXT NOT NULL REFERENCES users(id),config TEXT NOT NULL,secret TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS classroom_provider_tokens(token TEXT PRIMARY KEY,class_id TEXT NOT NULL REFERENCES classrooms(id),student_id TEXT NOT NULL REFERENCES users(id),UNIQUE(class_id,student_id));`);
   let key: Buffer;
   if (database === ":memory:") key = randomBytes(32);
@@ -33,8 +36,13 @@ export function classroomProviders(db: DatabaseSync, database: string) {
     } catch (e: any) {
       if (e.code !== "ENOENT") throw e;
       if (
-        (db.prepare("SELECT count(*) n FROM classroom_providers").get() as any)
-          .n
+        (
+          db
+            .prepare(
+              "SELECT (SELECT count(*) FROM classroom_providers)+(SELECT count(*) FROM teacher_providers) n",
+            )
+            .get() as any
+        ).n
       )
         throw new Error("课堂 AI 加密密钥缺失，请从备份恢复 .ai-key 文件");
       key = randomBytes(32);
@@ -61,11 +69,116 @@ export function classroomProviders(db: DatabaseSync, database: string) {
       { config: string; secret: string } | undefined;
   const visible = (id: string): ClassroomProvider | null => {
     const r = row(id);
-    return r ? JSON.parse(r.config) : null;
+    return r ? safe(JSON.parse(r.config), decrypt(r.secret)) : null;
   };
+  const safe = (c: ClassroomProvider, secret: string): ClassroomProvider => ({
+    name: publicText(c.name, secret),
+    baseUrl: publicText(c.baseUrl, secret),
+    api: c.api,
+    model: publicText(c.model, secret),
+    effort: c.effort,
+    contextWindow: c.contextWindow,
+    vision: c.vision,
+    enabled: c.enabled,
+    updatedAt: c.updatedAt,
+  });
+  // Existing classroom configurations become reusable teacher-owned entries without exposing keys.
+  db.exec(
+    `INSERT OR IGNORE INTO teacher_providers SELECT p.class_id,c.teacher_id,p.config,p.secret FROM classroom_providers p JOIN classrooms c ON c.id=p.class_id;`,
+  );
   const active = new Map<string, number>();
   return {
     visible,
+    remember(id: string, teacherId: string) {
+      const r = row(id);
+      if (r)
+        db.prepare(
+          "INSERT INTO teacher_providers VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config,secret=excluded.secret",
+        ).run(id, teacherId, r.config, r.secret);
+    },
+    setEnabled(id: string, enabled: boolean) {
+      const r = row(id);
+      if (!r) throw new Error("课堂尚未配置模型");
+      const c = JSON.parse(r.config);
+      db.prepare(
+        "UPDATE classroom_providers SET config=? WHERE class_id=?",
+      ).run(
+        JSON.stringify({ ...c, enabled, updatedAt: new Date().toISOString() }),
+        id,
+      );
+      return visible(id);
+    },
+    list(teacherId: string): TeacherProvider[] {
+      return (
+        db
+          .prepare(
+            "SELECT * FROM teacher_providers WHERE teacher_id=? ORDER BY rowid DESC",
+          )
+          .all(teacherId) as any[]
+      ).map((r) => ({
+        ...safe(JSON.parse(r.config), decrypt(r.secret)),
+        id: r.id,
+      }));
+    },
+    saveTemplate(teacherId: string, input: any) {
+      const previous = input.id
+        ? (db
+            .prepare(
+              "SELECT * FROM teacher_providers WHERE id=? AND teacher_id=?",
+            )
+            .get(input.id, teacherId) as any)
+        : null;
+      if (input.id && !previous) throw new Error("模型配置不存在或无权修改");
+      const old = previous ? JSON.parse(previous.config) : null;
+      if (!endpoints[input.api]) throw new Error("接口协议不支持");
+      const config = validate(input, {
+        storedApiKey:
+          previous &&
+          old.baseUrl === normaliseBaseUrl(input.baseUrl) &&
+          old.api === input.api
+            ? decrypt(previous.secret)
+            : null,
+      });
+      const { apiKey, models: _models, ...rest } = config;
+      const value: ClassroomProvider = {
+        ...rest,
+        api: input.api,
+        vision: input.vision === true,
+        enabled: true,
+        updatedAt: new Date().toISOString(),
+      };
+      const id = previous?.id || randomUUID();
+      db.prepare(
+        "INSERT INTO teacher_providers VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config,secret=excluded.secret",
+      ).run(id, teacherId, JSON.stringify(value), encrypt(apiKey));
+      return { ...value, id };
+    },
+    assign(
+      id: string,
+      teacherId: string,
+      providerId: string,
+      enabled: boolean,
+    ) {
+      const template = db
+        .prepare("SELECT * FROM teacher_providers WHERE id=? AND teacher_id=?")
+        .get(providerId, teacherId) as any;
+      if (!template) throw new Error("模型配置不存在或无权使用");
+      const config = JSON.parse(template.config);
+      // Validate historical entries too, including keys accidentally placed in model fields.
+      validate({ ...config, apiKey: decrypt(template.secret) });
+      db.prepare(
+        "INSERT INTO classroom_providers VALUES(?,?,?) ON CONFLICT(class_id) DO UPDATE SET config=excluded.config,secret=excluded.secret",
+      ).run(
+        id,
+        JSON.stringify({
+          ...config,
+          enabled,
+          updatedAt: new Date().toISOString(),
+        }),
+        template.secret,
+      );
+      return visible(id);
+    },
     save(id: string, input: any) {
       if (typeof input.enabled !== "boolean")
         throw new Error("请指定是否向学生开放");

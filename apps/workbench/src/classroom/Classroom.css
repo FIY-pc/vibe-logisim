@@ -172,6 +172,28 @@
   display: flex;
   gap: 10px;
   margin-top: 16px;
+  flex-wrap: wrap;
+}
+.classroom-config {
+  border: 1px solid var(--border, #ddd);
+  border-radius: 8px;
+  padding: 14px;
+}
+.classroom-config > summary {
+  font-weight: 600;
+}
+.classroom-settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 20px;
+  max-width: 700px;
+}
+.classroom-budget {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--panel, #f6f8fb);
+  font-size: 13px;
+  line-height: 1.7;
 }
 .classroom-dialog details {
   margin: 10px 0;

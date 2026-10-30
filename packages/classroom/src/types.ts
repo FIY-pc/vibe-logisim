@@ -34,8 +34,9 @@ export interface WorkSnapshot {
   conversationId: string | null;
   messages: SharedMessage[];
   status: "working" | "submitted";
-  progress: number;
-  note: string;
+  /** Accepted only for reading historical records; new clients do not self-report progress. */
+  progress?: number;
+  note?: string;
 }
 export interface SubmissionSummary {
   id: string;
@@ -43,7 +44,7 @@ export interface SubmissionSummary {
   createdAt: string;
   name: string;
   status: "working" | "submitted";
-  progress: number;
+  progress?: number;
   revision: string;
   components: number;
   wires: number;
@@ -69,6 +70,21 @@ export interface AnalysisReport {
   evidence: string[];
   coveredStudents: number;
   totalStudents: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedInputTokens?: number;
+  sourceHash?: string;
+}
+export interface AnalysisPreview {
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  includedStudents: number;
+  totalStudents: number;
+  truncated: boolean;
+  cached: boolean;
+}
+export interface TeacherProvider extends ClassroomProvider {
+  id: string;
 }
 export interface ClassroomDetail {
   provider?: ClassroomProvider | null;

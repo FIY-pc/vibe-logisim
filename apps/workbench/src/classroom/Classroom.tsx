@@ -10,22 +10,22 @@ import {
 import Markdown from "react-markdown";
 import { DialogClose, useModal } from "../shared/Dialog";
 import { Select } from "../shared/Select";
-import { Checkbox } from "../shared/Checkbox";
 import { useView } from "../app/hooks";
 import {
   classroomRequest,
   serverAddress,
   type ClassroomSession,
 } from "./client";
-import { prepareWork, type PreparedWork } from "./sharing";
-import { useSharing } from "./useSharing";
+import { useSharing, savedClassroom } from "./useSharing";
 import { ClassroomAI } from "./ClassroomAI";
+import { RoomSettings } from "./RoomSettings";
 import type {
   Classroom,
   ClassroomDetail,
   Submission,
   SubmissionSummary,
   AnalysisReport,
+  AnalysisPreview,
 } from "../../../../packages/classroom/src/types";
 import "./Classroom.css";
 
@@ -34,7 +34,11 @@ const time = (value: string) => new Date(value).toLocaleString();
 const sessionKey = "vibe.classroom.session";
 function savedSession(): ClassroomSession | null {
   try {
-    return JSON.parse(sessionStorage.getItem(sessionKey) || "null");
+    return JSON.parse(
+      localStorage.getItem(sessionKey) ||
+        sessionStorage.getItem(sessionKey) ||
+        "null",
+    );
   } catch {
     return null;
   }
@@ -44,12 +48,13 @@ function savedSession(): ClassroomSession | null {
 export function ClassroomEntry() {
   const [open, setOpen] = useState(false),
     [session, setSession] = useState<ClassroomSession | null>(savedSession);
-  const sharing = useSharing();
+  const { doc } = useView();
+  const sharing = useSharing(session, doc?.id);
   const changeSession = (next: ClassroomSession | null) => {
-    sharing.stop();
     setSession(next);
-    if (next) sessionStorage.setItem(sessionKey, JSON.stringify(next));
-    else sessionStorage.removeItem(sessionKey);
+    sessionStorage.removeItem(sessionKey);
+    if (next) localStorage.setItem(sessionKey, JSON.stringify(next));
+    else localStorage.removeItem(sessionKey);
   };
   return (
     <>
@@ -59,9 +64,10 @@ export function ClassroomEntry() {
         }
         onClick={() => setOpen(true)}
         aria-label="课堂管理"
+        title={sharing.status || "课堂管理"}
       >
         <GraduationCap size={16} />
-        <span>课堂{sharing.binding ? " · 共享中" : ""}</span>
+        <span>课堂{sharing.binding ? " · 自动同步" : ""}</span>
       </button>
       {open && (
         <ClassroomDialog
@@ -163,7 +169,11 @@ function ClassroomDialog({
           );
         await call("/auth/me");
         const list = await call<{ classrooms: Classroom[] }>("/classrooms");
-        const first = list.classrooms[0]?.id || "";
+        const remembered = savedClassroom(session);
+        const first =
+          list.classrooms.find((c) => c.id === remembered)?.id ||
+          list.classrooms[0]?.id ||
+          "";
         const data = first
           ? await call<ClassroomDetail>(`/classrooms/${first}`)
           : null;
@@ -228,7 +238,7 @@ function ClassroomDialog({
           <p>
             {session
               ? `${session.user.name} · ${session.user.role === "teacher" ? "教师端" : "学生端"}`
-              : "连接课堂，与教师共享学习进度"}
+              : "连接课堂，同步电路与学习记录"}
           </p>
         </div>
         <DialogClose label="关闭课堂管理" onClick={onClose} />
@@ -257,7 +267,6 @@ function ClassroomDialog({
               disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  sharing.stop();
                   try {
                     await api("/auth/logout", "POST", {});
                   } finally {
@@ -306,7 +315,7 @@ function ClassroomDialog({
                     setNotice(
                       session.user.role === "teacher"
                         ? "课堂已创建，请将课堂码发给学生"
-                        : "已加入课堂。预览后可共享选定电路和对话记录。",
+                        : "已加入课堂。当前课堂会自动同步绑定工作文件夹的电路和 AI 对话。",
                     );
                   })
                 }
@@ -374,17 +383,35 @@ function ClassroomDialog({
                       </button>
                     )}
                   </div>
-                  <ClassroomAI
-                    key={`${selected}:${detail.provider?.updatedAt || "none"}`}
-                    classroomId={selected}
-                    provider={detail.provider}
-                    session={session}
-                    busy={busy}
-                    api={api}
-                    run={run}
-                    refresh={refresh}
-                    notify={setNotice}
-                  />
+                  <details className="classroom-config">
+                    <summary>
+                      {session.user.role === "teacher"
+                        ? "课堂设置与 AI 服务"
+                        : "AI 服务选择"}
+                    </summary>
+                    {session.user.role === "teacher" && (
+                      <RoomSettings
+                        classroom={detail.classroom}
+                        busy={busy}
+                        run={run}
+                        api={api}
+                        refresh={refresh}
+                        notify={setNotice}
+                      />
+                    )}
+                    <ClassroomAI
+                      key={`${selected}:${detail.provider?.updatedAt || "none"}`}
+                      classroomId={selected}
+                      classroomTitle={detail.classroom.title}
+                      provider={detail.provider}
+                      session={session}
+                      busy={busy}
+                      api={api}
+                      run={run}
+                      refresh={refresh}
+                      notify={setNotice}
+                    />
+                  </details>
                   {detail.classroom.task && (
                     <section className="classroom-task">
                       <h4>课堂任务</h4>
@@ -427,7 +454,7 @@ function ClassroomDialog({
                   <p>
                     {session.user.role === "teacher"
                       ? "创建课堂、发布电路任务，然后把课堂码分享给学生。"
-                      : "输入教师提供的课堂码。加入后，你可以预览并共享电路及 AI 交互记录。"}
+                      : "输入教师提供的课堂码。加入后，当前课堂会自动同步绑定工作文件夹的电路和 AI 交互记录。"}
                   </p>
                 </div>
               )}
@@ -475,6 +502,7 @@ function Login({
           required
           defaultValue={
             localStorage.getItem("vibe.classroom.server") ||
+            import.meta.env?.VITE_CLASSROOM_SERVER ||
             "http://127.0.0.1:8810"
           }
           placeholder="https://classroom.example.edu"
@@ -630,159 +658,74 @@ function StudentRoom({
   notify: (text: string) => void;
 }) {
   const { doc } = useView();
-  const [prepared, setPrepared] = useState<PreparedWork | null>(null),
-    [include, setInclude] = useState(true),
-    [auto, setAuto] = useState(false),
-    [progress, setProgress] = useState(0),
-    [note, setNote] = useState("");
   const latest = detail.members[0]?.latest;
-  const submit = (status: "working" | "submitted") =>
-    void run(async () => {
-      if (!prepared) throw new Error("请先预览共享内容");
-      sharing.stop();
-      await api(`/classrooms/${detail.classroom.id}/submissions`, "POST", {
-        id: crypto.randomUUID(),
-        snapshot: { ...prepared.snapshot, status, progress, note },
-      });
-      if (auto && status === "working")
-        sharing.start({
-          session,
-          classroomId: detail.classroom.id,
-          target: prepared.target,
-          progress,
-          note,
-          fingerprint: JSON.stringify({
-            ...prepared.snapshot,
-            status,
-            progress,
-            note,
-          }),
-        });
-      else sharing.stop();
-      setPrepared(null);
-      await refresh();
-      notify(
-        status === "submitted"
-          ? "电路已提交，自动共享已停止"
-          : "进度已共享，教师可以查看本次电路和选中的交互记录",
-      );
-    });
+  useEffect(() => {
+    if (!detail.classroom.archived) void sharing.select(detail.classroom.id);
+  }, [detail.classroom.id, detail.classroom.archived]);
   return (
     <section className="classroom-student">
-      <h4>我的学习进度</h4>
-      {latest ? (
-        <p>
-          最近共享：{time(latest.createdAt)} ·{" "}
-          {latest.status === "submitted" ? "已提交" : "进行中"} · 自报进度{" "}
-          {latest.progress}%
-        </p>
-      ) : (
-        <p>还没有共享记录。教师只能看到你主动共享的内容。</p>
-      )}
+      <h4>课堂自动同步</h4>
       <p>
-        选定电路：<strong>{doc?.name || "请先打开电路文件"}</strong>
+        本课堂会每 15 秒检查变化，自动同步当前电路和当前 AI
+        对话；关闭课堂窗口后继续同步。
       </p>
-      <label className="classroom-check">
-        <Checkbox
-          checked={include}
-          onCheckedChange={(value) => {
-            setInclude(value);
-            setPrepared(null);
-          }}
-        />
-        同时共享当前文件夹的当前 AI 对话（问答与工具结果）
-      </label>
-      <label>
-        自报完成进度（%）
-        <input
-          aria-label="完成进度"
-          type="number"
-          min={0}
-          max={100}
-          value={progress}
-          onChange={(e) => setProgress(Number(e.target.value))}
-        />
-      </label>
-      <label>
-        进度说明
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={2000}
-          placeholder="已完成哪些部分、遇到什么问题？"
-        />
-      </label>
-      <label className="classroom-check">
-        <Checkbox checked={auto} onCheckedChange={setAuto} />
-        共享后每 30 秒检查变化；关闭此窗口后继续共享选定电路和对话
-      </label>
+      <p>
+        当前电路：<strong>{doc?.name || "请先打开电路文件"}</strong>
+      </p>
+      <p role="status">{sharing.status || "等待同步"}</p>
+      {latest && (
+        <p className="muted">
+          最近记录：{time(latest.createdAt)} ·{" "}
+          {latest.status === "submitted" ? "已提交" : "学习中"}
+        </p>
+      )}
       <p className="muted">
-        切换工作文件夹或 AI 对话会暂停自动共享。API
-        密钥、模型配置、其他文件和其他对话不会上传。自报进度不等同于仿真验证结果。
+        只同步绑定的工作文件夹。切换 AI
+        对话会自动跟随；切换工作文件夹时暂停，可在此重新绑定。个人 API
+        密钥和模型配置不会上传。过长的问答与工具输出会截断。
       </p>
-      <button
-        disabled={busy || !doc || detail.classroom.archived}
-        onClick={() =>
-          void run(async () => {
-            setPrepared(await prepareWork(doc!.id, include));
-          })
-        }
-      >
-        预览将共享的内容
-      </button>
-      {prepared && (
-        <div className="classroom-preview">
-          <h4>共享预览 · {prepared.snapshot.name}</h4>
-          {prepared.snapshot.image && (
-            <img
-              className="classroom-circuit-image"
-              src={prepared.snapshot.image}
-              alt="将共享的电路图"
-            />
-          )}
-          <p>
-            {prepared.snapshot.components} 个元件 · {prepared.snapshot.wires}{" "}
-            条导线 · {prepared.snapshot.messages.length} 条交互记录
-          </p>
-          <details>
-            <summary>查看电路 XML</summary>
-            <pre>{prepared.snapshot.xml}</pre>
-          </details>
-          <details>
-            <summary>查看 AI 交互记录</summary>
-            {prepared.snapshot.messages.map((m) => (
-              <article key={m.id}>
-                <strong>
-                  {m.type === "user"
-                    ? "学生"
-                    : m.type === "assistant"
-                      ? "AI"
-                      : "工具"}
-                </strong>
-                <p>{m.text}</p>
-              </article>
-            ))}
-          </details>
-          <div className="classroom-actions">
-            <button
-              className="primary"
-              disabled={busy || detail.classroom.archived}
-              onClick={() => submit("working")}
-            >
-              <Send size={14} />
-              共享进度
-            </button>
-            <button
-              disabled={busy || detail.classroom.archived}
-              onClick={() => submit("submitted")}
-            >
-              提交电路
-            </button>
-          </div>
+      {detail.classroom.archived ? (
+        <p>课堂已关闭，暂停同步与提交。</p>
+      ) : (
+        <div className="classroom-actions">
+          <button
+            disabled={busy || !doc}
+            onClick={() =>
+              void run(async () => {
+                await sharing.syncNow();
+                await refresh();
+              })
+            }
+          >
+            立即同步
+          </button>
+          <button
+            className="primary"
+            disabled={busy || !doc}
+            onClick={() =>
+              void run(async () => {
+                await sharing.syncNow(true);
+                await refresh();
+                notify("电路已提交；后续修改仍会自动同步。");
+              })
+            }
+          >
+            <Send size={14} />
+            提交电路
+          </button>
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await sharing.select(detail.classroom.id, true);
+                notify("已绑定当前工作文件夹，自动同步已启用。");
+              })
+            }
+          >
+            绑定当前工作文件夹
+          </button>
         </div>
       )}
-      {sharing.status && <p role="status">{sharing.status}</p>}
-      {sharing.binding && <button onClick={sharing.stop}>停止自动共享</button>}
     </section>
   );
 }
@@ -805,6 +748,37 @@ function TeacherRoom({
     [submission, setSubmission] = useState<Submission | null>(null),
     [question, setQuestion] = useState(""),
     [report, setReport] = useState<AnalysisReport | null>(null);
+  const [preview, setPreview] = useState<AnalysisPreview | null>(null);
+  const evidenceVersion = detail.members
+    .map((m) => m.latest?.id || "none")
+    .join(":");
+  useEffect(() => {
+    if (!detail.aiAvailable) return;
+    let current = true;
+    setPreview(null);
+    const timer = setTimeout(() => {
+      void api<AnalysisPreview>(
+        `/classrooms/${detail.classroom.id}/analysis/preview`,
+        "POST",
+        { question: question || undefined, studentId: student || undefined },
+      )
+        .then((p) => {
+          if (current) setPreview(p);
+        })
+        .catch(() => {});
+    }, 500);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [
+    detail.classroom.id,
+    detail.classroom.task,
+    detail.classroom.rubric,
+    evidenceVersion,
+    student,
+    question,
+  ]);
   const members = detail.members,
     submitted = members.filter((m) => m.latest?.status === "submitted").length;
   const loadStudent = (studentId: string) =>
@@ -840,8 +814,8 @@ function TeacherRoom({
         </div>
       </div>
       <p className="muted">
-        每 15 秒刷新。进度由学生自报；未共享不代表未学习。点击学生查看电路和 AI
-        交互证据。
+        每 15 秒刷新。点击学生查看自动同步的电路和 AI
+        交互记录；未同步不代表未学习。
       </p>
       <div className="classroom-table">
         <table>
@@ -849,7 +823,7 @@ function TeacherRoom({
             <tr>
               <th>学生</th>
               <th>学号</th>
-              <th>状态 / 进度</th>
+              <th>学习状态</th>
               <th>元件 / 导线</th>
               <th>提问 / 工具错误</th>
               <th>最近共享</th>
@@ -872,7 +846,7 @@ function TeacherRoom({
                 <td>{m.user.studentNo}</td>
                 <td>
                   {m.latest
-                    ? `${m.latest.status === "submitted" ? "已提交" : "进行中"} · ${m.latest.progress}%`
+                    ? `${m.latest.status === "submitted" ? "已提交" : "进行中"}`
                     : "尚未共享"}
                 </td>
                 <td>
@@ -912,7 +886,7 @@ function TeacherRoom({
               value={submission?.id || history[0].id}
               options={history.map((s) => ({
                 value: s.id,
-                label: `${time(s.createdAt)} · ${s.progress}% · ${s.name}`,
+                label: `${time(s.createdAt)} · ${s.name}`,
               }))}
               onChange={(id) =>
                 void run(async () =>
@@ -932,8 +906,7 @@ function TeacherRoom({
           {submission && (
             <>
               <p>
-                提交编号：<code>{submission.id}</code> ·{" "}
-                {submission.snapshot.note}
+                提交编号：<code>{submission.id}</code>
               </p>
               {submission.snapshot.image && (
                 <img
@@ -976,6 +949,18 @@ function TeacherRoom({
           maxLength={2000}
           placeholder="例如：哪些学生在进位逻辑上遇到困难？他们怎样使用 AI？下一节课应重点讲什么？"
         />
+        <p className="muted">
+          仅点击生成时调用模型。全班使用问答摘要与电路统计；选中学生后补充较详细的问答和电路摘录。
+        </p>
+        {preview && (
+          <p className="classroom-budget">
+            {preview.cached
+              ? "已有相同证据和问题的报告，将直接复用，不再调用模型。"
+              : `本次预计输入约 ${preview.estimatedInputTokens.toLocaleString()} tokens，最多输出 ${preview.maxOutputTokens.toLocaleString()} tokens（估算值，实际以接口返回为准）。`}{" "}
+            覆盖 {preview.includedStudents}/{preview.totalStudents} 位学生。
+            {preview.truncated && "部分记录已按预算摘录。"}
+          </p>
+        )}
         <button
           className="primary"
           disabled={busy || !detail.aiAvailable}
@@ -995,7 +980,7 @@ function TeacherRoom({
           }
         >
           <Sparkles size={14} />
-          {busy ? "处理中…" : "生成分析报告"}
+          {busy ? "处理中…" : preview?.cached ? "查看已有报告" : "生成分析报告"}
         </button>
         {!detail.aiAvailable && (
           <p className="muted">请由服务管理员配置课堂 AI 接口、密钥和模型。</p>
@@ -1017,6 +1002,10 @@ function Report({ report }: { report: AnalysisReport }) {
       <p>
         {time(report.createdAt)} · {report.model} · 覆盖{" "}
         {report.coveredStudents}/{report.totalStudents} 位学生
+        {report.inputTokens !== undefined &&
+          ` · 输入 ${report.inputTokens} tokens`}
+        {report.outputTokens !== undefined &&
+          ` · 输出 ${report.outputTokens} tokens`}
       </p>
       <Markdown skipHtml components={{ img: () => null }}>
         {report.text}
