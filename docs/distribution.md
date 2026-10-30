@@ -50,6 +50,8 @@ Java 桥接以 JAR 分发，避免“完整运行时摘要 + Java 包目录”�
 
 `test:desktop` 解压便携包到含空格与非 ASCII 字符的路径，在独立状态中启动实际 Tauri 窗口。它检查前端挂载、IPC、原生逻辑门测试、内置运行时启动和关闭重开后的草稿身份。Linux 需要显示服务，CI 使用 Xvfb。这些检查不发送远端模型请求，也不代替交互体验检查。
 
+Windows CI 还运行 `node scripts/workbench/verify-portable-paths.mts`，通过 Windows 自带 ZIP 组件将便携包解压到较深的目录，检查内部路径预算及 JAR 分发，再验证解压后的应用启动、仿真与重启恢复。
+
 Windows CI 另从相同源码构建版本 `0.0.0` 的安装器，实际安装、升级到当前版本、重开、检查草稿恢复并卸载。检查使用正常资源查找，不覆盖用户的安装与状态目录。此脚本只能在临时 Windows CI 环境运行：
 
 ```sh

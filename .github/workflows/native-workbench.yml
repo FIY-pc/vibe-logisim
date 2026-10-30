@@ -165,6 +165,9 @@ jobs:
       - name: Launch Windows portable desktop and verify restart recovery
         if: runner.os == 'Windows'
         run: npm run test:desktop
+      - name: Verify Windows portable extraction path budget
+        if: runner.os == 'Windows'
+        run: node scripts/workbench/verify-portable-paths.mts
       - name: Build Windows installer upgrade baseline
         if: runner.os == 'Windows'
         run: node scripts/workbench/package.mts --upgrade-baseline
