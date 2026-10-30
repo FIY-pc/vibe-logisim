@@ -611,6 +611,12 @@ function StudentRoom({
           target: prepared.target,
           progress,
           note,
+          fingerprint: JSON.stringify({
+            ...prepared.snapshot,
+            status,
+            progress,
+            note,
+          }),
         });
       else sharing.stop();
       setPrepared(null);

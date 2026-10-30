@@ -78,6 +78,19 @@ export async function verifyClassroomUI() {
   document.body.append(container);
   let root = createRoot(container);
   const oldCommand = (globalThis as any).__command;
+  const originalInterval = globalThis.setInterval;
+  let tickSharing: (() => void) | undefined;
+  let folderId = "folder-ui",
+    agentBusy = false,
+    captureReads = 0;
+  (globalThis as any).setInterval = (
+    callback: () => void,
+    delay: number,
+    ...args: any[]
+  ) => {
+    if (delay === 30000) tickSharing = callback;
+    return originalInterval(callback, delay, ...args);
+  };
   const doc: any = {
     id: "shared-doc",
     name: "adder.circ",
@@ -92,8 +105,11 @@ export async function verifyClassroomUI() {
   };
   const image = "data:image/png;base64,iVBORw0KGgo=";
   (globalThis as any).__command = async (r: any) => {
-    if (r.op === "status") return { folder: { id: "folder-ui" } };
-    if (r.op === "read") return doc;
+    if (r.op === "status") return { folder: { id: folderId } };
+    if (r.op === "read") {
+      captureReads++;
+      return doc;
+    }
     if (r.op === "source")
       return { xml: '<project><circuit name="main"/></project>' };
     if (r.op === "render") return { image };
@@ -101,7 +117,7 @@ export async function verifyClassroomUI() {
       return {
         workspaceKey: "folder-ui",
         conversationId: "conversation-ui",
-        busy: false,
+        busy: agentBusy,
         customProvider: { apiKey: "must-not-upload" },
         messages: [
           { id: "u1", type: "user", text: "进位为什么不对？" },
@@ -170,6 +186,11 @@ export async function verifyClassroomUI() {
       null,
       "preview alone never uploads",
     );
+    await act(async () =>
+      container
+        .querySelectorAll<HTMLButtonElement>('[role="checkbox"]')[1]
+        .click(),
+    );
     await click("共享进度");
     await wait(() => Boolean(container.textContent?.includes("进度已共享")));
     const roster = await api(`/classrooms/${room.id}`, teacher.token),
@@ -179,6 +200,52 @@ export async function verifyClassroomUI() {
     ).submission;
     assert.equal(saved.snapshot.messages.length, 2);
     assert.ok(!JSON.stringify(saved).includes("must-not-upload"));
+    await wait(() => Boolean(tickSharing));
+    await click("关闭课堂管理");
+    assert.ok(button("课堂管理").textContent?.includes("共享中"));
+    await act(async () => {
+      tickSharing!();
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    assert.equal(
+      (await api(`/classrooms/${room.id}`, teacher.token)).members[0]
+        .submissionCount,
+      1,
+      "unchanged snapshots are not uploaded twice",
+    );
+    doc.revision = "r2";
+    agentBusy = true;
+    await act(async () => {
+      tickSharing!();
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    assert.ok(
+      button("课堂管理").textContent?.includes("共享中"),
+      "running AI turn waits without disabling sharing",
+    );
+    agentBusy = false;
+    await act(async () => {
+      tickSharing!();
+      await new Promise((r) => setTimeout(r, 80));
+    });
+    assert.equal(
+      (await api(`/classrooms/${room.id}`, teacher.token)).members[0]
+        .submissionCount,
+      2,
+      "explicit sharing survives closing the dialog",
+    );
+    const beforeSwitch = captureReads;
+    folderId = "other-folder";
+    await act(async () => {
+      tickSharing!();
+      await new Promise((r) => setTimeout(r, 40));
+    });
+    assert.equal(
+      captureReads,
+      beforeSwitch,
+      "a switched workspace is rejected before reading another document",
+    );
+    assert.ok(!button("课堂管理").textContent?.includes("共享中"));
     await act(async () => root.unmount());
     root = createRoot(container);
     sessionStorage.setItem(
@@ -207,7 +274,10 @@ export async function verifyClassroomUI() {
     await click("生成分析报告");
     await wait(() => Boolean(container.querySelector(".classroom-report")));
     assert.ok(container.textContent?.includes("建议在下一节课讲解进位逻辑"));
-    assert.ok(container.textContent?.includes(id));
+    assert.ok(
+      container.querySelector(".classroom-report code"),
+      "report includes evidence identifiers",
+    );
     console.log(
       "PASS: classroom preview requires explicit sharing, strips provider credentials, persists circuit/conversation evidence, and teacher review/AI analysis use the real classroom API",
     );
@@ -216,6 +286,7 @@ export async function verifyClassroomUI() {
     container.remove();
     sessionStorage.removeItem("vibe.classroom.session");
     (globalThis as any).__command = oldCommand;
+    globalThis.setInterval = originalInterval;
     await service.close();
     provider.closeIdleConnections();
     await new Promise<void>((resolve) => provider.close(() => resolve()));

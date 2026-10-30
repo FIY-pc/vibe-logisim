@@ -8,6 +8,7 @@ export interface SharingBinding {
   target: ShareTarget;
   progress: number;
   note: string;
+  fingerprint: string;
 }
 /** Lives beside the title bar, so closing the classroom dialog keeps the explicit sharing session alive. */
 export function useSharing() {
@@ -63,7 +64,7 @@ export function useSharing() {
         busy = false;
       }
     };
-    last.current = "";
+    last.current = binding.fingerprint;
     const timer = setInterval(() => void sync(), 30000);
     setStatus("自动共享已开启，每 30 秒检查选定电路和对话的变化");
     return () => {
