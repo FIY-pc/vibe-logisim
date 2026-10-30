@@ -49,6 +49,8 @@ export interface Satellite {
   box: Box;
   // copper from the ports to the connection point
   leads: Point[][];
+  // stepped aside of a wired port's lead
+  aside?: boolean;
 }
 
 export interface Shape {
@@ -227,6 +229,47 @@ const leadThrough = (p: Point, q: Point, b: Box): boolean => {
 };
 const pathThrough = (path: Point[], b: Box): boolean =>
   path.some((p, i) => i > 0 && leadThrough(path[i - 1], p, b));
+const lengthOf = (path: Point[]): number =>
+  path.reduce((sum, p, i) => (i ? sum + Math.abs(p[0] - path[i - 1][0]) + Math.abs(p[1] - path[i - 1][1]) : 0), 0);
+
+// Whether two axis-parallel paths touch anywhere (a crossing, a shared
+// point, or one running along the other).
+function pathsTouch(a: Point[], b: Point[]): boolean {
+  for (let i = 1; i < a.length; i++)
+    for (let j = 1; j < b.length; j++) {
+      const [p, q, r, s] = [a[i - 1], a[i], b[j - 1], b[j]];
+      if (
+        Math.max(Math.min(p[0], q[0]), Math.min(r[0], s[0])) <= Math.min(Math.max(p[0], q[0]), Math.max(r[0], s[0])) &&
+        Math.max(Math.min(p[1], q[1]), Math.min(r[1], s[1])) <= Math.min(Math.max(p[1], q[1]), Math.max(r[1], s[1]))
+      )
+        return true;
+    }
+  return false;
+}
+
+// Ports a path passes within 10 px of without ending on them, where the eye
+// reads a junction (readability's port grazes).
+function grazes(path: Point[], ports: Point[]): number {
+  let n = 0;
+  for (const [px, py] of ports)
+    for (let i = 1; i < path.length; i++) {
+      const [p, q] = [path[i - 1], path[i]];
+      const on = (p[1] === q[1] ? py === p[1] : px === p[0]) &&
+        Math.min(p[0], q[0]) <= px && px <= Math.max(p[0], q[0]) &&
+        Math.min(p[1], q[1]) <= py && py <= Math.max(p[1], q[1]);
+      if (on) continue;
+      if (
+        Math.min(p[0], q[0]) - 10 <= px &&
+        px <= Math.max(p[0], q[0]) + 10 &&
+        Math.min(p[1], q[1]) - 10 <= py &&
+        py <= Math.max(p[1], q[1]) + 10
+      ) {
+        n += 1;
+        break;
+      }
+    }
+  return n;
+}
 
 const netOfTerminal = (model: Model, t: Terminal): Net =>
   model.netOfPort.get(portId(t.ports[0].part, t.ports[0].end))!;
@@ -292,6 +335,12 @@ export function shapeUnit(model: Model, unit: Unit): Shape {
   };
   const kindOf = (t: Terminal) => netOfTerminal(model, t).kind;
   const clear = (box: Box) => !solid.some((b) => overlapBy(box, b, 1)) && !satellites.some((s) => overlapBy(box, s.box, 1));
+  // a wired port's lead runs straight out to the edge of the node
+  const wiredLeads: Point[][] = unit.terminals
+    .filter((t) => kindOf(t) === "wire")
+    .map((t) => [t.point, step(t.point, t.side, 100)]);
+  const onWiredLead = (box: Box) => wiredLeads.some((lead) => pathThrough(lead, box));
+  const others = unit.terminals.map((t) => t.point);
   const bySide = new Map<Side, Terminal[]>();
   for (const t of unit.terminals) {
     if (!bySide.has(t.side)) bySide.set(t.side, []);
@@ -433,46 +482,70 @@ export function shapeUnit(model: Model, unit: Unit): Shape {
           });
         }
       }
-      if (placed.every((s) => clear(s.box))) placed.forEach(add);
+      if (placed.every((s) => clear(s.box) && !onWiredLead(s.box))) placed.forEach(add);
     }
 
-    // the rest, one by one
+    // the rest, one by one: the shortest lead straight out that keeps the
+    // satellite clear; out and aside when every one straight out stands on
+    // a wired port's lead (a Tunnel on a full adder's sum over its carry
+    // wire) and the way aside is free
     for (const t of all) {
       const kind = kindOf(t);
       if ((kind !== "tunnel" && kind !== "constant") || satelliteOf.has(t)) continue;
       const net = netOfTerminal(model, t);
+      const satelliteAt = (path: Point[]): Satellite => {
+        const q = path.at(-1)!;
+        const facing = kind === "tunnel" ? FACING_TOWARD[side] : constantAt(net, q, side).facing;
+        return {
+          kind: kind === "tunnel" ? "tunnel" : "constant",
+          net,
+          terminals: [t],
+          point: q,
+          facing,
+          label: kind === "tunnel" ? net.label : null,
+          box: kind === "tunnel" ? tunnelBox(q[0], q[1], facing, net.label ?? "") : constantAt(net, q, side).box,
+          leads: [path],
+        };
+      };
+      const costOf = (s: Satellite): number => {
+        const path = s.leads[0];
+        let cost = lengthOf(path) / 100 + (path.length - 2);
+        for (const b of solid) if (overlapBy(s.box, b, 1)) cost += 20;
+        for (const o of satellites) {
+          if (overlapBy(s.box, o.box, 3)) cost += 3;
+          if (pathThrough(path, o.box)) cost += 4;
+          if (o.leads.some((lead) => pathThrough(lead, s.box))) cost += 4;
+        }
+        if (onWiredLead(s.box)) cost += 4;
+        // past the turn the lead is no longer the port's own
+        return cost + 6 * grazes(path.slice(1), others);
+      };
       let best: { cost: number; s: Satellite } | null = null;
       for (const lead of [0, 10, 20, 30, 40]) {
-        const q = step(t.point, side, lead / GRID);
-        let box: Box;
-        let facing: string;
-        if (kind === "tunnel") {
-          facing = FACING_TOWARD[side];
-          box = tunnelBox(q[0], q[1], facing, net.label ?? "");
-        } else ({ facing, box } = constantAt(net, q, side));
-        let cost = lead / 100;
-        for (const b of solid) if (overlapBy(box, b, 1)) cost += 20;
-        for (const s of satellites) {
-          if (overlapBy(box, s.box, 3)) cost += 3;
-          if (leadThrough(t.point, q, s.box)) cost += 4;
-          if (s.leads.some((path) => pathThrough(path, box))) cost += 4;
-        }
-        if (!best || cost < best.cost)
-          best = {
-            cost,
-            s: {
-              kind: kind === "tunnel" ? "tunnel" : "constant",
-              net,
-              terminals: [t],
-              point: q,
-              facing,
-              label: kind === "tunnel" ? net.label : null,
-              box,
-              leads: [[t.point, q]],
-            },
-          };
+        const s = satelliteAt([t.point, step(t.point, side, lead / GRID)]);
+        const cost = costOf(s);
+        if (!best || cost < best.cost) best = { cost, s };
       }
-      add(best!.s);
+      if (model.stepAside && onWiredLead(best!.s.box))
+        for (const out of [10, 20])
+          for (const dir of ALONG[side])
+            for (const aside of [10, 20]) {
+              const turn = step(t.point, side, out / GRID);
+              const path = [t.point, turn, step(turn, dir, aside / GRID)];
+              const s = satelliteAt(path);
+              if (!clear(s.box) || onWiredLead(s.box)) continue;
+              // nothing else on the way aside: no port, satellite or wired lead
+              const span = [path[1][axis], path[2][axis]].sort((a, b) => a - b);
+              if (all.some((u) => u !== t && along(u) >= span[0] && along(u) <= span[1])) continue;
+              if (others.some((o) => o !== t.point && pathsTouch(path, [o, o]))) continue;
+              if (satellites.some((o) => o.leads.some((lead) => pathsTouch(path, lead)))) continue;
+              if (wiredLeads.some((lead) => pathsTouch(path.slice(1), lead))) continue;
+              const cost = costOf(s);
+              if (cost < best!.cost) best = { cost, s: { ...s, aside: true } };
+            }
+      const chosen = best!.s;
+      if (chosen.leads[0].length === 2) chosen.leads = [[t.point, chosen.point]];
+      add(chosen);
     }
   }
   // what the satellites cover: flags, bodies and leads

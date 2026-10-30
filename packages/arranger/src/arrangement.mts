@@ -306,12 +306,27 @@ export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
   let spare: Model | null = fresh();
   const tried: Report[] = [];
   let best: { arrangement: Arrangement; score: number } | null = null;
-  // An array drawn ahead of the layout (array.mts) is one family of
-  // candidates, the same parts laid out one by one the other.
-  const families = !options.organization && planArray(spare) ? [true, false] : [false];
-  for (const array of families) {
-    const probe = array ? fresh() : spare!;
-    if (array) applyArray(probe);
+  // Families of candidates: an array drawn ahead of the layout (array.mts),
+  // the parts laid out one by one with satellites stepping aside of wired
+  // leads, and the same without stepping aside when any did: ELK's layout
+  // of a large sheet changes with the shape of any of its nodes, so neither
+  // is better everywhere.
+  const families: { array: boolean; aside: boolean; name: string }[] = [
+    ...(!options.organization && planArray(spare) ? [{ array: true, aside: true, name: "array, " }] : []),
+    { array: false, aside: true, name: "" },
+    { array: false, aside: false, name: "flags in line, " },
+  ];
+  let steppedAside = false;
+  for (const family of families) {
+    if (!family.aside && !steppedAside) continue;
+    const model0 = () => {
+      const model = spare ?? fresh();
+      spare = null;
+      model.stepAside = family.aside;
+      if (family.array) applyArray(model);
+      return model;
+    };
+    let probe: Model | null = model0();
     // groups are laid out by ELK's own strategies (see runElk); a drawing
     // that is one unit looks the same under every variant
     const variants = variantsFor(probe.units.length)
@@ -319,15 +334,9 @@ export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
       .slice(0, probe.units.length > 1 ? undefined : 1);
     for (const variant of variants)
       for (const rails of [true, false]) {
-        let model: Model;
-        if (spare && !array) {
-          model = spare;
-          spare = null;
-        } else {
-          model = fresh();
-          if (array) applyArray(model);
-        }
-        const name = (n: string) => (array ? `array, ${n}` : n);
+        const model = probe ?? model0();
+        probe = null;
+        const name = (n: string) => family.name + n;
         const rows = options.organization
           ? organizationRows(model, options.organization)
           : [flowOrder(model)];
@@ -339,6 +348,8 @@ export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
           });
           continue;
         }
+        if ([...drawing.shapes.values()].some((shape) => shape.satellites.some((s) => s.aside)))
+          steppedAside = true;
         drawing.variant = name(drawing.variant);
         const emitted = emit(model, drawing);
         if (options.organization)
