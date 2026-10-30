@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // Behaviour of arrange() and verifyArrangement() on two small circuits. The
 // fixtures are hand-built Logisim files plus the observer's reading of them;
 // the arrangement is checked structurally here, and equivalence to the
@@ -19,7 +20,7 @@ import type {
   Focus,
 } from "../src/index.mts";
 
-const here = new URL("./fixtures/", import.meta.url).pathname;
+const here = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const file = (name: string): string => readFileSync(here + name, "utf8");
 const observation = (name: string): Focus => JSON.parse(file(name));
 
@@ -262,7 +263,9 @@ function wiresOf(xml: string): [number, number, number, number][] {
   return [
     ...body
       .slice(0, body.indexOf("</circuit>"))
-      .matchAll(/<wire from="\((-?\d+),(-?\d+)\)" to="\((-?\d+),(-?\d+)\)"\/>/g),
+      .matchAll(
+        /<wire from="\((-?\d+),(-?\d+)\)" to="\((-?\d+),(-?\d+)\)"\/>/g,
+      ),
   ].map((m) => m.slice(1).map(Number) as [number, number, number, number]);
 }
 
@@ -299,10 +302,16 @@ describe("signal-flow layout", () => {
       const left = Math.min(...gates.map((c) => c.bounds.x));
       for (const pin of pins)
         if (output(pin)) {
-          const label = pin.attributes.find((a) => a.name === "label")!.standard!;
+          const label = pin.attributes.find(
+            (a) => a.name === "label",
+          )!.standard!;
           const driver = driverOf(result.predicted!, label);
-          assert.ok(pin.bounds.x > driver.bounds.x + driver.bounds.width, label);
-        } else assert.ok(pin.bounds.x + pin.bounds.width < left, pin.componentId);
+          assert.ok(
+            pin.bounds.x > driver.bounds.x + driver.bounds.width,
+            label,
+          );
+        } else
+          assert.ok(pin.bounds.x + pin.bounds.width < left, pin.componentId);
       for (const measure of [
         "overlaps",
         "labelOverlaps",
@@ -328,7 +337,10 @@ describe("signal-flow layout", () => {
               a === c
                 ? px === a && py > Math.min(b, d) && py < Math.max(b, d)
                 : py === b && px > Math.min(a, c) && px < Math.max(a, c);
-            assert.ok(!inside, `wire end ${px},${py} on (${a},${b})-(${c},${d})`);
+            assert.ok(
+              !inside,
+              `wire end ${px},${py} on (${a},${b})-(${c},${d})`,
+            );
           }
       const again = await arrange({
         xml,

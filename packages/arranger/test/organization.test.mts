@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // What the caller sees before arranging: the placement graph it organizes,
 // and how an explicit organization comes back annotated.
 import { readFileSync } from "node:fs";
@@ -11,7 +12,7 @@ import {
 } from "../src/index.mts";
 import type { CircuitToolError as ToolError } from "../src/index.mts";
 
-const here = new URL("./fixtures/", import.meta.url).pathname;
+const here = fileURLToPath(new URL("./fixtures/", import.meta.url));
 const file = (name: string): string => readFileSync(here + name, "utf8");
 
 const XML = file("adder.circ");
@@ -122,8 +123,14 @@ describe("grouped organization", () => {
     for (const h of headings) {
       const { x, y, width, height } = h.bounds;
       for (const w of predicted.wires ?? []) {
-        const [x0, x1] = [Math.min(w.from.x, w.to.x), Math.max(w.from.x, w.to.x)];
-        const [y0, y1] = [Math.min(w.from.y, w.to.y), Math.max(w.from.y, w.to.y)];
+        const [x0, x1] = [
+          Math.min(w.from.x, w.to.x),
+          Math.max(w.from.x, w.to.x),
+        ];
+        const [y0, y1] = [
+          Math.min(w.from.y, w.to.y),
+          Math.max(w.from.y, w.to.y),
+        ];
         assert.ok(
           x1 < x || x0 > x + width || y1 < y || y0 > y + height,
           `heading at ${x},${y} on a wire`,
@@ -133,7 +140,10 @@ describe("grouped organization", () => {
         if (c === h) continue;
         const b = c.bounds;
         assert.ok(
-          b.x + b.width <= x || b.x >= x + width || b.y + b.height <= y || b.y >= y + height,
+          b.x + b.width <= x ||
+            b.x >= x + width ||
+            b.y + b.height <= y ||
+            b.y >= y + height,
           `heading at ${x},${y} on ${c.componentId}`,
         );
       }

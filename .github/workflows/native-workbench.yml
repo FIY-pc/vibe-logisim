@@ -11,6 +11,22 @@ permissions:
   contents: read
 
 jobs:
+  windows-regression:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: cargo test -p vibe-circuit-document
+      - run: npm run check
+      - run: npm run test:arranger
+      - run: npm run test:runtime
+      - run: npm run test:ui
+
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20

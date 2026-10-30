@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
 
@@ -33,7 +33,7 @@ try {
           builder.onLoad({ filter: /.*/, namespace: "worker-url" }, () => ({
             contents: 'export default "arrange-worker.js";',
           }));
-          builder.onLoad({ filter: /\/shared\/transport\.ts$/ }, () => ({
+          builder.onLoad({ filter: /[\\/]shared[\\/]transport\.ts$/ }, () => ({
             contents:
               "export const command=(v)=>globalThis.__command(v);export const desktop=()=>globalThis.__desktop??false;export const openPath=async()=>null;export const savePath=async()=>null;",
           }));
@@ -48,14 +48,17 @@ try {
             contents:
               "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{globalThis.__fileDropHandler=handler;return ()=>{if(globalThis.__fileDropHandler===handler)delete globalThis.__fileDropHandler}}});",
           }));
-          builder.onLoad({ filter: /\/shared\/events\.ts$/ }, () => ({
+          builder.onLoad({ filter: /[\\/]shared[\\/]events\.ts$/ }, () => ({
             contents:
               "export const subscribeEvents=(fn)=>globalThis.__subscribe(fn);",
           }));
-          builder.onLoad({ filter: /\/workspace\/FilePreview\.tsx$/ }, () => ({
-            contents: "export const FilePreview=()=>null;",
-          }));
-          builder.onLoad({ filter: /\/workspace\/pdf\.ts$/ }, () => ({
+          builder.onLoad(
+            { filter: /[\\/]workspace[\\/]FilePreview\.tsx$/ },
+            () => ({
+              contents: "export const FilePreview=()=>null;",
+            }),
+          );
+          builder.onLoad({ filter: /[\\/]workspace[\\/]pdf\.ts$/ }, () => ({
             contents:
               "export const openPdf=async()=>{throw new Error('PDF is not rendered under jsdom')};export const pageText=async()=>'';",
           }));
@@ -66,7 +69,7 @@ try {
   await fs.writeFile(
     path.join(temp, "setup.mjs"),
     `
-import {JSDOM} from ${JSON.stringify(jsdom)};
+import {JSDOM} from ${JSON.stringify(pathToFileURL(jsdom).href)};
 const dom=new JSDOM('<div id="root"></div>',{url:'http://localhost/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,localStorage:dom.window.localStorage,HTMLElement:dom.window.HTMLElement,HTMLTextAreaElement:dom.window.HTMLTextAreaElement,HTMLDialogElement:dom.window.HTMLDialogElement,HTMLFormElement:dom.window.HTMLFormElement,HTMLButtonElement:dom.window.HTMLButtonElement,HTMLInputElement:dom.window.HTMLInputElement,HTMLSelectElement:dom.window.HTMLSelectElement,HTMLSpanElement:dom.window.HTMLSpanElement,HTMLDivElement:dom.window.HTMLDivElement,SVGElement:dom.window.SVGElement,Element:dom.window.Element,Node:dom.window.Node,Text:dom.window.Text,DocumentFragment:dom.window.DocumentFragment,MutationObserver:dom.window.MutationObserver,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),Event:dom.window.Event,CustomEvent:dom.window.CustomEvent,MouseEvent:dom.window.MouseEvent,KeyboardEvent:dom.window.KeyboardEvent,FocusEvent:dom.window.FocusEvent,devicePixelRatio:1,IS_REACT_ACT_ENVIRONMENT:true,requestAnimationFrame:(fn)=>setTimeout(fn,0),cancelAnimationFrame:(id)=>clearTimeout(id)});
 // jsdom has no PointerEvent; the shared Select reads pointerType off it.

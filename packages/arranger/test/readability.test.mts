@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 // Each readability measure against a fixture that shows it:
 // fixtures/readability/<measure>.circ holds two definitions, "before" (the
 // problem) and "after" (the same parts drawn cleanly; open the file to see
@@ -9,7 +10,7 @@ import { compareReadability, readability } from "../src/index.mts";
 import type { Focus, READABILITY_WEIGHTS } from "../src/index.mts";
 
 type Measure = keyof typeof READABILITY_WEIGHTS;
-const here = new URL("./fixtures/readability/", import.meta.url).pathname;
+const here = fileURLToPath(new URL("./fixtures/readability/", import.meta.url));
 const observed = (name: string): { before: Focus; after: Focus } =>
   JSON.parse(readFileSync(here + name + ".focus.json", "utf8"));
 
