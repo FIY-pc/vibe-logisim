@@ -63,7 +63,7 @@ export async function prepareWork(
   const before = await command<any>({ op: "status", summary: true });
   const folderId = before.folder?.id;
   if (!folderId || (expected && folderId !== expected.folderId))
-    throw new Error("工作文件夹已变化，请重新预览共享内容");
+    throw new Error("工作文件夹已变化，请重新绑定课堂工作文件夹");
   const doc = await command<Document>({ op: "read", id: documentId });
   if (doc.path && before.folder?.path) {
     const clean = (s: string) =>
@@ -124,7 +124,7 @@ export async function prepareWork(
   }
   const after = await command<any>({ op: "status", summary: true });
   if (after.folder?.id !== folderId)
-    throw new Error("工作文件夹已变化，请重新预览");
+    throw new Error("工作文件夹已变化，请重新绑定课堂工作文件夹");
   return {
     target: { documentId, folderId, conversationId, includeConversation },
     snapshot: {
