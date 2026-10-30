@@ -7,6 +7,7 @@ import {
   arrange,
   CircuitToolError,
   organizationContext,
+  readability,
   verifyArrangement,
 } from "../src/index.mts";
 import type { CircuitToolError as ToolError } from "../src/index.mts";
@@ -193,5 +194,32 @@ describe("grouped organization", () => {
       ),
       "分组引用的元件 c999_999 不存在（元件 ID 以当前 inspect_circuit 的结果为准）",
     );
+  });
+});
+
+// A 4-bit adder of full-adder instances, grouped as inputs, one group per
+// bit and outputs: the bits' Tunnels must not stand on the carry wires.
+describe("grouped instances", () => {
+  it("steps a flag aside of a wire it would stand on", async () => {
+    const result = await arrange({
+      xml: file("adder4-instances.circ"),
+      circuit: "Adder4",
+      focus: JSON.parse(file("adder4-instances.focus.json")),
+      options: {
+        organization: {
+          groups: [
+            { id: "in", label: "inputs", row: 0, componentIds: ["c100_120", "c140_140", "c100_250", "c120_270", "c90_360"] },
+            { id: "b0", label: "bit 0", row: 1, componentIds: ["c290_340"] },
+            { id: "b1", label: "bit 1", row: 1, componentIds: ["c400_330"] },
+            { id: "b2", label: "bit 2", row: 1, componentIds: ["c510_320"] },
+            { id: "b3", label: "bit 3", row: 1, componentIds: ["c600_450"] },
+            { id: "out", label: "outputs", row: 2, componentIds: ["c690_380", "c710_410", "c650_460"] },
+          ],
+        },
+      },
+    });
+    const after = readability(result.predicted!);
+    assert.equal(after.labelsOnWires, 0);
+    assert.equal(after.crossings, 0);
   });
 });

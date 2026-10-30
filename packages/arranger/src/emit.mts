@@ -188,11 +188,17 @@ export function emit(model: Model, drawing: Drawing): Emitted {
   // where everything goes
   const placement = new Map<string, Point>();
   for (const [u, s] of drawing.shift) {
-    for (const c of u.parts) placement.set(c.componentId, s);
+    // a unit drawn ahead of the layout holds copies of its parts, moved
+    const offset = (c: Component): Point => u.offsets?.get(c.componentId) ?? [0, 0];
+    for (const c of u.parts) {
+      const [ox, oy] = offset(c);
+      placement.set(c.componentId, [s[0] + ox, s[1] + oy]);
+    }
     const moved = drawing.shapes.get(u)!.captionShift;
     for (const c of u.captions) {
       const [dx, dy] = moved.get(c) ?? [0, 0];
-      placement.set(c.componentId, [s[0] + dx, s[1] + dy]);
+      const [ox, oy] = offset(c);
+      placement.set(c.componentId, [s[0] + dx + ox, s[1] + dy + oy]);
     }
   }
   for (const c of model.notes) placement.set(c.componentId, drawing.notesShift.get(c.componentId) ?? [0, 0]);
