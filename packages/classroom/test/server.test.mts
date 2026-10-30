@@ -11,6 +11,7 @@ import type { WorkSnapshot } from "../src/types.ts";
 test("classroom lifecycle, role isolation, immutable evidence, AI scope and persistence", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "vibe-classroom-test-"));
   const prompts: string[] = [];
+  let failure: "none" | "json" | "length" | "http" = "none";
   const provider = createServer(async (req, res) => {
     let body = "";
     for await (const chunk of req) body += chunk;
@@ -18,13 +19,22 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
     prompts.push(JSON.stringify(input.messages));
     assert.equal(req.headers.authorization, "Bearer test-provider-key");
     assert.equal(input.stream, false);
+    if (failure === "http") {
+      res.writeHead(503);
+      res.end("unavailable");
+      return;
+    }
+    if (failure === "json") {
+      res.end("not-json");
+      return;
+    }
     res.setHeader("Content-Type", "application/json");
     res.end(
       JSON.stringify({
         choices: [
           {
             message: { content: "依据提交证据：建议复习进位逻辑。" },
-            finish_reason: "stop",
+            finish_reason: failure === "length" ? "length" : "stop",
           },
         ],
       }),
@@ -247,6 +257,23 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
       t.token,
       404,
     );
+    for (const mode of ["http", "json", "length"] as const) {
+      failure = mode;
+      await request(
+        `/classrooms/${c.id}/analysis`,
+        "POST",
+        { studentId: s.user.id },
+        t.token,
+        502,
+      );
+      assert.equal(
+        (await request(`/classrooms/${c.id}`, "GET", undefined, t.token))
+          .analyses.length,
+        0,
+        "failed or incomplete reports are never saved",
+      );
+    }
+    failure = "none";
     const report = (
       await request(
         `/classrooms/${c.id}/analysis`,

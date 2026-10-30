@@ -112,7 +112,10 @@ function ClassroomDialog({
     try {
       await work();
     } catch (e) {
-      if (alive.current) setError(message(e));
+      if (alive.current) {
+        if ((e as { status?: number })?.status === 401) onSession(null);
+        setError(message(e));
+      }
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -171,7 +174,10 @@ function ClassroomDialog({
       };
       void load()
         .catch((e) => {
-          if (current) setError(message(e));
+          if (current) {
+            if ((e as { status?: number })?.status === 401) onSession(null);
+            setError(message(e));
+          }
         })
         .finally(() => {
           if (current) {
@@ -179,6 +185,9 @@ function ClassroomDialog({
             setBusy(false);
           }
         });
+    } else {
+      pending.current = false;
+      setBusy(false);
     }
     return () => {
       current = false;

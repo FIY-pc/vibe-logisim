@@ -306,11 +306,18 @@ export function createClassroomServer(options: ServerOptions) {
       }
       if (route === "/api/auth/register" || route === "/api/auth/login") {
         if (method !== "POST") return fail(405, "方法不支持");
-        const key = req.socket.remoteAddress || "local",
+        const b = await readBody(req),
+          username = text(b.username, "账号", 80).trim().toLowerCase(),
+          password = text(b.password, "密码", 200);
+        // A class often shares one campus gateway or reverse proxy. Limit
+        // repeated attempts for one account without blocking its classmates.
+        const key = `${req.socket.remoteAddress || "local"}:${username}`,
           time = Date.now();
         if (authAttempts.size > 10000)
           for (const [k, v] of authAttempts)
             if (v.until < time) authAttempts.delete(k);
+        if (authAttempts.size >= 10000 && !authAttempts.has(key))
+          return fail(429, "服务繁忙，请稍后再试");
         const attempt = authAttempts.get(key);
         if (attempt && attempt.until > time && attempt.count >= 20)
           return fail(429, "登录尝试过多，请稍后再试");
@@ -318,9 +325,6 @@ export function createClassroomServer(options: ServerOptions) {
           count: attempt && attempt.until > time ? attempt.count + 1 : 1,
           until: attempt && attempt.until > time ? attempt.until : time + 60000,
         });
-        const b = await readBody(req),
-          username = text(b.username, "账号", 80).trim().toLowerCase(),
-          password = text(b.password, "密码", 200);
         if (password.length < 10) return fail(400, "密码至少 10 个字符");
         if (route.endsWith("register")) {
           if (!["teacher", "student"].includes(b.role))
@@ -570,13 +574,11 @@ export function createClassroomServer(options: ServerOptions) {
           evidence.push(s.id);
           // Every member is represented. Detailed evidence is bounded and explicitly marked.
           const detail = JSON.stringify({
-            messages: snapshot.messages
-              .slice(-40)
-              .map((m) => ({
-                ...m,
-                text: m.text.slice(0, 2000),
-                truncated: m.text.length > 2000,
-              })),
+            messages: snapshot.messages.slice(-40).map((m) => ({
+              ...m,
+              text: m.text.slice(0, 2000),
+              truncated: m.text.length > 2000,
+            })),
             omittedMessages: Math.max(0, snapshot.messages.length - 40),
             xml: snapshot.xml.slice(0, 8000),
             xmlTruncated: snapshot.xml.length > 8000,
@@ -629,18 +631,23 @@ export function createClassroomServer(options: ServerOptions) {
           );
           if (!response.ok)
             return fail(502, `课堂 AI 服务返回 HTTP ${response.status}`);
-          const result = (await response.json()) as any;
+          const result = (await response
+            .json()
+            .catch(() =>
+              fail(502, "课堂 AI 返回了无效数据，请稍后重试"),
+            )) as any;
           const output = result.choices?.[0]?.message?.content;
           if (
             typeof output !== "string" ||
             !output.trim() ||
+            output.length > 50000 ||
             result.choices?.[0]?.finish_reason === "length"
           )
             return fail(502, "AI 分析未完整返回，请缩小分析范围后重试");
           const report: AnalysisReport = {
             id: randomUUID(),
             createdAt: now(),
-            text: output.slice(0, 50000),
+            text: output,
             model: options.ai.model,
             question,
             studentId,

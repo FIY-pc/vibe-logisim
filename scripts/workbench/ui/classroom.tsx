@@ -278,6 +278,33 @@ export async function verifyClassroomUI() {
       container.querySelector(".classroom-report code"),
       "report includes evidence identifiers",
     );
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    sessionStorage.setItem(
+      "vibe.classroom.session",
+      JSON.stringify({ ...teacher, token: "0".repeat(64), server }),
+    );
+    await act(async () =>
+      root.render(
+        <StrictMode>
+          <Workbench>
+            <ClassroomEntry />
+          </Workbench>
+        </StrictMode>,
+      ),
+    );
+    await click("课堂管理");
+    await wait(() => Boolean(container.querySelector(".classroom-login")));
+    assert.equal(
+      sessionStorage.getItem("vibe.classroom.session"),
+      null,
+      "expired sessions are cleared",
+    );
+    assert.equal(
+      button("登录").disabled,
+      false,
+      "expired-session recovery does not leave login busy",
+    );
     console.log(
       "PASS: classroom preview requires explicit sharing, strips provider credentials, persists circuit/conversation evidence, and teacher review/AI analysis use the real classroom API",
     );

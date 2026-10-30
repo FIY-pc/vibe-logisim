@@ -35,8 +35,18 @@ export async function classroomRequest<T>(
       ? AbortSignal.any([signal, AbortSignal.timeout(100000)])
       : AbortSignal.timeout(100000),
   });
-  const result = await response.json();
+  const result = await response.json().catch(() => {
+    throw Object.assign(
+      new Error(
+        `课堂服务返回了无效数据（HTTP ${response.status}），请检查服务地址或稍后重试`,
+      ),
+      { status: response.status },
+    );
+  });
   if (!response.ok)
-    throw new Error(result.error || `课堂服务返回 HTTP ${response.status}`);
+    throw Object.assign(
+      new Error(result.error || `课堂服务返回 HTTP ${response.status}`),
+      { status: response.status },
+    );
   return result as T;
 }
