@@ -219,6 +219,7 @@ try {
     [jar, "logisim.jar"],
     [legacyJar, "logisim-2.15"],
   ]) {
+    const bridgeClasses = path.join(unpack, "bridge", artifact);
     await run(path.join(jdk, "bin", executable("javac")), [
       "--release",
       "17",
@@ -227,8 +228,17 @@ try {
       "-cp",
       runtimeJar,
       "-d",
-      path.join(native, "classes", lock.artifacts[artifact].sha256),
+      bridgeClasses,
       ...(await files(path.join(native, "src"))),
+    ]);
+    await mkdir(path.join(native, "classes"), { recursive: true });
+    await run(path.join(jdk, "bin", executable("jar")), [
+      "--create",
+      "--file",
+      path.join(native, "classes", `${lock.artifacts[artifact].sha256}.jar`),
+      "-C",
+      bridgeClasses,
+      ".",
     ]);
   }
   await mkdir(path.join(stage, "third-party/logisim"), { recursive: true });
