@@ -15,6 +15,7 @@ import * as path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { loadSdk } from "./sdk-loader.mts";
 import { validate, maskKey } from "./validate.mts";
+import { publicText } from "./public-fields.mts";
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"];
 function atomic(file: string, value: unknown) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -39,7 +40,7 @@ const matches = (
 const publicService = (c: ServiceConfig | null): PublicService | null => {
   if (!c) return null;
   const { apiKey, ...rest } = c;
-  return { ...rest, apiKeyHint: maskKey(apiKey) };
+  return { ...rest, name: publicText(rest.name, apiKey), model: publicText(rest.model, apiKey), baseUrl: publicText(rest.baseUrl, apiKey), models: rest.models?.map((m) => publicText(m, apiKey)), apiKeyHint: maskKey(apiKey) };
 };
 class ServiceStore {
   declare profileDir: string;
