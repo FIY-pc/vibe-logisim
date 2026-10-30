@@ -1,4 +1,5 @@
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
+import { verifyClassroomUI } from "./classroom";
 import { verifyAISettings } from "./ai-settings";
 import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyConversationTurns } from "./conversation-turns";
@@ -1328,6 +1329,7 @@ await verifyConversationSummaries();
 await verifyConversationTurns();
 await verifyAISettings();
 await verifyEditorRequestLifetimes();
+await verifyClassroomUI();
 console.log("All focused UI lifecycle checks passed");
 
 process.exit(0);

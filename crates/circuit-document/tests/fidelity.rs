@@ -903,3 +903,35 @@ fn a_batch_is_one_change_and_one_undo_step() {
         Err(Error::InvalidCommand(_))
     ));
 }
+
+#[test]
+fn a_batch_selects_new_wires_after_deleting_old_ones() {
+    let mut d = open(CLASSIC);
+    let original = d.bytes().to_vec();
+    let outcome = d
+        .edit(
+            &d.revision(),
+            "main",
+            Edit::Batch {
+                edits: vec![
+                    Edit::Delete {
+                        ids: vec!["w0".into()],
+                    },
+                    Edit::Wire {
+                        points: vec![p(500, 500), p(600, 500)],
+                    },
+                ],
+            },
+        )
+        .unwrap();
+    let sheet = &d.view().unwrap().circuits[0];
+    assert!(outcome.wires.iter().any(|id| {
+        sheet
+            .wires
+            .iter()
+            .any(|w| &w.id == id && w.from == p(500, 500) && w.to == p(600, 500))
+    }));
+    d.undo(&d.revision()).unwrap();
+    assert_eq!(d.bytes(), original);
+    assert!(!d.view().unwrap().can_undo);
+}

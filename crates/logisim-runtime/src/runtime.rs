@@ -189,6 +189,14 @@ impl Launcher {
     async fn build(&self, runtime: &Path) -> Result<PathBuf> {
         let runtime_bytes = std::fs::read(runtime).map_err(|e| e.to_string())?;
         let packaged = self.facts().root().join("native");
+        // Avoid deep Java package paths in Windows portable archives. Older
+        // products and development installs can still use class directories.
+        let archive = packaged
+            .join("classes")
+            .join(format!("{}.jar", digest(&runtime_bytes)));
+        if archive.is_file() {
+            return Ok(archive);
+        }
         let precompiled = packaged.join("classes").join(digest(&runtime_bytes));
         if precompiled
             .join("com/cburch/logisim/file/CircuitSession.class")

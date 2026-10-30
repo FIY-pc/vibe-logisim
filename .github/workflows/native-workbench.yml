@@ -11,6 +11,23 @@ permissions:
   contents: read
 
 jobs:
+  windows-regression:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: cargo test -p vibe-circuit-document
+      - run: npm run check
+      - run: npm run test:arranger
+      - run: npm run test:runtime
+      - run: npm run test:classroom
+      - run: npm run test:ui
+
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -59,6 +76,7 @@ jobs:
           npm run check
           npm run test:arranger
           npm run test:runtime
+          npm run test:classroom
           npm run test:ui
           npm run build
       - name: Verify native simulation, editing and local model transport
@@ -147,6 +165,9 @@ jobs:
       - name: Launch Windows portable desktop and verify restart recovery
         if: runner.os == 'Windows'
         run: npm run test:desktop
+      - name: Verify Windows portable extraction path budget
+        if: runner.os == 'Windows'
+        run: node scripts/workbench/verify-portable-paths.mts
       - name: Build Windows installer upgrade baseline
         if: runner.os == 'Windows'
         run: node scripts/workbench/package.mts --upgrade-baseline

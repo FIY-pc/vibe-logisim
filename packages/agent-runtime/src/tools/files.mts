@@ -4,7 +4,7 @@ import { createReadStream } from "node:fs";
 import * as path from "node:path";
 import { createInterface } from "node:readline";
 import { spawn, execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 /**
  * The bundled circuit-knowledge directory. In development it sits two levels
@@ -202,6 +202,17 @@ function command(
  * folder-relative; the bundled references are readable too.
  */
 function fileTools({ root, runtimeRoot, assertCurrent }: any) {
+  const versions = new Map<string, string | null>();
+  const digestFile = async (file: string) => {
+    try {
+      return createHash("sha256")
+        .update(await fs.readFile(file))
+        .digest("hex");
+    } catch (error: any) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }
+  };
   const schema = (properties: any) => ({
     type: "object",
     properties,
@@ -229,14 +240,19 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
         assertCurrent();
         signal?.throwIfAborted();
         const file = await resolveFile(root, args.path);
-        return result(await readText(file, args));
+        const version = await digestFile(file);
+        const text = await readText(file, args);
+        if (version !== (await digestFile(file)))
+          throw new Error("文件在读取时发生变化，请重新读取");
+        versions.set(file, version);
+        return result(text);
       },
     },
     {
       name: "write_file",
       label: "写入文件",
       description:
-        "Write UTF-8 text to a folder-relative file. Parent directory must exist. Writing an open .circ is allowed: the circuit tools read the file again on their next call and the canvas follows (a document with unsaved changes keeps them instead).",
+        "Write UTF-8 text atomically to a folder-relative file. Read an existing file with read_file first; a changed file must be re-read before writing. Parent directory must exist. Open .circ files follow the next host request.",
       parameters: schema({ path: string, content: string }),
       execute: async (_id: any, args: any, signal: any) => {
         assertCurrent();
@@ -244,7 +260,39 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
         const file = await resolveFile(root, args.path, true);
         if (Buffer.byteLength(args.content) > 2 * 1024 * 1024)
           throw new Error("单次写入超过 2 MB");
-        await fs.writeFile(file, args.content, "utf8");
+        const baseline = versions.get(file) ?? null;
+        const current = await digestFile(file);
+        if (current !== baseline)
+          throw new Error(
+            "文件已存在或读取后发生变化，请先用 read_file 重新读取再修改",
+          );
+        const temp = path.join(
+          path.dirname(file),
+          `.vibe-write-${randomUUID()}.tmp`,
+        );
+        try {
+          const mode = current === null ? 0o600 : (await fs.stat(file)).mode;
+          const staged = await fs.open(temp, "wx", mode);
+          try {
+            await staged.writeFile(args.content, { encoding: "utf8", signal });
+            await staged.sync();
+          } finally {
+            await staged.close();
+          }
+          await resolveFile(root, args.path, true);
+          if ((await digestFile(file)) !== baseline)
+            throw new Error("文件在写入前发生变化，请重新读取");
+          assertCurrent();
+          signal?.throwIfAborted();
+          if (current === null) await fs.link(temp, file);
+          else await fs.rename(temp, file);
+          versions.set(
+            file,
+            createHash("sha256").update(args.content).digest("hex"),
+          );
+        } finally {
+          await fs.rm(temp, { force: true });
+        }
         return result("已写入 " + args.path);
       },
     },
