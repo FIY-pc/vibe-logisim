@@ -510,6 +510,8 @@ export function shapeUnit(model: Model, unit: Unit): Shape {
   }
   for (const k of covered) grow(k);
   for (const t of unit.terminals) grow([t.point[0], t.point[1], t.point[0], t.point[1]]);
+  for (const lines of unit.copper?.values() ?? [])
+    for (const line of lines) for (const [x, y] of line) grow([x, y, x, y]);
   box = [down(box[0]), down(box[1]), up(box[2]), up(box[3])];
   const anchors = new Map<Terminal, Point>();
   for (const t of unit.terminals) {
@@ -1248,6 +1250,22 @@ export async function drawModel(
       if (tree === null) return { failed: `a net left unjoined (${net.label ?? net.index})` };
       wires.set(net, tree);
     }
+    // the copper of nets drawn inside their unit, where the unit went
+    for (const u of model.units)
+      for (const [net, lines] of u.copper ?? []) {
+        const units: Units = new Set();
+        for (const line of lines)
+          if (!addPolyline(units, line.map((p) => moved(u, p)))) return { failed: `a diagonal wire inside ${u.id}` };
+        const tree = netTree(
+          units,
+          net.terminals.map((t) => {
+            const p = moved(t.unit, t.point);
+            return pointKey(p[0], p[1]);
+          }),
+        );
+        if (tree === null) return { failed: `a net left unjoined inside ${u.id}` };
+        wires.set(net, tree);
+      }
     const leads = new Map<Net, Units>();
     for (const [u, s] of model.units.flatMap((u) => shapes.get(u)!.satellites.map((s) => [u, s] as const))) {
       if (!leads.has(s.net)) leads.set(s.net, new Set());
@@ -1407,7 +1425,8 @@ function pinOrderChanged(model: Model, shift: Map<Unit, Point>): string | null {
     const after = sorted((c) => {
       const u = model.unitOf.get(c.componentId);
       const [dx, dy] = (u && shift.get(u)) ?? [0, 0];
-      return [c.location.x + dx, c.location.y + dy];
+      const [ox, oy] = u?.offsets?.get(c.componentId) ?? [0, 0];
+      return [c.location.x + ox + dx, c.location.y + oy + dy];
     });
     if (before !== after) return `the order of the ${facing}-facing Pins would change`;
   }

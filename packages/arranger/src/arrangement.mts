@@ -28,7 +28,9 @@ import { emit } from "./emit.mts";
 import { regionSegment } from "./fixed-geometry.mts";
 import { drawModel, flowOrder, variantsFor } from "./layout.mts";
 import { assertFloatingIsolation, looseWireGeometry } from "./loose-wires.mts";
+import { applyArray, planArray } from "./array.mts";
 import { arrangeOptions, buildModel } from "./model.mts";
+import type { Model } from "./model.mts";
 import { organizationReport, organizationRows } from "./organization.mts";
 import { readability } from "./readability.mts";
 import type { Readability } from "./readability.mts";
@@ -301,53 +303,68 @@ export async function arrange(request: ArrangeRequest): Promise<Arrangement> {
   resolveUnknownWidths(focus);
   const options = arrangeOptions(request.options ?? {});
   const fresh = () => buildModel(xml, circuit, focus, options);
-  let model = fresh();
+  let spare: Model | null = fresh();
   const tried: Report[] = [];
   let best: { arrangement: Arrangement; score: number } | null = null;
-  // groups are laid out by ELK's own strategies (see runElk)
-  const variants = variantsFor(model.units.length).filter(
-    (v) => !options.organization || v.name !== "sketch",
-  );
-  let first = true;
-  for (const variant of variants)
-    for (const rails of [true, false]) {
-      if (!first) model = fresh();
-      first = false;
-      const rows = options.organization
-        ? organizationRows(model, options.organization)
-        : [flowOrder(model)];
-      const drawing = await drawModel(model, variant, rows, rails);
-      if ("failed" in drawing) {
-        tried.push({
-          variant: rails ? variant.name : `${variant.name}, no rails`,
-          skipped: drawing.failed,
-        });
-        continue;
+  // An array drawn ahead of the layout (array.mts) is one family of
+  // candidates, the same parts laid out one by one the other.
+  const families = !options.organization && planArray(spare) ? [true, false] : [false];
+  for (const array of families) {
+    const probe = array ? fresh() : spare!;
+    if (array) applyArray(probe);
+    // groups are laid out by ELK's own strategies (see runElk); a drawing
+    // that is one unit looks the same under every variant
+    const variants = variantsFor(probe.units.length)
+      .filter((v) => !options.organization || v.name !== "sketch")
+      .slice(0, probe.units.length > 1 ? undefined : 1);
+    for (const variant of variants)
+      for (const rails of [true, false]) {
+        let model: Model;
+        if (spare && !array) {
+          model = spare;
+          spare = null;
+        } else {
+          model = fresh();
+          if (array) applyArray(model);
+        }
+        const name = (n: string) => (array ? `array, ${n}` : n);
+        const rows = options.organization
+          ? organizationRows(model, options.organization)
+          : [flowOrder(model)];
+        const drawing = await drawModel(model, variant, rows, rails);
+        if ("failed" in drawing) {
+          tried.push({
+            variant: name(rails ? variant.name : `${variant.name}, no rails`),
+            skipped: drawing.failed,
+          });
+          continue;
+        }
+        drawing.variant = name(drawing.variant);
+        const emitted = emit(model, drawing);
+        if (options.organization)
+          Object.assign(emitted.report, organizationReport(options.organization, drawing));
+        const score = readability(emitted.predicted).score;
+        tried.push({ variant: drawing.variant, score });
+        if (!best || score < best.score)
+          best = {
+            score,
+            arrangement: {
+              circuit,
+              source: xml,
+              focus,
+              xml: emitted.xml,
+              report: emitted.report,
+              placement: emitted.placement,
+              keptWires: model.keptWires,
+              panelBelowY: model.panelBelowY,
+              fixedComponentIds: new Set(model.fixed.keys()),
+              predicted: emitted.predicted,
+            },
+          };
+        // without rails to draw, the drawing without them is this one
+        if (!drawing.rails) break;
       }
-      const emitted = emit(model, drawing);
-      if (options.organization)
-        Object.assign(emitted.report, organizationReport(options.organization, drawing));
-      const score = readability(emitted.predicted).score;
-      tried.push({ variant: drawing.variant, score });
-      if (!best || score < best.score)
-        best = {
-          score,
-          arrangement: {
-            circuit,
-            source: xml,
-            focus,
-            xml: emitted.xml,
-            report: emitted.report,
-            placement: emitted.placement,
-            keptWires: model.keptWires,
-            panelBelowY: model.panelBelowY,
-            fixedComponentIds: new Set(model.fixed.keys()),
-            predicted: emitted.predicted,
-          },
-        };
-      // without rails to draw, the drawing without them is this one
-      if (!drawing.rails) break;
-    }
+  }
   if (!best)
     throw new CircuitToolError(
       "ARRANGE_FAILED",

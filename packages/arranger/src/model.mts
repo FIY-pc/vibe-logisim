@@ -131,7 +131,8 @@ export interface Terminal {
   direction: "output" | "inout" | "input";
 }
 
-export type NetKind = "wire" | "tunnel" | "constant" | "fixed";
+// "inner": drawn inside its unit (an array, array.mts), not by the layout.
+export type NetKind = "wire" | "tunnel" | "constant" | "fixed" | "inner";
 
 export interface Net {
   index: number;
@@ -162,6 +163,11 @@ export interface Unit {
   terminals: Terminal[];
   // the original box of its parts and captions
   box: Box;
+  // A unit drawn ahead of the layout (array.mts): its parts and captions
+  // are copies moved by these offsets (componentId -> [dx, dy]) and its
+  // inner nets come with their copper, in the moved coordinates.
+  offsets?: Map<string, Point>;
+  copper?: Map<Net, Point[][]>;
 }
 
 export interface ArrangeOptions {
