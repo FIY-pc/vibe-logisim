@@ -353,3 +353,69 @@ describe("signal-flow layout", () => {
         assert.ok(xs[i] > xs[i - 1], `sum drivers at x ${xs}`);
     });
 });
+
+// Four full-adder instances fed bit by bit from two Splitters, their sums
+// gathered by a third, joined by the carry: a bit-slice array.
+describe("bit-slice array", () => {
+  const labelOf = (c: Focus["components"][number]) =>
+    c.attributes.find((a) => a.name === "label")?.standard ?? "";
+  const textOf = (c: Focus["components"][number]) =>
+    c.attributes.find((a) => a.name === "text")?.standard ?? "";
+
+  it("steps the instances down to the right along the carry chain", async () => {
+    const result = await arrange({
+      xml: file("adder4-instances.circ"),
+      circuit: "Adder4",
+      focus: observation("adder4-instances.focus.json"),
+    });
+    assert.match(result.report.variant, /^array/);
+    const members = result
+      .predicted!.components.filter((c) => c.factoryName === "FullAdder")
+      .sort((a, b) => labelOf(a).localeCompare(labelOf(b)));
+    for (let k = 1; k < members.length; k++) {
+      const dx = members[k].location.x - members[k - 1].location.x;
+      const dy = members[k].location.y - members[k - 1].location.y;
+      assert.ok(dx > 0 && dx <= 100 && dy > 0 && dy <= 100, `bit ${k} steps ${dx},${dy}`);
+    }
+    // each bit drops from its Splitter without a Tunnel; the crossings left
+    // are the ones the ports' order forces
+    const after = readability(result.predicted!);
+    assert.equal(after.tunnels, 0);
+    assert.ok(after.crossings <= 12, `crossings ${after.crossings}`);
+    for (const measure of [
+      "overlaps",
+      "labelOverlaps",
+      "wireOverBody",
+      "portGrazes",
+      "labelsOnWires",
+      "closeParallels",
+      "pinsOffSide",
+    ] as const)
+      assert.equal(after[measure], 0, measure);
+    assert.ok(after.score <= 83, `score ${after.score}`);
+  });
+
+  it("keeps group headings with their parts when arranged without groups", async () => {
+    const result = await arrange({
+      xml: file("adder4-instances-grouped.circ"),
+      circuit: "Adder4",
+      focus: observation("adder4-instances-grouped.focus.json"),
+    });
+    // each heading keeps its place over its bit's instance
+    const parts = result.predicted!.components;
+    const offsets = parts
+      .filter((c) => c.factoryName === "FullAdder")
+      .map((member) => {
+        const heading = parts.find((c) => c.factoryName === "Text" && textOf(c).endsWith(labelOf(member)))!;
+        return [heading.location.x - member.location.x, heading.location.y - member.location.y];
+      });
+    assert.equal(offsets.length, 4);
+    for (const [dx, dy] of offsets) {
+      assert.deepEqual([dx, dy], offsets[0]);
+      assert.ok(Math.abs(dx) <= 200 && dy < 0 && dy > -100, `heading at ${dx},${dy}`);
+    }
+    const after = readability(result.predicted!);
+    assert.equal(after.labelsOnWires, 0);
+    assert.ok(after.score <= 32, `score ${after.score}`);
+  });
+});
