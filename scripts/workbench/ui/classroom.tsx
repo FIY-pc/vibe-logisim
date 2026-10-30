@@ -1,0 +1,223 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { act, useLayoutEffect, StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { ClassroomEntry } from "../../../apps/workbench/src/classroom/Classroom";
+import { useWorkbench } from "../../../apps/workbench/src/app/provider";
+import { createClassroomServer } from "../../../packages/classroom/src/server.mts";
+import { Workbench } from "./workbench";
+
+export async function verifyClassroomUI() {
+  const provider = createServer(async (req, res) => {
+    for await (const _ of req) {
+    }
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        choices: [
+          {
+            message: { content: "建议在下一节课讲解进位逻辑。" },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((resolve) =>
+    provider.listen(0, "127.0.0.1", resolve),
+  );
+  const service = createClassroomServer({
+    database: ":memory:",
+    teacherCode: "invite",
+    ai: {
+      baseUrl: `http://127.0.0.1:${(provider.address() as any).port}/v1`,
+      apiKey: "test",
+      model: "fixture",
+    },
+  });
+  await new Promise<void>((resolve) =>
+    service.server.listen(0, "127.0.0.1", resolve),
+  );
+  const server = `http://127.0.0.1:${(service.server.address() as any).port}`;
+  const api = async (path: string, token: string, body?: unknown) => {
+    const response = await fetch(server + "/api" + path, {
+      method: body ? "POST" : "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = (await response.json()) as any;
+    assert.ok(response.ok, JSON.stringify(data));
+    return data;
+  };
+  const teacher = await api("/auth/register", "", {
+    username: "teacher-ui",
+    password: "test-password",
+    name: "李老师",
+    role: "teacher",
+    teacherCode: "invite",
+  });
+  const student = await api("/auth/register", "", {
+    username: "student-ui",
+    password: "test-password",
+    name: "张同学",
+    studentNo: "20260001",
+    role: "student",
+  });
+  const room = (
+    await api("/classrooms", teacher.token, {
+      title: "全加器课堂",
+      task: "完成全加器",
+      rubric: "测试全部输入",
+    })
+  ).classroom;
+  await api("/classrooms/join", student.token, { code: room.code });
+  const container = document.createElement("div");
+  document.body.append(container);
+  let root = createRoot(container);
+  const oldCommand = (globalThis as any).__command;
+  const doc: any = {
+    id: "shared-doc",
+    name: "adder.circ",
+    path: "/work/adder.circ",
+    revision: "r1",
+    main: "main",
+    dirty: false,
+    canUndo: false,
+    canRedo: false,
+    libraries: [],
+    circuits: [{ name: "main", components: [], wires: [] }],
+  };
+  const image = "data:image/png;base64,iVBORw0KGgo=";
+  (globalThis as any).__command = async (r: any) => {
+    if (r.op === "status") return { folder: { id: "folder-ui" } };
+    if (r.op === "read") return doc;
+    if (r.op === "source")
+      return { xml: '<project><circuit name="main"/></project>' };
+    if (r.op === "render") return { image };
+    if (r.op === "agent")
+      return {
+        workspaceKey: "folder-ui",
+        conversationId: "conversation-ui",
+        busy: false,
+        customProvider: { apiKey: "must-not-upload" },
+        messages: [
+          { id: "u1", type: "user", text: "进位为什么不对？" },
+          { id: "a1", type: "assistant", text: "检查真值表" },
+        ],
+      };
+    throw new Error("Unexpected host request " + r.op);
+  };
+  function Fixture() {
+    const { stores } = useWorkbench();
+    useLayoutEffect(() => {
+      stores.documents.setState({ docs: [doc], active: doc.id });
+    }, [stores]);
+    return <ClassroomEntry />;
+  }
+  const button = (label: string) => {
+    const b = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (n) =>
+        n.textContent?.trim() === label ||
+        n.getAttribute("aria-label") === label,
+    );
+    assert(b, `button ${label}`);
+    return b;
+  };
+  const click = async (label: string) => {
+    await act(async () => button(label).click());
+  };
+  const wait = async (predicate: () => boolean) => {
+    for (let i = 0; i < 100; i++) {
+      if (predicate()) return;
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+      });
+    }
+    assert.ok(predicate(), container.textContent || "UI did not settle");
+  };
+  try {
+    sessionStorage.setItem(
+      "vibe.classroom.session",
+      JSON.stringify({ ...student, server }),
+    );
+    await act(async () =>
+      root.render(
+        <StrictMode>
+          <Workbench>
+            <Fixture />
+          </Workbench>
+        </StrictMode>,
+      ),
+    );
+    await click("课堂管理");
+    await wait(() => Boolean(container.querySelector(".classroom-student")));
+    assert.equal(
+      (await api(`/classrooms/${room.id}`, teacher.token)).members[0].latest,
+      null,
+    );
+    await click("预览将共享的内容");
+    await wait(() => Boolean(container.querySelector(".classroom-preview")));
+    assert.ok(container.textContent?.includes("进位为什么不对"));
+    assert.equal(
+      container.querySelector(".classroom-preview img")?.getAttribute("src"),
+      image,
+    );
+    assert.equal(
+      (await api(`/classrooms/${room.id}`, teacher.token)).members[0].latest,
+      null,
+      "preview alone never uploads",
+    );
+    await click("共享进度");
+    await wait(() => Boolean(container.textContent?.includes("进度已共享")));
+    const roster = await api(`/classrooms/${room.id}`, teacher.token),
+      id = roster.members[0].latest.id;
+    const saved = (
+      await api(`/classrooms/${room.id}/submissions/${id}`, teacher.token)
+    ).submission;
+    assert.equal(saved.snapshot.messages.length, 2);
+    assert.ok(!JSON.stringify(saved).includes("must-not-upload"));
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    sessionStorage.setItem(
+      "vibe.classroom.session",
+      JSON.stringify({ ...teacher, server }),
+    );
+    await act(async () =>
+      root.render(
+        <StrictMode>
+          <Workbench>
+            <ClassroomEntry />
+          </Workbench>
+        </StrictMode>,
+      ),
+    );
+    await click("课堂管理");
+    await wait(() => Boolean(container.querySelector(".classroom-teacher")));
+    await click("张同学");
+    await wait(() =>
+      Boolean(container.textContent?.includes("进位为什么不对")),
+    );
+    assert.equal(
+      container.querySelector(".classroom-review img")?.getAttribute("src"),
+      image,
+    );
+    await click("生成分析报告");
+    await wait(() => Boolean(container.querySelector(".classroom-report")));
+    assert.ok(container.textContent?.includes("建议在下一节课讲解进位逻辑"));
+    assert.ok(container.textContent?.includes(id));
+    console.log(
+      "PASS: classroom preview requires explicit sharing, strips provider credentials, persists circuit/conversation evidence, and teacher review/AI analysis use the real classroom API",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    sessionStorage.removeItem("vibe.classroom.session");
+    (globalThis as any).__command = oldCommand;
+    await service.close();
+    provider.closeIdleConnections();
+    await new Promise<void>((resolve) => provider.close(() => resolve()));
+  }
+}

@@ -355,7 +355,11 @@ export class TurnRunner extends EventEmitter {
    * (binding, switching conversations, after missing events); afterwards
    * events carry every change. */
   historySnapshot() {
-    return { ...this.snapshot(), messages: this.messages() };
+    return {
+      ...this.snapshot(),
+      workspaceKey: this.workspaceKey,
+      messages: this.messages(),
+    };
   }
   emitStatus() {
     this.emit("event", { type: "status", ...this.snapshot() });

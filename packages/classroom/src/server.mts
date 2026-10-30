@@ -176,9 +176,16 @@ export function createClassroomServer(options: ServerOptions) {
     if (!["working", "submitted"].includes(input.status))
       fail(400, "提交状态无效");
     const xml = text(input.xml, "电路内容", 2 * 1024 * 1024);
+    const image =
+      input.image === undefined
+        ? undefined
+        : text(input.image, "电路预览", 1024 * 1024);
+    if (image && !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image))
+      fail(400, "电路预览必须为 PNG");
     if (!/<project\b/.test(xml) || !/<circuit\b/.test(xml))
       fail(400, "请选择 Logisim 电路文件");
     return {
+      ...(image ? { image } : {}),
       name: text(input.name, "文件名", 200),
       xml,
       revision: text(input.revision, "修订", 200),

@@ -24,6 +24,7 @@ export interface SharedMessage {
   status?: string;
 }
 export interface WorkSnapshot {
+  image?: string;
   name: string;
   xml: string;
   revision: string;
