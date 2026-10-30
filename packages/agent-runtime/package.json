@@ -6,7 +6,7 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.1.0",
     "@earendil-works/pi-ai": "1.1.0",
-    "undici": "8.11.2"
+    "undici": "^8.12.2"
   },
   "scripts": {
     "check": "tsc -p tsconfig.json"

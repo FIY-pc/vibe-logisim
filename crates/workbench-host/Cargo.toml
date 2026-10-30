@@ -15,7 +15,7 @@ xmltree.workspace = true
 uuid.workspace = true
 axum = "0.8"
 futures-util = "0.3"
-zip = { version = "=9.0.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 ts-rs.workspace = true
 tempfile.workspace = true

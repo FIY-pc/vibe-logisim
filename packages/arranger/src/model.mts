@@ -131,7 +131,8 @@ export interface Terminal {
   direction: "output" | "inout" | "input";
 }
 
-export type NetKind = "wire" | "tunnel" | "constant" | "fixed";
+// "inner": drawn inside its unit (an array, array.mts), not by the layout.
+export type NetKind = "wire" | "tunnel" | "constant" | "fixed" | "inner";
 
 export interface Net {
   index: number;
@@ -162,6 +163,11 @@ export interface Unit {
   terminals: Terminal[];
   // the original box of its parts and captions
   box: Box;
+  // A unit drawn ahead of the layout (array.mts): its parts and captions
+  // are copies moved by these offsets (componentId -> [dx, dy]) and its
+  // inner nets come with their copper, in the moved coordinates.
+  offsets?: Map<string, Point>;
+  copper?: Map<Net, Point[][]>;
 }
 
 export interface ArrangeOptions {
@@ -200,6 +206,9 @@ export interface Model {
   usedLabels: Set<string>;
   // drawn mostly with Tunnels: Tunnels the author drew stay Tunnels
   tunnelPage: boolean;
+  // a Tunnel or constant that would stand on a wired port's lead may step
+  // aside of it (layout.mts, shapeUnit)
+  stepAside: boolean;
   wiringLib: string | null;
   baseLib: string | null;
   report: Report;
@@ -516,9 +525,22 @@ export function buildModel(
   }
 
   // captions follow the nearest part, and stay by a part that stays; other
-  // free text becomes a note
+  // free text becomes a note. A part's own Tunnels, joined by their copper
+  // to it alone, are part of how it is drawn: text by one of them (a group
+  // heading over its flags) is the part's caption too.
   const notes: Component[] = [];
   const staying = parts.filter((c) => fixed.has(c.componentId) && !isText(c));
+  const islandAt = new Map<string, Set<string>>();
+  for (const island of wireIslands(focus)) for (const p of island.points) islandAt.set(p, island.points);
+  const ownTunnels: [Unit | null, Component][] = [];
+  for (const t of tunnels) {
+    const at = `${t.location.x},${t.location.y}`;
+    const owners = new Set<Unit | null>();
+    for (const p of islandAt.get(at) ?? [at])
+      for (const q of portsAt.get(p) ?? [])
+        if (!localized.has(q.part.componentId)) owners.add(unitOf.get(q.part.componentId) ?? null);
+    if (owners.size === 1) ownTunnels.push([[...owners][0], t]);
+  }
   for (const t of parts) {
     if (!isText(t) || fixed.has(t.componentId)) continue;
     const tb = boxOf(t.bounds);
@@ -527,7 +549,11 @@ export function buildModel(
       return Math.max(b[0] - tb[2], tb[0] - b[2], b[1] - tb[3], tb[1] - b[3], 0);
     };
     let best: [number, Unit | null] | null = null;
-    for (const [u, c] of [...units.flatMap((u) => u.parts.map((c) => [u, c] as const)), ...staying.map((c) => [null, c] as const)]) {
+    for (const [u, c] of [
+      ...units.flatMap((u) => u.parts.map((c) => [u, c] as const)),
+      ...staying.map((c) => [null, c] as const),
+      ...ownTunnels,
+    ]) {
       const gap = gapTo(c);
       if (gap <= CAPTION_DISTANCE && (!best || gap < best[0])) best = [gap, u];
     }
@@ -677,6 +703,7 @@ export function buildModel(
     netOfPort,
     usedLabels,
     tunnelPage,
+    stepAside: true,
     wiringLib: libName("#Wiring"),
     baseLib: libName("#Base"),
     report,
