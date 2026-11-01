@@ -58,6 +58,8 @@ Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话
 
 此功能需要独立部署课堂服务，启动、模型配置和数据边界见 [课堂服务说明](docs/classroom.md)。
 
+包含课堂功能的 Windows 测试包、固定文件校验值和使用步骤见 [产品介绍页](https://lovej.site/vibe-logisim/)，可直接下载；上游旧 Releases 不一定包含课堂模块。介绍页也提供审核后公开的体验反馈，以及独立的评论管理后台。
+
 ## 电路与 AI 接口的兼容性
 
 支持 **Logisim-ITA 2.16** 与 **HUST 2020 版**的 `.circ` 电路，可在对应版本的 Logisim 中继续使用。打开已有工程时需保留所用的组件库。
