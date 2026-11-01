@@ -48,8 +48,11 @@ if (data/'showcase.sqlite').exists():
     os.chmod(backup/'showcase.sqlite',0o600)
 environment=root/'showcase.env'
 password=None
+bootstrap=root/'first-login.json'
 if not environment.exists():
     password=secrets.token_urlsafe(24)
+    fd=os.open(bootstrap,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'w') as f:json.dump({'password':password},f)
     salt=secrets.token_hex(16)
     hashed=hashlib.scrypt(password.encode(),salt=salt.encode(),n=16384,r=8,p=1,dklen=64).hex()
     content='\n'.join(['NODE_ENV=production','SHOWCASE_PORT=8811','SHOWCASE_DATABASE='+str(data/'showcase.sqlite'),'SHOWCASE_PUBLIC='+str(root/'current/public'),'SHOWCASE_DOWNLOADS='+str(downloads),'SHOWCASE_ORIGIN=https://lovej.site','SHOWCASE_TRUST_PROXY=1','SHOWCASE_ADMIN_USERNAME=admin','SHOWCASE_ADMIN_PASSWORD_HASH='+salt+':'+hashed,'SHOWCASE_IP_SECRET='+secrets.token_hex(32),''])
@@ -58,6 +61,7 @@ if not environment.exists():
 else:
     shutil.copy2(environment,backup/'showcase.env')
     os.chmod(backup/'showcase.env',0o600)
+    if bootstrap.exists():password=json.loads(bootstrap.read_text())['password']
 current=root/'current'
 assert not current.exists() or current.is_symlink()
 previous=current.resolve() if current.is_symlink() else None

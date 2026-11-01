@@ -6,7 +6,7 @@ Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己
 
 电路编辑、资料阅读、AI 对话和仿真在同一个窗口里完成。成果保存在你自己的文件夹中，是可以继续编辑和运行的 `.circ` 文件。
 
-[下载 Windows / Linux 版](https://github.com/FIY-pc/vibe-logisim/releases) · [反馈问题](https://github.com/FIY-pc/vibe-logisim/issues/new/choose) · [参与开发](docs/development.md)
+[产品介绍与 Windows 课堂版下载](https://lovej.site/vibe-logisim/) · [上游发布与 Linux 版](https://github.com/FIY-pc/vibe-logisim/releases) · [反馈问题](https://github.com/FIY-pc/vibe-logisim/issues/new/choose) · [参与开发](docs/development.md)
 
 ## 用它做什么
 
