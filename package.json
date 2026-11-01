@@ -13,7 +13,7 @@
     "dev": "node scripts/workbench/dev.mts",
     "desktop": "cd apps/workbench && npm run desktop",
     "build": "cd apps/workbench && npm run build",
-    "check": "tsc -b apps/workbench && tsc -p packages/agent-runtime/tsconfig.json && tsc -p packages/arranger/tsconfig.json && tsc -p scripts/workbench/tsconfig.json && tsc -p packages/classroom/tsconfig.json && tsc -p packages/showcase/tsconfig.json",
+    "check": "tsc -b apps/workbench && tsc -p packages/agent-runtime/tsconfig.json && tsc -p packages/arranger/tsconfig.json && tsc -p scripts/workbench/tsconfig.json && tsc -p packages/classroom/tsconfig.json && tsc -p packages/showcase/tsconfig.json && tsc -p packages/showcase/tsconfig.demo.json",
     "classroom": "node packages/classroom/src/main.mts",
     "test:classroom": "node --test packages/classroom/test/*.test.mts",
     "test:arranger": "cd packages/arranger && npm test",

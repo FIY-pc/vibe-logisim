@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node src/main.mts",
     "test": "node --test test/*.test.mts",
-    "check": "tsc -p tsconfig.json"
+    "check": "tsc -p tsconfig.json && tsc -p tsconfig.demo.json",
+    "build:demo": "node scripts/build-demo.mts",
+    "record:demo": "node scripts/record-demo.mts"
   }
 }
