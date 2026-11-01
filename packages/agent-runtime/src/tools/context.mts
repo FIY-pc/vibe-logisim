@@ -243,6 +243,22 @@ export class ToolContext {
     return { view: observationView(raw), raw, document };
   }
 
+  async preview(
+    document: DocumentRef,
+    circuit: string,
+    edits: Edit[],
+  ): Promise<Observed> {
+    const raw = await this.host.call({
+      op: "observeEdits",
+      id: document.id,
+      revision: document.revision,
+      circuit,
+      edits,
+    });
+    this.assertCurrent();
+    return { view: observationView(raw), raw, document };
+  }
+
   /**
    * Sends edit, undo or redo requests one after another, each on the
    * revision the previous one made. The host broadcasts what they changed.
@@ -300,7 +316,10 @@ export class ToolContext {
   }
 
   /** The identity every tool result starts with. */
-  identity(document: { id: string; path: string | null; revision: string }, circuit: string) {
+  identity(
+    document: { id: string; path: string | null; revision: string },
+    circuit: string,
+  ) {
     return {
       documentId: document.id,
       path: document.path

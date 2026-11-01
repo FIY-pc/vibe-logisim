@@ -4,6 +4,7 @@ import "./ai-settings.css";
 import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { DialogClose, useModal } from "../shared/Dialog";
+import { publicText } from "../../../../packages/agent-runtime/src/models/public-fields.mts";
 export interface ProviderConfiguration {
   id?: string;
   name: string;
@@ -472,18 +473,37 @@ export function ProviderSettings(props: SettingsProps) {
               >
                 <div>
                   <strong>
-                    {service.name || service.baseUrl}
+                    {publicText(service.name || service.baseUrl)}
                     {props.conversationId && service.id === provider?.id && (
                       <span className="ai-settings-badge">此对话</span>
                     )}
                   </strong>
-                  <p>{service.baseUrl}</p>
-                  <p>{service.model}</p>
+                  {!service.baseUrl.includes("/api/classrooms/") && (
+                    <p>{publicText(service.baseUrl)}</p>
+                  )}
+                  <p>{publicText(service.model)}</p>
+                  {service.baseUrl.includes("/api/classrooms/") && (
+                    <p className="muted">
+                      课堂提供 · 配置由教师管理，使用独立访问凭据
+                    </p>
+                  )}
                 </div>
                 <div className="ai-service-actions">
+                  {service.baseUrl.includes("/api/classrooms/") && (
+                    <button
+                      disabled={locked}
+                      onClick={() => {
+                        setConfirmation({ kind: "remove", service });
+                        navigate("confirm");
+                      }}
+                    >
+                      移除
+                    </button>
+                  )}
                   <button
                     disabled={locked}
                     onClick={() => edit(service)}
+                    hidden={service.baseUrl.includes("/api/classrooms/")}
                     aria-label={`编辑 ${service.name || service.baseUrl}`}
                   >
                     编辑

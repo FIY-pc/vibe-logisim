@@ -76,11 +76,14 @@ fn save_as_cannot_reuse_identity_of_another_open_document() {
     let doc = w.open(&original).unwrap();
     let saved = w.save(&doc.id, &doc.revision, Some(&copy)).unwrap();
     assert_eq!(saved.id, doc.id);
-    assert_eq!(saved.path.as_ref(), Some(&copy));
+    assert_eq!(saved.path.as_ref(), Some(&copy.canonicalize().unwrap()));
     let reopened = w.open(&original).unwrap();
     assert_ne!(reopened.id, doc.id);
     assert_eq!(w.documents.len(), 2);
-    assert_eq!(w.get(&doc.id).unwrap().path.as_ref(), Some(&copy));
+    assert_eq!(
+        w.get(&doc.id).unwrap().path.as_ref(),
+        Some(&copy.canonicalize().unwrap())
+    );
     assert!(w.save(&doc.id, &doc.revision, Some(&original)).is_err());
     w.persist(&session).unwrap();
     let mut recovered = Workspace::restore(&session).unwrap();
@@ -354,7 +357,7 @@ fn save_as_overwrite_checks_target_and_open_document_identity() {
         .save_checked(&doc.id, &doc.revision, Some(&target), Some(&expected))
         .unwrap();
     assert_eq!(saved.id, doc.id);
-    assert_eq!(saved.path.as_deref(), Some(target.as_path()));
+    assert_eq!(saved.path.as_ref(), Some(&target.canonicalize().unwrap()));
     assert_ne!(workspace.open(&source).unwrap().id, doc.id);
     assert_eq!(std::fs::read(&source).unwrap(), original);
 }
@@ -397,7 +400,9 @@ fn save_as_rebases_external_libraries_and_history_without_changing_original() {
         format!(
             "file#{}",
             std::path::Path::new("..")
-                .join("original/parts/logic.circ")
+                .join("original")
+                .join("parts")
+                .join("logic.circ")
                 .display()
         )
     );

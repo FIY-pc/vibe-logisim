@@ -133,6 +133,18 @@ await cp(
   path.join(portable, "vibe-logisim" + (windows ? ".exe" : "")),
 );
 if (windows) {
+  // Leave room for the destination directory added by Explorer's Extract All.
+  const inspect = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await inspect(file);
+      else if (path.relative(cache, file).length > 140)
+        throw new Error(
+          `Portable path exceeds Windows extraction budget: ${path.relative(cache, file)}`,
+        );
+    }
+  };
+  await inspect(portable);
   await writeFile(
     path.join(portable, "start.cmd"),
     '@echo off\r\nset "VIBE_WORKBENCH_RESOURCES=%~dp0resources\\workbench"\r\nstart "" "%~dp0vibe-logisim.exe" %*\r\n',

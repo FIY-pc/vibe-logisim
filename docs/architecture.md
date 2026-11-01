@@ -46,7 +46,7 @@
 
 每个模块 README 末尾的「Remaining tasks」是当前的待办。跨模块的优先次序：
 
-1. 通过新的 `agent-runtime` 跑一次真实模型回合，修掉断点（`packages/agent-runtime/README.md`）。
-2. 宿主加 `observeXml`，`arrange_circuit` 改为先验证再应用（`crates/workbench-host/README.md`、`packages/agent-runtime/README.md`）。
+1. 已完成真实模型回合与脚本化 sidecar 验证；继续扩大真实模型的放置、连接、整理场景（`packages/agent-runtime/README.md`）。
+2. 已有 `observeXml` 和 `observeEdits`：整理与自动连接先预览验证，再一次性提交。
 3. 已做：编辑路径上不再落盘，一次编辑一次 Java 往返（`crates/workbench-host/README.md` Status）。
-4. 补回 sidecar 回合的脚本场景（`scripts/workbench/README.md`）。
+4. 已补回 sidecar 回合脚本（`scripts/workbench/README.md`）；Windows 与 Linux 都运行基础回归检查。

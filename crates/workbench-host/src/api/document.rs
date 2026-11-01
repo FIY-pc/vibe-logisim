@@ -193,6 +193,13 @@ pub enum DocumentRequest {
         circuit: String,
         xml: String,
     },
+    /// Observe a proposed batch without changing the document or its history.
+    ObserveEdits {
+        id: String,
+        revision: String,
+        circuit: String,
+        edits: Vec<Edit>,
+    },
     /// The vector picture of each kind and the circuit's width conflicts
     /// (`crates/logisim-runtime/README.md`, Symbols), as the worker's JSON.
     Symbols {
@@ -381,6 +388,7 @@ impl DocumentRequest {
         "redo",
         "observe",
         "observeXml",
+        "observeEdits",
         "symbols",
         "connections",
         "template",
@@ -437,7 +445,7 @@ impl DocumentRequest {
                 .stage(Stage::Edit)
                 .history(Action::document("redo", "重做修改", id))
                 .agent(),
-            Self::Observe { .. } | Self::ObserveXml { .. } => {
+            Self::Observe { .. } | Self::ObserveXml { .. } | Self::ObserveEdits { .. } => {
                 Meta::new(Read).stage(Stage::Observe).agent()
             }
             Self::Template { .. } | Self::Properties { .. } | Self::Catalog { .. } => {
@@ -1004,6 +1012,27 @@ impl Host {
                         .snapshot()
                 };
                 let _observe = timing::span("observe");
+                let text = self
+                    .native
+                    .lock()
+                    .await
+                    .observe_raw(&proposed, &circuit)
+                    .await?;
+                return Ok(Reply::Text(text));
+            }
+            DocumentRequest::ObserveEdits {
+                id,
+                revision,
+                circuit,
+                edits,
+            } => {
+                let edits = self.resolve_batch(&id, &revision, &circuit, edits).await?;
+                let proposed = {
+                    let w = self.workspace.lock().await;
+                    w.get(&id)?
+                        .preview(&revision, &circuit, Edit::Batch { edits })?
+                        .snapshot()
+                };
                 let text = self
                     .native
                     .lock()

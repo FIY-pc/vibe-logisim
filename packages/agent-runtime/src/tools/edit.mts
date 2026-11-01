@@ -106,7 +106,10 @@ export async function setAttributes(
   // sent for, so two edits of one part in a batch would undo each other.
   const values = new Map<string, Record<string, string>>();
   for (const e of args.edits ?? [])
-    values.set(e.componentId, { ...values.get(e.componentId), ...e.attributes });
+    values.set(e.componentId, {
+      ...values.get(e.componentId),
+      ...e.attributes,
+    });
   const edits: Edit[] = [...values].map(([id, attributes]) => ({
     kind: "attributes",
     id,
@@ -133,22 +136,15 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
     throw new CircuitToolError("INVALID_ARGUMENT", "没有要执行的连线操作", {
       hint: "给出 connections、wires、additions 或 removeWireIds。",
     });
-  // Removals and placements land first so routing sees the real grid.
-  let current: DocumentRef = document;
-  let last: EditResult | null = null;
-  let first: Applied | null = null;
-  if (prelude.length) {
-    const applied = await context.edit(document, circuit, prelude);
-    first = applied;
-    current = applied.change;
-    last = applied.result;
-  }
+  // Routing sees the proposed grid, while the live file stays untouched.
   const paths: Point[][] = [...drawn];
   const joined: { from: PortRef; to: PortRef }[] = [];
   const already: number[] = [];
   let before: Map<string, string | null> | null = null;
   if (connections.length) {
-    const { view } = await context.observe(current, circuit);
+    const { view } = prelude.length
+      ? await context.preview(document, circuit, prelude)
+      : await context.observe(document, circuit);
     const ports = portIndex(view.circuit);
     before = netsOf(ports);
     const router = new Router(view.circuit);
@@ -170,7 +166,11 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
             : `第 ${i + 1} 条连接：电路里没有元件 ${missing.component}。`,
           {
             hint: "端口编号来自 inspect_circuit 的 componentIds 或 describe_component；元件移动后 id 会变。",
-            context: { connection: i, from: connection.from, to: connection.to },
+            context: {
+              connection: i,
+              from: connection.from,
+              to: connection.to,
+            },
           },
         );
       }
@@ -180,7 +180,11 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
           `第 ${i + 1} 条连接：${portName(connection.from)} 是 ${from.end.width} 位，${portName(connection.to)} 是 ${to.end.width} 位，不能直接相连。`,
           {
             hint: "先用 set_attributes 统一位宽，或经 Splitter 拆分/合并。",
-            context: { connection: i, from: connection.from, to: connection.to },
+            context: {
+              connection: i,
+              from: connection.from,
+              to: connection.to,
+            },
           },
         );
       if (router.joined(from, to)) {
@@ -194,7 +198,11 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
           `第 ${i + 1} 条连接：${portName(connection.from)} 到 ${portName(connection.to)} 之间找不到不碰其他元件和导线的正交路径。`,
           {
             hint: "移动元件留出通道，或用 wires 直接给出这段导线的拐点。前面的连接都还没有画。",
-            context: { connection: i, from: connection.from, to: connection.to },
+            context: {
+              connection: i,
+              from: connection.from,
+              to: connection.to,
+            },
           },
         );
       router.commit(points);
@@ -202,38 +210,35 @@ export async function connect(context: ToolContext, args: Record<string, any>) {
       joined.push({ from, to });
     }
   }
-  if (paths.length) {
-    const applied = await context.edit(
-      current,
-      circuit,
-      paths.map((points) => ({ kind: "wire", points }) as Edit),
-    );
-    last = applied.result;
-    first = first
-      ? {
-          result: applied.result,
-          results: [...first.results, ...applied.results],
-          change: applied.change,
-        }
-      : applied;
-    if (before && joined.length) await checkJoins(context, applied, circuit, before, joined);
+  const edits: Edit[] = [
+    ...prelude,
+    ...paths.map((points) => ({ kind: "wire", points }) as Edit),
+  ];
+  if (paths.length && before && joined.length) {
+    const observed = await context.preview(document, circuit, edits);
+    checkJoins(observed.view.circuit, before, joined);
   }
+  context.assertCurrent();
   const notes = already.length
-    ? [`第 ${already.map((i) => i + 1).join("、")} 条连接的两个端口本来就相连，没有画线。`]
+    ? [
+        `第 ${already.map((i) => i + 1).join("、")} 条连接的两个端口本来就相连，没有画线。`,
+      ]
     : [];
-  if (!last || !first)
+  if (!edits.length)
     return {
-      ...context.identity(current, circuit),
+      ...context.identity(document, circuit),
       wiresAdded: 0,
       alreadyConnected: already.length,
       note: notes[0],
     };
-  return outcome(context, first, {
+  return outcome(context, await context.edit(document, circuit, edits), {
     ...(args.removeWireIds?.length
       ? { removed: { [circuit]: args.removeWireIds.map(fileWireId) } }
       : {}),
     wiresAdded: paths.length,
-    ...(already.length ? { alreadyConnected: already.length, note: notes[0] } : {}),
+    ...(already.length
+      ? { alreadyConnected: already.length, note: notes[0] }
+      : {}),
   });
 }
 
@@ -247,18 +252,14 @@ function netsOf(ports: Map<string, PortRef>) {
 /**
  * The drawn wires must join exactly the requested nets: every requested pair
  * shares a net afterwards, and no two nets merged that no request linked.
- * Otherwise the wires are taken back and the call fails with the first
- * unexpected merge.
+ * The preview must pass before any edits are applied.
  */
-async function checkJoins(
-  context: ToolContext,
-  applied: Applied,
-  circuit: string,
+function checkJoins(
+  circuit: import("./observe.mts").CircuitView,
   before: Map<string, string | null>,
   joined: { from: PortRef; to: PortRef }[],
 ) {
-  const observed = await context.observe(applied.change, circuit);
-  const after = netsOf(portIndex(observed.view.circuit));
+  const after = netsOf(portIndex(circuit));
   // Nets the requests link, as union-find over the nets before.
   const parent = new Map<string, string>();
   const find = (n: string): string => {
@@ -298,18 +299,9 @@ async function checkJoins(
     }
   }
   if (!problem) return;
-  // Take the wires of this call back (one batch, or a single wire).
-  await context.send(
-    applied.change,
-    applied.results.map(() => (revision) => ({
-      op: "undo",
-      id: applied.change.id,
-      revision,
-    })),
-  );
   throw new CircuitToolError(
     "ROUTE_CHANGED_NETS",
-    `自动布线出错：${problem}。这次的导线已撤回。`,
+    `自动布线出错：${problem}。这次修改没有应用。`,
     {
       hint: "用 wires 直接给出这段导线的拐点，或移动元件后重试。",
     },

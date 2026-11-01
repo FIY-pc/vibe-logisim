@@ -14,6 +14,7 @@ import { sameRun, simulationClient } from "./simulation-client.mts";
 import { agentScript, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 import { documentViews } from "./document-views.mts";
+import { verifyAtomicConnect } from "./connect-native-scenarios.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 // The sidecar reads its model services at start: point them at a scripted model.
@@ -304,7 +305,7 @@ try {
   assert.equal(reloaded.dirty, false);
   assert.equal(reloaded.id, id);
   assert.equal(
-    (await readFile(copyPath, "utf8")),
+    await readFile(copyPath, "utf8"),
     saved,
     "The document was not read from its file",
   );
@@ -451,6 +452,7 @@ try {
     "Observation did not survive restart",
   );
   await verifyAgentTurn(command, stream!, state);
+  await verifyAtomicConnect(post);
   console.log(
     "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup; a scripted AI turn's edit, folder checkpoint and undo; a turn that rewrites the open file reads it again.",
   );

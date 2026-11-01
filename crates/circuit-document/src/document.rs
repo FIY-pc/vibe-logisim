@@ -781,9 +781,11 @@ impl Document {
             _ => false,
         };
         let old_wires = if wiring {
-            wire_count(&self.source.tree, circuit)?
+            wire_ends(&self.source.tree, circuit)?
+                .into_iter()
+                .collect::<HashSet<_>>()
         } else {
-            0
+            HashSet::new()
         };
         let next = match &edit {
             Edit::Replace { xml, .. } => {
@@ -805,8 +807,12 @@ impl Document {
         if selecting {
             let tree = &self.source.tree;
             if wiring {
-                let count = wire_count(tree, circuit).unwrap_or(0);
-                outcome.wires = (old_wires..count).map(|k| format!("w{k}")).collect();
+                outcome.wires = wire_ends(tree, circuit)?
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, ends)| !old_wires.contains(ends))
+                    .map(|(k, _)| format!("w{k}"))
+                    .collect();
             }
             let items = match edit {
                 Edit::Batch { edits } => edits,
@@ -1195,7 +1201,16 @@ fn edit_title(edit: &Edit, circuit: &str, doc: &Document) -> String {
     }
 }
 
-/// How many wires the circuit has.
-fn wire_count(tree: &Tree, circuit: &str) -> Result<usize> {
-    Ok(tree.named(editing::find(tree, circuit)?, "wire").count())
+/// Canonical endpoint pairs survive deletions and Logisim junction splitting.
+fn wire_ends(tree: &Tree, circuit: &str) -> Result<Vec<(Point, Point)>> {
+    editing::Sheet::new(tree, editing::find(tree, circuit)?)?
+        .segments()
+        .map(|(a, b)| {
+            Ok(if (a.x, a.y) <= (b.x, b.y) {
+                (a, b)
+            } else {
+                (b, a)
+            })
+        })
+        .collect()
 }
