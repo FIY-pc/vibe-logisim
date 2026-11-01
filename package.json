@@ -6,13 +6,14 @@
     "apps/workbench",
     "packages/agent-runtime",
     "packages/arranger",
-    "packages/classroom"
+    "packages/classroom",
+    "packages/showcase"
   ],
   "scripts": {
     "dev": "node scripts/workbench/dev.mts",
     "desktop": "cd apps/workbench && npm run desktop",
     "build": "cd apps/workbench && npm run build",
-    "check": "tsc -b apps/workbench && tsc -p packages/agent-runtime/tsconfig.json && tsc -p packages/arranger/tsconfig.json && tsc -p scripts/workbench/tsconfig.json && tsc -p packages/classroom/tsconfig.json",
+    "check": "tsc -b apps/workbench && tsc -p packages/agent-runtime/tsconfig.json && tsc -p packages/arranger/tsconfig.json && tsc -p scripts/workbench/tsconfig.json && tsc -p packages/classroom/tsconfig.json && tsc -p packages/showcase/tsconfig.json",
     "classroom": "node packages/classroom/src/main.mts",
     "test:classroom": "node --test packages/classroom/test/*.test.mts",
     "test:arranger": "cd packages/arranger && npm test",
@@ -37,7 +38,9 @@
     "test:runtime": "node scripts/workbench/network-check.mts && node scripts/workbench/reference-check.mts && node scripts/workbench/builtin-runtime-check.mts && node scripts/workbench/write-safety-check.mts && node scripts/workbench/connect-safety-check.mts",
     "test:ui": "node scripts/workbench/verify-ui.mts",
     "test:interfaces": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/interface-check.mts",
-    "test:history": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/history-check.mts"
+    "test:history": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/history-check.mts",
+    "showcase": "node packages/showcase/src/main.mts",
+    "test:showcase": "node --test packages/showcase/test/*.test.mts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

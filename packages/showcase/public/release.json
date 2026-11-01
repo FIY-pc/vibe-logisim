@@ -1,0 +1,18 @@
+{
+  "label": "课堂协作测试版",
+  "buildDate": "2026-10-30",
+  "applicationVersion": "0.6.0-beta.3",
+  "sourceCommit": "9eb83ca",
+  "classroomIncluded": true,
+  "platform": "Windows 10/11 x64",
+  "installer": {
+    "name": "vibe-logisim-classroom-20261030-win64-setup.exe",
+    "bytes": 104583043,
+    "sha256": "fb7853380b41b1be7ba7255860f29c3cba0e2522c15dae18805598d5723ed35b"
+  },
+  "portable": {
+    "name": "vibe-logisim-classroom-20261030-win64.zip",
+    "bytes": 126703410,
+    "sha256": "7593b0bada8c4cbbac031c98e26ca2e7fcd348b2375bdcf0be43b0b5463b9bf1"
+  }
+}

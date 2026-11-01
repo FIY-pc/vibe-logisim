@@ -44,3 +44,6 @@ tmp/
 # bun writes its own lock file; package-lock.json is the one in use
 bun.lock
 bun.lockb
+
+# Product showcase private state
+/.showcase-data/
