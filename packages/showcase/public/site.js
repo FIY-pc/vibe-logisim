@@ -65,6 +65,26 @@ const views = {
   student: ["assets/student.png", "学生课堂界面，显示自动同步状态"],
   review: ["assets/review.png", "教师只读审阅学生电路与AI交互记录"],
 };
+
+// Local full-adder illustration; switching an input never sends a request.
+const adderInputs = { a: 0, b: 0, cin: 0 };
+document.querySelectorAll("[data-input]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const input = button.dataset.input;
+    adderInputs[input] ^= 1;
+    button.setAttribute("aria-pressed", String(Boolean(adderInputs[input])));
+    button.querySelector("b").textContent = String(adderInputs[input]);
+    const total = adderInputs.a + adderInputs.b + adderInputs.cin;
+    for (const [id, value] of [
+      ["adder-sum", total % 2],
+      ["adder-cout", total >= 2 ? 1 : 0],
+    ]) {
+      const output = document.getElementById(id);
+      output.textContent = String(value);
+      output.classList.toggle("on", Boolean(value));
+    }
+  });
+});
 document.querySelectorAll("[data-view]").forEach((button) =>
   button.addEventListener("click", () => {
     document.querySelectorAll("[data-view]").forEach((b) => {
@@ -125,11 +145,7 @@ async function loadComments(append = false) {
     }
     if (!d.total)
       comments.append(
-        node(
-          "p",
-          "还没有公开评论。你的真实体验，会成为我们继续改进的依据。",
-          "empty-comments",
-        ),
+        node("p", "用过之后，来聊聊你的发现吧。", "empty-comments"),
       );
     d.comments.forEach((c) => comments.append(renderComment(c)));
     offset += d.comments.length;
