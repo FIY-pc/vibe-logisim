@@ -1,4 +1,5 @@
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
+import { verifyStraightWires } from "./straight-wires";
 import { verifyClassroomUI } from "./classroom";
 import { verifyAISettings } from "./ai-settings";
 import { verifyConversationSummaries } from "./conversation-summaries";
@@ -1324,6 +1325,7 @@ console.log(
 await act(async () => root.unmount());
 assert.deepEqual(errors, []);
 await verifyRestoredInteractions();
+await verifyStraightWires();
 await verifyFilesUI();
 await verifyReferencesUI();
 await verifyReferenceLinks();

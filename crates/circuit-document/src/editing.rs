@@ -432,6 +432,34 @@ fn wire(sheet: &Sheet, points: &[Point], out: &mut Splices<'_>) -> Result<()> {
             added.push(segment);
         }
     }
+    // Click-to-route can leave several collinear pieces in one gesture. They
+    // draw as a single line but otherwise become separately selectable wires.
+    // Remove only forward straight waypoints: a bend, retrace or contact with
+    // another wire must retain its endpoint and junction semantics.
+    let mut straight: Vec<Segment> = Vec::new();
+    for (i, segment) in added.iter().enumerate() {
+        if let Some(previous) = straight.last_mut() {
+            let joined = Segment {
+                from: previous.from,
+                to: segment.to,
+            };
+            let middle = segment.from;
+            if previous.to == middle
+                && joined.inside(middle)
+                && !sheet.wires.iter().any(|w| w.segment.touches(middle))
+                && !sheet.comps.iter().any(|c| c.location == middle)
+                && !added
+                    .iter()
+                    .enumerate()
+                    .any(|(j, other)| j != i && j + 1 != i && other.touches(middle))
+            {
+                previous.to = segment.to;
+                continue;
+            }
+        }
+        straight.push(*segment);
+    }
+    let added = straight;
     let ends: Vec<Point> = added.iter().flat_map(|s| [s.from, s.to]).collect();
     let mut plan = Plan::new(sheet);
     plan.added = added;
