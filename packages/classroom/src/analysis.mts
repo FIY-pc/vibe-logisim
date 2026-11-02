@@ -59,8 +59,6 @@ export function analysisInput(
         })),
         students: cappedStudents!.map((s) => ({
           studentId: s.studentId,
-          name: s.name.slice(0, 32),
-          student_no: s.student_no.slice(0, 32),
           passedLessons: s.lessons.filter((c) => c.passed).length,
           submittedLessons: s.lessons.filter((c) => c.attempts > 0).length,
           attempts: s.lessons.reduce((n, c) => n + c.attempts, 0),
@@ -198,22 +196,30 @@ export function analysisInput(
         }
       : { status: "尚未同步" }),
   }));
-  for (const row of base) {
-    students.push(row);
-    const score = gradeRows.get(row.studentId);
-    if (score) payload.assessment.students.push(score);
-    if (serialize().length > budget - 800 && score) {
-      delete score.lessons;
-      delete score.results;
-      payload.assessment.detailsOmitted = true;
-      truncated = true;
-    }
+  students.push(...base);
+  if (payload.assessment) {
+    payload.assessment.students = base
+      .map((row) => gradeRows.get(row.studentId))
+      .filter(Boolean);
+    // Reserve summaries for the whole class before spending space on details.
     if (serialize().length > budget - 800) {
-      students.pop();
-      if (score) payload.assessment.students.pop();
+      for (const score of payload.assessment.students) {
+        delete score.lessons;
+        delete score.results;
+      }
+      payload.assessment.detailsOmitted = true;
+      delete payload.assessment.resultColumns;
+      delete payload.assessment.statusCodes;
       truncated = true;
-      break;
     }
+  }
+  while (students.length && serialize().length > budget - 800) {
+    const removed = students.pop();
+    if (payload.assessment)
+      payload.assessment.students = payload.assessment.students.filter(
+        (s: any) => s.studentId !== removed.studentId,
+      );
+    truncated = true;
   }
   payload.omittedStudents = roster.length - students.length;
   const perStudent = Math.max(

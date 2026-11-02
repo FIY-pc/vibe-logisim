@@ -134,6 +134,42 @@ test("40 students and 10 lessons retain every score and per-lesson result within
   }
 });
 
+test("whole-class scores take priority over early students' details with UUID identities", () => {
+  const f = fixture(40, 10);
+  f.roster.forEach((m, i) => {
+    m.user.id = `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+    m.latest!.studentId = m.user.id;
+    f.grading.students[i].studentId = m.user.id;
+  });
+  const result = analysisInput(
+    { task: "数字电路课堂", rubric: "按关卡评测计分" },
+    "分析全班",
+    f.roster,
+    f.snapshot,
+    false,
+    "fixture",
+    f.grading,
+  );
+  const payload = JSON.parse(result.messages[1].content);
+  assert.ok(JSON.stringify(result.messages).length <= 24000);
+  assert.equal(result.includedStudents, 40);
+  assert.equal(payload.assessment.omittedStudents, 0);
+  assert.equal(payload.assessment.students.length, 40);
+  for (const expected of f.grading.students) {
+    const row = payload.assessment.students.find(
+      (s: any) => s.studentId === expected.studentId,
+    );
+    assert.equal(
+      row.total,
+      expected.lessons.reduce(
+        (sum, lesson) => sum + (lesson.passed ? lesson.points : 0),
+        0,
+      ),
+    );
+  }
+  assert.equal(payload.assessment.detailsOmitted, true);
+});
+
 test("large classes retain scoped score summaries and explicitly report omitted students and lesson details", () => {
   const f = fixture(500, 40);
   const result = analysisInput(
