@@ -128,7 +128,7 @@ export function EditorToolbar({
         {actionButton(
           "删除选中对象",
           "删除选中对象",
-          "Delete",
+          [shortcuts.delete, "Delete"].filter(Boolean).join(" / "),
           <Trash2 size={15} />,
           onDelete,
           !hasSelection || Boolean(pending),

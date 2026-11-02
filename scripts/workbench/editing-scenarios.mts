@@ -109,6 +109,41 @@ export async function verifyEditing(command: Command, stream: Stream) {
   wireOnly = await move(wireOnly, [wireOnly.circuits[0].wires[0].id], 0, 80);
   await signal(wireOnly, "input", "1", ["out"]);
 
+  // The canvas can place a bend in any quadrant. Shortening an existing
+  // segment and extending it must both keep the moved leg connected.
+  for (const x of [100, -300]) {
+    for (const y of [100, -200]) {
+      for (const dx of [-50, 50]) {
+        const bend = await open(
+          wire(x, y, x + 100, y) + wire(x + 100, y, x + 100, y + 100),
+        );
+        const preview = await command({
+          op: "movePreview",
+          id: bend.id,
+          revision: bend.revision,
+          circuit: "main",
+          ids: ["w1"],
+          delta: { x: dx, y: 0 },
+        });
+        const from = { x: dx < 0 ? x : x + 100, y };
+        const to = { x: x + 100 + dx, y };
+        assert.deepEqual(preview, {
+          removed: dx < 0 ? ["w0"] : [],
+          added: [{ from, to }],
+          unconnected: [],
+        });
+        const moved = await move(bend, ["w1"], dx, 0);
+        assert(moved.circuits[0].wires.some((w) =>
+          w.from.x === from.x && w.from.y === from.y &&
+          w.to.x === to.x && w.to.y === to.y,
+        ), "The committed move must include the preview's connecting segment");
+        assert.equal(documentOf(await command({
+          op: "undo", id: moved.id, revision: moved.revision,
+        })).revision, bend.revision);
+      }
+    }
+  }
+
   // A part dropped onto a wire connects there, as in Logisim, and undo
   // gives back the file byte for byte.
   const loose = await open(
