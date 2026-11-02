@@ -58,3 +58,20 @@
 
 验证与创建过程没有调用付费模型；除演示课堂与演示账号外未留下其他测试数据。
 服务在发布与验证期间保持 active，健康检查通过。
+
+## 桌面端打包
+
+同一提交 `01e3e1e` 的工作台已重新打包（版本 `0.6.0-beta.3`，本机 Node 22 需
+`--experimental-strip-types` 运行打包脚本，Rust 工具链取自
+`~/.rustup/toolchains/1.99.0-x86_64-pc-windows-msvc`）：
+
+- 安装包 `.workbench-cache/release/vibe-logisim-0.6.0-beta.3-win32-x64-setup.exe`
+  （104656360 字节，`ccd724ce14116c7f74b112a867f3aac2d1f660e48ff450b67d63ee6e8aa981ab`）
+- 便携包 `.workbench-cache/release/vibe-logisim-0.6.0-beta.3-win32-x64.zip`
+  （126795694 字节，`ea02670db6c0c6597fd6167d1fa6ac04415396950a3b0beafa331b525cb05849`）
+- 校验和文件 `SHA256SUMS-win32-x64.txt` 与二者同目录。
+
+便携包按既有检查从压缩包外解压并真实启动验收通过：前端挂载与 IPC、内置 Java
+仿真、内置 Node 启动、关闭重开后的草稿恢复；不依赖系统 PATH 中的运行时。
+演示课堂与评测功能在桌面端的使用方式：标题栏“课堂”入口填写
+`https://lovej.site/vibe-classroom` 登录演示账号。
