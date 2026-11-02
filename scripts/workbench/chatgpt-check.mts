@@ -273,7 +273,11 @@ try {
       .digest("base64url"),
     start.searchParams.get("code_challenge"),
   );
-  assert.equal((await stat(accountsFile)).mode & 0o777, 0o600);
+  const accountStat = await stat(accountsFile);
+  assert.ok(accountStat.isFile());
+  // Windows stat modes do not describe ACL access; 0600 is a Unix check.
+  if (process.platform !== "win32")
+    assert.equal(accountStat.mode & 0o777, 0o600);
   const store = new ServiceStore(temp, auth);
   const api = store.save({
     name: "API",
