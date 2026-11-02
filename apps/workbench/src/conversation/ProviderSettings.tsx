@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+} from "lucide-react";
 import "./ai-settings.css";
 import { ChatGPTLogin } from "./ChatGPTLogin";
 import { Checkbox } from "../shared/Checkbox";
@@ -442,7 +448,9 @@ export function ProviderSettings(props: SettingsProps) {
           onClick={onClose}
         />
       </header>
-      <div className="ai-settings-content">
+      <div
+        className={`ai-settings-content${page === "services" ? " ai-settings-services" : ""}`}
+      >
         <div className="ai-settings-heading">
           {page !== "services" && (
             <button
@@ -456,23 +464,32 @@ export function ProviderSettings(props: SettingsProps) {
           <h3 ref={heading} tabIndex={-1}>
             {title}
           </h3>
-          {page === "services" && (
-            <button disabled={locked} onClick={() => edit(null)}>
-              添加 API 服务
-            </button>
-          )}
         </div>
         {page === "services" && (
           <>
-            <ChatGPTLogin
-              services={services}
-              busy={locked}
-              request={request}
-              onSaved={onSaved}
-              providerId={provider?.id}
-              canBind={Boolean(props.conversationId)}
-              onChoose={choose}
-            />
+            <ul className="ai-service-options" aria-label="添加模型服务">
+              <li>
+                <ChatGPTLogin
+                  services={services}
+                  busy={locked}
+                  request={request}
+                  onSaved={onSaved}
+                  providerId={provider?.id}
+                  canBind={Boolean(props.conversationId)}
+                  onChoose={choose}
+                />
+              </li>
+              <li>
+                <button
+                  className="ai-service-option"
+                  disabled={locked}
+                  onClick={() => edit(null)}
+                >
+                  添加自定义 API
+                  <ChevronRight size={18} aria-hidden="true" />
+                </button>
+              </li>
+            </ul>
             {props.configurationError && (
               <p className="dialog-error" role="alert">
                 {props.configurationError}
@@ -543,11 +560,6 @@ export function ProviderSettings(props: SettingsProps) {
                   </div>
                 </div>
               ))}
-            {!services.length && (
-              <p>
-                也可以添加 DeepSeek、OpenAI 等 API 服务，使用自己的 API 密钥。
-              </p>
-            )}
             {services.length > 0 && (
               <label className="ai-settings-field">
                 新对话默认服务

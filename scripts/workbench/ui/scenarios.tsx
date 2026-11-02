@@ -1258,7 +1258,7 @@ await render(
 );
 await click(
   [...document.querySelectorAll("button")].find(
-    (n) => n.textContent === "添加 API 服务",
+    (n) => n.textContent === "添加自定义 API",
   )!,
 );
 await pickOption("服务类型", "自定义接口");

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { desktop } from "../shared/transport";
 import type { ProviderConfiguration } from "./ProviderSettings";
 
@@ -151,8 +152,15 @@ export function ChatGPTLogin({
   };
   return (
     <section className="ai-chatgpt" aria-label="ChatGPT 登录">
-      <strong>使用 ChatGPT 订阅</strong>
-      <p>登录 ChatGPT，用订阅额度完成电路工作。</p>
+      <button
+        className="ai-service-option"
+        data-oai-siwc-button
+        disabled={busy || working || Boolean(login)}
+        onClick={() => void begin()}
+      >
+        使用 ChatGPT 订阅
+        <ChevronRight size={18} aria-hidden="true" />
+      </button>
       {services
         .filter((s) => s.auth === "chatgpt")
         .map((s) => (
@@ -164,14 +172,14 @@ export function ChatGPTLogin({
                   <span className="ai-settings-badge">此对话</span>
                 )}
               </strong>
-              <small>{s.model}</small>
-              <small>
+              <p>{s.model}</p>
+              <p>
                 {!s.account?.connected
                   ? "已退出登录"
                   : s.account.planEnabled
                     ? "使用 ChatGPT 订阅额度"
                     : "尚未授权使用订阅额度"}
-              </small>
+              </p>
             </div>
             {(!s.account?.connected || !s.account.planEnabled) && (
               <button
@@ -208,7 +216,7 @@ export function ChatGPTLogin({
             )}
           </div>
         ))}
-      {login ? (
+      {login && (
         <div className="ai-chatgpt-waiting" role="status">
           <p>请在浏览器中完成登录与授权。</p>
           <button
@@ -226,15 +234,6 @@ export function ChatGPTLogin({
             取消登录
           </button>
         </div>
-      ) : (
-        <button
-          className="ai-chatgpt-signin"
-          data-oai-siwc-button
-          disabled={busy || working}
-          onClick={() => void begin()}
-        >
-          Continue with ChatGPT
-        </button>
       )}
       {welcome && (
         <div className="ai-chatgpt-welcome" role="status">
@@ -255,7 +254,9 @@ export function ChatGPTLogin({
         </div>
       )}
       {message && <p role="status">{message}</p>}
-      <ChatGPTUsage />
+      {services.some((s) => s.auth === "chatgpt" && s.account?.connected) && (
+        <ChatGPTUsage />
+      )}
     </section>
   );
 }

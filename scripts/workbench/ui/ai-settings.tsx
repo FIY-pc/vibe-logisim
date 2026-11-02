@@ -238,14 +238,14 @@ export async function verifyAISettings() {
     };
     try {
       await act(async () => root.render(<ChatGPTLogin {...loginProps} />));
-      await click(button("Continue with ChatGPT"));
+      await click(button("使用 ChatGPT 订阅"));
       assert.equal(opened.length, 1);
       assert.match(container.textContent!, /浏览器中完成登录/);
       await click(button("取消登录"));
       assert.equal(loginCalls.at(-1)?.method, "cancelChatGPTLogin");
       assert.equal(saved, 0);
       loginStatus = "complete";
-      await click(button("Continue with ChatGPT"));
+      await click(button("使用 ChatGPT 订阅"));
       assert.match(container.textContent!, /正在使用你的 ChatGPT 订阅/);
       assert.equal(saved, 1);
       await click(button("知道了"));
@@ -267,7 +267,7 @@ export async function verifyAISettings() {
       assert.equal(loginCalls.at(-1)?.method, "logoutChatGPT");
       assert.match(container.textContent!, /未确认远端撤销/);
       loginStatus = "pending";
-      await click(button("Continue with ChatGPT"));
+      await click(button("使用 ChatGPT 订阅"));
       await act(async () => root.render(<div />));
       assert.equal(
         loginCalls.at(-1)?.method,
