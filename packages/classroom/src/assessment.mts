@@ -297,7 +297,7 @@ export function assessments(
       room = options.roomFor(u, cid);
     const writable = () => {
       teacher(u);
-      if (room.archived) fail(409, "请先重新开放课堂");
+      if (options.roomFor(u, cid).archived) fail(409, "请先重新开放课堂");
     };
     if (kind === "curriculum" && method === "GET") {
       const chapters = all(
@@ -344,6 +344,7 @@ export function assessments(
         title = str(b.title, "章节标题", 100),
         description = str(b.description ?? "", "章节说明", 2000, true),
         position = num(b.position ?? 0, 0, 10000);
+      writable();
       if (method === "POST") {
         const chapterId = randomUUID();
         run(
@@ -381,6 +382,7 @@ export function assessments(
     ) {
       writable();
       const b = await options.body(req);
+      writable();
       const previous = id ? lesson(cid, id, u) : null;
       const chapterId = str(b.chapterId, "章节", 80);
       if (
@@ -459,17 +461,22 @@ export function assessments(
     if (kind === "lessons" && id && tail === "preview" && method === "POST") {
       writable();
       if (!options.grade) fail(503, "评测服务暂不可用");
+      const b = await options.body(req);
+      writable();
       if (active) fail(429, "评测正在处理其他提交，请稍后试评");
       const l = lesson(cid, id, u),
-        config = JSON.parse(l.config),
-        b = await options.body(req);
+        config = JSON.parse(l.config);
+      if (b.version !== undefined && b.version !== l.version)
+        fail(409, "关卡已更新，请刷新后重新试评");
       const source = xml(b.xml);
       active = true;
-      const pending = options.grade!({
-        xml: source,
-        circuit: config.circuit,
-        tests: config.tests,
-      });
+      const pending = Promise.resolve().then(() =>
+        options.grade!({
+          xml: source,
+          circuit: config.circuit,
+          tests: config.tests,
+        }),
+      );
       worker = pending.then(
         () => {},
         () => {},
@@ -487,9 +494,10 @@ export function assessments(
         fail(403, "请使用学生账号提交；教师可使用参考电路试评");
       if (room.archived) fail(409, "课堂已关闭，不能提交");
       if (!options.grade) fail(503, "评测服务暂不可用");
-      const l = lesson(cid, id, u),
-        b = await options.body(req),
+      const b = await options.body(req),
         clientId = str(b.clientId, "提交标识", 100);
+      if (options.roomFor(u, cid).archived) fail(409, "课堂已关闭，不能提交");
+      const l = lesson(cid, id, u);
       const duplicate = get(
         "SELECT * FROM assessment_attempts WHERE class_id=? AND student_id=? AND client_id=?",
         cid,
@@ -639,7 +647,7 @@ export function assessments(
       cid,
     );
     const lessons: ProgressLesson[] = all(
-      "SELECT id,title,config,grading_version version FROM assessment_lessons WHERE class_id=? AND published=1 ORDER BY position,rowid",
+      "SELECT l.id,l.title,l.config,l.grading_version version FROM assessment_lessons l JOIN assessment_chapters c ON c.id=l.chapter_id AND c.class_id=l.class_id WHERE l.class_id=? AND l.published=1 ORDER BY c.position,c.rowid,l.position,l.rowid",
       cid,
     ).map((l) => ({
       id: l.id,
