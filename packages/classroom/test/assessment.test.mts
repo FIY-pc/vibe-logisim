@@ -208,7 +208,7 @@ test("chapters, published lessons, hidden cases, immutable grading and classroom
     }
     assert.equal(result.status, "passed");
     assert.equal(result.total, 2);
-    assert.equal(result.lessonVersion, l.version);
+    assert.equal(result.lessonVersion, l.gradingVersion);
     assert.deepEqual(result.result[1], {
       id: "secret",
       title: "隐藏用例",

@@ -18,6 +18,7 @@ export interface Lesson {
   position: number;
   published: boolean;
   version: number;
+  gradingVersion: number;
   circuit: string;
   templateName: string;
   templateXml: string;
@@ -73,9 +74,7 @@ export interface GradeInput {
   circuit: string;
   tests: AssessmentCase[];
 }
-export type GradeRunner = (
-  input: GradeInput,
-) => Promise<{
+export type GradeRunner = (input: GradeInput) => Promise<{
   rows: {
     oscillating: boolean;
     outputs: Record<string, { bits: string; value?: number }>;

@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node src/main.mts",
     "check": "tsc -p tsconfig.json",
-    "test": "node --test test/*.test.mts"
+    "test": "node --test test/*.test.mts",
+    "build:grader": "node scripts/build-grader.mts"
   }
 }

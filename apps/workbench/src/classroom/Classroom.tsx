@@ -19,6 +19,7 @@ import {
 import { useSharing, savedClassroom } from "./useSharing";
 import { ClassroomAI } from "./ClassroomAI";
 import { RoomSettings } from "./RoomSettings";
+import { Curriculum } from "./Curriculum";
 import type {
   Classroom,
   ClassroomDetail,
@@ -99,6 +100,7 @@ function ClassroomDialog({
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
+  const [roomTab, setRoomTab] = useState<"lessons" | "activity">("lessons");
   const pending = useRef(false),
     alive = useRef(true),
     controller = useRef(new AbortController());
@@ -214,6 +216,7 @@ function ClassroomDialog({
   }, [session, selected]);
   const choose = (id: string) =>
     void run(async () => {
+      setRoomTab("lessons");
       setSelected(id);
       setDetail(null);
       const data = await api<ClassroomDetail>(`/classrooms/${id}`);
@@ -424,7 +427,36 @@ function ClassroomDialog({
                       )}
                     </section>
                   )}
-                  {session.user.role === "teacher" ? (
+                  <div
+                    className="assessment-tabs"
+                    role="group"
+                    aria-label="课堂内容"
+                  >
+                    <button
+                      aria-pressed={roomTab === "lessons"}
+                      onClick={() => setRoomTab("lessons")}
+                    >
+                      章节关卡
+                    </button>
+                    <button
+                      aria-pressed={roomTab === "activity"}
+                      onClick={() => setRoomTab("activity")}
+                    >
+                      {session.user.role === "teacher"
+                        ? "学习记录与分析"
+                        : "学习记录与同步"}
+                    </button>
+                  </div>
+                  {roomTab === "lessons" ? (
+                    <Curriculum
+                      key={selected}
+                      session={session}
+                      classroom={detail.classroom}
+                      onUnauthorized={() => onSession(null)}
+                      onOpen={onClose}
+                      onBind={() => sharing.select(selected, true)}
+                    />
+                  ) : session.user.role === "teacher" ? (
                     <TeacherRoom
                       key={selected}
                       detail={detail}

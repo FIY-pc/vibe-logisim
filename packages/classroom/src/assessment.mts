@@ -27,6 +27,28 @@ export function assessments(
   db.exec(
     "UPDATE assessment_attempts SET status='queued',message='' WHERE status='running'",
   );
+  if (
+    !(db.prepare("PRAGMA table_info(assessment_lessons)").all() as Row[]).some(
+      (c) => c.name === "grading_version",
+    )
+  ) {
+    db.exec(
+      "ALTER TABLE assessment_lessons ADD COLUMN grading_version INTEGER NOT NULL DEFAULT 1",
+    );
+    db.exec("UPDATE assessment_lessons SET grading_version=version");
+  }
+  const gradingKey = (c: any) =>
+    JSON.stringify([
+      c.circuit,
+      c.tests
+        .map((t: AssessmentCase) => [
+          Object.entries(t.inputs).sort(),
+          Object.entries(t.expected).sort(),
+        ])
+        .sort((a: any, b: any) =>
+          JSON.stringify(a).localeCompare(JSON.stringify(b)),
+        ),
+    ]);
   const get = (sql: string, ...args: any[]) =>
     db.prepare(sql).get(...args) as Row | undefined;
   const all = (sql: string, ...args: any[]) =>
@@ -155,6 +177,7 @@ export function assessments(
       position: row.position,
       published: !!row.published,
       version: row.version,
+      gradingVersion: row.grading_version,
       ...c,
       tests:
         u.role === "teacher"
@@ -294,7 +317,7 @@ export function assessments(
               "SELECT count(*) attempts,coalesce(max(status='passed'),0) passed FROM assessment_attempts WHERE lesson_id=? AND student_id=? AND lesson_version=?",
               l.id,
               u.id,
-              l.version,
+              l.grading_version,
             )!;
           return {
             id: l.id,
@@ -392,11 +415,16 @@ export function assessments(
         if (b.version !== previous.version)
           fail(409, "关卡已被修改，请重新打开编辑");
         run(
-          "UPDATE assessment_lessons SET chapter_id=?,title=?,position=?,published=?,version=version+1,config=?,updated_at=? WHERE id=?",
+          "UPDATE assessment_lessons SET chapter_id=?,title=?,position=?,published=?,version=version+1,grading_version=?,config=?,updated_at=? WHERE id=?",
           chapterId,
           title,
           position,
           Number(b.published),
+          previous.grading_version +
+            Number(
+              gradingKey(JSON.parse(previous.config)) !==
+                gradingKey(JSON.parse(config)),
+            ),
           config,
           now(),
           id,
@@ -405,7 +433,7 @@ export function assessments(
       } else {
         const lessonId = randomUUID();
         run(
-          "INSERT INTO assessment_lessons VALUES(?,?,?,?,?,?,?,?,?)",
+          "INSERT INTO assessment_lessons(id,class_id,chapter_id,title,position,published,version,config,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
           lessonId,
           cid,
           chapterId,
@@ -503,7 +531,7 @@ export function assessments(
         cid,
         id,
         u.id,
-        l.version,
+        l.grading_version,
         name,
         now(),
         config.tests.length,
@@ -529,11 +557,26 @@ export function assessments(
         0,
         100000,
       );
+      const studentId =
+        u.role === "teacher"
+          ? new URL(req.url!, "http://local").searchParams.get("studentId") ||
+            ""
+          : u.id;
+      if (
+        studentId &&
+        u.role === "teacher" &&
+        !get(
+          "SELECT 1 FROM members WHERE class_id=? AND student_id=?",
+          cid,
+          studentId,
+        )
+      )
+        fail(404, "学生不属于此课堂");
       const rows = all(
-        `SELECT a.*,u.name name_student,u.student_no FROM assessment_attempts a JOIN users u ON u.id=a.student_id WHERE a.class_id=? AND a.lesson_id=? ${u.role === "teacher" ? "" : "AND a.student_id=?"} ORDER BY a.created_at DESC,a.rowid DESC LIMIT 50 OFFSET ?`,
+        `SELECT a.*,u.name name_student,u.student_no FROM assessment_attempts a JOIN users u ON u.id=a.student_id WHERE a.class_id=? AND a.lesson_id=? ${studentId ? "AND a.student_id=?" : ""} ORDER BY a.created_at DESC,a.rowid DESC LIMIT 50 OFFSET ?`,
         cid,
         id,
-        ...(u.role === "teacher" ? [] : [u.id]),
+        ...(studentId ? [studentId] : []),
         offset,
       );
       send(200, {
@@ -561,7 +604,7 @@ export function assessments(
         cid,
       );
       const lessons = all(
-        "SELECT id,title,version FROM assessment_lessons WHERE class_id=? AND published=1 ORDER BY position",
+        "SELECT id,title,grading_version version FROM assessment_lessons WHERE class_id=? AND published=1 ORDER BY position",
         cid,
       );
       send(200, {
