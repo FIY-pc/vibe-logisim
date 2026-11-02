@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { createClassroomServer } from "./server.mts";
+import { nativeGrader } from "./native-grader.mts";
 
 const database = path.resolve(
   process.env.CLASSROOM_DATABASE || ".classroom-data/classroom.sqlite",
@@ -25,6 +26,14 @@ const app = createClassroomServer({
     .map((s) => s.trim())
     .filter(Boolean),
   ...(baseUrl && apiKey && model ? { ai: { baseUrl, apiKey, model } } : {}),
+  ...(process.env.CLASSROOM_GRADER_CLASSPATH
+    ? {
+        grade: nativeGrader({
+          java: process.env.CLASSROOM_GRADER_JAVA || "java",
+          classPath: process.env.CLASSROOM_GRADER_CLASSPATH,
+        }),
+      }
+    : {}),
 });
 const port = Number(process.env.CLASSROOM_PORT || 8810),
   host = process.env.CLASSROOM_HOST || "127.0.0.1";

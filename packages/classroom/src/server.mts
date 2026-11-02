@@ -16,6 +16,8 @@ import { classroomProviders } from "./ai-provider.mts";
 import { analysisInput, MAX_ANALYSIS_OUTPUT } from "./analysis.mts";
 import { snapshotContent } from "./snapshot-content.mts";
 import { gunzipSync } from "node:zlib";
+import { assessments } from "./assessment.mts";
+import type { GradeRunner } from "./assessment-types.ts";
 import type {
   ClassroomUser,
   WorkSnapshot,
@@ -73,6 +75,7 @@ export interface ServerOptions {
   teacherCode: string;
   origins?: string[];
   ai?: { baseUrl: string; apiKey: string; model: string };
+  grade?: GradeRunner;
 }
 
 /** Independent service. No access to local workspaces or model credentials from the desktop. */
@@ -274,6 +277,12 @@ export function createClassroomServer(options: ServerOptions) {
     );
     return { token, user: publicUser(u) };
   }
+  const assessment = assessments(db, {
+    grade: options.grade,
+    fail,
+    roomFor,
+    body: readBody,
+  });
   const origins = new Set(
     options.origins ?? [
       "http://127.0.0.1:5173",
@@ -396,6 +405,7 @@ export function createClassroomServer(options: ServerOptions) {
         return;
       }
       const u = session(req);
+      if (await assessment.handle(req, route, method, u, send)) return;
       if (route === "/api/auth/me" && method === "GET") {
         send(200, { user: u });
         return;
@@ -809,6 +819,7 @@ export function createClassroomServer(options: ServerOptions) {
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),
       );
+      await assessment.close();
       db.close();
     },
   };
