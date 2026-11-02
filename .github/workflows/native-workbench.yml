@@ -81,6 +81,10 @@ jobs:
           npm run test:showcase
           npm run test:ui
           npm run build
+      - name: Verify classroom grading with the real Logisim runtime
+        run: |
+          node packages/classroom/scripts/build-grader.mts
+          CLASSROOM_TEST_GRADER_CP="$PWD/.workbench-cache/assessment/grader-bridge.jar:$PWD/.workbench-cache/Logisim-ITA.jar" node --test packages/classroom/test/native-grader.test.mts
       - name: Verify native simulation, editing and local model transport
         run: |
           npm run test:native

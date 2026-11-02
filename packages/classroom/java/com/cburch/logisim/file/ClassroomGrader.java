@@ -11,7 +11,12 @@ import com.cburch.logisim.data.Value;
 public final class ClassroomGrader {
     private static final Set<String> LIBRARIES = new HashSet<>(Arrays.asList("#Wiring", "#Gates", "#Plexers", "#Arithmetic", "#Memory", "#I/O", "#Base"));
     private static final Map<String, Set<String>> FACTORIES = new HashMap<>();
+    // The native appearance reader accepts only these local drawing primitives.
+    private static final Set<String> APPEARANCE_SHAPES = set(
+        "rect", "ellipse", "line", "path", "polyline", "polygon", "text",
+        "circ-anchor", "circ-origin", "circ-port");
     static {
+        FACTORIES.put("#Base", set("Text"));
         FACTORIES.put("#Wiring", set("Pin", "Splitter", "Tunnel", "Constant", "Bit Extender", "Pull Resistor"));
         FACTORIES.put("#Gates", set("NOT Gate", "Buffer", "AND Gate", "OR Gate", "NAND Gate", "NOR Gate", "XOR Gate", "XNOR Gate", "Odd Parity", "Even Parity", "Controlled Buffer", "Controlled Inverter"));
         FACTORIES.put("#Plexers", set("Multiplexer", "Demultiplexer", "Decoder", "Priority Encoder", "Bit Selector"));
@@ -33,12 +38,17 @@ public final class ClassroomGrader {
     private static void validate(Document doc) {
         reject(!doc.getDocumentElement().getTagName().equals("project"));
         NodeList nodes = doc.getElementsByTagName("*"); reject(nodes.getLength() > 30000);
-        Set<String> allowed = set("project", "lib", "main", "options", "mappings", "toolbar", "circuit", "a", "comp", "wire", "tool", "mapping");
+        Set<String> allowed = set("project", "lib", "main", "options", "mappings", "toolbar", "circuit", "a", "comp", "wire", "tool", "mapping", "appear");
         Map<String,String> libs = new HashMap<>(); Set<String> definitions = new HashSet<>();
         NodeList circuits = doc.getElementsByTagName("circuit"); reject(circuits.getLength() > 32);
         for (int i=0;i<circuits.getLength();i++) reject(!definitions.add(((Element)circuits.item(i)).getAttribute("name")));
         for (int i=0;i<nodes.getLength();i++) {
-            Element e=(Element)nodes.item(i); reject(!allowed.contains(e.getTagName()));
+            Element e=(Element)nodes.item(i); String tag=e.getTagName();
+            if (APPEARANCE_SHAPES.contains(tag)) {
+                reject(!(e.getParentNode() instanceof Element) || !((Element)e.getParentNode()).getTagName().equals("appear"));
+            } else reject(!allowed.contains(tag));
+            if (tag.equals("appear"))
+                reject(!(e.getParentNode() instanceof Element) || !((Element)e.getParentNode()).getTagName().equals("circuit"));
             int depth=0;for(Node p=e;p!=null;p=p.getParentNode())depth++;reject(depth>32);
             if(e.getTagName().equals("lib")) {
                 String desc=e.getAttribute("desc");reject(!LIBRARIES.contains(desc));

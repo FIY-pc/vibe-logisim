@@ -700,23 +700,26 @@ export function createClassroomServer(options: ServerOptions) {
                 title: l.title,
                 points: l.points,
               })),
-              students: matrix.students.map((s) => ({
-                name: s.name,
-                student_no: s.student_no,
-                lessons: s.lessons.map((c) => ({
-                  title:
-                    matrix.lessons.find((l) => l.id === c.lessonId)?.title ??
-                    "",
-                  points:
-                    matrix.lessons.find((l) => l.id === c.lessonId)?.points ??
-                    0,
-                  passed: c.passed,
-                  attempts: c.attempts,
-                  lastStatus: c.lastStatus,
-                  lastPassed: c.lastPassed,
-                  total: c.total,
+              students: matrix.students
+                .filter((s) => !studentId || s.id === studentId)
+                .map((s) => ({
+                  studentId: s.id,
+                  name: s.name,
+                  student_no: s.student_no,
+                  lessons: s.lessons.map((c) => ({
+                    title:
+                      matrix.lessons.find((l) => l.id === c.lessonId)?.title ??
+                      "",
+                    points:
+                      matrix.lessons.find((l) => l.id === c.lessonId)?.points ??
+                      0,
+                    passed: c.passed,
+                    attempts: c.attempts,
+                    lastStatus: c.lastStatus,
+                    lastPassed: c.lastPassed,
+                    total: c.total,
+                  })),
                 })),
-              })),
             }
           : undefined;
         const input = analysisInput(
