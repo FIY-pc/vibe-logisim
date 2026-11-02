@@ -1,4 +1,4 @@
-// One arrangement request, run off the transport thread with a deadline.
+// One arrangement request, run off the transport thread until done or cancelled.
 import { Worker } from "node:worker_threads";
 import { existsSync } from "node:fs";
 export interface ArrangeOutcome {
@@ -11,9 +11,10 @@ export interface ArrangeOutcome {
 }
 export function arrangeInWorker(
   request: Record<string, unknown>,
-  timeout: number,
+  signal?: AbortSignal,
 ): Promise<ArrangeOutcome> {
   return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
     // The bundle ships arrange-worker.mjs beside worker.mjs; development runs
     // the TypeScript source directly (Node 24 loads .mts natively).
     const bundled = new URL("./arrange-worker.mjs", import.meta.url);
@@ -26,21 +27,11 @@ export function arrangeInWorker(
     const finish = (action: () => void) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
-      void worker.terminate();
-      action();
+      signal?.removeEventListener("abort", abort);
+      void worker.terminate().then(action, reject);
     };
-    const timer = setTimeout(
-      () =>
-        finish(() =>
-          reject(
-            new Error(
-              "布局运行时未完成：这个电路超出了单次整理的时间上限，可以只整理选中的元件，或把电路拆成子电路后再试。",
-            ),
-          ),
-        ),
-      timeout,
-    );
+    const abort = () => finish(() => reject(signal!.reason));
+    signal?.addEventListener("abort", abort, { once: true });
     worker.once("error", (error) => finish(() => reject(error)));
     worker.once("exit", (code) =>
       finish(() =>
@@ -53,6 +44,11 @@ export function arrangeInWorker(
         reject(Object.assign(new Error(result.message), { code: result.code }));
       }),
     );
-    worker.postMessage(request);
+    try {
+      if (signal?.aborted) abort();
+      else worker.postMessage(request);
+    } catch (error) {
+      finish(() => reject(error));
+    }
   });
 }

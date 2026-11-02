@@ -26,13 +26,17 @@ const ARRANGE_OPTIONS = [
 export async function arrangeCircuit(
   context: ToolContext,
   args: Record<string, any>,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const { document, circuit } = await context.target(args);
+  signal?.throwIfAborted();
   const source = await context.host.call<{ xml: string }>({
     op: "source",
     id: document.id,
     revision: document.revision,
   });
+  signal?.throwIfAborted();
   const before = await context.observe(document, circuit);
   // The arranger reads a present key as given, so absent options stay absent.
   const options = Object.fromEntries(
@@ -42,9 +46,10 @@ export async function arrangeCircuit(
   );
   const outcome = await arrangeInWorker(
     { xml: source.xml, circuit, focus: before.raw.focus, options },
-    60_000,
+    signal,
   );
   context.assertCurrent();
+  signal?.throwIfAborted();
   // What the arranged file loads as, observed before anything is applied.
   const after = await context.host.call<any>({
     op: "observeXml",
@@ -54,6 +59,7 @@ export async function arrangeCircuit(
     xml: outcome.xml,
   });
   context.assertCurrent();
+  signal?.throwIfAborted();
   if (!after?.focus)
     throw new CircuitToolError(
       "EXACT_OBSERVER_FAILED",

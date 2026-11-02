@@ -34,6 +34,7 @@ import type { ToolContext } from "./context.mts";
 export type ToolHandler = (
   context: ToolContext,
   args: Record<string, any>,
+  signal?: AbortSignal,
 ) => Promise<Record<string, unknown>>;
 
 export const HANDLERS: Record<ToolName, ToolHandler> = {
@@ -86,8 +87,9 @@ export function circuitTools({
       try {
         context.assertCurrent();
         signal?.throwIfAborted();
-        const value = await HANDLERS[spec.name](context, args ?? {});
+        const value = await HANDLERS[spec.name](context, args ?? {}, signal);
         context.assertCurrent();
+        signal?.throwIfAborted();
         const { publicResult, modelContentItems } = splitModelContent(value);
         return {
           content: [
