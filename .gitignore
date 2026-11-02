@@ -47,3 +47,6 @@ bun.lockb
 
 # Product showcase private state
 /.showcase-data/
+
+# Local course presentations and rehearsal media
+/reports/
