@@ -129,6 +129,27 @@ test("chapters, published lessons, hidden cases, immutable grading and classroom
       ],
     };
     let l = (await call(p + "/lessons", teacher.token, config, 201)).lesson;
+    assert.equal(l.points, 10, "lessons default to 10 points");
+    assert.equal(
+      (await call(p + "/curriculum", teacher.token)).chapters[0].lessons[0]
+        .points,
+      10,
+    );
+    l = (
+      await call(
+        p + "/lessons/" + l.id,
+        teacher.token,
+        { ...config, version: l.version, points: 25 },
+        200,
+        "PATCH",
+      )
+    ).lesson;
+    assert.equal(l.points, 25);
+    assert.equal(
+      l.gradingVersion,
+      1,
+      "changing the score keeps passed results valid",
+    );
     assert.equal(
       (await call(p + "/curriculum", student.token)).chapters[0].lessons.length,
       0,
@@ -138,7 +159,7 @@ test("chapters, published lessons, hidden cases, immutable grading and classroom
       await call(
         p + "/lessons/" + l.id,
         teacher.token,
-        { ...config, version: l.version, published: true },
+        { ...config, version: l.version, published: true, points: 25 },
         200,
         "PATCH",
       )
@@ -186,6 +207,7 @@ test("chapters, published lessons, hidden cases, immutable grading and classroom
           ...config,
           version: l.version,
           published: true,
+          points: 25,
           tests: [{ ...config.tests[0], expected: { Y: 0 } }],
         },
         200,
@@ -272,6 +294,7 @@ test("chapters, published lessons, hidden cases, immutable grading and classroom
       if (i === 49) assert.fail("Incorrect circuit did not fail");
     }
     const progress = await call(p + "/curriculum", teacher.token, {});
+    assert.equal(progress.lessons[0].points, 25);
     assert.equal(progress.students.length, 2);
     assert.equal(progress.students[0].lessons[0].passed, false);
     await call(p, teacher.token, { archived: true }, 200, "PATCH");

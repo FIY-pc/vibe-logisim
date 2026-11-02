@@ -212,8 +212,10 @@ export async function verifyClassroomUI() {
     const { stores } = useWorkbench();
     useLayoutEffect(() => {
       stores.documents.setState({ docs: [doc], active: doc.id });
+      // A Windows-shaped folder path: the host reports verbatim `\\?\` roots,
+      // and template files must join with backslashes there.
       stores.files.setState({
-        folder: { id: "folder-ui", path: "/work", name: "work" },
+        folder: { id: "folder-ui", path: "C:\\work", name: "work" },
       });
     }, [stores]);
     return <ClassroomEntry />;
@@ -427,6 +429,7 @@ export async function verifyClassroomUI() {
     await click("新增关卡");
     await wait(() => Boolean(container.querySelector(".lesson-editor")));
     await setValue(field("关卡名称"), "异或门关卡");
+    await setValue(field("分值"), "20");
     await clickContaining("模板与测试用例");
     await setFiles(
       container.querySelector(".lesson-template input[type='file']")!,
@@ -589,6 +592,10 @@ export async function verifyClassroomUI() {
       "the student sees how many hidden cases exist",
     );
     assert.ok(
+      container.textContent?.includes("分值 20 分（全部用例通过才得分）"),
+      "the lesson states its score rule to students",
+    );
+    assert.ok(
       !container.textContent?.includes("教师私有场景"),
       "hidden case titles and values stay on the teacher side",
     );
@@ -600,7 +607,7 @@ export async function verifyClassroomUI() {
     await wait(() => !container.querySelector(".assessment-root"));
     assert.ok(
       typeof template?.path === "string" &&
-        template.path.startsWith("/work/关卡-异或门关卡-") &&
+        template.path.startsWith("C:\\work\\关卡-异或门关卡-") &&
         template.path.endsWith(".circ"),
       "the template is saved into the open project folder and opened",
     );
@@ -658,6 +665,18 @@ export async function verifyClassroomUI() {
       "the progress table lists the student",
     );
     assert.ok(container.textContent?.includes("1 次提交"));
+    assert.equal(
+      container.querySelector(".assessment-total")?.textContent,
+      "20",
+      "passing every case earns the lesson score",
+    );
+    await click("生成成绩单");
+    await wait(() =>
+      Boolean(container.querySelector(".assessment-report-csv")),
+    );
+    const csv = container.querySelector(".assessment-report-csv")!.textContent!;
+    assert.ok(csv.includes("异或门关卡（20分）"), "score sheet header");
+    assert.ok(csv.includes("张同学") && csv.includes('"20","20"'), csv);
     await clickContaining("已通过");
     await wait(() =>
       Boolean(container.textContent?.includes("张同学的提交记录")),

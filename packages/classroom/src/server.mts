@@ -692,6 +692,33 @@ export function createClassroomServer(options: ServerOptions) {
           studentId = b.studentId ? text(b.studentId, "学生", 80) : null;
         const roster = members(id, studentId || undefined);
         if (studentId && !roster.length) return fail(404, "学生不在本课堂");
+        // Level grading results are trustworthy score evidence for the report.
+        const matrix = assessment.progress(id);
+        const grading = matrix.lessons.length
+          ? {
+              lessons: matrix.lessons.map((l) => ({
+                title: l.title,
+                points: l.points,
+              })),
+              students: matrix.students.map((s) => ({
+                name: s.name,
+                student_no: s.student_no,
+                lessons: s.lessons.map((c) => ({
+                  title:
+                    matrix.lessons.find((l) => l.id === c.lessonId)?.title ??
+                    "",
+                  points:
+                    matrix.lessons.find((l) => l.id === c.lessonId)?.points ??
+                    0,
+                  passed: c.passed,
+                  attempts: c.attempts,
+                  lastStatus: c.lastStatus,
+                  lastPassed: c.lastPassed,
+                  total: c.total,
+                })),
+              })),
+            }
+          : undefined;
         const input = analysisInput(
           c as { task: string; rubric: string },
           question,
@@ -703,6 +730,7 @@ export function createClassroomServer(options: ServerOptions) {
             ),
           Boolean(studentId),
           options.ai.model,
+          grading,
         );
         const cached = all(
           "SELECT report FROM analyses WHERE class_id=? ORDER BY rowid DESC LIMIT 30",
@@ -759,8 +787,21 @@ export function createClassroomServer(options: ServerOptions) {
             ![undefined, null, "stop"].includes(
               result.choices?.[0]?.finish_reason,
             )
-          )
-            return fail(502, "AI 分析未完整返回，请缩小分析范围后重试");
+          ) {
+            console.warn(
+              "classroom analysis incomplete:",
+              JSON.stringify({
+                finish_reason: result?.choices?.[0]?.finish_reason,
+                usage: result?.usage,
+                contentLength:
+                  typeof output === "string" ? output.length : null,
+              }),
+            );
+            return fail(
+              502,
+              `AI 分析未完整返回（${result?.choices?.[0]?.finish_reason || "空响应"}），请点击单个学生分析或稍后重试`,
+            );
+          }
           const report: AnalysisReport = {
             id: randomUUID(),
             createdAt: now(),

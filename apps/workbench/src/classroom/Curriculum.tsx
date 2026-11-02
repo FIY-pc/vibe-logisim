@@ -25,7 +25,7 @@ import { lessonKey, attemptStatus, draftLesson } from "./assessment-utils";
 import "./Assessment.css";
 
 type Progress = {
-  lessons: { id: string; title: string; version: number }[];
+  lessons: { id: string; title: string; version: number; points: number }[];
   students: {
     id: string;
     name: string;
@@ -86,6 +86,7 @@ export function Curriculum({
     id: string;
     name: string;
   } | null>(null);
+  const [report, setReport] = useState(false);
   const alive = useRef(true),
     controller = useRef(new AbortController()),
     pending = useRef(false),
@@ -251,8 +252,12 @@ export function Curriculum({
         .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
         .slice(0, 45),
       name = `关卡-${safeTitle}-${crypto.randomUUID().slice(0, 6)}.circ`;
+    // The host reports Windows folders with a verbatim `\\?\` prefix, where a
+    // forward slash is an invalid name (os error 123); join with its own separator.
     const destination = folder
-      ? folder.path.replace(/[\\/]+$/, "") + "/" + name
+      ? folder.path.replace(/[\\/]+$/, "") +
+        (folder.path.includes("\\") ? "\\" : "/") +
+        name
       : desktop()
         ? await savePath(name)
         : null;
@@ -371,6 +376,34 @@ export function Curriculum({
     const d = await api<{ attempt: AssessmentAttempt }>(`/attempts/${id}`);
     if (alive.current) setAttempt(d.attempt);
   };
+  // A lesson's points are earned only by passing every case at the current
+  // grading version; anything else scores zero.
+  const earned = (lessons: Progress["students"][number]["lessons"]) =>
+    lessons.map((p) =>
+      p.passed
+        ? progress?.lessons.find((l) => l.id === p.lessonId)?.points || 0
+        : 0,
+    );
+  const total = (lessons: Progress["students"][number]["lessons"]) =>
+    earned(lessons).reduce((a, b) => a + b, 0);
+  const reportCsv = () => {
+    if (!progress) return "";
+    const q = (v: string) => `"${v.replaceAll('"', '""')}"`;
+    const head = [
+      "学生",
+      "学号",
+      ...progress.lessons.map((l) => `${l.title}（${l.points}分）`),
+      "总分",
+    ];
+    const rows = progress.students.map((s) => [
+      s.name,
+      s.student_no,
+      ...earned(s.lessons).map(String),
+      String(total(s.lessons)),
+    ]);
+    // A BOM keeps Chinese columns readable when pasted into Excel.
+    return "﻿" + [head, ...rows].map((r) => r.map(q).join(",")).join("\r\n");
+  };
   return (
     <section className="assessment-root" aria-label="章节与关卡评测">
       {error && (
@@ -415,17 +448,22 @@ export function Curriculum({
               返回关卡
             </button>
             <h3>学生闯关情况</h3>
-            <button
-              disabled={busy}
-              onClick={() =>
-                void run(async () =>
-                  setProgress(await api<Progress>("/curriculum", "POST", {})),
-                )
-              }
-            >
-              <RefreshCw size={14} />
-              刷新
-            </button>
+            <div>
+              <button onClick={() => setReport(!report)}>
+                {report ? "收起成绩单" : "生成成绩单"}
+              </button>
+              <button
+                disabled={busy}
+                onClick={() =>
+                  void run(async () =>
+                    setProgress(await api<Progress>("/curriculum", "POST", {})),
+                  )
+                }
+              >
+                <RefreshCw size={14} />
+                刷新
+              </button>
+            </div>
           </div>
           <div className="lesson-table-scroll">
             <table className="assessment-table">
@@ -433,8 +471,12 @@ export function Curriculum({
                 <tr>
                   <th>学生</th>
                   {progress.lessons.map((l) => (
-                    <th key={l.id}>{l.title}</th>
+                    <th key={l.id}>
+                      {l.title}
+                      <small>{l.points} 分</small>
+                    </th>
                   ))}
+                  <th>总分</th>
                 </tr>
               </thead>
               <tbody>
@@ -461,9 +503,17 @@ export function Curriculum({
                               ? attemptStatus(p.lastStatus)
                               : "未提交"}
                         </button>
-                        <small>{p.attempts} 次提交</small>
+                        <small>
+                          {p.passed
+                            ? `${progress.lessons.find((l) => l.id === p.lessonId)?.points || 0} 分 · `
+                            : ""}
+                          {p.attempts} 次提交
+                        </small>
                       </td>
                     ))}
+                    <td className="assessment-total">
+                      {total(student.lessons)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -473,6 +523,34 @@ export function Curriculum({
             <p className="assessment-empty">
               学生加入课堂后，这里会展示每个关卡的完成情况。
             </p>
+          )}
+          {report && progress.students.length > 0 && (
+            <section className="assessment-report" aria-label="成绩单">
+              <div className="assessment-heading">
+                <h4>成绩单</h4>
+                <button
+                  onClick={() =>
+                    void run(async () => {
+                      if (navigator.clipboard) {
+                        await navigator.clipboard.writeText(reportCsv());
+                        setNotice("成绩单已复制为 CSV，可直接粘贴到表格软件。");
+                      } else {
+                        setNotice(
+                          "当前环境不支持剪贴板，请按下方内容手动复制。",
+                        );
+                      }
+                    })
+                  }
+                >
+                  复制 CSV
+                </button>
+              </div>
+              <pre className="assessment-report-csv">{reportCsv()}</pre>
+              <p className="assessment-help">
+                计分规则：某关卡在当前测试版本下全部用例（含隐藏用例）通过才获得该关分值，未通过或未提交记
+                0 分；修改关卡分值不影响已通过记录。
+              </p>
+            </section>
           )}
         </>
       ) : selected && lesson ? (
@@ -499,7 +577,8 @@ export function Curriculum({
           <div className="lesson-title">
             <h3>{lesson.title}</h3>
             <p>
-              {lesson.testCount} 组用例，其中 {lesson.hiddenCount} 组隐藏
+              {lesson.testCount} 组用例，其中 {lesson.hiddenCount} 组隐藏 · 分值{" "}
+              {lesson.points} 分{!teacher && "（全部用例通过才得分）"}
             </p>
           </div>
           <LessonMarkdown lesson={lesson} />
@@ -857,7 +936,10 @@ export function Curriculum({
                           <strong>{l.title}</strong>
                           <small>
                             {l.testCount} 组用例
-                            {l.hiddenCount ? ` · ${l.hiddenCount} 组隐藏` : ""}
+                            {l.hiddenCount
+                              ? ` · ${l.hiddenCount} 组隐藏`
+                              : ""}{" "}
+                            · {l.points} 分
                           </small>
                         </span>
                         <span className="assessment-lesson-tag">

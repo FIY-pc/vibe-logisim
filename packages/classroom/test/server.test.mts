@@ -6,6 +6,7 @@ import path from "node:path";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { createClassroomServer } from "../src/server.mts";
+import { MAX_ANALYSIS_OUTPUT } from "../src/analysis.mts";
 import type { WorkSnapshot } from "../src/types.ts";
 
 test("classroom lifecycle, role isolation, immutable evidence, AI scope and persistence", async () => {
@@ -336,7 +337,7 @@ test("classroom lifecycle, role isolation, immutable evidence, AI scope and pers
       t.token,
     );
     assert.equal(preview.cached, true);
-    assert.equal(preview.maxOutputTokens, 1800);
+    assert.equal(preview.maxOutputTokens, MAX_ANALYSIS_OUTPUT);
     assert.ok(preview.estimatedInputTokens > 0);
     const cached = await request(
       `/classrooms/${c.id}/analysis`,

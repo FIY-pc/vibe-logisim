@@ -93,7 +93,8 @@ await import('./scenarios.mjs');
   );
   execFileSync(process.execPath, [path.join(temp, "setup.mjs")], {
     stdio: "inherit",
-    timeout: 60000,
+    // The classroom scenario waits on a one-second grading poller.
+    timeout: 240000,
   });
 } finally {
   await fs.rm(temp, { recursive: true, force: true });

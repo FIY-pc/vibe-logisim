@@ -76,6 +76,7 @@ export function draftLesson(chapterId: string): Lesson {
       "# 实验目标\n\n请完成电路设计，并提交评测。\n\n## 输入与输出\n\n",
     position: 0,
     published: false,
+    points: 10,
     version: 0,
     gradingVersion: 1,
     circuit: "main",

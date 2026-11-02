@@ -5,6 +5,7 @@ import type {
   Chapter,
 } from "../../../../packages/classroom/src/assessment-types";
 import Markdown, { defaultUrlTransform } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { blankCase, templatePins } from "./assessment-utils";
 
 export function LessonMarkdown({
@@ -15,6 +16,7 @@ export function LessonMarkdown({
   return (
     <div className="lesson-markdown">
       <Markdown
+        remarkPlugins={[remarkGfm]}
         urlTransform={(url) =>
           url.startsWith("image:") ? url : defaultUrlTransform(url)
         }
@@ -225,6 +227,16 @@ export function LessonEditor({
             max={10000}
             value={draft.position}
             onChange={(e) => patch({ position: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          分值（全部用例通过才得分）
+          <input
+            type="number"
+            min={0}
+            max={1000}
+            value={draft.points}
+            onChange={(e) => patch({ points: Number(e.target.value) })}
           />
         </label>
       </div>

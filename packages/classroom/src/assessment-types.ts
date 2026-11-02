@@ -17,6 +17,8 @@ export interface Lesson {
   description: string;
   position: number;
   published: boolean;
+  /** Score a student earns for passing every case at the grading version. */
+  points: number;
   version: number;
   gradingVersion: number;
   circuit: string;
@@ -39,6 +41,7 @@ export interface Chapter {
     | "position"
     | "published"
     | "version"
+    | "points"
     | "testCount"
     | "hiddenCount"
   > & { passed: boolean; attempts: number })[];

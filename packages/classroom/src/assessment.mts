@@ -179,6 +179,7 @@ export function assessments(
       version: row.version,
       gradingVersion: row.grading_version,
       ...c,
+      points: num(c.points ?? 10, 0, 1000),
       tests:
         u.role === "teacher"
           ? c.tests
@@ -325,6 +326,7 @@ export function assessments(
             position: l.position,
             published: !!l.published,
             version: l.version,
+            points: num(config.points ?? 10, 0, 1000),
             testCount: config.tests.length,
             hiddenCount: config.tests.filter((t: AssessmentCase) => t.hidden)
               .length,
@@ -395,7 +397,8 @@ export function assessments(
         templateName = str(b.templateName, "模板名称", 120),
         templateXml = xml(b.templateXml),
         imageList = images(b.images ?? []),
-        testList = tests(b.tests);
+        testList = tests(b.tests),
+        points = num(b.points ?? 10, 0, 1000);
       if (
         !templateName.toLowerCase().endsWith(".circ") ||
         /[\\/]/.test(templateName)
@@ -410,6 +413,7 @@ export function assessments(
           templateXml,
           images: imageList,
           tests: testList,
+          points,
         });
       if (previous) {
         if (b.version !== previous.version)
@@ -599,48 +603,83 @@ export function assessments(
     }
     if (kind === "curriculum" && method === "POST") {
       teacher(u);
-      const members = all(
-        "SELECT u.id,u.name,u.student_no FROM members m JOIN users u ON u.id=m.student_id WHERE m.class_id=? ORDER BY u.student_no",
-        cid,
-      );
-      const lessons = all(
-        "SELECT id,title,grading_version version FROM assessment_lessons WHERE class_id=? AND published=1 ORDER BY position",
-        cid,
-      );
-      send(200, {
-        lessons,
-        students: members.map((s) => ({
-          ...s,
-          lessons: lessons.map((l) => {
-            const p = get(
-              "SELECT count(*) attempts,coalesce(max(status='passed'),0) passed,max(created_at) lastSubmittedAt FROM assessment_attempts WHERE student_id=? AND lesson_id=? AND lesson_version=?",
-              s.id,
-              l.id,
-              l.version,
-            )!;
-            const last = get(
-              "SELECT status,passed,total FROM assessment_attempts WHERE student_id=? AND lesson_id=? AND lesson_version=? ORDER BY created_at DESC,rowid DESC LIMIT 1",
-              s.id,
-              l.id,
-              l.version,
-            );
-            return {
-              lessonId: l.id,
-              ...p,
-              passed: !!p.passed,
-              lastStatus: last?.status ?? null,
-              lastPassed: last?.passed ?? 0,
-              total: last?.total ?? 0,
-            };
-          }),
-        })),
-      });
+      send(200, progressRows(cid));
       return true;
     }
     return fail(405, "评测接口不支持此操作");
   }
+  /** Published-lesson score matrix for one class, shared by the API and AI analysis. */
+  type ProgressLesson = {
+    id: string;
+    title: string;
+    version: number;
+    points: number;
+  };
+  type ProgressCell = {
+    lessonId: string;
+    attempts: number;
+    passed: boolean;
+    lastSubmittedAt: string | null;
+    lastStatus: string | null;
+    lastPassed: number;
+    total: number;
+  };
+  type ProgressStudent = {
+    id: string;
+    name: string;
+    student_no: string;
+    lessons: ProgressCell[];
+  };
+  function progressRows(cid: string): {
+    lessons: ProgressLesson[];
+    students: ProgressStudent[];
+  } {
+    const members = all(
+      "SELECT u.id,u.name,u.student_no FROM members m JOIN users u ON u.id=m.student_id WHERE m.class_id=? ORDER BY u.student_no",
+      cid,
+    );
+    const lessons: ProgressLesson[] = all(
+      "SELECT id,title,config,grading_version version FROM assessment_lessons WHERE class_id=? AND published=1 ORDER BY position,rowid",
+      cid,
+    ).map((l) => ({
+      id: l.id,
+      title: l.title,
+      version: l.version,
+      points: num(JSON.parse(l.config).points ?? 10, 0, 1000),
+    }));
+    const students: ProgressStudent[] = members.map((s) => ({
+      id: s.id,
+      name: s.name,
+      student_no: s.student_no,
+      lessons: lessons.map((l) => {
+        const p = get(
+          "SELECT count(*) attempts,coalesce(max(status='passed'),0) passed,max(created_at) last_submitted FROM assessment_attempts WHERE student_id=? AND lesson_id=? AND lesson_version=?",
+          s.id,
+          l.id,
+          l.version,
+        )!;
+        const last = get(
+          "SELECT status,passed,total FROM assessment_attempts WHERE student_id=? AND lesson_id=? AND lesson_version=? ORDER BY created_at DESC,rowid DESC LIMIT 1",
+          s.id,
+          l.id,
+          l.version,
+        );
+        return {
+          lessonId: l.id,
+          attempts: p.attempts,
+          passed: !!p.passed,
+          lastSubmittedAt: p.last_submitted ?? null,
+          lastStatus: last?.status ?? null,
+          lastPassed: last?.passed ?? 0,
+          total: last?.total ?? 0,
+        };
+      }),
+    }));
+    return { lessons, students };
+  }
   return {
     handle,
+    progress: progressRows,
     close: async () => {
       closed = true;
       await worker;
