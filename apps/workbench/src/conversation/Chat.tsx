@@ -1,3 +1,4 @@
+import { ChatGPTUsage } from "./ChatGPTLogin";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -763,7 +764,7 @@ export function Chat({
                 )
               ) : !state.services.length ? (
                 <div className="chat-card">
-                  <span>添加一个模型服务后开始对话。</span>
+                  <span>登录 ChatGPT 或添加 API 服务后开始对话。</span>
                   <button
                     className="primary"
                     onClick={() => setConfigure(true)}
@@ -844,6 +845,14 @@ export function Chat({
       </div>
       {!scroll.following && <FollowLatest onClick={scroll.latest} />}
       <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
+        {state?.customProvider?.auth === "chatgpt" && (
+          <div className="chat-plan-status">
+            <span>
+              使用 ChatGPT 订阅额度 · {state.customProvider.account?.email}
+            </span>
+            <ChatGPTUsage />
+          </div>
+        )}
         {references.composer}
         <textarea
           ref={composerInput}

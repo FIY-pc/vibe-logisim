@@ -108,6 +108,18 @@ async function dispatch(method: RuntimeMethod, args: any) {
       return runner.listModels(Boolean(args?.refresh));
     case "selectModel":
       return runner.selectModel(args?.inherit === true ? null : args);
+    case "loginChatGPT":
+      return runner.loginChatGPT(args);
+    case "chatGPTLoginStatus":
+      return runner.chatGPTLoginStatus(String(args.attemptId));
+    case "cancelChatGPTLogin":
+      runner.chatgpt.cancel(String(args.attemptId));
+      return { cancelled: true };
+    case "logoutChatGPT":
+      return runner.logoutChatGPT(String(args.id));
+    case "acknowledgeChatGPT":
+      runner.chatgpt.welcome(String(args.id));
+      return { acknowledged: true };
     case "configure":
       return runner.configureService(args);
     case "removeProvider":

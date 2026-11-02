@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, RefreshCw } from "lucide-react";
 import "./ai-settings.css";
+import { ChatGPTLogin } from "./ChatGPTLogin";
 import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { DialogClose, useModal } from "../shared/Dialog";
 import { publicText } from "../../../../packages/agent-runtime/src/models/public-fields.mts";
 export interface ProviderConfiguration {
   id?: string;
+  auth?: "chatgpt";
+  account?: { email: string; connected: boolean; planEnabled: boolean };
   name: string;
   baseUrl: string;
   apiKey?: string;
@@ -455,73 +458,95 @@ export function ProviderSettings(props: SettingsProps) {
           </h3>
           {page === "services" && (
             <button disabled={locked} onClick={() => edit(null)}>
-              添加服务
+              添加 API 服务
             </button>
           )}
         </div>
         {page === "services" && (
           <>
+            <ChatGPTLogin
+              services={services}
+              busy={locked}
+              request={request}
+              onSaved={onSaved}
+              providerId={provider?.id}
+              canBind={Boolean(props.conversationId)}
+              onChoose={choose}
+            />
             {props.configurationError && (
               <p className="dialog-error" role="alert">
                 {props.configurationError}
               </p>
             )}
-            {services.map((service) => (
-              <div
-                className="ai-service-row"
-                key={service.id || service.baseUrl}
-              >
-                <div>
-                  <strong>
-                    {publicText(service.name || service.baseUrl)}
-                    {props.conversationId && service.id === provider?.id && (
-                      <span className="ai-settings-badge">此对话</span>
+            {services
+              .filter((service) => service.auth !== "chatgpt")
+              .map((service) => (
+                <div
+                  className="ai-service-row"
+                  key={service.id || service.baseUrl}
+                >
+                  <div>
+                    <strong>
+                      {publicText(service.name || service.baseUrl)}
+                      {props.conversationId && service.id === provider?.id && (
+                        <span className="ai-settings-badge">此对话</span>
+                      )}
+                    </strong>
+                    {!service.baseUrl.includes("/api/classrooms/") && (
+                      <p>{publicText(service.baseUrl)}</p>
                     )}
-                  </strong>
-                  {!service.baseUrl.includes("/api/classrooms/") && (
-                    <p>{publicText(service.baseUrl)}</p>
-                  )}
-                  <p>{publicText(service.model)}</p>
-                  {service.baseUrl.includes("/api/classrooms/") && (
-                    <p className="muted">
-                      课堂提供 · 配置由教师管理，使用独立访问凭据
-                    </p>
-                  )}
-                </div>
-                <div className="ai-service-actions">
-                  {service.baseUrl.includes("/api/classrooms/") && (
+                    <p>{publicText(service.model)}</p>
+                    {service.baseUrl.includes("/api/classrooms/") && (
+                      <p className="muted">
+                        课堂提供 · 配置由教师管理，使用独立访问凭据
+                      </p>
+                    )}
+                  </div>
+                  <div className="ai-service-actions">
+                    {service.baseUrl.includes("/api/classrooms/") && (
+                      <button
+                        disabled={locked}
+                        onClick={() => {
+                          setConfirmation({ kind: "remove", service });
+                          navigate("confirm");
+                        }}
+                      >
+                        移除
+                      </button>
+                    )}
                     <button
                       disabled={locked}
-                      onClick={() => {
-                        setConfirmation({ kind: "remove", service });
-                        navigate("confirm");
-                      }}
+                      onClick={() => edit(service)}
+                      hidden={
+                        service.auth === "chatgpt" ||
+                        service.baseUrl.includes("/api/classrooms/")
+                      }
+                      aria-label={`编辑 ${service.name || service.baseUrl}`}
                     >
-                      移除
+                      编辑
                     </button>
-                  )}
-                  <button
-                    disabled={locked}
-                    onClick={() => edit(service)}
-                    hidden={service.baseUrl.includes("/api/classrooms/")}
-                    aria-label={`编辑 ${service.name || service.baseUrl}`}
-                  >
-                    编辑
-                  </button>
-                  {(service.id !== provider?.id ||
-                    props.configurationError) && (
-                    <button
-                      disabled={locked || !props.conversationId}
-                      onClick={() => choose(service)}
-                    >
-                      用于此对话
-                    </button>
-                  )}
+                    {(service.id !== provider?.id ||
+                      props.configurationError) && (
+                      <button
+                        disabled={
+                          locked ||
+                          !props.conversationId ||
+                          (service.auth === "chatgpt" &&
+                            (!service.account?.connected ||
+                              !service.account.planEnabled))
+                        }
+                        onClick={() => choose(service)}
+                      >
+                        用于此对话
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
             {!services.length && (
-              <p>添加一个模型服务（API 地址、密钥和模型名）后即可对话。</p>
+              <p>
+                也可以添加 DeepSeek、OpenAI 等 API 服务，使用自己的 API 密钥。
+              </p>
             )}
             {services.length > 0 && (
               <label className="ai-settings-field">

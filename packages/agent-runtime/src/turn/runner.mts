@@ -19,6 +19,8 @@ import {
   URL as CATALOG_URL,
   providerFor,
 } from "../models/catalog.mts";
+import { ChatGPTAccounts } from "../models/chatgpt.mts";
+import { chatgptFetch, chatgptPayload } from "../models/chatgpt-responses.mts";
 import { discoverModels } from "../models/probe.mts";
 import { loadSdk } from "../models/sdk-loader.mts";
 import {
@@ -205,6 +207,9 @@ export function retryingStream(
         visible ||
         signal?.aborted ||
         attempt >= STREAM_RETRY.maxRetries ||
+        /subscription_sharing_(usage_limit_exceeded|user_not_eligible|unsupported_capability|route_not_supported|invalid_user)|chatpass_v2_/.test(
+          message.errorMessage || "",
+        ) ||
         !sdk.isRetryableAssistantError(message)
       ) {
         out.push(final);
@@ -244,6 +249,14 @@ export function retryingStream(
  * Chinese and keep the original text after it for diagnosis. */
 const FAILURES: [RegExp, string][] = [
   [
+    /subscription_sharing_usage_limit_exceeded/,
+    "ChatGPT 使用额度已达上限，请打开 ChatGPT 用量设置查看",
+  ],
+  [
+    /subscription_sharing_user_not_eligible/,
+    "这个账号或工作区暂不能在此应用使用 ChatGPT 订阅额度",
+  ],
+  [
     /\b401\b|unauthori[sz]ed|invalid.*(api[ _-]?key|token)|incorrect api key|authentication/i,
     "模型服务拒绝了 API 密钥",
   ],
@@ -266,7 +279,12 @@ const FAILURES: [RegExp, string][] = [
     "与模型服务的连接中断",
   ],
 ];
-function failureText(message: string) {
+function failureText(message: string, chatgpt = false) {
+  if (
+    chatgpt &&
+    /\b401\b|unauthori[sz]ed|invalid.*token|authentication/i.test(message)
+  )
+    return `ChatGPT 登录未被接受，请在 AI 设置中重新登录（${message}）`;
   if (/[\u4e00-\u9fff]/.test(message)) return message;
   const known = FAILURES.find(([pattern]) => pattern.test(message));
   return known ? `${known[1]}（${message}）` : message;
@@ -274,6 +292,7 @@ function failureText(message: string) {
 
 export class TurnRunner extends EventEmitter {
   readonly services: ServiceStore;
+  readonly chatgpt: ChatGPTAccounts;
   readonly conversations: ConversationStore;
   readonly catalog: ModelCatalog;
   private readonly host: HostClient;
@@ -307,7 +326,13 @@ export class TurnRunner extends EventEmitter {
     this.host = options.host;
     this.runtimeRoot = options.runtimeRoot ?? null;
     this.instructionsOverride = options.instructions ?? null;
-    this.services = new ServiceStore(options.profileDir);
+    this.chatgpt = new ChatGPTAccounts(options.profileDir, {
+      fetchFor: (url) => this.requestFetch({ baseUrl: url }),
+      changed: () => {
+        if (this.catalog) this.emitStatus();
+      },
+    });
+    this.services = new ServiceStore(options.profileDir, this.chatgpt);
     this.conversations = new ConversationStore(options.conversationsFile);
     this.catalog = new ModelCatalog({
       profileDir: options.profileDir,
@@ -341,7 +366,10 @@ export class TurnRunner extends EventEmitter {
       network: this.network,
       transmission: this.transmission,
       modelConfigurationError: issue,
-      modelCatalog: this.catalog.status(this.services.resolve(this.selection)),
+      modelCatalog:
+        config?.auth === "chatgpt"
+          ? { error: null }
+          : this.catalog.status(this.services.resolve(this.selection)),
     };
   }
   /** The conversation as the window shows it. */
@@ -387,6 +415,7 @@ export class TurnRunner extends EventEmitter {
     return this.start();
   }
   async stop() {
+    this.chatgpt.cancel();
     await this.interrupt();
     this.status = "stopped";
     this.emitStatus();
@@ -410,6 +439,25 @@ export class TurnRunner extends EventEmitter {
   private async requestFetch(config: { baseUrl: string }) {
     this.network = await this.resolveNetwork(config.baseUrl);
     return networkFetch(this.network as any);
+  }
+
+  async loginChatGPT(args: { id?: string; consent?: boolean }) {
+    if (this.snapshot().busy) throw new Error("请先停止当前回答");
+    return this.chatgpt.begin(args.id, args.consent);
+  }
+  async chatGPTLoginStatus(id: string) {
+    const result = this.chatgpt.status(id);
+    if (result.status === "complete" && !this.services.registry().defaultId) {
+      this.services.setDefault(result.serviceId!);
+      await this.start();
+    }
+    return result;
+  }
+  async logoutChatGPT(id: string) {
+    if (this.snapshot().busy) throw new Error("请先停止当前回答");
+    const result = await this.chatgpt.logout(id);
+    await this.start();
+    return result;
   }
 
   // ---- services and models ---------------------------------------------
@@ -492,6 +540,22 @@ export class TurnRunner extends EventEmitter {
   async listModels(refresh = false) {
     const c = this.services.resolve(this.selection);
     const scope = this.conversationId;
+    if (c?.auth === "chatgpt") {
+      const issue = configurationIssue(this.selection, c, false);
+      if (issue)
+        return { state: this.snapshot(), models: [], warning: issue.message };
+      const models = await this.chatgpt.models(c.id, refresh);
+      if (
+        scope !== this.conversationId ||
+        c.id !== this.services.resolve(this.selection)?.id
+      )
+        throw new Error("模型服务已变化，请重新打开列表");
+      return {
+        state: this.snapshot(),
+        models,
+        warning: models.length ? null : "这个 ChatGPT 账号暂未提供可用模型",
+      };
+    }
     if (refresh) await this.catalog.refresh(c);
     else if (providerFor(c)) void this.catalog.refreshMetadata();
     // An async refresh must never return rows for a different conversation or service.
@@ -521,6 +585,31 @@ export class TurnRunner extends EventEmitter {
       this.history.some((m) => m.type === "user"),
     );
     if (issue) throw new Error(issue.message);
+    if (c?.auth === "chatgpt") {
+      const models = await this.chatgpt.models(c.id);
+      const picked = models.find((m) => m.model === selection?.model);
+      if (!picked) throw new Error("请选择 ChatGPT 账号可用的模型");
+      const effort = selection?.effort || picked.defaultEffort || "none";
+      if (!["none", "low", "medium", "high", "xhigh", "max"].includes(effort))
+        throw new Error("不支持这个思考深度");
+      if (this.workspaceKey) {
+        this.selection = selectionFor({
+          ...c,
+          model: picked.model,
+          effort: effort as ServiceConfig["effort"],
+          contextWindow: picked.metadata.contextWindow,
+          vision: picked.metadata.vision,
+        });
+        this.persist();
+      } else
+        this.chatgpt.select(
+          c.id,
+          picked.model,
+          effort as ServiceConfig["effort"],
+        );
+      this.emitStatus();
+      return this.snapshot();
+    }
     if (
       !c ||
       !this.catalog
@@ -712,9 +801,10 @@ export class TurnRunner extends EventEmitter {
       this.history.some((m) => m.type === "user"),
     );
     if (issue) throw new Error(issue.message);
-    if (!service) throw new Error("请先添加模型服务");
+    if (!service) throw new Error("请先登录 ChatGPT 或添加 API 服务");
     this.selection ||= selectionFor(service);
     const config = { ...service, ...this.selection };
+    if (!config.model) throw new Error("请先选择模型；可在模型列表中刷新重试");
     if (images.length && !config.vision)
       throw new Error(
         "当前模型服务未启用图片输入，请开启后重试，或移除图片引用",
@@ -726,7 +816,15 @@ export class TurnRunner extends EventEmitter {
       const sdk = await loadSdk();
       const { Agent, createInitialSystemMessage, toToolDeclaration } = sdk;
       const api = await transport(config.api);
-      const fetch = retryableFetch(await this.requestFetch(config));
+      const baseFetch = await this.requestFetch(config);
+      const fetch =
+        config.auth === "chatgpt"
+          ? chatgptFetch(
+              this.chatgpt.api,
+              () => this.chatgpt.access(config.id),
+              baseFetch,
+            )
+          : retryableFetch(baseFetch);
       if (this.cancelStarting) throw new Error("已停止");
       if (request.editMessageId) {
         const point = this.checkpoints[request.editMessageId];
@@ -844,10 +942,14 @@ export class TurnRunner extends EventEmitter {
             () =>
               api.streamSimple(model, ctx, {
                 ...opts,
-                apiKey: config.apiKey,
+                apiKey:
+                  config.auth === "chatgpt" ? "chatgpt-session" : config.apiKey,
                 fetch,
                 maxTokens: 8192,
-                maxRetries: 8,
+                maxRetries: config.auth === "chatgpt" ? 0 : 8,
+                ...(config.auth === "chatgpt"
+                  ? { onPayload: chatgptPayload }
+                  : {}),
               }),
             sdk,
             opts?.signal,
@@ -1091,7 +1193,13 @@ export class TurnRunner extends EventEmitter {
         this.agent.signal?.aborted || this.cancelStarting
           ? "interrupted"
           : "failed";
-      error = status === "interrupted" ? "已停止" : failureText(e.message);
+      error =
+        status === "interrupted"
+          ? "已停止"
+          : failureText(
+              e.message,
+              this.services.resolve(this.selection)?.auth === "chatgpt",
+            );
     } finally {
       let change: FolderChange | null = null;
       try {

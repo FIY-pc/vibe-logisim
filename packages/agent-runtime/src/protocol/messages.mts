@@ -33,6 +33,11 @@ export type RuntimeMethod =
   | "conversations"
   | "models"
   | "selectModel"
+  | "loginChatGPT"
+  | "chatGPTLoginStatus"
+  | "cancelChatGPTLogin"
+  | "logoutChatGPT"
+  | "acknowledgeChatGPT"
   | "configure"
   | "removeProvider"
   | "discover"
@@ -50,6 +55,8 @@ export const TRANSITIONS: ReadonlySet<RuntimeMethod> = new Set<RuntimeMethod>([
   "bind",
   "ask",
   "conversations",
+  "loginChatGPT",
+  "logoutChatGPT",
   "configure",
   "removeProvider",
   "selectModel",

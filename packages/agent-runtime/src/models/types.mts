@@ -3,6 +3,8 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 /** One model service the user configured: endpoint, protocol, credentials and the model it defaults to. */
 export interface ServiceConfig {
   id: string;
+  auth?: "chatgpt";
+  account?: { email: string; connected: boolean; planEnabled: boolean };
   name: string;
   baseUrl: string;
   api: string;

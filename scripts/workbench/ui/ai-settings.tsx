@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
+import { ChatGPTLogin } from "../../../apps/workbench/src/conversation/ChatGPTLogin";
 import { ModelPicker } from "../../../apps/workbench/src/conversation/ModelPicker";
 import { pickOption } from "./workbench";
 
@@ -201,6 +202,81 @@ export async function verifyAISettings() {
         .dispatchEvent(new Event("cancel", { cancelable: true }));
     });
     assert.equal(container.querySelector("dialog")?.textContent ?? null, null);
+    const oldOpen = window.open;
+    const opened: string[] = [];
+    window.open = ((url: string) => {
+      opened.push(url);
+      return null;
+    }) as typeof window.open;
+    let loginStatus = "pending",
+      saved = 0;
+    const loginCalls: { method: string; args: any }[] = [];
+    const chatgptRequest = async (method: string, args: any) => {
+      loginCalls.push({ method, args });
+      if (method === "loginChatGPT")
+        return {
+          attemptId: "attempt-local",
+          url: "https://auth.openai.com/api/accounts/authorize?state=local",
+        };
+      if (method === "chatGPTLoginStatus")
+        return {
+          status: loginStatus,
+          welcome: true,
+          serviceId: "local-account",
+        };
+      if (method === "logoutChatGPT")
+        return { warning: "已退出本机账号，但未确认远端撤销" };
+      return {};
+    };
+    const loginProps = {
+      services: [],
+      busy: false,
+      request: chatgptRequest as any,
+      onSaved: async () => {
+        saved++;
+      },
+    };
+    try {
+      await act(async () => root.render(<ChatGPTLogin {...loginProps} />));
+      await click(button("Continue with ChatGPT"));
+      assert.equal(opened.length, 1);
+      assert.match(container.textContent!, /浏览器中完成登录/);
+      await click(button("取消登录"));
+      assert.equal(loginCalls.at(-1)?.method, "cancelChatGPTLogin");
+      assert.equal(saved, 0);
+      loginStatus = "complete";
+      await click(button("Continue with ChatGPT"));
+      assert.match(container.textContent!, /正在使用你的 ChatGPT 订阅/);
+      assert.equal(saved, 1);
+      await click(button("知道了"));
+      assert.equal(loginCalls.at(-1)?.method, "acknowledgeChatGPT");
+      const signedIn = {
+        ...services[0],
+        id: "local-account",
+        auth: "chatgpt" as const,
+        account: {
+          email: "tester@example.com",
+          connected: true,
+          planEnabled: true,
+        },
+      };
+      await act(async () =>
+        root.render(<ChatGPTLogin {...loginProps} services={[signedIn]} />),
+      );
+      await click(button("退出登录"));
+      assert.equal(loginCalls.at(-1)?.method, "logoutChatGPT");
+      assert.match(container.textContent!, /未确认远端撤销/);
+      loginStatus = "pending";
+      await click(button("Continue with ChatGPT"));
+      await act(async () => root.render(<div />));
+      assert.equal(
+        loginCalls.at(-1)?.method,
+        "cancelChatGPTLogin",
+        "closing settings cancels the pending callback",
+      );
+    } finally {
+      window.open = oldOpen;
+    }
     console.log(
       "PASS: settings keep defaults separate from conversation bindings; model picker preserves search, refresh warnings, keyboard navigation and busy state",
     );

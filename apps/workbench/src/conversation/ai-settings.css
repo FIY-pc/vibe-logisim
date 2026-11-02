@@ -355,3 +355,61 @@
   padding: 8px;
   font-size: 12px;
 }
+
+.ai-chatgpt {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ai-chatgpt > p {
+  margin: 6px 0 12px;
+}
+.ai-chatgpt a,
+.chat-plan-status a {
+  color: inherit;
+  text-decoration: underline;
+}
+.ai-chatgpt > a {
+  display: inline-block;
+  margin: 10px 0 0 12px;
+  font-size: 12px;
+}
+.ai-chatgpt-signin {
+  background: #111;
+  color: white;
+  border: 1px solid #111;
+  padding: 9px 16px;
+  border-radius: 6px;
+}
+.ai-chatgpt-account {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.ai-chatgpt-account > div {
+  flex: 1;
+  min-width: 160px;
+  overflow-wrap: anywhere;
+}
+.ai-chatgpt-account small {
+  display: block;
+  margin-top: 4px;
+}
+.ai-chatgpt-waiting button + button {
+  margin-left: 8px;
+}
+.ai-chatgpt-welcome {
+  padding: 12px 0;
+}
+.chat-plan-status {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}

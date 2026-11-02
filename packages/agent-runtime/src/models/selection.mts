@@ -32,6 +32,15 @@ function configurationIssue(selection: any, config: any, hasHistory: any) {
       code: "service-missing",
       message: `原模型服务不可用：${selection.baseUrl}`,
     };
+  if (config?.auth === "chatgpt") {
+    if (!config.account?.connected)
+      return { code: "chatgpt-login", message: "请在 AI 设置中登录 ChatGPT" };
+    if (!config.account.planEnabled)
+      return {
+        code: "chatgpt-permission",
+        message: "请授权使用 ChatGPT 订阅额度，或选择 API 服务",
+      };
+  }
   return null;
 }
 function recoverHistory(history: RuntimeMessage[]): RuntimeMessage[] {

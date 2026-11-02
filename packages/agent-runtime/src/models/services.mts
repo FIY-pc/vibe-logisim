@@ -15,18 +15,10 @@ import * as path from "node:path";
 import { randomUUID, createHash } from "node:crypto";
 import { loadSdk } from "./sdk-loader.mts";
 import { validate, maskKey } from "./validate.mts";
+import { atomic } from "./storage.mts";
+import type { ChatGPTAccounts } from "./chatgpt.mts";
 import { publicText } from "./public-fields.mts";
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"];
-function atomic(file: string, value: unknown) {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temp = `${file}.${randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(temp, JSON.stringify(value), { mode: 0o600, flag: "wx" });
-    fs.renameSync(temp, file);
-  } finally {
-    fs.rmSync(temp, { force: true });
-  }
-}
 // Stable service records own credentials; conversations hold only their IDs.
 const serviceEndpoint = (c: Partial<ServiceConfig> | null | undefined) =>
   String(c?.baseUrl || "").replace(/\/+$/, "");
@@ -53,7 +45,9 @@ class ServiceStore {
   declare profileDir: string;
   declare file: string;
 
-  constructor(profileDir: string) {
+  readonly chatgpt?: ChatGPTAccounts;
+  constructor(profileDir: string, chatgpt?: ChatGPTAccounts) {
+    this.chatgpt = chatgpt;
     this.profileDir = profileDir;
     this.file = path.join(profileDir, "builtin-provider.json");
   }
@@ -64,7 +58,7 @@ class ServiceStore {
     } catch (e: any) {
       if (e.code !== "ENOENT")
         throw new Error("模型服务配置无法读取，原文件已保留");
-      return { version: 2, defaultId: null, services: [] };
+      saved = { version: 2, defaultId: null, services: [] };
     }
     if (
       saved?.version !== 2 ||
@@ -72,7 +66,10 @@ class ServiceStore {
       saved.services.some((c: any) => !c.id || !c.baseUrl || !c.api)
     )
       throw new Error("模型服务配置无效，原文件已保留");
-    return saved;
+    return {
+      ...saved,
+      services: [...saved.services, ...(this.chatgpt?.services() || [])],
+    };
   }
   read(id?: string | null) {
     const r = this.registry();
@@ -99,6 +96,8 @@ class ServiceStore {
   }
   validate(input: Partial<ServiceConfig>): Omit<ServiceConfig, "id"> {
     const old = input.id ? this.read(input.id) : null;
+    if (old?.auth === "chatgpt" || input.auth === "chatgpt")
+      throw new Error("ChatGPT 账号请通过登录管理");
     const same = old && serviceEndpoint(input) === serviceEndpoint(old);
     const value = validate(
       { ...input, effort: input.effort || "none" },
@@ -124,7 +123,10 @@ class ServiceStore {
     if (index < 0) r.services.push(next);
     else r.services[index] = next;
     r.defaultId ||= id;
-    atomic(this.file, r);
+    atomic(this.file, {
+      ...r,
+      services: r.services.filter((c) => c.auth !== "chatgpt"),
+    });
     return publicService(next)!;
   }
   setDefault(id: string) {
@@ -132,14 +134,22 @@ class ServiceStore {
     if (!r.services.some((c: any) => c.id === id))
       throw new Error("模型服务不存在");
     r.defaultId = id;
-    atomic(this.file, r);
+    atomic(this.file, {
+      ...r,
+      services: r.services.filter((c) => c.auth !== "chatgpt"),
+    });
   }
   clear(id?: string) {
     const r = this.registry(),
       target = id === undefined ? r.defaultId : id;
+    if (r.services.find((c) => c.id === target)?.auth === "chatgpt")
+      throw new Error("请使用退出 ChatGPT 登录");
     r.services = r.services.filter((c: any) => c.id !== target);
     if (r.defaultId === target) r.defaultId = r.services[0]?.id || null;
-    atomic(this.file, r);
+    atomic(this.file, {
+      ...r,
+      services: r.services.filter((c) => c.auth !== "chatgpt"),
+    });
   }
 }
 function modelFor(
