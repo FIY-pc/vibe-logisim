@@ -1026,7 +1026,6 @@ button.primary:active:where(:not(:disabled)) {
 }
 .composer footer .composer-effort {
   max-width: 125px;
-  margin-right: auto;
 }
 .composer-stop svg {
   fill: currentColor;

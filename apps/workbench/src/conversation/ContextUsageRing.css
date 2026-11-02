@@ -1,0 +1,47 @@
+.context-usage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  height: 28px;
+  margin-right: auto;
+  border-radius: 6px;
+  color: var(--accent);
+  cursor: default;
+}
+.context-usage:hover {
+  background: var(--hover);
+}
+.context-usage.is-high {
+  color: #bd8700;
+}
+.context-usage-track,
+.context-usage-fill {
+  fill: none;
+  stroke-width: 2;
+}
+.context-usage-track {
+  stroke: var(--border);
+}
+.context-usage-fill {
+  stroke: currentColor;
+}
+.context-usage.is-unknown .context-usage-track {
+  stroke: currentColor;
+  stroke-dasharray: 2 3;
+  opacity: 0.5;
+}
+.context-usage-pulse {
+  fill: currentColor;
+  animation: context-usage-pulse 1.2s ease-in-out infinite;
+}
+@keyframes context-usage-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .context-usage-pulse {
+    animation: none;
+  }
+}
