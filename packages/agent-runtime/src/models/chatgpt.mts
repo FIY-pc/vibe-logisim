@@ -39,7 +39,6 @@ interface Account {
   models: ChatGPTModel[];
   model: string;
   effort: ServiceConfig["effort"];
-  welcomed: boolean;
 }
 export interface ChatGPTModel {
   model: string;
@@ -58,7 +57,6 @@ type LoginState = {
   status: "pending" | "complete" | "error" | "cancelled";
   serviceId?: string;
   error?: string;
-  welcome?: boolean;
 };
 interface Attempt {
   state: string;
@@ -381,7 +379,6 @@ export class ChatGPTAccounts {
         models: existing?.models || [],
         model: existing?.model || "",
         effort: existing?.effort || "none",
-        welcomed: existing?.welcomed || false,
       };
       if (a.result.status !== "pending") throw new Error("登录已取消");
       if (planEnabled(account)) {
@@ -402,7 +399,6 @@ export class ChatGPTAccounts {
       this.finish(a, {
         status: "complete",
         serviceId: account.id,
-        welcome: planEnabled(account) && !account.welcomed,
       });
     } catch (e: any) {
       res
@@ -512,11 +508,6 @@ export class ChatGPTAccounts {
       throw new Error("请选择 ChatGPT 账号可用的模型");
     a.model = model;
     a.effort = effort;
-    this.save(a);
-  }
-  welcome(id: string) {
-    const a = this.account(id);
-    a.welcomed = true;
     this.save(a);
   }
   async logout(id: string) {

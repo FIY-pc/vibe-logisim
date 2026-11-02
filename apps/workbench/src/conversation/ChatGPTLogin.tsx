@@ -19,7 +19,7 @@ export async function openChatGPTLink(url: string) {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 }
-export function ChatGPTUsage() {
+function ChatGPTUsage() {
   return (
     <a
       href={USAGE}
@@ -60,7 +60,6 @@ export function ChatGPTLogin({
   const [login, setLogin] = useState<Login | null>(null);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState("");
-  const [welcome, setWelcome] = useState<string | null>(null);
   const pending = useRef<string | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -82,8 +81,6 @@ export function ChatGPTLogin({
         const result = await request<{
           status: string;
           error?: string;
-          serviceId?: string;
-          welcome?: boolean;
         }>("chatGPTLoginStatus", { attemptId: login.attemptId });
         if (cancelled) return;
         if (result.status === "pending") {
@@ -93,8 +90,6 @@ export function ChatGPTLogin({
         pending.current = null;
         setLogin(null);
         if (result.status === "complete") {
-          if (result.welcome) setWelcome(result.serviceId!);
-          else setMessage("已登录 ChatGPT");
           await onSaved();
         } else setMessage(result.error || "已取消登录");
       } catch (e) {
@@ -173,13 +168,13 @@ export function ChatGPTLogin({
                 )}
               </strong>
               <p>{s.model}</p>
-              <p>
-                {!s.account?.connected
-                  ? "已退出登录"
-                  : s.account.planEnabled
-                    ? "使用 ChatGPT 订阅额度"
+              {(!s.account?.connected || !s.account.planEnabled) && (
+                <p>
+                  {!s.account?.connected
+                    ? "已退出登录"
                     : "尚未授权使用订阅额度"}
-              </p>
+                </p>
+              )}
             </div>
             {(!s.account?.connected || !s.account.planEnabled) && (
               <button
@@ -232,24 +227,6 @@ export function ChatGPTLogin({
             onClick={() => void cancel().catch((e) => setMessage(String(e)))}
           >
             取消登录
-          </button>
-        </div>
-      )}
-      {welcome && (
-        <div className="ai-chatgpt-welcome" role="status">
-          <strong>正在使用你的 ChatGPT 订阅</strong>
-          <p>
-            选择这个账号后，AI 请求会使用它的 ChatGPT 额度。你可以在 ChatGPT
-            设置中管理应用用量。
-          </p>
-          <button
-            onClick={() =>
-              void request("acknowledgeChatGPT", { id: welcome })
-                .then(() => setWelcome(null))
-                .catch((e) => setMessage(String(e)))
-            }
-          >
-            知道了
           </button>
         </div>
       )}

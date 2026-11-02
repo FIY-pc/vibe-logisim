@@ -221,7 +221,6 @@ export async function verifyAISettings() {
       if (method === "chatGPTLoginStatus")
         return {
           status: loginStatus,
-          welcome: true,
           serviceId: "local-account",
         };
       if (method === "logoutChatGPT")
@@ -246,10 +245,7 @@ export async function verifyAISettings() {
       assert.equal(saved, 0);
       loginStatus = "complete";
       await click(button("使用 ChatGPT 订阅"));
-      assert.match(container.textContent!, /正在使用你的 ChatGPT 订阅/);
       assert.equal(saved, 1);
-      await click(button("知道了"));
-      assert.equal(loginCalls.at(-1)?.method, "acknowledgeChatGPT");
       const signedIn = {
         ...services[0],
         id: "local-account",

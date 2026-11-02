@@ -117,9 +117,6 @@ async function dispatch(method: RuntimeMethod, args: any) {
       return { cancelled: true };
     case "logoutChatGPT":
       return runner.logoutChatGPT(String(args.id));
-    case "acknowledgeChatGPT":
-      runner.chatgpt.welcome(String(args.id));
-      return { acknowledged: true };
     case "configure":
       return runner.configureService(args);
     case "removeProvider":

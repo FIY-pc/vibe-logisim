@@ -54,7 +54,7 @@ Host ops the tools use: status (`summary: true`) read open new edit undo observe
 
 ## ChatGPT methods
 
-`loginChatGPT {id?, consent?}` starts a loopback listener and returns `{attemptId, url}`. The UI opens the URL in the system browser. `chatGPTLoginStatus {attemptId}` returns pending/complete/error/cancelled, with a service ID on success. `cancelChatGPTLogin {attemptId}` closes the listener. `logoutChatGPT {id}` revokes the renewable session and clears local tokens; `acknowledgeChatGPT {id}` records the first-use notice. Existing bind/default/model methods work with both account and API services.
+`loginChatGPT {id?, consent?}` starts a loopback listener and returns `{attemptId, url}`. The UI opens the URL in the system browser. `chatGPTLoginStatus {attemptId}` returns pending/complete/error/cancelled, with a service ID on success. `cancelChatGPTLogin {attemptId}` closes the listener. `logoutChatGPT {id}` revokes the renewable session and clears local tokens. Account details and usage management live in AI settings. Existing bind/default/model methods work with both account and API services.
 
 Protocol reference: [registration](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference), [sessions](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions).
 

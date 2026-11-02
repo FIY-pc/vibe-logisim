@@ -1,4 +1,3 @@
-import { ChatGPTUsage } from "./ChatGPTLogin";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -845,14 +844,6 @@ export function Chat({
       </div>
       {!scroll.following && <FollowLatest onClick={scroll.latest} />}
       <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
-        {state?.customProvider?.auth === "chatgpt" && (
-          <div className="chat-plan-status">
-            <span>
-              使用 ChatGPT 订阅额度 · {state.customProvider.account?.email}
-            </span>
-            <ChatGPTUsage />
-          </div>
-        )}
         {references.composer}
         <textarea
           ref={composerInput}

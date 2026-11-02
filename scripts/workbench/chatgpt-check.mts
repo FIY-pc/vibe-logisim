@@ -261,7 +261,6 @@ try {
   assert.equal(forms.length, 0, "wrong state must not exchange credentials");
   const completed = await finish(login);
   assert.equal(completed.status, "complete");
-  assert.equal(completed.welcome, true);
   const id = completed.serviceId!;
   assert.equal(forms[0].get("client_id"), clientId);
   assert.equal(
@@ -295,7 +294,6 @@ try {
     async () => store.save({ ...store.read(id)! }),
     /登录管理/,
   );
-  auth.welcome(id);
   auth = new ChatGPTAccounts(temp, options);
   assert.equal(await auth.access(id), "local-access-0");
   const models = await auth.models(id, true);
@@ -502,7 +500,7 @@ try {
   scope = "openid resource.invoke chatgpt.tokens.use.direct offline_access";
   const enable = await auth.begin(id, true);
   assert.equal(new URL(enable.url).searchParams.get("prompt"), "consent");
-  assert.equal((await finish(enable)).welcome, false);
+  assert.equal((await finish(enable)).status, "complete");
   assert.deepEqual(await auth.logout(id), { warning: null });
   assert.equal(forms.at(-1)?.get("token_type_hint"), "refresh_token");
   assert.equal(auth.services()[0].account?.connected, false);

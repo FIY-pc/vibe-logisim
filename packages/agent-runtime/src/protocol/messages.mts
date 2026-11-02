@@ -37,7 +37,6 @@ export type RuntimeMethod =
   | "chatGPTLoginStatus"
   | "cancelChatGPTLogin"
   | "logoutChatGPT"
-  | "acknowledgeChatGPT"
   | "configure"
   | "removeProvider"
   | "discover"
