@@ -6,7 +6,7 @@ Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己
 
 电路编辑、资料阅读、AI 对话和仿真在同一个窗口里完成。成果保存在你自己的文件夹中，是可以继续编辑和运行的 `.circ` 文件。
 
-[产品介绍与 Windows 课堂版下载](https://lovej.site/vibe-logisim/) · [上游发布与 Linux 版](https://github.com/FIY-pc/vibe-logisim/releases) · [反馈问题](https://github.com/FIY-pc/vibe-logisim/issues/new/choose) · [参与开发](docs/development.md)
+[下载](https://github.com/FIY-pc/vibe-logisim/releases/latest) · [产品介绍](https://lovej.site/vibe-logisim/) · [反馈问题](https://github.com/FIY-pc/vibe-logisim/issues/new/choose) · [参与开发](docs/development.md)
 
 ## 用它做什么
 
@@ -58,7 +58,7 @@ Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话
 
 此功能需要独立部署课堂服务，启动、模型配置和数据边界见 [课堂服务说明](docs/classroom.md)。
 
-包含课堂功能的 Windows 测试包、固定文件校验值和使用步骤见 [产品介绍页](https://lovej.site/vibe-logisim/)，可直接下载；上游旧 Releases 不一定包含课堂模块。介绍页也提供审核后公开的体验反馈，以及独立的评论管理后台。
+从 26.11.1 起，Windows 和 Linux 发布包均包含课堂功能。[产品介绍页](https://lovej.site/vibe-logisim/) 提供使用演示及审核后公开的体验反馈。
 
 ## 电路与 AI 接口的兼容性
 

@@ -1,7 +1,7 @@
 {
   "name": "vibe-logisim",
   "private": true,
-  "version": "0.6.0-beta.3",
+  "version": "26.11.1",
   "workspaces": [
     "apps/workbench",
     "packages/agent-runtime",
@@ -10,6 +10,7 @@
     "packages/showcase"
   ],
   "scripts": {
+    "release:version": "node scripts/workbench/version.mts",
     "dev": "node scripts/workbench/dev.mts",
     "desktop": "cd apps/workbench && npm run desktop",
     "build": "cd apps/workbench && npm run build",
