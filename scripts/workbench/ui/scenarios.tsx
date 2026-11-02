@@ -3,6 +3,7 @@ import { verifyClassroomUI } from "./classroom";
 import { verifyAISettings } from "./ai-settings";
 import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyConversationTurns } from "./conversation-turns";
+import { verifyContextUsage } from "./context-usage";
 import { verifyProjectInfoUI } from "./project-info";
 import { verifyDocumentHistory } from "./history";
 import { verifyReferenceLinks } from "./reference-links";
@@ -362,9 +363,7 @@ const latestMutationDocument = {
 };
 await openMenu("更多");
 await clickMenuItem("保存");
-await act(async () =>
-  hostChange(change(latestMutationDocument, "r2")),
-);
+await act(async () => hostChange(change(latestMutationDocument, "r2")));
 await act(async () => {
   mutationGate.resolve({
     ...doc("A"),
@@ -1258,7 +1257,7 @@ await render(
 );
 await click(
   [...document.querySelectorAll("button")].find(
-    (n) => n.textContent === "添加服务",
+    (n) => n.textContent === "添加自定义 API",
   )!,
 );
 await pickOption("服务类型", "自定义接口");
@@ -1304,6 +1303,10 @@ await inputValue(
   document.querySelector('input[aria-label="上下文窗口"]')!,
   "128000",
 );
+await inputValue(
+  document.querySelector('input[aria-label="最大输出 token"]')!,
+  "65536",
+);
 await click(document.querySelector('[role="checkbox"]'));
 await act(async () =>
   document
@@ -1313,6 +1316,7 @@ await act(async () =>
 assert.equal(saved, true);
 assert.equal(providerCalls.at(-1).method, "configure");
 assert.equal(providerCalls.at(-1).args.contextWindow, 128000);
+assert.equal(providerCalls.at(-1).args.maxOutput, 65536);
 assert.equal(providerCalls.at(-1).args.vision, true);
 console.log(
   "PASS: provider discovery/probe and explicit context/image settings reach the configuration API",
@@ -1327,6 +1331,7 @@ await verifyDocumentHistory();
 await verifyProjectInfoUI();
 await verifyConversationSummaries();
 await verifyConversationTurns();
+await verifyContextUsage();
 await verifyAISettings();
 await verifyEditorRequestLifetimes();
 await verifyClassroomUI();

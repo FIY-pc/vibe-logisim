@@ -31,6 +31,9 @@
   padding: 20px 24px;
   scroll-padding: 20px;
 }
+.ai-settings-services {
+  min-height: 0;
+}
 .ai-settings-heading {
   display: flex;
   align-items: center;
@@ -43,9 +46,6 @@
   flex: 1;
   font-weight: 600;
   outline: none;
-}
-.ai-settings-heading > button:last-child:not(:first-child) {
-  border: 1px solid var(--border);
 }
 .ai-service-row {
   display: flex;
@@ -100,8 +100,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 14px;
+  color: inherit;
   margin: 20px 0;
 }
 .ai-settings-field .select-trigger {
@@ -354,4 +354,69 @@
   display: block;
   padding: 8px;
   font-size: 12px;
+}
+
+.ai-service-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ai-service-options > li + li {
+  border-top: 1px solid var(--border);
+}
+.ai-service-options + .ai-service-row {
+  padding-top: 18px;
+}
+.ai-service-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 16px;
+  border: 0;
+  border-radius: 0;
+  font-size: 14px;
+  text-align: left;
+}
+.ai-service-option svg {
+  flex: none;
+  color: var(--muted);
+}
+.ai-chatgpt > p {
+  margin: 12px 16px;
+}
+.ai-chatgpt a {
+  color: inherit;
+  text-decoration: underline;
+}
+.ai-chatgpt > a {
+  display: inline-block;
+  margin: 0 16px 16px;
+}
+.ai-chatgpt-account {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 10px 0;
+  margin: 0 16px;
+  border-top: 1px solid var(--border);
+}
+.ai-chatgpt-account > div {
+  flex: 1;
+  min-width: 160px;
+  overflow-wrap: anywhere;
+}
+.ai-chatgpt-account p {
+  margin: 4px 0 0;
+}
+.ai-chatgpt-waiting button + button {
+  margin-left: 8px;
+}
+.ai-chatgpt-waiting {
+  padding: 0 16px 16px;
 }

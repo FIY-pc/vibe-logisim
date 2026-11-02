@@ -14,11 +14,6 @@ import {
   resolveFile,
   SANDBOX_REFERENCE,
 } from "../../packages/agent-runtime/src/tools/files.mts";
-import {
-  CLEARED,
-  clearOldToolOutput,
-  contextSize,
-} from "../../packages/agent-runtime/src/turn/context-budget.mts";
 
 const linux = systemInstructions(null, "linux");
 const windows = systemInstructions(null, "win32");
@@ -32,10 +27,7 @@ assert.doesNotMatch(windows, /Shell cwd/);
 // The references are readable at the sandbox path the prompt gives.
 assert.ok(linux.includes("index.md"), "the prompt names the reference index");
 assert.equal(
-  await resolveFile(
-    "/nonexistent-folder",
-    SANDBOX_REFERENCE + "/index.md",
-  ),
+  await resolveFile("/nonexistent-folder", SANDBOX_REFERENCE + "/index.md"),
   path.join(referenceRoot, "index.md"),
 );
 for (const name of ["digital-design.md", "java-runtime.md", "arrangement.md"])
@@ -101,47 +93,6 @@ try {
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
-// Ten turns of 60 000-character observations in a 768 000-character budget:
-// past 60 % the oldest observations give way down to 40 %; every word stays.
-const turns = Array.from({ length: 10 }, (_, i) => [
-  { role: "user", content: `问题 ${i}`, timestamp: i },
-  {
-    role: "assistant",
-    content: [{ type: "toolCall", id: `t${i}`, name: "inspect_circuit", arguments: {} }],
-    timestamp: i,
-  },
-  {
-    role: "toolResult",
-    toolCallId: `t${i}`,
-    toolName: "inspect_circuit",
-    content: [{ type: "text", text: "x".repeat(60000) }],
-    isError: false,
-    timestamp: i,
-  },
-]).flat() as any[];
-const budget = 768000;
-const kept = clearOldToolOutput(turns, budget);
-const results = kept.filter((m: any) => m.role === "toolResult");
-assert.ok(contextSize(kept) <= budget * 0.4);
-assert.deepEqual(
-  results.map((m: any) => m.content[0].text === CLEARED),
-  [true, true, true, true, true, false, false, false, false, false],
-);
-assert.deepEqual(
-  kept.filter((m: any) => m.role !== "toolResult"),
-  turns.filter((m: any) => m.role !== "toolResult"),
-);
-// Under the threshold nothing changes; an image counts as a picture, not as its encoding.
-const pictured = turns.slice(0, 6).concat({
-  role: "toolResult",
-  toolCallId: "r",
-  toolName: "render_circuit",
-  content: [{ type: "image", data: "A".repeat(2_000_000), mimeType: "image/png" }],
-  isError: false,
-  timestamp: 9,
-});
-assert.equal(clearOldToolOutput(pictured, budget), pictured);
-
 console.log(
-  "Verified built-in instructions per platform, read_file paging and clearing old tool output.",
+  "Verified built-in instructions per platform and read_file paging.",
 );

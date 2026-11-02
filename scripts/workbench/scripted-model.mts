@@ -27,6 +27,8 @@ export interface Step {
   tool?: ToolCall;
   /** Waited before the step is sent, to show a running turn. */
   delayMs?: number;
+  /** A deterministic provider rejection, for overflow/error recovery checks. */
+  error?: string;
 }
 /** One tool call of the current turn and what it returned. */
 export interface Exchange {
@@ -83,11 +85,16 @@ export function turnOf(request: any): Turn {
         name: call.name,
         args: call.args,
         result,
-        error: result && typeof result === "object" ? (result.error ?? null) : null,
+        error:
+          result && typeof result === "object" ? (result.error ?? null) : null,
         image: false,
       });
     }
-    if (m.role === "user" && textOf(m.content).startsWith(IMAGE_NOTICE) && calls.length)
+    if (
+      m.role === "user" &&
+      textOf(m.content).startsWith(IMAGE_NOTICE) &&
+      calls.length
+    )
       calls[calls.length - 1].image = true;
   }
   // The runner appends the workspace context to the question.
@@ -134,6 +141,10 @@ export async function startScriptedModel(
         `[model] step ${turn.calls.length}: ${step.tool ? step.tool.name + " " + JSON.stringify(step.tool.args).slice(0, 160) : JSON.stringify(step.text ?? "").slice(0, 80)}`,
       );
     if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+    if (step.error) {
+      res.writeHead(400, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: { message: step.error } }));
+    }
     const chunk = (delta: any, finish_reason: string | null = null) =>
       `data: ${JSON.stringify({
         id: "scripted-" + turn.calls.length,

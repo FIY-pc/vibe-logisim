@@ -30,12 +30,12 @@ Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己
 | Windows 10/11 x64 便携版 | `vibe-logisim-<版本>-win32-x64.zip`              | 解压后运行 `start.cmd`；需要 Microsoft Edge WebView2                                 |
 | Linux x64                | `vibe-logisim-<版本>-linux-x64.deb` 或 `.tar.gz` | 安装 deb 后从应用菜单打开；便携包解压后运行 `./start.sh`；需要 GTK3 与 WebKitGTK 4.1 |
 
-Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话。macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功能使用你自己的 API 接口及相应额度。
+Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话。macOS 暂未提供安装包。**人工编辑和仿真无需连接 AI。** AI 功能可登录 ChatGPT 使用订阅额度，也可使用自己的 API 接口及相应额度。
 
 ## 开始一个电路任务
 
 1. **打开文件夹。** 放入已有的 `.circ`、组件库和参考资料，或在工作台中新建电路。已有工程建议保持原目录结构，避免组件库的相对路径失效。
-2. **自己编辑，或连接 AI。** 手工操作可以直接开始。要使用 AI，打开右栏“AI 设置”添加模型服务，选择预设或填写接口、密钥和模型。
+2. **自己编辑，或连接 AI。** 手工操作可以直接开始。要使用 AI，打开右栏“AI 设置”，选择 **Continue with ChatGPT** 在浏览器中登录并授权，或添加 API 服务，选择预设或填写接口、密钥和模型。
 3. **描述目标，边运行边完善。** 告诉 AI 想做什么、哪些结构需要保留、期望的输入输出是什么。它直接修改工作文件夹中的工程，每轮改动都会记录一次文件夹检查点；你可以在对话里查看改动、运行验证或撤销，再提出下一步调整。
 
 可以从这些小任务开始：
@@ -62,7 +62,9 @@ Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话
 
 支持 **Logisim-ITA 2.16** 与 **HUST 2020 版**的 `.circ` 电路，可在对应版本的 Logisim 中继续使用。打开已有工程时需保留所用的组件库。
 
-模型服务支持流式 **Chat Completions、Responses 和 Anthropic Messages** 三种接口。接口未提供模型列表时，可以手动填写模型名。密钥保存在本机；图片输入需在高级设置中按模型能力开启。“检测连接”只验证基本响应，不代表工具或图片能力已经通过验证。
+ChatGPT 登录使用 OpenAI 提供的原生客户端授权流程，无需安装 Codex CLI 或填写 API 密钥。账号是否能使用订阅额度取决于 OpenAI 的账号、工作区及区域政策；登录后读取该账号可用的模型。登录凭据只保存在本机，可在 AI 设置中退出；用量与应用授权可在 [ChatGPT 设置](https://chatgpt.com/settings/usage) 中管理。多个账号与 API 服务可以并存，更换已有对话的服务会先确认历史将发送到哪里。接入说明见 [OpenAI 文档](https://developers.openai.com/siwc/token-sharing-open-source)。
+
+API 模型服务支持流式 **Chat Completions、Responses 和 Anthropic Messages** 三种接口。接口未提供模型列表时，可以手动填写模型名。密钥保存在本机；图片输入需在高级设置中按模型能力开启。“检测连接”只验证基本响应，不代表工具或图片能力已经通过验证。
 
 应用读取系统 HTTP 代理或 `HTTPS_PROXY`。连接失败时可在 AI 设置中重新检测；调整代理后重启应用，或使用错误提示中的“重新连接”。纯 SOCKS 地址不支持，可使用代理软件的 HTTP 或混合端口。
 

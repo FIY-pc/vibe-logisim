@@ -106,6 +106,12 @@ function command(
 ) {
   if (process.platform !== "linux")
     throw new Error("当前系统尚不支持隔离的命令执行，请使用文件和电路工具");
+  if (
+    !Number.isSafeInteger(timeout) ||
+    timeout < 0 ||
+    timeout * 1000 > 2147483647
+  )
+    throw new Error("timeout 必须是非负整数秒，0 表示运行到完成或主动停止");
   const unit = `vibe-builtin-${randomUUID()}.service`;
   const bind = (source: any, target: string) =>
     `${JSON.stringify(source)}:${JSON.stringify(target)}`;
@@ -117,6 +123,7 @@ function command(
     "--quiet",
     "--collect",
     "--service-type=exec",
+    "--expand-environment=no",
     `--unit=${unit}`,
     "--property=ProtectSystem=strict",
     "--property=ProtectHome=tmpfs",
@@ -131,7 +138,7 @@ function command(
     "--property=NoNewPrivileges=yes",
     "--property=CapabilityBoundingSet=",
     "--property=RestrictSUIDSGID=yes",
-    `--property=RuntimeMaxSec=${Math.min(300, Math.max(1, timeout)) + 2}`,
+    ...(timeout > 0 ? [`--property=RuntimeMaxSec=${timeout + 2}`] : []),
     "--property=UMask=0077",
     "--property=MemoryMax=6442450944",
     "--property=TasksMax=512",
@@ -177,7 +184,7 @@ function command(
       kill();
       stopTimer ||= setInterval(kill, 100);
     };
-    const timer = setTimeout(stop, Math.min(300, Math.max(1, timeout)) * 1000);
+    const timer = timeout > 0 ? setTimeout(stop, timeout * 1000) : undefined;
     signal?.addEventListener("abort", stop, { once: true });
     const cleanup = () => {
       clearTimeout(timer);
@@ -329,7 +336,15 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
         "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at " +
         SANDBOX_REFERENCE +
         ". No model credentials or user home access. Output is limited to the last 64000 characters.",
-      parameters: schema({ command: string, timeout: { type: "number" } }),
+      parameters: schema({
+        command: string,
+        timeout: {
+          type: "integer",
+          minimum: 0,
+          description:
+            "Deadline in seconds (default 120). Set a longer duration for long work, or 0 to run until completion or cancellation.",
+        },
+      }),
       execute: async (_id: any, args: any, signal: any) => {
         assertCurrent();
         return command(args.command, {

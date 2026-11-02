@@ -19,6 +19,7 @@ import { eventBinding } from "../shared/shortcuts";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import { useChatReferences } from "./ChatReferences";
+import { ContextUsageRing, type ContextUsage } from "./ContextUsageRing";
 import {
   ConversationPicker,
   CopyButton,
@@ -64,6 +65,7 @@ interface RuntimeState {
   /** The stream retry notice while the model service is busy. */
   transmission?: { phase: string; message: string } | null;
   modelConfigurationError?: { message: string } | null;
+  contextUsage?: ContextUsage | null;
 }
 interface Props {
   visible: boolean;
@@ -763,7 +765,7 @@ export function Chat({
                 )
               ) : !state.services.length ? (
                 <div className="chat-card">
-                  <span>添加一个模型服务后开始对话。</span>
+                  <span>登录 ChatGPT 或添加 API 服务后开始对话。</span>
                   <button
                     className="primary"
                     onClick={() => setConfigure(true)}
@@ -899,6 +901,7 @@ export function Chat({
                 .catch(onError)
             }
           />
+          <ContextUsageRing usage={scopeReady ? state?.contextUsage : null} />
           {busy ? (
             <button
               className="primary composer-stop"

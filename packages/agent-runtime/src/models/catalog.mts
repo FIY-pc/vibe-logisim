@@ -57,8 +57,7 @@ const providerFor = (c: any) =>
   ENDPOINTS[String(c?.baseUrl || "").replace(/\/+$/, "")] || null;
 const modelId = (id: unknown): id is string =>
   typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}$/.test(id);
-const finite = (n: any) =>
-  Number.isSafeInteger(n) && n > 0 && n <= 10000000 ? n : null;
+const finite = (n: any) => (Number.isSafeInteger(n) && n > 0 ? n : null);
 function normalize(data: ProtocolObject): MetadataCatalog {
   if (!data || typeof data !== "object" || Array.isArray(data))
     throw new Error("模型目录格式无效");
