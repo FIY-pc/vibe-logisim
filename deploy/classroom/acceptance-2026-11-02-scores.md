@@ -35,6 +35,15 @@
   根因判断；报告准确引用评测证据（逐关通过状态、总分、evidence 编号），并正确
   遵守“未同步不代表未学习、不宣称功能正确”的约束。
 
-## 待跟进
+## 桌面端打包
 
-- 桌面安装包需基于 `20039ed` 重新构建并完成便携验收。
+基于 `20039ed` 重新构建并验收（版本仍为 `0.6.0-beta.3`）：
+
+- 安装包 `.workbench-cache/release/vibe-logisim-0.6.0-beta.3-win32-x64-setup.exe`
+  （104648389 字节，`02848150a4683b42c783a0835cead5bdf34306a61b4327dada2b305002b2269a`）
+- 便携包 `.workbench-cache/release/vibe-logisim-0.6.0-beta.3-win32-x64.zip`
+  （126796862 字节，`1e9836b318451ed8451da4ff61f9a9dd8582bd36526fdc5d5b2a211d8cfd8b81`）
+- 校验和文件 `SHA256SUMS-win32-x64.txt` 与二者同目录。
+
+便携包从压缩包外解压并真实启动验收通过：前端挂载与 IPC、内置 Java 仿真、内置 Node
+启动、关闭重开后的草稿恢复；不依赖系统 PATH 中的运行时。
