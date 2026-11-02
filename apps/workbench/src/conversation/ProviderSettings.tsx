@@ -24,6 +24,7 @@ export interface ProviderConfiguration {
   model: string;
   effort: string;
   contextWindow: number;
+  maxOutput?: number;
   vision: boolean;
 }
 interface ProbeResult {
@@ -294,14 +295,31 @@ function ProviderForm({
             <input
               aria-label="上下文窗口"
               type="number"
-              min={32000}
-              max={2000000}
+              min={1}
               step={1}
               required
               disabled={locked}
               value={form.contextWindow}
               onChange={(e) =>
                 update({ contextWindow: Number(e.target.value) })
+              }
+            />
+          </label>
+          <label>
+            最大输出 token
+            <input
+              aria-label="最大输出 token"
+              type="number"
+              min={1}
+              step={1}
+              disabled={locked}
+              value={form.maxOutput ?? ""}
+              placeholder="自动"
+              onChange={(e) =>
+                update({
+                  maxOutput:
+                    e.target.value === "" ? undefined : Number(e.target.value),
+                })
               }
             />
           </label>

@@ -18,6 +18,7 @@ import { validate, maskKey } from "./validate.mts";
 import { atomic } from "./storage.mts";
 import type { ChatGPTAccounts } from "./chatgpt.mts";
 import { publicText } from "./public-fields.mts";
+import { outputLimit } from "./generation.mts";
 const APIS = ["openai-completions", "openai-responses", "anthropic-messages"];
 // Stable service records own credentials; conversations hold only their IDs.
 const serviceEndpoint = (c: Partial<ServiceConfig> | null | undefined) =>
@@ -196,7 +197,9 @@ function modelFor(
     ...(compat ? { compat } : {}),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: config.contextWindow,
-    maxTokens: 8192,
+    // Unknown output capacity is not an 8K model. generationPayload omits the
+    // SDK default on protocols that let the endpoint choose its own limit.
+    maxTokens: outputLimit(config, metadata) ?? config.contextWindow,
   };
 }
 async function transport(api: string): Promise<{ streamSimple: StreamFn }> {

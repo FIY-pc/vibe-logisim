@@ -363,9 +363,7 @@ const latestMutationDocument = {
 };
 await openMenu("更多");
 await clickMenuItem("保存");
-await act(async () =>
-  hostChange(change(latestMutationDocument, "r2")),
-);
+await act(async () => hostChange(change(latestMutationDocument, "r2")));
 await act(async () => {
   mutationGate.resolve({
     ...doc("A"),
@@ -1305,6 +1303,10 @@ await inputValue(
   document.querySelector('input[aria-label="上下文窗口"]')!,
   "128000",
 );
+await inputValue(
+  document.querySelector('input[aria-label="最大输出 token"]')!,
+  "65536",
+);
 await click(document.querySelector('[role="checkbox"]'));
 await act(async () =>
   document
@@ -1314,6 +1316,7 @@ await act(async () =>
 assert.equal(saved, true);
 assert.equal(providerCalls.at(-1).method, "configure");
 assert.equal(providerCalls.at(-1).args.contextWindow, 128000);
+assert.equal(providerCalls.at(-1).args.maxOutput, 65536);
 assert.equal(providerCalls.at(-1).args.vision, true);
 console.log(
   "PASS: provider discovery/probe and explicit context/image settings reach the configuration API",

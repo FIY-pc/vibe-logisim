@@ -14,6 +14,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { ServiceStore, modelFor, transport } from "../models/services.mts";
+import { generationPayload } from "../models/generation.mts";
 import {
   ModelCatalog,
   URL as CATALOG_URL,
@@ -42,11 +43,7 @@ import { fileTools } from "../tools/files.mts";
 import { circuitTools, TOOL_LABELS } from "../tools/index.mts";
 import { ToolContext } from "../tools/context.mts";
 import { toolActivity } from "./activity.mts";
-import {
-  CHARS_PER_TOKEN,
-  clearOldToolOutput,
-  contextSize,
-} from "./context-budget.mts";
+import { ConversationContext } from "./context-budget.mts";
 import { systemInstructions } from "./instructions.mts";
 import type {
   FolderChange,
@@ -308,10 +305,13 @@ export class TurnRunner extends EventEmitter {
   transcript: AgentMessage[] = [];
   checkpoints: Record<string, { raw: number; history: number }> = {};
   selection: ServiceSelection | null = null;
+  private context = new ConversationContext();
+  private compactContext: ((force?: boolean) => Promise<boolean>) | null = null;
   /** The stream retry notice while the model service is busy; null otherwise. */
   transmission: { phase: string; message: string | null } | null = null;
   network: Record<string, unknown> | null = null;
   private agent: Agent | undefined;
+  private turnAbort: AbortController | null = null;
   private pending: PendingTurn | null = null;
   private run: Promise<void> | null = null;
   private starting = false;
@@ -365,6 +365,9 @@ export class TurnRunner extends EventEmitter {
       defaultServiceId: this.services.registry().defaultId,
       network: this.network,
       transmission: this.transmission,
+      contextUsage: selected?.contextWindow
+        ? this.context.usage(this.transcript, selected.contextWindow)
+        : null,
       modelConfigurationError: issue,
       modelCatalog:
         config?.auth === "chatgpt"
@@ -422,6 +425,7 @@ export class TurnRunner extends EventEmitter {
   }
   async interrupt() {
     this.cancelStarting = true;
+    this.turnAbort?.abort();
     this.agent?.abort();
     if (this.run) await this.run;
     return { interrupted: true };
@@ -510,12 +514,15 @@ export class TurnRunner extends EventEmitter {
   }
   async configureService(settings: Partial<ServiceConfig>) {
     if (this.snapshot().busy) throw new Error("请先停止当前回答");
+    const config = this.services.validate(settings);
+    generationPayload(config, this.catalog.metadataFor(config, config.model));
     const next = this.services.save(settings);
     if (this.selection && this.selection.serviceId === next.id) {
       this.selection = {
         ...this.selection,
         vision: next.vision,
         contextWindow: next.contextWindow,
+        maxOutput: next.maxOutput,
       };
       this.persist();
     }
@@ -668,6 +675,8 @@ export class TurnRunner extends EventEmitter {
     this.history = recoverHistory(saved.messages || []);
     this.transmission = null;
     this.transcript = recoverTranscript(saved.transcript || []);
+    this.context = new ConversationContext(saved.compactions || []);
+    this.compactContext = null;
     this.checkpoints = saved.checkpoints || {};
     if (
       JSON.stringify(this.history) !== JSON.stringify(saved.messages || []) ||
@@ -720,6 +729,7 @@ export class TurnRunner extends EventEmitter {
         selection: this.selection,
         transcript: this.transcript,
         checkpoints: this.checkpoints,
+        compactions: this.context.checkpoints,
       },
     });
   }
@@ -830,6 +840,7 @@ export class TurnRunner extends EventEmitter {
         const point = this.checkpoints[request.editMessageId];
         if (!point) throw new Error("这条消息没有可编辑的运行记录");
         this.transcript = this.transcript.slice(0, point.raw);
+        this.context.rewind(point.raw);
         this.history = this.history.slice(0, point.history);
         this.checkpoints = Object.fromEntries(
           Object.entries(this.checkpoints).filter(
@@ -855,6 +866,7 @@ export class TurnRunner extends EventEmitter {
       };
       this.activeTurnId = turnId;
       this.pending = pending;
+      this.turnAbort = new AbortController();
       const assertCurrent = () => {
         if (this.pending !== pending || this.agent?.signal?.aborted)
           throw new Error("工具调用已停止或过期");
@@ -877,14 +889,23 @@ export class TurnRunner extends EventEmitter {
         ...circuitTools({ context, vision: config.vision }),
       ];
       const instructions = systemInstructions(this.instructionsOverride);
-      if (this.transcript[0]?.role === "system")
-        this.transcript = [
-          createInitialSystemMessage(
-            instructions,
-            tools.map(toToolDeclaration),
-          )!,
-          ...this.transcript.slice(1),
-        ];
+      const metadata = this.catalog.metadataFor(config, config.model);
+      const onPayload =
+        config.auth === "chatgpt"
+          ? chatgptPayload
+          : generationPayload(config, metadata);
+      if (this.transcript[0]?.role === "system") {
+        const system = createInitialSystemMessage(
+          instructions,
+          tools.map(toToolDeclaration),
+        )!;
+        const prior = this.transcript[0];
+        // Keep the prefix timestamp and usage valid when instructions/tools did not change.
+        const same =
+          JSON.stringify({ ...system, timestamp: 0 }) ===
+          JSON.stringify({ ...prior, timestamp: 0 });
+        if (!same) this.transcript = [system, ...this.transcript.slice(1)];
+      }
       const userId = randomUUID();
       this.checkpoints[userId] = {
         raw: this.transcript.length,
@@ -920,16 +941,37 @@ export class TurnRunner extends EventEmitter {
       };
       this.history.push(record);
       this.emitMessage(record);
-      // Earlier turns' tool output is the first thing to go when the
-      // conversation outgrows the model's context (see context-budget.mts).
-      const budget = config.contextWindow * CHARS_PER_TOKEN;
-      this.transcript = clearOldToolOutput(this.transcript, budget);
+      const model = modelFor(config, metadata);
+      const streamFn = (model: any, ctx: any, opts: any) =>
+        retryingStream(
+          () =>
+            api.streamSimple(model, ctx, {
+              ...opts,
+              apiKey:
+                config.auth === "chatgpt" ? "chatgpt-session" : config.apiKey,
+              fetch,
+              maxRetries: config.auth === "chatgpt" ? 0 : 8,
+              onPayload,
+            }),
+          sdk,
+          opts?.signal,
+          {
+            scheduled: (attempt, max, delayMs) => {
+              this.transmission = {
+                phase: "retrying",
+                message: `模型服务繁忙，${Math.ceil(delayMs / 1000)} 秒后重试（${attempt}/${max}）`,
+              };
+              this.emitStatus();
+            },
+            started: () => {
+              this.transmission = null;
+              this.emitStatus();
+            },
+          },
+        );
       this.agent = new Agent({
         initialState: {
-          model: modelFor(
-            config,
-            this.catalog.metadataFor(config, config.model),
-          ),
+          model,
           systemPrompt: instructions,
           messages: this.transcript,
           tools,
@@ -937,51 +979,38 @@ export class TurnRunner extends EventEmitter {
         },
         toolExecution: "sequential",
         maxRetryDelayMs: 30_000,
-        streamFn: (model: any, ctx: any, opts: any) =>
-          retryingStream(
-            () =>
-              api.streamSimple(model, ctx, {
-                ...opts,
-                apiKey:
-                  config.auth === "chatgpt" ? "chatgpt-session" : config.apiKey,
-                fetch,
-                maxTokens: 8192,
-                maxRetries: config.auth === "chatgpt" ? 0 : 8,
-                ...(config.auth === "chatgpt"
-                  ? { onPayload: chatgptPayload }
-                  : {}),
-              }),
-            sdk,
-            opts?.signal,
-            {
-              scheduled: (attempt, max, delayMs) => {
-                this.transmission = {
-                  phase: "retrying",
-                  message: `模型服务繁忙，${Math.ceil(delayMs / 1000)} 秒后重试（${attempt}/${max}）`,
-                };
-                this.emitStatus();
-              },
-              started: () => {
-                this.transmission = null;
-                this.emitStatus();
-              },
+        streamFn,
+        sessionId: this.conversationId!,
+        prepareRequest: async ({ context: requestContext }, signal) => {
+          this.transcript = requestContext.messages;
+          await this.context.prepare(
+            requestContext.messages,
+            model,
+            streamFn,
+            signal
+              ? AbortSignal.any([signal, this.turnAbort!.signal])
+              : this.turnAbort!.signal,
+            () => {
+              this.persist();
+              this.emitStatus();
             },
-          ),
-        prepareRequest: ({ context: requestContext }: any) => {
-          // Old tool output is cleared within a long turn as well; the
-          // instructions and tool declarations take their share first.
-          const room =
-            budget - JSON.stringify({ ...requestContext, messages: [] }).length;
-          const messages = clearOldToolOutput(requestContext.messages, room);
-          if (contextSize(messages) > room)
-            throw new Error(
-              "这次对话的内容超过了模型的上下文长度，请新建对话后继续",
-            );
-          return messages === requestContext.messages
-            ? undefined
-            : { context: { ...requestContext, messages } };
+          );
+          this.emitStatus();
         },
+        transformContext: async (messages) => this.context.project(messages),
       });
+      this.compactContext = (force = false) =>
+        this.context.prepare(
+          this.agent!.state.messages,
+          model,
+          streamFn,
+          this.turnAbort!.signal,
+          () => {
+            this.persist();
+            this.emitStatus();
+          },
+          force,
+        );
       this.agent.subscribe((e: any) => {
         if (this.pending === pending && this.activeTurnId === pending.turnId)
           this.onAgentEvent(e);
@@ -1140,6 +1169,11 @@ export class TurnRunner extends EventEmitter {
           text,
           phase,
         });
+        if (
+          e.message.stopReason !== "error" &&
+          e.message.stopReason !== "aborted"
+        )
+          this.runError = null;
         if (["error", "aborted", "length"].includes(e.message.stopReason))
           this.runError =
             e.message.errorMessage ||
@@ -1154,6 +1188,7 @@ export class TurnRunner extends EventEmitter {
       }
       this.transcript = this.agent.state.messages;
       this.persistSoon();
+      this.emitStatus();
     }
   }
   /**
@@ -1186,7 +1221,33 @@ export class TurnRunner extends EventEmitter {
     let error: string | null = null;
     try {
       await this.agent.prompt(prompt);
-      if (this.agent.signal?.aborted) throw new Error("已停止");
+      this.turnAbort?.signal.throwIfAborted();
+      if (
+        this.runError &&
+        /context.{0,30}(length|window|limit)|too many tokens|prompt.{0,20}too long/i.test(
+          this.runError,
+        )
+      ) {
+        // Provider tokenizers can disagree with estimates. Compact once and
+        // resume the same run; retain the failed response in the local history.
+        const failed = this.agent.state.messages.at(-1);
+        // Pi continuation starts from the pending user/tool result. A rejected
+        // request produced no content and must not become an assistant turn.
+        if (
+          failed?.role === "assistant" &&
+          failed.stopReason === "error" &&
+          !failed.content.length
+        ) {
+          this.agent.state.messages = this.agent.state.messages.slice(0, -1);
+          this.transcript = this.agent.state.messages;
+        }
+        if (await this.compactContext?.(true)) {
+          this.turnAbort?.signal.throwIfAborted();
+          this.runError = null;
+          await this.agent.continue();
+          this.turnAbort?.signal.throwIfAborted();
+        }
+      }
       if (this.runError) throw new Error(this.runError);
     } catch (e: any) {
       status =

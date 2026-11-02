@@ -12,6 +12,7 @@ export interface ServiceConfig {
   model: string;
   effort: Exclude<ThinkingLevel, "off"> | "none";
   contextWindow: number;
+  maxOutput?: number;
   vision: boolean;
   models?: string[];
 }

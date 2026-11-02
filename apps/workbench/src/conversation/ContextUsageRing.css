@@ -21,7 +21,8 @@
   stroke-width: 2;
 }
 .context-usage-track {
-  stroke: var(--border);
+  stroke: currentColor;
+  opacity: 0.24;
 }
 .context-usage-fill {
   stroke: currentColor;

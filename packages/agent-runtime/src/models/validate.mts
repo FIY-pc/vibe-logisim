@@ -61,12 +61,18 @@ function validate(settings: ProtocolObject, options: any = {}) {
     String(settings.name || "")
       .trim()
       .slice(0, 40) || "自定义接口";
-  // The context window bounds a turn's transcript. Frontier models behind
-  // relays accept 200k+; let the student say what their model has.
-  let contextWindow = Number(settings.contextWindow);
-  if (!Number.isFinite(contextWindow) || contextWindow <= 0)
-    contextWindow = 256000;
-  contextWindow = Math.max(32000, Math.min(2000000, Math.round(contextWindow)));
+  const contextWindow = Number(settings.contextWindow ?? 256000);
+  if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0)
+    throw new Error("上下文窗口必须是正整数");
+  const maxOutput =
+    settings.maxOutput == null || settings.maxOutput === ""
+      ? undefined
+      : Number(settings.maxOutput);
+  if (
+    maxOutput !== undefined &&
+    (!Number.isSafeInteger(maxOutput) || maxOutput <= 0)
+  )
+    throw new Error("最大输出 token 必须是正整数，或留空使用自动设置");
   // The chosen model always leads; the rest is whatever the endpoint listed.
   const models = [model];
   for (const candidate of Array.isArray(settings.models)
@@ -82,7 +88,16 @@ function validate(settings: ProtocolObject, options: any = {}) {
       models.push(id);
     if (models.length >= MAX_CATALOG_MODELS) break;
   }
-  return { baseUrl, apiKey, model, effort, name, contextWindow, models };
+  return {
+    baseUrl,
+    apiKey,
+    model,
+    effort,
+    name,
+    contextWindow,
+    maxOutput,
+    models,
+  };
 }
 
 function maskKey(key: string) {

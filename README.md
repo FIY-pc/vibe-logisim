@@ -62,7 +62,7 @@ Linux 包基于 Ubuntu 24.04 构建，AI 命令隔离需要 systemd 用户会话
 
 支持 **Logisim-ITA 2.16** 与 **HUST 2020 版**的 `.circ` 电路，可在对应版本的 Logisim 中继续使用。打开已有工程时需保留所用的组件库。
 
-ChatGPT 登录使用 OpenAI 面向开源应用的授权流程，无需安装 Codex CLI 或填写 API 密钥。账号是否能使用订阅额度取决于 OpenAI 的账号、工作区及区域政策；登录后读取该账号可用的模型。登录凭据只保存在本机，可在 AI 设置中退出；用量与应用授权可在 [ChatGPT 设置](https://chatgpt.com/settings/usage) 中管理。多个账号与 API 服务可以并存，更换已有对话的服务会先确认历史将发送到哪里。接入说明见 [OpenAI 文档](https://developers.openai.com/siwc/token-sharing-open-source)。
+ChatGPT 登录使用 OpenAI 提供的原生客户端授权流程，无需安装 Codex CLI 或填写 API 密钥。账号是否能使用订阅额度取决于 OpenAI 的账号、工作区及区域政策；登录后读取该账号可用的模型。登录凭据只保存在本机，可在 AI 设置中退出；用量与应用授权可在 [ChatGPT 设置](https://chatgpt.com/settings/usage) 中管理。多个账号与 API 服务可以并存，更换已有对话的服务会先确认历史将发送到哪里。接入说明见 [OpenAI 文档](https://developers.openai.com/siwc/token-sharing-open-source)。
 
 API 模型服务支持流式 **Chat Completions、Responses 和 Anthropic Messages** 三种接口。接口未提供模型列表时，可以手动填写模型名。密钥保存在本机；图片输入需在高级设置中按模型能力开启。“检测连接”只验证基本响应，不代表工具或图片能力已经通过验证。
 

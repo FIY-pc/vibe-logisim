@@ -13,6 +13,7 @@ function selectionFor(config: ServiceConfig | null): ServiceSelection | null {
         effort: config.effort,
         vision: config.vision === true,
         contextWindow: config.contextWindow,
+        maxOutput: config.maxOutput,
       }
     : null;
 }

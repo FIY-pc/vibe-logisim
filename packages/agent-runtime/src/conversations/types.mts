@@ -1,3 +1,4 @@
+import type { CompactionCheckpoint } from "../turn/context-budget.mts";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ProtocolObject } from "../protocol/types.mts";
 import type { ServiceSelection } from "../models/types.mts";
@@ -37,6 +38,7 @@ export interface ConversationRecord {
   selection?: ServiceSelection | null;
   /** The model transcript and where each message starts in it and in `messages`. */
   transcript?: AgentMessage[];
+  compactions?: CompactionCheckpoint[];
   checkpoints?: Record<string, { raw: number; history: number }>;
 }
 export interface ConversationWorkspace {
