@@ -1,0 +1,16 @@
+{
+  "name": "@vibe-logisim/showcase",
+  "version": "0.6.0-beta.3",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.13.0"
+  },
+  "scripts": {
+    "start": "node src/main.mts",
+    "test": "node --test test/*.test.mts",
+    "check": "tsc -p tsconfig.json && tsc -p tsconfig.demo.json",
+    "build:demo": "node scripts/build-demo.mts",
+    "record:demo": "node scripts/record-demo.mts"
+  }
+}

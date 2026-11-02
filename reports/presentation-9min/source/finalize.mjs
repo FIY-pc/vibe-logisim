@@ -1,0 +1,7 @@
+import fs from 'node:fs/promises';import {pathToFileURL} from 'node:url';import path from 'node:path';
+const workspace=process.env.REPORT_WORKSPACE||path.resolve('.workbench-cache/report-dynamic'),skill=process.env.PRESENTATIONS_SKILL;
+if(!skill)throw new Error('Set PRESENTATIONS_SKILL to the presentation tooling directory');
+if(!process.env.RUNTIME_NODE_MODULES)throw new Error('Set RUNTIME_NODE_MODULES to the presentation dependencies directory');
+const meta=JSON.parse(await fs.readFile(workspace+'/build/deck-meta.json','utf8'));
+const {finalizePresentation}=await import(pathToFileURL(skill+'/container_tools/artifact_tool_utils.mjs').href);
+const result=await finalizePresentation({workspaceDir:workspace,candidatePath:workspace+'/build/candidate-normalized.pptx',finalPath:workspace+'/output/vibe-logisim-demo.pptx',pythonExecutable:process.env.PYTHON_EXECUTABLE||'python',integrityValidatorPath:skill+'/container_tools/inspect_presentation_package_integrity.py',layoutValidatorPath:skill+'/container_tools/inspect_presentation_layout_geometry.py',layoutArgs:['--expected-slide-size-emu','12192000,6858000','--validate-bullet-geometry','--validate-heading-fit',...meta.tables.flatMap(n=>['--require-native-table-slide',String(n)])],requiredNativeTableOwnerSlides:meta.tables,fontPolicy:{basis:'design',families:[meta.font]},verifyArtifactToolImport:true,receiptPath:workspace+'/build/final-validation-v2.json',explicitTotalSlideCount:meta.slides});console.log(JSON.stringify(result));

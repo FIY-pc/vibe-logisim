@@ -29,4 +29,12 @@ python3 /home/ubuntu/apps/vibe-logisim-classroom/incoming/update.py <提交或�
 
 教师注册码在 `classroom.env` 的 `CLASSROOM_TEACHER_CODE` 中。教师注册后可自行在客户端发布课堂 AI 配置。教师学情分析另需在该文件中设置完整的 `CLASSROOM_AI_BASE_URL`、`CLASSROOM_AI_API_KEY`、`CLASSROOM_AI_MODEL` 并重启服务。
 
+关卡评测另需服务器侧的 Java 组件：把 `.workbench-cache/Logisim-ITA.jar` 与
+`npm run build:grader --workspace @vibe-logisim/classroom` 产出的
+`.workbench-cache/assessment/grader-bridge.jar` 上传到 `grader/` 目录，并在
+`classroom.env` 中追加 `CLASSROOM_GRADER_JAVA`（Java 17+ 可执行文件）与
+`CLASSROOM_GRADER_CLASSPATH`（两个 jar，Linux 用冒号分隔），重启服务后生效。
+缺少这些配置时服务照常运行，只是关卡不能提交评测。2026-11-02 起线上已启用，
+见 `acceptance-2026-11-02-assessment.md`。
+
 Nginx 在原 HTTPS server 中引入 `nginx-location.conf` 对应的独立 snippet。修改前保留原配置，`nginx -t` 成功后才 reload。备份数据库时必须同时保留 `data/classroom.sqlite.ai-key`；在线数据库应使用 SQLite backup API，或停服务后备份数据库与密钥。环境文件也应单独安全备份，不要提交凭据到 Git。

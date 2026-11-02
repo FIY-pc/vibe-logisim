@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#fafbfe" />
+    <base href="/vibe-logisim/" />
+    <title>Vibe Logisim · 从想法，到电路。</title>
+    <meta
+      name="description"
+      content="和 AI 一起设计、仿真与探索数字电路。从个人工作台到课堂协作，让每一步学习都连起来。下载 Windows 课堂版。"
+    />
+    <link rel="icon" href="assets/icon.png" />
+    <link rel="stylesheet" href="site.css?v=20261101-2" />
+    <link rel="stylesheet" href="demo.css?v=20261101-1" />
+    <script src="site.js?v=20261101-2" defer></script>
+    <script src="demo.js?v=20261101-1" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">跳到正文</a>
+    <header class="header">
+      <a class="brand" href="#" aria-label="Vibe Logisim 首页"
+        ><img src="assets/icon.png" width="28" height="28" alt="" />Vibe
+        Logisim</a
+      >
+      <nav aria-label="主导航">
+        <a href="#experience">产品体验</a><a href="#classroom">课堂协作</a
+        ><a href="#guide">快速开始</a
+        ><a href="#feedback" id="feedback-nav">体验反馈</a>
+      </nav>
+      <a class="nav-download" href="#download"
+        >下载应用 <span aria-hidden="true">↓</span></a
+      >
+    </header>
+    <main id="main">
+      <section class="hero">
+        <div class="container hero-intro">
+          <a class="edition" href="#classroom"
+            ><span class="edition-dot"></span>课堂协作，现已加入
+            <span aria-hidden="true">↗</span></a
+          >
+          <h1>从想法，<span>到电路。</span></h1>
+          <p class="hero-copy">
+            和 AI 一起设计、仿真与探索。<br />让电路里的每一条连接，都更有思路。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#download"
+              ><svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" /></svg
+              >下载 Windows 课堂版</a
+            ><a class="button quiet" href="#demo"
+              >试试 AI 搭电路 <span aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+        <div class="product-stage">
+          <div class="container product-frame guided-frame" id="demo">
+            <div id="guided-demo" data-state="idle" hidden>
+              <div
+                class="demo-prompts"
+                role="group"
+                aria-label="选择 AI 演示提示词"
+              >
+                <span class="demo-prompt-label"
+                  ><span aria-hidden="true">✦</span> 选个想法，试一试</span
+                >
+                <button type="button" data-story="build" aria-pressed="false">
+                  构建一个全加器 <span aria-hidden="true">↗</span>
+                </button>
+                <button type="button" data-story="explain" aria-pressed="false">
+                  为什么会产生进位？ <span aria-hidden="true">↗</span>
+                </button>
+                <button type="button" data-story="verify" aria-pressed="false">
+                  验证全部输入组合 <span aria-hidden="true">↗</span>
+                </button>
+              </div>
+              <div class="demo-appbar">
+                <span class="demo-app-brand"
+                  ><img
+                    src="assets/icon.png"
+                    width="20"
+                    height="20"
+                    alt=""
+                  />Vibe Logisim</span
+                ><span class="demo-file-tab">▱ 全加器.circ</span
+                ><span class="demo-appbar-actions" aria-hidden="true"
+                  >⌘ 课堂 <span>▷ 仿真</span> ···</span
+                >
+              </div>
+              <div class="demo-workspace">
+                <aside class="demo-sidebar" aria-label="演示工程目录">
+                  <div class="demo-folder">⌄ 演示电路 <span>＋</span></div>
+                  <div class="demo-sidebar-tabs">文件 <span>元件</span></div>
+                  <div class="demo-file-selected">▱ 全加器.circ</div>
+                  <div class="demo-sidebar-bottom">
+                    <span>⌄ 当前电路</span>
+                    <div>全加器.circ <span>×</span></div>
+                    <p>main</p>
+                  </div>
+                </aside>
+                <div class="demo-editor">
+                  <div class="demo-breadcrumb">
+                    全加器.circ <span>/ main</span
+                    ><span id="demo-canvas-status">准备就绪</span>
+                  </div>
+                  <div class="demo-canvas-wrap">
+                    <canvas
+                      id="demo-canvas"
+                      role="img"
+                      aria-label="全加器电路画布，包含两个异或门、两个与门、一个或门以及输入输出引脚"
+                    ></canvas>
+                    <div id="demo-highlight" aria-hidden="true"></div>
+                    <div class="demo-canvas-hint" id="demo-canvas-hint">
+                      从一句话开始，看看电路如何成形。
+                    </div>
+                    <div class="demo-tools" aria-hidden="true">
+                      <span>↖ 选择</span><span>⌁ 布线</span
+                      ><span>☝ 操作输入</span><i></i><span>−</span
+                      ><span id="demo-zoom">100%</span><span>＋</span
+                      ><span>适合</span>
+                    </div>
+                  </div>
+                  <div class="demo-signals">
+                    <span class="demo-signals-label">输入</span
+                    ><button
+                      type="button"
+                      data-demo-pin="A"
+                      aria-pressed="false"
+                      disabled
+                    >
+                      A <b>0</b></button
+                    ><button
+                      type="button"
+                      data-demo-pin="B"
+                      aria-pressed="false"
+                      disabled
+                    >
+                      B <b>0</b></button
+                    ><button
+                      type="button"
+                      data-demo-pin="Cin"
+                      aria-pressed="false"
+                      disabled
+                    >
+                      Cin <b>0</b></button
+                    ><span class="demo-signal-divider"></span
+                    ><span class="demo-output">Sum <b id="demo-sum">0</b></span
+                    ><span class="demo-output"
+                      >Cout <b id="demo-cout">0</b></span
+                    >
+                  </div>
+                </div>
+                <aside class="demo-chat" aria-label="AI 对话演示">
+                  <div class="demo-chat-tabs">
+                    <span>对话</span><span>连接</span><span>改动</span
+                    ><span aria-hidden="true">＋</span>
+                  </div>
+                  <div class="demo-chat-scroll" id="demo-chat-scroll">
+                    <div class="demo-welcome" id="demo-welcome">
+                      <span class="demo-ai-mark" aria-hidden="true">✦</span>
+                      <h3>想搭个什么电路？</h3>
+                      <p>
+                        从一个想法开始，<br />把设计、连线和验证交给 AI 协作。
+                      </p>
+                      <span class="demo-welcome-arrow" aria-hidden="true"
+                        >↑</span
+                      >
+                    </div>
+                    <div id="demo-messages" hidden>
+                      <div
+                        class="demo-user-message"
+                        id="demo-user-message"
+                      ></div>
+                      <div class="demo-assistant-message">
+                        <div class="demo-assistant-heading">
+                          <span aria-hidden="true">✦</span> Vibe AI
+                        </div>
+                        <p id="demo-answer"></p>
+                      </div>
+                      <div id="demo-task" class="demo-task" hidden>
+                        <span id="demo-task-icon" aria-hidden="true">↻</span>
+                        <div>
+                          <strong id="demo-task-title"></strong
+                          ><span id="demo-task-detail"></span>
+                        </div>
+                      </div>
+                      <div
+                        class="demo-truth-table"
+                        id="demo-truth-table"
+                        hidden
+                      >
+                        <div class="demo-table-heading">
+                          <span>A B Cin</span><span>Sum Cout</span><span></span>
+                        </div>
+                        <div id="demo-table-rows"></div>
+                      </div>
+                      <div class="demo-result" id="demo-result" hidden>
+                        <span aria-hidden="true">✓</span>
+                        <p id="demo-result-text"></p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="demo-composer">
+                    <div id="demo-draft">描述你的想法…</div>
+                    <div>
+                      <span>推荐示例</span
+                      ><span class="demo-send" aria-hidden="true">↑</span>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+              <div class="demo-playback">
+                <span class="demo-label">交互演示</span
+                ><button id="demo-play" type="button" aria-label="播放演示">
+                  <span aria-hidden="true">▶</span></button
+                ><button
+                  id="demo-replay"
+                  type="button"
+                  aria-label="重新播放演示"
+                >
+                  ↻</button
+                ><input
+                  id="demo-progress"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  value="0"
+                  step="1"
+                  aria-label="演示进度"
+                /><span id="demo-time">0:00 / 0:12</span
+                ><span id="demo-stage" role="status" aria-live="polite"
+                  >选择上方提示词开始</span
+                >
+              </div>
+            </div>
+            <img
+              id="demo-fallback"
+              src="assets/workbench.png"
+              alt="Vibe Logisim 工作台，包含工程目录、全加器电路画布与 AI 对话面板"
+              width="1600"
+              height="1000"
+              fetchpriority="high"
+            />
+          </div>
+        </div>
+        <div class="container product-capabilities">
+          <span><b class="cap-symbol" aria-hidden="true">↗</b> AI 协作编辑</span
+          ><span
+            ><b class="cap-symbol" aria-hidden="true">⌁</b> Logisim
+            电路仿真</span
+          ><span
+            ><b class="cap-symbol" aria-hidden="true">▱</b> .circ 工程兼容</span
+          ><span
+            ><b class="cap-symbol" aria-hidden="true">◎</b> 教师与学生双端</span
+          >
+        </div>
+      </section>
+      <section class="section container" id="experience">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">灵感，接上线。</p>
+            <h2>画出来。聊清楚。<br />跑起来。</h2>
+          </div>
+          <p>把工程、对话和仿真放在一起，<br />专注理解电路本身。</p>
+        </div>
+        <div class="experience-grid">
+          <article class="feature-card ai-card">
+            <div class="feature-copy">
+              <span class="feature-label">AI 协作</span>
+              <h3>让下一步，<br />更有方向。</h3>
+              <p>
+                描述需求、解释选区、修改连线。<br />从一个问题开始，回到电路里验证。
+              </p>
+            </div>
+            <div class="ai-visual" aria-hidden="true">
+              <div class="prompt-bubble">
+                <span class="spark">✦</span>帮我梳理这个全加器的逻辑
+              </div>
+              <div class="logic-sketch">
+                <svg viewBox="0 0 460 150">
+                  <g class="sketch-wires">
+                    <path d="M25 45h130m-130 60h130m100-30h175" />
+                  </g>
+                  <g class="sketch-gate">
+                    <path d="M153 34q35 41 0 82 70 0 103-41-33-41-103-41Z" />
+                    <path d="M142 34q35 41 0 82" />
+                  </g>
+                  <g class="sketch-pins">
+                    <circle cx="25" cy="45" r="6" />
+                    <circle cx="25" cy="105" r="6" />
+                    <circle cx="430" cy="75" r="6" />
+                  </g>
+                  <g class="sketch-labels">
+                    <text x="18" y="30">A</text>
+                    <text x="18" y="135">B</text>
+                    <text x="404" y="105">A ⊕ B</text>
+                  </g></svg
+                ><span class="logic-chip">理解 · 编辑 · 验证</span>
+              </div>
+            </div>
+          </article>
+          <article class="feature-card simulation-card">
+            <div class="feature-copy">
+              <span class="feature-label">电路仿真</span>
+              <h3>每个想法，<br />都有迹可循。</h3>
+              <p>切换输入，观察信号与输出。<br />现在就点一下，试试全加器。</p>
+            </div>
+            <div class="adder-demo" aria-label="交互式全加器演示">
+              <div class="adder-inputs">
+                <button
+                  type="button"
+                  data-input="a"
+                  aria-label="输入 A"
+                  aria-pressed="false"
+                >
+                  <span>A</span><b>0</b></button
+                ><button
+                  type="button"
+                  data-input="b"
+                  aria-label="输入 B"
+                  aria-pressed="false"
+                >
+                  <span>B</span><b>0</b></button
+                ><button
+                  type="button"
+                  data-input="cin"
+                  aria-label="输入 Cin"
+                  aria-pressed="false"
+                >
+                  <span>Cin</span><b>0</b>
+                </button>
+              </div>
+              <div class="adder-connection" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <div class="adder-chip">Full Adder<span>全加器</span></div>
+              <div class="adder-output-lines" aria-hidden="true">
+                <span></span><span></span>
+              </div>
+              <div class="adder-outputs" aria-live="polite" aria-atomic="true">
+                <div><span>Sum</span><output id="adder-sum">0</output></div>
+                <div><span>Cout</span><output id="adder-cout">0</output></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section class="classroom-section" id="classroom">
+        <div class="container">
+          <div class="center-heading">
+            <p class="eyebrow">把工作台，带进课堂。</p>
+            <h2>一间课堂，<br />连接每一次探索。</h2>
+            <p>一个课堂码，让实验、对话与教学反馈连在一起。</p>
+          </div>
+          <div class="showcase-controls" role="group" aria-label="选择界面截图">
+            <button
+              class="view-switch active"
+              data-view="teacher"
+              aria-pressed="true"
+            >
+              教师工作台</button
+            ><button
+              class="view-switch"
+              data-view="student"
+              aria-pressed="false"
+            >
+              学生学习空间</button
+            ><button
+              class="view-switch"
+              data-view="review"
+              aria-pressed="false"
+            >
+              电路与对话审阅
+            </button>
+          </div>
+          <div class="classroom-image">
+            <img
+              id="classroom-shot"
+              src="assets/teacher.png"
+              alt="教师课堂管理界面，显示任务和学生学习状态"
+              width="1600"
+              height="1000"
+              loading="lazy"
+            />
+          </div>
+          <div class="classroom-notes">
+            <article>
+              <span class="note-icon" aria-hidden="true">01</span>
+              <h3>加入课堂，即刻开始</h3>
+              <p>
+                输入课堂码，绑定工程。电路与 AI 对话自动同步，学习过程自然留下。
+              </p>
+            </article>
+            <article>
+              <span class="note-icon" aria-hidden="true">02</span>
+              <h3>配置一次，全班可用</h3>
+              <p>
+                从模型库为课堂分配 AI 服务。学生一键使用，密钥由服务端保管。
+              </p>
+            </article>
+            <article>
+              <span class="note-icon" aria-hidden="true">03</span>
+              <h3>看见过程，更懂学生</h3>
+              <p>
+                结合电路和对话记录，按需生成 AI
+                学情分析，找到下一步教学的切入点。
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+      <section class="download-section" id="download">
+        <div class="container">
+          <div class="download-heading">
+            <div>
+              <p class="eyebrow">准备好，接通灵感。</p>
+              <h2>你的下一份电路，<br />从这里开始。</h2>
+            </div>
+            <p>
+              Windows 10 / 11 · x64<br /><span>课堂协作版 · 0.6.0-beta.3</span>
+            </p>
+          </div>
+          <div class="downloads">
+            <article class="download-card recommended">
+              <div class="download-top">
+                <svg viewBox="0 0 32 32" aria-hidden="true">
+                  <path
+                    d="m4 7 10-1v10H4zm12-1 12-2v12H16zM4 18h10v10L4 26zm12 0h12v12l-12-2z"
+                  /></svg
+                ><span class="download-tag">推荐</span>
+              </div>
+              <h3>安装版</h3>
+              <p>安装一次，随时从桌面打开。</p>
+              <a
+                class="button primary download-link"
+                href="downloads/vibe-logisim-classroom-20261030-win64-setup.exe"
+                data-kind="installer"
+                >下载 Windows 安装包 <span>99.7 MiB ↗</span></a
+              >
+              <details>
+                <summary>文件信息与校验</summary>
+                <code data-hash="installer">正在读取…</code
+                ><button class="copy-hash" data-copy="installer">
+                  复制校验值
+                </button>
+              </details>
+            </article>
+            <article class="download-card">
+              <div class="download-top">
+                <svg viewBox="0 0 32 32" aria-hidden="true">
+                  <path
+                    d="M4 9h9l3 3h12v15H4zM4 9V5h10l3 4h11v3"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                  /></svg
+                ><span class="portable-label">解压即用</span>
+              </div>
+              <h3>便携版</h3>
+              <p>带上工程，换台电脑继续。</p>
+              <a
+                class="button secondary download-link"
+                href="downloads/vibe-logisim-classroom-20261030-win64.zip"
+                data-kind="portable"
+                >下载 Windows 便携包 <span>120.8 MiB ↗</span></a
+              >
+              <details>
+                <summary>文件信息与校验</summary>
+                <code data-hash="portable">正在读取…</code
+                ><button class="copy-hash" data-copy="portable">
+                  复制校验值
+                </button>
+              </details>
+            </article>
+          </div>
+          <div class="download-bottom">
+            <span>内置 Java 与 Node.js，开箱即用。</span
+            ><a href="downloads/SHA256SUMS.txt"
+              >完整校验清单 <span aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+      </section>
+      <section class="section container guide-section" id="guide">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">几步，就能开始。</p>
+            <h2>把第一次打开，<br />变成第一次探索。</h2>
+          </div>
+          <a class="inline-link" href="assets/full-adder.circ" download
+            >下载全加器示例 <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <ol class="steps">
+          <li>
+            <span>1</span>
+            <h3>打开你的工程</h3>
+            <p>
+              安装应用，选择工作文件夹。<br />已有的 .circ 电路也能继续编辑。
+            </p>
+          </li>
+          <li>
+            <span>2</span>
+            <h3>让电路跑起来</h3>
+            <p>打开示例，切换输入。<br />观察 Sum 与 Cout，验证你的想法。</p>
+          </li>
+          <li>
+            <span>3</span>
+            <h3>与 AI 或课堂连接</h3>
+            <p>
+              添加个人 AI 服务，或打开“课堂”，<br />使用课堂码加入教师的课堂。
+            </p>
+          </li>
+        </ol>
+        <div class="address-block">
+          <div>
+            <span>课堂服务地址</span
+            ><code id="classroom-address"
+              >https://lovej.site/vibe-classroom</code
+            >
+          </div>
+          <button id="copy-address" class="button secondary">
+            复制地址 <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+        <div class="faq-layout">
+          <h3>你可能想知道</h3>
+          <div class="faq-list">
+            <details class="faq">
+              <summary>安装和解压时需要注意什么？</summary>
+              <p>
+                适用于 Windows 10 / 11 x64。便携包请解压到较短路径，例如
+                D:\VibeDemo，然后运行 start.cmd。便携版依赖 Microsoft Edge
+                WebView2。应用目前未签名，系统可能提示“未知发布者”，可使用下载区的
+                SHA-256 校验值核对文件。
+              </p>
+            </details>
+            <details class="faq">
+              <summary>如何注册并加入课堂？</summary>
+              <p>
+                在应用的“课堂”中填写上方服务地址。学生注册账号后，输入教师提供的课堂码即可加入。教师账号注册需要向维护者获取邀请码。
+              </p>
+            </details>
+            <details class="faq">
+              <summary>AI 服务怎么配置？</summary>
+              <p>
+                个人使用可在 AI 设置中添加接口地址、模型和 API
+                Key。课堂内可选择“使用教师提供的
+                AI”，由教师统一配置。手工编辑与电路仿真可以独立使用。
+              </p>
+            </details>
+            <details class="faq">
+              <summary>教师的 AI 学情分析如何工作？</summary>
+              <p>
+                分析结合已同步的电路摘要和 AI
+                对话，按需生成教学建议，提供用量预估并复用相同证据的报告。它辅助教师了解学习过程；电路正确性仍需结合仿真与测试输入判断。
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+      <section class="feedback-section" id="feedback">
+        <div class="container">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">一起，让它更好用。</p>
+              <h2>下一次改进，<br />从你的体验开始。</h2>
+            </div>
+            <p>一个建议，一次发现，<br />都欢迎留在这里。</p>
+          </div>
+          <div class="feedback-layout">
+            <div class="feedback-list">
+              <div class="feedback-title">
+                <h3>大家的留言</h3>
+                <span id="comment-count">正在读取…</span>
+              </div>
+              <div id="comments" aria-live="polite">
+                <p class="muted">正在加载评论…</p>
+              </div>
+              <button id="more-comments" class="button secondary" hidden>
+                加载更多
+              </button>
+            </div>
+            <form id="comment-form" class="comment-form">
+              <h3>分享你的体验</h3>
+              <div class="form-row">
+                <label
+                  >称呼<input
+                    name="author"
+                    maxlength="40"
+                    autocomplete="nickname"
+                    required
+                    placeholder="怎样称呼你" /></label
+                ><label
+                  >你的角色<select name="role">
+                    <option value="student">学生</option>
+                    <option value="teacher">教师</option>
+                    <option value="other">其他体验者</option>
+                  </select></label
+                >
+              </div>
+              <label
+                >整体体验<select name="rating">
+                  <option value="">选择评分（可选）</option>
+                  <option value="5">5 分 · 很顺手</option>
+                  <option value="4">4 分 · 整体不错</option>
+                  <option value="3">3 分 · 还有改进空间</option>
+                  <option value="2">2 分 · 遇到较多阻碍</option>
+                  <option value="1">1 分 · 难以完成任务</option>
+                </select></label
+              ><label
+                >你的体验<textarea
+                  name="content"
+                  required
+                  minlength="1"
+                  maxlength="1500"
+                  rows="4"
+                  placeholder="哪里顺手？哪里还可以更好？"
+                ></textarea></label
+              ><label class="honeypot" aria-hidden="true"
+                >网站<input
+                  name="website"
+                  tabindex="-1"
+                  autocomplete="off" /></label
+              ><label class="check"
+                ><input name="consent" type="checkbox" required /><span
+                  >同意留言经审核后公开展示</span
+                ></label
+              ><button class="button primary" type="submit">
+                提交反馈 <span aria-hidden="true">↗</span>
+              </button>
+              <p id="form-message" role="status"></p>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="container footer-inner">
+        <div>
+          <a class="brand" href="#"
+            ><img src="assets/icon.png" width="26" height="26" alt="" />Vibe
+            Logisim</a
+          >
+          <p>从想法，到电路。</p>
+        </div>
+        <div class="footer-links">
+          <a
+            href="https://github.com/FIY-pc/vibe-logisim"
+            target="_blank"
+            rel="noopener noreferrer"
+            >GitHub ↗</a
+          ><a
+            href="https://github.com/FIY-pc/vibe-logisim/blob/main/LICENSE"
+            target="_blank"
+            rel="noopener noreferrer"
+            >GPL-3.0</a
+          ><a href="admin/">网站管理</a>
+        </div>
+      </div>
+    </footer>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>

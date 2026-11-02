@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <base href="/vibe-logisim/" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>评论管理 · Vibe Logisim</title>
+    <link rel="icon" href="assets/icon.png" />
+    <link rel="stylesheet" href="site.css?v=20261101-2" />
+    <script src="admin.js" defer></script>
+  </head>
+  <body>
+    <header class="header">
+      <a class="brand" href="./"
+        ><img src="assets/icon.png" width="28" height="28" alt="" />Vibe
+        Logisim<span class="brand-dot">.</span></a
+      ><a class="nav-download" href="./">返回介绍页 ↗</a>
+    </header>
+    <main class="admin-wrap">
+      <form id="login" class="admin-login">
+        <h1>评论管理</h1>
+        <p class="small muted">登录以审核留言、回复反馈与管理评论区。</p>
+        <label
+          >账号<input name="username" required autocomplete="username" /></label
+        ><label
+          >密码<input
+            name="password"
+            type="password"
+            required
+            autocomplete="current-password"
+            maxlength="256" /></label
+        ><button class="button primary" type="submit">登录管理后台</button>
+        <p id="login-message" role="status" class="error"></p>
+      </form>
+      <section id="dashboard" hidden>
+        <div class="admin-top">
+          <div>
+            <div class="eyebrow">SITE MANAGEMENT</div>
+            <h1>体验反馈管理</h1>
+            <p>
+              审核访客反馈，回复问题，自行发布站方内容。隐藏操作可随时恢复。
+            </p>
+          </div>
+          <button id="logout" class="button secondary">退出登录</button>
+        </div>
+        <p id="admin-message" class="admin-message" role="status"></p>
+        <form id="settings" class="admin-panel admin-settings">
+          <label class="check"
+            ><input name="visible" type="checkbox" /><span
+              >显示整个评论区</span
+            ></label
+          ><label class="check"
+            ><input name="posting" type="checkbox" /><span
+              >允许访客发布评论</span
+            ></label
+          ><button class="button secondary" type="submit">保存设置</button>
+        </form>
+        <div class="admin-columns">
+          <section class="admin-panel">
+            <div class="admin-filter">
+              <h2 hidden>评论列表</h2>
+              <label
+                >筛选<select id="status">
+                  <option value="pending">待审核</option>
+                  <option value="published">已公开</option>
+                  <option value="hidden">已隐藏</option>
+                  <option value="all">全部记录</option>
+                </select></label
+              ><button id="refresh" class="button secondary">刷新</button>
+            </div>
+            <p id="counts" class="admin-counts"></p>
+            <div id="admin-comments" class="admin-comments"></div>
+            <button id="load-more" class="button secondary" hidden>
+              加载更多
+            </button>
+          </section>
+          <aside class="admin-panel admin-editorial">
+            <form id="editorial">
+              <h2>添加站方内容</h2>
+              <p class="admin-small">
+                以“站方发布”身份展示使用提示与版本动态。
+              </p>
+              <label
+                >显示名称<input
+                  name="author"
+                  required
+                  maxlength="40"
+                  value="项目组" /></label
+              ><label
+                >内容<textarea
+                  name="content"
+                  required
+                  maxlength="1500"
+                  rows="6"
+                  placeholder="发布使用提示、已修复的问题或版本说明。"
+                ></textarea></label
+              ><button class="button primary" type="submit">添加并公开</button>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

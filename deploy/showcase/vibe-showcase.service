@@ -1,0 +1,24 @@
+[Unit]
+Description=Vibe Logisim product showcase and moderated feedback
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/vibe-logisim-site/current
+EnvironmentFile=/home/ubuntu/apps/vibe-logisim-site/showcase.env
+ExecStart=/home/ubuntu/apps/vibe-logisim-classroom/runtime/bin/node /home/ubuntu/apps/vibe-logisim-site/current/showcase-server.mjs
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/apps/vibe-logisim-site/data
+RestrictSUIDSGID=true
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

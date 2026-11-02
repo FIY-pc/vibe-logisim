@@ -16,6 +16,8 @@ import { classroomProviders } from "./ai-provider.mts";
 import { analysisInput, MAX_ANALYSIS_OUTPUT } from "./analysis.mts";
 import { snapshotContent } from "./snapshot-content.mts";
 import { gunzipSync } from "node:zlib";
+import { assessments } from "./assessment.mts";
+import type { GradeRunner } from "./assessment-types.ts";
 import type {
   ClassroomUser,
   WorkSnapshot,
@@ -73,6 +75,7 @@ export interface ServerOptions {
   teacherCode: string;
   origins?: string[];
   ai?: { baseUrl: string; apiKey: string; model: string };
+  grade?: GradeRunner;
 }
 
 /** Independent service. No access to local workspaces or model credentials from the desktop. */
@@ -274,6 +277,12 @@ export function createClassroomServer(options: ServerOptions) {
     );
     return { token, user: publicUser(u) };
   }
+  const assessment = assessments(db, {
+    grade: options.grade,
+    fail,
+    roomFor,
+    body: readBody,
+  });
   const origins = new Set(
     options.origins ?? [
       "http://127.0.0.1:5173",
@@ -396,6 +405,7 @@ export function createClassroomServer(options: ServerOptions) {
         return;
       }
       const u = session(req);
+      if (await assessment.handle(req, route, method, u, send)) return;
       if (route === "/api/auth/me" && method === "GET") {
         send(200, { user: u });
         return;
@@ -682,6 +692,36 @@ export function createClassroomServer(options: ServerOptions) {
           studentId = b.studentId ? text(b.studentId, "学生", 80) : null;
         const roster = members(id, studentId || undefined);
         if (studentId && !roster.length) return fail(404, "学生不在本课堂");
+        // Level grading results are trustworthy score evidence for the report.
+        const matrix = assessment.progress(id);
+        const grading = matrix.lessons.length
+          ? {
+              lessons: matrix.lessons.map((l) => ({
+                title: l.title,
+                points: l.points,
+              })),
+              students: matrix.students
+                .filter((s) => !studentId || s.id === studentId)
+                .map((s) => ({
+                  studentId: s.id,
+                  name: s.name,
+                  student_no: s.student_no,
+                  lessons: s.lessons.map((c) => ({
+                    title:
+                      matrix.lessons.find((l) => l.id === c.lessonId)?.title ??
+                      "",
+                    points:
+                      matrix.lessons.find((l) => l.id === c.lessonId)?.points ??
+                      0,
+                    passed: c.passed,
+                    attempts: c.attempts,
+                    lastStatus: c.lastStatus,
+                    lastPassed: c.lastPassed,
+                    total: c.total,
+                  })),
+                })),
+            }
+          : undefined;
         const input = analysisInput(
           c as { task: string; rubric: string },
           question,
@@ -693,6 +733,7 @@ export function createClassroomServer(options: ServerOptions) {
             ),
           Boolean(studentId),
           options.ai.model,
+          grading,
         );
         const cached = all(
           "SELECT report FROM analyses WHERE class_id=? ORDER BY rowid DESC LIMIT 30",
@@ -749,8 +790,21 @@ export function createClassroomServer(options: ServerOptions) {
             ![undefined, null, "stop"].includes(
               result.choices?.[0]?.finish_reason,
             )
-          )
-            return fail(502, "AI 分析未完整返回，请缩小分析范围后重试");
+          ) {
+            console.warn(
+              "classroom analysis incomplete:",
+              JSON.stringify({
+                finish_reason: result?.choices?.[0]?.finish_reason,
+                usage: result?.usage,
+                contentLength:
+                  typeof output === "string" ? output.length : null,
+              }),
+            );
+            return fail(
+              502,
+              `AI 分析未完整返回（${result?.choices?.[0]?.finish_reason || "空响应"}），请点击单个学生分析或稍后重试`,
+            );
+          }
           const report: AnalysisReport = {
             id: randomUUID(),
             createdAt: now(),
@@ -809,6 +863,7 @@ export function createClassroomServer(options: ServerOptions) {
       await new Promise<void>((resolve, reject) =>
         server.close((e) => (e ? reject(e) : resolve())),
       );
+      await assessment.close();
       db.close();
     },
   };
