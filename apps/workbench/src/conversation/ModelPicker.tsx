@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, RefreshCw } from "lucide-react";
-import { DialogClose } from "../shared/Dialog";
+import { useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronDown, RefreshCw, Search, X } from "lucide-react";
+import {
+  Button,
+  Callout,
+  Flex,
+  Heading,
+  IconButton,
+  Popover,
+  Text,
+  TextField,
+  Tooltip,
+} from "@radix-ui/themes";
 import "./ai-settings.css";
 
 export interface ModelOption {
@@ -53,34 +63,48 @@ export function ModelPicker({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [recent, setRecent] = useState<{ scope: string; models: string[] }>({
     scope,
     models: [],
   });
   return (
-    <>
-      <button
-        ref={trigger}
-        className="ai-model-trigger"
-        aria-label={`选择模型：${name || model || "选择模型"}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-      >
-        <span>{name || model || "选择模型"}</span>
-        <ChevronDown size={12} aria-hidden="true" />
-      </button>
+    <Popover.Root
+      modal
+      open={open}
+      onOpenChange={(next) => {
+        if (!saving) setOpen(next);
+      }}
+    >
+      <Popover.Trigger>
+        <Button
+          ref={trigger}
+          size="2"
+          variant="soft"
+          color="gray"
+          className="ai-model-trigger"
+          aria-label={`选择模型：${name || model || "选择模型"}`}
+          disabled={disabled || saving}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
+        >
+          <span>{name || model || "选择模型"}</span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </Button>
+      </Popover.Trigger>
       {open && (
         <ModelDialog
           key={scope}
-          trigger={trigger.current}
+          container={
+            trigger.current?.closest<HTMLDialogElement>("dialog[open]") ??
+            undefined
+          }
+          saving={saving}
+          setSaving={setSaving}
           model={model}
           recent={recent.scope === scope ? recent.models : []}
           busy={busy}
@@ -101,11 +125,13 @@ export function ModelPicker({
           onClose={() => setOpen(false)}
         />
       )}
-    </>
+    </Popover.Root>
   );
 }
 function ModelDialog({
-  trigger,
+  container,
+  saving,
+  setSaving,
   model,
   recent,
   busy,
@@ -114,7 +140,9 @@ function ModelDialog({
   select,
   onClose,
 }: {
-  trigger: HTMLButtonElement | null;
+  container?: HTMLElement;
+  saving: boolean;
+  setSaving: (saving: boolean) => void;
   model: string | null;
   recent: string[];
   busy: boolean;
@@ -123,13 +151,12 @@ function ModelDialog({
   select: (model: ModelOption) => Promise<void>;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null),
-    search = useRef<HTMLInputElement>(null),
+  const titleId = useId();
+  const search = useRef<HTMLInputElement>(null),
     list = useRef<HTMLDivElement>(null);
   const [models, setModels] = useState<ModelOption[]>([]),
     [query, setQuery] = useState(""),
     [loading, setLoading] = useState(false),
-    [saving, setSaving] = useState(false),
     [error, setError] = useState("");
   const epoch = useRef(0);
   const reload = async (refresh: boolean) => {
@@ -152,26 +179,9 @@ function ModelDialog({
     }
   };
   useEffect(() => {
-    const node = dialog.current;
-    const position = () => {
-      if (!node || !trigger) return;
-      const anchor = trigger.getBoundingClientRect();
-      node.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - node.offsetWidth - 12))}px`;
-      node.style.top = `${Math.max(12, Math.min(anchor.top - node.offsetHeight - 8, window.innerHeight - node.offsetHeight - 12))}px`;
-    };
-    node?.showModal();
-    search.current?.focus();
-    position();
-    const observer = new ResizeObserver(position);
-    if (node) observer.observe(node);
-    window.addEventListener("resize", position);
     void reload(false);
     return () => {
       epoch.current++;
-      observer.disconnect();
-      window.removeEventListener("resize", position);
-      node?.close();
-      if (trigger?.isConnected) trigger.focus();
     };
   }, []);
   const chosen = model;
@@ -203,24 +213,22 @@ function ModelDialog({
     }
   };
   return (
-    <dialog
-      ref={dialog}
-      className="ai-model-dialog"
-      aria-labelledby="ai-model-title"
-      onCancel={(event) => {
+    <Popover.Content
+      container={container}
+      className="ai-model-popover"
+      side="top"
+      width="400px"
+      aria-labelledby={titleId}
+      aria-busy={saving}
+      onOpenAutoFocus={(event) => {
         event.preventDefault();
-        if (!saving) onClose();
+        search.current?.focus();
       }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget || saving) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        if (
-          event.clientX < bounds.left ||
-          event.clientX > bounds.right ||
-          event.clientY < bounds.top ||
-          event.clientY > bounds.bottom
-        )
-          onClose();
+      onEscapeKeyDown={(event) => {
+        if (saving) event.preventDefault();
+      }}
+      onInteractOutside={(event) => {
+        if (saving) event.preventDefault();
       }}
       onKeyDown={(event) => {
         if (
@@ -255,97 +263,148 @@ function ModelDialog({
         options[next].scrollIntoView({ block: "nearest" });
       }}
     >
-      <header>
-        <h2 id="ai-model-title">选择模型</h2>
-        <DialogClose label="关闭模型设置" disabled={saving} onClick={onClose} />
-      </header>
-      <input
-        ref={search}
-        className="ai-model-search"
-        type="search"
-        aria-label="搜索模型"
-        placeholder="搜索模型"
-        autoComplete="off"
-        value={query}
-        disabled={saving}
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      {loading && <p role="status">正在更新…</p>}
-      <div
-        ref={list}
-        className="ai-model-list"
-        role="listbox"
-        aria-label="当前服务的模型"
-      >
-        {entries.map((entry) => {
-          const info = entry.metadata;
-          const detail = [
-            info?.contextWindow
-              ? `${new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(info.contextWindow)} 上下文`
-              : null,
-            info?.vision ? "图片输入" : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          const description = info
-            ? ""
-            : entry.description
-              ? descriptions[entry.description] || entry.description
-              : entry.model !== entry.name && entry.name
-                ? entry.model
-                : "";
-          return (
-            <button
-              key={entry.model}
-              className="ai-model-option"
-              role="option"
-              aria-selected={entry.model === chosen}
-              disabled={busy || saving}
-              onClick={() => void choose(entry)}
-              data-tip={[
-                entry.model,
-                info?.source ? `资料来源：${info.source}` : null,
-                info?.toolCall === false ? "目录标记不支持工具调用" : null,
-                info?.status ? "目录标记已弃用" : null,
-              ]
-                .filter(Boolean)
-                .join("\n")}
+      <Flex direction="column" gap="3" className="ai-model-content">
+        <Flex align="center" justify="between" gap="3">
+          <Heading as="h2" id={titleId} size="4">
+            选择模型
+          </Heading>
+          <Popover.Close>
+            <IconButton
+              aria-label="关闭模型设置"
+              variant="ghost"
+              color="gray"
+              disabled={saving}
             >
-              <span>
-                <strong>{entry.name || entry.label || entry.model}</strong>
-                {description && <small>{description}</small>}
-                {detail && <small>{detail}</small>}
-              </span>
-              {entry.model === chosen && <Check size={15} />}
-            </button>
-          );
-        })}
-        {!entries.length && !loading && (
-          <p className="muted">没有找到这个模型</p>
-        )}
-      </div>
-      {(configurationError ||
-        (!loading &&
-          models.length > 0 &&
-          model &&
-          !models.some((entry) => entry.model === model))) && (
-        <p>{configurationError || "当前模型尚未出现在列表中。"}</p>
-      )}
-      {busy && <p>回答进行中，完成或停止后可以切换模型。</p>}
-      {error && (
-        <p className="dialog-error" role="alert">
-          {error}
-        </p>
-      )}
-      <footer>
-        <button
-          disabled={loading || saving || busy}
-          onClick={() => void reload(true)}
+              <X size={18} />
+            </IconButton>
+          </Popover.Close>
+        </Flex>
+        <TextField.Root
+          size="3"
+          ref={search}
+          type="search"
+          aria-label="搜索模型"
+          placeholder="搜索模型"
+          autoComplete="off"
+          value={query}
+          disabled={saving}
+          onChange={(event) => setQuery(event.target.value)}
         >
-          <RefreshCw size={13} />
-          刷新列表
-        </button>
-      </footer>
-    </dialog>
+          <TextField.Slot>
+            <Search size={18} />
+          </TextField.Slot>
+        </TextField.Root>
+        {loading && (
+          <Text size="3" role="status" color="gray">
+            正在更新…
+          </Text>
+        )}
+        <Flex
+          direction="column"
+          gap="1"
+          ref={list}
+          className="ai-model-list"
+          role="listbox"
+          aria-label="当前服务的模型"
+        >
+          {entries.map((entry) => {
+            const info = entry.metadata;
+            const detail = [
+              info?.contextWindow
+                ? `${new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(info.contextWindow)} 上下文`
+                : null,
+              info?.vision ? "图片输入" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            const description = info
+              ? ""
+              : entry.description
+                ? descriptions[entry.description] || entry.description
+                : entry.model !== entry.name && entry.name
+                  ? entry.model
+                  : "";
+            return (
+              <Tooltip
+                container={container}
+                key={entry.model}
+                content={[
+                  entry.model,
+                  info?.source ? `资料来源：${info.source}` : null,
+                  info?.toolCall === false ? "目录标记不支持工具调用" : null,
+                  info?.status ? "目录标记已弃用" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              >
+                <Button
+                  size="3"
+                  variant={entry.model === chosen ? "soft" : "ghost"}
+                  color={entry.model === chosen ? undefined : "gray"}
+                  className="ai-model-option"
+                  role="option"
+                  aria-selected={entry.model === chosen}
+                  disabled={busy || saving}
+                  onClick={() => void choose(entry)}
+                >
+                  <Flex as="span" direction="column" gap="1" minWidth="0">
+                    <Text size="3" weight="medium">
+                      {entry.name || entry.label || entry.model}
+                    </Text>
+                    {description && (
+                      <Text size="3" color="gray">
+                        {description}
+                      </Text>
+                    )}
+                    {detail && (
+                      <Text size="3" color="gray">
+                        {detail}
+                      </Text>
+                    )}
+                  </Flex>
+                  {entry.model === chosen && <Check size={18} />}
+                </Button>
+              </Tooltip>
+            );
+          })}
+          {!entries.length && !loading && (
+            <Text size="3" color="gray">
+              没有找到这个模型
+            </Text>
+          )}
+        </Flex>
+        {(configurationError ||
+          (!loading &&
+            models.length > 0 &&
+            model &&
+            !models.some((entry) => entry.model === model))) && (
+          <Text as="p" size="3">
+            {configurationError || "当前模型尚未出现在列表中。"}
+          </Text>
+        )}
+        {busy && (
+          <Text as="p" size="3">
+            回答进行中，完成或停止后可以切换模型。
+          </Text>
+        )}
+        {error && (
+          <Callout.Root color="red" role="alert">
+            <Callout.Text>{error}</Callout.Text>
+          </Callout.Root>
+        )}
+        <Flex justify="start">
+          <Button
+            variant="soft"
+            color="gray"
+            loading={loading}
+            disabled={loading || saving || busy}
+            onClick={() => void reload(true)}
+          >
+            <RefreshCw size={16} />
+            刷新列表
+          </Button>
+        </Flex>
+      </Flex>
+    </Popover.Content>
   );
 }

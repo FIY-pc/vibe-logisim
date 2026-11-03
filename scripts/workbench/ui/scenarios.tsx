@@ -1280,7 +1280,10 @@ assert.equal(
   "false",
 );
 await inputValue(field("接口地址"), "http://fixture.invalid/v1");
-await inputValue(field("模型"), "fixture");
+await inputValue(
+  document.querySelector('input[aria-label="模型"]')!,
+  "fixture",
+);
 await click(
   [...document.querySelectorAll("button")].find(
     (n) => n.textContent === "读取模型列表",
@@ -1291,6 +1294,7 @@ assert.equal(
   document.querySelector('[role="option"]')!.textContent,
   "fixture-new",
 );
+await click(document.querySelector('[role="option"]')!);
 await click(
   [...document.querySelectorAll("button")].find(
     (n) => n.textContent === "检测连接",
