@@ -11,7 +11,6 @@ import {
   type ConnectionPeer,
   type SignalTarget,
 } from "./connectivity";
-import "./inspector.css";
 import { tip } from "../shared/Tooltips";
 
 interface Props {

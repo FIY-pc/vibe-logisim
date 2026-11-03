@@ -17,8 +17,6 @@ import {
   CommandSearch,
   preventComposingDismiss,
 } from "../shared/command";
-import "../shared/command.css";
-import "./ai-settings.css";
 
 export interface ModelOption {
   model: string;

@@ -6,7 +6,7 @@ import {
   type RefObject,
 } from "react";
 import { Command, useCommandState } from "cmdk";
-import { Button, TextField } from "@radix-ui/themes";
+import { ActionRow, TextField } from "../design/ui";
 
 // cmdk 1.1.1 can publish the previous item's ID after search reorders results.
 // Keep its selection controller; resolve the input's ARIA target after commit.
@@ -51,6 +51,6 @@ export function preventComposingDismiss(event: KeyboardEvent) {
 export function CommandButton({
   "data-disabled": _commandDisabled,
   ...props
-}: ComponentProps<typeof Button> & { "data-disabled"?: boolean | string }) {
-  return <Button {...props} />;
+}: ComponentProps<typeof ActionRow> & { "data-disabled"?: boolean | string }) {
+  return <ActionRow {...props} />;
 }

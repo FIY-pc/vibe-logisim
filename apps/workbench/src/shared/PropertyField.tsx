@@ -1,9 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { optionLabels, propertyLabels } from "../editor/componentLabels";
 import type { XmlNode } from "./types";
-import "../editor/inspector.css";
 import { Select } from "./Select";
-import { TextArea, TextField } from "@radix-ui/themes";
+import { TextArea, TextField } from "../design/ui";
 
 interface Props {
   field: XmlNode;

@@ -7,7 +7,6 @@ import type {
   ReferenceSummary,
   StoredReference,
 } from "./references";
-import "./ChatReferences.css";
 import { DialogFrame, DialogBody } from "../shared/Dialog";
 import { useWorkbench } from "../app/provider";
 import type { PreviewFile } from "../workspace/FilePreview";

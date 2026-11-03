@@ -24,7 +24,6 @@ import type {
 } from "../../../../packages/classroom/src/assessment-types";
 import { LessonEditor, LessonMarkdown } from "./LessonEditor";
 import { lessonKey, attemptStatus, draftLesson } from "./assessment-utils";
-import "./Assessment.css";
 
 type Progress = {
   lessons: { id: string; title: string; version: number; points: number }[];

@@ -5,7 +5,6 @@ import type { CatalogGroup, CatalogTool } from "../shared/types";
 import { layoutLimits as limits, railSections as sections } from "./store";
 import { useShell } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
-import "./WorkspaceLayout.css";
 import { fullText, tip } from "../shared/Tooltips";
 /** The workspace frame's layout, read from the shell store. */
 export function useWorkspaceLayout() {

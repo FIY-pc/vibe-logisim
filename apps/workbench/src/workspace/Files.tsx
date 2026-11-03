@@ -35,7 +35,6 @@ import { ContextMenu } from "../shared/ContextMenu";
 import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
-import "./Files.css";
 import { Select } from "../shared/Select";
 import { DialogBody, DialogFooter, DialogFrame } from "../shared/Dialog";
 import { Button } from "@radix-ui/themes";
@@ -1246,7 +1245,7 @@ function ImportDialog({
               {item.conflict ? (
                 <Select
                   label={`${item.name} 的重名处理`}
-                  size="small"
+
                   value={choices[item.index]}
                   disabled={pending}
                   options={[

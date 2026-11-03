@@ -11,7 +11,6 @@ import {
   resizeRect,
   translateShape,
 } from "./symbol-geometry";
-import "./InterfaceEditor.css";
 import { Select } from "../shared/Select";
 import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 interface Definition extends SymbolDraft {
@@ -449,7 +448,7 @@ export function InterfaceEditor({
                       内外接线
                       <Select
                         label="内外接线"
-                        size="small"
+
                         value={selectedPort.disconnect ? "detach" : "keep"}
                         options={[
                           { value: "keep", label: "保持接线" },
@@ -643,7 +642,7 @@ export function InterfaceEditor({
                 />
                 <Select
                   label={`${p.label} 方向`}
-                  size="small"
+
                   value={p.direction}
                   options={[
                     { value: "input", label: "输入" },

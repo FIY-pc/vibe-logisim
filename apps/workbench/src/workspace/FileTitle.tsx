@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { FileText } from "lucide-react";
 import { useFiles, useView } from "../app/hooks";
 
@@ -9,13 +10,15 @@ export function FileTitle() {
     <div className="file-title">
       {doc && (
         <>
-          <button
+          <Button
+            variant="ghost"
+            color="gray"
             data-tip="文件信息与导出"
             onClick={() => setInfoTarget(doc.id)}
           >
             <FileText size={15} />
             {doc.name}
-          </button>
+          </Button>
           {doc.dirty && (
             <span
               className="dirty-dot"

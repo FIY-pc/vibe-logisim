@@ -29,7 +29,6 @@ import type {
   AnalysisReport,
   AnalysisPreview,
 } from "../../../../packages/classroom/src/types";
-import "./Classroom.css";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const time = (value: string) => new Date(value).toLocaleString();

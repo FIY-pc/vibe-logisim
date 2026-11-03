@@ -32,8 +32,6 @@ import {
   CommandSearch,
   preventComposingDismiss,
 } from "../shared/command";
-import "../shared/command.css";
-import "./ai-settings.css";
 import { ChatGPTLogin } from "./ChatGPTLogin";
 import { publicText } from "../../../../packages/agent-runtime/src/models/public-fields.mts";
 export interface ProviderConfiguration {

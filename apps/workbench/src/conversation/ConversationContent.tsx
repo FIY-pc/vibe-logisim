@@ -16,14 +16,12 @@ import {
   CommandSearch,
   preventComposingDismiss,
 } from "../shared/command";
-import "../shared/command.css";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowDown, Check, ChevronDown, Copy } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { desktop } from "../shared/transport";
 import { keepKeys, usePortalContainer } from "../shared/layer";
-import "./ConversationContent.css";
 import { fullText } from "../shared/Tooltips";
 
 export interface Message {

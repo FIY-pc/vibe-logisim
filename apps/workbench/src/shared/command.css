@@ -5,20 +5,7 @@
   padding: var(--space-1);
   margin-top: var(--space-3);
 }
-.command-list [cmdk-item] {
-  box-sizing: border-box;
-  display: flex;
-  width: 100%;
-  height: auto;
-  min-height: var(--space-7);
-  margin: 0;
-  padding: var(--space-3);
-  justify-content: space-between;
-  gap: var(--space-3);
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
+
 .command-list [cmdk-item][data-selected="true"] {
   background: var(--accent-a4);
 }

@@ -43,7 +43,7 @@ export function ContextMenu({
       <Context.Content
         ref={(node) => rememberFocusOrigin(node, opener.current)}
         container={container}
-        size="1"
+        size="2"
         className="app-menu-content"
         collisionPadding={8}
         loop

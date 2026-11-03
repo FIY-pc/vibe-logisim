@@ -5,7 +5,6 @@ import type { HistoryReview as Review } from "../generated/HistoryReview";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import type { CodeEditorHandle } from "../shared/CodeEditor";
-import "./HistoryReview.css";
 import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
@@ -158,7 +157,7 @@ export function HistoryReview({
         <nav aria-label="对照方式">
           <Select
             label="对照方式"
-            size="small"
+
             value={mode}
             options={[
               {
@@ -172,7 +171,7 @@ export function HistoryReview({
           />
           <Select
             label="电路"
-            size="small"
+
             value={selected}
             options={names.map((name) => ({ value: name, label: name }))}
             onChange={setSelected}

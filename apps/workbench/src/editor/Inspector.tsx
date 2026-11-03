@@ -10,7 +10,6 @@ import { inputBits, inputDisplay } from "../simulation/simulationInputs";
 import { formatSignal } from "../simulation/simulation";
 import { PropertyField } from "../shared/PropertyField";
 import { tip } from "../shared/Tooltips";
-import "./inspector.css";
 
 interface Props {
   doc: Document;

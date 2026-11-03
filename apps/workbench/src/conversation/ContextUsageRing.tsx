@@ -1,5 +1,4 @@
 import { tip } from "../shared/Tooltips";
-import "./ContextUsageRing.css";
 
 /** Context usage from the runtime's status snapshot. */
 export interface ContextUsage {

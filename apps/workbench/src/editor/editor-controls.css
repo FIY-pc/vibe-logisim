@@ -29,51 +29,36 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px 12px;
   max-width: 100%;
-  min-height: 39px;
-  padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 9px;
   background: var(--paper);
-  box-shadow: 0 2px 8px #20242b0d;
   white-space: nowrap;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-2);
 }
 .canvas-tool-modes,
 .canvas-tool-actions {
   display: flex;
   align-items: center;
-  gap: 3px;
   flex-shrink: 0;
-}
-.canvas-tools button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 29px;
-  min-width: 26px;
-  padding: 0 7px;
-  border-radius: 5px;
-  font-size: 11px;
-}
-.canvas-tools button[aria-pressed="true"] {
-  background: #eef1ff;
-  color: var(--accent);
-}
-.canvas-tools svg {
-  flex-shrink: 0;
+  gap: var(--space-1);
 }
 .canvas-zoom {
-  font-size: 11px;
-  min-width: 34px;
   text-align: center;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-1);
+  min-width: var(--control-height);
 }
-@container (max-width: 620px) {
+@container (max-width: 800px) {
   .editor-toolbar.canvas-tools {
     column-gap: 8px;
+    gap: var(--space-1) var(--space-2);
+    padding: var(--space-1);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-2);
   }
   .canvas-tool-modes {
     flex-basis: 100%;
@@ -81,17 +66,9 @@
   }
 }
 @container (max-width: 340px) {
-  .canvas-tool-modes button {
-    padding: 0 4px;
-    gap: 3px;
-  }
   .canvas-tools kbd {
     display: none;
   }
-}
-.simulation-menu-trigger {
-  gap: 4px;
-  padding: 6px 8px 6px 10px;
 }
 .simulation-menu-trigger > svg {
   color: var(--muted);
@@ -106,37 +83,21 @@
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 7px;
   background: var(--paper);
-  box-shadow: 0 2px 8px #20242b0d;
+  padding: var(--space-1);
+  gap: var(--space-1);
+  box-shadow: var(--shadow-2);
+  border-radius: var(--radius-3);
 }
 .runtime-transport output {
   padding: 0 8px;
-  font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
-}
-.runtime-transport button {
-  width: 32px;
-  height: 30px;
-  padding: 0;
-  border-radius: 4px;
+  font-size: var(--font-size-2);
 }
 .runtime-transport .spinner {
   margin-left: 7px;
-}
-.runtime-transport button.runtime-restart {
-  width: auto;
-  padding: 0 9px;
-  color: var(--accent);
-  font-size: 11px;
-}
-.runtime-transport[data-running="true"] button[aria-label="暂停时钟"] {
-  color: var(--accent);
-  background: #eef1ff;
 }
 .runtime-transport[aria-busy="true"] output {
   color: var(--accent);
@@ -151,7 +112,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  font-size: 13px;
+  font-size: var(--font-size-2);
 }
 .simulation-frequency span {
   display: flex;

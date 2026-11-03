@@ -17,7 +17,7 @@ export function Checkbox({
 }) {
   return (
     <ThemesCheckbox
-      size="1"
+      size="2"
       className={className ? `checkbox ${className}` : "checkbox"}
       checked={checked}
       onCheckedChange={(value) => onCheckedChange(value === true)}

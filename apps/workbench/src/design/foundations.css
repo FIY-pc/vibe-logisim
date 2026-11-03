@@ -1,43 +1,35 @@
-/* Domain views keep their layout while library controls own their appearance. */
-@import "../style.css" layer(workbench);
-@import "@radix-ui/themes/styles.css";
-
-:root,
-.radix-themes {
-  --default-font-family:
-    "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI", sans-serif;
-  --heading-font-family: var(--default-font-family);
-  --default-font-size: var(--font-size-2);
-  --default-line-height: 1.55;
-  --cursor-button: pointer;
-  --cursor-checkbox: pointer;
-  --cursor-menu-item: pointer;
-  --paper: var(--color-panel-solid, white);
-  --workspace-surface: var(--gray-2);
-  --text: var(--gray-12);
-  --muted: var(--gray-11);
-  --border: var(--gray-6);
-  --accent: var(--indigo-9);
-  --accent-soft: var(--indigo-3);
-  --hover: var(--gray-3);
-  --danger: var(--red-11);
-  --warning: var(--amber-11);
-  --selection-fill: var(--indigo-a3);
-  --grid: var(--gray-6);
-  --layer-shadow: var(--shadow-4);
-  --dialog-shadow: var(--shadow-6);
-  --backdrop: var(--color-overlay);
-}
+/* All styles enter here. Domain styles never depend on JS import order. */
+@layer reset, theme, layout, controls;
+@import "./reset.css" layer(reset);
+@import "@radix-ui/themes/styles.css" layer(theme);
+@import "../style.css" layer(layout);
+@import "../classroom/Classroom.css" layer(layout);
+@import "../classroom/Assessment.css" layer(layout);
+@import "../conversation/ChatReferences.css" layer(layout);
+@import "../conversation/ContextUsageRing.css" layer(layout);
+@import "../shared/command.css" layer(layout);
+@import "../conversation/ConversationContent.css" layer(layout);
+@import "../conversation/ai-settings.css" layer(layout);
+@import "../conversation/Turn.css" layer(layout);
+@import "../editor/editor-controls.css" layer(layout);
+@import "../editor/inspector.css" layer(layout);
+@import "../editor/InterfaceEditor.css" layer(layout);
+@import "../history/DocumentHistory.css" layer(layout);
+@import "../history/HistoryReview.css" layer(layout);
+@import "../shared/CodeEditor.css" layer(layout);
+@import "../shared/Dialog.css" layer(layout);
+@import "../shared/Menu.css" layer(layout);
+@import "../shell/feedback.css" layer(layout);
+@import "../shell/WorkspaceLayout.css" layer(layout);
+@import "../workspace/reader/Reader.css" layer(layout);
+@import "../workspace/Files.css" layer(layout);
+@import "../workspace/ProjectInfo.css" layer(layout);
+@import "./controls.css" layer(controls);
+@import "./tokens.css";
 
 .workbench-theme {
   height: 100%;
   min-height: 0;
-}
-
-/* Domain dialogs not migrated yet use the same reading and field scale. */
-dialog {
-  font-family: var(--default-font-family);
-  font-size: var(--font-size-2);
 }
 
 /* These are application layouts; surface, typography and control styles come from Themes. */

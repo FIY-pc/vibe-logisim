@@ -885,7 +885,7 @@ export function Chat({
           />
           <Select
             label="思考深度"
-            size="small"
+
             variant="plain"
             className="composer-effort"
             value={state?.effort || "none"}

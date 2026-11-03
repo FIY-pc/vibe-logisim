@@ -10,7 +10,6 @@ import {
   X,
 } from "lucide-react";
 import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
-import "./feedback.css";
 import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 
 const RELEASES = "https://github.com/FIY-pc/vibe-logisim/releases";

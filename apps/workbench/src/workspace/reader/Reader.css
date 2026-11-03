@@ -31,10 +31,10 @@
 .reader-header {
   display: flex;
   align-items: stretch;
-  height: 40px;
   flex-shrink: 0;
   background: var(--workspace-surface);
   border-bottom: 1px solid var(--border);
+  height: var(--section-height);
 }
 .reader-tabs {
   display: flex;
@@ -64,7 +64,7 @@
   border: none;
   border-radius: 0;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-2);
   min-width: 0;
 }
 .reader-tab > button[role="tab"] {
@@ -92,10 +92,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  min-height: 38px;
-  padding: 3px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--paper);
+  min-height: var(--section-height);
+  padding: var(--space-1) var(--space-2);
 }
 .reader-actions button {
   display: inline-flex;
@@ -103,8 +103,8 @@
   gap: 6px;
   background: transparent;
   border: none;
-  padding: 5px 8px;
-  font-size: 13px;
+  font-size: var(--font-size-2);
+  padding: 0 var(--space-2);
 }
 .reader-actions button:hover,
 .reader-actions button[aria-pressed="true"],

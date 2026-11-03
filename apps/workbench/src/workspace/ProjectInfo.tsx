@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { Copy, Download } from "lucide-react";
 import { command, desktop } from "../shared/transport";
 import type { Document } from "../shared/types";
-import "./ProjectInfo.css";
 import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 interface Info {
   documentId: string;

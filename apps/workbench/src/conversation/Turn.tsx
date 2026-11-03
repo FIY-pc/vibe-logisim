@@ -10,7 +10,6 @@ import {
   type Segment,
 } from "./turns";
 import { useTurnDisclosure } from "./TurnExpansion";
-import "./Turn.css";
 
 /** The files a turn changed, as the folder history recorded them. */
 export interface TurnChange {

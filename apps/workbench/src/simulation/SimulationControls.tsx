@@ -1,4 +1,4 @@
-import { Button, TextField } from "@radix-ui/themes";
+import { Button, IconButton, TextField } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Pause, Play, RotateCcw, StepForward } from "lucide-react";
@@ -12,7 +12,6 @@ import {
 import type { Tool } from "../shared/types";
 import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
-import "../editor/editor-controls.css";
 import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 import { tip } from "../shared/Tooltips";
 
@@ -246,7 +245,6 @@ function SimulationSettings({
         </DialogBody>
         <DialogFooter>
           <Button
-            size="2"
             variant="soft"
             color="gray"
             type="button"
@@ -255,7 +253,7 @@ function SimulationSettings({
           >
             取消
           </Button>
-          <Button size="2" type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending}>
             {pending ? "应用中…" : "应用"}
           </Button>
         </DialogFooter>
@@ -296,24 +294,25 @@ export function SimulationTransport({
         {text}
       </output>
       {status.stale ? (
-        <button
+        <Button
+          variant="soft"
           className="runtime-restart"
           disabled={disabled}
           onClick={() => dispatch("start")}
         >
           重新仿真
-        </button>
+        </Button>
       ) : (
         <>
-          <button
+          <IconButton
             aria-label={running ? "暂停时钟" : "运行时钟"}
             {...tip(running ? "暂停时钟" : "运行时钟", shortcuts.clock)}
             disabled={disabled}
             onClick={() => dispatch("toggle-clock")}
           >
             {running ? <Pause size={15} /> : <Play size={15} />}
-          </button>
-          <button
+          </IconButton>
+          <IconButton
             aria-label="时钟一步"
             {...(running
               ? tip("先暂停时钟，再逐步推进")
@@ -322,15 +321,15 @@ export function SimulationTransport({
             onClick={() => dispatch("tick")}
           >
             <StepForward size={15} />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
             aria-label="复位仿真"
             {...tip("复位仿真", shortcuts.reset)}
             disabled={disabled || !active}
             onClick={() => dispatch("reset")}
           >
             <RotateCcw size={15} />
-          </button>
+          </IconButton>
         </>
       )}
     </div>

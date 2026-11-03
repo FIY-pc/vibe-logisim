@@ -1,3 +1,4 @@
+import { Button, IconButton, Text } from "../design/ui";
 import {
   createContext,
   useContext,
@@ -5,12 +6,9 @@ import {
   type RefObject,
 } from "react";
 import {
-  Button,
   ContextMenu as Context,
   DropdownMenu as Dropdown,
   Flex,
-  IconButton,
-  Text,
 } from "@radix-ui/themes";
 import { Ellipsis } from "lucide-react";
 import {
@@ -19,7 +17,6 @@ import {
   rememberFocusOrigin,
   usePortalContainer,
 } from "./layer";
-import "./Menu.css";
 
 /** The kind of menu the shared items below render into. Radix keeps a
  * drop-down's items and a context menu's items apart, so each item asks. */
@@ -91,7 +88,6 @@ export function Menu({
             if (triggerRef) triggerRef.current = node;
           }}
           type="button"
-          size="1"
           variant="ghost"
           color="gray"
           className={["menu-trigger", className].filter(Boolean).join(" ")}
@@ -100,14 +96,14 @@ export function Menu({
           disabled={disabled}
           tabIndex={tabIndex}
         >
-          {trigger ?? <Ellipsis size={15} aria-hidden="true" />}
+          {trigger ?? <Ellipsis size={16} aria-hidden="true" />}
         </Trigger>
       </Dropdown.Trigger>
       <Dropdown.Content
         ref={(node) => rememberFocusOrigin(node, anchor.current)}
         container={container}
         className="app-menu-content"
-        size="1"
+        size="2"
         align={align}
         collisionPadding={8}
         loop

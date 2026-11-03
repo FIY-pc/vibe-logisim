@@ -8,7 +8,6 @@ import {
 } from "react";
 import { X } from "lucide-react";
 import { Dialog as ThemesDialog, IconButton } from "@radix-ui/themes";
-import "./Dialog.css";
 
 const openers = new WeakMap<HTMLElement, HTMLElement>();
 export const modalSelector = 'dialog[open],[aria-modal="true"]';

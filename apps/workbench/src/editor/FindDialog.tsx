@@ -5,7 +5,6 @@ import {
   CommandSearch,
   preventComposingDismiss,
 } from "../shared/command";
-import "../shared/command.css";
 import type { Circuit, Document } from "../shared/types";
 import { DialogClose, useDialogFocus } from "../shared/Dialog";
 const names: Record<string, string> = {

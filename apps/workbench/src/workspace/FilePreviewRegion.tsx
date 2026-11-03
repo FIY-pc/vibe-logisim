@@ -4,7 +4,6 @@ import { FilePreview } from "./FilePreview";
 import { useFiles, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import { readerKey } from "./reader/types";
-import "./reader/Reader.css";
 
 export function FilePreviewRegion() {
   const { stores } = useWorkbench(),

@@ -1,5 +1,6 @@
+import { IconButton as ThemesIconButton } from "../design/ui";
 import type { ReactNode } from "react";
-import { IconButton as ThemesIconButton, Kbd, Tooltip } from "@radix-ui/themes";
+import { Kbd, Tooltip } from "@radix-ui/themes";
 import { usePortalContainer } from "./layer";
 
 /** A button that shows only an icon; its title is its hint and its accessible
@@ -36,7 +37,6 @@ export function IconButton({
       <ThemesIconButton
         ref={anchor}
         type="button"
-        size="1"
         variant="ghost"
         color="gray"
         aria-label={title}

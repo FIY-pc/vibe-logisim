@@ -11,7 +11,6 @@ import { MergeView } from "@codemirror/merge";
 import { closeSearchPanel } from "@codemirror/search";
 import { keepKeys } from "./layer";
 import { lineEnding, xmlExtensions } from "./codeEditorTheme";
-import "./CodeEditor.css";
 
 const externalValue = Annotation.define<boolean>();
 export interface CodeEditorHandle {

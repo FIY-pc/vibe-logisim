@@ -1,4 +1,4 @@
-import { TextField } from "@radix-ui/themes";
+import { TextField } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { tip } from "../shared/Tooltips";

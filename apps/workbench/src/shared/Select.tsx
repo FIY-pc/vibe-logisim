@@ -18,7 +18,6 @@ export function Select({
   onChange,
   placeholder,
   disabled = false,
-  size,
   variant,
   className,
   title,
@@ -30,8 +29,6 @@ export function Select({
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
-  /** `small` for dense rows (tables, footers). */
-  size?: "small";
   /** `plain` drops the border and background, for toolbars and footers. */
   variant?: "plain";
   className?: string;
@@ -42,7 +39,7 @@ export function Select({
   return (
     <Radix.Root
       value={value}
-      size={size === "small" ? "1" : "2"}
+      size="2"
       onValueChange={onChange}
       disabled={disabled}
     >
