@@ -29,7 +29,8 @@ export async function verifyFilesUI() {
   const calls: any[] = [],
     opened: string[] = [],
     previews: any[] = [],
-    errors: unknown[] = [];
+    errors: unknown[] = [],
+    references: string[][] = [];
   let conflict = true;
   g.__desktop = true;
   g.__command = async (request: any) => {
@@ -115,12 +116,25 @@ export async function verifyFilesUI() {
     assert(found, "tree row " + path);
     return found;
   };
-  const key = async (key: string) =>
-    act(async () => {
+  const key = async (key: string, code = key) => {
+    await act(async () => {
       document.activeElement?.dispatchEvent(
-        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+        new KeyboardEvent("keydown", {
+          key,
+          code,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      document.dispatchEvent(
+        new KeyboardEvent("keyup", { key, code, bubbles: true }),
       );
     });
+    // Headless Tree restores DOM focus after the state-driven rows commit.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 40));
+    });
+  };
   const click = async (label: string) => act(async () => button(label).click());
   const flush = async () =>
     act(async () => {
@@ -136,10 +150,12 @@ export async function verifyFilesUI() {
           onOpen={(p) => opened.push(p)}
           onPreview={(p) => previews.push(p)}
           onError={(e) => errors.push(e)}
+          onReference={(paths) => references.push(paths)}
           onRename={async () => {}}
         />,
       ),
     );
+    await flush();
     await act(async () => row("dir").focus());
     await key("ArrowRight");
     await key("ArrowDown");
@@ -152,10 +168,36 @@ export async function verifyFilesUI() {
       0,
       "Keyboard selection must not open documents",
     );
+    assert.equal(row("dir/child.circ").getAttribute("aria-level"), "2");
+    assert(row("dir/child.circ").closest('[role="group"]'));
+    assert.equal(
+      node.querySelectorAll('[role="treeitem"][tabindex="0"]').length,
+      1,
+    );
     await key("Enter");
     assert.deepEqual(opened, ["/fixture/project/dir/child.circ"]);
     await key("ArrowLeft");
     assert.equal((document.activeElement as HTMLElement).dataset.tip, "dir");
+    await key("End");
+    assert.equal(
+      (document.activeElement as HTMLElement)?.dataset.tip,
+      "readme.txt",
+    );
+    await key("Home");
+    assert.equal((document.activeElement as HTMLElement)?.dataset.tip, "dir");
+    await key("r", "KeyR");
+    await flush();
+    assert.equal(
+      document.activeElement?.getAttribute("aria-label"),
+      "按名称定位文件",
+    );
+    await key("Escape");
+    assert.equal(
+      (document.activeElement as HTMLElement)?.dataset.tip,
+      "readme.txt",
+    );
+    assert.equal(previews.length, 0, "Typeahead only moves selection");
+    await key("Home");
     await key("F2");
     assert(
       document
@@ -321,9 +363,118 @@ export async function verifyFilesUI() {
           c.folder_id === folder.id,
       ),
     );
+    await click("关闭");
+    await flush();
+    assert.equal(
+      document.activeElement?.getAttribute("aria-label"),
+      "文件夹操作",
+      "History returns focus to its menu trigger",
+    );
+
+    // Removing the focused file during refresh leaves a usable keyboard tree.
+    await act(async () => row("readme.txt").focus());
+    rows[""] = rows[""].filter((entry) => entry.path !== "readme.txt");
+    await key("F5");
+    await flush();
+    assert.equal((document.activeElement as HTMLElement)?.dataset.tip, "dir");
+    assert.equal(
+      node.querySelectorAll('[role="treeitem"][tabindex="0"]').length,
+      1,
+    );
+    await key("ArrowDown");
+    assert.equal(
+      (document.activeElement as HTMLElement)?.dataset.tip,
+      "dir/child.circ",
+    );
+
+    const referenceZone = document.createElement("div");
+    referenceZone.setAttribute("data-reference-drop", "");
+    node.append(referenceZone);
+    document.elementFromPoint = () => referenceZone;
+    await act(async () => {
+      row("dir/child.circ").dispatchEvent(
+        new MouseEvent("pointerdown", {
+          button: 0,
+          clientX: 10,
+          clientY: 10,
+          bubbles: true,
+        }),
+      );
+      window.dispatchEvent(
+        new MouseEvent("pointermove", {
+          clientX: 40,
+          clientY: 20,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      window.dispatchEvent(
+        new MouseEvent("pointerup", {
+          clientX: 40,
+          clientY: 20,
+          bubbles: true,
+        }),
+      );
+    });
+    assert.deepEqual(
+      references,
+      [["dir/child.circ"]],
+      "Internal reference drops retain the relative file path",
+    );
+    referenceZone.remove();
+
+    // An unresolved expansion belongs to its folder identity, even if another
+    // folder opens before the host replies. A collapsed loading folder stays closed.
+    await act(async () => row("dir").focus());
+    await key("ArrowLeft");
+    let resolveListing!: (value: any) => void;
+    const originalCommand = g.__command;
+    g.__command = (request: any) =>
+      request.op === "folderList" && request.path === "dir"
+        ? new Promise((resolve) => {
+            resolveListing = resolve;
+          })
+        : originalCommand(request);
+    await key("ArrowRight");
+    assert.equal(typeof resolveListing, "function");
+    assert.equal(row("dir").getAttribute("aria-expanded"), "true");
+    await key("ArrowLeft");
+    assert.equal(row("dir").getAttribute("aria-expanded"), "false");
+    const nextFolder = {
+      id: "next-project",
+      path: "/fixture/next",
+      name: "next",
+    };
+    g.__command = async () => ({
+      folder: nextFolder,
+      entries: [entry("fresh.circ")],
+    });
+    await act(async () =>
+      root.render(
+        <Files
+          folder={nextFolder}
+          onFolder={() => {}}
+          onOpen={(path) => opened.push(path)}
+          onPreview={(preview) => previews.push(preview)}
+          onError={(error) => errors.push(error)}
+          onRename={async () => {}}
+        />,
+      ),
+    );
+    await flush();
+    await act(async () =>
+      resolveListing({ folder, entries: [entry("late.circ", false, "dir")] }),
+    );
+    await flush();
+    assert.equal(node.querySelectorAll('[role="treeitem"]').length, 1);
+    assert(row("fresh.circ"));
+    assert(!node.textContent?.includes("late.circ"));
+    await act(async () => row("fresh.circ").focus());
+    await key("Enter");
+    assert.equal(opened.at(-1), "/fixture/next/fresh.circ");
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: file tree keyboard selection/open/F2/Delete/locate, pointer move, native drop destination/scale, explicit conflict handling, picker import, immutable text references, and history comparison/undo entry",
+      "PASS: Headless Tree async hierarchy/stale-folder isolation, roles/keyboard/typeahead/refresh focus, pointer move/reference, native drop destination/scale, import conflicts and dialog history/undo/focus",
     );
   } finally {
     await act(async () => root.unmount());

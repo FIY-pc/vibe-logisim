@@ -2,6 +2,16 @@ import type { PreviewFile } from "./FilePreview";
 import { TextPrompt } from "../shared/TextPrompt";
 import { DecisionDialog } from "../shared/DecisionDialog";
 import { useEffect, useRef, useState } from "react";
+import { useTree } from "@headless-tree/react";
+import {
+  asyncDataLoaderFeature,
+  hotkeysCoreFeature,
+  searchFeature,
+  selectionFeature,
+  type FeatureImplementation,
+  type ItemInstance,
+  type TreeInstance,
+} from "@headless-tree/core";
 import {
   ChevronDown,
   ChevronRight,
@@ -27,7 +37,8 @@ import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import "./Files.css";
 import { Select } from "../shared/Select";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogBody, DialogFooter, DialogFrame } from "../shared/Dialog";
+import { Button } from "@radix-ui/themes";
 import { fullText } from "../shared/Tooltips";
 export interface ProjectFolder {
   historyWarning?: string;
@@ -142,7 +153,36 @@ interface Props {
 const FOLDER_REFERENCE = "请选择文件；文件夹可以在问题中按路径说明";
 const referenceZoneAt = (x: number, y: number) =>
   Boolean(document.elementFromPoint(x, y)?.closest("[data-reference-drop]"));
-export function Files({
+// The workspace has single-file commands. Keep selection single, and relist
+// folders when reopened because disk contents may have changed while collapsed.
+const fileTreeFeature: FeatureImplementation<Entry> = {
+  key: "workspace-files",
+  overwrites: ["selection", "tree"],
+  itemInstance: {
+    expand: ({ item, prev }) => {
+      if (!item.isFolder() || item.isExpanded()) return;
+      prev?.();
+      void item.invalidateChildrenIds(true);
+    },
+    getProps: ({ item, tree, prev }) => ({
+      ...prev?.(),
+      onClick: () => {
+        item.setFocused();
+        tree.setSelectedItems([item.getId()]);
+        item.primaryAction();
+        if (item.isFolder()) {
+          if (item.isExpanded()) item.collapse();
+          else item.expand();
+        }
+      },
+    }),
+  },
+};
+export function Files(props: Props) {
+  // Async caches and pending interactions belong to one folder identity.
+  return <FolderFiles key={props.folder?.id ?? "no-folder"} {...props} />;
+}
+function FolderFiles({
   folder,
   activePath,
   version,
@@ -164,36 +204,34 @@ export function Files({
     [removing, setRemoving] = useState<Entry | null>(null);
   /** The entry the context menu was opened on; null for the folder. */
   const [contextEntry, setContextEntry] = useState<Entry | null>(null);
-  const [pending, setPending] = useState(false),
-    [selected, setSelectedState] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   const previewRequest = useRef(0);
   const selectedPath = useRef<string | null>(null);
   const alive = useRef(true);
   const setSelected = (path: string | null) => {
     if (selectedPath.current !== path) previewRequest.current++;
     selectedPath.current = path;
-    setSelectedState(path);
+    fileTree.setSelectedItems(path === null ? [] : [path]);
   };
-  const [entries, setEntries] = useState<Record<string, Entry[]>>({}),
-    [expanded, setExpanded] = useState(new Set([""]));
   const [dragging, setDragging] = useState<string | null>(null),
     [dropTarget, setDropTarget] = useState<string | null>(null);
   const [importPlan, setImportPlan] = useState<ImportPlan | null>(null),
     [history, setHistory] = useState(false);
   const filesRef = useRef<HTMLDivElement>(null);
-  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   const currentFolder = useRef(folder?.id);
   if (currentFolder.current !== folder?.id) previewRequest.current++;
   currentFolder.current = folder?.id;
   useEffect(() => {
     alive.current = true;
+    currentFolder.current = folder?.id;
     return () => {
       alive.current = false;
+      currentFolder.current = undefined;
       previewRequest.current++;
+      onReferenceHover?.(false);
     };
   }, []);
-  const skipClick = useRef(false),
-    search = useRef({ text: "", at: 0 });
+  const skipClick = useRef(false);
   const pointer = useRef<{
     entry: Entry;
     x: number;
@@ -218,13 +256,6 @@ export function Files({
           normalize(folder.path).replace(/\/$/, "").length + 1,
         )
       : null;
-  const all = Object.values(entries).flat();
-  const selectedEntry = all.find((e) => e.path === selected);
-  const selectedParent = selectedEntry
-    ? selectedEntry.directory
-      ? selectedEntry.path
-      : parentOf(selectedEntry.path)
-    : "";
   const warned = useRef(new Set<string>());
   const warnHistory = (warning?: string | null) => {
     if (!warning) return;
@@ -233,33 +264,190 @@ export function Files({
     warned.current.add(key);
     onError(new Error(`文件历史暂不可用：${warning}`));
   };
-  const list = async (path = "") => {
-    const result = await command<
-      OperationResult & { folder: ProjectFolder; entries: Entry[] }
-    >({
-      op: "folderList",
-      path,
-    });
-    if (result.folder.id !== currentFolder.current) return;
-    warnHistory(result.historyWarning);
-    setEntries((previous) => ({
-      ...previous,
-      [path]: result.entries.map((e) => ({ ...e, path: normalize(e.path) })),
-    }));
-  };
+  const fileTree: TreeInstance<Entry> = useTree<Entry>({
+    rootItemId: "",
+    getItemName: (item) => item.getItemData().name,
+    isItemFolder: (item) => item.getItemData().directory,
+    isSearchMatchingItem: (search, item) =>
+      search.length > 0 &&
+      item
+        .getItemName()
+        .toLocaleLowerCase()
+        .startsWith(search.toLocaleLowerCase()),
+    dataLoader: {
+      // getChildrenWithData supplies every visible entry, including metadata.
+      getItem: (path) => ({
+        path,
+        name: path.split("/").at(-1) || "",
+        directory: path === "",
+        size: 0,
+      }),
+      getChildrenWithData: async (
+        path,
+      ): Promise<{ id: string; data: Entry }[]> => {
+        if (!folder || !alive.current) return [];
+        try {
+          const result = await command<
+            OperationResult & { folder: ProjectFolder; entries: Entry[] }
+          >({ op: "folderList", path });
+          if (!alive.current || result.folder.id !== currentFolder.current)
+            return [];
+          warnHistory(result.historyWarning);
+          return result.entries.map((entry) => {
+            const data = { ...entry, path: normalize(entry.path) };
+            return { id: data.path, data };
+          });
+        } catch (error) {
+          // Resolve failed loads so the library leaves its loading state. Keep
+          // the last listing; F5 or reopening the folder can retry the request.
+          if (alive.current) onError(error);
+          return fileTree
+            .retrieveChildrenIds(path, true)
+            .map((id) => ({ id, data: fileTree.retrieveItemData(id) }));
+        }
+      },
+    },
+    features: [
+      asyncDataLoaderFeature,
+      selectionFeature,
+      hotkeysCoreFeature,
+      searchFeature,
+      fileTreeFeature,
+    ],
+    onPrimaryAction: (item) => void select(item.getItemData()),
+    onTreeHotkey: (_name, event) => {
+      // Selection follows keyboard focus immediately, before the library's
+      // deferred DOM focus, so a previous preview cannot arrive in that gap.
+      setSelected(fileTree.getFocusedItem()?.getId() ?? null);
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    hotkeys: {
+      // Bulk selection has no corresponding file operation in this workspace.
+      toggleSelectedItem: { isEnabled: () => false },
+      selectUpwards: { isEnabled: () => false },
+      selectDownwards: { isEnabled: () => false },
+      selectAll: { isEnabled: () => false },
+      expandOrDown: {
+        isEnabled: (tree) =>
+          !tree.isSearchOpen() && !!tree.getFocusedItem()?.isFolder(),
+      },
+      collapseOrUp: { isEnabled: (tree) => !tree.isSearchOpen() },
+      customOpen: {
+        hotkey: "Enter",
+        isEnabled: (tree) => !tree.isSearchOpen(),
+        handler: (_event, tree) => tree.getFocusedItem()?.getProps().onClick(),
+      },
+      customSelect: {
+        hotkey: "Space",
+        handler: (_event, tree) =>
+          setSelected(tree.getFocusedItem()?.getId() ?? null),
+      },
+      customRename: {
+        hotkey: "F2",
+        handler: (_event, tree) =>
+          setRenaming(tree.getFocusedItem()?.getItemData() ?? null),
+      },
+      customRefresh: { hotkey: "F5", handler: () => void refresh() },
+      customDelete: {
+        hotkey: "Delete",
+        handler: (event, tree) => {
+          if (!event.repeat)
+            setRemoving(tree.getFocusedItem()?.getItemData() ?? null);
+        },
+      },
+      customBackspace: {
+        hotkey: "Backspace",
+        handler: (event, tree) => {
+          if (!event.repeat)
+            setRemoving(tree.getFocusedItem()?.getItemData() ?? null);
+        },
+      },
+      customContextMenu: {
+        hotkey: "ContextMenu",
+        handler: () => openContextMenu(),
+      },
+      customContextMenuShift: {
+        hotkey: "Shift+F10",
+        handler: () => openContextMenu(),
+      },
+      customCopy: {
+        hotkey: "MetaOrControl+KeyC",
+        handler: (_event, tree) => {
+          const item = tree.getFocusedItem();
+          if (item)
+            void navigator.clipboard.writeText(item.getId()).catch(onError);
+        },
+      },
+      // A file-tree key must never undo the active circuit.
+      customUndo: { hotkey: "MetaOrControl+KeyZ", handler: () => {} },
+      customEscape: {
+        hotkey: "Escape",
+        isEnabled: (tree) => !tree.isSearchOpen(),
+        handler: () => {},
+      },
+    },
+  });
+  // Leave row-action buttons to Radix and suppress workspace shortcuts while a
+  // modal is open. The search input is outside the tree and has its own listener.
+  fileTree.setConfig((config) => ({
+    ...config,
+    hotkeys: Object.fromEntries(
+      Object.keys({ ...fileTree.getHotkeyPresets(), ...config.hotkeys }).map(
+        (name) => {
+          const presets = fileTree.getHotkeyPresets();
+          const hotkey = {
+            ...presets[name as keyof typeof presets],
+            ...config.hotkeys?.[name as keyof typeof config.hotkeys],
+          };
+          return [
+            name,
+            {
+              ...hotkey,
+              isEnabled: (tree: TreeInstance<Entry>) =>
+                !pending &&
+                !document.querySelector('dialog[open],[aria-modal="true"]') &&
+                (document.activeElement?.getAttribute("role") === "treeitem" ||
+                  document.activeElement === tree.getSearchInputElement() ||
+                  (document.activeElement === tree.getElement() &&
+                    name === "customRefresh")) &&
+                (tree.getItems().length > 0 || name === "customRefresh") &&
+                (hotkey.isEnabled?.(tree) ?? true),
+            },
+          ];
+        },
+      ),
+    ),
+  }));
+  const selectedEntry = fileTree.getSelectedItems()[0]?.getItemData();
+  const selectedParent = selectedEntry
+    ? selectedEntry.directory
+      ? selectedEntry.path
+      : parentOf(selectedEntry.path)
+    : "";
+  const expanded = fileTree.getState().expandedItems;
   const refresh = async () => {
-    for (const path of expanded) {
-      try {
-        await list(path);
-      } catch (error) {
-        if (path === "") throw error;
-        setExpanded((previous) => {
-          const next = new Set(previous);
-          next.delete(path);
-          return next;
-        });
-      }
+    const before = document.activeElement;
+    const hadTreeFocus =
+      before?.getAttribute("role") === "treeitem" &&
+      fileTree.getElement()?.contains(before);
+    for (const path of ["", ...fileTree.getState().expandedItems]) {
+      if (!alive.current) return;
+      if (path && !fileTree.getItems().some((item) => item.getId() === path))
+        continue;
+      await fileTree.getItemInstance(path).invalidateChildrenIds(true);
     }
+    if (hadTreeFocus)
+      requestAnimationFrame(() => {
+        if (
+          alive.current &&
+          document.activeElement === document.body &&
+          !before?.isConnected
+        )
+          (
+            fileTree.getFocusedItem()?.getElement() ?? fileTree.getElement()
+          )?.focus();
+      });
   };
   const reveal = async (path: string, focus = true) => {
     const folderId = folder?.id;
@@ -275,14 +463,22 @@ export function Files({
       paths.push(parts.slice(0, i).join("/"));
     try {
       for (const parent of paths) {
-        await list(parent);
+        if (
+          parent &&
+          !fileTree.getItems().some((item) => item.getId() === parent)
+        )
+          return;
+        const item = fileTree.getItemInstance(parent);
+        await item.invalidateChildrenIds(true);
         if (!current()) return;
+        if (parent) item.expand();
       }
     } catch (error) {
       if (current()) onError(error);
       return;
     }
-    setExpanded((previous) => new Set([...previous, ...paths]));
+    if (!fileTree.getItems().some((item) => item.getId() === path)) return;
+    fileTree.getItemInstance(path).setFocused();
     setSelected(path);
     const selectedRequest = previewRequest.current;
     if (focus)
@@ -293,8 +489,9 @@ export function Files({
           previewRequest.current !== selectedRequest
         )
           return;
-        rowRefs.current.get(path)?.focus();
-        rowRefs.current.get(path)?.scrollIntoView({ block: "nearest" });
+        const element = fileTree.getItemInstance(path).getElement();
+        element?.focus();
+        element?.scrollIntoView({ block: "nearest" });
       });
   };
   // The AI changes files and opens documents from its own turns; the host
@@ -316,8 +513,10 @@ export function Files({
     if (version && folder) void latestRefresh.current().catch(onError);
   }, [version]);
   const afterChange = async (path?: string, warning?: string | null) => {
+    if (!alive.current) return;
     warnHistory(warning);
     await refresh();
+    if (!alive.current) return;
     await onRename();
     if (path) await reveal(path);
   };
@@ -348,20 +547,7 @@ export function Files({
       currentFolder.current === folderId &&
       previewRequest.current === request;
     try {
-      if (entry.directory) {
-        if (expanded.has(entry.path))
-          setExpanded((previous) => {
-            const next = new Set(previous);
-            next.delete(entry.path);
-            return next;
-          });
-        else {
-          await list(entry.path);
-          if (current())
-            setExpanded((previous) => new Set([...previous, entry.path]));
-        }
-        return;
-      }
+      if (entry.directory) return;
       if (entry.name.toLowerCase().endsWith(".circ")) {
         onOpen(absolute(entry.path));
         return;
@@ -405,7 +591,12 @@ export function Files({
     destination: string,
     reference = false,
   ) => {
-    if (!folder || pending || document.querySelector('dialog[open],[aria-modal="true"]')) return;
+    if (
+      !folder ||
+      pending ||
+      document.querySelector('dialog[open],[aria-modal="true"]')
+    )
+      return;
     if (reference && sources.length > 8)
       throw new Error("每条问题最多引用 8 处资料或观察");
     const folder_id = folder.id;
@@ -499,22 +690,6 @@ export function Files({
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, [folder?.id, pending, selectedParent]);
-  useEffect(() => {
-    setEntries({});
-    setExpanded(new Set([""]));
-    setSelected(null);
-    setContextEntry(null);
-    setCreate(null);
-    setRenaming(null);
-    setMoving(null);
-    setRemoving(null);
-    setDragging(null);
-    setDropTarget(null);
-    setImportPlan(null);
-    setHistory(false);
-    pointer.current = null;
-    if (folder) void list().catch(onError);
-  }, [folder?.id]);
   // Pointer dragging remains available when Tauri's native file-drop hook is on
   // (Windows' native hook intentionally disables HTML5 drag events).
   useEffect(() => {
@@ -588,7 +763,7 @@ export function Files({
       window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("blur", cancel);
     };
-  }, [folder?.id, pending, entries, expanded]);
+  }, [folder?.id, pending]);
   useEffect(() => {
     if (!desktop() || !folder) return;
     let disposed = false,
@@ -614,7 +789,10 @@ export function Files({
               void importSources(payload.paths, "", true).catch(onError);
             else if (parent !== null)
               void importSources(payload.paths, parent).catch(onError);
-          } else if (!pending && !document.querySelector('dialog[open],[aria-modal="true"]')) {
+          } else if (
+            !pending &&
+            !document.querySelector('dialog[open],[aria-modal="true"]')
+          ) {
             setDropTarget(parent);
             hoverReference(reference);
           }
@@ -627,151 +805,58 @@ export function Files({
       disposed = true;
       unlisten?.();
     };
-  }, [folder?.id, pending, expanded]);
+  }, [folder?.id, pending]);
   useEffect(() => {
-    if (dropTarget === null || expanded.has(dropTarget)) return;
+    if (
+      dropTarget === null ||
+      dropTarget === "" ||
+      expanded.includes(dropTarget)
+    )
+      return;
     const timer = setTimeout(
-      () =>
-        void list(dropTarget)
-          .then(() =>
-            setExpanded((previous) => new Set([...previous, dropTarget])),
-          )
-          .catch(onError),
+      () => fileTree.getItemInstance(dropTarget).expand(),
       650,
     );
     return () => clearTimeout(timer);
   }, [dropTarget, expanded]);
-  const visible: Entry[] = [];
-  const flatten = (parent: string) => {
-    for (const entry of entries[parent] || []) {
-      visible.push(entry);
-      if (entry.directory && expanded.has(entry.path)) flatten(entry.path);
-    }
-  };
-  flatten("");
-  const focusEntry = (entry: Entry | undefined) => {
-    if (!entry) return;
-    setSelected(entry.path);
-    rowRefs.current.get(entry.path)?.focus();
-    rowRefs.current.get(entry.path)?.scrollIntoView({ block: "nearest" });
-  };
-  const keyboard = (event: React.KeyboardEvent) => {
-    if (
-      pending ||
-      document.querySelector('dialog[open],[aria-modal="true"]') ||
-      !event.currentTarget.contains(event.target as Node)
-    )
-      return;
-    const entry = visible.find((e) => e.path === selected) ?? visible[0],
-      at = visible.indexOf(entry);
-    const handled =
-      [
-        "ArrowDown",
-        "ArrowUp",
-        "ArrowLeft",
-        "ArrowRight",
-        "Home",
-        "End",
-        "Enter",
-        " ",
-        "F2",
-        "F5",
-        "Delete",
-        "Backspace",
-        "ContextMenu",
-        "Escape",
-      ].includes(event.key) ||
-      (event.key === "F10" && event.shiftKey) ||
-      (event.key.toLowerCase() === "c" && (event.ctrlKey || event.metaKey)) ||
-      (event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey));
-    if (handled) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    if (event.key === "ArrowDown")
-      focusEntry(visible[Math.min(at + 1, visible.length - 1)]);
-    else if (event.key === "ArrowUp") focusEntry(visible[Math.max(at - 1, 0)]);
-    else if (event.key === "Home") focusEntry(visible[0]);
-    else if (event.key === "End") focusEntry(visible.at(-1));
-    else if (event.key === "ArrowRight" && entry?.directory) {
-      if (!expanded.has(entry.path)) void select(entry).catch(onError);
-      else focusEntry(visible[at + 1]);
-    } else if (event.key === "ArrowLeft" && entry) {
-      if (entry.directory && expanded.has(entry.path))
-        void select(entry).catch(onError);
-      else focusEntry(visible.find((e) => e.path === parentOf(entry.path)));
-    } else if (event.key === "Enter" && entry)
-      void select(entry).catch(onError);
-    else if (event.key === " " && entry) setSelected(entry.path);
-    else if (event.key === "F2" && entry) setRenaming(entry);
-    else if (event.key === "F5") void refresh().catch(onError);
-    else if (
-      ["Delete", "Backspace"].includes(event.key) &&
-      entry &&
-      !event.repeat
-    )
-      setRemoving(entry);
-    else if (
-      (event.key === "ContextMenu" ||
-        (event.key === "F10" && event.shiftKey)) &&
-      entry
-    ) {
-      // Opens the tree's context menu below the row, as a right-click would.
-      const row = rowRefs.current.get(entry.path);
-      const rect = row?.getBoundingClientRect();
-      if (row && rect)
-        row.dispatchEvent(
-          new MouseEvent("contextmenu", {
-            bubbles: true,
-            cancelable: true,
-            clientX: rect.left + 20,
-            clientY: rect.bottom,
-          }),
-        );
-    } else if (
-      event.key.toLowerCase() === "c" &&
-      (event.ctrlKey || event.metaKey) &&
-      entry
-    )
-      void navigator.clipboard.writeText(entry.path).catch(onError);
-    else if (
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      event.key.length === 1 &&
-      event.key !== " "
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      const now = Date.now();
-      search.current = {
-        text:
-          now - search.current.at < 800
-            ? search.current.text + event.key
-            : event.key,
-        at: now,
-      };
-      const query = /^(.)\1+$/.test(search.current.text)
-        ? event.key
-        : search.current.text;
-      focusEntry(
-        [...visible.slice(at + 1), ...visible.slice(0, at + 1)].find((e) =>
-          e.name.toLocaleLowerCase().startsWith(query.toLocaleLowerCase()),
-        ),
+  const items = fileTree.getItems();
+  const focusedId = fileTree.getState().focusedItem;
+  // Refresh can remove the focused path. Keep one reachable tab stop without
+  // stealing focus from a dialog or menu that initiated the disk operation.
+  useEffect(() => {
+    if (!focusedId || items.some((item) => item.getId() === focusedId)) return;
+    let parent = parentOf(focusedId);
+    while (parent && !items.some((item) => item.getId() === parent))
+      parent = parentOf(parent);
+    const next = items.find((item) => item.getId() === parent) ?? items[0];
+    fileTree.applySubStateUpdate("focusedItem", next?.getId() ?? null);
+    setSelected(next?.getId() ?? null);
+  }, [items, focusedId]);
+  const openContextMenu = () => {
+    const row = fileTree.getFocusedItem()?.getElement();
+    const rect = row?.getBoundingClientRect();
+    if (row && rect)
+      row.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left + 20,
+          clientY: rect.bottom,
+        }),
       );
-    }
   };
-  const tree = (parent: string, depth: number): React.ReactNode =>
-    (entries[parent] || []).map((entry, index) => (
-      <div key={entry.path} role="none">
+  const renderItem = (item: ItemInstance<Entry>): React.ReactNode => {
+    const entry = item.getItemData();
+    const props = item.getProps();
+    return (
+      <div key={item.getKey()} role="none">
         <div
           className={
             "file-row" +
-            (selected === entry.path ? " file-selected" : "") +
+            (item.isSelected() ? " file-selected" : "") +
+            (item.isMatchingSearch() ? " file-search-match" : "") +
             (activeRelative === entry.path ? " file-current" : "") +
-            (dropTarget ===
-              (entry.directory ? entry.path : parentOf(entry.path)) &&
-            entry.directory
+            (dropTarget === entry.path && entry.directory
               ? " file-drop-target"
               : "")
           }
@@ -779,33 +864,21 @@ export function Files({
           data-file-path={entry.path}
         >
           <button
-            ref={(node) => {
-              if (node) rowRefs.current.set(entry.path, node);
-              else rowRefs.current.delete(entry.path);
-            }}
+            {...props}
             className={
               "file-entry" + (dragging === entry.path ? " file-dragging" : "")
             }
-            role="treeitem"
-            aria-level={depth + 1}
-            aria-posinset={index + 1}
-            aria-setsize={(entries[parent] || []).length}
-            aria-expanded={
-              entry.directory ? expanded.has(entry.path) : undefined
-            }
-            aria-selected={selected === entry.path}
             aria-current={activeRelative === entry.path ? "page" : undefined}
-            tabIndex={
-              selected === entry.path ||
-              (!selected && visible[0]?.path === entry.path)
-                ? 0
-                : -1
-            }
-            style={{ paddingLeft: 10 + depth * 13 }}
+            aria-busy={item.isLoading() || undefined}
+            style={{ paddingLeft: 10 + item.getItemMeta().level * 13 }}
             data-tip={entry.path}
-            onFocus={() => setSelected(entry.path)}
+            onFocus={() => {
+              item.setFocused();
+              setSelected(entry.path);
+            }}
             onPointerDown={(event) => {
               if (event.button === 0 && !pending) {
+                item.setFocused();
                 setSelected(entry.path);
                 pointer.current = {
                   entry,
@@ -816,12 +889,12 @@ export function Files({
                 };
               }
             }}
-            onClick={() => {
-              if (!skipClick.current) void select(entry).catch(onError);
+            onClick={(event) => {
+              if (!pending && !skipClick.current) props.onClick(event);
             }}
           >
             {entry.directory ? (
-              expanded.has(entry.path) ? (
+              item.isExpanded() ? (
                 <ChevronDown size={12} />
               ) : (
                 <ChevronRight size={12} />
@@ -832,7 +905,7 @@ export function Files({
             <EntryIcon
               name={entry.name}
               directory={entry.directory}
-              open={expanded.has(entry.path)}
+              open={item.isExpanded()}
               size={14}
             />
             <span>{entry.name}</span>
@@ -846,11 +919,12 @@ export function Files({
             {actions(entry)}
           </Menu>
         </div>
-        {entry.directory && expanded.has(entry.path) && (
-          <div role="group">{tree(entry.path, depth + 1)}</div>
+        {item.isFolder() && item.isExpanded() && (
+          <div role="group">{item.getChildren().map(renderItem)}</div>
         )}
       </div>
-    ));
+    );
+  };
   /** The commands for an entry, or for the folder itself when null. */
   const actions = (entry: Entry | null) => {
     const parent = entry
@@ -934,7 +1008,7 @@ export function Files({
     )?.dataset.filePath;
     return path === undefined
       ? null
-      : (entries[parentOf(path)]?.find((e) => e.path === path) ?? null);
+      : (items.find((item) => item.getId() === path)?.getItemData() ?? null);
   };
   return (
     <div className="files" ref={filesRef}>
@@ -1066,24 +1140,33 @@ export function Files({
           </div>
         </div>
       </ContextMenu>
+      {folder && fileTree.isSearchOpen() && (
+        <input
+          {...fileTree.getSearchInputElementProps()}
+          className="file-tree-search"
+          aria-label="按名称定位文件"
+          placeholder="输入文件名，↑↓ 定位，Esc 关闭"
+        />
+      )}
       {folder ? (
         <ContextMenu content={actions(contextEntry)} disabled={pending}>
           <div
             className={
               "file-tree" + (dropTarget === "" ? " file-drop-root" : "")
             }
-            role="tree"
-            aria-label={folder.name}
-            aria-busy={pending}
+            {...fileTree.getContainerProps(folder.name)}
+            tabIndex={items.length === 0 ? 0 : -1}
+            aria-busy={
+              pending || fileTree.getState().loadingItemChildrens.length > 0
+            }
             data-file-target=""
-            onKeyDown={keyboard}
             onContextMenu={(event) => {
               const entry = entryAt(event.target);
               if (entry) setSelected(entry.path);
               setContextEntry(entry);
             }}
           >
-            {tree("", 0)}
+            {fileTree.getRootItem().getChildren().map(renderItem)}
             {pending && (
               <div className="file-working" role="status">
                 正在处理…
@@ -1117,8 +1200,7 @@ function ImportDialog({
   /** The imported files, and the existing ones kept instead of a copy. */
   onImported?: (paths: string[]) => void;
 }) {
-  const dialog = useModal(),
-    [pending, setPending] = useState(false),
+  const [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const [choices, setChoices] = useState<Record<number, ImportAction>>(() =>
     Object.fromEntries(plan.items.map((item) => [item.index, "keepBoth"])),
@@ -1141,69 +1223,69 @@ function ImportDialog({
     onClose();
   };
   return (
-    <dialog
-      ref={dialog}
-      className="text-prompt file-import-dialog"
+    <DialogFrame
+      className="file-import-dialog"
+      title="导入文件"
       aria-label="导入文件"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!pending) void close().catch((e) => setError(message(e)));
-      }}
+      onClose={() => void close().catch((e) => setError(message(e)))}
+      closeDisabled={pending}
+      maxWidth="600px"
     >
-      <header>
-        <h2>导入文件</h2>
-      </header>
-      <div className="file-import-items">
-        {plan.items.map((item) => (
-          <div key={item.index}>
-            <span {...fullText(item.path)}>
-              <EntryIcon
-                name={item.path}
-                directory={item.directory}
-                size={15}
-              />{" "}
-              {item.path}
-            </span>
-            {item.conflict ? (
-              <Select
-                label={`${item.name} 的重名处理`}
-                size="small"
-                value={choices[item.index]}
-                disabled={pending}
-                options={[
-                  { value: "keepBoth", label: "保留两者" },
-                  ...(item.replaceable
-                    ? [{ value: "replace", label: "覆盖现有文件" }]
-                    : []),
-                  { value: "skip", label: "跳过" },
-                ]}
-                onChange={(value) =>
-                  setChoices((previous) => ({
-                    ...previous,
-                    [item.index]: value as ImportAction,
-                  }))
-                }
-              />
-            ) : (
-              <span>新增</span>
-            )}
-          </div>
-        ))}
-      </div>
-      {error && (
-        <p role="alert" className="dialog-error">
-          {error}
-        </p>
-      )}
-      <footer>
-        <button
+      <DialogBody>
+        <div className="file-import-items">
+          {plan.items.map((item) => (
+            <div key={item.index}>
+              <span {...fullText(item.path)}>
+                <EntryIcon
+                  name={item.path}
+                  directory={item.directory}
+                  size={15}
+                />{" "}
+                {item.path}
+              </span>
+              {item.conflict ? (
+                <Select
+                  label={`${item.name} 的重名处理`}
+                  size="small"
+                  value={choices[item.index]}
+                  disabled={pending}
+                  options={[
+                    { value: "keepBoth", label: "保留两者" },
+                    ...(item.replaceable
+                      ? [{ value: "replace", label: "覆盖现有文件" }]
+                      : []),
+                    { value: "skip", label: "跳过" },
+                  ]}
+                  onChange={(value) =>
+                    setChoices((previous) => ({
+                      ...previous,
+                      [item.index]: value as ImportAction,
+                    }))
+                  }
+                />
+              ) : (
+                <span>新增</span>
+              )}
+            </div>
+          ))}
+        </div>
+        {error && (
+          <p role="alert" className="dialog-error">
+            {error}
+          </p>
+        )}
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          variant="soft"
+          color="gray"
           disabled={pending}
           onClick={() => void close().catch((e) => setError(message(e)))}
         >
           取消
-        </button>
-        <button
-          className="primary"
+        </Button>
+        <Button
+          variant="solid"
           disabled={pending}
           onClick={() => {
             setPending(true);
@@ -1235,9 +1317,9 @@ function ImportDialog({
           }}
         >
           {pending ? "正在导入…" : "导入"}
-        </button>
-      </footer>
-    </dialog>
+        </Button>
+      </DialogFooter>
+    </DialogFrame>
   );
 }
 function HistoryDialog({
@@ -1249,8 +1331,7 @@ function HistoryDialog({
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
-  const dialog = useModal(),
-    [entries, setEntries] = useState<FileChange[] | null>(null),
+  const [entries, setEntries] = useState<FileChange[] | null>(null),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const [selection, setSelection] = useState<{
@@ -1317,26 +1398,22 @@ function HistoryDialog({
       </p>
     );
   return (
-    <dialog
-      ref={dialog}
+    <DialogFrame
       className="file-history-dialog"
+      title="文件改动"
       aria-label="文件改动"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!pending) onClose();
-      }}
+      onClose={onClose}
+      closeDisabled={pending}
+      maxWidth="1100px"
+      width="94vw"
     >
-      <header>
-        <h2>文件改动</h2>
-        <DialogClose disabled={pending} onClick={onClose} />
-      </header>
       {error && (
         <p role="alert" className="dialog-error">
           {error}
         </p>
       )}
       {entries?.length === 0 ? (
-        <div className="file-history-empty">
+        <DialogBody className="file-history-empty">
           <History size={28} aria-hidden="true" />
           <p>还没有文件改动</p>
           <p className="muted">
@@ -1344,9 +1421,9 @@ function HistoryDialog({
             <br />
             选中一项可以对照改动前后的内容，也可以撤销。
           </p>
-        </div>
+        </DialogBody>
       ) : (
-        <div className="file-history-body">
+        <DialogBody scroll={false} className="file-history-body">
           <aside>
             {!entries && !error && <p role="status">正在读取…</p>}
             {entries?.map((entry) => (
@@ -1356,7 +1433,10 @@ function HistoryDialog({
                     {entry.title}
                     <time>{new Date(entry.at).toLocaleString()}</time>
                   </span>
-                  <button
+                  <Button
+                    size="1"
+                    variant="soft"
+                    color="gray"
                     disabled={pending || !entry.undoable}
                     data-tip={
                       !entry.undoable ? "包含未保留内容的大文件" : undefined
@@ -1364,10 +1444,14 @@ function HistoryDialog({
                     onClick={() => setConfirm(entry)}
                   >
                     撤销
-                  </button>
+                  </Button>
                 </div>
                 {entry.files.map((file) => (
-                  <button
+                  <Button
+                    variant="ghost"
+                    color="gray"
+                    size="1"
+                    style={{ margin: 0, height: "auto" }}
                     key={file.path}
                     className={
                       selection?.id === entry.id && selection.path === file.path
@@ -1386,7 +1470,7 @@ function HistoryDialog({
                       }
                     </span>
                     <span>{file.path}</span>
-                  </button>
+                  </Button>
                 ))}
               </section>
             ))}
@@ -1414,7 +1498,7 @@ function HistoryDialog({
               entries && <p>选择文件查看改动</p>
             )}
           </div>
-        </div>
+        </DialogBody>
       )}
       {confirm && (
         <DecisionDialog
@@ -1447,6 +1531,6 @@ function HistoryDialog({
           onClose={() => setConfirm(null)}
         />
       )}
-    </dialog>
+    </DialogFrame>
   );
 }
