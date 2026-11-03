@@ -61,21 +61,25 @@ public static class VibeCommandJob {
 }
 '@
 [VibeCommandJob]::Start()
+Set-Location -LiteralPath $env:VIBE_PROJECT_ROOT
+[Environment]::CurrentDirectory = $env:VIBE_PROJECT_ROOT
 $global:LASTEXITCODE = 0
 `;
 
+const ordinaryPath = (value: string) =>
+  value.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "");
+
 /** Only OS necessities and the product's interpreters enter the shell. */
 function environment(
+  root: string,
   temporary: string,
   referenceRoot: string,
   runtimeRoot?: string | null,
 ) {
   // Rust's canonical paths may have an extended-length prefix. PATH lookup
   // and Windows PowerShell's providers expect ordinary drive/UNC spellings.
-  const ordinary = (value: string) =>
-    value.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "");
-  referenceRoot = ordinary(referenceRoot);
-  if (runtimeRoot) runtimeRoot = ordinary(runtimeRoot);
+  referenceRoot = ordinaryPath(referenceRoot);
+  if (runtimeRoot) runtimeRoot = ordinaryPath(runtimeRoot);
   const systemRoot = process.env.SystemRoot || "C:\\Windows";
   const system32 = path.join(systemRoot, "System32");
   return {
@@ -89,9 +93,12 @@ function environment(
       system32,
       path.join(system32, "WindowsPowerShell", "v1.0"),
       systemRoot,
+      // Prefer product interpreters; also allow tools the user already installed.
+      ...(process.env.PATH ? [process.env.PATH] : []),
     ].join(path.delimiter),
     TEMP: temporary,
     TMP: temporary,
+    VIBE_PROJECT_ROOT: ordinaryPath(root),
     VIBE_CIRCUIT_REFERENCE: referenceRoot,
     ...(runtimeRoot ? { VIBE_RUNTIME: runtimeRoot } : {}),
   };
@@ -124,7 +131,7 @@ export async function windowsCommand(
       "utf8",
     );
     signal?.throwIfAborted();
-    const env = environment(temporary, referenceRoot, runtimeRoot);
+    const env = environment(root, temporary, referenceRoot, runtimeRoot);
     const system32 = path.join(env.SystemRoot, "System32");
     return await new Promise<AgentToolResult<any>>((resolve, reject) => {
       const child = spawn(
