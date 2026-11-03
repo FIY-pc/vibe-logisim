@@ -566,7 +566,6 @@ export function ProviderSettings(props: SettingsProps) {
             container={container}
             className="ai-settings-panel"
             maxWidth="760px"
-            maxHeight="calc(100dvh - 64px)"
             align="start"
             aria-describedby={undefined}
             onOpenAutoFocus={(event) => {

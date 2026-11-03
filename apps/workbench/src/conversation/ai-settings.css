@@ -1,8 +1,4 @@
 /* Only layout belongs here; controls, type, colors and states come from Themes. */
-.ai-settings-panel {
-  overflow: auto;
-  scroll-padding: var(--space-5);
-}
 .ai-settings-content,
 .ai-service-details {
   min-width: 0;
