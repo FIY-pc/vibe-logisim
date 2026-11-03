@@ -8,7 +8,7 @@ import type {
   StoredReference,
 } from "./references";
 import "./ChatReferences.css";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody } from "../shared/Dialog";
 import { useWorkbench } from "../app/provider";
 import type { PreviewFile } from "../workspace/FilePreview";
 
@@ -215,27 +215,21 @@ function ReferencePreview({
   reference: StoredReference;
   onClose: () => void;
 }) {
-  const dialog = useModal();
   return (
-    <dialog
+    <DialogFrame
+      title={`${reference.label}${reference.page ? ` · 第 ${reference.page} 页` : ""}`}
       className="reference-preview"
-      ref={dialog}
+      maxWidth="850px"
+      maxHeight="88dvh"
       aria-label={`引用 ${reference.label}`}
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
+      closeLabel="关闭引用"
+      onClose={onClose}
     >
-      <header>
-        <h2>
-          {reference.label}
-          {reference.page ? ` · 第 ${reference.page} 页` : ""}
-        </h2>
-        <DialogClose label="关闭引用" onClick={onClose} />
-      </header>
-      {reference.image && <img src={reference.image} alt={reference.label} />}
-      {reference.text && <pre>{reference.text}</pre>}
-      {reference.truncated && <p>此引用保留前 24,000 个字符。</p>}
-    </dialog>
+      <DialogBody>
+        {reference.image && <img src={reference.image} alt={reference.label} />}
+        {reference.text && <pre>{reference.text}</pre>}
+        {reference.truncated && <p>此引用保留前 24,000 个字符。</p>}
+      </DialogBody>
+    </DialogFrame>
   );
 }

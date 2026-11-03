@@ -1,8 +1,9 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
+import type { CodeEditorHandle } from "../shared/CodeEditor";
 import { useEditor, useShell, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import { DecisionDialog } from "../shared/DecisionDialog";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 
 const XmlEditor = lazy(() =>
   import("../shared/CodeEditor").then((module) => ({
@@ -17,10 +18,10 @@ export function SourceDialog() {
 }
 
 function SourceEditor() {
+  const editor = useRef<CodeEditorHandle>(null);
   const { stores, actions } = useWorkbench();
   const source = useEditor((state) => state.source);
   const pending = useShell((state) => state.pending);
-  const dialog = useModal();
   const { doc } = useView();
   const stale = Boolean(
     source && (doc?.id !== source.id || doc.revision !== source.revision),
@@ -34,65 +35,62 @@ function SourceEditor() {
     if (changed) setDiscarding(true);
     else setSource(null);
   };
+  if (!source) return null;
   return (
-    <>
-      <dialog
-        ref={dialog}
-        className="source-dialog"
-        aria-label="编辑源文件"
-        onCancel={(event) => {
-          event.preventDefault();
-          close();
-        }}
-      >
-        {source && (
-          <>
-            <header>
-              <h2>{source.name}</h2>
-              <DialogClose disabled={Boolean(pending)} onClick={close} />
-            </header>
-            <Suspense fallback={<p role="status">正在打开编辑器…</p>}>
-              <XmlEditor
-                key={`${source.id}:${source.revision}`}
-                label="源文件内容"
-                autoFocus
-                value={source.xml}
-                readOnly={Boolean(pending) || stale}
-                onChange={(xml) =>
-                  setSource((current) =>
-                    current?.id === source.id &&
-                    current.revision === source.revision
-                      ? { ...current, xml, error: undefined }
-                      : current,
-                  )
-                }
-              />
-            </Suspense>
-            {stale && (
-              <p className="dialog-error" role="status">
-                文档已切换或有后续修改；草稿保留，可复制后重新打开源文件。
-              </p>
-            )}
-            {source.error && (
-              <p className="dialog-error" role="alert">
-                {source.error}
-              </p>
-            )}
-            <footer>
-              <button disabled={Boolean(pending)} onClick={close}>
-                取消
-              </button>
-              <button
-                className="primary"
-                disabled={Boolean(pending) || stale || !changed}
-                onClick={() => actions.editor.applySource(source)}
-              >
-                应用修改
-              </button>
-            </footer>
-          </>
+    <DialogFrame
+      title={source.name}
+      className="source-dialog"
+      aria-label="编辑源文件"
+      maxWidth="950px"
+      height="80dvh"
+      closeDisabled={Boolean(pending)}
+      onClose={close}
+      onEscapeKeyDown={(event) => {
+        if (editor.current?.closeSearch()) event.preventDefault();
+      }}
+    >
+      <DialogBody scroll={false}>
+        <Suspense fallback={<p role="status">正在打开编辑器…</p>}>
+          <XmlEditor
+            ref={editor}
+            key={`${source.id}:${source.revision}`}
+            label="源文件内容"
+            autoFocus
+            value={source.xml}
+            readOnly={Boolean(pending) || stale}
+            onChange={(xml) =>
+              setSource((current) =>
+                current?.id === source.id &&
+                current.revision === source.revision
+                  ? { ...current, xml, error: undefined }
+                  : current,
+              )
+            }
+          />
+        </Suspense>
+        {stale && (
+          <p className="dialog-error" role="status">
+            文档已切换或有后续修改；草稿保留，可复制后重新打开源文件。
+          </p>
         )}
-      </dialog>
+        {source.error && (
+          <p className="dialog-error" role="alert">
+            {source.error}
+          </p>
+        )}
+      </DialogBody>
+      <DialogFooter>
+        <button disabled={Boolean(pending)} onClick={close}>
+          取消
+        </button>
+        <button
+          className="primary"
+          disabled={Boolean(pending) || stale || !changed}
+          onClick={() => actions.editor.applySource(source)}
+        >
+          应用修改
+        </button>
+      </DialogFooter>
       {discarding && (
         <DecisionDialog
           decision={{
@@ -109,6 +107,6 @@ function SourceEditor() {
           onClose={() => setDiscarding(false)}
         />
       )}
-    </>
+    </DialogFrame>
   );
 }

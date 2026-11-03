@@ -1,8 +1,3 @@
-.project-info {
-  width: min(540px, calc(100vw - 36px));
-  max-height: calc(100vh - 48px);
-  overflow: auto;
-}
 .project-source {
   display: flex;
   gap: 8px;

@@ -7,6 +7,7 @@ import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyConversationTurns } from "./conversation-turns";
 import { verifyContextUsage } from "./context-usage";
 import { verifyProjectInfoUI } from "./project-info";
+import { verifyDialogFoundation } from "./dialog-foundation";
 import { verifyDocumentHistory } from "./history";
 import { verifyReferenceLinks } from "./reference-links";
 import { verifyReferencesUI } from "./references";
@@ -455,7 +456,7 @@ assert.equal(document.querySelector(".error-bar")?.textContent ?? null, null);
 await openMenu("更多");
 await clickMenuItem("帮助与反馈");
 await clickMenuItem("反馈问题…");
-assert.ok(document.querySelector('dialog[aria-label="反馈问题"]'));
+assert.ok(document.querySelector('[role="dialog"][aria-label="反馈问题"]'));
 assert.match(
   document.querySelector<HTMLTextAreaElement>('[aria-label="诊断预览"]')!.value,
   /nativeRuntimeAvailable/,
@@ -1331,6 +1332,7 @@ console.log(
 await act(async () => root.unmount());
 assert.deepEqual(errors, []);
 await verifyMenusUI();
+await verifyDialogFoundation();
 await verifyRestoredInteractions();
 await verifyFilesUI();
 await verifyReferencesUI();

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useImperativeHandle, useLayoutEffect, useRef, type Ref } from "react";
 import {
   Annotation,
   Compartment,
@@ -8,11 +8,35 @@ import {
 import { EditorView, keymap } from "@codemirror/view";
 import { history, historyKeymap } from "@codemirror/commands";
 import { MergeView } from "@codemirror/merge";
+import { closeSearchPanel } from "@codemirror/search";
 import { keepKeys } from "./layer";
 import { lineEnding, xmlExtensions } from "./codeEditorTheme";
 import "./CodeEditor.css";
 
 const externalValue = Annotation.define<boolean>();
+export interface CodeEditorHandle {
+  closeSearch: () => boolean;
+}
+
+// Radix handles Escape in capture phase, before CodeMirror's search keymap.
+// Let the containing dialog delegate that key without eagerly loading CodeMirror.
+function useSearchEscape(
+  ref: Ref<CodeEditorHandle> | undefined,
+  parent: { current: HTMLDivElement | null },
+) {
+  useImperativeHandle(
+    ref,
+    () => ({
+      closeSearch() {
+        const active = document.activeElement;
+        if (!active || !parent.current?.contains(active)) return false;
+        const editor = EditorView.findFromDOM(active as HTMLElement);
+        return editor ? closeSearchPanel(editor) : false;
+      },
+    }),
+    [parent],
+  );
+}
 const editable = (readOnly: boolean) => [
   EditorState.readOnly.of(readOnly),
   EditorView.editable.of(!readOnly),
@@ -26,14 +50,17 @@ export function XmlEditor({
   readOnly = false,
   autoFocus = false,
   label,
+  ref,
 }: {
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
   autoFocus?: boolean;
   label: string;
+  ref?: Ref<CodeEditorHandle>;
 }) {
   const parent = useRef<HTMLDivElement>(null);
+  useSearchEscape(ref, parent);
   const view = useRef<EditorView | null>(null);
   const initial = useRef({ value, readOnly, autoFocus, label }).current;
   const callback = useRef(onChange);
@@ -93,14 +120,17 @@ export function XmlDiff({
   beforeLabel,
   afterLabel,
   allLines = false,
+  ref,
 }: {
   original: string;
   revised: string;
   beforeLabel: string;
   afterLabel: string;
   allLines?: boolean;
+  ref?: Ref<CodeEditorHandle>;
 }) {
   const parent = useRef<HTMLDivElement>(null);
+  useSearchEscape(ref, parent);
   const view = useRef<MergeView | null>(null);
   useLayoutEffect(() => {
     const merge = new MergeView({

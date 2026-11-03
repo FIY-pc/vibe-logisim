@@ -811,30 +811,6 @@ button.primary:active:where(:not(:disabled)) {
     transform: rotate(360deg);
   }
 }
-.source-dialog {
-  width: min(950px, 90vw);
-  height: 80vh;
-  padding: 0;
-  overflow: hidden;
-}
-.source-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-.source-dialog header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 10px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.source-dialog footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
-}
 .chat {
   display: flex;
   flex-direction: column;
@@ -1375,31 +1351,6 @@ button.primary:active:where(:not(:disabled)) {
   display: block;
   width: calc(100% - var(--waveform-label));
   margin: 6px 0 0 var(--waveform-label);
-}
-.observations-dialog {
-  width: min(1100px, 94vw);
-  height: min(780px, 88vh);
-  padding: 0;
-}
-/* Header and footer keep their height; the list and viewer scroll between. */
-.observations-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-.observations-dialog > header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.observations-dialog > footer {
-  display: flex;
-  flex: none;
-  justify-content: flex-end;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
 }
 .observations-body {
   display: flex;

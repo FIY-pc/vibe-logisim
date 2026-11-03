@@ -141,15 +141,10 @@
 .runtime-transport[aria-busy="true"] output {
   color: var(--accent);
 }
-.simulation-settings {
-  width: min(380px, calc(100vw - 32px));
-  padding: 22px;
-}
-.simulation-settings header {
+.simulation-settings form {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  flex-direction: column;
+  min-height: 0;
 }
 .simulation-frequency {
   display: flex;
@@ -182,10 +177,4 @@
 }
 .simulation-settings p.dialog-error {
   color: #b42318;
-}
-.simulation-settings footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
 }

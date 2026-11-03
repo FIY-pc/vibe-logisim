@@ -27,18 +27,6 @@
   font-size: 11px;
   overflow-wrap: anywhere;
 }
-.reference-preview {
-  width: min(850px, 92vw);
-  max-height: 88vh;
-  overflow: auto;
-  padding: 16px;
-}
-.reference-preview header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
 .reference-preview img {
   display: block;
   max-width: 100%;

@@ -12,7 +12,7 @@ import type { Tool } from "../shared/types";
 import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
 import "../editor/editor-controls.css";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 import { tip } from "../shared/Tooltips";
 
 interface SimulationProps {
@@ -177,7 +177,6 @@ function SimulationSettings({
   onApply: (value: number) => Promise<void>;
   onClose: () => void;
 }) {
-  const dialog = useModal();
   const alive = useRef(true);
   const [value, setValue] = useState(String(frequency));
   const [pending, setPending] = useState(false);
@@ -189,23 +188,15 @@ function SimulationSettings({
     };
   }, []);
   return (
-    <dialog
-      ref={dialog}
+    <DialogFrame
+      title="仿真设置"
       className="simulation-settings"
+      maxWidth="380px"
       aria-label="仿真设置"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!pending) onClose();
-      }}
+      closeLabel="关闭仿真设置"
+      closeDisabled={pending}
+      onClose={onClose}
     >
-      <header>
-        <h2>仿真设置</h2>
-        <DialogClose
-          label="关闭仿真设置"
-          disabled={pending}
-          onClick={onClose}
-        />
-      </header>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -227,39 +218,41 @@ function SimulationSettings({
             });
         }}
       >
-        <label className="simulation-frequency">
-          时钟频率{" "}
-          <span>
-            <input
-              data-autofocus
-              type="number"
-              min="0.25"
-              max="4096"
-              step="any"
-              required
-              disabled={pending}
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-            />
-            tick/s
-          </span>
-        </label>
-        <p>高、低电平各 1 tick 时，2 tick/s 为每秒一个完整周期。</p>
-        {error && (
-          <p className="dialog-error" role="alert">
-            {error}
-          </p>
-        )}
-        <footer>
+        <DialogBody>
+          <label className="simulation-frequency">
+            时钟频率{" "}
+            <span>
+              <input
+                data-autofocus
+                type="number"
+                min="0.25"
+                max="4096"
+                step="any"
+                required
+                disabled={pending}
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+              />
+              tick/s
+            </span>
+          </label>
+          <p>高、低电平各 1 tick 时，2 tick/s 为每秒一个完整周期。</p>
+          {error && (
+            <p className="dialog-error" role="alert">
+              {error}
+            </p>
+          )}
+        </DialogBody>
+        <DialogFooter>
           <button type="button" disabled={pending} onClick={onClose}>
             取消
           </button>
           <button className="primary" type="submit" disabled={pending}>
             {pending ? "应用中…" : "应用"}
           </button>
-        </footer>
+        </DialogFooter>
       </form>
-    </dialog>
+    </DialogFrame>
   );
 }
 

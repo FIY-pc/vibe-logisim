@@ -15,16 +15,8 @@
   align-items: center;
   gap: 5px;
 }
-.feedback-dialog {
-  width: min(560px, calc(100vw - 40px));
-}
-.feedback-dialog header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 /* The body lines up with the title and the buttons. */
-.feedback-dialog > p {
+.feedback-dialog .dialog-body > p {
   margin: 0 0 10px;
   font-size: 13px;
 }

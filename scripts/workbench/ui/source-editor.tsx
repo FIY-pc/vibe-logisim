@@ -38,7 +38,7 @@ export async function verifySourceEditor() {
     await act(async () => root.render(<Theme>{element}</Theme>));
     await settle();
   };
-  const editor = (scope: ParentNode = node) => {
+  const editor = (scope: ParentNode = document) => {
     const dom = scope.querySelector<HTMLElement>(".cm-editor");
     assert(dom, "CodeMirror mounted");
     return EditorView.findFromDOM(dom)!;
@@ -227,12 +227,34 @@ export async function verifySourceEditor() {
       </WorkbenchProvider>,
     );
     const draftView = editor();
+    await act(async () => {
+      openSearchPanel(draftView);
+    });
+    await settle();
+    await act(async () =>
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    assert(
+      !document.querySelector(".source-dialog .cm-search"),
+      "Escape closes editor search first",
+    );
+    assert(
+      workbench.stores.editor.getState().source,
+      "search Escape keeps the source dialog open",
+    );
+
     await act(async () =>
       draftView.dispatch({ changes: { from: 0, insert: "<!--edit-->\r\n" } }),
     );
     await settle();
     const edited = workbench.stores.editor.getState().source!.xml;
-    await click("取消", node);
+    await click("取消", document);
     assert(document.querySelector('[role="alertdialog"]'));
     await click("取消", document.querySelector('[role="alertdialog"]')!);
     assert.equal(editor(), draftView);
@@ -242,7 +264,7 @@ export async function verifySourceEditor() {
       0,
       "typing and cancelling confirmation never apply XML",
     );
-    await click("应用修改", node);
+    await click("应用修改", document);
     assert.equal(calls.at(-1).edit.xml, edited);
     assert.equal(calls.at(-1).revision, "r1");
     assert(editor().state.readOnly, "pending apply freezes editing");
@@ -251,7 +273,10 @@ export async function verifySourceEditor() {
       await apply.promise.catch(() => {});
     });
     await settle();
-    assert.match(node.textContent!, /Invalid circuit/);
+    assert.match(
+      document.querySelector(".source-dialog")!.textContent!,
+      /Invalid circuit/,
+    );
     assert.equal(editor().state.sliceDoc(), edited);
     await act(async () =>
       workbench.stores.documents
@@ -261,7 +286,7 @@ export async function verifySourceEditor() {
     await settle();
     assert(editor().state.readOnly);
     assert(
-      [...node.querySelectorAll("button")].find(
+      [...document.querySelectorAll("button")].find(
         (b) => b.textContent === "应用修改",
       )!.disabled,
     );
@@ -270,7 +295,7 @@ export async function verifySourceEditor() {
       edited,
       "stale revision keeps the unapplied draft",
     );
-    await click("取消", node);
+    await click("取消", document);
     await click("放弃修改", document.querySelector('[role="alertdialog"]')!);
     assert.equal(workbench.stores.editor.getState().source, null);
 
@@ -308,7 +333,7 @@ export async function verifySourceEditor() {
       workbench.stores.editor.getState().setSource(currentDraft);
     });
     apply = deferred();
-    await click("应用修改", node);
+    await click("应用修改", document);
     await act(async () => {
       apply.resolve({
         change: {
@@ -372,7 +397,7 @@ export async function verifySourceEditor() {
       });
     });
     await settle();
-    const details = node.querySelector<HTMLDetailsElement>(
+    const details = document.querySelector<HTMLDetailsElement>(
       ".history-review-source",
     )!;
     await act(async () => {
@@ -385,7 +410,7 @@ export async function verifySourceEditor() {
       crlf,
       "late history mode response is discarded",
     );
-    await click("历史版本", node);
+    await click("历史版本", document);
     await act(async () => {
       previews.at(-1)!.gate.resolve({ image: "data:image/svg+xml,before" });
     });
@@ -395,12 +420,12 @@ export async function verifySourceEditor() {
     });
     await settle();
     assert.equal(
-      node.querySelector(".history-review-image img")!.getAttribute("src"),
+      document.querySelector(".history-review-image img")!.getAttribute("src"),
       "data:image/svg+xml,before",
     );
     await render(history({ ...doc, revision: "r-later" }));
     assert(
-      [...node.querySelectorAll("button")].find(
+      [...document.querySelectorAll("button")].find(
         (b) => b.textContent === "恢复到这个版本",
       )!.disabled,
     );

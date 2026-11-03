@@ -51,7 +51,7 @@ export async function verifyProjectInfoUI() {
     dirty: true,
   };
   const button = (text: string) =>
-    Array.from(node.querySelectorAll("button")).find(
+    Array.from(document.querySelectorAll(".project-info button")).find(
       (b) => b.textContent === text,
     )!;
   try {
@@ -64,8 +64,14 @@ export async function verifyProjectInfoUI() {
       "projectInfo",
       "Opening metadata must not start simulation or checks",
     );
-    assert.match(node.textContent!, /尚未载入/);
-    assert.match(node.textContent!, /未保存的改动/);
+    assert.match(
+      document.querySelector(".project-info")!.textContent!,
+      /尚未载入/,
+    );
+    assert.match(
+      document.querySelector(".project-info")!.textContent!,
+      /未保存的改动/,
+    );
     await act(async () => button("导出工程 ZIP…").click());
     assert(
       !calls.some((c) => c.op === "projectExport"),
@@ -83,7 +89,10 @@ export async function verifyProjectInfoUI() {
       ),
     );
     assert(button("导出工程 ZIP…").disabled);
-    assert.match(node.textContent!, /组件库文件不存在/);
+    assert.match(
+      document.querySelector(".project-info")!.textContent!,
+      /组件库文件不存在/,
+    );
     const circuit: any = {
       name: "main",
       components: [
