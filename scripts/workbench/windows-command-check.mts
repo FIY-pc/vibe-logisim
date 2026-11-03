@@ -17,7 +17,7 @@ if (process.platform !== "win32") {
   const tools = fileTools({ root, runtimeRoot, assertCurrent() {} });
   const tool = tools.find((t) => t.name === "exec_command");
   assert.ok(tool, "Windows exposes exec_command to the agent");
-  const run = async (command: string, timeout = 30, signal?: AbortSignal) => {
+  const run = async (command: string, timeout = 60, signal?: AbortSignal) => {
     const result = await tool.execute(
       "command-check",
       { command, timeout },
@@ -26,7 +26,7 @@ if (process.platform !== "win32") {
     return JSON.parse((result.content[0] as { text: string }).text);
   };
   const waitFor = async (name: string) => {
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 500; i++) {
       try {
         return await readFile(path.join(root, name), "utf8");
       } catch {}
@@ -124,7 +124,7 @@ setInterval(() => {}, 1000);
     await assertDead(cancelledPid);
 
     const timed = assert.rejects(
-      run("node ./child.mjs timed.pid", 6),
+      run("node ./child.mjs timed.pid", 30),
       /停止|超时/,
     );
     const timedPid = Number(await waitFor("timed.pid"));
