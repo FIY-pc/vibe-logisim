@@ -238,6 +238,92 @@ export async function verifyStraightWires() {
         },
       ]);
     }
+    // Retracing a clicked segment must shorten both the preview and the edit.
+    const p = (x: number, y: number) => ({ x, y });
+    const cases = [
+      {
+        clicks: [p(0, 100), p(100, 100)],
+        end: p(50, 100),
+        expected: [p(0, 100), p(50, 100)],
+      },
+      {
+        clicks: [p(0, 100), p(100, 100)],
+        end: p(50, 150),
+        expected: [p(0, 100), p(50, 100), p(50, 150)],
+      },
+      {
+        clicks: [p(0, 100), p(100, 100)],
+        end: p(0, 100),
+        expected: [p(0, 100)],
+      },
+      {
+        clicks: [p(0, 100), p(100, 100)],
+        end: p(-50, 100),
+        expected: [p(0, 100), p(-50, 100)],
+      },
+      {
+        clicks: [p(100, 100), p(0, 100)],
+        end: p(50, 150),
+        expected: [p(100, 100), p(50, 100), p(50, 150)],
+      },
+      {
+        clicks: [p(0, 0), p(0, 100)],
+        end: p(0, 50),
+        expected: [p(0, 0), p(0, 50)],
+      },
+      {
+        clicks: [p(0, 100), p(50, 100), p(100, 100)],
+        end: p(20, 100),
+        expected: [p(0, 100), p(20, 100)],
+      },
+      {
+        clicks: [p(0, 0), p(0, 100), p(100, 100)],
+        end: p(50, 100),
+        expected: [p(0, 0), p(0, 100), p(50, 100)],
+      },
+    ];
+    for (const [i, { clicks, end, expected }] of cases.entries()) {
+      for (const finish of ["enter", "double-click", "drag"]) {
+        edits.length = 0;
+        await act(async () =>
+          root.render(<Harness key={`retrace-${i}-${finish}`} tool="wire" />),
+        );
+        for (const [index, click] of clicks.entries()) {
+          await pointer("pointermove", click.x, click.y);
+          await pointer("pointerdown", click.x, click.y);
+          if (finish !== "drag" || index < clicks.length - 1)
+            await pointer("pointerup", click.x, click.y);
+        }
+        await pointer("pointermove", end.x, end.y);
+        assert.equal(
+          container.querySelector("polyline")!.getAttribute("points"),
+          expected.map(({ x, y }) => `${x},${y}`).join(" "),
+          `preview ${i} ${finish}`,
+        );
+        if (finish === "drag") {
+          await pointer("pointerup", end.x, end.y);
+        } else if (finish === "double-click") {
+          for (let click = 0; click < 2; click++) {
+            await pointer("pointerdown", end.x, end.y);
+            await pointer("pointerup", end.x, end.y);
+          }
+          await pointer("dblclick", end.x, end.y);
+        } else {
+          await act(async () => {
+            container
+              .querySelector(".canvas")!
+              .dispatchEvent(
+                new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+              );
+          });
+        }
+        assert.deepEqual(
+          edits,
+          expected.length > 1 ? [{ kind: "wire", points: expected }] : [],
+          `commit ${i} ${finish}`,
+        );
+      }
+    }
     assert.deepEqual(errors, []);
   } finally {
     await act(async () => root.unmount());

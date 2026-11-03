@@ -44,7 +44,16 @@ export function handleShortcuts(stores: Stores, actions: Actions): () => void {
           placement.current.rotate();
       } else if (shortcut === "save") workspace.save(view);
       else if (shortcut === "undo") editing.history(view, "undo");
-      else if (shortcut === "find" && doc)
+      else if (shortcut === "delete") {
+        const { selected, requestDelete } = editor.getState();
+        if (
+          doc &&
+          !shell.getState().pending &&
+          selected.scope === view.scope &&
+          selected.ids.length
+        )
+          requestDelete(selected.ids);
+      } else if (shortcut === "find" && doc)
         editor.getState().setFind("component");
       else if (shortcut === "circuitSearch" && doc) {
         shell.getState().revealNavigator();

@@ -111,6 +111,25 @@ const route = (a: Point, b: Point): Point[] =>
   [a, { x: b.x, y: a.y }, b].filter(
     (p, i, arr) => i === 0 || p.x !== arr[i - 1].x || p.y !== arr[i - 1].y,
   );
+/** Retracing the active path erases its tail, including clicked corners. */
+const extendWire = (points: Point[], cursor: Point): Point[] => {
+  if (!points.length) return [cursor];
+  const result = [...points];
+  for (const next of route(points[points.length - 1], cursor).slice(1)) {
+    while (result.length > 1) {
+      const a = result[result.length - 2];
+      const b = result[result.length - 1];
+      const retraces =
+        (a.y === b.y && b.y === next.y && (b.x - a.x) * (next.x - b.x) < 0) ||
+        (a.x === b.x && b.x === next.x && (b.y - a.y) * (next.y - b.y) < 0);
+      if (!retraces) break;
+      result.pop();
+    }
+    const last = result[result.length - 1];
+    if (last.x !== next.x || last.y !== next.y) result.push(next);
+  }
+  return result;
+};
 const segments = (points: Point[]) =>
   points.slice(1).map((to, i) => ({ from: points[i], to }));
 
@@ -709,18 +728,12 @@ export function Canvas({
     };
   };
   const finishWire = () => {
-    const points =
-      cursor && wire.length
-        ? [...wire, ...route(wire[wire.length - 1], cursor).slice(1)]
-        : wire;
+    const points = cursor && wire.length ? extendWire(wire, cursor) : wire;
     if (points.length > 1) commitWire(points);
     setWire([]);
   };
   const hit = (p: Point) => hitTest(scene, circuit, p);
-  const pendingWire =
-    wire.length && cursor
-      ? [...wire, ...route(wire[wire.length - 1], cursor).slice(1)]
-      : wire;
+  const pendingWire = wire.length && cursor ? extendWire(wire, cursor) : wire;
   const viewBox = `${view.x} ${view.y} ${size.width / view.scale} ${size.height / view.scale}`;
   const right = view.x + size.width / view.scale,
     bottom = view.y + size.height / view.scale;
@@ -806,14 +819,7 @@ export function Canvas({
         if (tool === "wire") {
           wireGesture.current = { x: e.clientX, y: e.clientY };
           e.currentTarget.setPointerCapture(e.pointerId);
-          setWire((previous) =>
-            previous.length
-              ? [
-                  ...previous,
-                  ...route(previous[previous.length - 1], p).slice(1),
-                ]
-              : [p],
-          );
+          setWire((previous) => extendWire(previous, p));
           return;
         }
         if (tool === "poke" && target) {
@@ -883,10 +889,7 @@ export function Canvas({
           wire.length &&
           Math.hypot(e.clientX - gesture.x, e.clientY - gesture.y) > 4
         ) {
-          const points = [
-            ...wire,
-            ...route(wire[wire.length - 1], point(e)).slice(1),
-          ];
+          const points = extendWire(wire, point(e));
           if (points.length > 1) commitWire(points);
           setWire([]);
         }

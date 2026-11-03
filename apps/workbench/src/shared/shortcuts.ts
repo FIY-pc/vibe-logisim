@@ -7,6 +7,7 @@ export const shortcutCommands = [
   { id: "rotate", label: "旋转待放置元件", group: "工具", key: "R" },
   { id: "save", label: "保存", group: "编辑与视图", key: "Mod+S" },
   { id: "undo", label: "撤销", group: "编辑与视图", key: "Mod+Z" },
+  { id: "delete", label: "删除选中对象", group: "编辑与视图", key: "D" },
   { id: "find", label: "查找元件", group: "编辑与视图", key: "Mod+F" },
   { id: "circuitSearch", label: "查找电路", group: "编辑与视图", key: "/" },
   { id: "fit", label: "适合窗口", group: "编辑与视图", key: "F" },
