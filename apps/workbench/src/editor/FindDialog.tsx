@@ -1,6 +1,10 @@
 import { Command } from "cmdk";
-import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
-import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import { Dialog, Flex, Text } from "@radix-ui/themes";
+import {
+  CommandButton,
+  CommandSearch,
+  preventComposingDismiss,
+} from "../shared/command";
 import "../shared/command.css";
 import type { Circuit, Document } from "../shared/types";
 import { DialogClose, useDialogFocus } from "../shared/Dialog";
@@ -112,10 +116,10 @@ export function FindDialog({
                   onClose();
                 }}
               >
-                <Button variant="ghost" color="gray" size="3">
+                <CommandButton variant="ghost" color="gray" size="3">
                   <Text>{item.label}</Text>
                   <Text color="gray">{item.detail}</Text>
-                </Button>
+                </CommandButton>
               </Command.Item>
             ))}
             <Command.Empty>

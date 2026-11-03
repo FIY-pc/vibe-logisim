@@ -80,6 +80,11 @@ export async function verifySearchControls() {
       250,
       "matching results are not capped at 100",
     );
+    assert.equal(
+      active()?.hasAttribute("data-disabled"),
+      false,
+      "enabled command options must not acquire the theme's disabled appearance",
+    );
     const first = active()?.id;
     await key("ArrowDown", { isComposing: true });
     assert.equal(

@@ -12,7 +12,11 @@ import {
   Tooltip,
 } from "@radix-ui/themes";
 import { Command } from "cmdk";
-import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import {
+  CommandButton,
+  CommandSearch,
+  preventComposingDismiss,
+} from "../shared/command";
 import "../shared/command.css";
 import "./ai-settings.css";
 
@@ -317,7 +321,7 @@ function ModelDialog({
                     disabled={busy || saving}
                     onSelect={() => void choose(entry)}
                   >
-                    <Button
+                    <CommandButton
                       size="3"
                       variant={entry.model === chosen ? "soft" : "ghost"}
                       color={entry.model === chosen ? undefined : "gray"}
@@ -341,7 +345,7 @@ function ModelDialog({
                         )}
                       </Flex>
                       {entry.model === chosen && <Check size={18} />}
-                    </Button>
+                    </CommandButton>
                   </Command.Item>
                 </Tooltip>
               );
@@ -353,14 +357,14 @@ function ModelDialog({
                 disabled={busy || saving}
                 onSelect={() => void choose({ model: query.trim() })}
               >
-                <Button
+                <CommandButton
                   variant="ghost"
                   color="gray"
                   size="3"
                   disabled={busy || saving}
                 >
                   使用模型 ID：{query.trim()}
-                </Button>
+                </CommandButton>
               </Command.Item>
             )}
             {!entries.length && !loading && !(allowCustom && query.trim()) && (

@@ -27,7 +27,11 @@ import {
   TextField,
 } from "@radix-ui/themes";
 import { Command } from "cmdk";
-import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import {
+  CommandButton,
+  CommandSearch,
+  preventComposingDismiss,
+} from "../shared/command";
 import "../shared/command.css";
 import "./ai-settings.css";
 import { ChatGPTLogin } from "./ChatGPTLogin";
@@ -1015,7 +1019,7 @@ function ProviderModelInput({
                     setOpen(false);
                   }}
                 >
-                  <Button
+                  <CommandButton
                     className="ai-model-option"
                     variant={model === value ? "soft" : "ghost"}
                     color={model === value ? undefined : "gray"}
@@ -1024,7 +1028,7 @@ function ProviderModelInput({
                     disabled={disabled}
                   >
                     {model}
-                  </Button>
+                  </CommandButton>
                 </Command.Item>
               ))}
               <Command.Empty>

@@ -6,7 +6,7 @@ import {
   type RefObject,
 } from "react";
 import { Command, useCommandState } from "cmdk";
-import { TextField } from "@radix-ui/themes";
+import { Button, TextField } from "@radix-ui/themes";
 
 // cmdk 1.1.1 can publish the previous item's ID after search reorders results.
 // Keep its selection controller; resolve the input's ARIA target after commit.
@@ -44,4 +44,13 @@ export function CommandSearch({
 // Radix handles Escape in document capture, before the command root sees it.
 export function preventComposingDismiss(event: KeyboardEvent) {
   if (event.isComposing || event.keyCode === 229) event.preventDefault();
+}
+
+// cmdk uses data-disabled="false"; Themes treats any present data-disabled as
+// disabled. Keep cmdk's ARIA state and let Button derive its visual state.
+export function CommandButton({
+  "data-disabled": _commandDisabled,
+  ...props
+}: ComponentProps<typeof Button> & { "data-disabled"?: boolean | string }) {
+  return <Button {...props} />;
 }

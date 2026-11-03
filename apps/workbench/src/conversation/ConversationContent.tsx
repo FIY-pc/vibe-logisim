@@ -1,13 +1,7 @@
 import type { ReferenceContext } from "./conversationReferences";
 import type { ReferenceSummary } from "./references";
 import type { TurnChange } from "./Turn";
-import {
-  Children,
-  isValidElement,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { Children, isValidElement, useEffect, useRef, useState } from "react";
 import {
   Button,
   Callout,
@@ -17,7 +11,11 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { Command } from "cmdk";
-import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import {
+  CommandButton,
+  CommandSearch,
+  preventComposingDismiss,
+} from "../shared/command";
 import "../shared/command.css";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -338,7 +336,7 @@ export function ConversationPicker({
                 disabled={disabled || working}
                 onSelect={() => void choose(item)}
               >
-                <Button
+                <CommandButton
                   variant="ghost"
                   color="gray"
                   size="3"
@@ -364,7 +362,7 @@ export function ConversationPicker({
                       </Text>
                     )}
                   </Flex>
-                </Button>
+                </CommandButton>
               </Command.Item>
             ))}
             <Command.Empty>

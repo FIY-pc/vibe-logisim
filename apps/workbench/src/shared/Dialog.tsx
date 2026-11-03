@@ -140,7 +140,9 @@ export function DialogFrame({
         }}
       >
         <header className="dialog-header">
-          <ThemesDialog.Title className="dialog-title" mb="0">{title}</ThemesDialog.Title>
+          <ThemesDialog.Title className="dialog-title" mb="0">
+            {title}
+          </ThemesDialog.Title>
           <DialogClose
             label={closeLabel}
             disabled={closeDisabled}
