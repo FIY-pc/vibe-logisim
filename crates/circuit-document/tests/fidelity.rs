@@ -384,6 +384,95 @@ fn trunk() -> Document {
 }
 
 #[test]
+fn straight_waypoints_in_one_gesture_are_one_wire() {
+    for points in [
+        vec![p(0, 100), p(100, 100), p(200, 100)],
+        vec![p(0, 100), p(50, 100), p(50, 100), p(100, 100), p(200, 100)],
+        vec![p(200, 100), p(100, 100), p(50, 100), p(0, 100)],
+        vec![p(100, 200), p(100, 150), p(100, 100), p(100, 0)],
+    ] {
+        let expected = (*points.first().unwrap(), *points.last().unwrap());
+        let mut d = Document::new("straight.circ".into());
+        let before = d.bytes().to_vec();
+        let outcome = d
+            .edit(&d.revision(), "main", Edit::Wire { points })
+            .unwrap();
+        assert_eq!(wires(&d, "main"), [expected]);
+        assert_eq!(outcome.wires, ["w0"]);
+        let after = d.bytes().to_vec();
+        assert_eq!(
+            wires(&open(std::str::from_utf8(&after).unwrap()), "main"),
+            [expected]
+        );
+        d.undo(&d.revision()).unwrap();
+        assert_eq!(d.bytes(), before);
+        d.redo(&d.revision()).unwrap();
+        assert_eq!(d.bytes(), after);
+    }
+}
+
+#[test]
+fn straight_waypoint_cleanup_preserves_bends_and_junctions() {
+    let mut d = Document::new("bend.circ".into());
+    edit(
+        &mut d,
+        "main",
+        Edit::Wire {
+            points: vec![p(0, 100), p(50, 100), p(100, 100), p(100, 150), p(100, 200)],
+        },
+    );
+    assert_eq!(
+        wires(&d, "main"),
+        [(p(0, 100), p(100, 100)), (p(100, 100), p(100, 200)),]
+    );
+    // Clicking through a crossing explicitly joins it. Removing that waypoint
+    // would silently disconnect the two lines when the file is reopened.
+    let mut d = Document::new("crossing.circ".into());
+    edit(
+        &mut d,
+        "main",
+        Edit::Wire {
+            points: vec![p(100, 0), p(100, 200)],
+        },
+    );
+    edit(
+        &mut d,
+        "main",
+        Edit::Wire {
+            points: vec![p(0, 100), p(50, 100), p(100, 100), p(150, 100), p(200, 100)],
+        },
+    );
+    assert_eq!(
+        wires(&d, "main"),
+        [
+            (p(100, 0), p(100, 100)),
+            (p(100, 100), p(100, 200)),
+            (p(0, 100), p(100, 100)),
+            (p(100, 100), p(200, 100)),
+        ]
+    );
+    // The same gesture can return to a straight waypoint and branch there.
+    let mut d = Document::new("loop.circ".into());
+    edit(
+        &mut d,
+        "main",
+        Edit::Wire {
+            points: vec![
+                p(0, 100),
+                p(100, 100),
+                p(200, 100),
+                p(200, 200),
+                p(100, 200),
+                p(100, 100),
+            ],
+        },
+    );
+    assert_eq!(wires(&d, "main").len(), 5);
+    assert!(wires(&d, "main").contains(&(p(0, 100), p(100, 100))));
+    assert!(wires(&d, "main").contains(&(p(100, 100), p(200, 100))));
+}
+
+#[test]
 fn j1_two_branches_meeting_on_a_trunk_split_it() {
     let mut d = trunk();
     for from in [p(100, 50), p(100, 150)] {
