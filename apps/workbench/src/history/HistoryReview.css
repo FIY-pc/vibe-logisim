@@ -79,6 +79,10 @@
 }
 .history-review-source[open] {
   flex: 1;
+  overflow: auto;
+}
+.history-review-source .code-diff {
+  height: min(320px, 36dvh);
 }
 .history-review-source > summary {
   padding: 8px 16px;
@@ -92,55 +96,16 @@
   font-weight: 400;
   color: var(--muted);
 }
-.history-review-source-scroll {
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
+.history-review-source-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--gray-6);
+  color: var(--gray-11);
+  font-size: var(--font-size-1);
 }
-.history-review-source table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-}
-.history-review-source th {
-  position: sticky;
-  top: 0;
-  background: var(--paper);
-  border-bottom: 1px solid var(--border);
-  padding: 10px;
-  font-weight: 500;
-}
-.history-review-source td {
-  padding: 0 8px;
-  vertical-align: top;
-}
-.history-review-source pre {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: 11px;
-  line-height: 1.65;
-  font-family: ui-monospace, monospace;
-}
-.history-review-source .source-number {
-  width: 38px;
-  color: var(--muted);
-  text-align: right;
-  user-select: none;
-  font:
-    11px/1.65 ui-monospace,
-    monospace;
-}
-.history-review-source .source-removed {
-  background: #fff0f0;
-}
-.history-review-source .source-added {
-  background: #edf8f0;
-}
-.history-review-source .source-omitted {
-  text-align: center;
-  padding: 7px;
-  color: var(--muted);
+.history-review-source-labels > span {
+  padding: var(--space-2) var(--space-3);
 }
 .history-review > footer {
   border-top: 1px solid var(--border);

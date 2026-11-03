@@ -1,8 +1,14 @@
-import { useState } from "react";
-import { useEditor, useShell } from "../app/hooks";
+import { lazy, Suspense, useState } from "react";
+import { useEditor, useShell, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import { DecisionDialog } from "../shared/DecisionDialog";
 import { DialogClose, useModal } from "../shared/Dialog";
+
+const XmlEditor = lazy(() =>
+  import("../shared/CodeEditor").then((module) => ({
+    default: module.XmlEditor,
+  })),
+);
 
 /** Edits the active document's file as XML. */
 export function SourceDialog() {
@@ -15,6 +21,10 @@ function SourceEditor() {
   const source = useEditor((state) => state.source);
   const pending = useShell((state) => state.pending);
   const dialog = useModal();
+  const { doc } = useView();
+  const stale = Boolean(
+    source && (doc?.id !== source.id || doc.revision !== source.revision),
+  );
   const [discarding, setDiscarding] = useState(false);
   const { setSource } = stores.editor.getState();
   const changed = Boolean(source && source.xml !== source.original);
@@ -41,14 +51,28 @@ function SourceEditor() {
               <h2>{source.name}</h2>
               <DialogClose disabled={Boolean(pending)} onClick={close} />
             </header>
-            <textarea
-              data-autofocus
-              aria-label="源文件内容"
-              value={source.xml}
-              disabled={Boolean(pending)}
-              onChange={(e) => setSource({ ...source, xml: e.target.value })}
-              spellCheck={false}
-            />
+            <Suspense fallback={<p role="status">正在打开编辑器…</p>}>
+              <XmlEditor
+                key={`${source.id}:${source.revision}`}
+                label="源文件内容"
+                autoFocus
+                value={source.xml}
+                readOnly={Boolean(pending) || stale}
+                onChange={(xml) =>
+                  setSource((current) =>
+                    current?.id === source.id &&
+                    current.revision === source.revision
+                      ? { ...current, xml, error: undefined }
+                      : current,
+                  )
+                }
+              />
+            </Suspense>
+            {stale && (
+              <p className="dialog-error" role="status">
+                文档已切换或有后续修改；草稿保留，可复制后重新打开源文件。
+              </p>
+            )}
             {source.error && (
               <p className="dialog-error" role="alert">
                 {source.error}
@@ -60,7 +84,7 @@ function SourceEditor() {
               </button>
               <button
                 className="primary"
-                disabled={Boolean(pending) || !changed}
+                disabled={Boolean(pending) || stale || !changed}
                 onClick={() => actions.editor.applySource(source)}
               >
                 应用修改

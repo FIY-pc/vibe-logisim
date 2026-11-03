@@ -1,13 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { HistoryEntry } from "../generated/HistoryEntry";
 import type { HistoryReview as Review } from "../generated/HistoryReview";
-import { sourceDiff } from "./sourceDiff";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import "./HistoryReview.css";
 import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { DialogClose, useModal } from "../shared/Dialog";
+
+const XmlDiff = lazy(() =>
+  import("../shared/CodeEditor").then((module) => ({
+    default: module.XmlDiff,
+  })),
+);
 
 interface Preview {
   image: string | null;
@@ -87,9 +92,9 @@ export function HistoryReview({
     return () => {
       live = false;
     };
-  }, [mode]);
+  }, [entry.id, mode]);
   useEffect(() => {
-    if (!review) return;
+    if (!review || review.mode !== mode || review.entry.id !== entry.id) return;
     let live = true;
     setPreview(null);
     setPreviewError("");
@@ -108,22 +113,7 @@ export function HistoryReview({
     return () => {
       live = false;
     };
-  }, [review, selected, after]);
-  const lines = useMemo(
-    () => (showSource && review ? sourceDiff(review.original, review.xml) : []),
-    [review, showSource],
-  );
-  const shown = useMemo(
-    () =>
-      new Set(
-        lines.flatMap((line, index) =>
-          line.changed
-            ? Array.from({ length: 7 }, (_, offset) => index + offset - 3)
-            : [],
-        ),
-      ),
-    [lines],
-  );
+  }, [review, selected, after, mode, entry.id]);
   const restore = async () => {
     setPending(true);
     setError("");
@@ -240,65 +230,26 @@ export function HistoryReview({
             </label>
           )}
         </summary>
-        <div className="history-review-source-scroll">
-          <table aria-label="源码对照">
-            <colgroup>
-              <col style={{ width: 38 }} />
-              <col />
-              <col style={{ width: 38 }} />
-              <col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th colSpan={2}>{beforeLabel}</th>
-                <th colSpan={2}>{afterLabel}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line, index) =>
-                !allLines && !shown.has(index) ? (
-                  index === 0 || shown.has(index - 1) ? (
-                    <tr key={index}>
-                      <td className="source-omitted" colSpan={4}>
-                        ⋯ 未改动 ⋯
-                      </td>
-                    </tr>
-                  ) : null
-                ) : (
-                  <tr key={index}>
-                    <td className="source-number">{line.beforeNumber}</td>
-                    <td
-                      className={
-                        line.changed && line.before !== undefined
-                          ? "source-removed"
-                          : ""
-                      }
-                    >
-                      <pre>{line.before}</pre>
-                    </td>
-                    <td className="source-number">{line.afterNumber}</td>
-                    <td
-                      className={
-                        line.changed && line.after !== undefined
-                          ? "source-added"
-                          : ""
-                      }
-                    >
-                      <pre>{line.after}</pre>
-                    </td>
-                  </tr>
-                ),
-              )}
-              {showSource && review && !lines.some((line) => line.changed) && (
-                <tr>
-                  <td className="source-omitted" colSpan={4}>
-                    两个版本的源码相同
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {showSource && review && (
+          <>
+            <div className="history-review-source-labels" aria-hidden="true">
+              <span>{beforeLabel}</span>
+              <span>{afterLabel}</span>
+            </div>
+            <Suspense fallback={<p role="status">正在打开源码对照…</p>}>
+              <XmlDiff
+                original={review.original}
+                revised={review.xml}
+                beforeLabel={beforeLabel}
+                afterLabel={afterLabel}
+                allLines={allLines}
+              />
+            </Suspense>
+            {review.original === review.xml && (
+              <p className="quiet-empty">两个版本的源码相同</p>
+            )}
+          </>
+        )}
       </details>
       <footer>
         <span>恢复会追加一条修改记录，已有历史保留。</span>

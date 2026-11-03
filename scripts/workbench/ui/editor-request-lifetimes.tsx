@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot } from "./themed-root";
 import { App } from "../../../apps/workbench/src/App";
@@ -295,13 +296,18 @@ export async function verifyEditorRequestLifetimes() {
       container.querySelector(".file-title")!.textContent!,
       /B.circ/,
     );
-    assert.equal(container.querySelector(".error-bar")?.textContent ?? null, null);
+    assert.equal(
+      container.querySelector(".error-bar")?.textContent ?? null,
+      null,
+    );
     await fromMenu("编辑源文件…");
     const dialog = container.querySelector('dialog[aria-label="编辑源文件"]')!;
     assert.ok(dialog);
     assert.match(dialog.querySelector("header")!.textContent!, /B.circ/);
     assert.equal(
-      dialog.querySelector("textarea")!.value,
+      EditorView.findFromDOM(
+        dialog.querySelector(".cm-editor")!,
+      )!.state.sliceDoc(),
       '<project name="B"/>',
     );
     await click(dialog.querySelector('button[aria-label="关闭"]'));

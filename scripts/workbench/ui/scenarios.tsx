@@ -1,4 +1,5 @@
 import { verifyMenusUI } from "./menus";
+import { verifySourceEditor } from "./source-editor";
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
 import { verifyClassroomUI } from "./classroom";
 import { verifyAISettings } from "./ai-settings";
@@ -1340,6 +1341,7 @@ await verifyConversationSummaries();
 await verifyConversationTurns();
 await verifyContextUsage();
 await verifyAISettings();
+await verifySourceEditor();
 await verifyEditorRequestLifetimes();
 await verifyClassroomUI();
 console.log("All focused UI lifecycle checks passed");
