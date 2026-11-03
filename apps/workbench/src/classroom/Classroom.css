@@ -237,20 +237,8 @@
   width: 100%;
   overflow: auto;
 }
-.classroom-table table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.classroom-table th,
-.classroom-table td {
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--border, #ddd);
-  text-align: left;
-}
 .classroom-table tr.selected {
-  background: #eef4ff;
+  background: var(--accent-a3);
 }
 .classroom-message {
   border-left: 3px solid #cbd5e1;
@@ -316,4 +304,13 @@
   .classroom-room-heading {
     flex-direction: column;
   }
+}
+
+.classroom-dialog .rt-TextFieldRoot {
+  min-width: 0;
+  width: 100%;
+}
+.classroom-dialog .classroom-columns > nav > button {
+  height: auto;
+  white-space: normal;
 }

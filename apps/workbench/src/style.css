@@ -1248,7 +1248,7 @@ button.primary:active:where(:not(:disabled)) {
   padding: 0 12px 5px;
   flex-wrap: wrap;
 }
-.memory-navigation input {
+.memory-navigation .rt-TextFieldRoot {
   width: 86px;
   font-family: ui-monospace, monospace;
 }
@@ -1267,7 +1267,7 @@ button.primary:active:where(:not(:disabled)) {
   font-size: 11px;
   color: var(--muted);
 }
-.memory-grid input {
+.memory-grid .rt-TextFieldRoot {
   width: 100%;
   font:
     12px ui-monospace,
@@ -1280,7 +1280,7 @@ button.primary:active:where(:not(:disabled)) {
 .memory-panel > header .memory-state + button {
   margin-left: 0;
 }
-.memory-grid label[data-changed] input {
+.memory-grid label[data-changed] .rt-TextFieldRoot {
   background: var(--selection-fill);
   border-color: var(--accent);
 }

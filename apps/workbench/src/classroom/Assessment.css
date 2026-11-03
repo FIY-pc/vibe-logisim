@@ -27,26 +27,6 @@
   color: var(--muted);
   margin: 8px 0;
 }
-.assessment-tabs {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
-  padding: 10px 0;
-  margin: 12px 0 18px;
-}
-.assessment-tabs button {
-  border: 0;
-  background: transparent;
-  padding: 9px 15px;
-  color: var(--muted);
-  border-radius: 6px;
-}
-.assessment-tabs button[aria-pressed="true"] {
-  color: var(--accent);
-  background: var(--accent-soft, #eef2ff);
-  font-weight: 600;
-}
 .assessment-empty {
   padding: 24px;
   text-align: center;
@@ -238,9 +218,6 @@
   flex: 1;
   min-width: 0;
 }
-.lesson-submit select {
-  width: 100%;
-}
 .lesson-public-cases {
   margin: 22px 0;
   border-top: 1px solid var(--border);
@@ -257,26 +234,6 @@
   max-width: 100%;
   margin: 10px 0 20px;
 }
-.assessment-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 13px;
-  text-align: left;
-}
-.assessment-table th,
-.assessment-table td {
-  border-bottom: 1px solid var(--border);
-  padding: 11px 12px;
-  vertical-align: middle;
-  line-height: 1.7;
-}
-.assessment-table thead {
-  background: var(--surface-2, #f7f9fd);
-  color: var(--muted);
-}
-.assessment-table th {
-  font-weight: 500;
-}
 .assessment-table small {
   display: block;
   color: var(--muted);
@@ -288,10 +245,6 @@
 }
 .assessment-table input:not([type="checkbox"]) {
   min-width: 95px;
-}
-.assessment-table input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
 }
 .assessment-result {
   border: 1px solid var(--border);
@@ -486,19 +439,6 @@
   font-family: monospace;
   font-size: 12px;
   margin-bottom: 12px;
-}
-.assessment-root select {
-  min-height: 34px;
-  background: var(--surface, #fff);
-  color: inherit;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 9px;
-}
-.assessment-root .primary {
-  background: var(--accent, #335dff);
-  color: #fff;
-  border-color: var(--accent, #335dff);
 }
 @media (min-width: 1400px) {
   .classroom-dialog {

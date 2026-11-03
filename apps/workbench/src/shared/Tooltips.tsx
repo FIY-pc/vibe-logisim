@@ -1,5 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  useFloating,
+} from "@floating-ui/react-dom";
 
 const DELAY = 600,
   SKIP = 400,
@@ -69,7 +76,17 @@ const typing = (node: Element) =>
  * under its element and flips above near the bottom edge. */
 export function Tooltips() {
   const [shown, setShown] = useState<Shown | null>(null);
-  const node = useRef<HTMLDivElement>(null);
+  const { refs, floatingStyles, isPositioned } = useFloating({
+    elements: { reference: shown?.anchor ?? null },
+    placement: "bottom",
+    strategy: "fixed",
+    middleware: [
+      offset(GAP),
+      flip({ padding: EDGE }),
+      shift({ padding: EDGE }),
+    ],
+    whileElementsMounted: autoUpdate,
+  });
   useEffect(() => {
     let anchor: Element | null = null,
       visible = false,
@@ -88,7 +105,9 @@ export function Tooltips() {
             anchor: target,
             text,
             shortcut: target.getAttribute("data-tip-key"),
-            container: target.closest('dialog[open],[aria-modal="true"]') || document.body,
+            container:
+              target.closest('dialog[open],[aria-modal="true"]') ||
+              document.body,
           }
         : null;
     };
@@ -226,24 +245,19 @@ export function Tooltips() {
       window.removeEventListener("blur", hide);
     };
   }, []);
-  useLayoutEffect(() => {
-    const tooltip = node.current;
-    if (!shown || !tooltip) return;
-    const box = shown.anchor.getBoundingClientRect(),
-      width = tooltip.offsetWidth,
-      height = tooltip.offsetHeight,
-      right = document.documentElement.clientWidth - EDGE,
-      bottom = document.documentElement.clientHeight - EDGE;
-    let top = box.bottom + GAP;
-    if (top + height > bottom) top = box.top - GAP - height;
-    tooltip.style.left = `${Math.round(Math.max(EDGE, Math.min(box.left + box.width / 2 - width / 2, right - width)))}px`;
-    tooltip.style.top = `${Math.round(Math.max(EDGE, Math.min(top, bottom - height)))}px`;
-    tooltip.style.visibility = "visible";
-  });
   if (!shown) return null;
   const [head, ...rest] = shown.text.split("\n");
   return createPortal(
-    <div ref={node} id={ID} role="tooltip" className="app-tooltip">
+    <div
+      ref={refs.setFloating}
+      style={{
+        ...floatingStyles,
+        visibility: isPositioned ? "visible" : "hidden",
+      }}
+      id={ID}
+      role="tooltip"
+      className="app-tooltip"
+    >
       <div className="app-tooltip-head">
         <span>{head}</span>
         {shown.shortcut && <kbd>{shown.shortcut}</kbd>}

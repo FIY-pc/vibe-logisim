@@ -1,3 +1,4 @@
+import { TextField } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { tip } from "../shared/Tooltips";
@@ -205,7 +206,7 @@ export function MemoryPanel({
             >
               <label>
                 地址{" "}
-                <input
+                <TextField.Root
                   aria-label="跳转到字地址（十六进制）"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
@@ -301,7 +302,7 @@ function MemoryWord({
   return (
     <label data-changed={changed || undefined}>
       <code>{hex(address, addressBits)}</code>
-      <input
+      <TextField.Root
         aria-label={`地址 ${hex(address, addressBits)}`}
         value={draft}
         disabled={disabled}

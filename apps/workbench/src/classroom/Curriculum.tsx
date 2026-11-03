@@ -1,3 +1,5 @@
+import { Button, Table, TextField } from "@radix-ui/themes";
+import { Select } from "../shared/Select";
 import { useEffect, useRef, useState } from "react";
 import {
   BookOpen,
@@ -443,16 +445,26 @@ export function Curriculum({
       ) : progress ? (
         <>
           <div className="assessment-heading">
-            <button onClick={() => setProgress(null)}>
+            <Button
+              variant="soft"
+              color="gray"
+              onClick={() => setProgress(null)}
+            >
               <ChevronLeft size={15} />
               返回关卡
-            </button>
+            </Button>
             <h3>学生闯关情况</h3>
             <div>
-              <button onClick={() => setReport(!report)}>
+              <Button
+                variant="soft"
+                color="gray"
+                onClick={() => setReport(!report)}
+              >
                 {report ? "收起成绩单" : "生成成绩单"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="soft"
+                color="gray"
                 disabled={busy}
                 onClick={() =>
                   void run(async () =>
@@ -462,33 +474,35 @@ export function Curriculum({
               >
                 <RefreshCw size={14} />
                 刷新
-              </button>
+              </Button>
             </div>
           </div>
           <div className="lesson-table-scroll">
-            <table className="assessment-table">
-              <thead>
-                <tr>
-                  <th>学生</th>
+            <Table.Root className="assessment-table">
+              <Table.Header>
+                <Table.Row>
+                  <Table.ColumnHeaderCell>学生</Table.ColumnHeaderCell>
                   {progress.lessons.map((l) => (
-                    <th key={l.id}>
+                    <Table.ColumnHeaderCell key={l.id}>
                       {l.title}
                       <small>{l.points} 分</small>
-                    </th>
+                    </Table.ColumnHeaderCell>
                   ))}
-                  <th>总分</th>
-                </tr>
-              </thead>
-              <tbody>
+                  <Table.ColumnHeaderCell>总分</Table.ColumnHeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
                 {progress.students.map((student) => (
-                  <tr key={student.id}>
-                    <th>
+                  <Table.Row key={student.id}>
+                    <Table.ColumnHeaderCell>
                       {student.name}
                       <small>{student.student_no}</small>
-                    </th>
+                    </Table.ColumnHeaderCell>
                     {student.lessons.map((p) => (
-                      <td key={p.lessonId}>
-                        <button
+                      <Table.Cell key={p.lessonId}>
+                        <Button
+                          variant="soft"
+                          color="gray"
                           className={p.passed ? "assessment-passed" : ""}
                           onClick={() =>
                             choose(p.lessonId, {
@@ -502,22 +516,22 @@ export function Curriculum({
                             : p.lastStatus
                               ? attemptStatus(p.lastStatus)
                               : "未提交"}
-                        </button>
+                        </Button>
                         <small>
                           {p.passed
                             ? `${progress.lessons.find((l) => l.id === p.lessonId)?.points || 0} 分 · `
                             : ""}
                           {p.attempts} 次提交
                         </small>
-                      </td>
+                      </Table.Cell>
                     ))}
-                    <td className="assessment-total">
+                    <Table.Cell className="assessment-total">
                       {total(student.lessons)}
-                    </td>
-                  </tr>
+                    </Table.Cell>
+                  </Table.Row>
                 ))}
-              </tbody>
-            </table>
+              </Table.Body>
+            </Table.Root>
           </div>
           {!progress.students.length && (
             <p className="assessment-empty">
@@ -528,7 +542,9 @@ export function Curriculum({
             <section className="assessment-report" aria-label="成绩单">
               <div className="assessment-heading">
                 <h4>成绩单</h4>
-                <button
+                <Button
+                  variant="soft"
+                  color="gray"
                   onClick={() =>
                     void run(async () => {
                       if (navigator.clipboard) {
@@ -543,7 +559,7 @@ export function Curriculum({
                   }
                 >
                   复制 CSV
-                </button>
+                </Button>
               </div>
               <pre className="assessment-report-csv">{reportCsv()}</pre>
               <p className="assessment-help">
@@ -556,18 +572,20 @@ export function Curriculum({
       ) : selected && lesson ? (
         <>
           <div className="assessment-heading">
-            <button onClick={() => choose("")}>
+            <Button variant="soft" color="gray" onClick={() => choose("")}>
               <ChevronLeft size={15} />
               章节目录
-            </button>
+            </Button>
             <div>
               {teacher && (
-                <button
+                <Button
+                  variant="soft"
+                  color="gray"
                   disabled={busy || classroom.archived}
                   onClick={() => setEditing(lesson)}
                 >
                   编辑关卡
-                </button>
+                </Button>
               )}
               <span className="assessment-state">
                 {lesson.published ? "已发布" : "草稿"}
@@ -587,10 +605,15 @@ export function Curriculum({
               <strong>初始模板</strong>
               <span>{lesson.templateName}</span>
             </div>
-            <button disabled={busy} onClick={() => void run(openTemplate)}>
+            <Button
+              variant="soft"
+              color="gray"
+              disabled={busy}
+              onClick={() => void run(openTemplate)}
+            >
               <Download size={15} />
               {teacher ? "打开模板副本" : "下载模板并打开"}
-            </button>
+            </Button>
             {teacher && (
               <label className="assessment-upload">
                 {busy ? "试评中…" : "上传参考电路试评"}
@@ -611,21 +634,19 @@ export function Curriculum({
             <div className="lesson-submit">
               <label>
                 要提交的电路
-                <select
+                <Select
+                  label="要提交的电路"
                   value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                >
-                  <option value="">请选择已打开的电路</option>
-                  {docs.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                      {d.id === doc?.id ? "（当前）" : ""}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setTarget}
+                  placeholder="请选择已打开的电路"
+                  options={docs.map((d) => ({
+                    value: d.id,
+                    label: d.name + (d.id === doc?.id ? "（当前）" : ""),
+                  }))}
+                />
               </label>
-              <button
-                className="primary"
+              <Button
+                variant="solid"
                 disabled={
                   busy ||
                   !available ||
@@ -637,7 +658,7 @@ export function Curriculum({
               >
                 <Send size={15} />
                 提交关卡评测
-              </button>
+              </Button>
             </div>
           )}
           <details className="lesson-public-cases" open>
@@ -645,34 +666,38 @@ export function Curriculum({
               {teacher ? "测试用例" : "公开测试用例"}（{lesson.tests.length}）
             </summary>
             <div className="lesson-table-scroll">
-              <table className="assessment-table">
-                <thead>
-                  <tr>
-                    <th>用例</th>
-                    <th>输入</th>
-                    <th>预期输出</th>
-                    {teacher && <th>可见性</th>}
-                  </tr>
-                </thead>
-                <tbody>
+              <Table.Root className="assessment-table">
+                <Table.Header>
+                  <Table.Row>
+                    <Table.ColumnHeaderCell>用例</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>输入</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>预期输出</Table.ColumnHeaderCell>
+                    {teacher && (
+                      <Table.ColumnHeaderCell>可见性</Table.ColumnHeaderCell>
+                    )}
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
                   {lesson.tests.map((t) => (
-                    <tr key={t.id}>
-                      <th>{t.title}</th>
-                      <td>
+                    <Table.Row key={t.id}>
+                      <Table.ColumnHeaderCell>{t.title}</Table.ColumnHeaderCell>
+                      <Table.Cell>
                         {Object.entries(t.inputs)
                           .map(([k, v]) => `${k}=${v}`)
                           .join("，")}
-                      </td>
-                      <td>
+                      </Table.Cell>
+                      <Table.Cell>
                         {Object.entries(t.expected)
                           .map(([k, v]) => `${k}=${v}`)
                           .join("，")}
-                      </td>
-                      {teacher && <td>{t.hidden ? "隐藏" : "公开"}</td>}
-                    </tr>
+                      </Table.Cell>
+                      {teacher && (
+                        <Table.Cell>{t.hidden ? "隐藏" : "公开"}</Table.Cell>
+                      )}
+                    </Table.Row>
                   ))}
-                </tbody>
-              </table>
+                </Table.Body>
+              </Table.Root>
             </div>
             {!lesson.tests.length && (
               <p>教师未设置公开用例，提交后可查看通过情况。</p>
@@ -711,67 +736,77 @@ export function Curriculum({
                   : "学生提交记录"
                 : "我的提交记录"}
             </h4>
-            <button
+            <Button
+              variant="soft"
+              color="gray"
               disabled={busy}
               onClick={() => void run(() => history(lesson.id))}
             >
               <RefreshCw size={14} />
               刷新记录
-            </button>
+            </Button>
           </div>
           {attempts.length ? (
             <div className="lesson-table-scroll">
-              <table className="assessment-table">
-                <thead>
-                  <tr>
-                    {teacher && <th>学生</th>}
-                    <th>文件</th>
-                    <th>时间</th>
-                    <th>结果</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table.Root className="assessment-table">
+                <Table.Header>
+                  <Table.Row>
+                    {teacher && (
+                      <Table.ColumnHeaderCell>学生</Table.ColumnHeaderCell>
+                    )}
+                    <Table.ColumnHeaderCell>文件</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>时间</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>结果</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell></Table.ColumnHeaderCell>
+                  </Table.Row>
+                </Table.Header>
+                <Table.Body>
                   {attempts.map((a) => (
-                    <tr key={a.id}>
+                    <Table.Row key={a.id}>
                       {teacher && (
-                        <td>
+                        <Table.Cell>
                           {a.studentName}
                           <small>{a.studentNo}</small>
-                        </td>
+                        </Table.Cell>
                       )}
-                      <td>{a.name}</td>
-                      <td>{new Date(a.createdAt).toLocaleString()}</td>
-                      <td>
+                      <Table.Cell>{a.name}</Table.Cell>
+                      <Table.Cell>
+                        {new Date(a.createdAt).toLocaleString()}
+                      </Table.Cell>
+                      <Table.Cell>
                         <span
                           className={"assessment-status status-" + a.status}
                         >
                           {attemptStatus(a.status)} {a.passed}/{a.total}
                         </span>
-                      </td>
-                      <td>
-                        <button
+                      </Table.Cell>
+                      <Table.Cell>
+                        <Button
+                          variant="soft"
+                          color="gray"
                           disabled={busy}
                           onClick={() => void run(() => selectAttempt(a.id))}
                         >
                           查看结果
-                        </button>
-                      </td>
-                    </tr>
+                        </Button>
+                      </Table.Cell>
+                    </Table.Row>
                   ))}
-                </tbody>
-              </table>
+                </Table.Body>
+              </Table.Root>
             </div>
           ) : (
             <p className="assessment-empty">还没有提交记录。</p>
           )}
           {more && (
-            <button
+            <Button
+              variant="soft"
+              color="gray"
               disabled={busy}
               onClick={() => void run(() => history(lesson.id, true))}
             >
               加载更多提交
-            </button>
+            </Button>
           )}
         </>
       ) : (
@@ -787,7 +822,9 @@ export function Curriculum({
             <div>
               {teacher && (
                 <>
-                  <button
+                  <Button
+                    variant="soft"
+                    color="gray"
                     disabled={busy}
                     onClick={() =>
                       void run(async () =>
@@ -798,8 +835,10 @@ export function Curriculum({
                     }
                   >
                     学生闯关情况
-                  </button>
-                  <button
+                  </Button>
+                  <Button
+                    variant="soft"
+                    color="gray"
                     disabled={busy || classroom.archived}
                     onClick={() =>
                       setChapterForm({
@@ -811,13 +850,18 @@ export function Curriculum({
                   >
                     <Plus size={15} />
                     新增章节
-                  </button>
+                  </Button>
                 </>
               )}
-              <button disabled={busy} onClick={() => void run(refresh)}>
+              <Button
+                variant="soft"
+                color="gray"
+                disabled={busy}
+                onClick={() => void run(refresh)}
+              >
                 <RefreshCw size={14} />
                 刷新
-              </button>
+              </Button>
             </div>
           </div>
           {chapterForm && (
@@ -838,7 +882,7 @@ export function Curriculum({
             >
               <label>
                 章节名称
-                <input
+                <TextField.Root
                   value={chapterForm.title}
                   required
                   maxLength={100}
@@ -849,7 +893,7 @@ export function Curriculum({
               </label>
               <label>
                 章节说明
-                <input
+                <TextField.Root
                   value={chapterForm.description}
                   maxLength={2000}
                   onChange={(e) =>
@@ -862,7 +906,7 @@ export function Curriculum({
               </label>
               <label>
                 排序
-                <input
+                <TextField.Root
                   type="number"
                   min={0}
                   max={10000}
@@ -876,12 +920,17 @@ export function Curriculum({
                 />
               </label>
               <div>
-                <button type="button" onClick={() => setChapterForm(null)}>
+                <Button
+                  variant="soft"
+                  color="gray"
+                  type="button"
+                  onClick={() => setChapterForm(null)}
+                >
                   取消
-                </button>
-                <button className="primary" disabled={busy} type="submit">
+                </Button>
+                <Button variant="solid" disabled={busy} type="submit">
                   保存章节
-                </button>
+                </Button>
               </div>
             </form>
           )}
@@ -898,7 +947,9 @@ export function Curriculum({
                   </div>
                   {teacher && (
                     <div>
-                      <button
+                      <Button
+                        variant="soft"
+                        color="gray"
                         disabled={busy || classroom.archived}
                         onClick={() =>
                           setChapterForm({
@@ -910,21 +961,27 @@ export function Curriculum({
                         }
                       >
                         编辑章节
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="soft"
+                        color="gray"
                         disabled={busy || classroom.archived}
                         onClick={() => setEditing(draftLesson(chapter.id))}
                       >
                         <Plus size={14} />
                         新增关卡
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
                 <ol className="assessment-lessons">
                   {chapter.lessons.map((l) => (
                     <li key={l.id}>
-                      <button onClick={() => choose(l.id)}>
+                      <Button
+                        variant="soft"
+                        color="gray"
+                        onClick={() => choose(l.id)}
+                      >
                         <span className="assessment-lesson-icon">
                           {l.passed ? (
                             <CheckCircle size={19} />
@@ -953,7 +1010,7 @@ export function Curriculum({
                                 ? "已尝试"
                                 : "待完成"}
                         </span>
-                      </button>
+                      </Button>
                     </li>
                   ))}
                 </ol>
@@ -984,7 +1041,9 @@ export function Curriculum({
           {loading ? (
             "正在读取关卡…"
           ) : (
-            <button onClick={() => choose("")}>返回章节目录</button>
+            <Button variant="soft" color="gray" onClick={() => choose("")}>
+              返回章节目录
+            </Button>
           )}
         </p>
       )}
@@ -1012,7 +1071,9 @@ function AttemptResult({
             {attempt.passed} / {attempt.total}
           </span>
         </h4>
-        <button onClick={onOpen}>打开提交电路副本</button>
+        <Button variant="soft" color="gray" onClick={onOpen}>
+          打开提交电路副本
+        </Button>
       </div>
       <p>
         {["queued", "running"].includes(attempt.status)

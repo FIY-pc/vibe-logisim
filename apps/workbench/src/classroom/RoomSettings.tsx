@@ -1,3 +1,4 @@
+import { Button, TextArea, TextField } from "@radix-ui/themes";
 import type { Classroom } from "../../../../packages/classroom/src/types";
 
 export function RoomSettings({
@@ -35,7 +36,7 @@ export function RoomSettings({
       <h4>课堂信息</h4>
       <label>
         课堂名称
-        <input
+        <TextField.Root
           name="title"
           defaultValue={classroom.title}
           maxLength={120}
@@ -44,7 +45,7 @@ export function RoomSettings({
       </label>
       <label>
         课堂任务
-        <textarea
+        <TextArea
           name="task"
           defaultValue={classroom.task}
           maxLength={10000}
@@ -53,7 +54,7 @@ export function RoomSettings({
       </label>
       <label>
         评价标准
-        <textarea
+        <TextArea
           name="rubric"
           defaultValue={classroom.rubric}
           maxLength={5000}
@@ -62,7 +63,7 @@ export function RoomSettings({
       </label>
       <label>
         人数上限
-        <input
+        <TextField.Root
           name="capacity"
           type="number"
           min={Math.max(1, classroom.memberCount)}
@@ -71,9 +72,9 @@ export function RoomSettings({
           required
         />
       </label>
-      <button className="primary" disabled={busy}>
+      <Button variant="solid" disabled={busy}>
         保存课堂信息
-      </button>
+      </Button>
     </form>
   );
 }

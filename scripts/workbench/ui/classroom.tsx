@@ -221,16 +221,25 @@ export async function verifyClassroomUI() {
     return <ClassroomEntry />;
   }
   const button = (label: string) => {
-    const b = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    const b = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (n) =>
         n.textContent?.trim() === label ||
+        n.querySelector(".rt-TabsTriggerInner")?.textContent?.trim() ===
+          label ||
         n.getAttribute("aria-label") === label,
     );
     assert(b, `button ${label}`);
     return b;
   };
   const click = async (label: string) => {
-    await act(async () => button(label).click());
+    await act(async () => activate(button(label)));
+  };
+  const activate = (button: HTMLButtonElement) => {
+    if (button.getAttribute("role") === "tab")
+      button.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    else button.click();
   };
   const wait = async (predicate: () => boolean) => {
     for (let i = 0; i < 100; i++) {
@@ -239,7 +248,7 @@ export async function verifyClassroomUI() {
         await new Promise((r) => setTimeout(r, 10));
       });
     }
-    assert.ok(predicate(), container.textContent || "UI did not settle");
+    assert.ok(predicate(), document.body.textContent || "UI did not settle");
   };
   // The attempt poller runs on a one-second interval; some waits outlive `wait`.
   const waitLong = async (predicate: () => boolean) => {
@@ -249,7 +258,7 @@ export async function verifyClassroomUI() {
         await new Promise((r) => setTimeout(r, 10));
       });
     }
-    assert.ok(predicate(), container.textContent || "UI did not settle");
+    assert.ok(predicate(), document.body.textContent || "UI did not settle");
   };
   const setValue = async (el: Element, value: string) => {
     const proto =
@@ -273,7 +282,7 @@ export async function verifyClassroomUI() {
   };
   /** The single control of the label starting with `text`. */
   const field = (text: string) => {
-    const label = [...container.querySelectorAll("label")].find((l) =>
+    const label = [...document.querySelectorAll("label")].find((l) =>
       l.textContent?.trim().startsWith(text),
     );
     assert(label, `field ${text}`);
@@ -282,11 +291,11 @@ export async function verifyClassroomUI() {
     return control;
   };
   const clickContaining = async (text: string) => {
-    const b = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    const b = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (n) => n.textContent?.includes(text),
     );
     assert(b, `button containing ${text}`);
-    await act(async () => b.click());
+    await act(async () => activate(b));
   };
   // LessonEditor parses uploaded templates with the browser XML parser.
   (globalThis as any).DOMParser = window.DOMParser;
@@ -306,9 +315,11 @@ export async function verifyClassroomUI() {
       ),
     );
     await click("课堂管理");
-    await wait(() => Boolean(container.querySelector(".assessment-tabs")));
+    await wait(() =>
+      Boolean(document.querySelector('[role=tablist][aria-label="课堂内容"]')),
+    );
     await click("学习记录与同步");
-    await wait(() => Boolean(container.querySelector(".classroom-student")));
+    await wait(() => Boolean(document.querySelector(".classroom-student")));
     await click("使用教师提供的 AI");
     await wait(() => selected.id === "teacher-proxy");
     assert.ok(selected.baseUrl.endsWith(`/classrooms/${room.id}/ai/v1`));
@@ -321,9 +332,11 @@ export async function verifyClassroomUI() {
       services.some((s) => s.id === "personal"),
       "teacher selection preserves personal services",
     );
-    await wait(() => Boolean(container.textContent?.includes("已自动同步")));
-    assert.ok(!container.textContent?.includes("自报完成"));
-    assert.ok(!container.textContent?.includes("进度说明"));
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("已自动同步")),
+    );
+    assert.ok(!document.body.textContent?.includes("自报完成"));
+    assert.ok(!document.body.textContent?.includes("进度说明"));
     const roster = await api(`/classrooms/${room.id}`, teacher.token),
       id = roster.members[0].latest.id;
     const saved = (
@@ -392,10 +405,12 @@ export async function verifyClassroomUI() {
       "a switched workspace is rejected before reading another document",
     );
     await click("课堂管理");
-    await wait(() => Boolean(container.querySelector(".assessment-tabs")));
+    await wait(() =>
+      Boolean(document.querySelector('[role=tablist][aria-label="课堂内容"]')),
+    );
     await click("学习记录与同步");
     await wait(() =>
-      Boolean(container.textContent?.includes("本课堂同步已暂停")),
+      Boolean(document.body.textContent?.includes("本课堂同步已暂停")),
     );
     folderId = "folder-ui";
     await act(async () => root.unmount());
@@ -415,62 +430,68 @@ export async function verifyClassroomUI() {
       ),
     );
     await click("课堂管理");
-    await wait(() => Boolean(container.querySelector(".assessment-tabs")));
+    await wait(() =>
+      Boolean(document.querySelector('[role=tablist][aria-label="课堂内容"]')),
+    );
     // The lessons tab is the teacher's publishing workspace: create a chapter,
     // then a published lesson with a template, a public and a hidden case.
     await click("新增章节");
     await wait(() =>
-      Boolean(container.querySelector(".assessment-chapter-form")),
+      Boolean(document.querySelector(".assessment-chapter-form")),
     );
     await setValue(field("章节名称"), "组合逻辑基础");
     await setValue(field("章节说明"), "从异或门开始");
     await click("保存章节");
-    await wait(() => Boolean(container.textContent?.includes("组合逻辑基础")));
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("组合逻辑基础")),
+    );
     await click("新增关卡");
-    await wait(() => Boolean(container.querySelector(".lesson-editor")));
+    await wait(() => Boolean(document.querySelector(".lesson-editor")));
     await setValue(field("关卡名称"), "异或门关卡");
     await setValue(field("分值"), "20");
     await clickContaining("模板与测试用例");
     await setFiles(
-      container.querySelector(".lesson-template input[type='file']")!,
+      document.querySelector(".lesson-template input[type='file']")!,
       [new File([templateXml], "xor-template.circ")],
     );
     await wait(() =>
-      Boolean(container.textContent?.includes("xor-template.circ")),
+      Boolean(document.body.textContent?.includes("xor-template.circ")),
     );
     await setValue(field("用例数量"), "2");
     await click("应用数量");
     await wait(() =>
-      Boolean(container.querySelector('input[aria-label="用例2名称"]')),
+      Boolean(document.querySelector('input[aria-label="用例2名称"]')),
     );
     await setValue(
-      container.querySelector('input[aria-label="用例1输入A"]')!,
+      document.querySelector('input[aria-label="用例1输入A"]')!,
       "1",
     );
     await setValue(
-      container.querySelector('input[aria-label="用例1预期Y"]')!,
+      document.querySelector('input[aria-label="用例1预期Y"]')!,
       "1",
     );
     await setValue(
-      container.querySelector('input[aria-label="用例2名称"]')!,
+      document.querySelector('input[aria-label="用例2名称"]')!,
       "教师私有场景",
     );
     await setValue(
-      container.querySelector('input[aria-label="用例2输入A"]')!,
+      document.querySelector('input[aria-label="用例2输入A"]')!,
       "1",
     );
     await setValue(
-      container.querySelector('input[aria-label="用例2输入B"]')!,
+      document.querySelector('input[aria-label="用例2输入B"]')!,
       "1",
     );
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>('input[aria-label="隐藏用例2"]')!
+      document
+        .querySelector<HTMLButtonElement>(
+          '[role="checkbox"][aria-label="隐藏用例2"]',
+        )!
         .click(),
     );
     await click("关卡说明");
     await setFiles(
-      container.querySelector(".lesson-upload-tools input[type='file']")!,
+      document.querySelector(".lesson-upload-tools input[type='file']")!,
       [
         new File(["# 异或门\n\n实现 Y = A ⊕ B，并提交评测。"], "xor.md", {
           type: "text/markdown",
@@ -481,22 +502,26 @@ export async function verifyClassroomUI() {
       (field("Markdown 内容") as HTMLTextAreaElement).value.includes("异或门"),
     );
     await act(async () =>
-      container
-        .querySelector<HTMLInputElement>(".classroom-check input")!
+      document
+        .querySelector<HTMLButtonElement>('.classroom-check [role="checkbox"]')!
         .click(),
     );
     await click("保存关卡");
-    await wait(() => Boolean(container.textContent?.includes("关卡已保存")));
-    await wait(() => Boolean(container.textContent?.includes("教师私有场景")));
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("关卡已保存")),
+    );
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("教师私有场景")),
+    );
     assert.ok(
-      container.textContent?.includes("测试用例（2）"),
+      document.body.textContent?.includes("测试用例（2）"),
       "the teacher sees both cases on the lesson page",
     );
     await click("学习记录与分析");
-    await wait(() => Boolean(container.querySelector(".classroom-teacher")));
+    await wait(() => Boolean(document.querySelector(".classroom-teacher")));
     await wait(() => !button("修改选中配置").disabled);
     await click("修改选中配置");
-    const providerForm = container.querySelector<HTMLFormElement>(
+    const providerForm = document.querySelector<HTMLFormElement>(
       ".classroom-provider-form",
     )!;
     const keyField = providerForm.querySelector<HTMLInputElement>(
@@ -513,14 +538,16 @@ export async function verifyClassroomUI() {
       );
     });
     await wait(() =>
-      Boolean(container.textContent?.includes("模型配置已保存到教师模型库")),
+      Boolean(
+        document.body.textContent?.includes("模型配置已保存到教师模型库"),
+      ),
     );
     assert.equal(
-      container.querySelector('.classroom-provider-form input[name="apiKey"]'),
+      document.querySelector('.classroom-provider-form input[name="apiKey"]'),
       null,
       "successful save closes the credential form",
     );
-    const classroomForm = container.querySelector<HTMLFormElement>(
+    const classroomForm = document.querySelector<HTMLFormElement>(
       ".classroom-settings-form",
     )!;
     const titleField = classroomForm.querySelector<HTMLInputElement>(
@@ -533,35 +560,37 @@ export async function verifyClassroomUI() {
       ),
     );
     await wait(() =>
-      Boolean(container.textContent?.includes("课堂信息已更新")),
+      Boolean(document.body.textContent?.includes("课堂信息已更新")),
     );
     assert.equal(
       (await api(`/classrooms/${room.id}`, teacher.token)).classroom.title,
       "更新后的课堂",
     );
-    const originalCode = container.querySelector(
+    const originalCode = document.querySelector(
       ".classroom-room-heading code",
     )?.textContent;
     await click("更新课堂码");
     await wait(
       () =>
-        container.querySelector(".classroom-room-heading code")?.textContent !==
+        document.querySelector(".classroom-room-heading code")?.textContent !==
         originalCode,
     );
     await wait(() => !button("更新课堂码").disabled);
     await click("张同学");
     await wait(() =>
-      Boolean(container.textContent?.includes("另一段课堂对话")),
+      Boolean(document.body.textContent?.includes("另一段课堂对话")),
     );
     assert.equal(
-      container.querySelector(".classroom-review img")?.getAttribute("src"),
+      document.querySelector(".classroom-review img")?.getAttribute("src"),
       image,
     );
     await click("生成分析报告");
-    await wait(() => Boolean(container.querySelector(".classroom-report")));
-    assert.ok(container.textContent?.includes("建议在下一节课讲解进位逻辑"));
+    await wait(() => Boolean(document.querySelector(".classroom-report")));
     assert.ok(
-      container.querySelector(".classroom-report code"),
+      document.body.textContent?.includes("建议在下一节课讲解进位逻辑"),
+    );
+    assert.ok(
+      document.querySelector(".classroom-report code"),
       "report includes evidence identifiers",
     );
     // —— The student opens the lesson template, completes it and submits. ——
@@ -582,29 +611,31 @@ export async function verifyClassroomUI() {
       ),
     );
     await click("课堂管理");
-    await wait(() => Boolean(container.textContent?.includes("组合逻辑基础")));
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("组合逻辑基础")),
+    );
     await clickContaining("异或门关卡");
     await wait(() =>
-      Boolean(container.textContent?.includes("下载模板并打开")),
+      Boolean(document.body.textContent?.includes("下载模板并打开")),
     );
     assert.ok(
-      container.textContent?.includes("1 组隐藏"),
+      document.body.textContent?.includes("1 组隐藏"),
       "the student sees how many hidden cases exist",
     );
     assert.ok(
-      container.textContent?.includes("分值 20 分（全部用例通过才得分）"),
+      document.body.textContent?.includes("分值 20 分（全部用例通过才得分）"),
       "the lesson states its score rule to students",
     );
     assert.ok(
-      !container.textContent?.includes("教师私有场景"),
+      !document.body.textContent?.includes("教师私有场景"),
       "hidden case titles and values stay on the teacher side",
     );
     assert.ok(
-      !container.textContent?.includes("评测服务尚未配置"),
+      !document.body.textContent?.includes("评测服务尚未配置"),
       "grading is available",
     );
     await click("下载模板并打开");
-    await wait(() => !container.querySelector(".assessment-root"));
+    await wait(() => !document.querySelector(".assessment-root"));
     assert.ok(
       typeof template?.path === "string" &&
         template.path.startsWith("C:\\work\\关卡-异或门关卡-") &&
@@ -612,26 +643,33 @@ export async function verifyClassroomUI() {
       "the template is saved into the open project folder and opened",
     );
     await click("课堂管理");
-    await wait(() => Boolean(container.textContent?.includes("提交关卡评测")));
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("提交关卡评测")),
+    );
     await wait(
       () =>
-        container.querySelector<HTMLSelectElement>(".lesson-submit select")
-          ?.value === "template-doc",
+        document.querySelector('[role="combobox"][aria-label="要提交的电路"]')
+          ?.textContent?.includes("（当前）") === true,
     );
     await click("提交关卡评测");
     await waitLong(() =>
-      Boolean(container.querySelector(".assessment-result.status-passed")),
+      Boolean(document.querySelector(".assessment-result.status-passed")),
     );
-    assert.ok(container.textContent?.includes("2 / 2"), "both cases passed");
+    assert.ok(
+      document.body.textContent?.includes("2 / 2"),
+      "both cases passed",
+    );
     const studentResult =
-      container.querySelector(".assessment-result")!.textContent!;
+      document.querySelector(".assessment-result")!.textContent!;
     assert.ok(
       studentResult.includes("隐藏用例"),
       "hidden cases report pass/fail only",
     );
     assert.ok(!studentResult.includes("教师私有场景"));
-    await wait(() => Boolean(container.textContent?.includes("我的提交记录")));
-    assert.ok(container.textContent?.includes("通过 2/2"));
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("我的提交记录")),
+    );
+    assert.ok(document.body.textContent?.includes("通过 2/2"));
     // —— The teacher reviews the whole class and one student's attempts. ——
     await act(async () => root.unmount());
     root = createRoot(container);
@@ -653,39 +691,40 @@ export async function verifyClassroomUI() {
     // The teacher returns to the last opened lesson; go back to the chapters.
     await wait(
       () =>
-        Boolean(container.textContent?.includes("组合逻辑基础")) ||
-        Boolean(container.textContent?.includes("章节目录")),
+        Boolean(document.body.textContent?.includes("组合逻辑基础")) ||
+        Boolean(document.body.textContent?.includes("章节目录")),
     );
-    if (container.textContent?.includes("章节目录")) await click("章节目录");
-    await wait(() => Boolean(container.textContent?.includes("组合逻辑基础")));
+    if (document.body.textContent?.includes("章节目录"))
+      await click("章节目录");
+    await wait(() =>
+      Boolean(document.body.textContent?.includes("组合逻辑基础")),
+    );
     await click("学生闯关情况");
-    await wait(() => Boolean(container.querySelector(".assessment-passed")));
+    await wait(() => Boolean(document.querySelector(".assessment-passed")));
     assert.ok(
-      container.textContent?.includes("张同学"),
+      document.body.textContent?.includes("张同学"),
       "the progress table lists the student",
     );
-    assert.ok(container.textContent?.includes("1 次提交"));
+    assert.ok(document.body.textContent?.includes("1 次提交"));
     assert.equal(
-      container.querySelector(".assessment-total")?.textContent,
+      document.querySelector(".assessment-total")?.textContent,
       "20",
       "passing every case earns the lesson score",
     );
     await click("生成成绩单");
-    await wait(() =>
-      Boolean(container.querySelector(".assessment-report-csv")),
-    );
-    const csv = container.querySelector(".assessment-report-csv")!.textContent!;
+    await wait(() => Boolean(document.querySelector(".assessment-report-csv")));
+    const csv = document.querySelector(".assessment-report-csv")!.textContent!;
     assert.ok(csv.includes("异或门关卡（20分）"), "score sheet header");
     assert.ok(csv.includes("张同学") && csv.includes('"20","20"'), csv);
     await clickContaining("已通过");
     await wait(() =>
-      Boolean(container.textContent?.includes("张同学的提交记录")),
+      Boolean(document.body.textContent?.includes("张同学的提交记录")),
     );
     assert.ok(
-      container.textContent?.includes("adder.circ"),
+      document.body.textContent?.includes("adder.circ"),
       "the filtered history shows the student's submission",
     );
-    assert.ok(container.textContent?.includes("通过 2/2"));
+    assert.ok(document.body.textContent?.includes("通过 2/2"));
     await act(async () => root.unmount());
     root = createRoot(container);
     localStorage.removeItem("vibe.classroom.session");
@@ -703,7 +742,7 @@ export async function verifyClassroomUI() {
       ),
     );
     await click("课堂管理");
-    await wait(() => Boolean(container.querySelector(".classroom-login")));
+    await wait(() => Boolean(document.querySelector(".classroom-login")));
     assert.equal(
       sessionStorage.getItem("vibe.classroom.session"),
       null,

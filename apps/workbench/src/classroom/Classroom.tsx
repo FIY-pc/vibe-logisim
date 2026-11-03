@@ -1,3 +1,4 @@
+import { Button, Table, Tabs, TextArea, TextField } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import {
   GraduationCap,
@@ -59,7 +60,9 @@ export function ClassroomEntry() {
   };
   return (
     <>
-      <button
+      <Button
+        variant="soft"
+        color="gray"
         className={
           sharing.binding ? "classroom-entry sharing" : "classroom-entry"
         }
@@ -69,7 +72,7 @@ export function ClassroomEntry() {
       >
         <GraduationCap size={16} />
         <span>课堂{sharing.binding ? " · 自动同步" : ""}</span>
-      </button>
+      </Button>
       {open && (
         <ClassroomDialog
           session={session}
@@ -262,11 +265,18 @@ function ClassroomDialog({
         <>
           <div className="classroom-session">
             <span>{session.server}</span>
-            <button disabled={busy} onClick={() => void run(() => refresh())}>
+            <Button
+              variant="soft"
+              color="gray"
+              disabled={busy}
+              onClick={() => void run(() => refresh())}
+            >
               <RefreshCw size={14} />
               刷新
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="soft"
+              color="gray"
               disabled={busy}
               onClick={() =>
                 void run(async () => {
@@ -280,13 +290,15 @@ function ClassroomDialog({
             >
               <LogOut size={14} />
               退出登录
-            </button>
+            </Button>
           </div>
           <div className="classroom-columns">
             <nav aria-label="我的课堂">
               <h3>我的课堂</h3>
               {rooms.map((c) => (
-                <button
+                <Button
+                  variant="soft"
+                  color="gray"
                   key={c.id}
                   disabled={busy}
                   aria-current={selected === c.id ? "page" : undefined}
@@ -299,7 +311,7 @@ function ClassroomDialog({
                       ? "已关闭"
                       : `${c.memberCount} 人 · ${c.teacherName}`}
                   </small>
-                </button>
+                </Button>
               ))}
               {!rooms.length && <p className="muted">尚未加入或创建课堂</p>}
               <ClassForm
@@ -333,7 +345,9 @@ function ClassroomDialog({
                       {session.user.role === "teacher" && (
                         <p>
                           课堂码 <code>{detail.classroom.code}</code>{" "}
-                          <button
+                          <Button
+                            variant="soft"
+                            color="gray"
                             className="icon-button"
                             aria-label="复制课堂码"
                             onClick={() =>
@@ -346,8 +360,10 @@ function ClassroomDialog({
                             }
                           >
                             <Copy size={14} />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            variant="soft"
+                            color="gray"
                             disabled={busy}
                             onClick={() =>
                               void run(async () => {
@@ -364,12 +380,14 @@ function ClassroomDialog({
                             }
                           >
                             更新课堂码
-                          </button>
+                          </Button>
                         </p>
                       )}
                     </div>
                     {session.user.role === "teacher" && (
-                      <button
+                      <Button
+                        variant="soft"
+                        color="gray"
                         disabled={busy}
                         onClick={() =>
                           void run(async () => {
@@ -383,7 +401,7 @@ function ClassroomDialog({
                         {detail.classroom.archived
                           ? "重新开放"
                           : "关闭加入与提交"}
-                      </button>
+                      </Button>
                     )}
                   </div>
                   <details className="classroom-config">
@@ -427,57 +445,55 @@ function ClassroomDialog({
                       )}
                     </section>
                   )}
-                  <div
-                    className="assessment-tabs"
-                    role="group"
-                    aria-label="课堂内容"
+                  <Tabs.Root
+                    value={roomTab}
+                    onValueChange={(value) =>
+                      setRoomTab(value as "lessons" | "activity")
+                    }
                   >
-                    <button
-                      aria-pressed={roomTab === "lessons"}
-                      onClick={() => setRoomTab("lessons")}
-                    >
-                      章节关卡
-                    </button>
-                    <button
-                      aria-pressed={roomTab === "activity"}
-                      onClick={() => setRoomTab("activity")}
-                    >
-                      {session.user.role === "teacher"
-                        ? "学习记录与分析"
-                        : "学习记录与同步"}
-                    </button>
-                  </div>
-                  {roomTab === "lessons" ? (
-                    <Curriculum
-                      key={selected}
-                      session={session}
-                      classroom={detail.classroom}
-                      onUnauthorized={() => onSession(null)}
-                      onOpen={onClose}
-                      onBind={() => sharing.select(selected, true)}
-                    />
-                  ) : session.user.role === "teacher" ? (
-                    <TeacherRoom
-                      key={selected}
-                      detail={detail}
-                      busy={busy}
-                      run={run}
-                      api={api}
-                      refresh={refresh}
-                    />
-                  ) : (
-                    <StudentRoom
-                      key={selected}
-                      session={session}
-                      detail={detail}
-                      busy={busy}
-                      run={run}
-                      api={api}
-                      refresh={refresh}
-                      sharing={sharing}
-                      notify={setNotice}
-                    />
-                  )}
+                    <Tabs.List aria-label="课堂内容" mb="4">
+                      <Tabs.Trigger value="lessons">章节关卡</Tabs.Trigger>
+                      <Tabs.Trigger value="activity">
+                        {session.user.role === "teacher"
+                          ? "学习记录与分析"
+                          : "学习记录与同步"}
+                      </Tabs.Trigger>
+                    </Tabs.List>
+                    <Tabs.Content value="lessons">
+                      <Curriculum
+                        key={selected}
+                        session={session}
+                        classroom={detail.classroom}
+                        onUnauthorized={() => onSession(null)}
+                        onOpen={onClose}
+                        onBind={() => sharing.select(selected, true)}
+                      />
+                    </Tabs.Content>
+                    <Tabs.Content value="activity">
+                      {session.user.role === "teacher" ? (
+                        <TeacherRoom
+                          key={selected}
+                          detail={detail}
+                          busy={busy}
+                          run={run}
+                          api={api}
+                          refresh={refresh}
+                        />
+                      ) : (
+                        <StudentRoom
+                          key={selected}
+                          session={session}
+                          detail={detail}
+                          busy={busy}
+                          run={run}
+                          api={api}
+                          refresh={refresh}
+                          sharing={sharing}
+                          notify={setNotice}
+                        />
+                      )}
+                    </Tabs.Content>
+                  </Tabs.Root>
                 </>
               ) : (
                 <div className="classroom-empty">
@@ -528,7 +544,7 @@ function Login({
       <h3>{register ? "注册课堂账号" : "登录课堂"}</h3>
       <label>
         课堂服务地址
-        <input
+        <TextField.Root
           name="server"
           type="url"
           required
@@ -542,7 +558,7 @@ function Login({
       </label>
       <label>
         账号
-        <input
+        <TextField.Root
           name="username"
           required
           maxLength={80}
@@ -551,7 +567,7 @@ function Login({
       </label>
       <label>
         密码
-        <input
+        <TextField.Root
           name="password"
           type="password"
           minLength={10}
@@ -564,7 +580,7 @@ function Login({
         <>
           <label>
             姓名
-            <input name="name" required maxLength={80} />
+            <TextField.Root name="name" required maxLength={80} />
           </label>
           <label>
             角色
@@ -582,12 +598,12 @@ function Login({
           {role === "student" ? (
             <label>
               学号
-              <input name="studentNo" required maxLength={80} />
+              <TextField.Root name="studentNo" required maxLength={80} />
             </label>
           ) : (
             <label>
               教师邀请码
-              <input
+              <TextField.Root
                 name="teacherCode"
                 type="password"
                 required
@@ -597,16 +613,18 @@ function Login({
           )}
         </>
       )}
-      <button className="primary" disabled={busy}>
+      <Button variant="solid" disabled={busy}>
         {busy ? "连接中…" : register ? "注册并登录" : "登录"}
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="soft"
+        color="gray"
         type="button"
         disabled={busy}
         onClick={() => setRegister((v) => !v)}
       >
         {register ? "已有账号，返回登录" : "注册学生 / 教师账号"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -633,19 +651,19 @@ function ClassForm({
         <>
           <label>
             课堂名称
-            <input name="title" required maxLength={120} />
+            <TextField.Root name="title" required maxLength={120} />
           </label>
           <label>
             任务说明
-            <textarea name="task" rows={3} maxLength={10000} />
+            <TextArea name="task" rows={3} maxLength={10000} />
           </label>
           <label>
             评价标准
-            <textarea name="rubric" rows={2} maxLength={5000} />
+            <TextArea name="rubric" rows={2} maxLength={5000} />
           </label>
           <label>
             人数上限
-            <input
+            <TextField.Root
               name="capacity"
               type="number"
               min={1}
@@ -658,12 +676,17 @@ function ClassForm({
       ) : (
         <label>
           课堂码
-          <input name="code" required maxLength={40} autoComplete="off" />
+          <TextField.Root
+            name="code"
+            required
+            maxLength={40}
+            autoComplete="off"
+          />
         </label>
       )}
-      <button disabled={busy} className="primary">
+      <Button variant="soft" color="gray" disabled={busy} className="primary">
         {teacher ? "创建并生成课堂码" : "加入课堂"}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -720,7 +743,9 @@ function StudentRoom({
         <p>课堂已关闭，暂停同步与提交。</p>
       ) : (
         <div className="classroom-actions">
-          <button
+          <Button
+            variant="soft"
+            color="gray"
             disabled={busy || !doc}
             onClick={() =>
               void run(async () => {
@@ -730,9 +755,9 @@ function StudentRoom({
             }
           >
             立即同步
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            variant="solid"
             disabled={busy || !doc}
             onClick={() =>
               void run(async () => {
@@ -744,8 +769,10 @@ function StudentRoom({
           >
             <Send size={14} />
             提交电路
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="soft"
+            color="gray"
             disabled={busy}
             onClick={() =>
               void run(async () => {
@@ -755,7 +782,7 @@ function StudentRoom({
             }
           >
             绑定当前工作文件夹
-          </button>
+          </Button>
         </div>
       )}
     </section>
@@ -850,58 +877,64 @@ function TeacherRoom({
         交互记录；未同步不代表未学习。
       </p>
       <div className="classroom-table">
-        <table>
-          <thead>
-            <tr>
-              <th>学生</th>
-              <th>学号</th>
-              <th>学习状态</th>
-              <th>元件 / 导线</th>
-              <th>提问 / 工具错误</th>
-              <th>最近共享</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table.Root>
+          <Table.Header>
+            <Table.Row>
+              <Table.ColumnHeaderCell>学生</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>学号</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>学习状态</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>元件 / 导线</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>提问 / 工具错误</Table.ColumnHeaderCell>
+              <Table.ColumnHeaderCell>最近共享</Table.ColumnHeaderCell>
+            </Table.Row>
+          </Table.Header>
+          <Table.Body>
             {members.map((m) => (
-              <tr
+              <Table.Row
                 key={m.user.id}
                 className={student === m.user.id ? "selected" : ""}
               >
-                <td>
-                  <button
+                <Table.Cell>
+                  <Button
+                    variant="soft"
+                    color="gray"
                     disabled={busy}
                     onClick={() => loadStudent(m.user.id)}
                   >
                     {m.user.name}
-                  </button>
-                </td>
-                <td>{m.user.studentNo}</td>
-                <td>
+                  </Button>
+                </Table.Cell>
+                <Table.Cell>{m.user.studentNo}</Table.Cell>
+                <Table.Cell>
                   {m.latest
                     ? `${m.latest.status === "submitted" ? "已提交" : "进行中"}`
                     : "尚未共享"}
-                </td>
-                <td>
+                </Table.Cell>
+                <Table.Cell>
                   {m.latest
                     ? `${m.latest.components} / ${m.latest.wires}`
                     : "—"}
-                </td>
-                <td>
+                </Table.Cell>
+                <Table.Cell>
                   {m.latest
                     ? `${m.latest.questions} / ${m.latest.toolErrors}`
                     : "—"}
-                </td>
-                <td>{m.latest ? time(m.latest.createdAt) : "—"}</td>
-              </tr>
+                </Table.Cell>
+                <Table.Cell>
+                  {m.latest ? time(m.latest.createdAt) : "—"}
+                </Table.Cell>
+              </Table.Row>
             ))}
-          </tbody>
-        </table>
+          </Table.Body>
+        </Table.Root>
       </div>
       {student && (
         <section className="classroom-review">
           <h4>
             {members.find((m) => m.user.id === student)?.user.name} · 只读审阅{" "}
-            <button
+            <Button
+              variant="soft"
+              color="gray"
               disabled={busy}
               onClick={() => {
                 setStudent("");
@@ -910,7 +943,7 @@ function TeacherRoom({
               }}
             >
               返回全班
-            </button>
+            </Button>
           </h4>
           {history.length ? (
             <Select
@@ -974,7 +1007,7 @@ function TeacherRoom({
           <Sparkles size={16} />
           AI 学情分析 · {student ? "当前学生" : "全班"}
         </h4>
-        <textarea
+        <TextArea
           aria-label="学情分析问题"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
@@ -993,8 +1026,8 @@ function TeacherRoom({
             {preview.truncated && "部分记录已按预算摘录。"}
           </p>
         )}
-        <button
-          className="primary"
+        <Button
+          variant="solid"
           disabled={busy || !detail.aiAvailable}
           onClick={() =>
             void run(async () => {
@@ -1013,7 +1046,7 @@ function TeacherRoom({
         >
           <Sparkles size={14} />
           {busy ? "处理中…" : preview?.cached ? "查看已有报告" : "生成分析报告"}
-        </button>
+        </Button>
         {!detail.aiAvailable && (
           <p className="muted">请由服务管理员配置课堂 AI 接口、密钥和模型。</p>
         )}

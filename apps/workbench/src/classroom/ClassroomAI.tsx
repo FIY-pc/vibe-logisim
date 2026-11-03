@@ -1,3 +1,4 @@
+import { Button, TextField } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 import { Select } from "../shared/Select";
 import { Checkbox } from "../shared/Checkbox";
@@ -149,8 +150,8 @@ export function ClassroomAI({
             }))}
           />
           <div className="classroom-actions">
-            <button
-              className="primary"
+            <Button
+              variant="solid"
               disabled={busy || !templateId}
               onClick={() =>
                 void run(async () => {
@@ -164,8 +165,10 @@ export function ClassroomAI({
               }
             >
               应用到本课堂
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="soft"
+              color="gray"
               disabled={busy}
               onClick={() => {
                 setFormProvider(null);
@@ -176,8 +179,10 @@ export function ClassroomAI({
               }}
             >
               新增模型配置
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="soft"
+              color="gray"
               disabled={busy || !templateId}
               onClick={() => {
                 const p = templates.find((p) => p.id === templateId)!;
@@ -189,9 +194,11 @@ export function ClassroomAI({
               }}
             >
               修改选中配置
-            </button>
+            </Button>
             {provider && (
-              <button
+              <Button
+                variant="soft"
+                color="gray"
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
@@ -206,7 +213,7 @@ export function ClassroomAI({
                 }
               >
                 {provider.enabled ? "暂停学生使用" : "开放学生使用"}
-              </button>
+              </Button>
             )}
           </div>
           <p className="muted">
@@ -249,7 +256,7 @@ export function ClassroomAI({
             >
               <label>
                 服务名称
-                <input
+                <TextField.Root
                   name="name"
                   defaultValue={formProvider?.name || "教师提供的 AI"}
                   maxLength={40}
@@ -258,7 +265,7 @@ export function ClassroomAI({
               </label>
               <label>
                 接口地址
-                <input
+                <TextField.Root
                   name="baseUrl"
                   defaultValue={formProvider?.baseUrl || ""}
                   type="url"
@@ -284,7 +291,7 @@ export function ClassroomAI({
               </label>
               <label>
                 API Key
-                <input
+                <TextField.Root
                   name="apiKey"
                   type="password"
                   autoComplete="new-password"
@@ -296,7 +303,7 @@ export function ClassroomAI({
               </label>
               <label>
                 模型
-                <input
+                <TextField.Root
                   name="model"
                   defaultValue={formProvider?.model || ""}
                   placeholder="例如 deepseek-flash，请勿填写 API Key"
@@ -306,7 +313,7 @@ export function ClassroomAI({
               </label>
               <label>
                 上下文窗口
-                <input
+                <TextField.Root
                   name="contextWindow"
                   type="number"
                   min={32000}
@@ -317,7 +324,7 @@ export function ClassroomAI({
               </label>
               <label>
                 思考深度
-                <input
+                <TextField.Root
                   name="effort"
                   defaultValue={formProvider?.effort || "none"}
                   placeholder="none / low / medium / high / xhigh / max"
@@ -335,17 +342,21 @@ export function ClassroomAI({
                 真实密钥加密保存在服务器。学生通过独立凭据使用服务，费用计入教师配置的账号。关闭课堂或取消开放可停止后续请求。
               </p>
               <div className="classroom-actions">
-                <button className="primary" disabled={busy}>
+                <Button variant="solid" disabled={busy}>
                   保存并用于本课堂
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="soft"
+                  color="gray"
                   type="button"
                   disabled={busy}
                   onClick={() => setEditing(false)}
                 >
                   取消编辑
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="soft"
+                  color="gray"
                   type="button"
                   disabled={busy || !provider}
                   onClick={() =>
@@ -360,7 +371,7 @@ export function ClassroomAI({
                   }
                 >
                   撤销全部学生凭据
-                </button>
+                </Button>
               </div>
             </form>
           )}
@@ -372,14 +383,16 @@ export function ClassroomAI({
               ? `${provider.name} · ${provider.model} · ${provider.api}`
               : "教师尚未开放课堂 AI 配置"}
           </p>
-          <button
-            className="primary"
+          <Button
+            variant="solid"
             disabled={busy || !provider?.enabled}
             onClick={useTeacher}
           >
             使用教师提供的 AI
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="soft"
+            color="gray"
             disabled={busy}
             onClick={() =>
               void run(async () => {
@@ -389,8 +402,10 @@ export function ClassroomAI({
             }
           >
             管理自己的 AI 配置
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="soft"
+            color="gray"
             disabled={busy}
             onClick={() =>
               void run(async () => {
@@ -399,7 +414,7 @@ export function ClassroomAI({
             }
           >
             刷新可选服务
-          </button>
+          </Button>
           {state && (
             <>
               <p>当前对话使用：{state.customProvider?.name || "尚未选择"}</p>
@@ -417,7 +432,9 @@ export function ClassroomAI({
                     label: s.name,
                   }))}
               />
-              <button
+              <Button
+                variant="soft"
+                color="gray"
                 disabled={busy || !personal}
                 onClick={() =>
                   void run(async () => {
@@ -432,7 +449,7 @@ export function ClassroomAI({
                 }
               >
                 使用自己的 AI
-              </button>
+              </Button>
             </>
           )}
           <p className="muted">

@@ -1,3 +1,6 @@
+import { Button, Table, Tabs, TextArea, TextField } from "@radix-ui/themes";
+import { Checkbox } from "../shared/Checkbox";
+import { Select } from "../shared/Select";
 import { useState } from "react";
 import type {
   Lesson,
@@ -183,12 +186,18 @@ export function LessonEditor({
       <div className="assessment-heading">
         <h3>{initial.id ? "编辑关卡" : "新增关卡"}</h3>
         <div>
-          <button type="button" disabled={busy} onClick={onCancel}>
+          <Button
+            variant="soft"
+            color="gray"
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+          >
             取消编辑
-          </button>
-          <button className="primary" disabled={busy} type="submit">
+          </Button>
+          <Button variant="solid" disabled={busy} type="submit">
             {busy ? "保存中…" : "保存关卡"}
-          </button>
+          </Button>
         </div>
       </div>
       {error && (
@@ -199,7 +208,7 @@ export function LessonEditor({
       <div className="lesson-form-row">
         <label>
           关卡名称
-          <input
+          <TextField.Root
             value={draft.title}
             onChange={(e) => patch({ title: e.target.value })}
             required
@@ -208,20 +217,16 @@ export function LessonEditor({
         </label>
         <label>
           所属章节
-          <select
+          <Select
+            label="所属章节"
             value={draft.chapterId}
-            onChange={(e) => patch({ chapterId: e.target.value })}
-          >
-            {chapters.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
-            ))}
-          </select>
+            onChange={(chapterId) => patch({ chapterId })}
+            options={chapters.map((c) => ({ value: c.id, label: c.title }))}
+          />
         </label>
         <label>
           排序
-          <input
+          <TextField.Root
             type="number"
             min={0}
             max={10000}
@@ -231,7 +236,7 @@ export function LessonEditor({
         </label>
         <label>
           分值（全部用例通过才得分）
-          <input
+          <TextField.Root
             type="number"
             min={0}
             max={1000}
@@ -241,31 +246,23 @@ export function LessonEditor({
         </label>
       </div>
       <label className="classroom-check">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={draft.published}
-          onChange={(e) => patch({ published: e.target.checked })}
+          onCheckedChange={(published) => patch({ published })}
         />
         发布后学生可见
       </label>
-      <div className="assessment-tabs">
-        <button
-          type="button"
-          aria-pressed={tab === "description"}
-          onClick={() => setTab("description")}
-        >
-          关卡说明
-        </button>
-        <button
-          type="button"
-          aria-pressed={tab === "cases"}
-          onClick={() => setTab("cases")}
-        >
-          模板与测试用例（{draft.tests.length}）
-        </button>
-      </div>
-      {tab === "description" ? (
-        <>
+      <Tabs.Root
+        value={tab}
+        onValueChange={(value) => setTab(value as "description" | "cases")}
+      >
+        <Tabs.List aria-label="编辑关卡" mb="4">
+          <Tabs.Trigger value="description">关卡说明</Tabs.Trigger>
+          <Tabs.Trigger value="cases">
+            模板与测试用例（{draft.tests.length}）
+          </Tabs.Trigger>
+        </Tabs.List>
+        <Tabs.Content value="description">
           <div className="lesson-upload-tools">
             <label className="assessment-upload">
               导入 Markdown
@@ -293,16 +290,21 @@ export function LessonEditor({
                 onChange={(e) => void run(() => addImages(e.target.files))}
               />
             </label>
-            <button type="button" onClick={() => setPreview(!preview)}>
+            <Button
+              variant="soft"
+              color="gray"
+              type="button"
+              onClick={() => setPreview(!preview)}
+            >
               {preview ? "继续编辑" : "预览说明"}
-            </button>
+            </Button>
           </div>
           {preview ? (
             <LessonMarkdown lesson={draft} />
           ) : (
             <label>
               Markdown 内容
-              <textarea
+              <TextArea
                 rows={13}
                 value={draft.description}
                 maxLength={100000}
@@ -316,7 +318,9 @@ export function LessonEditor({
                 <div key={image.id}>
                   <img src={image.data} alt={image.name} />
                   <span>{image.name}</span>
-                  <button
+                  <Button
+                    variant="soft"
+                    color="gray"
                     type="button"
                     onClick={() =>
                       patch({
@@ -325,14 +329,13 @@ export function LessonEditor({
                     }
                   >
                     移除图片
-                  </button>
+                  </Button>
                 </div>
               ))}
             </div>
           )}
-        </>
-      ) : (
-        <>
+        </Tabs.Content>
+        <Tabs.Content value="cases">
           <div className="lesson-template">
             <label>
               初始电路模板（.circ）
@@ -348,7 +351,7 @@ export function LessonEditor({
             <p>{draft.templateName || "尚未上传模板"}</p>
             <label>
               待评测电路名称
-              <input
+              <TextField.Root
                 value={draft.circuit}
                 onChange={(e) => patch({ circuit: e.target.value })}
                 required
@@ -362,29 +365,31 @@ export function LessonEditor({
           <div className="lesson-ports">
             <label>
               输入标签（逗号分隔）
-              <input
+              <TextField.Root
                 value={inputNames}
                 onChange={(e) => setInputNames(e.target.value)}
               />
             </label>
             <label>
               输出标签（逗号分隔）
-              <input
+              <TextField.Root
                 value={outputNames}
                 onChange={(e) => setOutputNames(e.target.value)}
               />
             </label>
-            <button
+            <Button
+              variant="soft"
+              color="gray"
               type="button"
               onClick={() => void run(async () => applyPorts())}
             >
               应用引脚设置
-            </button>
+            </Button>
           </div>
           <div className="lesson-case-tools">
             <label>
               用例数量
-              <input
+              <TextField.Root
                 type="number"
                 min={1}
                 max={256}
@@ -392,7 +397,9 @@ export function LessonEditor({
                 onChange={(e) => setCount(e.target.value)}
               />
             </label>
-            <button
+            <Button
+              variant="soft"
+              color="gray"
               type="button"
               onClick={() =>
                 void run(async () => {
@@ -409,28 +416,32 @@ export function LessonEditor({
               }
             >
               应用数量
-            </button>
+            </Button>
             <span>隐藏用例仅向学生反馈通过情况</span>
           </div>
           <div className="lesson-table-scroll">
-            <table className="assessment-table">
-              <thead>
-                <tr>
-                  <th>用例</th>
+            <Table.Root className="assessment-table">
+              <Table.Header>
+                <Table.Row>
+                  <Table.ColumnHeaderCell>用例</Table.ColumnHeaderCell>
                   {inputs.map((k) => (
-                    <th key={"in" + k}>输入 {k}</th>
+                    <Table.ColumnHeaderCell key={"in" + k}>
+                      输入 {k}
+                    </Table.ColumnHeaderCell>
                   ))}
                   {outputs.map((k) => (
-                    <th key={"out" + k}>预期 {k}</th>
+                    <Table.ColumnHeaderCell key={"out" + k}>
+                      预期 {k}
+                    </Table.ColumnHeaderCell>
                   ))}
-                  <th>隐藏</th>
-                </tr>
-              </thead>
-              <tbody>
+                  <Table.ColumnHeaderCell>隐藏</Table.ColumnHeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
                 {draft.tests.map((t, i) => (
-                  <tr key={t.id}>
-                    <td>
-                      <input
+                  <Table.Row key={t.id}>
+                    <Table.Cell>
+                      <TextField.Root
                         aria-label={`用例${i + 1}名称`}
                         value={t.title}
                         onChange={(e) =>
@@ -438,10 +449,10 @@ export function LessonEditor({
                         }
                         maxLength={100}
                       />
-                    </td>
+                    </Table.Cell>
                     {inputs.map((k) => (
-                      <td key={"i" + k}>
-                        <input
+                      <Table.Cell key={"i" + k}>
+                        <TextField.Root
                           aria-label={`用例${i + 1}输入${k}`}
                           type="number"
                           required
@@ -457,11 +468,11 @@ export function LessonEditor({
                             })
                           }
                         />
-                      </td>
+                      </Table.Cell>
                     ))}
                     {outputs.map((k) => (
-                      <td key={"o" + k}>
-                        <input
+                      <Table.Cell key={"o" + k}>
+                        <TextField.Root
                           aria-label={`用例${i + 1}预期${k}`}
                           type="number"
                           required
@@ -477,32 +488,31 @@ export function LessonEditor({
                             })
                           }
                         />
-                      </td>
+                      </Table.Cell>
                     ))}
-                    <td>
-                      <input
-                        aria-label={`隐藏用例${i + 1}`}
-                        type="checkbox"
+                    <Table.Cell>
+                      <Checkbox
+                        label={`隐藏用例${i + 1}`}
                         checked={t.hidden}
-                        onChange={(e) =>
-                          updateCase(i, { hidden: e.target.checked })
-                        }
+                        onCheckedChange={(hidden) => updateCase(i, { hidden })}
                       />
-                    </td>
-                  </tr>
+                    </Table.Cell>
+                  </Table.Row>
                 ))}
-              </tbody>
-            </table>
+              </Table.Body>
+            </Table.Root>
           </div>
           <details className="lesson-case-json">
             <summary>批量导入用例 JSON</summary>
-            <textarea
+            <TextArea
               aria-label="批量用例JSON"
               id="assessment-case-json"
               rows={6}
               defaultValue={JSON.stringify(draft.tests, null, 2)}
             />
-            <button
+            <Button
+              variant="soft"
+              color="gray"
               type="button"
               onClick={() =>
                 void run(async () => {
@@ -545,10 +555,10 @@ export function LessonEditor({
               }
             >
               应用 JSON
-            </button>
+            </Button>
           </details>
-        </>
-      )}
+        </Tabs.Content>
+      </Tabs.Root>
     </form>
   );
 }
