@@ -92,7 +92,7 @@ export function SimulationMenu({
         onOpenChange={setOpen}
         trigger={
           <>
-            仿真 <ChevronDown size={14} aria-hidden="true" />
+            仿真 <ChevronDown size={16} aria-hidden="true" />
           </>
         }
       >
@@ -310,7 +310,7 @@ export function SimulationTransport({
             disabled={disabled}
             onClick={() => dispatch("toggle-clock")}
           >
-            {running ? <Pause size={15} /> : <Play size={15} />}
+            {running ? <Pause size={16} /> : <Play size={16} />}
           </IconButton>
           <IconButton
             aria-label="时钟一步"
@@ -320,7 +320,7 @@ export function SimulationTransport({
             disabled={disabled || running || !active}
             onClick={() => dispatch("tick")}
           >
-            <StepForward size={15} />
+            <StepForward size={16} />
           </IconButton>
           <IconButton
             aria-label="复位仿真"
@@ -328,7 +328,7 @@ export function SimulationTransport({
             disabled={disabled || !active}
             onClick={() => dispatch("reset")}
           >
-            <RotateCcw size={15} />
+            <RotateCcw size={16} />
           </IconButton>
         </>
       )}

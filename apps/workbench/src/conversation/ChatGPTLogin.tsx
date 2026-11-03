@@ -1,6 +1,7 @@
+import { ActionRow, Button, Text } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { Badge, Button, Card, Flex, Link, Text } from "@radix-ui/themes";
+import { Badge, Card, Flex, Link } from "@radix-ui/themes";
 import { desktop } from "../shared/transport";
 import type { ProviderConfiguration } from "./ProviderSettings";
 
@@ -23,7 +24,7 @@ export async function openChatGPTLink(url: string) {
 function ChatGPTUsage() {
   return (
     <Link
-      size="3"
+      size="2"
       href={USAGE}
       target="_blank"
       rel="noreferrer"
@@ -154,18 +155,17 @@ export function ChatGPTLogin({
         aria-label="ChatGPT 登录"
         aria-busy={working}
       >
-        <Button
+        <ActionRow
           variant="soft"
           color="gray"
-          size="3"
           className="ai-service-option"
           data-oai-siwc-button
           disabled={busy || working || Boolean(login)}
           onClick={() => void begin()}
         >
           使用 ChatGPT 订阅
-          <ChevronRight size={18} aria-hidden="true" />
-        </Button>
+          <ChevronRight size={16} aria-hidden="true" />
+        </ActionRow>
         {services
           .filter((s) => s.auth === "chatgpt")
           .map((s) => (
@@ -178,18 +178,14 @@ export function ChatGPTLogin({
                   className="ai-service-details"
                 >
                   <Flex gap="2" align="center" wrap="wrap">
-                    <Text size="3" weight="medium">
-                      {s.name}
-                    </Text>
+                    <Text weight="medium">{s.name}</Text>
                     {s.id === providerId && canBind && (
                       <Badge size="2">此对话</Badge>
                     )}
                   </Flex>
-                  <Text size="3" color="gray">
-                    {s.model}
-                  </Text>
+                  <Text color="gray">{s.model}</Text>
                   {(!s.account?.connected || !s.account.planEnabled) && (
-                    <Text size="3" color="gray">
+                    <Text color="gray">
                       {!s.account?.connected
                         ? "已退出登录"
                         : "尚未授权使用订阅额度"}
@@ -242,7 +238,7 @@ export function ChatGPTLogin({
           ))}
         {login && (
           <Card role="status">
-            <Text as="p" size="3" mb="3">
+            <Text as="p" mb="3">
               请在浏览器中完成登录与授权。
             </Text>
             <Flex gap="3" wrap="wrap">
@@ -269,7 +265,7 @@ export function ChatGPTLogin({
           </Card>
         )}
         {message && (
-          <Text as="p" size="3" role="status">
+          <Text as="p" role="status">
             {message}
           </Text>
         )}

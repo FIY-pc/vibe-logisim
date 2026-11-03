@@ -1,4 +1,5 @@
-import { Button, TextArea, TextField } from "@radix-ui/themes";
+import { Button, TextArea, TextField, Heading } from "../design/ui";
+
 import type { Classroom } from "../../../../packages/classroom/src/types";
 
 export function RoomSettings({
@@ -33,7 +34,7 @@ export function RoomSettings({
         });
       }}
     >
-      <h4>课堂信息</h4>
+      <Heading as="h4">课堂信息</Heading>
       <label>
         课堂名称
         <TextField.Root

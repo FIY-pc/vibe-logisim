@@ -25,7 +25,10 @@ const theme = EditorView.theme({
     fontSize: "var(--font-size-2)",
   },
   "&.cm-focused": { outline: "none" },
-  ".cm-scroller": { fontFamily: "var(--code-font-family)", lineHeight: "1.7" },
+  ".cm-scroller": {
+    fontFamily: "var(--code-font-family)",
+    lineHeight: "var(--line-height-2)",
+  },
   ".cm-content": {
     caretColor: "var(--accent-11)",
     padding: "var(--space-3) 0",

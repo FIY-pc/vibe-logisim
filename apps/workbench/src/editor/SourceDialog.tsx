@@ -1,4 +1,5 @@
-import { Button } from "@radix-ui/themes";
+import { Button } from "../design/ui";
+
 import { lazy, Suspense, useRef, useState } from "react";
 import type { CodeEditorHandle } from "../shared/CodeEditor";
 import { useEditor, useShell, useView } from "../app/hooks";
@@ -82,7 +83,6 @@ function SourceEditor() {
       </DialogBody>
       <DialogFooter>
         <Button
-          size="2"
           type="button"
           variant="soft"
           color="gray"
@@ -92,7 +92,6 @@ function SourceEditor() {
           取消
         </Button>
         <Button
-          size="2"
           type="button"
           disabled={Boolean(pending) || stale || !changed}
           onClick={() => actions.editor.applySource(source)}

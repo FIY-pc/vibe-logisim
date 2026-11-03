@@ -1,13 +1,7 @@
+import { Button, IconButton, TextField, Heading } from "../design/ui";
 import { useState } from "react";
 import { X, Search } from "lucide-react";
-import {
-  Button,
-  Callout,
-  Dialog,
-  Flex,
-  IconButton,
-  TextField,
-} from "@radix-ui/themes";
+import { Callout, Flex } from "@radix-ui/themes";
 import {
   bindingLabel,
   bindingProblem,
@@ -17,7 +11,7 @@ import {
   type Bindings,
   type ShortcutId,
 } from "../shared/shortcuts";
-import { DialogClose, useDialogFocus } from "../shared/Dialog";
+import { DialogFrame, DialogBody } from "../shared/Dialog";
 
 export function ShortcutSettings({
   bindings,
@@ -28,7 +22,6 @@ export function ShortcutSettings({
   onChange: (value: Bindings) => void;
   onClose: () => void;
 }) {
-  const focus = useDialogFocus();
   const [query, setQuery] = useState(""),
     [error, setError] = useState("");
   const needle = query.trim().toLowerCase();
@@ -61,24 +54,15 @@ export function ShortcutSettings({
     }
   };
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <DialogFrame
+      title="快捷键"
+      onClose={onClose}
+      className="shortcut-dialog"
+      aria-label="快捷键"
+      maxWidth="640px"
+      maxHeight="85dvh"
     >
-      <Dialog.Content
-        {...focus}
-        className="shortcut-dialog-content"
-        aria-label="快捷键"
-        maxWidth="640px"
-        maxHeight="85vh"
-        aria-describedby={undefined}
-      >
-        <Flex align="center" justify="between" gap="4" flexShrink="0">
-          <Dialog.Title mb="0">快捷键</Dialog.Title>
-          <DialogClose onClick={onClose} />
-        </Flex>
+      <DialogBody className="shortcut-dialog-content">
         <TextField.Root
           data-autofocus
           aria-label="查找快捷键"
@@ -94,7 +78,7 @@ export function ShortcutSettings({
         <div className="shortcut-list">
           {groups.map(([group, commands]) => (
             <section key={group}>
-              <h3>{group}</h3>
+              <Heading as="h3">{group}</Heading>
               {commands.map((command) => (
                 <label key={command.id}>
                   <span>{command.label}</span>
@@ -113,7 +97,6 @@ export function ShortcutSettings({
                   <IconButton
                     variant="soft"
                     color="gray"
-                    size="1"
                     aria-label={`清除 ${command.label} 快捷键`}
                     onClick={() => change(command.id, null)}
                   >
@@ -146,7 +129,7 @@ export function ShortcutSettings({
             恢复默认
           </Button>
         </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+      </DialogBody>
+    </DialogFrame>
   );
 }

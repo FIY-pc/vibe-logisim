@@ -1,4 +1,5 @@
-import { Button, TextField } from "@radix-ui/themes";
+import { Button, TextField, Heading } from "../design/ui";
+
 import { useEffect, useState } from "react";
 import { Select } from "../shared/Select";
 import { Checkbox } from "../shared/Checkbox";
@@ -129,7 +130,7 @@ export function ClassroomAI({
     });
   return (
     <section className="classroom-analysis">
-      <h4>{teacher ? "课堂 AI 服务" : "AI 服务来源"}</h4>
+      <Heading as="h4">{teacher ? "课堂 AI 服务" : "AI 服务来源"}</Heading>
       {teacher ? (
         <>
           <p>

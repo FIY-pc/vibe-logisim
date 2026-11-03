@@ -1,4 +1,5 @@
-import { Button, TextArea } from "@radix-ui/themes";
+import { Button, TextArea } from "../design/ui";
+
 import { useEffect, useRef, useState } from "react";
 import { command, desktop } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
@@ -157,7 +158,7 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
   return (
     <>
       <MenuItem
-        icon={<MessageSquare size={14} />}
+        icon={<MessageSquare size={16} />}
         onSelect={() => feedback.setDialogOpen(true)}
       >
         反馈问题…
@@ -171,7 +172,7 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
         自动检查更新
       </MenuCheckboxItem>
       <MenuItem
-        icon={<RefreshCw size={14} />}
+        icon={<RefreshCw size={16} />}
         disabled={feedback.checking || status?.forcedOff}
         onSelect={() => void feedback.checkNow()}
       >
@@ -179,7 +180,7 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
       </MenuItem>
       <MenuSeparator />
       <MenuItem
-        trailing={<ExternalLink size={13} aria-hidden="true" />}
+        trailing={<ExternalLink size={16} aria-hidden="true" />}
         onSelect={() => void feedback.openRelease()}
       >
         关于 Vibe Logisim {status?.current || ""}
@@ -199,7 +200,7 @@ export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
         data-tip="关闭"
         aria-label="关闭更新提示"
       >
-        <X size={14} />
+        <X size={16} />
       </button>
     </aside>
   );
@@ -319,7 +320,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
           <p>目标文件已存在。确认后将替换它。</p>
           <DialogFooter>
             <Button
-              size="2"
               type="button"
               variant="soft"
               color="gray"
@@ -329,7 +329,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
               取消
             </Button>
             <Button
-              size="2"
               type="button"
               disabled={busy}
               onClick={() => void replace()}
@@ -341,14 +340,13 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <DialogFooter>
           <Button
-            size="2"
             type="button"
             variant="soft"
             color="gray"
             disabled={!report || busy}
             onClick={() => void save()}
           >
-            <Download size={15} />
+            <Download size={16} />
             {busy
               ? "正在保存…"
               : desktop()
@@ -360,7 +358,6 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
                   : "下载诊断"}
           </Button>
           <Button
-            size="2"
             type="button"
             disabled={!saved || busy}
             data-tip={saved ? undefined : "先检查并保存诊断文件"}
@@ -371,7 +368,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
             }
           >
             前往反馈页
-            <ExternalLink size={14} />
+            <ExternalLink size={16} />
           </Button>
         </DialogFooter>
       )}

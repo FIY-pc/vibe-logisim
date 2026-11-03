@@ -1,4 +1,5 @@
-import { Button, Table, Tabs, TextArea, TextField } from "@radix-ui/themes";
+import { Button, TextArea, TextField, Heading } from "../design/ui";
+import { Table, Tabs } from "@radix-ui/themes";
 import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
 import { useState } from "react";
@@ -184,7 +185,7 @@ export function LessonEditor({
       }}
     >
       <div className="assessment-heading">
-        <h3>{initial.id ? "编辑关卡" : "新增关卡"}</h3>
+        <Heading as="h3">{initial.id ? "编辑关卡" : "新增关卡"}</Heading>
         <div>
           <Button
             variant="soft"

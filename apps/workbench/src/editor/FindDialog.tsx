@@ -1,12 +1,13 @@
+import { Text } from "../design/ui";
 import { Command } from "cmdk";
-import { Dialog, Flex, Text } from "@radix-ui/themes";
+
 import {
   CommandButton,
   CommandSearch,
   preventComposingDismiss,
 } from "../shared/command";
 import type { Circuit, Document } from "../shared/types";
-import { DialogClose, useDialogFocus } from "../shared/Dialog";
+import { DialogFrame, DialogBody } from "../shared/Dialog";
 const names: Record<string, string> = {
   Register: "寄存器",
   Tunnel: "隧道",
@@ -36,7 +37,6 @@ export function FindDialog({
   onChoose: (circuit: string, component?: string) => void;
   onClose: () => void;
 }) {
-  const focus = useDialogFocus();
   const title = mode === "circuit" ? "查找电路" : "查找元件";
   const placeholder = mode === "circuit" ? "电路名称" : "元件名称或标签";
   const items =
@@ -58,26 +58,15 @@ export function FindDialog({
           component: c.id,
         }));
   return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
+    <DialogFrame
+      title={title}
+      onClose={onClose}
+      className="find-dialog"
+      maxWidth="560px"
+      align="start"
+      onEscapeKeyDown={preventComposingDismiss}
     >
-      <Dialog.Content
-        {...focus}
-        className="find-dialog"
-        maxWidth="560px"
-        align="start"
-        aria-describedby={undefined}
-        onEscapeKeyDown={preventComposingDismiss}
-      >
-        <Flex align="center" justify="between" gap="3" mb="3">
-          <Dialog.Title as="h2" mb="0">
-            {title}
-          </Dialog.Title>
-          <DialogClose onClick={onClose} />
-        </Flex>
+      <DialogBody>
         <Command
           label={title}
           filter={(_value, search, keywords = []) => {
@@ -94,7 +83,6 @@ export function FindDialog({
           }}
         >
           <CommandSearch
-            size="3"
             data-autofocus
             aria-label={placeholder}
             placeholder={placeholder}
@@ -115,20 +103,20 @@ export function FindDialog({
                   onClose();
                 }}
               >
-                <CommandButton variant="ghost" color="gray" size="3">
+                <CommandButton variant="ghost" color="gray">
                   <Text>{item.label}</Text>
                   <Text color="gray">{item.detail}</Text>
                 </CommandButton>
               </Command.Item>
             ))}
             <Command.Empty>
-              <Text as="p" size="3" color="gray">
+              <Text as="p" color="gray">
                 没有匹配的结果
               </Text>
             </Command.Empty>
           </Command.List>
         </Command>
-      </Dialog.Content>
-    </Dialog.Root>
+      </DialogBody>
+    </DialogFrame>
   );
 }

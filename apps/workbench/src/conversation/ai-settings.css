@@ -1,16 +1,9 @@
 /* Only layout belongs here; controls, type, colors and states come from Themes. */
-.ai-settings-panel.rt-DialogContent {
+
+.ai-settings-content {
   display: flex;
   flex-direction: column;
-  max-height: calc(100dvh - 48px);
-  overflow: hidden;
-}
-.ai-settings-panel > :first-child {
-  flex: none;
-}
-.ai-settings-content {
-  min-height: 0;
-  overflow: auto;
+  gap: var(--space-4);
 }
 .ai-settings-content > * {
   flex-shrink: 0;
@@ -30,12 +23,9 @@
   margin: 0;
   padding: 0;
 }
-/* Keep both service entries aligned even when the Themes reset loads later. */
 .ai-service-options .ai-service-option {
   box-sizing: border-box;
   width: 100%;
-  height: auto;
-  min-height: var(--space-8);
   justify-content: space-between;
   white-space: normal;
   text-align: left;

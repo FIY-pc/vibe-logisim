@@ -1,3 +1,11 @@
+import {
+  ActionRow,
+  Button,
+  Heading,
+  IconButton,
+  Text,
+  TextField,
+} from "../design/ui";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -6,25 +14,18 @@ import {
   ChevronRight,
   RefreshCw,
   Search,
-  X,
 } from "lucide-react";
 import {
   Badge,
   Box,
-  Button,
   Callout,
   Card,
   Checkbox,
   DataList,
-  Dialog,
   Flex,
-  Heading,
-  IconButton,
   Popover,
   Select,
   Separator,
-  Text,
-  TextField,
 } from "@radix-ui/themes";
 import { Command } from "cmdk";
 import {
@@ -32,6 +33,7 @@ import {
   CommandSearch,
   preventComposingDismiss,
 } from "../shared/command";
+import { DialogFrame, DialogBody } from "../shared/Dialog";
 import { ChatGPTLogin } from "./ChatGPTLogin";
 import { publicText } from "../../../../packages/agent-runtime/src/models/public-fields.mts";
 export interface ProviderConfiguration {
@@ -208,11 +210,8 @@ function ProviderForm({
         }}
       >
         <Flex direction="column" gap="2">
-          <Text size="3" weight="medium">
-            服务
-          </Text>
+          <Text weight="medium">服务</Text>
           <Select.Root
-            size="3"
             value={preset}
             disabled={locked}
             onValueChange={(value) => {
@@ -237,10 +236,9 @@ function ProviderForm({
         </Flex>
         {preset && (
           <>
-            <Text as="label" size="3" className="ai-settings-field">
+            <Text as="label" className="ai-settings-field">
               接口地址
               <TextField.Root
-                size="3"
                 required
                 disabled={locked}
                 value={form.baseUrl}
@@ -249,11 +247,8 @@ function ProviderForm({
               />
             </Text>
             <Flex direction="column" gap="2">
-              <Text size="3" weight="medium">
-                协议
-              </Text>
+              <Text weight="medium">协议</Text>
               <Select.Root
-                size="3"
                 disabled={locked}
                 value={form.api}
                 onValueChange={(api) => update({ api })}
@@ -270,10 +265,9 @@ function ProviderForm({
                 </Select.Content>
               </Select.Root>
             </Flex>
-            <Text as="label" size="3" className="ai-settings-field">
+            <Text as="label" className="ai-settings-field">
               API 密钥
               <TextField.Root
-                size="3"
                 type="password"
                 disabled={locked}
                 value={form.apiKey}
@@ -290,7 +284,7 @@ function ProviderForm({
               />
             </Text>
             <Box>
-              <Text as="div" size="3" weight="medium" mb="2">
+              <Text as="div" weight="medium" mb="2">
                 模型
               </Text>
               <ProviderModelInput
@@ -304,7 +298,6 @@ function ProviderForm({
               <Button
                 type="button"
                 variant="soft"
-                size="3"
                 loading={working === "discover"}
                 disabled={locked || !form.baseUrl.trim()}
                 onClick={() => void probe("discover")}
@@ -315,7 +308,6 @@ function ProviderForm({
               <Button
                 type="button"
                 variant="soft"
-                size="3"
                 loading={working === "probe"}
                 disabled={locked || !form.baseUrl.trim() || !form.model.trim()}
                 onClick={() => void probe("probe")}
@@ -334,24 +326,22 @@ function ProviderForm({
             )}
             <Card asChild>
               <details>
-                <Text asChild size="3" weight="medium">
+                <Text asChild weight="medium">
                   <summary>高级设置</summary>
                 </Text>
                 <Flex direction="column" gap="4" mt="4">
-                  <Text as="label" size="3" className="ai-settings-field">
+                  <Text as="label" className="ai-settings-field">
                     名称
                     <TextField.Root
-                      size="3"
                       disabled={locked}
                       value={form.name}
                       onChange={(e) => update({ name: e.target.value })}
                       placeholder="可选，用于区分服务"
                     />
                   </Text>
-                  <Text as="label" size="3" className="ai-settings-field">
+                  <Text as="label" className="ai-settings-field">
                     上下文窗口
                     <TextField.Root
-                      size="3"
                       aria-label="上下文窗口"
                       type="number"
                       min={1}
@@ -364,10 +354,9 @@ function ProviderForm({
                       }
                     />
                   </Text>
-                  <Text as="label" size="3" className="ai-settings-field">
+                  <Text as="label" className="ai-settings-field">
                     最大输出 token
                     <TextField.Root
-                      size="3"
                       aria-label="最大输出 token"
                       type="number"
                       min={1}
@@ -385,10 +374,10 @@ function ProviderForm({
                       }
                     />
                   </Text>
-                  <Text as="label" size="3">
+                  <Text as="label">
                     <Flex as="span" gap="2" align="center">
                       <Checkbox
-                        size="3"
+                        size="2"
                         disabled={locked}
                         checked={form.vision}
                         onCheckedChange={(vision) =>
@@ -399,11 +388,8 @@ function ProviderForm({
                     </Flex>
                   </Text>
                   <Flex direction="column" gap="2">
-                    <Text size="3" weight="medium">
-                      默认思考深度
-                    </Text>
+                    <Text weight="medium">默认思考深度</Text>
                     <Select.Root
-                      size="3"
                       disabled={locked}
                       value={form.effort}
                       onValueChange={(effort) => update({ effort })}
@@ -433,7 +419,6 @@ function ProviderForm({
         <Flex gap="3" justify="end" wrap="wrap">
           <Button
             type="button"
-            size="3"
             variant="soft"
             color="gray"
             disabled={working === "save"}
@@ -443,7 +428,6 @@ function ProviderForm({
           </Button>
           <Button
             type="submit"
-            size="3"
             loading={working === "save"}
             disabled={locked || !preset}
           >
@@ -560,358 +544,329 @@ export function ProviderSettings(props: SettingsProps) {
   return (
     <>
       <span ref={origin} hidden />
-      <Dialog.Root
-        open
-        onOpenChange={(open) => {
-          if (!open && !working && !formWorking) onClose();
-        }}
-      >
-        {container !== null && (
-          <Dialog.Content
-            container={container}
-            className="ai-settings-panel"
-            aria-modal="true"
-            maxWidth="760px"
-            align="start"
-            aria-describedby={undefined}
-            onOpenAutoFocus={(event) => {
+      {container !== null && (
+        <DialogFrame
+          title="AI 设置"
+          closeLabel="关闭 AI 设置"
+          closeDisabled={working || formWorking}
+          onClose={onClose}
+          container={container}
+          className="ai-settings-panel"
+          aria-modal="true"
+          maxWidth="760px"
+          align="start"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            heading.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (opener?.isConnected) opener.focus();
+          }}
+          onEscapeKeyDown={(event) => {
+            if (working || formWorking) event.preventDefault();
+            else if (page !== "services") {
               event.preventDefault();
-              heading.current?.focus();
-            }}
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              if (opener?.isConnected) opener.focus();
-            }}
-            onEscapeKeyDown={(event) => {
-              if (working || formWorking) event.preventDefault();
-              else if (page !== "services") {
-                event.preventDefault();
-                back();
-              }
-            }}
-            onInteractOutside={(event) => event.preventDefault()}
-          >
-            <Flex justify="between" align="center" gap="3" mb="4">
-              <Dialog.Title as="h2" mb="0">
-                AI 设置
-              </Dialog.Title>
-              <Dialog.Close>
+              back();
+            }
+          }}
+          onInteractOutside={(event) => event.preventDefault()}
+        >
+          <DialogBody className="ai-settings-content">
+            <Flex align="center" gap="3">
+              {page !== "services" && (
                 <IconButton
-                  aria-label="关闭 AI 设置"
-                  variant="ghost"
+                  aria-label="返回模型服务"
+                  variant="soft"
                   color="gray"
                   disabled={working || formWorking}
+                  onClick={back}
                 >
-                  <X size={20} />
+                  <ArrowLeft size={16} />
                 </IconButton>
-              </Dialog.Close>
+              )}
+              <Heading as="h3" ref={heading} tabIndex={-1}>
+                {title}
+              </Heading>
             </Flex>
-            <Flex className="ai-settings-content" direction="column" gap="4">
-              <Flex align="center" gap="3">
-                {page !== "services" && (
-                  <IconButton
-                    aria-label="返回模型服务"
+            {page === "services" && (
+              <>
+                <Flex
+                  asChild
+                  direction="column"
+                  gap="3"
+                  className="ai-service-options"
+                >
+                  <ul aria-label="模型服务">
+                    <li>
+                      <ChatGPTLogin
+                        services={services}
+                        busy={locked}
+                        request={request}
+                        onSaved={onSaved}
+                        providerId={provider?.id}
+                        canBind={Boolean(props.conversationId)}
+                        onChoose={choose}
+                      />
+                    </li>
+                    {services
+                      .filter((service) => service.auth !== "chatgpt")
+                      .map((service) => (
+                        <li key={service.id || service.baseUrl}>
+                          <Card>
+                            <Flex
+                              gap="4"
+                              justify="between"
+                              align="start"
+                              wrap="wrap"
+                            >
+                              <Flex
+                                direction="column"
+                                gap="2"
+                                className="ai-service-details"
+                                flexGrow="1"
+                              >
+                                <Flex gap="2" align="center" wrap="wrap">
+                                  <Text weight="medium">
+                                    {publicText(
+                                      service.name || service.baseUrl,
+                                    )}
+                                  </Text>
+                                  {props.conversationId &&
+                                    service.id === provider?.id && (
+                                      <Badge size="2">此对话</Badge>
+                                    )}
+                                </Flex>
+                                {!service.baseUrl.includes(
+                                  "/api/classrooms/",
+                                ) && (
+                                  <Text color="gray">
+                                    {publicText(service.baseUrl)}
+                                  </Text>
+                                )}
+                                <Text color="gray">
+                                  {publicText(service.model)}
+                                </Text>
+                                {service.baseUrl.includes(
+                                  "/api/classrooms/",
+                                ) && (
+                                  <Text color="gray">
+                                    课堂提供 · 配置由教师管理
+                                  </Text>
+                                )}
+                              </Flex>
+                              <Flex gap="2" wrap="wrap">
+                                {service.baseUrl.includes(
+                                  "/api/classrooms/",
+                                ) ? (
+                                  <Button
+                                    variant="soft"
+                                    color="red"
+                                    disabled={locked}
+                                    onClick={() => {
+                                      setConfirmation({
+                                        kind: "remove",
+                                        service,
+                                      });
+                                      navigate("confirm");
+                                    }}
+                                  >
+                                    移除
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="soft"
+                                    color="gray"
+                                    disabled={locked}
+                                    onClick={() => edit(service)}
+                                    aria-label={`编辑 ${service.name || service.baseUrl}`}
+                                  >
+                                    编辑
+                                  </Button>
+                                )}
+                                {(service.id !== provider?.id ||
+                                  props.configurationError) && (
+                                  <Button
+                                    variant="soft"
+                                    disabled={locked || !props.conversationId}
+                                    onClick={() => choose(service)}
+                                  >
+                                    用于此对话
+                                  </Button>
+                                )}
+                              </Flex>
+                            </Flex>
+                          </Card>
+                        </li>
+                      ))}
+                    <li>
+                      <ActionRow
+                        className="ai-service-option"
+                        variant="soft"
+                        color="gray"
+                        disabled={locked}
+                        onClick={() => edit(null)}
+                      >
+                        添加自定义 API
+                        <ChevronRight size={16} aria-hidden="true" />
+                      </ActionRow>
+                    </li>
+                  </ul>
+                </Flex>
+                {props.configurationError && (
+                  <Callout.Root color="red" role="alert">
+                    <Callout.Text>{props.configurationError}</Callout.Text>
+                  </Callout.Root>
+                )}
+                {services.length > 0 && (
+                  <>
+                    <Separator size="4" />
+                    <Flex direction="column" gap="2">
+                      <Text weight="medium">新对话默认服务</Text>
+                      <Select.Root
+                        disabled={locked}
+                        value={props.defaultServiceId || ""}
+                        onValueChange={(id) =>
+                          void action(() => request("defaultProvider", { id }))
+                        }
+                      >
+                        <Select.Trigger
+                          aria-label="新对话默认服务"
+                          placeholder="选择服务"
+                        />
+                        <Select.Content container={container}>
+                          {[...services]
+                            .sort(
+                              (a, b) =>
+                                Number(b.auth === "chatgpt") -
+                                Number(a.auth === "chatgpt"),
+                            )
+                            .filter((service) => service.id)
+                            .map((service) => (
+                              <Select.Item key={service.id} value={service.id!}>
+                                {publicText(service.name || service.baseUrl)}
+                              </Select.Item>
+                            ))}
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
+                  </>
+                )}
+              </>
+            )}
+            {page === "edit" && (
+              <ProviderForm
+                container={container}
+                key={editing?.id || editing?.baseUrl || "new"}
+                provider={editing}
+                busy={props.busy}
+                request={request}
+                onSaved={onSaved}
+                onWorking={setFormWorking}
+                onClose={back}
+              />
+            )}
+            {page === "edit" && editing && (
+              <Button
+                variant="soft"
+                color="red"
+                disabled={locked}
+                onClick={() => {
+                  setConfirmation({ kind: "remove", service: editing });
+                  navigate("confirm");
+                }}
+                style={{ alignSelf: "start" }}
+              >
+                移除服务…
+              </Button>
+            )}
+            {page === "confirm" && confirmation && (
+              <>
+                <DataList.Root size="2" className="ai-service-details">
+                  {confirmation.kind === "bind" && (
+                    <DataList.Item>
+                      <DataList.Label>当前</DataList.Label>
+                      <DataList.Value>
+                        <Flex direction="column" gap="1">
+                          <Text weight="medium">
+                            {publicText(
+                              provider?.name || provider?.model || "未绑定",
+                            )}
+                          </Text>
+                          <Text color="gray">
+                            {publicText(provider?.baseUrl || "")}
+                          </Text>
+                        </Flex>
+                      </DataList.Value>
+                    </DataList.Item>
+                  )}
+                  <DataList.Item>
+                    <DataList.Label>
+                      {confirmation.kind === "bind" ? "更换为" : "移除"}
+                    </DataList.Label>
+                    <DataList.Value>
+                      <Flex direction="column" gap="1">
+                        <Text weight="medium">
+                          {publicText(
+                            confirmation.service.name ||
+                              confirmation.service.model ||
+                              "",
+                          )}
+                        </Text>
+                        <Text color="gray">
+                          {publicText(confirmation.service.baseUrl || "")}
+                        </Text>
+                      </Flex>
+                    </DataList.Value>
+                  </DataList.Item>
+                </DataList.Root>
+                <Text as="p">
+                  {confirmation.kind === "bind"
+                    ? "已有历史将随下一次提问发送给这个服务。"
+                    : "使用它的对话仍会保留，继续提问前需要重新选择服务。"}
+                </Text>
+                <Flex gap="3" justify="end" wrap="wrap">
+                  <Button
                     variant="soft"
                     color="gray"
                     disabled={working || formWorking}
                     onClick={back}
                   >
-                    <ArrowLeft size={18} />
-                  </IconButton>
-                )}
-                <Heading as="h3" size="4" ref={heading} tabIndex={-1}>
-                  {title}
-                </Heading>
-              </Flex>
-              {page === "services" && (
-                <>
-                  <Flex
-                    asChild
-                    direction="column"
-                    gap="3"
-                    className="ai-service-options"
-                  >
-                    <ul aria-label="模型服务">
-                      <li>
-                        <ChatGPTLogin
-                          services={services}
-                          busy={locked}
-                          request={request}
-                          onSaved={onSaved}
-                          providerId={provider?.id}
-                          canBind={Boolean(props.conversationId)}
-                          onChoose={choose}
-                        />
-                      </li>
-                      {services
-                        .filter((service) => service.auth !== "chatgpt")
-                        .map((service) => (
-                          <li key={service.id || service.baseUrl}>
-                            <Card>
-                              <Flex
-                                gap="4"
-                                justify="between"
-                                align="start"
-                                wrap="wrap"
-                              >
-                                <Flex
-                                  direction="column"
-                                  gap="2"
-                                  className="ai-service-details"
-                                  flexGrow="1"
-                                >
-                                  <Flex gap="2" align="center" wrap="wrap">
-                                    <Text size="3" weight="medium">
-                                      {publicText(
-                                        service.name || service.baseUrl,
-                                      )}
-                                    </Text>
-                                    {props.conversationId &&
-                                      service.id === provider?.id && (
-                                        <Badge size="2">此对话</Badge>
-                                      )}
-                                  </Flex>
-                                  {!service.baseUrl.includes(
-                                    "/api/classrooms/",
-                                  ) && (
-                                    <Text size="3" color="gray">
-                                      {publicText(service.baseUrl)}
-                                    </Text>
-                                  )}
-                                  <Text size="3" color="gray">
-                                    {publicText(service.model)}
-                                  </Text>
-                                  {service.baseUrl.includes(
-                                    "/api/classrooms/",
-                                  ) && (
-                                    <Text size="3" color="gray">
-                                      课堂提供 · 配置由教师管理
-                                    </Text>
-                                  )}
-                                </Flex>
-                                <Flex gap="2" wrap="wrap">
-                                  {service.baseUrl.includes(
-                                    "/api/classrooms/",
-                                  ) ? (
-                                    <Button
-                                      variant="soft"
-                                      color="red"
-                                      disabled={locked}
-                                      onClick={() => {
-                                        setConfirmation({
-                                          kind: "remove",
-                                          service,
-                                        });
-                                        navigate("confirm");
-                                      }}
-                                    >
-                                      移除
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      variant="soft"
-                                      color="gray"
-                                      disabled={locked}
-                                      onClick={() => edit(service)}
-                                      aria-label={`编辑 ${service.name || service.baseUrl}`}
-                                    >
-                                      编辑
-                                    </Button>
-                                  )}
-                                  {(service.id !== provider?.id ||
-                                    props.configurationError) && (
-                                    <Button
-                                      variant="soft"
-                                      disabled={locked || !props.conversationId}
-                                      onClick={() => choose(service)}
-                                    >
-                                      用于此对话
-                                    </Button>
-                                  )}
-                                </Flex>
-                              </Flex>
-                            </Card>
-                          </li>
-                        ))}
-                      <li>
-                        <Button
-                          className="ai-service-option"
-                          variant="soft"
-                          color="gray"
-                          size="3"
-                          disabled={locked}
-                          onClick={() => edit(null)}
-                        >
-                          添加自定义 API
-                          <ChevronRight size={18} aria-hidden="true" />
-                        </Button>
-                      </li>
-                    </ul>
-                  </Flex>
-                  {props.configurationError && (
-                    <Callout.Root color="red" role="alert">
-                      <Callout.Text>{props.configurationError}</Callout.Text>
-                    </Callout.Root>
-                  )}
-                  {services.length > 0 && (
-                    <>
-                      <Separator size="4" />
-                      <Flex direction="column" gap="2">
-                        <Text size="3" weight="medium">
-                          新对话默认服务
-                        </Text>
-                        <Select.Root
-                          size="3"
-                          disabled={locked}
-                          value={props.defaultServiceId || ""}
-                          onValueChange={(id) =>
-                            void action(() =>
-                              request("defaultProvider", { id }),
-                            )
-                          }
-                        >
-                          <Select.Trigger
-                            aria-label="新对话默认服务"
-                            placeholder="选择服务"
-                          />
-                          <Select.Content container={container}>
-                            {[...services]
-                              .sort(
-                                (a, b) =>
-                                  Number(b.auth === "chatgpt") -
-                                  Number(a.auth === "chatgpt"),
+                    取消
+                  </Button>
+                  <Button
+                    color={confirmation.kind === "remove" ? "red" : undefined}
+                    loading={working}
+                    disabled={locked}
+                    onClick={() =>
+                      void action(
+                        () =>
+                          confirmation.kind === "bind"
+                            ? bind(
+                                confirmation.service,
+                                confirmation.conversationId,
                               )
-                              .filter((service) => service.id)
-                              .map((service) => (
-                                <Select.Item
-                                  key={service.id}
-                                  value={service.id!}
-                                >
-                                  {publicText(service.name || service.baseUrl)}
-                                </Select.Item>
-                              ))}
-                          </Select.Content>
-                        </Select.Root>
-                      </Flex>
-                    </>
-                  )}
-                </>
-              )}
-              {page === "edit" && (
-                <ProviderForm
-                  container={container}
-                  key={editing?.id || editing?.baseUrl || "new"}
-                  provider={editing}
-                  busy={props.busy}
-                  request={request}
-                  onSaved={onSaved}
-                  onWorking={setFormWorking}
-                  onClose={back}
-                />
-              )}
-              {page === "edit" && editing && (
-                <Button
-                  variant="soft"
-                  color="red"
-                  disabled={locked}
-                  onClick={() => {
-                    setConfirmation({ kind: "remove", service: editing });
-                    navigate("confirm");
-                  }}
-                  style={{ alignSelf: "start" }}
-                >
-                  移除服务…
-                </Button>
-              )}
-              {page === "confirm" && confirmation && (
-                <>
-                  <DataList.Root size="3" className="ai-service-details">
-                    {confirmation.kind === "bind" && (
-                      <DataList.Item>
-                        <DataList.Label>当前</DataList.Label>
-                        <DataList.Value>
-                          <Flex direction="column" gap="1">
-                            <Text weight="medium">
-                              {publicText(
-                                provider?.name || provider?.model || "未绑定",
-                              )}
-                            </Text>
-                            <Text color="gray">
-                              {publicText(provider?.baseUrl || "")}
-                            </Text>
-                          </Flex>
-                        </DataList.Value>
-                      </DataList.Item>
-                    )}
-                    <DataList.Item>
-                      <DataList.Label>
-                        {confirmation.kind === "bind" ? "更换为" : "移除"}
-                      </DataList.Label>
-                      <DataList.Value>
-                        <Flex direction="column" gap="1">
-                          <Text weight="medium">
-                            {publicText(
-                              confirmation.service.name ||
-                                confirmation.service.model ||
-                                "",
-                            )}
-                          </Text>
-                          <Text color="gray">
-                            {publicText(confirmation.service.baseUrl || "")}
-                          </Text>
-                        </Flex>
-                      </DataList.Value>
-                    </DataList.Item>
-                  </DataList.Root>
-                  <Text as="p" size="3">
-                    {confirmation.kind === "bind"
-                      ? "已有历史将随下一次提问发送给这个服务。"
-                      : "使用它的对话仍会保留，继续提问前需要重新选择服务。"}
-                  </Text>
-                  <Flex gap="3" justify="end" wrap="wrap">
-                    <Button
-                      size="3"
-                      variant="soft"
-                      color="gray"
-                      disabled={working || formWorking}
-                      onClick={back}
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      size="3"
-                      color={confirmation.kind === "remove" ? "red" : undefined}
-                      loading={working}
-                      disabled={locked}
-                      onClick={() =>
-                        void action(
-                          () =>
-                            confirmation.kind === "bind"
-                              ? bind(
-                                  confirmation.service,
-                                  confirmation.conversationId,
-                                )
-                              : request("removeProvider", {
-                                  id: confirmation.service.id,
-                                }),
-                          "services",
-                        )
-                      }
-                    >
-                      {confirmation.kind === "bind" ? "更换服务" : "移除服务"}
-                    </Button>
-                  </Flex>
-                </>
-              )}
-              {error && (
-                <Callout.Root color="red" role="alert">
-                  <Callout.Text>{error}</Callout.Text>
-                </Callout.Root>
-              )}
-            </Flex>
-          </Dialog.Content>
-        )}
-      </Dialog.Root>
+                            : request("removeProvider", {
+                                id: confirmation.service.id,
+                              }),
+                        "services",
+                      )
+                    }
+                  >
+                    {confirmation.kind === "bind" ? "更换服务" : "移除服务"}
+                  </Button>
+                </Flex>
+              </>
+            )}
+            {error && (
+              <Callout.Root color="red" role="alert">
+                <Callout.Text>{error}</Callout.Text>
+              </Callout.Root>
+            )}
+          </DialogBody>
+        </DialogFrame>
+      )}
     </>
   );
 }
@@ -941,7 +896,6 @@ function ProviderModelInput({
       }}
     >
       <TextField.Root
-        size="3"
         required
         aria-label="模型"
         disabled={disabled}
@@ -960,7 +914,7 @@ function ProviderModelInput({
               aria-label="展开接口模型"
               disabled={disabled || !models.length}
             >
-              <ChevronDown size={18} />
+              <ChevronDown size={16} />
             </IconButton>
           </Popover.Trigger>
         </TextField.Slot>
@@ -980,7 +934,7 @@ function ProviderModelInput({
         onEscapeKeyDown={preventComposingDismiss}
       >
         <Flex direction="column" gap="3">
-          <Heading as="h3" id={titleId} size="3">
+          <Heading as="h3" id={titleId}>
             接口提供的模型
           </Heading>
           <Command
@@ -994,7 +948,6 @@ function ProviderModelInput({
               value={query}
               onValueChange={setQuery}
               inputRef={search}
-              size="3"
               aria-label="搜索接口模型"
               placeholder="搜索模型"
             >
@@ -1030,9 +983,7 @@ function ProviderModelInput({
                 </Command.Item>
               ))}
               <Command.Empty>
-                <Text size="3" color="gray">
-                  没有匹配的模型，可直接输入名称。
-                </Text>
+                <Text color="gray">没有匹配的模型，可直接输入名称。</Text>
               </Command.Empty>
             </Command.List>
           </Command>

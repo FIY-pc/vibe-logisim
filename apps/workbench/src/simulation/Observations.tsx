@@ -1,4 +1,5 @@
-import { Button } from "@radix-ui/themes";
+import { Button, Heading } from "../design/ui";
+
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
 import { useEffect, useState } from "react";
@@ -170,7 +171,7 @@ export function Observations({
             {selected.length === 2 && <Comparison records={selected} />}
             {selected.map((record) => (
               <article key={record.id}>
-                <h3>{record.title}</h3>
+                <Heading as="h3">{record.title}</Heading>
                 <p className="muted">
                   {record.rootCircuit}
                   {record.instancePath.length
@@ -213,7 +214,6 @@ export function Observations({
       </DialogBody>
       <DialogFooter>
         <Button
-          size="2"
           type="button"
           disabled={!selected.length}
           onClick={() => {

@@ -1,4 +1,5 @@
-import { Button } from "@radix-ui/themes";
+import { Button } from "../design/ui";
+
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { HistoryEntry } from "../generated/HistoryEntry";
 import type { HistoryReview as Review } from "../generated/HistoryReview";
@@ -157,7 +158,6 @@ export function HistoryReview({
         <nav aria-label="对照方式">
           <Select
             label="对照方式"
-
             value={mode}
             options={[
               {
@@ -171,13 +171,11 @@ export function HistoryReview({
           />
           <Select
             label="电路"
-
             value={selected}
             options={names.map((name) => ({ value: name, label: name }))}
             onChange={setSelected}
           />
           <Button
-            size="2"
             type="button"
             variant={!after ? "solid" : "soft"}
             color={!after ? undefined : "gray"}
@@ -187,7 +185,6 @@ export function HistoryReview({
             {beforeLabel}
           </Button>
           <Button
-            size="2"
             type="button"
             variant={after ? "solid" : "soft"}
             color={after ? undefined : "gray"}
@@ -273,7 +270,6 @@ export function HistoryReview({
       <DialogFooter>
         <span>恢复会追加一条修改记录，已有历史保留。</span>
         <Button
-          size="2"
           type="button"
           disabled={
             pending || stale || !review || entry.revision === doc.revision

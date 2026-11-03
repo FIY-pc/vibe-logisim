@@ -1,4 +1,5 @@
-import { Button, Table, TextField } from "@radix-ui/themes";
+import { ActionRow, Button, TextField, Heading } from "../design/ui";
+import { Table } from "@radix-ui/themes";
 import { Select } from "../shared/Select";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -449,10 +450,10 @@ export function Curriculum({
               color="gray"
               onClick={() => setProgress(null)}
             >
-              <ChevronLeft size={15} />
+              <ChevronLeft size={16} />
               返回关卡
             </Button>
-            <h3>学生闯关情况</h3>
+            <Heading as="h3">学生闯关情况</Heading>
             <div>
               <Button
                 variant="soft"
@@ -471,7 +472,7 @@ export function Curriculum({
                   )
                 }
               >
-                <RefreshCw size={14} />
+                <RefreshCw size={16} />
                 刷新
               </Button>
             </div>
@@ -540,7 +541,7 @@ export function Curriculum({
           {report && progress.students.length > 0 && (
             <section className="assessment-report" aria-label="成绩单">
               <div className="assessment-heading">
-                <h4>成绩单</h4>
+                <Heading as="h4">成绩单</Heading>
                 <Button
                   variant="soft"
                   color="gray"
@@ -572,7 +573,7 @@ export function Curriculum({
         <>
           <div className="assessment-heading">
             <Button variant="soft" color="gray" onClick={() => choose("")}>
-              <ChevronLeft size={15} />
+              <ChevronLeft size={16} />
               章节目录
             </Button>
             <div>
@@ -592,7 +593,7 @@ export function Curriculum({
             </div>
           </div>
           <div className="lesson-title">
-            <h3>{lesson.title}</h3>
+            <Heading as="h3">{lesson.title}</Heading>
             <p>
               {lesson.testCount} 组用例，其中 {lesson.hiddenCount} 组隐藏 · 分值{" "}
               {lesson.points} 分{!teacher && "（全部用例通过才得分）"}
@@ -610,7 +611,7 @@ export function Curriculum({
               disabled={busy}
               onClick={() => void run(openTemplate)}
             >
-              <Download size={15} />
+              <Download size={16} />
               {teacher ? "打开模板副本" : "下载模板并打开"}
             </Button>
             {teacher && (
@@ -655,7 +656,7 @@ export function Curriculum({
                 }
                 onClick={() => void run(submit)}
               >
-                <Send size={15} />
+                <Send size={16} />
                 提交关卡评测
               </Button>
             </div>
@@ -728,20 +729,20 @@ export function Curriculum({
             </>
           )}
           <div className="assessment-heading">
-            <h4>
+            <Heading as="h4">
               {teacher
                 ? studentFilter
                   ? `${studentFilter.name}的提交记录`
                   : "学生提交记录"
                 : "我的提交记录"}
-            </h4>
+            </Heading>
             <Button
               variant="soft"
               color="gray"
               disabled={busy}
               onClick={() => void run(() => history(lesson.id))}
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={16} />
               刷新记录
             </Button>
           </div>
@@ -812,10 +813,10 @@ export function Curriculum({
         <>
           <div className="assessment-heading">
             <div>
-              <h3>
-                <BookOpen size={19} />
+              <Heading as="h3">
+                <BookOpen size={16} />
                 章节与关卡
-              </h3>
+              </Heading>
               <p>完成电路后提交，系统逐组比对输出。</p>
             </div>
             <div>
@@ -847,7 +848,7 @@ export function Curriculum({
                       })
                     }
                   >
-                    <Plus size={15} />
+                    <Plus size={16} />
                     新增章节
                   </Button>
                 </>
@@ -858,7 +859,7 @@ export function Curriculum({
                 disabled={busy}
                 onClick={() => void run(refresh)}
               >
-                <RefreshCw size={14} />
+                <RefreshCw size={16} />
                 刷新
               </Button>
             </div>
@@ -941,7 +942,7 @@ export function Curriculum({
                 <div className="assessment-chapter-heading">
                   <div>
                     <span>第 {i + 1} 章</span>
-                    <h4>{chapter.title}</h4>
+                    <Heading as="h4">{chapter.title}</Heading>
                     {chapter.description && <p>{chapter.description}</p>}
                   </div>
                   {teacher && (
@@ -967,7 +968,7 @@ export function Curriculum({
                         disabled={busy || classroom.archived}
                         onClick={() => setEditing(draftLesson(chapter.id))}
                       >
-                        <Plus size={14} />
+                        <Plus size={16} />
                         新增关卡
                       </Button>
                     </div>
@@ -976,16 +977,16 @@ export function Curriculum({
                 <ol className="assessment-lessons">
                   {chapter.lessons.map((l) => (
                     <li key={l.id}>
-                      <Button
+                      <ActionRow
                         variant="soft"
                         color="gray"
                         onClick={() => choose(l.id)}
                       >
                         <span className="assessment-lesson-icon">
                           {l.passed ? (
-                            <CheckCircle size={19} />
+                            <CheckCircle size={16} />
                           ) : (
-                            <Play size={17} />
+                            <Play size={16} />
                           )}
                         </span>
                         <span>
@@ -1009,7 +1010,7 @@ export function Curriculum({
                                 ? "已尝试"
                                 : "待完成"}
                         </span>
-                      </Button>
+                      </ActionRow>
                     </li>
                   ))}
                 </ol>
@@ -1024,8 +1025,10 @@ export function Curriculum({
             ))
           ) : (
             <div className="assessment-empty">
-              <BookOpen size={32} />
-              <h4>{teacher ? "发布你的第一个章节" : "等待教师发布关卡"}</h4>
+              <BookOpen size={20} />
+              <Heading as="h4">
+                {teacher ? "发布你的第一个章节" : "等待教师发布关卡"}
+              </Heading>
               <p>
                 {teacher
                   ? "每个关卡可以配置图文说明、circ模板及公开或隐藏测试用例。"
@@ -1064,12 +1067,12 @@ function AttemptResult({
       aria-label="关卡评测结果"
     >
       <div className="assessment-heading">
-        <h4>
+        <Heading as="h4">
           {attemptStatus(attempt.status)}
           <span>
             {attempt.passed} / {attempt.total}
           </span>
-        </h4>
+        </Heading>
         <Button variant="soft" color="gray" onClick={onOpen}>
           打开提交电路副本
         </Button>

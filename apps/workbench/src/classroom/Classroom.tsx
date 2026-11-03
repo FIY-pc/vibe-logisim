@@ -1,4 +1,5 @@
-import { Button, Table, Tabs, TextArea, TextField } from "@radix-ui/themes";
+import { ActionRow, Button, TextArea, TextField, Heading } from "../design/ui";
+import { Table, Tabs } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import {
   GraduationCap,
@@ -228,7 +229,7 @@ function ClassroomDialog({
       className={`classroom-dialog${session ? " classroom-connected" : ""}`}
       title={
         <>
-          <GraduationCap size={21} />
+          <GraduationCap size={20} />
           课堂管理
         </>
       }
@@ -262,7 +263,7 @@ function ClassroomDialog({
               disabled={busy}
               onClick={() => void run(() => refresh())}
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={16} />
               刷新
             </Button>
             <Button
@@ -279,17 +280,17 @@ function ClassroomDialog({
                 })
               }
             >
-              <LogOut size={14} />
+              <LogOut size={16} />
               退出登录
             </Button>
           </div>
           <div className="classroom-columns">
             <nav aria-label="我的课堂">
-              <h3>我的课堂</h3>
+              <Heading as="h3">我的课堂</Heading>
               {rooms.map((c) => (
-                <Button
-                  variant="soft"
-                  color="gray"
+                <ActionRow
+                  variant={selected === c.id ? "soft" : "ghost"}
+                  color={selected === c.id ? undefined : "gray"}
                   key={c.id}
                   disabled={busy}
                   aria-current={selected === c.id ? "page" : undefined}
@@ -302,7 +303,7 @@ function ClassroomDialog({
                       ? "已关闭"
                       : `${c.memberCount} 人 · ${c.teacherName}`}
                   </small>
-                </Button>
+                </ActionRow>
               ))}
               {!rooms.length && <p className="muted">尚未加入或创建课堂</p>}
               <ClassForm
@@ -332,7 +333,7 @@ function ClassroomDialog({
                 <>
                   <div className="classroom-room-heading">
                     <div>
-                      <h3>{detail.classroom.title}</h3>
+                      <Heading as="h3">{detail.classroom.title}</Heading>
                       {session.user.role === "teacher" && (
                         <p>
                           课堂码 <code>{detail.classroom.code}</code>{" "}
@@ -350,7 +351,7 @@ function ClassroomDialog({
                               })
                             }
                           >
-                            <Copy size={14} />
+                            <Copy size={16} />
                           </Button>
                           <Button
                             variant="soft"
@@ -426,11 +427,11 @@ function ClassroomDialog({
                   </details>
                   {detail.classroom.task && (
                     <section className="classroom-task">
-                      <h4>课堂任务</h4>
+                      <Heading as="h4">课堂任务</Heading>
                       <p>{detail.classroom.task}</p>
                       {detail.classroom.rubric && (
                         <>
-                          <h4>评价标准</h4>
+                          <Heading as="h4">评价标准</Heading>
                           <p>{detail.classroom.rubric}</p>
                         </>
                       )}
@@ -488,8 +489,8 @@ function ClassroomDialog({
                 </>
               ) : (
                 <div className="classroom-empty">
-                  <GraduationCap size={36} />
-                  <h3>从一个课堂开始</h3>
+                  <GraduationCap size={20} />
+                  <Heading as="h3">从一个课堂开始</Heading>
                   <p>
                     {session.user.role === "teacher"
                       ? "创建课堂、发布电路任务，然后把课堂码分享给学生。"
@@ -532,7 +533,7 @@ function Login({
         });
       }}
     >
-      <h3>{register ? "注册课堂账号" : "登录课堂"}</h3>
+      <Heading as="h3">{register ? "注册课堂账号" : "登录课堂"}</Heading>
       <label>
         课堂服务地址
         <TextField.Root
@@ -637,7 +638,7 @@ function ClassForm({
         void onSubmit(teacher ? { ...b, capacity: Number(b.capacity) } : b);
       }}
     >
-      <h4>{teacher ? "创建课堂" : "加入课堂"}</h4>
+      <Heading as="h4">{teacher ? "创建课堂" : "加入课堂"}</Heading>
       {teacher ? (
         <>
           <label>
@@ -710,7 +711,7 @@ function StudentRoom({
   }, [detail.classroom.id, detail.classroom.archived]);
   return (
     <section className="classroom-student">
-      <h4>课堂自动同步</h4>
+      <Heading as="h4">课堂自动同步</Heading>
       <p>
         本课堂会每 15 秒检查变化，自动同步当前电路和当前 AI
         对话；关闭课堂窗口后继续同步。
@@ -758,7 +759,7 @@ function StudentRoom({
               })
             }
           >
-            <Send size={14} />
+            <Send size={16} />
             提交电路
           </Button>
           <Button
@@ -921,7 +922,7 @@ function TeacherRoom({
       </div>
       {student && (
         <section className="classroom-review">
-          <h4>
+          <Heading as="h4">
             {members.find((m) => m.user.id === student)?.user.name} · 只读审阅{" "}
             <Button
               variant="soft"
@@ -935,7 +936,7 @@ function TeacherRoom({
             >
               返回全班
             </Button>
-          </h4>
+          </Heading>
           {history.length ? (
             <Select
               label="提交历史"
@@ -975,7 +976,9 @@ function TeacherRoom({
                 <summary>电路 XML · {submission.name}</summary>
                 <pre>{submission.snapshot.xml}</pre>
               </details>
-              <h4>与 AI 的交互记录（{submission.snapshot.messages.length}）</h4>
+              <Heading as="h4">
+                与 AI 的交互记录（{submission.snapshot.messages.length}）
+              </Heading>
               {submission.snapshot.messages.map((m) => (
                 <article key={m.id} className="classroom-message">
                   <strong>
@@ -994,10 +997,10 @@ function TeacherRoom({
         </section>
       )}
       <section className="classroom-analysis">
-        <h4>
+        <Heading as="h4">
           <Sparkles size={16} />
           AI 学情分析 · {student ? "当前学生" : "全班"}
-        </h4>
+        </Heading>
         <TextArea
           aria-label="学情分析问题"
           value={question}
@@ -1035,7 +1038,7 @@ function TeacherRoom({
             })
           }
         >
-          <Sparkles size={14} />
+          <Sparkles size={16} />
           {busy ? "处理中…" : preview?.cached ? "查看已有报告" : "生成分析报告"}
         </Button>
         {!detail.aiAvailable && (

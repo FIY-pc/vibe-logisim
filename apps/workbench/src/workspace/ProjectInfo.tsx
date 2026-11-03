@@ -1,4 +1,5 @@
-import { Button, IconButton } from "@radix-ui/themes";
+import { Button, IconButton, Heading, Text } from "../design/ui";
+
 import { useEffect, useState } from "react";
 import { Copy, Download } from "lucide-react";
 import { command, desktop } from "../shared/transport";
@@ -137,7 +138,6 @@ export function ProjectInfo({
               <span>{info.path || "未命名文件"}</span>
               {info.path && (
                 <IconButton
-                  size="2"
                   type="button"
                   variant="soft"
                   color="gray"
@@ -149,7 +149,7 @@ export function ProjectInfo({
                       .catch((error) => setError(String(error)))
                   }
                 >
-                  <Copy size={15} />
+                  <Copy size={16} />
                 </IconButton>
               )}
             </div>
@@ -166,12 +166,13 @@ export function ProjectInfo({
             </dl>
             {info.libraries.length > 0 && (
               <section aria-label="外部组件库">
-                <h3>外部组件库</h3>
+                <Heading as="h3">外部组件库</Heading>
                 <ul>
                   {info.libraries.map((library, index) => (
                     <li key={index}>
                       <span>{library.name}</span>
-                      <small
+                      <Text
+                        kind="meta"
                         className={library.available ? "" : "dialog-error"}
                       >
                         {library.available
@@ -179,7 +180,7 @@ export function ProjectInfo({
                             ? "JAR"
                             : "电路"
                           : library.error}
-                      </small>
+                      </Text>
                     </li>
                   ))}
                 </ul>
@@ -215,7 +216,6 @@ export function ProjectInfo({
       <DialogFooter>
         {replacement && (
           <Button
-            size="2"
             type="button"
             variant="soft"
             color="gray"
@@ -226,12 +226,11 @@ export function ProjectInfo({
           </Button>
         )}
         <Button
-          size="2"
           type="button"
           disabled={!info?.exportable || busy}
           onClick={() => void download()}
         >
-          <Download size={15} />
+          <Download size={16} />
           {busy
             ? "正在导出…"
             : replacement

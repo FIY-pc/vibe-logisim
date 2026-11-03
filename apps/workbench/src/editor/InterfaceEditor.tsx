@@ -1,4 +1,5 @@
-import { Button, IconButton, TextField } from "@radix-ui/themes";
+import { Button, IconButton, TextField, Heading } from "../design/ui";
+
 import { createElement, useEffect, useRef, useState } from "react";
 import { Maximize, Trash2, Undo2, X } from "lucide-react";
 import { command } from "../shared/transport";
@@ -206,7 +207,7 @@ export function InterfaceEditor({
         }
       }}
     >
-      <DialogBody scroll={false}>
+      <DialogBody>
         {!active && (
           <p role="alert" className="dialog-error">
             工程已改变，请关闭后重新打开编辑器。
@@ -221,7 +222,6 @@ export function InterfaceEditor({
           <div className="symbol-drawing">
             <div className="symbol-toolbar">
               <Button
-                size="1"
                 type="button"
                 variant="soft"
                 color="gray"
@@ -251,7 +251,6 @@ export function InterfaceEditor({
                 矩形
               </Button>
               <Button
-                size="1"
                 type="button"
                 variant="soft"
                 color="gray"
@@ -279,7 +278,6 @@ export function InterfaceEditor({
                 文字
               </Button>
               <IconButton
-                size="1"
                 type="button"
                 variant="soft"
                 color="gray"
@@ -287,10 +285,9 @@ export function InterfaceEditor({
                 aria-label="适应封装"
                 onClick={fit}
               >
-                <Maximize size={15} />
+                <Maximize size={16} />
               </IconButton>
               <IconButton
-                size="1"
                 type="button"
                 variant="soft"
                 color="gray"
@@ -299,7 +296,7 @@ export function InterfaceEditor({
                 disabled={busy || !undo.length}
                 onClick={restore}
               >
-                <Undo2 size={15} />
+                <Undo2 size={16} />
               </IconButton>
             </div>
             <svg
@@ -448,7 +445,6 @@ export function InterfaceEditor({
                       内外接线
                       <Select
                         label="内外接线"
-
                         value={selectedPort.disconnect ? "detach" : "keep"}
                         options={[
                           { value: "keep", label: "保持接线" },
@@ -556,7 +552,6 @@ export function InterfaceEditor({
                           />
                         ))}
                       <IconButton
-                        size="1"
                         type="button"
                         variant="soft"
                         color="gray"
@@ -570,7 +565,7 @@ export function InterfaceEditor({
                           })
                         }
                       >
-                        <Trash2 size={15} />
+                        <Trash2 size={16} />
                       </IconButton>
                     </>
                   ) : (
@@ -581,9 +576,8 @@ export function InterfaceEditor({
           </div>
           <section className="symbol-ports">
             <header>
-              <h3>端口</h3>
+              <Heading as="h3">端口</Heading>
               <Button
-                size="1"
                 type="button"
                 variant="soft"
                 color="gray"
@@ -626,7 +620,6 @@ export function InterfaceEditor({
                 className={`symbol-port-row ${selected?.id === p.id ? "selected" : ""}`}
               >
                 <IconButton
-                  size="1"
                   type="button"
                   variant="soft"
                   color="gray"
@@ -642,7 +635,6 @@ export function InterfaceEditor({
                 />
                 <Select
                   label={`${p.label} 方向`}
-
                   value={p.direction}
                   options={[
                     { value: "input", label: "输入" },
@@ -661,7 +653,6 @@ export function InterfaceEditor({
                   }
                 />
                 <IconButton
-                  size="1"
                   type="button"
                   variant="soft"
                   color="gray"
@@ -674,7 +665,7 @@ export function InterfaceEditor({
                     })
                   }
                 >
-                  <X size={13} />
+                  <X size={16} />
                 </IconButton>
               </fieldset>
             ))}
@@ -687,7 +678,7 @@ export function InterfaceEditor({
             )}
             {preview && (
               <div className="symbol-impact">
-                <h3>应用后的影响</h3>
+                <Heading as="h3">应用后的影响</Heading>
                 {preview.impacts.map((i) => (
                   <div key={i.circuit}>
                     <span>
@@ -695,7 +686,6 @@ export function InterfaceEditor({
                       {i.detachedPorts} 个端口
                     </span>
                     <Button
-                      size="1"
                       type="button"
                       variant="soft"
                       color="gray"
@@ -729,14 +719,13 @@ export function InterfaceEditor({
         {parentImage && (
           <div className="symbol-parent-preview">
             <IconButton
-              size="1"
               type="button"
               variant="soft"
               color="gray"
               aria-label="关闭图面预览"
               onClick={() => setParentImage(null)}
             >
-              <X size={15} />
+              <X size={16} />
             </IconButton>
             <img src={parentImage} alt="应用后的电路" />
           </div>
@@ -747,7 +736,6 @@ export function InterfaceEditor({
           {busy ? "正在读取并检查电路…" : dirty ? "草稿尚未应用" : ""}
         </span>
         <Button
-          size="2"
           type="button"
           variant="soft"
           color="gray"
@@ -761,7 +749,6 @@ export function InterfaceEditor({
           预览修改
         </Button>
         <Button
-          size="2"
           type="button"
           disabled={!dirty || busy || !active}
           onClick={() => void apply()}
@@ -796,7 +783,6 @@ function Field({
     <label>
       <span>{label}</span>
       <TextField.Root
-        size="2"
         className={
           label === "文字内容"
             ? "symbol-field symbol-field-text"

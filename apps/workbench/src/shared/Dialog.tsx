@@ -1,3 +1,4 @@
+import { IconButton } from "../design/ui";
 /* Focus handoff for project commands and dialogs during the Themes migration. */
 import {
   useEffect,
@@ -7,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { X } from "lucide-react";
-import { Dialog as ThemesDialog, IconButton } from "@radix-ui/themes";
+import { Dialog as ThemesDialog } from "@radix-ui/themes";
 
 const openers = new WeakMap<HTMLElement, HTMLElement>();
 export const modalSelector = 'dialog[open],[aria-modal="true"]';
@@ -139,7 +140,7 @@ export function DialogFrame({
         }}
       >
         <header className="dialog-header">
-          <ThemesDialog.Title className="dialog-title" mb="0">
+          <ThemesDialog.Title className="dialog-title" size="5" mb="0">
             {title}
           </ThemesDialog.Title>
           <DialogClose
@@ -227,7 +228,6 @@ export function DialogClose({
       type="button"
       variant="ghost"
       color="gray"
-      size="2"
       style={{ marginInlineStart: "auto" }}
       aria-label={label}
       data-tip="关闭"

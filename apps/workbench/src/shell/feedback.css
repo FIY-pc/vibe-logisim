@@ -17,8 +17,7 @@
 }
 /* The body lines up with the title and the buttons. */
 .feedback-dialog .dialog-body > p {
-  margin: 0 0 10px;
-  font-size: 13px;
+  margin: 0 0 var(--space-3);
 }
 .feedback-dialog .diagnostic-preview {
   height: 240px;

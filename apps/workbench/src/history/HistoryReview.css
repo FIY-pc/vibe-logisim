@@ -4,16 +4,15 @@
   gap: var(--space-2);
   flex-wrap: wrap;
   padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
 }
 .history-review h2 small {
-  font-size: 12px;
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
   font-weight: 400;
   color: var(--muted);
-  margin-left: 10px;
-}
-.history-review nav {
-  border-bottom: 1px solid var(--border);
-  padding-top: 0;
+  display: block;
+  margin-top: var(--space-1);
 }
 .history-review nav .select-trigger {
   max-width: 200px;
@@ -21,7 +20,7 @@
 .history-review-note {
   background: #fff7e5;
   color: #7e6226;
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   margin: 0;
   flex-shrink: 0;
 }
@@ -30,13 +29,13 @@
   overflow: auto;
 }
 .history-review .dialog-error {
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   margin: 0;
 }
 .history-review-image {
   height: 220px;
   min-height: 160px;
-  padding: 16px;
+  padding: var(--space-4);
   display: grid;
   place-items: center;
   overflow: auto;
@@ -48,7 +47,7 @@
   object-fit: contain;
 }
 .history-review-image p {
-  padding: 16px;
+  padding: var(--space-4);
   overflow-wrap: anywhere;
 }
 .history-review-source {
@@ -66,14 +65,14 @@
   height: min(320px, 36dvh);
 }
 .history-review-source > summary {
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   flex-shrink: 0;
 }
 .history-review-source > summary label {
-  margin-left: 10px;
+  margin-left: var(--space-2);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   font-weight: 400;
   color: var(--muted);
 }
@@ -93,6 +92,7 @@
 }
 .history-review > footer > span {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
   color: var(--muted);
 }

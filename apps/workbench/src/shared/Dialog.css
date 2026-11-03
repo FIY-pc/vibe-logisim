@@ -21,12 +21,24 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
 .dialog-body {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: auto;
   padding: var(--space-4);
+}
+.input-dialog .dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 .dialog-body[data-scroll="false"] {
   display: flex;
