@@ -70,10 +70,11 @@ export function TextArea(
 
 /** Only metadata is smaller than normal text. Headings get their scale from
  * their semantic role, so a field label cannot silently become a page title. */
+type TextProps<T> = T extends unknown ? Omit<T, "size" | "color"> : never;
 export function Text({
   kind = "body",
   ...props
-}: Omit<ComponentProps<typeof RadixText>, "size" | "color"> & {
+}: TextProps<ComponentProps<typeof RadixText>> & {
   kind?: "body" | "meta";
   color?: "gray" | "red";
 }) {
