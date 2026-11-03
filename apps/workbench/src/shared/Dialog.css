@@ -1,0 +1,40 @@
+/* Application layout only. Radix Themes supplies the surface and modal behavior. */
+.dialog-frame.rt-DialogContent {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.dialog-frame > .dialog-header,
+.dialog-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.dialog-frame > .dialog-header {
+  border-bottom: 1px solid var(--gray-6);
+}
+.dialog-header > h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dialog-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+.dialog-body[data-scroll="false"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dialog-footer {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--gray-6);
+}

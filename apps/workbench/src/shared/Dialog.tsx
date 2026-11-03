@@ -1,7 +1,14 @@
 /* Focus handoff for project commands and dialogs during the Themes migration. */
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
 import { X } from "lucide-react";
-import { IconButton } from "@radix-ui/themes";
+import { Dialog as ThemesDialog, IconButton } from "@radix-ui/themes";
+import "./Dialog.css";
 
 const openers = new WeakMap<HTMLElement, HTMLElement>();
 export const modalSelector = 'dialog[open],[aria-modal="true"]';
@@ -33,7 +40,9 @@ export function focusOrigin(element: Element | null): HTMLElement | null {
 export function useDialogFocus() {
   const ref = useRef<HTMLDivElement>(null);
   const opened = useRef<HTMLDivElement | null>(null);
-  const opener = useRef<HTMLElement | null>(null);
+  const opener = useRef<HTMLElement | null>(
+    focusOrigin(document.activeElement),
+  );
   // During migration a child dialog can still be launched from a native top layer.
   const [container] = useState(
     () =>
@@ -46,7 +55,9 @@ export function useDialogFocus() {
     "aria-modal": true as const,
     onOpenAutoFocus(event: Event) {
       opened.current = ref.current;
-      opener.current = focusOrigin(document.activeElement);
+      // Editors may focus in a child layout effect before Radix opens its scope.
+      if (!ref.current?.contains(document.activeElement))
+        opener.current = focusOrigin(document.activeElement);
       const start = ref.current?.querySelector<HTMLElement>("[data-autofocus]");
       if (start) {
         event.preventDefault();
@@ -63,6 +74,105 @@ export function useDialogFocus() {
       }
     },
   };
+}
+
+type DialogFrameProps = Omit<ThemesDialog.ContentProps, "title"> & {
+  title: ReactNode;
+  open?: boolean;
+  onClose: () => void;
+  closeDisabled?: boolean;
+  closeLabel?: string;
+  footer?: ReactNode;
+};
+
+/** Controlled project dialogs share layout; Radix owns layering and focus trapping.
+ * Mount conditionally or pass open. Keep draft/confirmation decisions in onClose. */
+export function DialogFrame({
+  title,
+  open = true,
+  onClose,
+  closeDisabled = false,
+  closeLabel,
+  footer,
+  children,
+  className = "",
+  onOpenAutoFocus,
+  onCloseAutoFocus,
+  onEscapeKeyDown,
+  onPointerDownOutside,
+  onKeyDown,
+  ...props
+}: DialogFrameProps) {
+  const focus = useDialogFocus();
+  return (
+    <ThemesDialog.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !closeDisabled) onClose();
+      }}
+    >
+      <ThemesDialog.Content
+        {...focus}
+        aria-describedby={undefined}
+        maxHeight="calc(100dvh - 48px)"
+        {...props}
+        className={`dialog-frame ${className}`}
+        onOpenAutoFocus={(event) => {
+          focus.onOpenAutoFocus(event);
+          onOpenAutoFocus?.(event);
+        }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          if (!event.defaultPrevented) focus.onCloseAutoFocus(event);
+        }}
+        onEscapeKeyDown={(event) => {
+          onEscapeKeyDown?.(event);
+          if (closeDisabled) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          onPointerDownOutside?.(event);
+          // Match native modal behavior: only an explicit close or Escape dismisses.
+          event.preventDefault();
+        }}
+        onKeyDown={(event) => {
+          onKeyDown?.(event);
+          event.stopPropagation();
+        }}
+      >
+        <header className="dialog-header">
+          <ThemesDialog.Title mb="0">{title}</ThemesDialog.Title>
+          <DialogClose
+            label={closeLabel}
+            disabled={closeDisabled}
+            onClick={onClose}
+          />
+        </header>
+        {children}
+        {footer != null && <DialogFooter>{footer}</DialogFooter>}
+      </ThemesDialog.Content>
+    </ThemesDialog.Root>
+  );
+}
+
+export function DialogBody({
+  scroll = true,
+  className = "",
+  ...props
+}: ComponentPropsWithoutRef<"div"> & { scroll?: boolean }) {
+  return (
+    <div
+      {...props}
+      className={`dialog-body ${className}`}
+      data-scroll={scroll}
+    />
+  );
+}
+
+export function DialogFooter({
+  className = "",
+  ...props
+}: ComponentPropsWithoutRef<"footer">) {
+  return <footer {...props} className={`dialog-footer ${className}`} />;
 }
 
 /** Shows the dialog on the returned ref as a modal while the component is
