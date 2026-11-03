@@ -9,7 +9,7 @@ import {
   Copy,
 } from "lucide-react";
 import Markdown from "react-markdown";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame } from "../shared/Dialog";
 import { Select } from "../shared/Select";
 import { useView } from "../app/hooks";
 import {
@@ -96,7 +96,6 @@ function ClassroomDialog({
   sharing: ReturnType<typeof useSharing>;
   onClose: () => void;
 }) {
-  const modal = useModal();
   const [rooms, setRooms] = useState<Classroom[]>([]),
     [selected, setSelected] = useState(""),
     [detail, setDetail] = useState<ClassroomDetail | null>(null);
@@ -226,29 +225,18 @@ function ClassroomDialog({
       if (alive.current) setDetail(data);
     });
   return (
-    <dialog
-      ref={modal}
-      className="classroom-dialog"
-      aria-label="课堂管理"
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
+    <DialogFrame
+      className={`classroom-dialog${session ? " classroom-connected" : ""}`}
+      title={
+        <>
+          <GraduationCap size={21} />
+          课堂管理
+        </>
+      }
+      onClose={onClose}
+      closeLabel="关闭课堂管理"
+      maxWidth={session ? "1200px" : "480px"}
     >
-      <header>
-        <div>
-          <h2>
-            <GraduationCap size={21} />
-            课堂管理
-          </h2>
-          <p>
-            {session
-              ? `${session.user.name} · ${session.user.role === "teacher" ? "教师端" : "学生端"}`
-              : "连接课堂，同步电路与学习记录"}
-          </p>
-        </div>
-        <DialogClose label="关闭课堂管理" onClick={onClose} />
-      </header>
       {error && (
         <p className="classroom-error" role="alert">
           {error}
@@ -264,7 +252,11 @@ function ClassroomDialog({
       ) : (
         <>
           <div className="classroom-session">
-            <span>{session.server}</span>
+            <span>
+              {session.user.name} ·{" "}
+              {session.user.role === "teacher" ? "教师端" : "学生端"} ·{" "}
+              {session.server}
+            </span>
             <Button
               variant="soft"
               color="gray"
@@ -510,7 +502,7 @@ function ClassroomDialog({
           </div>
         </>
       )}
-    </dialog>
+    </DialogFrame>
   );
 }
 

@@ -17,7 +17,7 @@
 .dialog-frame > .dialog-header {
   border-bottom: 1px solid var(--gray-6);
 }
-.dialog-header > h2 {
+.dialog-header > .rt-DialogTitle {
   min-width: 0;
   overflow-wrap: anywhere;
 }

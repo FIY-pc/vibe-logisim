@@ -648,7 +648,8 @@ export async function verifyClassroomUI() {
     );
     await wait(
       () =>
-        document.querySelector('[role="combobox"][aria-label="要提交的电路"]')
+        document
+          .querySelector('[role="combobox"][aria-label="要提交的电路"]')
           ?.textContent?.includes("（当前）") === true,
     );
     await click("提交关卡评测");
