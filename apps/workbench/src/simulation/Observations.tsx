@@ -1,3 +1,4 @@
+import { Button } from "@radix-ui/themes";
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
 import { useEffect, useState } from "react";
@@ -211,8 +212,9 @@ export function Observations({
         </div>
       </DialogBody>
       <DialogFooter>
-        <button
-          className="primary"
+        <Button
+          size="2"
+          type="button"
           disabled={!selected.length}
           onClick={() => {
             onQuote(
@@ -226,7 +228,7 @@ export function Observations({
           }}
         >
           {selected.length === 2 ? "引用两条观察" : "引用到对话"}
-        </button>
+        </Button>
       </DialogFooter>
       {renaming && (
         <TextPrompt

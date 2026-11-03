@@ -1,3 +1,4 @@
+import { Button } from "@radix-ui/themes";
 import { lazy, Suspense, useRef, useState } from "react";
 import type { CodeEditorHandle } from "../shared/CodeEditor";
 import { useEditor, useShell, useView } from "../app/hooks";
@@ -80,16 +81,24 @@ function SourceEditor() {
         )}
       </DialogBody>
       <DialogFooter>
-        <button disabled={Boolean(pending)} onClick={close}>
+        <Button
+          size="2"
+          type="button"
+          variant="soft"
+          color="gray"
+          disabled={Boolean(pending)}
+          onClick={close}
+        >
           取消
-        </button>
-        <button
-          className="primary"
+        </Button>
+        <Button
+          size="2"
+          type="button"
           disabled={Boolean(pending) || stale || !changed}
           onClick={() => actions.editor.applySource(source)}
         >
           应用修改
-        </button>
+        </Button>
       </DialogFooter>
       {discarding && (
         <DecisionDialog

@@ -161,13 +161,8 @@
   font-size: 12px;
   white-space: nowrap;
 }
-.simulation-frequency input {
+.simulation-frequency .rt-TextFieldRoot {
   width: 90px;
-  padding: 8px;
-  color: #30343b;
-  font:
-    13px ui-monospace,
-    monospace;
 }
 .simulation-settings p {
   margin: 12px 0;

@@ -75,10 +75,10 @@
   font-size: 11px;
   color: var(--muted);
 }
-.symbol-properties input {
+.symbol-properties .symbol-field {
   width: 75px;
 }
-.symbol-properties input[aria-label="文字内容"] {
+.symbol-properties .symbol-field-text {
   width: 210px;
 }
 .symbol-properties p {
@@ -116,14 +116,10 @@
 .symbol-port-row label > span {
   display: none;
 }
-.symbol-port-row input,
+.symbol-port-row .symbol-field,
 .symbol-port-row .select-trigger {
   width: 100%;
   min-width: 0;
-  padding: 6px;
-}
-.symbol-port-row button {
-  padding: 0;
 }
 .symbol-port-columns {
   font-size: 11px;
@@ -144,7 +140,6 @@
   margin: 8px 0;
 }
 .symbol-impact button {
-  font-size: 11px;
   flex-shrink: 0;
 }
 .symbol-parent-preview {

@@ -1,3 +1,4 @@
+import { Button, TextField } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Pause, Play, RotateCcw, StepForward } from "lucide-react";
@@ -222,7 +223,7 @@ function SimulationSettings({
           <label className="simulation-frequency">
             时钟频率{" "}
             <span>
-              <input
+              <TextField.Root
                 data-autofocus
                 type="number"
                 min="0.25"
@@ -244,12 +245,19 @@ function SimulationSettings({
           )}
         </DialogBody>
         <DialogFooter>
-          <button type="button" disabled={pending} onClick={onClose}>
+          <Button
+            size="2"
+            variant="soft"
+            color="gray"
+            type="button"
+            disabled={pending}
+            onClick={onClose}
+          >
             取消
-          </button>
-          <button className="primary" type="submit" disabled={pending}>
+          </Button>
+          <Button size="2" type="submit" disabled={pending}>
             {pending ? "应用中…" : "应用"}
-          </button>
+          </Button>
         </DialogFooter>
       </form>
     </DialogFrame>

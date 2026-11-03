@@ -1,3 +1,4 @@
+import { Button, TextArea } from "@radix-ui/themes";
 import { useEffect, useRef, useState } from "react";
 import { command, desktop } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
@@ -301,7 +302,9 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
     >
       <DialogBody>
         <p>诊断文件只包含下方内容。</p>
-        <textarea
+        <TextArea
+          className="diagnostic-preview"
+          resize="none"
           readOnly
           aria-label="诊断预览"
           value={report ? text : "正在生成预览…"}
@@ -316,21 +319,36 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
         <>
           <p>目标文件已存在。确认后将替换它。</p>
           <DialogFooter>
-            <button disabled={busy} onClick={() => setReplacement(null)}>
+            <Button
+              size="2"
+              type="button"
+              variant="soft"
+              color="gray"
+              disabled={busy}
+              onClick={() => setReplacement(null)}
+            >
               取消
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              size="2"
+              type="button"
               disabled={busy}
               onClick={() => void replace()}
             >
               替换文件
-            </button>
+            </Button>
           </DialogFooter>
         </>
       ) : (
         <DialogFooter>
-          <button disabled={!report || busy} onClick={() => void save()}>
+          <Button
+            size="2"
+            type="button"
+            variant="soft"
+            color="gray"
+            disabled={!report || busy}
+            onClick={() => void save()}
+          >
             <Download size={15} />
             {busy
               ? "正在保存…"
@@ -341,9 +359,10 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
                 : saved
                   ? "再次下载诊断"
                   : "下载诊断"}
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            size="2"
+            type="button"
             disabled={!saved || busy}
             data-tip={saved ? undefined : "先检查并保存诊断文件"}
             onClick={() =>
@@ -354,7 +373,7 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
           >
             前往反馈页
             <ExternalLink size={14} />
-          </button>
+          </Button>
         </DialogFooter>
       )}
     </DialogFrame>

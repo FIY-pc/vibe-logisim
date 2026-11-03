@@ -1,3 +1,4 @@
+import { Button, IconButton, TextField } from "@radix-ui/themes";
 import { createElement, useEffect, useRef, useState } from "react";
 import { Maximize, Trash2, Undo2, X } from "lucide-react";
 import { command } from "../shared/transport";
@@ -220,7 +221,11 @@ export function InterfaceEditor({
         <div className="symbol-workspace" aria-busy={busy}>
           <div className="symbol-drawing">
             <div className="symbol-toolbar">
-              <button
+              <Button
+                size="1"
+                type="button"
+                variant="soft"
+                color="gray"
                 disabled={busy || !draft}
                 onClick={() =>
                   edit((d) => {
@@ -245,8 +250,12 @@ export function InterfaceEditor({
                 }
               >
                 矩形
-              </button>
-              <button
+              </Button>
+              <Button
+                size="1"
+                type="button"
+                variant="soft"
+                color="gray"
                 disabled={busy || !draft}
                 onClick={() =>
                   edit((d) => {
@@ -269,18 +278,30 @@ export function InterfaceEditor({
                 }
               >
                 文字
-              </button>
-              <button data-tip="适应封装" aria-label="适应封装" onClick={fit}>
+              </Button>
+              <IconButton
+                size="1"
+                type="button"
+                variant="soft"
+                color="gray"
+                data-tip="适应封装"
+                aria-label="适应封装"
+                onClick={fit}
+              >
                 <Maximize size={15} />
-              </button>
-              <button
+              </IconButton>
+              <IconButton
+                size="1"
+                type="button"
+                variant="soft"
+                color="gray"
                 data-tip="撤销封装修改"
                 aria-label="撤销封装修改"
                 disabled={busy || !undo.length}
                 onClick={restore}
               >
                 <Undo2 size={15} />
-              </button>
+              </IconButton>
             </div>
             <svg
               ref={svg}
@@ -535,7 +556,11 @@ export function InterfaceEditor({
                             }
                           />
                         ))}
-                      <button
+                      <IconButton
+                        size="1"
+                        type="button"
+                        variant="soft"
+                        color="gray"
                         aria-label="删除图形"
                         onClick={() =>
                           edit((d) => {
@@ -547,7 +572,7 @@ export function InterfaceEditor({
                         }
                       >
                         <Trash2 size={15} />
-                      </button>
+                      </IconButton>
                     </>
                   ) : (
                     <p>此图形保留原样；可以继续编辑端口或添加图形。</p>
@@ -558,7 +583,11 @@ export function InterfaceEditor({
           <section className="symbol-ports">
             <header>
               <h3>端口</h3>
-              <button
+              <Button
+                size="1"
+                type="button"
+                variant="soft"
+                color="gray"
                 disabled={!base || busy || !active}
                 onClick={() =>
                   edit((d) => {
@@ -582,7 +611,7 @@ export function InterfaceEditor({
                 }
               >
                 添加端口
-              </button>
+              </Button>
             </header>
             <div className="symbol-port-columns">
               <span />
@@ -597,12 +626,16 @@ export function InterfaceEditor({
                 key={p.id}
                 className={`symbol-port-row ${selected?.id === p.id ? "selected" : ""}`}
               >
-                <button
+                <IconButton
+                  size="1"
+                  type="button"
+                  variant="soft"
+                  color="gray"
                   aria-label={`定位端口 ${p.label}`}
                   onClick={() => setSelected({ kind: "port", id: p.id })}
                 >
                   {p.direction === "input" ? "→" : "←"}
-                </button>
+                </IconButton>
                 <Field
                   label={`${p.label} 名称`}
                   value={p.label}
@@ -628,7 +661,11 @@ export function InterfaceEditor({
                     edit((d) => movePort(d, p.id, { width: Number(v) }))
                   }
                 />
-                <button
+                <IconButton
+                  size="1"
+                  type="button"
+                  variant="soft"
+                  color="gray"
                   aria-label={`删除端口 ${p.label}`}
                   data-tip="删除端口"
                   onClick={() =>
@@ -639,7 +676,7 @@ export function InterfaceEditor({
                   }
                 >
                   <X size={13} />
-                </button>
+                </IconButton>
               </fieldset>
             ))}
             {base && (
@@ -658,7 +695,11 @@ export function InterfaceEditor({
                       {i.circuit}：调整 {i.movedPorts} 个接点，断开{" "}
                       {i.detachedPorts} 个端口
                     </span>
-                    <button
+                    <Button
+                      size="1"
+                      type="button"
+                      variant="soft"
+                      color="gray"
                       disabled={busy}
                       onClick={() =>
                         void run(async () => {
@@ -673,7 +714,7 @@ export function InterfaceEditor({
                       }
                     >
                       查看图面
-                    </button>
+                    </Button>
                   </div>
                 ))}
                 {(preview.addedPorts > 0 || preview.removedPorts > 0) && (
@@ -688,12 +729,16 @@ export function InterfaceEditor({
         </div>
         {parentImage && (
           <div className="symbol-parent-preview">
-            <button
+            <IconButton
+              size="1"
+              type="button"
+              variant="soft"
+              color="gray"
               aria-label="关闭图面预览"
               onClick={() => setParentImage(null)}
             >
               <X size={15} />
-            </button>
+            </IconButton>
             <img src={parentImage} alt="应用后的电路" />
           </div>
         )}
@@ -702,7 +747,11 @@ export function InterfaceEditor({
         <span role="status">
           {busy ? "正在读取并检查电路…" : dirty ? "草稿尚未应用" : ""}
         </span>
-        <button
+        <Button
+          size="2"
+          type="button"
+          variant="soft"
+          color="gray"
           disabled={!dirty || busy || !active}
           onClick={() =>
             void run(async () => {
@@ -711,14 +760,15 @@ export function InterfaceEditor({
           }
         >
           预览修改
-        </button>
-        <button
-          className="primary"
+        </Button>
+        <Button
+          size="2"
+          type="button"
           disabled={!dirty || busy || !active}
           onClick={() => void apply()}
         >
           应用
-        </button>
+        </Button>
       </DialogFooter>
     </DialogFrame>
   );
@@ -746,7 +796,13 @@ function Field({
   return (
     <label>
       <span>{label}</span>
-      <input
+      <TextField.Root
+        size="2"
+        className={
+          label === "文字内容"
+            ? "symbol-field symbol-field-text"
+            : "symbol-field"
+        }
         aria-label={label}
         inputMode={numeric ? "decimal" : undefined}
         value={text}

@@ -49,11 +49,6 @@
 .project-info li small {
   text-align: right;
 }
-.project-info footer button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
 .project-warning {
   background: #fff7e5;
   color: #7e6226;

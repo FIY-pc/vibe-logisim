@@ -1,3 +1,4 @@
+import { Button, IconButton } from "@radix-ui/themes";
 import { useEffect, useState } from "react";
 import { Copy, Download } from "lucide-react";
 import { command, desktop } from "../shared/transport";
@@ -136,7 +137,11 @@ export function ProjectInfo({
             <div className="project-source">
               <span>{info.path || "未命名文件"}</span>
               {info.path && (
-                <button
+                <IconButton
+                  size="2"
+                  type="button"
+                  variant="soft"
+                  color="gray"
                   data-tip="复制路径"
                   aria-label="复制源文件路径"
                   onClick={() =>
@@ -146,7 +151,7 @@ export function ProjectInfo({
                   }
                 >
                   <Copy size={15} />
-                </button>
+                </IconButton>
               )}
             </div>
             <dl>
@@ -210,12 +215,20 @@ export function ProjectInfo({
       </DialogBody>
       <DialogFooter>
         {replacement && (
-          <button disabled={busy} onClick={() => setReplacement(null)}>
+          <Button
+            size="2"
+            type="button"
+            variant="soft"
+            color="gray"
+            disabled={busy}
+            onClick={() => setReplacement(null)}
+          >
             取消
-          </button>
+          </Button>
         )}
-        <button
-          className="primary"
+        <Button
+          size="2"
+          type="button"
           disabled={!info?.exportable || busy}
           onClick={() => void download()}
         >
@@ -227,7 +240,7 @@ export function ProjectInfo({
               : desktop()
                 ? "导出工程 ZIP…"
                 : "导出工程 ZIP"}
-        </button>
+        </Button>
       </DialogFooter>
     </DialogFrame>
   );

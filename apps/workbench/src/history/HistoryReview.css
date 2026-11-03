@@ -18,10 +18,6 @@
 .history-review nav .select-trigger {
   max-width: 200px;
 }
-.history-review button[aria-pressed="true"] {
-  color: var(--accent);
-  background: var(--selection-fill);
-}
 .history-review-note {
   background: #fff7e5;
   color: #7e6226;

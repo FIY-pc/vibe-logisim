@@ -1,3 +1,4 @@
+import { Button } from "@radix-ui/themes";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { HistoryEntry } from "../generated/HistoryEntry";
 import type { HistoryReview as Review } from "../generated/HistoryReview";
@@ -176,12 +177,26 @@ export function HistoryReview({
             options={names.map((name) => ({ value: name, label: name }))}
             onChange={setSelected}
           />
-          <button aria-pressed={!after} onClick={() => setAfter(false)}>
+          <Button
+            size="2"
+            type="button"
+            variant={!after ? "solid" : "soft"}
+            color={!after ? undefined : "gray"}
+            aria-pressed={!after}
+            onClick={() => setAfter(false)}
+          >
             {beforeLabel}
-          </button>
-          <button aria-pressed={after} onClick={() => setAfter(true)}>
+          </Button>
+          <Button
+            size="2"
+            type="button"
+            variant={after ? "solid" : "soft"}
+            color={after ? undefined : "gray"}
+            aria-pressed={after}
+            onClick={() => setAfter(true)}
+          >
             {afterLabel}
-          </button>
+          </Button>
         </nav>
         {stale && (
           <p className="history-review-note" role="status">
@@ -258,15 +273,16 @@ export function HistoryReview({
       </DialogBody>
       <DialogFooter>
         <span>恢复会追加一条修改记录，已有历史保留。</span>
-        <button
-          className="primary"
+        <Button
+          size="2"
+          type="button"
           disabled={
             pending || stale || !review || entry.revision === doc.revision
           }
           onClick={() => void restore()}
         >
           {pending ? "正在恢复…" : "恢复到这个版本"}
-        </button>
+        </Button>
       </DialogFooter>
     </DialogFrame>
   );
