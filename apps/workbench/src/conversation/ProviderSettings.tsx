@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Check,
@@ -448,7 +449,7 @@ export function ProviderSettings(props: SettingsProps) {
           ? "移除模型服务"
           : "更换此对话的模型服务"
         : "模型服务";
-  return (
+  return createPortal(
     <dialog
       ref={dialog}
       className="ai-settings-dialog"
@@ -680,7 +681,8 @@ export function ProviderSettings(props: SettingsProps) {
           </p>
         )}
       </div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 

@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use tauri::{
@@ -17,6 +17,7 @@ use vibe_workbench_host::{DocumentRequest, Host, Request};
 pub struct Check {
     report: PathBuf,
     ready: Arc<Notify>,
+    frontend_error: Arc<Mutex<Option<String>>>,
 }
 impl Check {
     pub fn from_env(state: &Path) -> std::io::Result<Option<Self>> {
@@ -35,13 +36,18 @@ impl Check {
         Ok(Some(Self {
             report,
             ready: Arc::new(Notify::new()),
+            frontend_error: Arc::new(Mutex::new(None)),
         }))
     }
 }
 
 #[tauri::command]
-pub fn installation_ready(check: tauri::State<'_, Option<Check>>) -> Result<(), String> {
+pub fn installation_ready(
+    check: tauri::State<'_, Option<Check>>,
+    error: Option<String>,
+) -> Result<(), String> {
     let check = check.as_ref().ok_or("No installation check is running")?;
+    *check.frontend_error.lock().map_err(|e| e.to_string())? = error;
     check.ready.notify_one();
     Ok(())
 }
@@ -56,11 +62,25 @@ pub fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
         // and its JS must be able to cross the production IPC boundary.
         let _ = webview.eval(
             r#"(() => {
-          const timer = setInterval(() => {
-            if (document.querySelector('#root')?.childElementCount && window.__TAURI_INTERNALS__) {
-              clearInterval(timer);
-              window.__TAURI_INTERNALS__.invoke('installation_ready');
-            }
+          const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+          const timer = setInterval(async () => {
+            const settings = document.querySelector('button[aria-label="AI 设置"]');
+            if (!settings || !window.__TAURI_INTERNALS__) return;
+            clearInterval(timer);
+            let error = null;
+            try {
+              settings.click();
+              await frame(); await frame();
+              const dialog = document.querySelector('.ai-settings-dialog[open]');
+              const content = dialog?.querySelector('.ai-settings-content');
+              if (!content || content.clientHeight < content.scrollHeight - 1)
+                throw new Error('AI settings service list is clipped in the installed WebView');
+              if (dialog.getBoundingClientRect().bottom > innerHeight)
+                throw new Error('AI settings exceed the installed window height');
+              dialog.querySelector('button[aria-label="关闭 AI 设置"]').click();
+              await frame();
+            } catch (reason) { error = String(reason); }
+            window.__TAURI_INTERNALS__.invoke('installation_ready', { error });
           }, 50);
           setTimeout(() => clearInterval(timer), 45000);
         })()"#,
@@ -75,10 +95,19 @@ async fn request(host: &Host, value: Value) -> Result<Value, String> {
         .map_err(|error| error.to_string())
 }
 
-async fn run(host: &Host, ready: &Notify, report: &mut Value) -> Result<(), String> {
-    tokio::time::timeout(Duration::from_secs(45), ready.notified())
+async fn run(host: &Host, check: &Check, report: &mut Value) -> Result<(), String> {
+    tokio::time::timeout(Duration::from_secs(45), check.ready.notified())
         .await
         .map_err(|_| "The installed frontend did not mount or complete IPC".to_owned())?;
+    if let Some(error) = check
+        .frontend_error
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+    {
+        return Err(error.clone());
+    }
+    report["settingsLayout"] = json!(true);
     report["frontend"] = json!(true);
     report["stage"] = json!("recovery");
     let status = host
@@ -141,11 +170,8 @@ pub fn start(app: tauri::AppHandle, host: Host, root: PathBuf, check: Check) {
     tauri::async_runtime::spawn(async move {
         let mut report = json!({"stage":"frontend","frontend":false,"nativeSimulation":false,
             "builtinRuntime":false,"recovered":false});
-        let result = tokio::time::timeout(
-            Duration::from_secs(90),
-            run(&host, &check.ready, &mut report),
-        )
-        .await;
+        let result =
+            tokio::time::timeout(Duration::from_secs(90), run(&host, &check, &mut report)).await;
         let code = match result {
             Ok(Ok(())) => 0,
             Ok(Err(error)) => {
