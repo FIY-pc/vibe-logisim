@@ -1,6 +1,5 @@
 /* Only layout belongs here; controls, type, colors and states come from Themes. */
 .ai-settings-panel {
-  max-height: calc(100dvh - 32px);
   overflow: auto;
   scroll-padding: var(--space-5);
 }
