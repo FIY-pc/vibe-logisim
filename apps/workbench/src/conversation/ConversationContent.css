@@ -191,3 +191,14 @@
   opacity: 0.5;
   cursor: default;
 }
+
+.messages.conversation-messages {
+  min-height: 0;
+  padding: 0;
+  overflow-anchor: none;
+}
+.conversation-segment {
+  display: flow-root;
+  padding: 0 16px;
+  min-width: 0;
+}

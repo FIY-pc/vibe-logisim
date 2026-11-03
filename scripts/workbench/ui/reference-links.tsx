@@ -167,6 +167,9 @@ export async function verifyReferenceLinks() {
         />
       </Workbench>,
     );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
     await act(async () =>
       node.querySelector<HTMLButtonElement>(".message-reference")!.click(),
     );

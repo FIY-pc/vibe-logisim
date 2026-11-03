@@ -9,6 +9,7 @@ import {
   toolState,
   type Segment,
 } from "./turns";
+import { useTurnDisclosure } from "./TurnExpansion";
 import "./Turn.css";
 
 /** The files a turn changed, as the folder history recorded them. */
@@ -65,14 +66,11 @@ export function Turn({
     : turn?.status === "running"
       ? "unfinished"
       : turn?.status || "completed";
-  const [open, setOpen] = useState(status !== "completed");
-  // A finished turn folds in the same render that ends it, without a frame
-  // of the open steps in between.
-  const [wasLive, setWasLive] = useState(live);
-  if (wasLive !== live) {
-    setWasLive(live);
-    if (!live) setOpen(status !== "completed");
-  }
+  const [open, setOpen] = useTurnDisclosure(
+    JSON.stringify([segment.key, "turn"]),
+    status,
+    status !== "completed",
+  );
   // Items render through stable callbacks so a status snapshot, which
   // replaces every message object, re-renders only what changed.
   const handlers = useRef({ onError, onFollowReference });
@@ -103,6 +101,7 @@ export function Turn({
           <TurnItem
             key={item.id}
             item={item}
+            disclosureKey={JSON.stringify([segment.key, item.id])}
             live={live}
             answer={!live && index >= process.length}
             onError={stable.error}
@@ -177,21 +176,31 @@ const sameItem = (a: Message, b: Message) =>
 const TurnItem = memo(
   function TurnItem({
     item,
+    disclosureKey,
     live,
     answer,
     onError,
     onFollowReference,
   }: {
     item: Message;
+    disclosureKey: string;
     live: boolean;
     /** Part of the finished turn's answer: it can be copied. */
     answer: boolean;
     onError: (error: unknown) => void;
     onFollowReference?: (href: string, message: Message) => void;
   }) {
-    if (item.type === "activity") return <ToolRow item={item} />;
+    if (item.type === "activity")
+      return <ToolRow item={item} disclosureKey={disclosureKey} />;
     if (item.type === "reasoning")
-      return <Thought text={item.text || ""} live={live} onError={onError} />;
+      return (
+        <Thought
+          text={item.text || ""}
+          live={live}
+          onError={onError}
+          disclosureKey={disclosureKey}
+        />
+      );
     if (item.type !== "assistant") return null;
     return (
       <div className="message assistant">
@@ -213,6 +222,7 @@ const TurnItem = memo(
     );
   },
   (a, b) =>
+    a.disclosureKey === b.disclosureKey &&
     a.live === b.live &&
     a.answer === b.answer &&
     a.onFollowReference === b.onFollowReference &&
@@ -231,21 +241,21 @@ const toggle =
 
 /** Reasoning: open while the turn runs, a one-line disclosure afterwards. */
 function Thought({
+  disclosureKey,
   text,
   live,
   onError,
 }: {
+  disclosureKey: string;
   text: string;
   live: boolean;
   onError: (error: unknown) => void;
 }) {
-  const [open, setOpen] = useState(live);
-  // It closes when the turn ends, as a reloaded window shows it.
-  const [wasLive, setWasLive] = useState(live);
-  if (wasLive !== live) {
-    setWasLive(live);
-    if (!live) setOpen(false);
-  }
+  const [open, setOpen] = useTurnDisclosure(
+    disclosureKey,
+    live ? "live" : "finished",
+    live,
+  );
   return (
     <details className="turn-thought" open={open}>
       <summary onClick={toggle(open, setOpen)}>思考</summary>
@@ -259,8 +269,14 @@ function Thought({
 }
 
 /** One tool call: what it did and on what; the input and output inside. */
-function ToolRow({ item }: { item: Message }) {
-  const [open, setOpen] = useState(false);
+function ToolRow({
+  item,
+  disclosureKey,
+}: {
+  item: Message;
+  disclosureKey: string;
+}) {
+  const [open, setOpen] = useTurnDisclosure(disclosureKey, "tool", false);
   const output = item.toolOutput;
   const state = toolState(item);
   const input = output?.input ? { ...output.input } : null;

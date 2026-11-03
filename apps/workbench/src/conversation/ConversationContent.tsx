@@ -6,10 +6,8 @@ import {
   isValidElement,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
-  type RefObject,
 } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import Markdown, { defaultUrlTransform } from "react-markdown";
@@ -370,73 +368,6 @@ export function ConversationPicker({
       </Popover.Portal>
     </Popover.Root>
   );
-}
-export function useConversationScroll(
-  scroller: RefObject<HTMLDivElement | null>,
-  identity: string,
-  visible: boolean,
-  content: unknown,
-) {
-  const follow = useRef(true);
-  const [following, setFollowing] = useState(true);
-  const setFollow = (value: boolean) => {
-    follow.current = value;
-    setFollowing(value);
-  };
-  const latest = () => {
-    setFollow(true);
-    if (scroller.current)
-      scroller.current.scrollTop = scroller.current.scrollHeight;
-  };
-  useLayoutEffect(() => {
-    follow.current = true;
-    setFollowing(true);
-  }, [identity]);
-  useLayoutEffect(() => {
-    if (visible && follow.current && scroller.current)
-      scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [content, identity, visible]);
-  useEffect(() => {
-    const element = scroller.current;
-    if (!element) return;
-    const resize = new ResizeObserver(() => {
-      if (visible && follow.current) element.scrollTop = element.scrollHeight;
-    });
-    // Observe content as well as the viewport: streamed text and disclosures can grow.
-    resize.observe(element);
-    if (element.firstElementChild) resize.observe(element.firstElementChild);
-    return () => resize.disconnect();
-  }, [scroller, visible]);
-  return {
-    following,
-    latest,
-    onScroll: () => {
-      const node = scroller.current;
-      if (node)
-        setFollow(node.scrollHeight - node.clientHeight - node.scrollTop < 32);
-    },
-    onWheel: (event: { deltaY: number }) => {
-      if (event.deltaY < 0) setFollow(false);
-    },
-    onKeyDown: (event: { key: string }) => {
-      if (["PageUp", "Home", "ArrowUp"].includes(event.key)) setFollow(false);
-    },
-    // Opening a disclosure grows the content below what was clicked: keep it
-    // where the reader is looking, and follow again only from the bottom.
-    onClickCapture: (event: { target: EventTarget | null }) => {
-      const node = scroller.current;
-      if (
-        !node ||
-        !(event.target instanceof Element) ||
-        !event.target.closest("summary, [aria-expanded]")
-      )
-        return;
-      follow.current = false;
-      requestAnimationFrame(() =>
-        setFollow(node.scrollHeight - node.clientHeight - node.scrollTop < 32),
-      );
-    },
-  };
 }
 export function FollowLatest({ onClick }: { onClick: () => void }) {
   return (
