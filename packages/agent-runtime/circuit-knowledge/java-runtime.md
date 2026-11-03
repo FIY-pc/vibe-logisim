@@ -10,7 +10,7 @@
 
 ## 脚本生成的大批量输入
 
-Windows 的 `exec_command` 使用 PowerShell 5.1，工作目录就是工程文件夹。应用附带 Node.js，可写 `generate.mjs` 后用 `node ./generate.mjs` 批量生成、分析或修改文件；无需额外安装 Python。打包版本还提供 `java`，运行资源在 `$env:VIBE_RUNTIME`，参考文档在 `$env:VIBE_CIRCUIT_REFERENCE`。Windows Java classpath 用 `;` 分隔，PowerShell 中含空格的路径用引号、执行路径用 `&`。
+Windows 的 `exec_command` 使用 PowerShell 5.1，工作目录就是工程文件夹。应用附带 Node.js，可写 `generate.mjs` 后用 `node ./generate.mjs` 批量生成、分析或修改文件；无需额外安装 Python。打包版本还提供 `java`，运行资源在 `$env:VIBE_RUNTIME`，参考文档在 `$env:VIBE_CIRCUIT_REFERENCE`。PowerShell 5.1 的文件命令在带方括号的目录下应使用绝对路径，例如 `Get-Content -LiteralPath (Join-Path $env:VIBE_PROJECT_ROOT 'checks/inputs.json') -Raw`；Node 脚本可正常使用工程相对路径。Windows Java classpath 用 `;` 分隔，PowerShell 中含空格的路径用引号、执行路径用 `&`。
 
 `simulate_circuit` 可直接读取工作区里的 JSON 文件，不需要自行编写 Java 入口或多次发送输入批次。`vectorsFile` 相对于打开的文件夹，文件内容是与 `vectors` 相同的数组：
 

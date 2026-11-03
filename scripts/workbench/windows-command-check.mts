@@ -67,7 +67,7 @@ console.log('脚本完成', process.version);
 `,
     );
     const edited = await run(
-      "node ./edit.mjs\n[xml]$circuit = Get-Content -LiteralPath './电路.circ' -Raw\n$circuit.project.circuit.name",
+      "node ./edit.mjs\n[xml]$circuit = Get-Content -LiteralPath (Join-Path $env:VIBE_PROJECT_ROOT '电路.circ') -Raw\n$circuit.project.circuit.name",
     );
     assert.equal(edited.exitCode, 0, edited.output);
     assert.match(edited.output, /脚本完成 v24\./);
@@ -75,6 +75,9 @@ console.log('脚本完成', process.version);
     assert.equal(
       await readFile(path.join(root, "电路.circ"), "utf8"),
       '<project><circuit name="修改后"/></project>',
+    );
+    console.log(
+      "Verified Windows script edits and XML reading in a Unicode project path.",
     );
     assert.equal((await run("exit 7")).exitCode, 7);
     assert.equal((await run("node -e 'process.exit(9)'")).exitCode, 9);
@@ -98,6 +101,9 @@ console.log('脚本完成', process.version);
       "Test-Path -LiteralPath (Join-Path $env:VIBE_CIRCUIT_REFERENCE 'index.md')",
     );
     assert.match(references.output, /True/);
+    console.log(
+      "Verified Windows exit codes, long commands, UTF-8 output and reference paths.",
+    );
     if (runtimeRoot) {
       const java = await run("java -version");
       assert.equal(java.exitCode, 0, java.output);
@@ -122,6 +128,9 @@ setInterval(() => {}, 1000);
     controller.abort();
     await cancelled;
     await assertDead(cancelledPid);
+    console.log(
+      "Verified Windows command cancellation ends its child process.",
+    );
 
     const timed = assert.rejects(
       run("node ./child.mjs timed.pid", 30),
@@ -130,6 +139,7 @@ setInterval(() => {}, 1000);
     const timedPid = Number(await waitFor("timed.pid"));
     await timed;
     await assertDead(timedPid);
+    console.log("Verified Windows command timeout ends its child process.");
 
     // A detached grandchild must also end when its launching shell succeeds.
     await writeFile(
