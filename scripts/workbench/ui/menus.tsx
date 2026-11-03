@@ -15,7 +15,10 @@ import { ContextMenu } from "../../../apps/workbench/src/shared/ContextMenu";
 import { Select } from "../../../apps/workbench/src/shared/Select";
 import { Checkbox } from "../../../apps/workbench/src/shared/Checkbox";
 import { IconButton } from "../../../apps/workbench/src/shared/IconButton";
-import { useModal } from "../../../apps/workbench/src/shared/Dialog";
+import {
+  useDialogFocus,
+  useModal,
+} from "../../../apps/workbench/src/shared/Dialog";
 
 /** Interaction and portal regressions only: jsdom does not prove layout,
  * collision handling or native dialog top-layer hit testing. */
@@ -170,6 +173,7 @@ export async function verifyMenusUI() {
     );
   }
   function Fixture() {
+    const themeFocus = useDialogFocus();
     const [native, setNative] = useState(false);
     const [themes, setThemes] = useState(false);
     const [open, setOpen] = useState(false);
@@ -215,16 +219,9 @@ export async function verifyMenusUI() {
           </NativeDialog>
         )}
         <ThemesDialog.Root open={themes} onOpenChange={setThemes}>
-          <ThemesDialog.Content
-            aria-describedby={undefined}
-            onCloseAutoFocus={(event) => {
-              // The application Dialog wrapper supplies the original menu opener.
-              event.preventDefault();
-              opener.current?.focus();
-            }}
-          >
+          <ThemesDialog.Content {...themeFocus} aria-describedby={undefined}>
             <ThemesDialog.Title>Themes dialog</ThemesDialog.Title>
-            <input aria-label="Themes input" />
+            <input aria-label="Themes input" data-autofocus="" />
             <DialogControls />
             <ThemesDialog.Close>
               <button aria-label="Close themes">Close</button>

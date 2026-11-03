@@ -565,6 +565,7 @@ export function ProviderSettings(props: SettingsProps) {
           <Dialog.Content
             container={container}
             className="ai-settings-panel"
+            aria-modal="true"
             maxWidth="760px"
             align="start"
             aria-describedby={undefined}

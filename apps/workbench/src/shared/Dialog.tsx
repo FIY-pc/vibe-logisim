@@ -117,6 +117,7 @@ export function DialogClose({
       variant="ghost"
       color="gray"
       size="2"
+      style={{ marginInlineStart: "auto" }}
       aria-label={label}
       data-tip="关闭"
       data-tip-key="Esc"

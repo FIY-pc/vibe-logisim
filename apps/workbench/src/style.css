@@ -828,17 +828,6 @@ button.primary:active:where(:not(:disabled)) {
   padding: 10px 12px 10px 16px;
   border-bottom: 1px solid var(--border);
 }
-.source-dialog textarea {
-  flex: 1;
-  resize: none;
-  border: 0;
-  border-radius: 0;
-  font:
-    12px/1.7 ui-monospace,
-    monospace;
-  padding: 18px;
-  outline: none;
-}
 .source-dialog footer {
   display: flex;
   justify-content: flex-end;

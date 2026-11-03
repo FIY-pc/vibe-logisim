@@ -72,7 +72,7 @@ export function ShortcutSettings({
         className="shortcut-dialog-content"
         aria-label="快捷键"
         maxWidth="640px"
-        maxHeight="calc(100dvh - 64px)"
+        maxHeight="85vh"
         aria-describedby={undefined}
       >
         <Flex align="center" justify="between" gap="4" flexShrink="0">
@@ -111,8 +111,9 @@ export function ShortcutSettings({
                     }}
                   />
                   <IconButton
-                    variant="ghost"
+                    variant="soft"
                     color="gray"
+                    size="1"
                     aria-label={`清除 ${command.label} 快捷键`}
                     onClick={() => change(command.id, null)}
                   >

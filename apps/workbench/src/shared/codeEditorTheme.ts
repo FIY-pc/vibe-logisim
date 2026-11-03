@@ -22,7 +22,7 @@ const theme = EditorView.theme({
   "&": {
     color: "var(--gray-12)",
     backgroundColor: "var(--color-background)",
-    fontSize: "var(--font-size-1)",
+    fontSize: "var(--font-size-2)",
   },
   "&.cm-focused": { outline: "none" },
   ".cm-scroller": { fontFamily: "var(--code-font-family)", lineHeight: "1.7" },
