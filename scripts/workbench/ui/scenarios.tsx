@@ -1,3 +1,4 @@
+import { verifySearchControls } from "./search-controls";
 import { verifyMenusUI } from "./menus";
 import { verifySourceEditor } from "./source-editor";
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
@@ -443,7 +444,7 @@ assert.equal(
   "ancestor",
 );
 await appKey("f", { ctrlKey: true });
-assert.ok(document.querySelector('dialog[aria-label="查找元件"]'));
+assert.ok(document.querySelector('.find-dialog[role="dialog"]'));
 await click(document.querySelector('.find-dialog [aria-label="关闭"]'));
 console.log(
   "PASS: editor keyboard dispatch toggles grid and opens actionable circuit/component search",
@@ -1343,6 +1344,7 @@ await verifyConversationSummaries();
 await verifyConversationTurns();
 await verifyContextUsage();
 await verifyAISettings();
+await verifySearchControls();
 await verifySourceEditor();
 await verifyEditorRequestLifetimes();
 await verifyClassroomUI();

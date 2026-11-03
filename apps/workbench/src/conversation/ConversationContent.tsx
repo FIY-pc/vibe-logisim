@@ -5,17 +5,25 @@ import {
   Children,
   isValidElement,
   useEffect,
-  useId,
   useRef,
   useState,
 } from "react";
-import * as Popover from "@radix-ui/react-popover";
+import {
+  Button,
+  Callout,
+  Checkbox,
+  Flex,
+  Popover,
+  Text,
+} from "@radix-ui/themes";
+import { Command } from "cmdk";
+import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import "../shared/command.css";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowDown, Check, ChevronDown, Copy } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { desktop } from "../shared/transport";
-import { Checkbox } from "../shared/Checkbox";
 import { keepKeys, usePortalContainer } from "../shared/layer";
 import "./ConversationContent.css";
 import { fullText } from "../shared/Tooltips";
@@ -204,168 +212,178 @@ export function ConversationPicker({
   conversations: ConversationSummary[];
   active: string | null;
   disabled: boolean;
-  onSelect: (id: string) => void;
-  onRestore: (id: string) => void;
+  onSelect: (id: string) => void | Promise<void>;
+  onRestore: (id: string) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [archived, setArchived] = useState(false);
-  const [highlight, setHighlight] = useState(0);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
   const [anchor, container] = usePortalContainer<HTMLButtonElement>();
   const searchInput = useRef<HTMLInputElement>(null);
-  const list = useRef<HTMLDivElement>(null);
-  const id = useId();
-  const query = search.trim().toLocaleLowerCase();
-  const shown = conversations.filter(
-    (item) =>
-      item.archived === archived &&
-      (!query ||
-        `${item.title}\n${item.preview || ""}`
-          .toLocaleLowerCase()
-          .includes(query)),
-  );
-  const at = Math.min(highlight, shown.length - 1);
+  const shown = conversations.filter((item) => item.archived === archived);
   const title = conversations.find((item) => item.id === active)?.title;
-  useEffect(() => {
-    if (open)
-      list.current
-        ?.querySelector("[data-highlighted]")
-        ?.scrollIntoView({ block: "nearest" });
-  }, [open, at]);
-  const choose = (item: ConversationSummary) => {
-    if (disabled) return;
-    setOpen(false);
-    if (item.archived) onRestore(item.id);
-    else onSelect(item.id);
+  const choose = async (item: ConversationSummary) => {
+    if (disabled || working) return;
+    setWorking(true);
+    setError("");
+    try {
+      await (item.archived ? onRestore(item.id) : onSelect(item.id));
+      setOpen(false);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWorking(false);
+    }
   };
   return (
     <Popover.Root
       open={open}
       onOpenChange={(next) => {
+        if (working) return;
         setOpen(next);
-        if (!next) return;
-        setSearch("");
-        setArchived(false);
-        setHighlight(
-          Math.max(
-            0,
-            conversations
-              .filter((item) => !item.archived)
-              .findIndex((item) => item.id === active),
-          ),
-        );
+        if (next) {
+          setSearch("");
+          setArchived(false);
+          setError("");
+        }
       }}
     >
-      <Popover.Trigger
-        ref={anchor}
-        className="conversation-picker"
-        aria-label={title ? `会话：${title}` : "会话"}
-        {...fullText(title)}
-      >
-        <span>{title || "新对话"}</span>
-        <ChevronDown size={14} aria-hidden="true" />
-      </Popover.Trigger>
-      <Popover.Portal container={container}>
-        <Popover.Content
-          className="conversation-popover"
-          align="start"
-          sideOffset={4}
-          collisionPadding={8}
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            searchInput.current?.focus();
-          }}
-          onKeyDown={keepKeys}
+      <Popover.Trigger>
+        <Button
+          ref={anchor}
+          variant="ghost"
+          color="gray"
+          size="2"
+          className="conversation-picker"
+          disabled={working}
+          aria-label={title ? `会话：${title}` : "会话"}
+          {...fullText(title)}
         >
-          <input
-            ref={searchInput}
-            className="conversation-search"
-            role="combobox"
+          <span>{title || "新对话"}</span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </Button>
+      </Popover.Trigger>
+      <Popover.Content
+        container={container}
+        className="conversation-popover"
+        width="360px"
+        aria-label="选择会话"
+        aria-busy={working}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          searchInput.current?.focus();
+        }}
+        onKeyDown={keepKeys}
+        onEscapeKeyDown={(event) => {
+          preventComposingDismiss(event);
+          if (working) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          if (working) event.preventDefault();
+        }}
+      >
+        <Command
+          label="选择会话"
+          loop
+          defaultValue={active || undefined}
+          filter={(_value, query, keywords = []) =>
+            keywords
+              .join(" ")
+              .toLocaleLowerCase()
+              .includes(query.trim().toLocaleLowerCase())
+              ? 1
+              : 0
+          }
+        >
+          <CommandSearch
+            value={search}
+            onValueChange={setSearch}
+            size="3"
+            inputRef={searchInput}
             aria-label="查找会话"
-            aria-expanded="true"
-            aria-controls={`${id}-list`}
-            aria-autocomplete="list"
-            aria-activedescendant={at >= 0 ? `${id}-${at}` : undefined}
             placeholder="查找会话"
             spellCheck={false}
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setHighlight(0);
-            }}
-            onKeyDown={(event) => {
-              const step =
-                event.key === "ArrowDown"
-                  ? 1
-                  : event.key === "ArrowUp"
-                    ? -1
-                    : 0;
-              if (step && shown.length) {
-                event.preventDefault();
-                setHighlight((at + step + shown.length) % shown.length);
-              } else if (event.key === "Enter" && shown[at]) {
-                event.preventDefault();
-                choose(shown[at]);
-              }
-            }}
+            disabled={working}
           />
-          <label className="conversation-archive">
-            <Checkbox
-              checked={archived}
-              onCheckedChange={(value) => {
-                setArchived(value);
-                setHighlight(0);
-                searchInput.current?.focus();
-              }}
-            />
-            已归档
-          </label>
-          <div
-            ref={list}
-            id={`${id}-list`}
-            className="conversation-list"
-            role="listbox"
-            aria-label={archived ? "已归档的对话" : "对话"}
+          <Text
+            as="label"
+            size="3"
+            className="conversation-archive"
+            onKeyDown={keepKeys}
           >
-            {shown.map((item, index) => (
-              <div
+            <Flex align="center" gap="2" mt="3">
+              <Checkbox
+                checked={archived}
+                disabled={working}
+                onCheckedChange={(value) => {
+                  setArchived(value === true);
+                  searchInput.current?.focus();
+                }}
+              />
+              已归档
+            </Flex>
+          </Text>
+          <Command.List
+            className="command-list conversation-list"
+            label={archived ? "已归档的对话" : "对话"}
+          >
+            {shown.map((item) => (
+              <Command.Item
+                asChild
                 key={item.id}
-                id={`${id}-${index}`}
-                role="option"
-                aria-selected={index === at}
-                aria-disabled={disabled || undefined}
-                aria-current={item.id === active ? "true" : undefined}
-                data-highlighted={index === at ? "" : undefined}
-                // The search field keeps focus while the pointer chooses.
-                onMouseDown={(event) => event.preventDefault()}
-                onPointerMove={() => index !== at && setHighlight(index)}
-                onClick={() => choose(item)}
+                value={item.id}
+                keywords={[item.title, item.preview || ""]}
+                disabled={disabled || working}
+                onSelect={() => void choose(item)}
               >
-                <span>
-                  <span className="conversation-title">{item.title}</span>
-                  {archived ? (
-                    <span className="conversation-restore">恢复</span>
-                  ) : (
-                    item.id === active && (
-                      <Check size={13} aria-label="当前对话" />
-                    )
-                  )}
-                </span>
-                {item.preview && <small>{item.preview}</small>}
-              </div>
+                <Button
+                  variant="ghost"
+                  color="gray"
+                  size="3"
+                  disabled={disabled || working}
+                  aria-current={item.id === active ? "true" : undefined}
+                >
+                  <Flex direction="column" gap="1" width="100%" minWidth="0">
+                    <Flex as="span" align="center" justify="between" gap="3">
+                      <Text className="conversation-title" weight="medium">
+                        {item.title}
+                      </Text>
+                      {archived ? (
+                        <Text color="blue">恢复</Text>
+                      ) : (
+                        item.id === active && (
+                          <Check size={16} aria-label="当前对话" />
+                        )
+                      )}
+                    </Flex>
+                    {item.preview && (
+                      <Text size="2" color="gray" truncate>
+                        {item.preview}
+                      </Text>
+                    )}
+                  </Flex>
+                </Button>
+              </Command.Item>
             ))}
-            {!shown.length && (
-              <p className="conversation-empty">
-                {query
+            <Command.Empty>
+              <Text size="3" color="gray">
+                {search.trim()
                   ? "没有匹配的会话"
                   : archived
                     ? "没有已归档的对话"
                     : "还没有对话"}
-              </p>
-            )}
-          </div>
-        </Popover.Content>
-      </Popover.Portal>
+              </Text>
+            </Command.Empty>
+          </Command.List>
+        </Command>
+        {error && (
+          <Callout.Root role="alert" color="red" mt="3">
+            <Callout.Text>{error}</Callout.Text>
+          </Callout.Root>
+        )}
+      </Popover.Content>
     </Popover.Root>
   );
 }

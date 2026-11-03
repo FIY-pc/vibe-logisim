@@ -155,7 +155,8 @@ export function ChatGPTLogin({
         aria-busy={working}
       >
         <Button
-          variant="surface"
+          variant="soft"
+          color="gray"
           size="3"
           className="ai-service-option"
           data-oai-siwc-button

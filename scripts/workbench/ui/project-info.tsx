@@ -93,6 +93,7 @@ export async function verifyProjectInfoUI() {
       document.querySelector(".project-info")!.textContent!,
       /组件库文件不存在/,
     );
+    await act(async () => root.render(null));
     const circuit: any = {
       name: "main",
       components: [
@@ -124,7 +125,8 @@ export async function verifyProjectInfoUI() {
         />,
       ),
     );
-    const input = node.querySelector("input")!;
+    const input =
+      document.querySelector<HTMLInputElement>(".find-dialog input")!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,

@@ -26,6 +26,9 @@ import {
   Text,
   TextField,
 } from "@radix-ui/themes";
+import { Command } from "cmdk";
+import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import "../shared/command.css";
 import "./ai-settings.css";
 import { ChatGPTLogin } from "./ChatGPTLogin";
 import { publicText } from "../../../../packages/agent-runtime/src/models/public-fields.mts";
@@ -731,7 +734,8 @@ export function ProviderSettings(props: SettingsProps) {
                       <li>
                         <Button
                           className="ai-service-option"
-                          variant="surface"
+                          variant="soft"
+                          color="gray"
                           size="3"
                           disabled={locked}
                           onClick={() => edit(null)}
@@ -925,11 +929,7 @@ function ProviderModelInput({
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const list = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const shown = models.filter((model) =>
-    model.toLowerCase().includes(query.toLowerCase()),
-  );
   return (
     <Popover.Root
       open={open}
@@ -975,88 +975,65 @@ function ProviderModelInput({
           event.preventDefault();
           search.current?.focus();
         }}
-        onKeyDown={(event) => {
-          if (
-            !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) ||
-            (["Home", "End"].includes(event.key) &&
-              event.target === search.current)
-          )
-            return;
-          const options = Array.from(
-            list.current?.querySelectorAll<HTMLButtonElement>(
-              "button:not(:disabled)",
-            ) || [],
-          );
-          if (!options.length) return;
-          event.preventDefault();
-          const current = options.indexOf(
-            document.activeElement as HTMLButtonElement,
-          );
-          const next =
-            event.key === "Home"
-              ? 0
-              : event.key === "End"
-                ? options.length - 1
-                : current < 0
-                  ? event.key === "ArrowDown"
-                    ? 0
-                    : options.length - 1
-                  : (current +
-                      (event.key === "ArrowDown" ? 1 : options.length - 1)) %
-                    options.length;
-          options[next].focus();
-          options[next].scrollIntoView({ block: "nearest" });
-        }}
+        onEscapeKeyDown={preventComposingDismiss}
       >
         <Flex direction="column" gap="3">
           <Heading as="h3" id={titleId} size="3">
             接口提供的模型
           </Heading>
-          <TextField.Root
-            ref={search}
-            size="3"
-            type="search"
-            aria-label="搜索接口模型"
-            placeholder="搜索模型"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+          <Command
+            label="接口提供的模型"
+            loop
+            filter={(model, query) =>
+              model.toLowerCase().includes(query.toLowerCase()) ? 1 : 0
+            }
           >
-            <TextField.Slot>
-              <Search size={16} />
-            </TextField.Slot>
-          </TextField.Root>
-          <Flex
-            ref={list}
-            direction="column"
-            gap="1"
-            className="ai-provider-model-options"
-            role="listbox"
-            aria-label="接口提供的模型"
-          >
-            {shown.map((model) => (
-              <Button
-                className="ai-model-option"
-                variant={model === value ? "soft" : "ghost"}
-                color={model === value ? undefined : "gray"}
-                type="button"
-                key={model}
-                role="option"
-                aria-selected={model === value}
-                disabled={disabled}
-                onClick={() => {
-                  onChange(model);
-                  setOpen(false);
-                }}
-              >
-                {model}
-              </Button>
-            ))}
-            {!shown.length && (
-              <Text size="3" color="gray">
-                没有匹配的模型，可直接输入名称。
-              </Text>
-            )}
-          </Flex>
+            <CommandSearch
+              value={query}
+              onValueChange={setQuery}
+              inputRef={search}
+              size="3"
+              aria-label="搜索接口模型"
+              placeholder="搜索模型"
+            >
+              <TextField.Slot>
+                <Search size={16} />
+              </TextField.Slot>
+            </CommandSearch>
+            <Command.List
+              className="command-list ai-provider-model-options"
+              label="接口提供的模型"
+            >
+              {models.map((model) => (
+                <Command.Item
+                  asChild
+                  key={model}
+                  value={model}
+                  disabled={disabled}
+                  onSelect={() => {
+                    onChange(model);
+                    setOpen(false);
+                  }}
+                >
+                  <Button
+                    className="ai-model-option"
+                    variant={model === value ? "soft" : "ghost"}
+                    color={model === value ? undefined : "gray"}
+                    type="button"
+                    aria-current={model === value ? "true" : undefined}
+                    disabled={disabled}
+                  >
+                    {model}
+                  </Button>
+                </Command.Item>
+              ))}
+              <Command.Empty>
+                <Text size="3" color="gray">
+                  没有匹配的模型，可直接输入名称。
+                </Text>
+              </Command.Empty>
+            </Command.List>
+          </Command>
         </Flex>
       </Popover.Content>
     </Popover.Root>

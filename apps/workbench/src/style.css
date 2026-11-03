@@ -220,13 +220,6 @@ dialog h2 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Dialogs whose content grows and shrinks (search results, pages) hang
- * from a fixed top instead of re-centring on every change. */
-.find-dialog {
-  margin-top: min(12vh, 96px);
-  margin-bottom: auto;
-  max-height: calc(100dvh - min(12vh, 96px) - 24px);
-}
 input,
 textarea,
 select {
@@ -1618,36 +1611,6 @@ button.primary:active:where(:not(:disabled)) {
   white-space: normal;
 }
 
-.find-dialog {
-  width: min(500px, calc(100vw - 40px));
-  padding: 18px;
-}
-.find-dialog header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.find-dialog > input {
-  width: 100%;
-}
-.find-results {
-  max-height: 50vh;
-  overflow: auto;
-  margin-top: 10px;
-}
-.find-results button {
-  width: 100%;
-  justify-content: space-between;
-  text-align: left;
-}
-.find-results button[aria-selected="true"] {
-  background: var(--selection-fill);
-}
-.find-results small {
-  color: var(--muted);
-  margin-left: 12px;
-}
 .right-panel > [aria-label="信号追踪"] {
   overflow: auto;
   flex: 1;

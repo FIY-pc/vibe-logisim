@@ -183,7 +183,7 @@ export async function verifyEditorRequestLifetimes() {
     await fromMenu("查找元件…");
     await click(
       Array.from(
-        container.querySelectorAll('.find-dialog [role="option"]'),
+        document.querySelectorAll('.find-dialog [role="option"]'),
       ).find((button) => button.querySelector("span")?.textContent === label),
     );
   };

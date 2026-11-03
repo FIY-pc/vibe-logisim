@@ -867,6 +867,9 @@ export function Chat({
             disabled={!ready || pending}
             busy={busy}
             configurationError={state?.modelConfigurationError?.message}
+            allowCustom={Boolean(
+              state?.customProvider && state.customProvider.auth !== "chatgpt",
+            )}
             load={loadModels}
             select={async (model) => {
               await runtime("selectModel", {

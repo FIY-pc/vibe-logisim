@@ -1,6 +1,9 @@
-import { useEffect, useId, useState } from "react";
+import { Command } from "cmdk";
+import { Button, Dialog, Flex, Text } from "@radix-ui/themes";
+import { CommandSearch, preventComposingDismiss } from "../shared/command";
+import "../shared/command.css";
 import type { Circuit, Document } from "../shared/types";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogClose, useDialogFocus } from "../shared/Dialog";
 const names: Record<string, string> = {
   Register: "寄存器",
   Tunnel: "隧道",
@@ -30,10 +33,9 @@ export function FindDialog({
   onChoose: (circuit: string, component?: string) => void;
   onClose: () => void;
 }) {
-  const dialog = useModal();
-  const listId = useId();
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  const focus = useDialogFocus();
+  const title = mode === "circuit" ? "查找电路" : "查找元件";
+  const placeholder = mode === "circuit" ? "电路名称" : "元件名称或标签";
   const items =
     mode === "circuit"
       ? doc.circuits.map((c) => ({
@@ -52,102 +54,78 @@ export function FindDialog({
           circuit: circuit.name,
           component: c.id,
         }));
-  const results = items
-    .filter((c) =>
-      query
-        .toLocaleLowerCase()
-        .trim()
-        .split(/\s+/)
-        .every((part) =>
-          `${c.label} ${c.detail} ${"search" in c ? c.search : ""}`
-            .toLocaleLowerCase()
-            .includes(part),
-        ),
-    )
-    .sort((a, b) => {
-      const value = query.toLocaleLowerCase().trim();
-      const score = (label: string) =>
-        label.toLocaleLowerCase() === value
-          ? 0
-          : label.toLocaleLowerCase().startsWith(value)
-            ? 1
-            : 2;
-      return score(a.label) - score(b.label);
-    })
-    .slice(0, 100);
-  const selected = Math.min(active, Math.max(0, results.length - 1));
-  useEffect(() => {
-    document
-      .getElementById(`${listId}-${selected}`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [selected, query, listId]);
-  const choose = (index: number) => {
-    const item = results[index];
-    if (item) {
-      onChoose(item.circuit, item.component);
-      onClose();
-    }
-  };
   return (
-    <dialog
-      ref={dialog}
-      className="find-dialog"
-      aria-label={mode === "circuit" ? "查找电路" : "查找元件"}
-      onCancel={onClose}
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <header>
-        <h2>{mode === "circuit" ? "查找电路" : "查找元件"}</h2>
-        <DialogClose onClick={onClose} />
-      </header>
-      <input
-        data-autofocus
-        role="combobox"
-        aria-expanded="true"
-        aria-controls={listId}
-        aria-activedescendant={
-          results.length ? `${listId}-${selected}` : undefined
-        }
-        aria-label={mode === "circuit" ? "电路名称" : "元件名称或标签"}
-        placeholder={mode === "circuit" ? "电路名称" : "元件名称或标签"}
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setActive(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return;
-          if (["ArrowDown", "ArrowUp", "Enter"].includes(e.key)) {
-            e.preventDefault();
-            if (e.key === "Enter") choose(selected);
-            else
-              setActive(
-                Math.max(
-                  0,
-                  Math.min(
-                    results.length - 1,
-                    selected + (e.key === "ArrowDown" ? 1 : -1),
-                  ),
-                ),
-              );
-          }
-        }}
-      />
-      <div className="find-results" role="listbox" id={listId}>
-        {results.map((c, index) => (
-          <button
-            key={c.id}
-            role="option"
-            id={`${listId}-${index}`}
-            tabIndex={-1}
-            aria-selected={selected === index}
-            onClick={() => choose(index)}
-          >
-            <span>{c.label}</span>
-            <small>{c.detail}</small>
-          </button>
-        ))}
-      </div>
-      {!results.length && <p className="muted">没有匹配的结果</p>}
-    </dialog>
+      <Dialog.Content
+        {...focus}
+        className="find-dialog"
+        maxWidth="560px"
+        align="start"
+        aria-describedby={undefined}
+        onEscapeKeyDown={preventComposingDismiss}
+      >
+        <Flex align="center" justify="between" gap="3" mb="3">
+          <Dialog.Title as="h2" mb="0">
+            {title}
+          </Dialog.Title>
+          <DialogClose onClick={onClose} />
+        </Flex>
+        <Command
+          label={title}
+          filter={(_value, search, keywords = []) => {
+            const [label = "", ...detail] = keywords;
+            const query = search.toLocaleLowerCase().trim();
+            const haystack = [label, ...detail].join(" ").toLocaleLowerCase();
+            if (!query.split(/\s+/).every((part) => haystack.includes(part)))
+              return 0;
+            return label.toLocaleLowerCase() === query
+              ? 1
+              : label.toLocaleLowerCase().startsWith(query)
+                ? 0.75
+                : 0.5;
+          }}
+        >
+          <CommandSearch
+            size="3"
+            data-autofocus
+            aria-label={placeholder}
+            placeholder={placeholder}
+          />
+          <Command.List className="command-list find-results" label={title}>
+            {items.map((item) => (
+              <Command.Item
+                asChild
+                key={item.id}
+                value={item.id}
+                keywords={[
+                  item.label,
+                  item.detail,
+                  "search" in item ? item.search : "",
+                ]}
+                onSelect={() => {
+                  onChoose(item.circuit, item.component);
+                  onClose();
+                }}
+              >
+                <Button variant="ghost" color="gray" size="3">
+                  <Text>{item.label}</Text>
+                  <Text color="gray">{item.detail}</Text>
+                </Button>
+              </Command.Item>
+            ))}
+            <Command.Empty>
+              <Text as="p" size="3" color="gray">
+                没有匹配的结果
+              </Text>
+            </Command.Empty>
+          </Command.List>
+        </Command>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }

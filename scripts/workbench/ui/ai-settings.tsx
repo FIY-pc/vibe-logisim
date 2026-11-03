@@ -339,8 +339,21 @@ export async function verifyAISettings() {
           new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
         );
     });
-    assert.equal(document.activeElement?.getAttribute("role"), "option");
-    await click(document.activeElement!);
+    const modelInput = document.querySelector<HTMLInputElement>(
+      'input[aria-label="搜索模型"]',
+    )!;
+    assert.equal(document.activeElement, modelInput);
+    assert.ok(modelInput.getAttribute("aria-activedescendant"));
+    await act(async () =>
+      modelInput.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    await settle();
     assert.equal(selected[0].model, "beta");
     assert.equal(
       document.querySelector('.ai-model-popover[role="dialog"]')?.textContent ??
