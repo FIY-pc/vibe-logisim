@@ -228,6 +228,26 @@ export async function verifyNodeRuntime(resources: string, label: string) {
   if (process.platform === "win32")
     await probe(resources, label + " with canonical Windows path", true);
 }
+async function verifyWindowsCommands(resources: string) {
+  if (process.platform !== "win32") return;
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      path.join(resources, "runtimes/node/node.exe"),
+      [path.join(import.meta.dirname, "windows-command-check.mts"), resources],
+      {
+        env: cleanEnvironment(resources),
+        stdio: "inherit",
+        windowsHide: true,
+      },
+    );
+    child.on("error", reject);
+    child.on("close", (code) =>
+      code === 0
+        ? resolve()
+        : reject(new Error(`Packaged command check exited ${code}`)),
+    );
+  });
+}
 export async function verifyNodeRelocation(resources: string) {
   await verifyNodeRuntime(resources, "original Node runtime");
   const directory = await mkdtemp(
@@ -236,6 +256,7 @@ export async function verifyNodeRelocation(resources: string) {
   try {
     for (const item of [
       "runtimes/node",
+      ...(process.platform === "win32" ? ["runtimes/java"] : []),
       "packages/agent-runtime",
       "config/runtime-lock.json",
     ])
@@ -247,6 +268,7 @@ export async function verifyNodeRelocation(resources: string) {
       directory,
       "Node runtime relocated to Unicode path",
     );
+    await verifyWindowsCommands(directory);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
