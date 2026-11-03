@@ -1,7 +1,13 @@
 import { useRef, type ReactElement, type ReactNode } from "react";
 import { ContextMenu as Context } from "@radix-ui/themes";
 import { MenuScope } from "./Menu";
-import { keepKeys, keepMovedFocus, usePortalContainer } from "./layer";
+import { focusOrigin } from "./Dialog";
+import {
+  keepKeys,
+  keepMovedFocus,
+  rememberFocusOrigin,
+  usePortalContainer,
+} from "./layer";
 
 /** A menu drawn by the app at the pointer when `children` is right-clicked
  * or long-pressed (a `contextmenu` event dispatched on it from the keyboard
@@ -26,8 +32,7 @@ export function ContextMenu({
     <Context.Root
       onOpenChange={(open) => {
         if (open) {
-          const focused = document.activeElement;
-          opener.current = focused instanceof HTMLElement ? focused : null;
+          opener.current = focusOrigin(document.activeElement) ?? anchor.current;
         }
         onOpenChange?.(open);
       }}
@@ -36,6 +41,7 @@ export function ContextMenu({
         {children}
       </Context.Trigger>
       <Context.Content
+        ref={(node) => rememberFocusOrigin(node, opener.current)}
         container={container}
         size="1"
         className="app-menu-content"

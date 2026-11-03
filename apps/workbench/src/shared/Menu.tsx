@@ -13,7 +13,12 @@ import {
   Text,
 } from "@radix-ui/themes";
 import { Ellipsis } from "lucide-react";
-import { keepKeys, keepMovedFocus, usePortalContainer } from "./layer";
+import {
+  keepKeys,
+  keepMovedFocus,
+  rememberFocusOrigin,
+  usePortalContainer,
+} from "./layer";
 import "./Menu.css";
 
 /** The kind of menu the shared items below render into. Radix keeps a
@@ -99,6 +104,7 @@ export function Menu({
         </Trigger>
       </Dropdown.Trigger>
       <Dropdown.Content
+        ref={(node) => rememberFocusOrigin(node, anchor.current)}
         container={container}
         className="app-menu-content"
         size="1"

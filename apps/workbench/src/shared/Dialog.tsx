@@ -6,16 +6,33 @@ import { IconButton } from "@radix-ui/themes";
 const openers = new WeakMap<HTMLElement, HTMLElement>();
 export const modalSelector = 'dialog[open],[aria-modal="true"]';
 
-/** Sends focus to `opener` once `dialog` closes. Menus use it: the item that
- * opened the dialog is gone by the time the dialog closes, so focus goes back
- * to the menu's trigger instead. */
-export function returnFocusTo(dialog: HTMLElement, opener: HTMLElement) {
-  openers.set(dialog, opener);
+/** Records the persistent control behind a menu or dialog. */
+export function returnFocusTo(layer: HTMLElement, opener: HTMLElement) {
+  openers.set(layer, opener);
+}
+
+/** Resolve menu items before their menu unmounts. Submenus point to their
+ * parent trigger; context menus register their origin explicitly. */
+export function focusOrigin(element: Element | null): HTMLElement | null {
+  let target = element instanceof HTMLElement ? element : null;
+  const seen = new Set<HTMLElement>();
+  while (target && !seen.has(target)) {
+    seen.add(target);
+    const menu = target.closest<HTMLElement>('[role="menu"]');
+    if (!menu) break;
+    const id = menu.getAttribute("aria-labelledby");
+    const origin =
+      openers.get(menu) ?? (id ? menu.ownerDocument.getElementById(id) : null);
+    if (!(origin instanceof HTMLElement)) break;
+    target = origin;
+  }
+  return target === document.body ? null : target;
 }
 
 /** Project commands open controlled dialogs without a persistent Dialog.Trigger. */
 export function useDialogFocus() {
   const ref = useRef<HTMLDivElement>(null);
+  const opened = useRef<HTMLDivElement | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   // During migration a child dialog can still be launched from a native top layer.
   const [container] = useState(
@@ -26,11 +43,10 @@ export function useDialogFocus() {
   return {
     ref,
     container,
+    "aria-modal": true as const,
     onOpenAutoFocus(event: Event) {
-      opener.current =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null;
+      opened.current = ref.current;
+      opener.current = focusOrigin(document.activeElement);
       const start = ref.current?.querySelector<HTMLElement>("[data-autofocus]");
       if (start) {
         event.preventDefault();
@@ -39,8 +55,8 @@ export function useDialogFocus() {
       }
     },
     onCloseAutoFocus(event: Event) {
-      const target =
-        (ref.current && openers.get(ref.current)) || opener.current;
+      const redirected = opened.current && openers.get(opened.current);
+      const target = redirected?.isConnected ? redirected : opener.current;
       if (target?.isConnected) {
         event.preventDefault();
         target.focus();
@@ -60,11 +76,7 @@ export function useModal() {
   useEffect(() => {
     const node = dialog.current;
     if (!node) return;
-    const focused = document.activeElement;
-    const opener =
-      focused instanceof HTMLElement && focused !== document.body
-        ? focused
-        : null;
+    const opener = focusOrigin(document.activeElement);
     node.showModal();
     const start = node.querySelector<HTMLElement>("[data-autofocus]");
     if (start) {
@@ -75,7 +87,8 @@ export function useModal() {
       node.focus();
     }
     return () => {
-      const target = openers.get(node) ?? opener;
+      const redirected = openers.get(node);
+      const target = redirected?.isConnected ? redirected : opener;
       node.close();
       const now = document.activeElement;
       if (
