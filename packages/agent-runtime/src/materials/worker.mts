@@ -43,10 +43,12 @@ async function read(): Promise<MaterialPage> {
   const task = getDocument({
     data: new Uint8Array(bytes),
     useSystemFonts: false,
-    cMapUrl: path.join(root, "cmaps") + path.sep,
+    // PDF.js requires a trailing '/', including for local Windows paths.
+    // Keep filesystem paths: its Node data factory passes them to fs.readFile.
+    cMapUrl: path.join(root, "cmaps") + "/",
     cMapPacked: true,
-    standardFontDataUrl: path.join(root, "standard_fonts") + path.sep,
-    wasmUrl: path.join(root, "wasm") + path.sep,
+    standardFontDataUrl: path.join(root, "standard_fonts") + "/",
+    wasmUrl: path.join(root, "wasm") + "/",
   });
   try {
     const pdf = await task.promise;
