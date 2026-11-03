@@ -45,9 +45,14 @@ const directory = await mkdtemp(path.join(tmpdir(), "vibe-material-"));
 try {
   const file = path.join(directory, "requirements.pdf");
   await writeFile(file, document());
-  const late = await readMaterial(file, { path: "requirements.pdf", page: 23 });
+  const late = await readMaterial(file, {
+    path: "requirements.pdf",
+    page: 23,
+    render: true,
+  });
   assert.equal(late.pages, 24);
   assert.match(late.text!, /FINAL_REQUIREMENT/);
+  assert.match(late.image!, /^data:image\/png;base64,/);
   const search = await readMaterial(file, {
     path: "requirements.pdf",
     query: "FINAL_REQUIREMENT",
