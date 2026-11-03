@@ -1,19 +1,23 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { spawn, execFile } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 // A job owns the shell and its descendants, including detached children. The
 // non-inheritable handle lives until PowerShell exits; closing it kills the job.
 // This manages lifetime and memory, not filesystem permissions.
-const bootstrap = String.raw`
+const bootstrap = (compile: boolean) =>
+  String.raw`
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+` +
+  (compile
+    ? String.raw`
 if (-not [IO.File]::Exists($env:VIBE_COMMAND_JOB_ASSEMBLY)) {
 Add-Type -TypeDefinition @'
 using System;
@@ -70,6 +74,9 @@ try {
     if (-not [IO.File]::Exists($env:VIBE_COMMAND_JOB_ASSEMBLY)) { throw }
 }
 }
+`
+    : "") +
+  String.raw`
 Add-Type -Path $env:VIBE_COMMAND_JOB_ASSEMBLY
 [VibeCommandJob]::Start()
 Set-Location -LiteralPath $env:VIBE_PROJECT_ROOT
@@ -148,11 +155,12 @@ export async function windowsCommand(
   try {
     // -File avoids Windows' command-line length limit and quoting rules. A BOM
     // is required for non-ASCII scripts in the built-in Windows PowerShell 5.1.
+    const assembly = await cachedJobAssembly();
     const script = path.join(temporary, "command.ps1");
     await writeFile(
       script,
       "\ufeff" +
-        bootstrap +
+        bootstrap(!existsSync(assembly)) +
         "\n& {\n" +
         commandText +
         "\n}\n$vibeCommandSucceeded = $?\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\nif (-not $vibeCommandSucceeded) { exit 1 }\nexit 0\n",
@@ -162,7 +170,7 @@ export async function windowsCommand(
     const env = environment(root, temporary, referenceRoot, runtimeRoot);
     const commandEnv = {
       ...env,
-      VIBE_COMMAND_JOB_ASSEMBLY: await cachedJobAssembly(),
+      VIBE_COMMAND_JOB_ASSEMBLY: assembly,
     };
     signal?.throwIfAborted();
     const system32 = path.join(env.SystemRoot, "System32");
