@@ -222,22 +222,10 @@ dialog h2 {
 }
 /* Dialogs whose content grows and shrinks (search results, pages) hang
  * from a fixed top instead of re-centring on every change. */
-.find-dialog,
-.ai-settings-dialog {
+.find-dialog {
   margin-top: min(12vh, 96px);
   margin-bottom: auto;
   max-height: calc(100dvh - min(12vh, 96px) - 24px);
-}
-.dialog-close {
-  flex: none;
-  margin-left: auto;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--muted);
-}
-.dialog-close:hover {
-  color: var(--text);
 }
 input,
 textarea,
@@ -248,52 +236,7 @@ select {
   padding: 7px;
   min-width: 0;
 }
-/* shared/Select.tsx: the trigger is sized like an input; the list is the app's own. */
-.select-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  border: 1px solid var(--border);
-  background: var(--paper);
-  border-radius: 5px;
-  padding: 7px 8px;
-  min-width: 0;
-  text-align: left;
-  white-space: nowrap;
-  font: inherit;
-  color: inherit;
-}
-.select-trigger:hover {
-  background: var(--paper);
-  border-color: #c9cfd9;
-}
-.select-trigger[data-placeholder] {
-  color: var(--muted);
-}
-.select-trigger > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.select-trigger > svg {
-  flex: none;
-  color: var(--muted);
-}
-.select-trigger.select-small {
-  padding: 4px 6px;
-  font-size: 11px;
-}
-.select-trigger.select-plain,
-.select-trigger.select-plain:hover {
-  border-color: transparent;
-  background: transparent;
-}
-.select-trigger.select-plain:hover {
-  background: #eceff4;
-}
 /* Floating layers drawn by the app share one surface, shadow and fade. */
-.menu-content,
-.select-content,
 .conversation-popover {
   z-index: 200;
   background: var(--paper);
@@ -304,57 +247,6 @@ select {
   font-size: 12px;
   outline: none;
   animation: layer-in var(--layer-fade) ease-out;
-}
-.select-content {
-  min-width: var(--radix-select-trigger-width);
-  max-height: var(--radix-select-content-available-height);
-  overflow: hidden;
-  padding: 4px;
-}
-.select-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: 5px;
-  cursor: default;
-  user-select: none;
-  outline: none;
-}
-.select-item[data-highlighted] {
-  background: #eceff4;
-}
-.select-item[data-state="checked"] {
-  color: var(--accent);
-}
-.select-item[data-disabled] {
-  opacity: 0.38;
-}
-.select-item > svg {
-  flex: none;
-}
-/* shared/Checkbox.tsx */
-.checkbox {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  border: 1px solid #b4bcc8;
-  border-radius: 4px;
-  background: var(--paper);
-  color: white;
-}
-.checkbox:hover {
-  background: var(--paper);
-  border-color: #8f99a8;
-}
-.checkbox[data-state="checked"] {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.checkbox-mark {
-  display: flex;
 }
 /* Key labels are set in the app's font, quieter than the text they follow. */
 kbd {
@@ -1060,22 +952,6 @@ button.primary:active:where(:not(:disabled)) {
 }
 .chat-card > small {
   color: var(--muted);
-}
-.provider-form {
-  padding: 14px;
-  overflow: auto;
-}
-.provider-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 11px;
-  margin-bottom: 13px;
-  color: #6b7381;
-}
-.provider-form button:not(.checkbox) {
-  background: #edf1fa;
-  color: var(--accent);
 }
 @media (max-width: 1100px) {
   .explorer {
@@ -1831,25 +1707,6 @@ button.primary:active:where(:not(:disabled)) {
 .find-results small {
   color: var(--muted);
   margin-left: 12px;
-}
-.provider-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.provider-advanced {
-  margin: 8px 0;
-}
-.provider-advanced summary {
-  color: var(--muted);
-  padding: 6px 0;
-}
-.provider-form .provider-check {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
 }
 .right-panel > [aria-label="信号追踪"] {
   overflow: auto;
