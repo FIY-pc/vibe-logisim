@@ -14,12 +14,12 @@
   min-width: 0;
 }
 .inspector .property-field [aria-invalid="true"] {
-  border-color: #b42318;
+  border-color: var(--danger);
 }
 .inspector .property-error {
   display: block;
   margin-top: 4px;
-  color: #b42318;
+  color: var(--danger);
   font-size: var(--font-size-2);
   overflow-wrap: anywhere;
 }
@@ -79,7 +79,7 @@
 }
 .inspector .pin-table button[aria-pressed="true"] {
   color: var(--accent);
-  background: #eaf0ff;
+  background: var(--accent-soft);
 }
 .inspector .selected-wire {
   margin: 0;
@@ -149,7 +149,7 @@
   text-align: left;
   padding: 7px 8px;
   margin-top: 4px;
-  background: var(--surface, #f7f8fb);
+  background: var(--surface-subtle);
   font-size: var(--font-size-2);
 }
 .selection-connections .connection-peer span {

@@ -28,12 +28,14 @@ export function Button({
 }
 export function IconButton({
   className,
+  variant = "ghost",
+  color = variant === "solid" ? undefined : "gray",
   ...props
 }: ControlProps<ComponentProps<typeof RadixIconButton>>) {
   return (
     <RadixIconButton
-      variant="ghost"
-      color="gray"
+      variant={variant}
+      color={color}
       {...props}
       className={["ui-icon-button", className].filter(Boolean).join(" ")}
       size="2"

@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
-  background: var(--paper);
+  background: var(--surface);
   height: calc(var(--control-height) + var(--space-4));
   padding: 0 var(--space-3);
   gap: var(--space-3);
@@ -53,7 +53,7 @@
   width: 6px;
   height: 6px;
   flex: none;
-  background: #6f7787;
+  background: var(--muted);
   border-radius: 50%;
 }
 .title-actions {
@@ -73,7 +73,7 @@
 .welcome .empty-symbol {
   width: 180px;
   height: 120px;
-  fill: var(--paper);
+  fill: var(--surface);
   stroke: var(--accent);
   stroke-width: 2;
   opacity: 0.5;
@@ -114,7 +114,7 @@
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  background: var(--workspace-surface);
+  background: var(--surface-subtle);
 }
 .panel-heading {
   flex: none;
@@ -179,7 +179,7 @@
   align-items: center;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--paper);
+  background: var(--surface);
   color: var(--muted);
   height: var(--control-height);
   margin: var(--space-2) var(--space-3);
@@ -243,7 +243,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: var(--surface);
 }
 .editor-toolbar {
   display: flex;
@@ -364,7 +364,7 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: var(--surface);
   border-left: 1px solid var(--border);
   min-height: 0;
 }
@@ -448,7 +448,7 @@
   font-family: monospace;
 }
 .signal code {
-  color: #4d68a2;
+  color: var(--accent);
 }
 .welcome {
   flex: 1;
@@ -463,7 +463,7 @@
 .welcome h1 {
   font-size: var(--font-size-5);
   font-weight: 500;
-  color: #555e6b;
+  color: var(--text);
   margin: 0;
 }
 .welcome > div {
@@ -490,9 +490,9 @@
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  background: #fff2ec;
-  border-top: 1px solid #f3d6c8;
-  color: #985734;
+  background: var(--danger-soft);
+  border-top: 1px solid var(--red-6);
+  color: var(--danger);
   font-size: var(--font-size-2);
   max-height: 96px;
   overflow: auto;
@@ -504,7 +504,7 @@
 .spinner {
   width: 12px;
   height: 12px;
-  border: 1.5px solid #c3cbe0;
+  border: 1.5px solid var(--gray-6);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -564,7 +564,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-4);
-  background: var(--paper);
+  background: var(--surface);
   margin: 0 var(--space-3) var(--space-3);
 }
 .composer textarea {
@@ -779,8 +779,8 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 7px 14px;
-  background: #fff7df;
-  border-bottom: 1px solid #e9d9ab;
+  background: var(--warning-soft);
+  border-bottom: 1px solid var(--amber-6);
   font-size: var(--font-size-2);
 }
 .source-notice > span {
@@ -789,7 +789,7 @@
 }
 .source-notice button {
   padding: 4px 8px;
-  background: #ffffff88;
+  background: var(--surface);
 }
 .decision-dialog {
   width: min(440px, calc(100vw - 32px));
@@ -873,7 +873,7 @@
   max-height: 34%;
   overflow: auto;
   border-top: 1px solid var(--border);
-  background: var(--paper);
+  background: var(--surface);
 }
 .memory-panel > header,
 .simulation-dock > header {
@@ -883,7 +883,7 @@
   padding: 5px 12px;
   position: sticky;
   top: 0;
-  background: var(--paper);
+  background: var(--surface);
   z-index: 1;
 }
 .memory-panel > header button,
@@ -961,7 +961,7 @@
   display: flex;
   height: 32px;
   align-items: stretch;
-  border-bottom: 1px solid #f0f2f5;
+  border-bottom: 1px solid var(--border);
 }
 .waveform-sheet {
   min-width: calc(var(--waveform-width) + var(--waveform-label));
@@ -975,7 +975,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--paper);
+  background: var(--surface);
   padding: 0 10px 0 2px;
   font-size: var(--font-size-2);
 }
@@ -1018,7 +1018,7 @@
   fill: var(--text);
 }
 .waveform-cursor {
-  fill: #315efb14;
+  fill: var(--accent-soft);
 }
 .waveform-scroll input[type="range"] {
   display: block;
@@ -1110,7 +1110,7 @@
   font-size: var(--font-size-2);
 }
 .observation-viewer .changed {
-  background: #ffedc780;
+  background: var(--warning-soft);
 }
 .observation-image {
   max-width: 100%;
@@ -1149,7 +1149,7 @@
 .capture-notice {
   display: flex;
   max-width: 100%;
-  background: var(--paper);
+  background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--layer-shadow);
   border-radius: 8px;

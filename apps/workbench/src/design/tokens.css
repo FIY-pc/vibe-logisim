@@ -8,8 +8,8 @@
   --cursor-button: pointer;
   --cursor-checkbox: pointer;
   --cursor-menu-item: pointer;
-  --paper: var(--color-panel-solid, white);
-  --workspace-surface: var(--gray-2);
+  --surface: var(--color-panel-solid, white);
+  --surface-subtle: var(--gray-2);
   --text: var(--gray-12);
   --muted: var(--gray-11);
   --border: var(--gray-6);
@@ -18,10 +18,16 @@
   --hover: var(--gray-3);
   --danger: var(--red-11);
   --warning: var(--amber-11);
+  --success: var(--green-11);
+  --danger-soft: var(--red-3);
+  --warning-soft: var(--amber-3);
+  --success-soft: var(--green-3);
   --selection-fill: var(--indigo-a3);
   --grid: var(--gray-6);
   --layer-shadow: var(--shadow-4);
   --dialog-shadow: var(--shadow-6);
+  /* Available space inside Themes' dialog scroll padding. */
+  --dialog-max-height: calc(100dvh - var(--space-6) - max(var(--space-6), 6vh));
   --backdrop: var(--color-overlay);
   --control-height: var(--space-6);
   --section-height: calc(var(--space-6) + var(--space-3));

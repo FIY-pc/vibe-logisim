@@ -48,8 +48,8 @@
   text-align: right;
 }
 .project-warning {
-  background: #fff7e5;
-  color: #7e6226;
+  background: var(--warning-soft);
+  color: var(--warning);
   padding: var(--space-2) var(--space-3);
   border-radius: 6px;
 }

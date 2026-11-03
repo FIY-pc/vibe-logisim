@@ -1,4 +1,5 @@
 .conversation-picker {
+  justify-content: flex-start;
   flex: 1;
   min-width: 0;
 }

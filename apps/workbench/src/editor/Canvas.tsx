@@ -983,11 +983,12 @@ export function Canvas({
             fill="var(--danger)"
           >
             {overlay.unconnected.flatMap((at) =>
-              [at, { x: at.x + overlay.delta.x, y: at.y + overlay.delta.y }].map(
-                (p, i) => (
-                  <circle key={`${at.x},${at.y}:${i}`} cx={p.x} cy={p.y} r={3} />
-                ),
-              ),
+              [
+                at,
+                { x: at.x + overlay.delta.x, y: at.y + overlay.delta.y },
+              ].map((p, i) => (
+                <circle key={`${at.x},${at.y}:${i}`} cx={p.x} cy={p.y} r={3} />
+              )),
             )}
           </g>
         )}
@@ -1081,7 +1082,7 @@ export function Canvas({
                 cx={p.x}
                 cy={p.y}
                 r={3 / view.scale}
-                fill="var(--paper)"
+                fill="var(--surface)"
                 stroke="var(--accent)"
                 strokeWidth={1 / view.scale}
               />

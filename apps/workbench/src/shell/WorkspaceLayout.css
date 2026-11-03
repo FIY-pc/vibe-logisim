@@ -55,13 +55,6 @@
   height: var(--control-height);
   gap: var(--space-2);
 }
-.section-toggle {
-  font-size: var(--font-size-2);
-  line-height: var(--line-height-2);
-  padding: 0;
-  height: var(--control-height);
-  gap: var(--space-2);
-}
 .section-toggle::before {
   content: "";
   flex: none;
@@ -102,11 +95,6 @@
 .resource-tabs > button {
   border-radius: 0;
   color: var(--muted);
-  font-size: var(--font-size-2);
-  padding: 0 var(--space-1);
-  height: var(--section-height);
-}
-.resource-tabs > button {
   border-bottom: 2px solid transparent;
   font-size: var(--font-size-2);
   padding: 0 var(--space-1);
@@ -167,7 +155,7 @@
   cursor: row-resize;
   position: relative;
   touch-action: none;
-  background: var(--paper);
+  background: var(--surface);
 }
 .row-resizer::after {
   content: "";
@@ -221,7 +209,7 @@
     top: 0;
     bottom: 0;
     z-index: 30;
-    box-shadow: 0 8px 30px #20242b25;
+    box-shadow: var(--layer-shadow);
   }
   .workspace .workspace-rail {
     left: 0;
@@ -235,7 +223,7 @@
     display: block;
     position: absolute;
     inset: 0;
-    background: #20242b20;
+    background: var(--backdrop);
     z-index: 29;
     border-radius: 0;
   }

@@ -33,7 +33,7 @@ export function DecisionDialog({
       <AlertDialog.Content
         {...focus}
         maxWidth="480px"
-        maxHeight="calc(100dvh - 48px)"
+        maxHeight="var(--dialog-max-height)"
         className="decision-dialog"
         aria-label={decision.title}
       >

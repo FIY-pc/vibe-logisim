@@ -18,7 +18,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #f8faff;
+  background: var(--surface-subtle);
 }
 .symbol-toolbar {
   display: flex;
@@ -44,16 +44,16 @@
 }
 .symbol-port {
   fill: white;
-  stroke: #4567d8;
+  stroke: var(--accent);
   stroke-width: 1.5;
   cursor: grab;
 }
 .symbol-port.selected {
-  fill: #4569ff;
-  stroke: #244abf;
+  fill: var(--accent);
+  stroke: var(--accent);
 }
 .symbol-selected {
-  filter: drop-shadow(0 0 2px #4569ff);
+  filter: drop-shadow(0 0 2px var(--accent));
 }
 .symbol-properties {
   border: 0;
@@ -107,7 +107,7 @@
   margin: 0;
 }
 .symbol-port-row.selected {
-  background: #edf1ff;
+  background: var(--accent-soft);
   border-radius: 6px;
 }
 .symbol-port-row label {
@@ -150,7 +150,7 @@
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 30px #17223520;
+  box-shadow: var(--layer-shadow);
 }
 .symbol-parent-preview button {
   position: sticky;

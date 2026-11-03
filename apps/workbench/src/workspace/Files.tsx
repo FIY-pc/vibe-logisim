@@ -37,7 +37,7 @@ import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import { Select } from "../shared/Select";
 import { DialogBody, DialogFooter, DialogFrame } from "../shared/Dialog";
-import { Button } from "@radix-ui/themes";
+import { Button, IconButton, ActionRow } from "../design/ui";
 import { fullText } from "../shared/Tooltips";
 export interface ProjectFolder {
   historyWarning?: string;
@@ -1111,7 +1111,7 @@ function FolderFiles({
           <div>
             {folder && (
               <>
-                <button
+                <IconButton
                   aria-label="新建文件"
                   data-tip="新建文件"
                   disabled={pending}
@@ -1120,8 +1120,8 @@ function FolderFiles({
                   }
                 >
                   <Plus size={13} />
-                </button>
-                <button
+                </IconButton>
+                <IconButton
                   aria-label="定位当前文件"
                   data-tip="定位当前文件"
                   disabled={!activeRelative || pending}
@@ -1130,7 +1130,7 @@ function FolderFiles({
                   }
                 >
                   <LocateFixed size={13} />
-                </button>
+                </IconButton>
                 <Menu label="文件夹操作" title="更多操作" disabled={pending}>
                   {actions(null)}
                 </Menu>
@@ -1433,7 +1433,6 @@ function HistoryDialog({
                     <time>{new Date(entry.at).toLocaleString()}</time>
                   </span>
                   <Button
-                    size="1"
                     variant="soft"
                     color="gray"
                     disabled={pending || !entry.undoable}
@@ -1446,11 +1445,9 @@ function HistoryDialog({
                   </Button>
                 </div>
                 {entry.files.map((file) => (
-                  <Button
+                  <ActionRow
                     variant="ghost"
                     color="gray"
-                    size="1"
-                    style={{ margin: 0, height: "auto" }}
                     key={file.path}
                     className={
                       selection?.id === entry.id && selection.path === file.path
@@ -1469,7 +1466,7 @@ function HistoryDialog({
                       }
                     </span>
                     <span>{file.path}</span>
-                  </Button>
+                  </ActionRow>
                 ))}
               </section>
             ))}

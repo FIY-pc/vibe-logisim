@@ -20,7 +20,7 @@
   min-width: 360px;
   max-width: calc(100% - 445px);
   flex-shrink: 0;
-  background: var(--paper);
+  background: var(--surface);
   border-left: 1px solid var(--border);
 }
 .reader-focus > .document-reader {
@@ -32,7 +32,7 @@
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
-  background: var(--workspace-surface);
+  background: var(--surface-subtle);
   border-bottom: 1px solid var(--border);
   height: var(--section-height);
 }
@@ -52,7 +52,7 @@
   border-top: 2px solid transparent;
 }
 .reader-tab.active {
-  background: var(--paper);
+  background: var(--surface);
   border-top-color: var(--accent);
 }
 .reader-tab > button {
@@ -93,7 +93,7 @@
   align-items: center;
   gap: 4px;
   border-bottom: 1px solid var(--border);
-  background: var(--paper);
+  background: var(--surface);
   min-height: var(--section-height);
   padding: var(--space-1) var(--space-2);
 }
@@ -117,7 +117,7 @@
   width: 100%;
   min-height: 0;
   border: none;
-  background: var(--workspace-surface);
+  background: var(--surface-subtle);
 }
 .reader-resizer {
   width: 5px;
@@ -145,22 +145,22 @@
   overflow-wrap: anywhere;
 }
 .material-markdown {
-  font-size: 15px;
+  font-size: var(--font-size-2);
   line-height: 1.75;
   color: var(--text);
 }
 .material-markdown h1 {
-  font-size: 25px;
+  font-size: var(--font-size-6);
 }
 .material-markdown h2 {
-  font-size: 20px;
+  font-size: var(--font-size-5);
 }
 .material-markdown img {
   max-width: 100%;
 }
 .material-markdown pre {
   overflow-x: auto;
-  background: var(--workspace-surface);
+  background: var(--surface-subtle);
   padding: 16px;
   border-radius: 6px;
 }
@@ -174,7 +174,7 @@
   padding: 8px;
 }
 .image-reader {
-  background: var(--workspace-surface);
+  background: var(--surface-subtle);
   padding: 16px;
 }
 .image-stage {
@@ -194,7 +194,7 @@
 }
 .image-selection {
   position: absolute;
-  border: 2px solid #345bff;
+  border: 2px solid var(--accent);
   background: var(--selection-fill);
   pointer-events: none;
 }

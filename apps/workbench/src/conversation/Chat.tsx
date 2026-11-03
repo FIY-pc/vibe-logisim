@@ -926,7 +926,6 @@ export function Chat({
           {busy ? (
             <IconButton
               variant="solid"
-              color={undefined}
               className="composer-stop"
               aria-label="停止回答"
               data-tip={stopping ? "正在停止…" : "停止回答"}
@@ -946,7 +945,6 @@ export function Chat({
           ) : (
             <IconButton
               variant="solid"
-              color={undefined}
               aria-label="发送"
               data-tip="发送"
               data-tip-key="Enter"

@@ -209,8 +209,8 @@ export function WorkspaceRail({
   const panelProps = (i: number) => ({
     id: ids[i],
     defaultSize: `${weights[i] * 100}%`,
-    minSize: layout.layout[sections[i]] ? 42 : 90,
-    maxSize: layout.layout[sections[i]] ? 42 : undefined,
+    minSize: layout.layout[sections[i]] ? 44 : 90,
+    maxSize: layout.layout[sections[i]] ? 44 : undefined,
     className: "rail-section-panel",
   });
   const splitter = (index: number) => (

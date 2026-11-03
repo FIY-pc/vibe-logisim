@@ -114,7 +114,7 @@ export function DialogFrame({
       <ThemesDialog.Content
         {...focus}
         aria-describedby={undefined}
-        maxHeight="calc(100dvh - 48px)"
+        maxHeight="var(--dialog-max-height)"
         {...props}
         className={`dialog-frame ${className}`}
         onOpenAutoFocus={(event) => {
