@@ -64,6 +64,12 @@ export function createShowcaseServer(options: SiteOptions) {
       postingEnabled: Boolean(r.posting),
     };
   };
+  const pageOffset = (url: URL) => {
+    const value = Number(url.searchParams.get("offset") || 0);
+    if (!Number.isInteger(value) || value < 0 || value > 100000)
+      fail(400, "分页位置必须是0–100000的整数");
+    return value;
+  };
   const present = (r: any) => ({
     id: r.id,
     author: r.author,
@@ -197,10 +203,7 @@ export function createShowcaseServer(options: SiteOptions) {
       }
       if (route === "/api/comments" && method === "GET") {
         const s = settings();
-        const offset = Math.max(
-          0,
-          Math.min(100000, Number(url.searchParams.get("offset")) || 0),
-        );
+        const offset = pageOffset(url);
         const rows = s.commentsVisible
           ? db
               .prepare(
@@ -303,10 +306,7 @@ export function createShowcaseServer(options: SiteOptions) {
           const status = url.searchParams.get("status") || "pending";
           if (!["pending", "published", "hidden", "all"].includes(status))
             fail(400, "状态无效");
-          const offset = Math.max(
-            0,
-            Math.min(100000, Number(url.searchParams.get("offset")) || 0),
-          );
+          const offset = pageOffset(url);
           const rows =
             status === "all"
               ? db
