@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Search } from "lucide-react";
+import {
+  Button,
+  Callout,
+  Dialog,
+  Flex,
+  IconButton,
+  TextField,
+} from "@radix-ui/themes";
 import {
   bindingLabel,
   bindingProblem,
@@ -9,7 +17,8 @@ import {
   type Bindings,
   type ShortcutId,
 } from "../shared/shortcuts";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogClose, useDialogFocus } from "../shared/Dialog";
+
 export function ShortcutSettings({
   bindings,
   onChange,
@@ -19,9 +28,9 @@ export function ShortcutSettings({
   onChange: (value: Bindings) => void;
   onClose: () => void;
 }) {
-  const dialog = useModal();
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState("");
+  const focus = useDialogFocus();
+  const [query, setQuery] = useState(""),
+    [error, setError] = useState("");
   const needle = query.trim().toLowerCase();
   const groups = [...new Set(shortcutCommands.map((c) => c.group))]
     .map(
@@ -47,79 +56,96 @@ export function ShortcutSettings({
     try {
       onChange({ ...bindings, [id]: value });
       setError("");
-    } catch (e) {
-      setError(String(e));
+    } catch (error) {
+      setError(String(error));
     }
   };
   return (
-    <dialog
-      ref={dialog}
-      className="settings-dialog shortcut-settings"
-      aria-label="快捷键"
-      onCancel={onClose}
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <header>
-        <h2>快捷键</h2>
-        <DialogClose onClick={onClose} />
-      </header>
-      <input
-        data-autofocus
-        aria-label="查找快捷键"
-        placeholder="查找命令或快捷键"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <div className="shortcut-list">
-        {groups.map(([group, commands]) => (
-          <section key={group}>
-            <h3>{group}</h3>
-            {commands.map((c) => (
-              <label key={c.id}>
-                <span>{c.label}</span>
-                <input
-                  readOnly
-                  aria-label={c.label + " 快捷键"}
-                  value={bindingLabel(bindings[c.id])}
-                  onKeyDown={(e) => {
-                    if (["Tab", "Escape"].includes(e.key)) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const binding = eventBinding(e.nativeEvent);
-                    if (binding) change(c.id, binding);
-                  }}
-                />
-                <button
-                  aria-label={`清除 ${c.label} 快捷键`}
-                  data-tip="清除快捷键"
-                  onClick={() => change(c.id, null)}
-                >
-                  <X size={12} />
-                </button>
-              </label>
-            ))}
-          </section>
-        ))}
-        {!groups.length && <p className="quiet-empty">没有匹配的命令</p>}
-      </div>
-      {error && (
-        <p className="dialog-error" role="alert">
-          {error}
-        </p>
-      )}
-      <footer>
-        <button
-          onClick={() => {
-            try {
-              onChange({ ...defaultBindings });
-              setError("");
-            } catch (e) {
-              setError(String(e));
-            }
-          }}
+      <Dialog.Content
+        {...focus}
+        className="shortcut-dialog-content"
+        aria-label="快捷键"
+        maxWidth="640px"
+        maxHeight="calc(100dvh - 64px)"
+        aria-describedby={undefined}
+      >
+        <Flex align="center" justify="between" gap="4" flexShrink="0">
+          <Dialog.Title mb="0">快捷键</Dialog.Title>
+          <DialogClose onClick={onClose} />
+        </Flex>
+        <TextField.Root
+          data-autofocus
+          aria-label="查找快捷键"
+          placeholder="查找命令或快捷键"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          style={{ flexShrink: 0 }}
         >
-          恢复默认
-        </button>
-      </footer>
-    </dialog>
+          <TextField.Slot>
+            <Search size={16} />
+          </TextField.Slot>
+        </TextField.Root>
+        <div className="shortcut-list">
+          {groups.map(([group, commands]) => (
+            <section key={group}>
+              <h3>{group}</h3>
+              {commands.map((command) => (
+                <label key={command.id}>
+                  <span>{command.label}</span>
+                  <TextField.Root
+                    readOnly
+                    aria-label={command.label + " 快捷键"}
+                    value={bindingLabel(bindings[command.id])}
+                    onKeyDown={(event) => {
+                      if (["Tab", "Escape"].includes(event.key)) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const binding = eventBinding(event.nativeEvent);
+                      if (binding) change(command.id, binding);
+                    }}
+                  />
+                  <IconButton
+                    variant="ghost"
+                    color="gray"
+                    aria-label={`清除 ${command.label} 快捷键`}
+                    onClick={() => change(command.id, null)}
+                  >
+                    <X size={16} />
+                  </IconButton>
+                </label>
+              ))}
+            </section>
+          ))}
+          {!groups.length && <p>没有匹配的命令</p>}
+        </div>
+        {error && (
+          <Callout.Root color="red" role="alert">
+            <Callout.Text>{error}</Callout.Text>
+          </Callout.Root>
+        )}
+        <Flex justify="end" flexShrink="0">
+          <Button
+            variant="soft"
+            color="gray"
+            onClick={() => {
+              try {
+                onChange({ ...defaultBindings });
+                setError("");
+              } catch (error) {
+                setError(String(error));
+              }
+            }}
+          >
+            恢复默认
+          </Button>
+        </Flex>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }

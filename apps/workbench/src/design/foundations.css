@@ -1,0 +1,82 @@
+/* Domain views keep their layout while library controls own their appearance. */
+@import "../style.css" layer(workbench);
+@import "@radix-ui/themes/styles.css";
+
+:root,
+.radix-themes {
+  --default-font-family:
+    "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI", sans-serif;
+  --heading-font-family: var(--default-font-family);
+  --default-font-size: var(--font-size-2);
+  --default-line-height: 1.55;
+  --cursor-button: pointer;
+  --cursor-checkbox: pointer;
+  --cursor-menu-item: pointer;
+  --paper: var(--color-panel-solid, white);
+  --workspace-surface: var(--gray-2);
+  --text: var(--gray-12);
+  --muted: var(--gray-11);
+  --border: var(--gray-6);
+  --accent: var(--indigo-9);
+  --accent-soft: var(--indigo-3);
+  --hover: var(--gray-3);
+  --danger: var(--red-11);
+  --warning: var(--amber-11);
+  --selection-fill: var(--indigo-a3);
+  --grid: var(--gray-6);
+  --layer-shadow: var(--shadow-4);
+  --dialog-shadow: var(--shadow-6);
+  --backdrop: var(--color-overlay);
+}
+
+.workbench-theme {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Domain dialogs not migrated yet use the same reading and field scale. */
+dialog {
+  font-family: var(--default-font-family);
+  font-size: var(--font-size-2);
+}
+
+/* These are application layouts; surface, typography and control styles come from Themes. */
+.prompt-dialog form,
+.shortcut-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+.prompt-dialog form > footer {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.shortcut-dialog-content .shortcut-list {
+  min-height: 0;
+  overflow: auto;
+}
+.shortcut-dialog-content .shortcut-list label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+}
+.shortcut-dialog-content .shortcut-list h3 {
+  font-size: var(--font-size-2);
+  color: var(--gray-11);
+  margin-block: var(--space-4) var(--space-2);
+}
+.shortcut-dialog-content .shortcut-list section:first-child h3 {
+  margin-top: 0;
+}
+
+@media (max-width: 540px) {
+  .shortcut-dialog-content .shortcut-list label {
+    grid-template-columns: minmax(0, 1fr) minmax(110px, 140px) auto;
+    gap: var(--space-2);
+  }
+}

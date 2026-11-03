@@ -25,7 +25,7 @@ export function keepMovedFocus(event: Event, opener: HTMLElement | null) {
   const active = document.activeElement;
   if (!active || active === document.body) return;
   event.preventDefault();
-  const dialog = active.closest("dialog");
+  const dialog = active.closest<HTMLElement>('dialog,[aria-modal="true"]');
   if (dialog && opener) returnFocusTo(dialog, opener);
 }
 

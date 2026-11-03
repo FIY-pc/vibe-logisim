@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { DialogClose, useModal } from "./Dialog";
+import { useState } from "react";
+import { Button, Callout, Dialog, Flex, TextField } from "@radix-ui/themes";
+import { DialogClose, useDialogFocus } from "./Dialog";
+
 export function TextPrompt({
   title,
   initial = "",
@@ -11,70 +13,82 @@ export function TextPrompt({
   onSubmit: (value: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const dialog = useModal(),
-    [value, setValue] = useState(initial),
+  const focus = useDialogFocus();
+  const [value, setValue] = useState(initial),
     [pending, setPending] = useState(false),
     [error, setError] = useState("");
-  useEffect(() => {
-    // A file name starts with its stem selected, as file managers do.
-    const extension = /\.[\w-]{1,8}$/.exec(initial);
-    if (extension?.index)
-      dialog.current
-        ?.querySelector("input")
-        ?.setSelectionRange(0, extension.index);
-  }, []);
   return (
-    <dialog
-      ref={dialog}
-      className="text-prompt"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!pending) onClose();
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open && !pending) onClose();
       }}
-      aria-label={title}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!value.trim() || pending) return;
-          setPending(true);
-          setError("");
-          void onSubmit(value.trim())
-            .then(onClose)
-            .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-            .finally(() => setPending(false));
+      <Dialog.Content
+        {...focus}
+        className="prompt-dialog"
+        aria-label={title}
+        maxWidth="440px"
+        aria-describedby={undefined}
+        onOpenAutoFocus={(event) => {
+          focus.onOpenAutoFocus(event);
+          const extension = /\.[\w-]{1,8}$/.exec(initial);
+          if (extension?.index)
+            focus.ref.current
+              ?.querySelector("input")
+              ?.setSelectionRange(0, extension.index);
         }}
+        onInteractOutside={(event) => event.preventDefault()}
       >
-        <header>
-          <h2>{title}</h2>
-          <DialogClose disabled={pending} onClick={onClose} />
-        </header>
-        <input
-          data-autofocus
-          required
-          aria-label={title}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          disabled={pending}
-        />
-        {error && (
-          <p className="dialog-error" role="alert">
-            {error}
-          </p>
-        )}
-        <footer>
-          <button type="button" onClick={onClose} disabled={pending}>
-            取消
-          </button>
-          <button
-            className="primary"
-            type="submit"
-            disabled={pending || !value.trim()}
-          >
-            {pending ? "正在处理…" : "确定"}
-          </button>
-        </footer>
-      </form>
-    </dialog>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!value.trim() || pending) return;
+            setPending(true);
+            setError("");
+            void onSubmit(value.trim())
+              .then(onClose)
+              .catch((error) =>
+                setError(
+                  error instanceof Error ? error.message : String(error),
+                ),
+              )
+              .finally(() => setPending(false));
+          }}
+        >
+          <Flex align="center" justify="between" gap="4">
+            <Dialog.Title mb="0">{title}</Dialog.Title>
+            <DialogClose disabled={pending} onClick={onClose} />
+          </Flex>
+          <TextField.Root
+            data-autofocus
+            required
+            aria-label={title}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            disabled={pending}
+          />
+          {error && (
+            <Callout.Root color="red" role="alert">
+              <Callout.Text>{error}</Callout.Text>
+            </Callout.Root>
+          )}
+          <footer>
+            <Button
+              type="button"
+              variant="soft"
+              color="gray"
+              onClick={onClose}
+              disabled={pending}
+            >
+              取消
+            </Button>
+            <Button type="submit" loading={pending} disabled={!value.trim()}>
+              确定
+            </Button>
+          </footer>
+        </form>
+      </Dialog.Content>
+    </Dialog.Root>
   );
 }

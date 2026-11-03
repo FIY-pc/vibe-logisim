@@ -159,8 +159,8 @@ export async function verifyFilesUI() {
     await key("F2");
     assert(
       document
-        .querySelector('dialog[aria-label="重命名"]')
-        ?.hasAttribute("open"),
+        .querySelector('[role="dialog"][aria-label="重命名"]')
+        ?.getAttribute("data-state") === "open",
     );
     await click("取消");
     await click("定位当前文件");
@@ -171,7 +171,9 @@ export async function verifyFilesUI() {
     );
     assert.equal(row("main.circ").getAttribute("aria-current"), "page");
     await key("Delete");
-    assert(document.querySelector('dialog[aria-label="移入回收站"]'));
+    assert(
+      document.querySelector('[role="alertdialog"][aria-label="移入回收站"]'),
+    );
     await click("取消");
     assert(!calls.some((c) => c.op === "folderTrash"));
     document.elementFromPoint = () => row("dir");

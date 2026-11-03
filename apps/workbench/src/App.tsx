@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect } from "react";
+import { Theme } from "@radix-ui/themes";
 import { UpdateNotice, useFeedback } from "./shell/Feedback";
 import { useWorkspaceLayout } from "./shell/WorkspaceLayout";
 import { usePlacement } from "./editor/usePlacement";
@@ -42,10 +43,18 @@ export function App() {
   useEffect(() => workbench.start(), [workbench]);
   useEffect(withoutPageMenu, []);
   return (
-    <WorkbenchProvider value={workbench}>
-      <Shell />
-      <Tooltips />
-    </WorkbenchProvider>
+    <Theme
+      appearance="light"
+      accentColor="indigo"
+      grayColor="slate"
+      radius="medium"
+      className="workbench-theme"
+    >
+      <WorkbenchProvider value={workbench}>
+        <Shell />
+        <Tooltips />
+      </WorkbenchProvider>
+    </Theme>
   );
 }
 

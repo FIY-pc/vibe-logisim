@@ -88,7 +88,7 @@ export function Tooltips() {
             anchor: target,
             text,
             shortcut: target.getAttribute("data-tip-key"),
-            container: target.closest("dialog[open]") || document.body,
+            container: target.closest('dialog[open],[aria-modal="true"]') || document.body,
           }
         : null;
     };

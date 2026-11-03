@@ -146,12 +146,12 @@ export async function verifyConversationSummaries() {
     await openMenu("对话操作", container);
     await clickMenuItem("重命名…");
     await input(
-      container.querySelector('input[aria-label="重命名对话"]')!,
+      document.querySelector('input[aria-label="重命名对话"]')!,
       "我命名的对话",
     );
     await act(async () =>
-      container
-        .querySelector("dialog form")!
+      document
+        .querySelector('[role="dialog"] form')!
         .dispatchEvent(
           new Event("submit", { bubbles: true, cancelable: true }),
         ),

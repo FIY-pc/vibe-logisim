@@ -405,7 +405,7 @@ export function Files({
     destination: string,
     reference = false,
   ) => {
-    if (!folder || pending || document.querySelector("dialog[open]")) return;
+    if (!folder || pending || document.querySelector('dialog[open],[aria-modal="true"]')) return;
     if (reference && sources.length > 8)
       throw new Error("每条问题最多引用 8 处资料或观察");
     const folder_id = folder.id;
@@ -486,7 +486,7 @@ export function Files({
         pending ||
         event.defaultPrevented ||
         event.repeat ||
-        document.querySelector("dialog[open]") ||
+        document.querySelector('dialog[open],[aria-modal="true"]') ||
         (event.target as HTMLElement)?.closest(
           "input,textarea,select,[contenteditable='true']",
         ) ||
@@ -614,7 +614,7 @@ export function Files({
               void importSources(payload.paths, "", true).catch(onError);
             else if (parent !== null)
               void importSources(payload.paths, parent).catch(onError);
-          } else if (!pending && !document.querySelector("dialog[open]")) {
+          } else if (!pending && !document.querySelector('dialog[open],[aria-modal="true"]')) {
             setDropTarget(parent);
             hoverReference(reference);
           }
@@ -658,7 +658,7 @@ export function Files({
   const keyboard = (event: React.KeyboardEvent) => {
     if (
       pending ||
-      document.querySelector("dialog[open]") ||
+      document.querySelector('dialog[open],[aria-modal="true"]') ||
       !event.currentTarget.contains(event.target as Node)
     )
       return;

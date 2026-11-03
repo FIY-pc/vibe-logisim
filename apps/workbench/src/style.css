@@ -223,7 +223,6 @@ dialog h2 {
 /* Dialogs whose content grows and shrinks (search results, pages) hang
  * from a fixed top instead of re-centring on every change. */
 .find-dialog,
-.shortcut-settings,
 .ai-settings-dialog {
   margin-top: min(12vh, 96px);
   margin-bottom: auto;
@@ -1803,69 +1802,6 @@ button.primary:active:where(:not(:disabled)) {
   white-space: normal;
 }
 
-.shortcut-settings {
-  width: min(600px, calc(100vw - 40px));
-  padding: 0;
-}
-.shortcut-settings[open] {
-  display: flex;
-  flex-direction: column;
-}
-.shortcut-settings > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 12px 8px 20px;
-}
-.shortcut-settings > input {
-  margin: 0 20px 4px;
-}
-.shortcut-list {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 0 20px 12px;
-}
-.shortcut-list h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  margin: 14px 0 4px;
-}
-.shortcut-list label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-}
-.shortcut-list label span {
-  flex: 1;
-}
-.shortcut-list label input {
-  width: 145px;
-  padding: 4px 8px;
-  font-size: 12px;
-  text-align: center;
-  cursor: pointer;
-}
-.shortcut-list label button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--muted);
-}
-.shortcut-list .quiet-empty {
-  padding: 24px 0;
-}
-.shortcut-settings > .dialog-error {
-  margin: 0 20px 8px;
-}
-.shortcut-settings > footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-}
 .find-dialog {
   width: min(500px, calc(100vw - 40px));
   padding: 18px;

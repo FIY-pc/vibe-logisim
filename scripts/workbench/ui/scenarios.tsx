@@ -553,7 +553,7 @@ await act(async () => {
 });
 await act(async () =>
   document
-    .querySelector('dialog[aria-label="重命名"] form')!
+    .querySelector('[role="dialog"][aria-label="重命名"] form')!
     .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
 );
 await settle();
@@ -571,7 +571,8 @@ await settle();
 assert.equal(statusReads, 4);
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 assert.equal(
-  document.querySelector('dialog[aria-label="重命名"]')?.textContent ?? null,
+  document.querySelector('[role="dialog"][aria-label="重命名"]')?.textContent ??
+    null,
   null,
 );
 
