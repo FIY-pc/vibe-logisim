@@ -2,10 +2,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 28px;
-  height: 28px;
+  flex: 0 0 var(--space-6);
+  align-self: stretch;
   margin-right: auto;
-  border-radius: 6px;
+  border-radius: var(--radius-2);
   color: var(--accent);
   cursor: default;
 }
@@ -13,7 +13,7 @@
   background: var(--hover);
 }
 .context-usage.is-high {
-  color: #bd8700;
+  color: var(--amber-11);
 }
 .context-usage-track,
 .context-usage-fill {

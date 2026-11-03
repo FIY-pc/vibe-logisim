@@ -1,3 +1,4 @@
+import { Button, IconButton, Text } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, X } from "lucide-react";
 import { command } from "../shared/transport";
@@ -152,17 +153,23 @@ export function useChatReferences({
     <div className="reference-chips">
       {refs.map((ref) => (
         <span key={ref.id}>
-          <button
+          <Button
+            variant="soft"
+            color="gray"
             data-tip={ref.path || ref.label}
             onClick={() => void open(ref.id)}
           >
-            <Paperclip size={13} />
-            {ref.label}
-            {ref.page ? ` · 第 ${ref.page} 页` : ""}
-            {ref.truncated ? " · 摘录" : ""}
-          </button>
+            <Paperclip size={16} />
+            <span className="reference-label">
+              {ref.label}
+              {ref.page ? ` · 第 ${ref.page} 页` : ""}
+              {ref.truncated ? " · 摘录" : ""}
+            </span>
+          </Button>
           {removable && (
-            <button
+            <IconButton
+              variant="ghost"
+              color="gray"
               aria-label={`取消引用 ${ref.label}`}
               onClick={() =>
                 persist(
@@ -171,8 +178,8 @@ export function useChatReferences({
                 )
               }
             >
-              <X size={12} />
-            </button>
+              <X size={16} />
+            </IconButton>
           )}
         </span>
       ))}
@@ -193,8 +200,16 @@ export function useChatReferences({
     composer: (
       <>
         {chips(references, true)}
-        {pending && <span role="status">正在添加引用…</span>}
-        {failure && <button onClick={() => void stage()}>重试添加引用</button>}
+        {pending && (
+          <Text kind="meta" role="status">
+            正在添加引用…
+          </Text>
+        )}
+        {failure && (
+          <Button variant="ghost" color="gray" onClick={() => void stage()}>
+            重试添加引用
+          </Button>
+        )}
         {preview && (
           <ReferencePreview
             reference={preview}
@@ -227,7 +242,11 @@ function ReferencePreview({
       <DialogBody>
         {reference.image && <img src={reference.image} alt={reference.label} />}
         {reference.text && <pre>{reference.text}</pre>}
-        {reference.truncated && <p>此引用保留前 24,000 个字符。</p>}
+        {reference.truncated && (
+          <Text as="p" kind="meta">
+            此引用保留前 24,000 个字符。
+          </Text>
+        )}
       </DialogBody>
     </DialogFrame>
   );

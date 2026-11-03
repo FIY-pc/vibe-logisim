@@ -68,14 +68,3 @@
   /* Keep the Themes focus ring inside the scrolling region. */
   padding: var(--space-1);
 }
-.ai-model-option {
-  flex: none;
-  height: auto;
-  min-height: var(--space-7);
-  margin: 0;
-  padding: var(--space-3);
-  justify-content: space-between;
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}

@@ -1,3 +1,4 @@
+import { ActionRow, Button, IconButton, TextArea } from "../design/ui";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -602,8 +603,9 @@ export function Chat({
     <div className="message user">
       {editingMessage?.id === m.id ? (
         <div className="message-edit">
-          <textarea
+          <TextArea
             ref={editInput}
+            className="message-edit-input"
             aria-label="编辑消息"
             value={editedText}
             onChange={(e) => setEditedText(e.target.value)}
@@ -619,16 +621,21 @@ export function Chat({
             }}
           />
           <div className="message-edit-actions">
-            <button disabled={pending} onClick={cancelEdit}>
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={pending}
+              onClick={cancelEdit}
+            >
               取消
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              variant="solid"
               disabled={pending || !editedText.trim()}
               onClick={() => resubmit(m, editedText)}
             >
               重新发送
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -639,7 +646,9 @@ export function Chat({
         <div className="message-actions">
           <CopyButton text={m.text || ""} onError={onError} />
           {!busy && m.canEdit && (
-            <button
+            <IconButton
+              variant="ghost"
+              color="gray"
               data-tip="编辑并重新发送"
               aria-label="编辑并重新发送"
               disabled={pending}
@@ -648,8 +657,8 @@ export function Chat({
                 setEditedText(m.text || "");
               }}
             >
-              <Pencil size={12} />
-            </button>
+              <Pencil size={16} />
+            </IconButton>
           )}
         </div>
       )}
@@ -687,14 +696,16 @@ export function Chat({
           onSelect={(id) => switchConversation("select", id)}
           onRestore={(id) => switchConversation("restore", id)}
         />
-        <button
+        <IconButton
+          variant="ghost"
+          color="gray"
           data-tip="新建对话"
           aria-label="新建对话"
           disabled={locked}
           onClick={() => switchConversation("new")}
         >
-          <Plus size={15} />
-        </button>
+          <Plus size={16} />
+        </IconButton>
         <Menu label="对话操作">
           <MenuItem
             disabled={locked || !state?.conversationId}
@@ -711,13 +722,15 @@ export function Chat({
             归档
           </MenuItem>
         </Menu>
-        <button
+        <IconButton
+          variant="ghost"
+          color="gray"
           data-tip="AI 设置"
           aria-label="AI 设置"
           onClick={() => setConfigure(!configure)}
         >
-          <Settings2 size={15} />
-        </button>
+          <Settings2 size={16} />
+        </IconButton>
       </div>
       {(runtimeError || state?.detail || state?.modelConfigurationError) && (
         <div className="error-bar" role="alert">
@@ -725,11 +738,21 @@ export function Chat({
             state?.modelConfigurationError?.message ||
             state?.detail}
           {!runtimeError && state?.modelConfigurationError ? (
-            <button onClick={() => setConfigure(true)}>
+            <Button
+              variant="ghost"
+              color="gray"
+              onClick={() => setConfigure(true)}
+            >
               {state.services.length ? "选择模型服务" : "添加模型服务"}
-            </button>
+            </Button>
           ) : (
-            <button onClick={() => void reconnect()}>重新连接</button>
+            <Button
+              variant="ghost"
+              color="gray"
+              onClick={() => void reconnect()}
+            >
+              重新连接
+            </Button>
           )}
         </div>
       )}
@@ -766,9 +789,9 @@ export function Chat({
             ) : !state.services.length ? (
               <div className="chat-card">
                 <span>登录 ChatGPT 或添加 API 服务后开始对话。</span>
-                <button className="primary" onClick={() => setConfigure(true)}>
+                <Button variant="solid" onClick={() => setConfigure(true)}>
                   连接 AI
-                </button>
+                </Button>
               </div>
             ) : draft.trim() ? (
               "描述要完成的电路，或选中元件后提问。"
@@ -779,7 +802,9 @@ export function Chat({
                   readable,
                   selection.length > 0,
                 ).map((starter) => (
-                  <button
+                  <ActionRow
+                    variant="soft"
+                    color="gray"
                     key={starter.id}
                     className="conversation-starter"
                     data-tip="立即发送"
@@ -792,8 +817,8 @@ export function Chat({
                   >
                     <starter.icon size={16} />
                     <span>{starter.label}</span>
-                    <ArrowUpRight size={14} />
-                  </button>
+                    <ArrowUpRight size={16} />
+                  </ActionRow>
                 ))}
               </div>
             )}
@@ -840,8 +865,9 @@ export function Chat({
       />
       <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
         {references.composer}
-        <textarea
+        <TextArea
           ref={composerInput}
+          className="composer-input"
           value={draft}
           onChange={(e) => changeDraft(e.target.value)}
           placeholder="描述你的想法…"
@@ -885,7 +911,6 @@ export function Chat({
           />
           <Select
             label="思考深度"
-
             variant="plain"
             className="composer-effort"
             value={state?.effort || "none"}
@@ -899,8 +924,10 @@ export function Chat({
           />
           <ContextUsageRing usage={scopeReady ? state?.contextUsage : null} />
           {busy ? (
-            <button
-              className="primary composer-stop"
+            <IconButton
+              variant="solid"
+              color={undefined}
+              className="composer-stop"
               aria-label="停止回答"
               data-tip={stopping ? "正在停止…" : "停止回答"}
               disabled={stopping}
@@ -914,11 +941,12 @@ export function Chat({
                   });
               }}
             >
-              <Square size={12} />
-            </button>
+              <Square size={16} />
+            </IconButton>
           ) : (
-            <button
-              className="primary"
+            <IconButton
+              variant="solid"
+              color={undefined}
               aria-label="发送"
               data-tip="发送"
               data-tip-key="Enter"
@@ -931,8 +959,8 @@ export function Chat({
               }
               onClick={() => send()}
             >
-              <Send size={15} />
-            </button>
+              <Send size={16} />
+            </IconButton>
           )}
         </footer>
       </div>

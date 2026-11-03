@@ -13,7 +13,7 @@
   flex: none;
 }
 .conversation-popover {
-  max-width: calc(100vw - 24px);
+  max-width: calc(100vw - var(--space-5));
   max-height: var(--radix-popover-content-available-height);
 }
 .messages-content {
@@ -22,91 +22,49 @@
 .chat-code {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  margin: 8px 0;
+  border-radius: var(--radius-2);
+  margin: var(--space-2) 0;
 }
 .chat-code pre {
   position: relative;
   margin: 0;
-  padding: 10px;
+  padding: var(--space-3);
   overflow: auto;
 }
 .chat-code-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
-  color: var(--muted);
-  font: 11px var(--font, sans-serif);
-}
-.chat-code-actions button {
-  display: inline-flex;
-  padding: 3px;
+  padding: var(--space-1) var(--space-2);
 }
 .chat-table {
   overflow-x: auto;
 }
 .follow-latest {
   align-self: center;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: -32px 0 6px;
+  margin: calc(-1 * (var(--space-6) + var(--space-2))) 0 var(--space-2);
   z-index: 1;
-  padding: 4px 10px;
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 2px 8px #0001;
 }
 .conversation-starters {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   min-width: 0;
 }
 .conversation-starter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  padding: 11px 12px;
+  justify-content: flex-start;
   text-align: left;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--paper);
-  color: #20242b;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.5;
-  cursor: pointer;
 }
 .conversation-starter span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.conversation-starter > svg:first-child {
-  color: #667b9c;
+.conversation-starter > svg {
   flex: none;
-}
-.conversation-starter > svg:last-child {
-  color: #99a5b7;
-  flex: none;
-}
-.conversation-starter:hover:not(:disabled) {
-  border-color: #bccbe3;
-  background: #f5f8fd;
-}
-.conversation-starter:active:not(:disabled) {
-  background: #eaf0fa;
-}
-.conversation-starter:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 
 .messages.conversation-messages {
@@ -116,6 +74,6 @@
 }
 .conversation-segment {
   display: flow-root;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
   min-width: 0;
 }

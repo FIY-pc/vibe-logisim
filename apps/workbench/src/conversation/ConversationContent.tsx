@@ -1,15 +1,9 @@
+import { Button, IconButton, Text } from "../design/ui";
 import type { ReferenceContext } from "./conversationReferences";
 import type { ReferenceSummary } from "./references";
 import type { TurnChange } from "./Turn";
 import { Children, isValidElement, useEffect, useRef, useState } from "react";
-import {
-  Button,
-  Callout,
-  Checkbox,
-  Flex,
-  Popover,
-  Text,
-} from "@radix-ui/themes";
+import { Callout, Checkbox, Flex, Link, Popover } from "@radix-ui/themes";
 import { Command } from "cmdk";
 import {
   CommandButton,
@@ -86,7 +80,9 @@ export function CopyButton({
     [],
   );
   return (
-    <button
+    <IconButton
+      variant="ghost"
+      color="gray"
       type="button"
       aria-label={copied ? "已复制" : label}
       data-tip={copied ? "已复制" : label}
@@ -101,8 +97,8 @@ export function CopyButton({
           .catch(onError);
       }}
     >
-      {copied ? <Check size={12} /> : <Copy size={12} />}
-    </button>
+      {copied ? <Check size={16} /> : <Copy size={16} />}
+    </IconButton>
   );
 }
 export function ChatMarkdown({
@@ -121,12 +117,15 @@ export function ChatMarkdown({
     if (!href) return <>{children}</>;
     if (reference(href))
       return onFollowReference ? (
-        <button
-          className="message-reference"
-          onClick={() => onFollowReference(href)}
-        >
-          {children}
-        </button>
+        <Link asChild>
+          <button
+            type="button"
+            className="message-reference"
+            onClick={() => onFollowReference(href)}
+          >
+            {children}
+          </button>
+        </Link>
       ) : (
         <>{children}</>
       );
@@ -165,7 +164,9 @@ export function ChatMarkdown({
           return (
             <section className="chat-code">
               <div className="chat-code-actions">
-                <span>{language || "代码"}</span>
+                <Text kind="meta" color="gray">
+                  {language || "代码"}
+                </Text>
                 <CopyButton text={value} label="复制代码" onError={onError} />
               </div>
               <pre>{children}</pre>
@@ -251,7 +252,6 @@ export function ConversationPicker({
           ref={anchor}
           variant="ghost"
           color="gray"
-          size="2"
           className="conversation-picker"
           disabled={working}
           aria-label={title ? `会话：${title}` : "会话"}
@@ -296,7 +296,6 @@ export function ConversationPicker({
           <CommandSearch
             value={search}
             onValueChange={setSearch}
-            size="3"
             inputRef={searchInput}
             aria-label="查找会话"
             placeholder="查找会话"
@@ -305,7 +304,6 @@ export function ConversationPicker({
           />
           <Text
             as="label"
-            size="3"
             className="conversation-archive"
             onKeyDown={keepKeys}
           >
@@ -337,7 +335,6 @@ export function ConversationPicker({
                 <CommandButton
                   variant="ghost"
                   color="gray"
-                  size="3"
                   disabled={disabled || working}
                   aria-current={item.id === active ? "true" : undefined}
                 >
@@ -347,7 +344,7 @@ export function ConversationPicker({
                         {item.title}
                       </Text>
                       {archived ? (
-                        <Text color="blue">恢复</Text>
+                        <Text>恢复</Text>
                       ) : (
                         item.id === active && (
                           <Check size={16} aria-label="当前对话" />
@@ -355,7 +352,7 @@ export function ConversationPicker({
                       )}
                     </Flex>
                     {item.preview && (
-                      <Text size="2" color="gray" truncate>
+                      <Text kind="meta" color="gray" truncate>
                         {item.preview}
                       </Text>
                     )}
@@ -364,7 +361,7 @@ export function ConversationPicker({
               </Command.Item>
             ))}
             <Command.Empty>
-              <Text size="3" color="gray">
+              <Text color="gray">
                 {search.trim()
                   ? "没有匹配的会话"
                   : archived
@@ -385,9 +382,15 @@ export function ConversationPicker({
 }
 export function FollowLatest({ onClick }: { onClick: () => void }) {
   return (
-    <button className="follow-latest" onClick={onClick}>
-      <ArrowDown size={13} />
+    <Button
+      variant="soft"
+      color="gray"
+      radius="full"
+      className="follow-latest"
+      onClick={onClick}
+    >
+      <ArrowDown size={16} />
       回到底部
-    </button>
+    </Button>
   );
 }

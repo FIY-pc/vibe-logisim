@@ -1,3 +1,4 @@
+import { Button, Text } from "../design/ui";
 import { memo, useEffect, useRef, useState } from "react";
 import { ChevronRight, RotateCcw, Undo2 } from "lucide-react";
 import { ChatMarkdown, CopyButton, type Message } from "./ConversationContent";
@@ -86,14 +87,16 @@ export function Turn({
   return (
     <div className="turn" data-status={status}>
       {!live && process.length > 0 && (
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           className="turn-summary"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          <ChevronRight size={13} aria-hidden />
+          <ChevronRight size={16} aria-hidden />
           <span>{summarize(process, turn?.elapsedMs)}</span>
-        </button>
+        </Button>
       )}
       {segment.items.map((item, index) =>
         !live && !open && index < process.length ? null : (
@@ -118,10 +121,15 @@ export function Turn({
         <div className="turn-end" data-status="failed">
           <span>{turn?.error || "回答没有完成"}</span>
           {onRetry && (
-            <button disabled={locked} onClick={onRetry}>
-              <RotateCcw size={12} aria-hidden />
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={locked}
+              onClick={onRetry}
+            >
+              <RotateCcw size={16} aria-hidden />
               重试
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -137,23 +145,29 @@ export function Turn({
             <ul>
               {change.files.map((file) => (
                 <li key={file.path}>
-                  <small>{KINDS[file.kind] || file.kind}</small>
+                  <Text kind="meta" asChild>
+                    <small>{KINDS[file.kind] || file.kind}</small>
+                  </Text>
                   {file.path}
                 </li>
               ))}
             </ul>
           </span>
           {change.undone ? (
-            <small>已撤销</small>
+            <Text kind="meta" color="gray" asChild>
+              <small>已撤销</small>
+            </Text>
           ) : (
-            <button
+            <Button
+              variant="ghost"
+              color="gray"
               disabled={locked || !change.undoable}
               data-tip={change.undoable ? undefined : "包含未保留内容的大文件"}
               onClick={() => onUndo(change)}
             >
-              <Undo2 size={13} aria-hidden />
+              <Undo2 size={16} aria-hidden />
               撤销
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -257,7 +271,9 @@ function Thought({
   );
   return (
     <details className="turn-thought" open={open}>
-      <summary onClick={toggle(open, setOpen)}>思考</summary>
+      <Button asChild variant="ghost" color="gray">
+        <summary onClick={toggle(open, setOpen)}>思考</summary>
+      </Button>
       {open && (
         <div className="turn-thought-text">
           <ChatMarkdown text={text} onError={onError} />
@@ -286,14 +302,20 @@ function ToolRow({
     (typeof output?.input?.circuit === "string" ? output.input.circuit : "");
   return (
     <details className="turn-tool" data-state={state} open={open}>
-      <summary onClick={toggle(open, setOpen)}>
-        {state === "running" && <span className="spinner" aria-hidden />}
-        <span className="turn-tool-label">
-          {item.label || toolName(item) || "工具调用"}
-        </span>
-        {target && <span className="turn-tool-target">{target}</span>}
-        {STATES[state] && <small>{STATES[state]}</small>}
-      </summary>
+      <Button asChild variant="ghost" color="gray">
+        <summary onClick={toggle(open, setOpen)}>
+          {state === "running" && <span className="spinner" aria-hidden />}
+          <span className="turn-tool-label">
+            {item.label || toolName(item) || "工具调用"}
+          </span>
+          {target && <span className="turn-tool-target">{target}</span>}
+          {STATES[state] && (
+            <Text kind="meta" className="turn-tool-status" asChild>
+              <small>{STATES[state]}</small>
+            </Text>
+          )}
+        </summary>
+      </Button>
       {open && (
         <div className="turn-tool-detail">
           {input &&
@@ -307,11 +329,11 @@ function ToolRow({
             <pre>{item.detail}</pre>
           ) : null}
           {output?.exitCode != null && output.exitCode !== 0 && (
-            <small>退出码 {output.exitCode}</small>
+            <Text kind="meta">退出码 {output.exitCode}</Text>
           )}
-          {output?.truncated && <small>输出已截断</small>}
+          {output?.truncated && <Text kind="meta">输出已截断</Text>}
           {state === "unknown" && (
-            <small>调用没有确认结束，请先检查工作区</small>
+            <Text kind="meta">调用没有确认结束，请先检查工作区</Text>
           )}
         </div>
       )}
@@ -335,15 +357,21 @@ function LiveLine({
   }, []);
   if (notice)
     return (
-      <div className="turn-live" data-notice="" role="status">
+      <Text
+        as="p"
+        kind="meta"
+        className="turn-live"
+        data-notice=""
+        role="status"
+      >
         {notice}
-      </div>
+      </Text>
     );
   const elapsed = now - (since ?? mounted);
   return (
-    <div className="turn-live">
+    <Text as="p" kind="meta" className="turn-live">
       <span className="turn-working">正在处理</span>
       {elapsed >= 1000 && <span aria-hidden> · {formatDuration(elapsed)}</span>}
-    </div>
+    </Text>
   );
 }

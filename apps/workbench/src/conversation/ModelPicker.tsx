@@ -1,16 +1,7 @@
+import { Button, IconButton, TextField, Text, Heading } from "../design/ui";
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, RefreshCw, Search, X } from "lucide-react";
-import {
-  Button,
-  Callout,
-  Flex,
-  Heading,
-  IconButton,
-  Popover,
-  Text,
-  TextField,
-  Tooltip,
-} from "@radix-ui/themes";
+import { Callout, Flex, Popover, Tooltip } from "@radix-ui/themes";
 import { Command } from "cmdk";
 import {
   CommandButton,
@@ -89,8 +80,7 @@ function ScopedModelPicker({
       <Popover.Trigger>
         <Button
           ref={trigger}
-          size="2"
-          variant="soft"
+          variant="ghost"
           color="gray"
           className="ai-model-trigger"
           aria-label={`选择模型：${name || model || "选择模型"}`}
@@ -245,7 +235,7 @@ function ModelDialog({
     >
       <Flex direction="column" gap="3" className="ai-model-content">
         <Flex align="center" justify="between" gap="3">
-          <Heading as="h2" id={titleId} size="4">
+          <Heading as="h2" kind="section" id={titleId}>
             选择模型
           </Heading>
           <Popover.Close>
@@ -255,7 +245,7 @@ function ModelDialog({
               color="gray"
               disabled={saving}
             >
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </Popover.Close>
         </Flex>
@@ -263,7 +253,6 @@ function ModelDialog({
           <CommandSearch
             value={query}
             onValueChange={setQuery}
-            size="3"
             inputRef={search}
             aria-label="搜索模型"
             placeholder="搜索或输入模型 ID"
@@ -271,11 +260,11 @@ function ModelDialog({
             disabled={saving}
           >
             <TextField.Slot>
-              <Search size={18} />
+              <Search size={16} />
             </TextField.Slot>
           </CommandSearch>
           {loading && (
-            <Text size="3" role="status" color="gray">
+            <Text role="status" color="gray">
               正在更新…
             </Text>
           )}
@@ -320,7 +309,6 @@ function ModelDialog({
                     onSelect={() => void choose(entry)}
                   >
                     <CommandButton
-                      size="3"
                       variant={entry.model === chosen ? "soft" : "ghost"}
                       color={entry.model === chosen ? undefined : "gray"}
                       className="ai-model-option"
@@ -328,21 +316,21 @@ function ModelDialog({
                       disabled={busy || saving}
                     >
                       <Flex as="span" direction="column" gap="1" minWidth="0">
-                        <Text size="3" weight="medium">
+                        <Text weight="medium">
                           {entry.name || entry.label || entry.model}
                         </Text>
                         {description && (
-                          <Text size="3" color="gray">
+                          <Text kind="meta" color="gray">
                             {description}
                           </Text>
                         )}
                         {detail && (
-                          <Text size="3" color="gray">
+                          <Text kind="meta" color="gray">
                             {detail}
                           </Text>
                         )}
                       </Flex>
-                      {entry.model === chosen && <Check size={18} />}
+                      {entry.model === chosen && <Check size={16} />}
                     </CommandButton>
                   </Command.Item>
                 </Tooltip>
@@ -358,7 +346,6 @@ function ModelDialog({
                 <CommandButton
                   variant="ghost"
                   color="gray"
-                  size="3"
                   disabled={busy || saving}
                 >
                   使用模型 ID：{query.trim()}
@@ -366,9 +353,7 @@ function ModelDialog({
               </Command.Item>
             )}
             {!entries.length && !loading && !(allowCustom && query.trim()) && (
-              <Text size="3" color="gray">
-                没有找到这个模型
-              </Text>
+              <Text color="gray">没有找到这个模型</Text>
             )}
           </Command.List>
         </Command>
@@ -377,15 +362,11 @@ function ModelDialog({
             models.length > 0 &&
             model &&
             !models.some((entry) => entry.model === model))) && (
-          <Text as="p" size="3">
+          <Text as="p">
             {configurationError || "当前模型尚未出现在列表中。"}
           </Text>
         )}
-        {busy && (
-          <Text as="p" size="3">
-            回答进行中，完成或停止后可以切换模型。
-          </Text>
-        )}
+        {busy && <Text as="p">回答进行中，完成或停止后可以切换模型。</Text>}
         {error && (
           <Callout.Root color="red" role="alert">
             <Callout.Text>{error}</Callout.Text>
