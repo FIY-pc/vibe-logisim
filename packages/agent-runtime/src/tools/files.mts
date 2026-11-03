@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { spawn, execFile } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { windowsCommand } from "./windows-command.mts";
 /**
  * The bundled circuit-knowledge directory. In development it sits two levels
  * up from this file; in the esbuild bundle (worker.mjs at src/) one level up.
@@ -56,7 +57,7 @@ async function resolveFile(root: string, value: any, write = false) {
 }
 const READ_LIMIT = 512000;
 
-// Without a shell (Windows), paging is the only way to read a large file.
+// Page large files without filling the conversation with the whole source.
 async function readText(
   file: string,
   { offset, limit }: { offset?: number; limit?: number },
@@ -104,14 +105,22 @@ function command(
   commandText: string,
   { root, runtimeRoot, signal, timeout = 120 }: any,
 ) {
-  if (process.platform !== "linux")
-    throw new Error("当前系统尚不支持隔离的命令执行，请使用文件和电路工具");
   if (
     !Number.isSafeInteger(timeout) ||
     timeout < 0 ||
     timeout * 1000 > 2147483647
   )
     throw new Error("timeout 必须是非负整数秒，0 表示运行到完成或主动停止");
+  if (process.platform === "win32")
+    return windowsCommand(commandText, {
+      root,
+      referenceRoot,
+      runtimeRoot,
+      signal,
+      timeout,
+    });
+  if (process.platform !== "linux")
+    throw new Error("当前系统尚不支持命令执行，请使用文件和电路工具");
   const unit = `vibe-builtin-${randomUUID()}.service`;
   const bind = (source: any, target: string) =>
     `${JSON.stringify(source)}:${JSON.stringify(target)}`;
@@ -205,7 +214,7 @@ function command(
 }
 /**
  * General file tools rooted at the open folder: read_file, write_file,
- * list_files and, on Linux, exec_command in a systemd sandbox. Paths are
+ * list_files and exec_command (Linux systemd sandbox / Windows PowerShell). Paths are
  * folder-relative; the bundled references are readable too.
  */
 function fileTools({ root, runtimeRoot, assertCurrent }: any) {
@@ -328,14 +337,16 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
       },
     },
   ];
-  if (process.platform === "linux")
+  if (process.platform === "linux" || process.platform === "win32")
     tools.push({
       name: "exec_command",
       label: "执行命令",
       description:
-        "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at " +
-        SANDBOX_REFERENCE +
-        ". No model credentials or user home access. Output is limited to the last 64000 characters.",
+        process.platform === "win32"
+          ? "Run Windows PowerShell 5.1 in the open project folder. Commands and scripts edit the user's files directly. node is the app's bundled Node.js; java is available in packaged builds. Use PowerShell syntax, not bash; for large scripts, write a .mjs file then run node ./script.mjs. For PowerShell file cmdlets use absolute -LiteralPath (Join-Path $env:VIBE_PROJECT_ROOT 'file') to handle brackets in directory names. References: $env:VIBE_CIRCUIT_REFERENCE; runtimes: $env:VIBE_RUNTIME. The shell has the current user's filesystem permissions, not a filesystem sandbox; operate on the project and requested materials. No user profile or inherited model credentials. UTF-8 output is limited to the last 64000 characters, with truncated=true when shortened."
+          : "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at " +
+            SANDBOX_REFERENCE +
+            ". No model credentials or user home access. Output is limited to the last 64000 characters.",
       parameters: schema({
         command: string,
         timeout: {
