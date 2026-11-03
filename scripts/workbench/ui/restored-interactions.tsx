@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { act, useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
 import {

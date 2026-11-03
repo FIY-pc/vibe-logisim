@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { ProjectInfo } from "../../../apps/workbench/src/workspace/ProjectInfo";
 import { FindDialog } from "../../../apps/workbench/src/editor/FindDialog";
 export async function verifyProjectInfoUI() {

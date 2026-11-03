@@ -81,6 +81,8 @@ globalThis.PointerEvent=dom.window.PointerEvent;
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 // A context menu anchors to a rectangle at the pointer.
 globalThis.DOMRect=dom.window.DOMRect;
+// Themes Dialog uses the DOM tree walker to find focusable controls.
+globalThis.NodeFilter=dom.window.NodeFilter;
 globalThis.ResizeObserver=class{constructor(fn){this.fn=fn}observe(){this.fn([{contentRect:{width:600,height:400}}])}unobserve(){}disconnect(){}};
 // Radix measures form controls through window's animation frames.
 dom.window.requestAnimationFrame=globalThis.requestAnimationFrame;dom.window.cancelAnimationFrame=globalThis.cancelAnimationFrame;

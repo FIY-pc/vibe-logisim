@@ -4,9 +4,15 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import * as Context from "@radix-ui/react-context-menu";
-import { Check, ChevronRight, Ellipsis } from "lucide-react";
+import {
+  Button,
+  ContextMenu as Context,
+  DropdownMenu as Dropdown,
+  Flex,
+  IconButton,
+  Text,
+} from "@radix-ui/themes";
+import { Ellipsis } from "lucide-react";
 import { keepKeys, keepMovedFocus, usePortalContainer } from "./layer";
 import "./Menu.css";
 
@@ -70,42 +76,42 @@ export function Menu({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [anchor, container] = usePortalContainer<HTMLButtonElement>();
+  const Trigger = trigger === undefined ? IconButton : Button;
   return (
     <Dropdown.Root open={open} onOpenChange={onOpenChange}>
-      <Dropdown.Trigger
-        ref={(node) => {
-          anchor.current = node;
-          if (triggerRef) triggerRef.current = node;
-        }}
-        className={[
-          "menu-trigger",
-          trigger === undefined && "icon-button",
-          className,
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={label}
-        data-tip={title ?? (trigger === undefined ? label : undefined)}
-        disabled={disabled}
-        tabIndex={tabIndex}
-      >
-        {trigger ?? <Ellipsis size={15} aria-hidden="true" />}
-      </Dropdown.Trigger>
-      <Dropdown.Portal container={container}>
-        <Dropdown.Content
-          className="menu-content"
-          align={align}
-          sideOffset={4}
-          collisionPadding={8}
-          loop
-          onCloseAutoFocus={(event) => keepMovedFocus(event, anchor.current)}
-          onKeyDown={keepKeys}
+      <Dropdown.Trigger>
+        <Trigger
+          ref={(node) => {
+            anchor.current = node;
+            if (triggerRef) triggerRef.current = node;
+          }}
+          type="button"
+          size="1"
+          variant="ghost"
+          color="gray"
+          className={["menu-trigger", className].filter(Boolean).join(" ")}
+          aria-label={label}
+          data-tip={title ?? (trigger === undefined ? label : undefined)}
+          disabled={disabled}
+          tabIndex={tabIndex}
         >
-          <MenuScope kind="dropdown" container={container}>
-            {children}
-          </MenuScope>
-        </Dropdown.Content>
-      </Dropdown.Portal>
+          {trigger ?? <Ellipsis size={15} aria-hidden="true" />}
+        </Trigger>
+      </Dropdown.Trigger>
+      <Dropdown.Content
+        container={container}
+        className="app-menu-content"
+        size="1"
+        align={align}
+        collisionPadding={8}
+        loop
+        onCloseAutoFocus={(event) => keepMovedFocus(event, anchor.current)}
+        onKeyDown={keepKeys}
+      >
+        <MenuScope kind="dropdown" container={container}>
+          {children}
+        </MenuScope>
+      </Dropdown.Content>
     </Dropdown.Root>
   );
 }
@@ -137,28 +143,35 @@ export function MenuItem({
   title?: string;
   onSelect?: (event: Event) => void;
 }) {
-  const Item = (
-    useContext(KindContext) === "context" ? Context.Item : Dropdown.Item
-  ) as typeof Dropdown.Item;
+  const Item =
+    useContext(KindContext) === "context" ? Context.Item : Dropdown.Item;
   return (
     <Item
-      className={danger ? "menu-item menu-danger" : "menu-item"}
+      color={danger ? "red" : undefined}
+      shortcut={shortcut ?? undefined}
       disabled={disabled}
       data-tip={title}
       textValue={textOf(children)}
       onSelect={onSelect}
     >
-      <span className="menu-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="menu-label">{children}</span>
-      {shortcut && <kbd>{shortcut}</kbd>}
-      {trailing}
+      {icon && (
+        <Flex flexShrink="0" aria-hidden="true">
+          {icon}
+        </Flex>
+      )}
+      <Text className="menu-label" truncate>
+        {children}
+      </Text>
+      {trailing && (
+        <Flex ml="auto" flexShrink="0">
+          {trailing}
+        </Flex>
+      )}
     </Item>
   );
 }
 
-/** A setting that is on or off; the check sits in the icon column. */
+/** A setting that is on or off, with the Themes check indicator. */
 export function MenuCheckboxItem({
   children,
   checked,
@@ -175,46 +188,35 @@ export function MenuCheckboxItem({
   title?: string;
 }) {
   const context = useContext(KindContext) === "context";
-  const Item = (
-    context ? Context.CheckboxItem : Dropdown.CheckboxItem
-  ) as typeof Dropdown.CheckboxItem;
-  const Indicator = (
-    context ? Context.ItemIndicator : Dropdown.ItemIndicator
-  ) as typeof Dropdown.ItemIndicator;
+  const Item = context ? Context.CheckboxItem : Dropdown.CheckboxItem;
   return (
     <Item
-      className="menu-item"
       checked={checked}
-      onCheckedChange={onCheckedChange}
+      shortcut={shortcut ?? undefined}
+      onCheckedChange={(value) => onCheckedChange(value === true)}
       disabled={disabled}
       data-tip={title}
       textValue={textOf(children)}
     >
-      <span className="menu-icon menu-check" aria-hidden="true">
-        <Indicator>
-          <Check size={14} />
-        </Indicator>
-      </span>
-      <span className="menu-label">{children}</span>
-      {shortcut && <kbd>{shortcut}</kbd>}
+      <Text className="menu-label" truncate>
+        {children}
+      </Text>
     </Item>
   );
 }
 
 export function MenuSeparator() {
-  const Separator = (
+  const Separator =
     useContext(KindContext) === "context"
       ? Context.Separator
-      : Dropdown.Separator
-  ) as typeof Dropdown.Separator;
-  return <Separator className="menu-separator" />;
+      : Dropdown.Separator;
+  return <Separator />;
 }
 
 /** A heading inside a menu; not a command. */
 export function MenuLabel({ children }: { children: ReactNode }) {
-  const Label = (
-    useContext(KindContext) === "context" ? Context.Label : Dropdown.Label
-  ) as typeof Dropdown.Label;
+  const Label =
+    useContext(KindContext) === "context" ? Context.Label : Dropdown.Label;
   return <Label className="menu-heading">{children}</Label>;
 }
 
@@ -232,34 +234,28 @@ export function MenuSub({
 }) {
   const kind = useContext(KindContext);
   const container = useContext(ContainerContext);
-  const Primitives = (
-    kind === "context" ? Context : Dropdown
-  ) as typeof Dropdown;
+  const Components = kind === "context" ? Context : Dropdown;
   return (
-    <Primitives.Sub>
-      <Primitives.SubTrigger
-        className="menu-item"
-        disabled={disabled}
-        textValue={label}
+    <Components.Sub>
+      <Components.SubTrigger disabled={disabled} textValue={label}>
+        {icon && (
+          <Flex flexShrink="0" aria-hidden="true">
+            {icon}
+          </Flex>
+        )}
+        <Text className="menu-label" truncate>
+          {label}
+        </Text>
+      </Components.SubTrigger>
+      <Components.SubContent
+        container={container}
+        className="app-menu-content"
+        collisionPadding={8}
+        loop
+        onKeyDown={keepKeys}
       >
-        <span className="menu-icon" aria-hidden="true">
-          {icon}
-        </span>
-        <span className="menu-label">{label}</span>
-        <ChevronRight className="menu-chevron" size={14} aria-hidden="true" />
-      </Primitives.SubTrigger>
-      <Primitives.Portal container={container}>
-        <Primitives.SubContent
-          className="menu-content"
-          sideOffset={2}
-          alignOffset={-5}
-          collisionPadding={8}
-          loop
-          onKeyDown={keepKeys}
-        >
-          {children}
-        </Primitives.SubContent>
-      </Primitives.Portal>
-    </Primitives.Sub>
+        {children}
+      </Components.SubContent>
+    </Components.Sub>
   );
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { App } from "../../../apps/workbench/src/App";
 import { clickMenuItem, openMenu } from "./workbench";
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { useChatReferences } from "../../../apps/workbench/src/conversation/ChatReferences";
 import { Workbench } from "./workbench";

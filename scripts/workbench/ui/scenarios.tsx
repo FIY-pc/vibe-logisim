@@ -1,3 +1,4 @@
+import { verifyMenusUI } from "./menus";
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
 import { verifyClassroomUI } from "./classroom";
 import { verifyAISettings } from "./ai-settings";
@@ -12,7 +13,7 @@ import { verifyFilesUI } from "./files";
 import { verifyRestoredInteractions } from "./restored-interactions";
 import assert from "node:assert/strict";
 import { act, useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { App } from "../../../apps/workbench/src/App";
 import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
@@ -1328,6 +1329,7 @@ console.log(
 );
 await act(async () => root.unmount());
 assert.deepEqual(errors, []);
+await verifyMenusUI();
 await verifyRestoredInteractions();
 await verifyFilesUI();
 await verifyReferencesUI();

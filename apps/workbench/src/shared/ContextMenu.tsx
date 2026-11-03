@@ -1,5 +1,5 @@
 import { useRef, type ReactElement, type ReactNode } from "react";
-import * as Context from "@radix-ui/react-context-menu";
+import { ContextMenu as Context } from "@radix-ui/themes";
 import { MenuScope } from "./Menu";
 import { keepKeys, keepMovedFocus, usePortalContainer } from "./layer";
 
@@ -32,22 +32,22 @@ export function ContextMenu({
         onOpenChange?.(open);
       }}
     >
-      <Context.Trigger ref={anchor} asChild disabled={disabled}>
+      <Context.Trigger ref={anchor} disabled={disabled}>
         {children}
       </Context.Trigger>
-      <Context.Portal container={container}>
-        <Context.Content
-          className="menu-content"
-          collisionPadding={8}
-          loop
-          onCloseAutoFocus={(event) => keepMovedFocus(event, opener.current)}
-          onKeyDown={keepKeys}
-        >
-          <MenuScope kind="context" container={container}>
-            {content}
-          </MenuScope>
-        </Context.Content>
-      </Context.Portal>
+      <Context.Content
+        container={container}
+        size="1"
+        className="app-menu-content"
+        collisionPadding={8}
+        loop
+        onCloseAutoFocus={(event) => keepMovedFocus(event, opener.current)}
+        onKeyDown={keepKeys}
+      >
+        <MenuScope kind="context" container={container}>
+          {content}
+        </MenuScope>
+      </Context.Content>
     </Context.Root>
   );
 }

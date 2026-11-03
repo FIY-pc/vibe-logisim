@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { act, useLayoutEffect, StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { ClassroomEntry } from "../../../apps/workbench/src/classroom/Classroom";
 import { useWorkbench } from "../../../apps/workbench/src/app/provider";
 import { createClassroomServer } from "../../../packages/classroom/src/server.mts";
