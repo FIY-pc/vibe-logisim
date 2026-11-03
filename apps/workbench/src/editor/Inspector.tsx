@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import { Eye } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ComponentState } from "../generated/ComponentState";
@@ -87,7 +88,9 @@ export function Inspector(props: Props) {
               ].map(([label, ids]) => {
                 const whole = ids.length === selection.length;
                 return (
-                  <button
+                  <Button
+                    variant="ghost"
+                    color="gray"
                     key={label}
                     {...tip(
                       !whole &&
@@ -98,7 +101,7 @@ export function Inspector(props: Props) {
                   >
                     <span>{label}</span>
                     <span>{ids.length}</span>
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -256,7 +259,9 @@ function SelectedInspector({
           </div>
         )}
         {["RAM", "ROM"].includes(selected.name) && (
-          <button
+          <Button
+            variant="ghost"
+            color="gray"
             className="inspector-memory"
             onClick={() => onOpenMemory(selected.id)}
           >
@@ -266,7 +271,7 @@ function SelectedInspector({
                 ? `${2 ** Number(valueOf("addrWidth"))} × ${valueOf("dataWidth")} bit　›`
                 : "›"}
             </span>
-          </button>
+          </Button>
         )}
         <h3 className="property-heading">属性</h3>
         {loading && (
@@ -277,9 +282,13 @@ function SelectedInspector({
         {loadError && (
           <div className="property-error" role="alert">
             {loadError}
-            <button onClick={() => setRetry((value) => value + 1)}>
+            <Button
+              variant="ghost"
+              color="gray"
+              onClick={() => setRetry((value) => value + 1)}
+            >
               重新读取
-            </button>
+            </Button>
           </div>
         )}
         {attributes
@@ -314,7 +323,7 @@ function SelectedInspector({
                           <code>{formatSignal(value)}</code>
                         </td>
                         <td>
-                          <button
+                          <IconButton
                             aria-label={`观察端口 ${end.index}`}
                             data-tip="观察信号"
                             aria-pressed={watched.includes(
@@ -324,7 +333,7 @@ function SelectedInspector({
                             onClick={() => onWatch(`${nativeId}:${end.index}`)}
                           >
                             <Eye size={13} />
-                          </button>
+                          </IconButton>
                         </td>
                       </>
                     )}
@@ -380,7 +389,9 @@ function HeldButton({
     };
   }, [componentId]);
   return (
-    <button
+    <Button
+      variant="ghost"
+      color="gray"
       aria-pressed={pressed}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -404,6 +415,6 @@ function HeldButton({
       }}
     >
       {pressed ? "松开" : "按下"}
-    </button>
+    </Button>
   );
 }

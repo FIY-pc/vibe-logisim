@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { House, Plus } from "lucide-react";
 import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import type { Document } from "../shared/types";
@@ -23,7 +24,9 @@ export function CircuitList({ doc: d }: { doc: Document }) {
         )
         .map((c) => (
           <div className="circuit-row" key={c.name}>
-            <button
+            <Button
+              variant="ghost"
+              color="gray"
               className={c.name === circuit?.name ? "active" : ""}
               onClick={() => navigation.switchCircuit(view, c.name)}
               {...fullText(c.name)}
@@ -39,7 +42,7 @@ export function CircuitList({ doc: d }: { doc: Document }) {
                   <House size={12} aria-hidden="true" />
                 </span>
               )}
-            </button>
+            </Button>
             {c.name === circuit?.name && (
               <Menu label="电路操作">
                 <MenuItem onSelect={() => setRenameCircuit(true)}>
@@ -72,10 +75,15 @@ export function CircuitList({ doc: d }: { doc: Document }) {
             )}
           </div>
         ))}
-      <button className="muted" onClick={() => setCircuitPrompt(true)}>
+      <Button
+        variant="ghost"
+        color="gray"
+        className="muted"
+        onClick={() => setCircuitPrompt(true)}
+      >
         <Plus size={13} />
         新建电路
-      </button>
+      </Button>
     </div>
   );
 }

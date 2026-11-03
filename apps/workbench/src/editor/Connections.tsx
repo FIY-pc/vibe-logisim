@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import {
   bitMapping,
   componentName,
@@ -38,13 +39,22 @@ export function Connections({
       <header>
         <strong>{target.label}</strong>
         {onBack && (
-          <button onClick={onBack} {...tip("返回上个位置", "Alt+←")}>
+          <Button
+            variant="ghost"
+            color="gray"
+            onClick={onBack}
+            {...tip("返回上个位置", "Alt+←")}
+          >
             返回上个位置
-          </button>
+          </Button>
         )}
-        <button onClick={onClose} aria-label="退出信号追踪" data-tip="退出追踪">
+        <IconButton
+          onClick={onClose}
+          aria-label="退出信号追踪"
+          data-tip="退出追踪"
+        >
           ×
-        </button>
+        </IconButton>
       </header>
       {groups
         .filter(([title, peers]) => peers.length || title === "上游驱动端")
@@ -57,6 +67,7 @@ export function Connections({
             )}
             {peers.map((peer) => (
               <button
+                className="signal-peer"
                 key={`${peer.component.componentId}:${peer.end.index}`}
                 onClick={() => onNavigate(peer)}
                 data-tip={`定位 ${componentName(peer.component)} · ${portName(peer.component, peer.end)}`}

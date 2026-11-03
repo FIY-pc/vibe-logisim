@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import { X } from "lucide-react";
 import { Waveform } from "./Waveform";
 import { tip } from "../shared/Tooltips";
@@ -30,7 +31,9 @@ export function SimulationDock() {
     <section className="simulation-dock" aria-label="观察信号">
       <header>
         <strong>观察信号</strong>
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           onClick={() =>
             void (
               recording
@@ -40,8 +43,8 @@ export function SimulationDock() {
           }
         >
           {recording ? "停止记录" : "重新记录"}
-        </button>
-        <button
+        </Button>
+        <IconButton
           aria-label="关闭观察信号"
           {...tip("不再观察这些端口")}
           onClick={(event) => {
@@ -54,7 +57,7 @@ export function SimulationDock() {
           }}
         >
           <X size={15} />
-        </button>
+        </IconButton>
       </header>
       <Waveform key={trace.id} trace={trace} labels={labels} />
     </section>

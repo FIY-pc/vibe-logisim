@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { useMemo } from "react";
 import type { Circuit } from "../shared/types";
 import {
@@ -50,7 +51,9 @@ export function SelectionConnections({
     (c) => !c.partial && selection.includes(c.componentId),
   );
   const selectedWires = circuit.wires.filter((w) => selection.includes(w.id));
-  const selectedRecords = focus.wires.filter((w) => selection.includes(w.wireId));
+  const selectedRecords = focus.wires.filter((w) =>
+    selection.includes(w.wireId),
+  );
   const bundles = [...new Set(selectedRecords.map((w) => w.bundleId))];
   const group = (target: SignalTarget, key: string) => {
     const peers = connectedPorts(index, target.bits, target.origin);
@@ -58,9 +61,14 @@ export function SelectionConnections({
       <section className="connection-port" key={key}>
         <h3>{target.label}</h3>
         {target.bits.length > 0 && (
-          <button className="signal-action" onClick={() => onTrace(target)}>
+          <Button
+            variant="ghost"
+            color="gray"
+            className="signal-action"
+            onClick={() => onTrace(target)}
+          >
             追踪此信号
-          </button>
+          </Button>
         )}
         {!target.bits.length ? (
           <p className="connection-empty">未读取到此端口的连接信息</p>
@@ -90,13 +98,15 @@ export function SelectionConnections({
   return (
     <div className="selection-connections" aria-label="选中对象的连接">
       {onBack && (
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           className="signal-action"
           onClick={onBack}
           {...tip("返回上个位置", "Alt+←")}
         >
           返回上个位置
-        </button>
+        </Button>
       )}
       {components.map((component) => (
         <section className="connection-component" key={component.componentId}>

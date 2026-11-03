@@ -1,3 +1,4 @@
+import { IconButton } from "../design/ui";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useNotices } from "../app/hooks";
@@ -29,9 +30,9 @@ export function Notice() {
       onBlur={() => setHeld(false)}
     >
       <span>{notice}</span>
-      <button aria-label="关闭提示" onClick={() => setNotice("")}>
+      <IconButton aria-label="关闭提示" onClick={() => setNotice("")}>
         <X size={13} />
-      </button>
+      </IconButton>
     </div>
   );
 }
@@ -44,9 +45,9 @@ export function ErrorBar() {
   return (
     <div className="error-bar" role="alert">
       <span>{error}</span>
-      <button aria-label="关闭错误" onClick={() => setError("")}>
+      <IconButton aria-label="关闭错误" onClick={() => setError("")}>
         <X size={15} />
-      </button>
+      </IconButton>
     </div>
   );
 }

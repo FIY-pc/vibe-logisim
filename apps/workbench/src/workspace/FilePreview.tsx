@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { desktop } from "../shared/transport";
 import ReactMarkdown from "react-markdown";
@@ -88,14 +89,18 @@ function PdfReader({ file, onQuote, onError, canQuote }: Props) {
   return (
     <>
       <div className="reader-actions">
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           disabled={!loaded || !canQuote}
           onClick={() => send("quote-page")}
         >
           <Quote size={15} />
           引用当前页
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          color="gray"
           disabled={!loaded || !canQuote}
           aria-pressed={capturing}
           onClick={() => {
@@ -105,7 +110,7 @@ function PdfReader({ file, onQuote, onError, canQuote }: Props) {
         >
           <Scan size={15} />
           框选引用
-        </button>
+        </Button>
       </div>
       <iframe
         ref={frame}
@@ -175,22 +180,24 @@ function ImageReader({ file, onQuote, canQuote }: Props) {
   return (
     <>
       <div className="reader-actions">
-        <button
+        <IconButton
           aria-label="缩小图片"
           onClick={() => setZoom(Math.max(0.25, zoom / 1.25))}
         >
           <ZoomOut size={16} />
-        </button>
-        <button aria-label="适合窗口" onClick={() => setZoom(1)}>
+        </IconButton>
+        <IconButton aria-label="适合窗口" onClick={() => setZoom(1)}>
           <RotateCcw size={15} />
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           aria-label="放大图片"
           onClick={() => setZoom(Math.min(6, zoom * 1.25))}
         >
           <ZoomIn size={16} />
-        </button>
-        <button
+        </IconButton>
+        <Button
+          variant="ghost"
+          color="gray"
           aria-pressed={capture}
           onClick={() => {
             setCapture(!capture);
@@ -199,11 +206,16 @@ function ImageReader({ file, onQuote, canQuote }: Props) {
         >
           <Scan size={15} />
           框选
-        </button>
-        <button disabled={!canQuote} onClick={quote}>
+        </Button>
+        <Button
+          variant="ghost"
+          color="gray"
+          disabled={!canQuote}
+          onClick={quote}
+        >
           <Quote size={15} />
           {region ? "引用选区" : "引用图片"}
-        </button>
+        </Button>
       </div>
       <div
         ref={scroll}
@@ -290,7 +302,9 @@ function TextReader({ file, onQuote, canQuote }: Props) {
   return (
     <>
       <div className="reader-actions">
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           disabled={!canQuote}
           onPointerDown={(event) => event.preventDefault()}
           onClick={() =>
@@ -302,7 +316,7 @@ function TextReader({ file, onQuote, canQuote }: Props) {
         >
           <Quote size={15} />
           {selection ? "引用选中文字" : "引用文件"}
-        </button>
+        </Button>
       </div>
       <div
         ref={body}
@@ -348,7 +362,9 @@ export function FilePreview(props: Props) {
         <FileQuestion size={32} />
         <p>{props.file.unavailable}</p>
         {desktop() && props.file.location && (
-          <button
+          <Button
+            variant="ghost"
+            color="gray"
             onClick={() =>
               void import("@tauri-apps/plugin-opener")
                 .then(({ revealItemInDir }) =>
@@ -358,7 +374,7 @@ export function FilePreview(props: Props) {
             }
           >
             在文件管理器中显示
-          </button>
+          </Button>
         )}
       </div>
     );

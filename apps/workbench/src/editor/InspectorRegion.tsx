@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { Inspector } from "./Inspector";
 import { PlacementInspector } from "./PlacementInspector";
 import { live } from "../simulation/store";
@@ -83,12 +84,14 @@ export function InspectorActions() {
   const selection = useSelection();
   if (!selection.length) return null;
   return (
-    <button
+    <Button
+      variant="ghost"
+      color="gray"
       className="quiet-button"
       {...tip("取消当前选择", "Esc")}
       onClick={() => actions.editor.select(view, [])}
     >
       取消选择
-    </button>
+    </Button>
   );
 }

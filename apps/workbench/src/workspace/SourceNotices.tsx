@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { desktop } from "../shared/transport";
 import { sourceStatusOf } from "./documents";
 import { useDocuments, useNotices, useShell, useView } from "../app/hooks";
@@ -28,29 +29,47 @@ export function SourceNotices() {
                   : "无法读取源文件"}
             </span>
             {sourceStatus.state === "modified" && (
-              <button
+              <Button
+                variant="ghost"
+                color="gray"
                 disabled={Boolean(pending)}
                 onClick={() =>
                   void actions.workspace.requestReload(view).catch(onError)
                 }
               >
                 重新载入
-              </button>
+              </Button>
             )}
-            <button disabled={Boolean(pending)} onClick={() => save(true)}>
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={Boolean(pending)}
+              onClick={() => save(true)}
+            >
               {desktop() ? "另存为…" : "下载副本"}
-            </button>
+            </Button>
             {sourceStatus.state === "unreadable" && (
-              <button onClick={() => void recheck()}>重试</button>
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={() => void recheck()}
+              >
+                重试
+              </Button>
             )}
           </div>
         )}
       {saveFailures[doc.id] && (
         <div className="source-notice" role="alert">
           <span>修改已保留，写回文件失败：{saveFailures[doc.id]}</span>
-          <button disabled={Boolean(pending)} onClick={() => save()}>
+          <Button
+            variant="ghost"
+            color="gray"
+            disabled={Boolean(pending)}
+            onClick={() => save()}
+          >
             重试保存
-          </button>
+          </Button>
         </div>
       )}
     </>

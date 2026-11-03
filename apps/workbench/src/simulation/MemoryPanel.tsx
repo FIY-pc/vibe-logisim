@@ -1,4 +1,4 @@
-import { TextField } from "../design/ui";
+import { IconButton, Button, TextField } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, RefreshCw, X } from "lucide-react";
 import { tip } from "../shared/Tooltips";
@@ -162,7 +162,7 @@ export function MemoryPanel({
           {ram ? "RAM · 运行内容" : "ROM · 工程内容"}
         </span>
         <span className="muted memory-state">{stateLine}</span>
-        <button
+        <IconButton
           aria-label="关闭存储器"
           {...tip("关闭")}
           onClick={(event) => {
@@ -175,18 +175,20 @@ export function MemoryPanel({
           }}
         >
           <X size={15} />
-        </button>
+        </IconButton>
       </header>
       {ram && !live ? (
         <div className="memory-empty">
           <p>RAM 内容属于运行实例。</p>
-          <button
+          <Button
+            variant="ghost"
+            color="gray"
             className="small-button"
             disabled={pending}
             onClick={() => void runAction(start)}
           >
             启动此电路的仿真
-          </button>
+          </Button>
         </div>
       ) : (
         <>
@@ -219,7 +221,7 @@ export function MemoryPanel({
                 {shown.length.toLocaleString()} 字 × {shown.dataBits} bit
               </span>
             )}
-            <button
+            <IconButton
               aria-label="上一页地址"
               {...tip("上一页")}
               disabled={pending || !offset}
@@ -228,23 +230,23 @@ export function MemoryPanel({
               }
             >
               <ChevronLeft size={15} />
-            </button>
-            <button
+            </IconButton>
+            <IconButton
               aria-label="下一页地址"
               {...tip("下一页")}
               disabled={pending || !shown || offset + PAGE >= shown.length}
               onClick={() => void runAction(() => read(offset + PAGE))}
             >
               <ChevronRight size={15} />
-            </button>
-            <button
+            </IconButton>
+            <IconButton
               aria-label="刷新存储器"
               {...tip("重新读取")}
               disabled={pending}
               onClick={() => void runAction(() => read(offset))}
             >
               <RefreshCw size={14} />
-            </button>
+            </IconButton>
             {pending && (
               <span className="spinner" aria-label="正在读取存储器" />
             )}

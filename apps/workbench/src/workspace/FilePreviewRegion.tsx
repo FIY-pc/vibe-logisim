@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import { useRef } from "react";
 import { Columns2, Maximize2, FileText, CircuitBoard, X } from "lucide-react";
 import { FilePreview } from "./FilePreview";
@@ -71,7 +72,9 @@ export function FilePreviewRegion() {
                   (readerKey(file) === readerKey(preview) ? " active" : "")
                 }
               >
-                <button
+                <Button
+                  variant="ghost"
+                  color="gray"
                   role="tab"
                   aria-selected={readerKey(file) === readerKey(preview)}
                   onClick={() => files.setPreview(file)}
@@ -79,25 +82,30 @@ export function FilePreviewRegion() {
                 >
                   <FileText size={14} />
                   <span>{file.name}</span>
-                </button>
-                <button
+                </Button>
+                <IconButton
                   className="reader-tab-close"
                   aria-label={`关闭 ${file.name}`}
                   onClick={() => files.closeReader(readerKey(file))}
                 >
                   <X size={13} />
-                </button>
+                </IconButton>
               </div>
             ))}
           </div>
           {doc && (
-            <button className="reader-back" onClick={() => files.hideReader()}>
+            <Button
+              variant="ghost"
+              color="gray"
+              className="reader-back"
+              onClick={() => files.hideReader()}
+            >
               <CircuitBoard size={16} />
               电路
-            </button>
+            </Button>
           )}
           {doc && (
-            <button
+            <IconButton
               className="reader-layout"
               aria-label={mode === "split" ? "展开资料" : "与电路并排"}
               title={mode === "split" ? "展开资料" : "与电路并排"}
@@ -110,7 +118,7 @@ export function FilePreviewRegion() {
               ) : (
                 <Columns2 size={16} />
               )}
-            </button>
+            </IconButton>
           )}
         </header>
         <FilePreview
@@ -152,13 +160,15 @@ export function ReaderRecall() {
   return (
     <div className="reader-recall" aria-label="返回资料">
       {readers.map((file) => (
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           key={readerKey(file)}
           onClick={() => stores.files.getState().setPreview(file)}
         >
           <FileText size={14} />
           {file.name}
-        </button>
+        </Button>
       ))}
     </div>
   );
