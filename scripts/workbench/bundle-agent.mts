@@ -8,6 +8,7 @@ import {
   readdir,
   stat,
   rm,
+  cp,
 } from "node:fs/promises";
 import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
@@ -45,6 +46,10 @@ const entries = [
     "packages/agent-runtime/src/tools/arrange-worker.mts",
     "packages/agent-runtime/src/arrange-worker.mjs",
   ],
+  [
+    "packages/agent-runtime/src/materials/worker.mts",
+    "packages/agent-runtime/src/material-worker.mjs",
+  ],
 ];
 const inputs = new Set<string>();
 for (const [entry, out] of entries) {
@@ -60,6 +65,7 @@ for (const [entry, out] of entries) {
     keepNames: true,
     metafile: true,
     legalComments: "inline",
+    external: ["pdfjs-dist/*", "@napi-rs/canvas"],
     banner: {
       js: 'import {createRequire as __createRequire} from "node:module";const require=__createRequire(import.meta.url);',
     },
@@ -68,6 +74,21 @@ for (const [entry, out] of entries) {
 }
 const packages = new Set<string>(),
   index: unknown[] = [];
+// PDF.js resolves its worker and native canvas at runtime, outside esbuild.
+for (const name of [
+  "pdfjs-dist",
+  "@napi-rs/canvas",
+  ...(await readdir(path.join(root, "node_modules/@napi-rs")))
+    .filter((name) => name.startsWith("canvas-"))
+    .map((name) => "@napi-rs/" + name),
+]) {
+  const directory = path.join(root, "node_modules", name);
+  packages.add(directory);
+  await cp(directory, path.join(output, "node_modules", name), {
+    recursive: true,
+    filter: (file) => !file.endsWith(".map"),
+  });
+}
 for (const input of inputs) {
   if (!input.includes("node_modules/")) continue;
   let directory = path.dirname(path.resolve(root, input));

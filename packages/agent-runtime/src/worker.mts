@@ -11,6 +11,8 @@ import { randomUUID } from "node:crypto";
 import { TurnRunner } from "./turn/runner.mts";
 import { storeReference, readReferences } from "./conversations/references.mts";
 import { closeNetwork } from "./network/fetch.mts";
+import { readMaterial } from "./materials/read.mts";
+import { resolveFile } from "./tools/files.mts";
 import {
   TRANSITIONS,
   type HostMessage,
@@ -52,6 +54,11 @@ const folderOf = async () =>
 
 async function dispatch(method: RuntimeMethod, args: any) {
   switch (method) {
+    case "readMaterial": {
+      const folder = await folderOf();
+      if (!folder) throw new Error("请先打开工作文件夹");
+      return readMaterial(await resolveFile(folder.path, args.path), args);
+    }
     case "status":
       return runner.snapshot();
     case "history":

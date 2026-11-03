@@ -59,6 +59,7 @@ export const HANDLERS: Record<ToolName, ToolHandler> = {
 /** Labels the conversation shows per tool name (file tools included). */
 export const TOOL_LABELS: Record<string, string> = {
   read_file: "读取文件",
+  read_material: "读取资料",
   write_file: "写入文件",
   list_files: "列出文件",
   exec_command: "执行命令",

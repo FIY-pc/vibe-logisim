@@ -108,7 +108,8 @@ export function panelSizes(
 export function createShellStore() {
   return createStore<ShellState>()((set, get) => {
     const measure = (node: HTMLDivElement) => {
-      const narrow = window.innerWidth <= 820;
+      // Reserve the editor width as well as both side panels and resize handles.
+      const narrow = window.innerWidth <= 1000;
       const width = node.clientWidth || window.innerWidth;
       // Crossing the narrow breakpoint closes any drawer.
       set((state) => ({
@@ -123,7 +124,7 @@ export function createShellStore() {
     };
     return {
       layout: savedLayout(),
-      narrow: window.innerWidth <= 820,
+      narrow: window.innerWidth <= 1000,
       width: window.innerWidth,
       visible: { rail: true, review: true },
       drawer: null,

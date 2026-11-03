@@ -9,6 +9,8 @@ import type {
 } from "./references";
 import "./ChatReferences.css";
 import { DialogClose, useModal } from "../shared/Dialog";
+import { useWorkbench } from "../app/provider";
+import type { PreviewFile } from "../workspace/FilePreview";
 
 interface Receipt {
   key: string;
@@ -40,6 +42,7 @@ export function useChatReferences({
   onError: (error: unknown) => void;
   ready: boolean;
 }) {
+  const workbench = useWorkbench();
   const [record, setRecord] = useState({
     key: draftKey,
     references: load(draftKey),
@@ -102,7 +105,46 @@ export function useChatReferences({
       const [ref] = await runtime<StoredReference[]>("readReferences", {
         ids: [id],
       });
-      if (liveKey.current === capturedKey) setPreview(ref);
+      if (liveKey.current !== capturedKey) return;
+      const folder = workbench.stores.files.getState().folder;
+      if (
+        ref?.kind === "material" &&
+        ref.path &&
+        folder &&
+        (!ref.folderId || ref.folderId === folder.id)
+      ) {
+        try {
+          const binary = /\.(pdf|png|jpe?g|webp)$/i.test(ref.path);
+          const file = await command<PreviewFile>({
+            op: binary ? "folderPreview" : "folderRead",
+            folder_id: folder.id,
+            path: ref.path,
+          });
+          if (
+            liveKey.current !== capturedKey ||
+            workbench.stores.files.getState().folder?.id !== folder.id
+          )
+            return;
+          // A changed source is opened as current data, without pretending its old region still matches.
+          const unchanged =
+            ref.revision === undefined || ref.revision === file.revision;
+          workbench.stores.files.getState().setPreview({
+            ...file,
+            name: ref.label,
+            path: ref.path,
+            folderId: folder.id,
+            ...(unchanged ? { page: ref.page, region: ref.region } : {}),
+          });
+          if (!unchanged)
+            workbench.stores.notices
+              .getState()
+              .setNotice("资料已更新，已打开当前文件；引用仍保留当时内容。");
+          return;
+        } catch {
+          /* A removed source remains readable as the saved quotation. */
+        }
+      }
+      setPreview(ref);
     } catch (error) {
       onError(error);
     }

@@ -1,0 +1,53 @@
+:root {
+  --toolbar-bg-color: #fff;
+  --toolbar-border-color: #e1e5ec;
+  --main-color: #242934;
+  --body-bg-color: #eceef2;
+  --toolbar-icon-bg-color: #596273;
+  --toolbar-icon-hover-bg-color: #2b50e6;
+  --toolbar-height: 40px;
+}
+#editorModeButtons,
+#editorModeSeparator,
+#printButton,
+#downloadButton,
+#secondaryOpenFile,
+#secondaryPrint,
+#secondaryDownload,
+#secondaryPresentationMode,
+#documentProperties {
+  display: none !important;
+}
+#toolbarContainer {
+  box-shadow: none;
+  border-bottom: 1px solid #e1e5ec;
+}
+.workbench-quote {
+  position: fixed;
+  z-index: 10000;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 14px;
+  background: #345bff;
+  color: white;
+  font: 14px system-ui;
+  cursor: pointer;
+  box-shadow: 0 3px 16px #0003;
+}
+.workbench-region {
+  position: fixed;
+  z-index: 9999;
+  border: 2px solid #345bff;
+  background: #345bff18;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.workbench-quote[hidden],
+.workbench-region[hidden] {
+  display: none;
+}
+.workbench-capture #viewerContainer,
+.workbench-capture .textLayer {
+  cursor: crosshair;
+  user-select: none;
+}

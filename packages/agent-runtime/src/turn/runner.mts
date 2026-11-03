@@ -884,6 +884,7 @@ export class TurnRunner extends EventEmitter {
         ...fileTools({
           root: status.folder.path,
           runtimeRoot: this.runtimeRoot,
+          vision: config.vision,
           assertCurrent,
         }),
         ...circuitTools({ context, vision: config.vision }),

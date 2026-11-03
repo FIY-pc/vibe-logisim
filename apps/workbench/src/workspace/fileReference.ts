@@ -1,9 +1,7 @@
 import { command } from "../shared/transport";
-import { openPdf, pageText } from "./pdf";
+import { openPdf } from "./pdf";
 import type { ReferenceInput } from "../conversation/references";
 
-// The runtime keeps this much text of one reference.
-const TEXT_LIMIT = 24_000;
 interface Read {
   revision?: string;
   pathVersion?: number;
@@ -31,27 +29,10 @@ export async function fileReference(
       };
     const pdf = await openPdf(file.data);
     try {
-      let text = "";
-      for (
-        let page = 1;
-        page <= pdf.numPages && text.length < TEXT_LIMIT;
-        page++
-      )
-        text += `[第 ${page} 页]\n${await pageText(pdf, page)}\n`;
-      if (text.replace(/\[第 \d+ 页\]/g, "").trim())
-        return { ...base, ...read, text };
-      // A scanned document has no text layer: its first page is the reference.
-      const first = await pdf.getPage(1),
-        viewport = first.getViewport({ scale: 1.25 }),
-        canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await first.render({ canvas, viewport }).promise;
       return {
         ...base,
         ...read,
-        page: 1,
-        image: canvas.toDataURL("image/png"),
+        text: `PDF 文件，共 ${pdf.numPages} 页。完整文件可通过 read_material 按页读取或搜索；本引用没有截取正文。`,
       };
     } finally {
       await pdf.loadingTask.destroy();

@@ -53,6 +53,20 @@ export async function storeReference(
     )
       throw new Error("资料引用无效");
     const text = input.text || "";
+    if (
+      input.region &&
+      (![
+        input.region.x,
+        input.region.y,
+        input.region.width,
+        input.region.height,
+      ].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) ||
+        input.region.width <= 0 ||
+        input.region.height <= 0 ||
+        input.region.x + input.region.width > 1.001 ||
+        input.region.y + input.region.height > 1.001)
+    )
+      throw new Error("资料选区无效");
     fields = {
       kind: "material",
       label: input.label.slice(0, 300),
@@ -61,6 +75,7 @@ export async function storeReference(
       folderId: input.folderId?.slice(0, 128),
       pathVersion: input.pathVersion,
       page: input.page,
+      region: input.region,
       text: text.slice(0, 24_000),
       truncated: text.length > 24_000,
       image: checkedImage(input.image),

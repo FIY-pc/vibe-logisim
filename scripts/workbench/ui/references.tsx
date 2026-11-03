@@ -18,7 +18,7 @@ export async function verifyReferencesUI() {
           resolve = r;
         })
       : [];
-  function Fixture({
+  function ReferenceFixture({
     draftKey,
     quotation = null,
   }: {
@@ -36,6 +36,13 @@ export async function verifyReferencesUI() {
       ready: true,
     });
     return <>{api.composer}</>;
+  }
+  function Fixture(props: Parameters<typeof ReferenceFixture>[0]) {
+    return (
+      <Workbench>
+        <ReferenceFixture {...props} />
+      </Workbench>
+    );
   }
   const first = {
     id: "first",
