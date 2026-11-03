@@ -1,6 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { spawn, execFile } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -13,6 +14,7 @@ $ProgressPreference = 'SilentlyContinue'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
 $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+if (-not [IO.File]::Exists($env:VIBE_COMMAND_JOB_ASSEMBLY)) {
 Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
@@ -59,7 +61,16 @@ public static class VibeCommandJob {
             throw new Win32Exception();
     }
 }
-'@
+'@ -OutputAssembly (Join-Path $env:TEMP 'job.dll')
+try {
+    [IO.File]::Move((Join-Path $env:TEMP 'job.dll'), $env:VIBE_COMMAND_JOB_ASSEMBLY)
+} catch [IO.IOException] {
+    # Another concurrent command may have finished compiling first. A rename
+    # publishes a complete assembly, never a partly written one.
+    if (-not [IO.File]::Exists($env:VIBE_COMMAND_JOB_ASSEMBLY)) { throw }
+}
+}
+Add-Type -Path $env:VIBE_COMMAND_JOB_ASSEMBLY
 [VibeCommandJob]::Start()
 Set-Location -LiteralPath $env:VIBE_PROJECT_ROOT
 [Environment]::CurrentDirectory = $env:VIBE_PROJECT_ROOT
@@ -68,6 +79,23 @@ $global:LASTEXITCODE = 0
 
 const ordinaryPath = (value: string) =>
   value.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "");
+
+// Compile the fixed interop type once per sidecar, not on every model tool call.
+// The private cache contains only this assembly; each command still gets a new
+// PowerShell process, environment and job. No project state is kept here.
+let jobAssembly: Promise<string> | undefined;
+function cachedJobAssembly() {
+  return (jobAssembly ??= mkdtemp(
+    path.join(tmpdir(), "vibe-command-runtime-"),
+  ).then((directory) => {
+    process.once("exit", () => {
+      try {
+        rmSync(directory, { recursive: true, force: true });
+      } catch {}
+    });
+    return path.join(directory, "job.dll");
+  }));
+}
 
 /** Only OS necessities and the product's interpreters enter the shell. */
 function environment(
@@ -132,6 +160,11 @@ export async function windowsCommand(
     );
     signal?.throwIfAborted();
     const env = environment(root, temporary, referenceRoot, runtimeRoot);
+    const commandEnv = {
+      ...env,
+      VIBE_COMMAND_JOB_ASSEMBLY: await cachedJobAssembly(),
+    };
+    signal?.throwIfAborted();
     const system32 = path.join(env.SystemRoot, "System32");
     return await new Promise<AgentToolResult<any>>((resolve, reject) => {
       const child = spawn(
@@ -147,7 +180,7 @@ export async function windowsCommand(
         ],
         {
           cwd: root,
-          env,
+          env: commandEnv,
           windowsHide: true,
           stdio: ["ignore", "pipe", "pipe"],
         },
