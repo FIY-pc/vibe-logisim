@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect } from "react";
 import { Theme } from "@radix-ui/themes";
 import { UpdateNotice, useFeedback } from "./shell/Feedback";
-import { useWorkspaceLayout } from "./shell/WorkspaceLayout";
+import { useWorkspaceLayout, WorkspacePanels } from "./shell/WorkspaceLayout";
 import { usePlacement } from "./editor/usePlacement";
 import { Breadcrumbs } from "./editor/Breadcrumbs";
 import { CanvasRegion } from "./editor/CanvasRegion";
@@ -117,15 +117,11 @@ function Shell() {
       <UploadInput />
       <Titlebar feedback={feedback} />
       <UpdateNotice feedback={feedback} />
-      <div className="workspace" ref={layout.workspace}>
-        {layout.narrow && (layout.showExplorer || layout.showRight) && (
-          <button
-            className="workspace-shade"
-            aria-label="关闭侧栏"
-            onClick={layout.closeDrawers}
-          />
-        )}
-        <Rail placement={placement} />
+      <WorkspacePanels
+        layout={layout}
+        rail={<Rail placement={placement} />}
+        review={<Aside />}
+      >
         <div
           className={
             "editor-group" +
@@ -159,8 +155,7 @@ function Shell() {
           </main>
           <FilePreviewRegion />
         </div>
-        <Aside />
-      </div>
+      </WorkspacePanels>
       <ErrorBar />
       <FeedbackDialogRegion feedback={feedback} />
       <DecisionRegion />

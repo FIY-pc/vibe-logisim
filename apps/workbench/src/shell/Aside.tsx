@@ -1,4 +1,4 @@
-import { PanelResize, useWorkspaceLayout } from "./WorkspaceLayout";
+import { useWorkspaceLayout } from "./WorkspaceLayout";
 import { useShell } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import { ChangesRegion } from "../history/ChangesRegion";
@@ -22,7 +22,6 @@ export function Aside() {
       id="workspace-review"
       className={"right-panel" + (layout.narrow ? " workspace-drawer" : "")}
       style={{
-        width: layout.sizes.review,
         display: layout.showRight ? undefined : "none",
       }}
     >
@@ -64,7 +63,6 @@ export function Aside() {
         ))}
       </div>
       <ConnectionsPanel />
-      {!layout.narrow && <PanelResize side="review" layout={layout} />}
       <ChangesRegion />
       <ChatRegion />
     </aside>

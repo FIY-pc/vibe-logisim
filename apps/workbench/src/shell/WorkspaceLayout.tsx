@@ -1,19 +1,8 @@
-import {
-  useRef,
-  type CSSProperties,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useRef, type ReactNode, type RefObject } from "react";
+import { Group, Panel, Separator, useGroupRef } from "react-resizable-panels";
 import { Search } from "lucide-react";
 import type { CatalogGroup, CatalogTool } from "../shared/types";
-import {
-  clamp,
-  layoutDefaults as defaults,
-  layoutLimits as limits,
-  panelSizes,
-  railSections as sections,
-  type Side,
-} from "./store";
+import { layoutLimits as limits, railSections as sections } from "./store";
 import { useShell } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import "./WorkspaceLayout.css";
@@ -24,7 +13,6 @@ export function useWorkspaceLayout() {
     setLayout,
     setSide,
     closeDrawers,
-    changeWidth,
     revealInspector,
     revealFiles,
     revealNavigator,
@@ -32,7 +20,6 @@ export function useWorkspaceLayout() {
   } = useWorkbench().stores.shell.getState();
   const layout = useShell((state) => state.layout);
   const narrow = useShell((state) => state.narrow);
-  const width = useShell((state) => state.width);
   const visible = useShell((state) => state.visible);
   const drawer = useShell((state) => state.drawer);
   return {
@@ -47,78 +34,136 @@ export function useWorkspaceLayout() {
     setShowRight: (v: boolean | ((shown: boolean) => boolean)) =>
       setSide("review", v),
     closeDrawers,
-    sizes: panelSizes(layout, visible, width),
-    changeWidth,
     revealInspector,
     revealFiles,
     revealNavigator,
   };
 }
 export type WorkspaceLayout = ReturnType<typeof useWorkspaceLayout>;
-export function PanelResize({
-  side,
+/** Panel geometry belongs to the resize library; the shell owns visibility and
+ * the user's preferred pixel widths. Keep children mounted across drawer mode. */
+export function WorkspacePanels({
   layout,
+  rail,
+  children,
+  review,
 }: {
-  side: Side;
   layout: WorkspaceLayout;
+  rail: ReactNode;
+  children: ReactNode;
+  review: ReactNode;
 }) {
-  const drag = useRef<{ id: number; x: number; width: number } | null>(null);
-  const finish = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (drag.current?.id !== event.pointerId) return;
-    drag.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-  };
+  const initial = useRef(layout.layout).current;
+  const group = useRef<HTMLDivElement>(null);
+  const groupApi = useGroupRef();
+  const previousFrame = useRef("");
+  const railOpen = !layout.narrow && layout.showExplorer;
+  const reviewOpen = !layout.narrow && layout.showRight;
   return (
-    <div
-      className={`panel-resizer ${side}-resizer`}
-      role="separator"
-      tabIndex={0}
-      aria-label={side === "rail" ? "调整项目栏宽度" : "调整工作栏宽度"}
-      aria-orientation="vertical"
-      aria-valuemin={limits[side][0]}
-      aria-valuemax={limits[side][1]}
-      aria-valuenow={Math.round(layout.sizes[side])}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.currentTarget.focus();
-        drag.current = {
-          id: e.pointerId,
-          x: e.clientX,
-          width: layout.sizes[side],
-        };
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (d?.id === e.pointerId)
-          layout.changeWidth(
-            side,
-            d.width + (e.clientX - d.x) * (side === "rail" ? 1 : -1),
+    <div className="workspace" ref={layout.workspace}>
+      {layout.narrow && (layout.showExplorer || layout.showRight) && (
+        <button
+          className="workspace-shade"
+          aria-label="关闭侧栏"
+          onClick={layout.closeDrawers}
+        />
+      )}
+      <Group
+        id="workspace-columns"
+        elementRef={group}
+        groupRef={groupApi}
+        className="workspace-columns"
+        style={{ overflow: "visible" }}
+        disabled={layout.narrow}
+        onLayoutChanged={(sizes, { isUserInteraction, requestedLayout }) => {
+          const element = group.current;
+          if (!element) return;
+          const separators = Array.from(element.children).filter((child) =>
+            child.hasAttribute("data-separator"),
           );
-      }}
-      onPointerUp={finish}
-      onPointerCancel={finish}
-      onLostPointerCapture={() => {
-        drag.current = null;
-      }}
-      onDoubleClick={() => layout.changeWidth(side, defaults[side])}
-      onKeyDown={(e) => {
-        if (!["ArrowLeft", "ArrowRight", "Home"].includes(e.key)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        layout.changeWidth(
-          side,
-          e.key === "Home"
-            ? defaults[side]
-            : layout.sizes[side] +
-                (e.key === "ArrowRight" ? 1 : -1) *
-                  (side === "rail" ? 1 : -1) *
-                  (e.shiftKey ? 40 : 16),
-        );
-      }}
-    />
+          const available =
+            element.clientWidth -
+            separators.reduce(
+              (sum, child) => sum + (child as HTMLElement).offsetWidth,
+              0,
+            );
+          if (!available) return;
+          const frame = `${available}:${railOpen}:${reviewOpen}`;
+          if (!isUserInteraction && previousFrame.current !== frame) {
+            previousFrame.current = frame;
+            // Restore the requested pixels when the drawer/visibility context
+            // changes; the library applies all current constraints.
+            const rail = railOpen ? (layout.layout.rail / available) * 100 : 0;
+            const review = reviewOpen
+              ? (layout.layout.review / available) * 100
+              : 0;
+            // Wait for Panel registration to publish the new constraints.
+            queueMicrotask(() => {
+              if (previousFrame.current === frame)
+                groupApi.current?.setLayout({
+                  rail,
+                  editor: 100 - rail - review,
+                  review,
+                });
+            });
+            return;
+          }
+          previousFrame.current = frame;
+          if (!isUserInteraction || layout.narrow) return;
+          const pixelsPerPercent = available / 100;
+          const requested = requestedLayout ?? sizes;
+          layout.setLayout((old) => ({
+            ...old,
+            ...(railOpen ? { rail: requested.rail * pixelsPerPercent } : {}),
+            ...(reviewOpen
+              ? { review: requested.review * pixelsPerPercent }
+              : {}),
+          }));
+        }}
+      >
+        <Panel
+          id="rail"
+          className="workspace-side"
+          style={{ overflow: "visible" }}
+          defaultSize={initial.rail}
+          minSize={railOpen ? limits.rail[0] : 0}
+          maxSize={railOpen ? limits.rail[1] : 0}
+          groupResizeBehavior="preserve-pixel-size"
+        >
+          {rail}
+        </Panel>
+        <Separator
+          className="panel-resizer"
+          aria-label="调整项目栏宽度"
+          disabled={!railOpen}
+          style={{ display: railOpen ? undefined : "none" }}
+        />
+        <Panel
+          id="editor"
+          className="workspace-center"
+          minSize={layout.narrow ? 0 : 440}
+        >
+          {children}
+        </Panel>
+        <Separator
+          className="panel-resizer"
+          aria-label="调整工作栏宽度"
+          disabled={!reviewOpen}
+          style={{ display: reviewOpen ? undefined : "none" }}
+        />
+        <Panel
+          id="review"
+          className="workspace-side"
+          style={{ overflow: "visible" }}
+          defaultSize={initial.review}
+          minSize={reviewOpen ? limits.review[0] : 0}
+          maxSize={reviewOpen ? limits.review[1] : 0}
+          groupResizeBehavior="preserve-pixel-size"
+        >
+          {review}
+        </Panel>
+      </Group>
+    </div>
   );
 }
 export function WorkspaceRail({
@@ -146,13 +191,15 @@ export function WorkspaceRail({
   navigatorActions: ReactNode;
   inspectorActions: ReactNode;
 }) {
-  const rail = useRef<HTMLElement>(null);
-  const rowDrag = useRef<{ id: number; index: number; y: number } | null>(null);
+  const initial = useRef(layout.layout).current;
   const weights = [
-    layout.layout.fileShare,
-    layout.layout.navigatorShare,
-    Math.max(0.1, 1 - layout.layout.fileShare - layout.layout.navigatorShare),
+    initial.fileShare,
+    initial.navigatorShare,
+    1 - initial.fileShare - initial.navigatorShare,
   ];
+  const ids = ["files", "navigation", "inspector"];
+  const groupApi = useGroupRef();
+  const previousSections = useRef("");
   const toggle = (i: number) =>
     layout.setLayout((old) => {
       const next = { ...old, [sections[i]]: !old[sections[i]] };
@@ -160,215 +207,200 @@ export function WorkspaceRail({
         next[sections[(i + 1) % 3]] = false;
       return next;
     });
-  const adjust = (index: number, delta: number) => {
-    const heights = Array.from(
-      rail.current?.querySelectorAll<HTMLElement>(":scope > .rail-section") ||
-        [],
-    ).map((e) => e.getBoundingClientRect().height);
-    if (heights.length !== 3) return;
-    const total = heights.reduce((a, b) => a + b, 0) || 600;
-    const change = clamp(
-      delta,
-      Math.min(90, heights[index]) - heights[index],
-      heights[index + 1] - Math.min(90, heights[index + 1]),
-    );
-    heights[index] += change;
-    heights[index + 1] -= change;
-    layout.setLayout((old) => ({
-      ...old,
-      fileShare: heights[0] / total,
-      navigatorShare: heights[1] / total,
-    }));
-  };
-  const splitter = (index: number) => {
-    const disabled =
-      layout.layout[sections[index]] || layout.layout[sections[index + 1]];
-    return (
-      <div
-        className="row-resizer"
-        role="separator"
-        tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled}
-        aria-orientation="horizontal"
-        aria-label={index === 0 ? "调整文件区高度" : "调整当前电路与属性的高度"}
-        aria-valuemin={10}
-        aria-valuemax={80}
-        aria-valuenow={Math.round(weights[index] * 100)}
-        onPointerDown={(e) => {
-          if (e.button !== 0 || disabled) return;
-          e.preventDefault();
-          e.currentTarget.focus();
-          rowDrag.current = { id: e.pointerId, index, y: e.clientY };
-          e.currentTarget.setPointerCapture(e.pointerId);
-        }}
-        onPointerMove={(e) => {
-          const d = rowDrag.current;
-          if (d?.id === e.pointerId) {
-            adjust(index, e.clientY - d.y);
-            d.y = e.clientY;
-          }
-        }}
-        onPointerUp={(e) => {
-          rowDrag.current = null;
-          if (e.currentTarget.hasPointerCapture(e.pointerId))
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }}
-        onPointerCancel={() => {
-          rowDrag.current = null;
-        }}
-        onLostPointerCapture={() => {
-          rowDrag.current = null;
-        }}
-        onKeyDown={(e) => {
-          if (disabled || !["ArrowUp", "ArrowDown", "Home"].includes(e.key))
-            return;
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.key === "Home")
-            layout.setLayout((v) => ({
-              ...v,
-              fileShare: defaults.fileShare,
-              navigatorShare: defaults.navigatorShare,
-            }));
-          else
-            adjust(
-              index,
-              (e.key === "ArrowDown" ? 1 : -1) * (e.shiftKey ? 40 : 16),
-            );
-        }}
-      />
-    );
-  };
-  const sectionStyle = (i: number): CSSProperties =>
-    layout.layout[sections[i]] && hasCircuit
-      ? { flex: "0 0 42px" }
-      : { flex: `${weights[i]} 1 0` };
+  const panelProps = (i: number) => ({
+    id: ids[i],
+    defaultSize: `${weights[i] * 100}%`,
+    minSize: layout.layout[sections[i]] ? 42 : 90,
+    maxSize: layout.layout[sections[i]] ? 42 : undefined,
+    className: "rail-section-panel",
+  });
+  const splitter = (index: number) => (
+    <Separator
+      className="row-resizer"
+      disabled={
+        layout.layout[sections[index]] || layout.layout[sections[index + 1]]
+      }
+      aria-label={
+        index === 0 ? "调整资源与电路区域高度" : "调整电路与属性区域高度"
+      }
+    />
+  );
   return (
     <aside
       id="workspace-projects"
-      ref={rail}
       className={`explorer workspace-rail${layout.narrow ? " workspace-drawer" : ""}`}
       style={{
-        width: layout.sizes.rail,
         display: layout.showExplorer ? undefined : "none",
       }}
       aria-label="项目栏"
     >
-      <section
-        className="rail-section rail-files"
-        style={hasCircuit ? sectionStyle(0) : { flex: 1 }}
+      <Group
+        id="workspace-sections"
+        groupRef={groupApi}
+        orientation="vertical"
+        onLayoutChanged={(sizes, { isUserInteraction, requestedLayout }) => {
+          const sectionState = `${hasCircuit}:${sections.map((key) => layout.layout[key]).join(":")}`;
+          if (!isUserInteraction && previousSections.current !== sectionState) {
+            previousSections.current = sectionState;
+            if (hasCircuit)
+              queueMicrotask(() => {
+                if (previousSections.current === sectionState)
+                  groupApi.current?.setLayout({
+                    files: layout.layout.fileShare * 100,
+                    navigation: layout.layout.navigatorShare * 100,
+                    inspector:
+                      (1 -
+                        layout.layout.fileShare -
+                        layout.layout.navigatorShare) *
+                      100,
+                  });
+              });
+            return;
+          }
+          previousSections.current = sectionState;
+          if (!isUserInteraction || !hasCircuit) return;
+          const requested = requestedLayout ?? sizes;
+          // Collapsed headers do not replace the expanded section's preferred share.
+          layout.setLayout((old) => {
+            const shares = [
+              old.fileShare,
+              old.navigatorShare,
+              1 - old.fileShare - old.navigatorShare,
+            ];
+            const open = ids.map((_, i) => i).filter((i) => !old[sections[i]]);
+            const weight = open.reduce((sum, i) => sum + shares[i], 0);
+            const total = open.reduce((sum, i) => sum + requested[ids[i]], 0);
+            for (const i of open)
+              shares[i] = (requested[ids[i]] / total) * weight;
+            return { ...old, fileShare: shares[0], navigatorShare: shares[1] };
+          });
+        }}
       >
-        <header>
-          <button
-            className="section-toggle"
-            aria-expanded={!hasCircuit || !layout.layout.filesCollapsed}
-            onClick={() => hasCircuit && toggle(0)}
-          >
-            {title}
-          </button>
-        </header>
-        <div
-          className="rail-section-content"
-          hidden={hasCircuit && layout.layout.filesCollapsed}
+        <Panel
+          {...(hasCircuit
+            ? panelProps(0)
+            : { id: "files", className: "rail-section-panel" })}
         >
-          {/* Always shown, so opening the first circuit does not shift the file list under the pointer. */}
-          <div className="resource-tabs" role="tablist" aria-label="项目资源">
-            {(
-              [
-                ["files", "文件"],
-                ["components", "元件"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                role="tab"
-                aria-selected={resourceTab === id}
-                onClick={() => onResourceTab(id)}
-                onKeyDown={(e) => {
-                  if (
-                    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)
-                  )
-                    return;
-                  e.preventDefault();
-                  const next =
-                    e.key === "Home"
-                      ? "files"
-                      : e.key === "End"
-                        ? "components"
-                        : id === "files"
-                          ? "components"
-                          : "files";
-                  onResourceTab(next);
-                  e.currentTarget.parentElement
-                    ?.querySelectorAll<HTMLButtonElement>("button")
-                    [next === "files" ? 0 : 1]?.focus();
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="resource-pane" hidden={resourceTab !== "files"}>
-            {files}
-          </div>
-          <div className="resource-pane" hidden={resourceTab !== "components"}>
-            {hasCircuit ? (
-              palette
-            ) : (
-              <div className="quiet-empty">打开电路后可以放置元件</div>
-            )}
-          </div>
-        </div>
-      </section>
-      {hasCircuit && (
-        <>
-          {splitter(0)}
-          <section
-            className="rail-section rail-navigation"
-            style={sectionStyle(1)}
-          >
+          <section className="rail-section rail-files">
             <header>
               <button
                 className="section-toggle"
-                aria-expanded={!layout.layout.navigatorCollapsed}
-                onClick={() => toggle(1)}
+                aria-expanded={!hasCircuit || !layout.layout.filesCollapsed}
+                onClick={() => hasCircuit && toggle(0)}
               >
-                当前电路
+                {title}
               </button>
-              <div>{navigatorActions}</div>
             </header>
             <div
               className="rail-section-content"
-              hidden={layout.layout.navigatorCollapsed}
+              hidden={hasCircuit && layout.layout.filesCollapsed}
             >
-              {navigation}
-            </div>
-          </section>
-          {splitter(1)}
-          <section
-            className="rail-section rail-inspector"
-            style={sectionStyle(2)}
-          >
-            <header>
-              <button
-                className="section-toggle"
-                aria-expanded={!layout.layout.inspectorCollapsed}
-                onClick={() => toggle(2)}
+              {/* Always shown, so opening the first circuit does not shift the file list under the pointer. */}
+              <div
+                className="resource-tabs"
+                role="tablist"
+                aria-label="项目资源"
               >
-                属性与接口
-              </button>
-              {inspectorActions}
-            </header>
-            <div
-              className="rail-section-content"
-              hidden={layout.layout.inspectorCollapsed}
-            >
-              {inspector}
+                {(
+                  [
+                    ["files", "文件"],
+                    ["components", "元件"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    role="tab"
+                    aria-selected={resourceTab === id}
+                    onClick={() => onResourceTab(id)}
+                    onKeyDown={(e) => {
+                      if (
+                        !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                          e.key,
+                        )
+                      )
+                        return;
+                      e.preventDefault();
+                      const next =
+                        e.key === "Home"
+                          ? "files"
+                          : e.key === "End"
+                            ? "components"
+                            : id === "files"
+                              ? "components"
+                              : "files";
+                      onResourceTab(next);
+                      e.currentTarget.parentElement
+                        ?.querySelectorAll<HTMLButtonElement>("button")
+                        [next === "files" ? 0 : 1]?.focus();
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="resource-pane" hidden={resourceTab !== "files"}>
+                {files}
+              </div>
+              <div
+                className="resource-pane"
+                hidden={resourceTab !== "components"}
+              >
+                {hasCircuit ? (
+                  palette
+                ) : (
+                  <div className="quiet-empty">打开电路后可以放置元件</div>
+                )}
+              </div>
             </div>
           </section>
-        </>
-      )}
-      {!layout.narrow && <PanelResize side="rail" layout={layout} />}
+        </Panel>
+        {hasCircuit && (
+          <>
+            {splitter(0)}
+            <Panel {...panelProps(1)}>
+              <section className="rail-section rail-navigation">
+                <header>
+                  <button
+                    className="section-toggle"
+                    aria-expanded={!layout.layout.navigatorCollapsed}
+                    onClick={() => toggle(1)}
+                  >
+                    当前电路
+                  </button>
+                  <div>{navigatorActions}</div>
+                </header>
+                <div
+                  className="rail-section-content"
+                  hidden={layout.layout.navigatorCollapsed}
+                >
+                  {navigation}
+                </div>
+              </section>
+            </Panel>
+            {splitter(1)}
+            <Panel {...panelProps(2)}>
+              <section className="rail-section rail-inspector">
+                <header>
+                  <button
+                    className="section-toggle"
+                    aria-expanded={!layout.layout.inspectorCollapsed}
+                    onClick={() => toggle(2)}
+                  >
+                    属性与接口
+                  </button>
+                  {inspectorActions}
+                </header>
+                <div
+                  className="rail-section-content"
+                  hidden={layout.layout.inspectorCollapsed}
+                >
+                  {inspector}
+                </div>
+              </section>
+            </Panel>
+          </>
+        )}
+      </Group>
     </aside>
   );
 }

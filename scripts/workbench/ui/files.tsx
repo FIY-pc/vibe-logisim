@@ -163,6 +163,8 @@ export async function verifyFilesUI() {
         ?.getAttribute("data-state") === "open",
     );
     await click("取消");
+    // Let the dialog finish returning focus before issuing another command.
+    await flush();
     await click("定位当前文件");
     await flush();
     assert.equal(

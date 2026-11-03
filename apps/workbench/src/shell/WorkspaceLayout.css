@@ -1,6 +1,21 @@
 .workspace {
   position: relative;
 }
+.workspace-columns,
+.workspace-side,
+.workspace-center,
+.rail-section-panel {
+  min-width: 0;
+  min-height: 0;
+}
+.workspace-center {
+  display: flex;
+}
+.workspace .workspace-rail,
+.workspace .right-panel {
+  width: 100%;
+  height: 100%;
+}
 .workspace-rail {
   position: relative;
   overflow: visible;
@@ -12,6 +27,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: 100%;
   position: relative;
   overflow: hidden;
 }
@@ -151,23 +167,15 @@
   top: 3px;
   background: var(--border);
 }
-.row-resizer[aria-disabled="true"] {
+.row-resizer[data-separator="disabled"] {
   cursor: default;
 }
 .panel-resizer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
+  position: relative;
+  flex: 0 0 8px;
   width: 8px;
   touch-action: none;
   cursor: col-resize;
-  z-index: 12;
-}
-.rail-resizer {
-  right: -4px;
-}
-.review-resizer {
-  left: -4px;
 }
 .panel-resizer::after {
   content: "";
@@ -177,8 +185,10 @@
   left: 3px;
   width: 2px;
 }
+.panel-resizer[data-separator="active"]::after,
 .panel-resizer:hover::after,
 .panel-resizer:focus-visible::after,
+.row-resizer[data-separator="active"]::after,
 .row-resizer:hover::after,
 .row-resizer:focus-visible::after {
   background: var(--accent);
@@ -204,11 +214,11 @@
   }
   .workspace .workspace-rail {
     left: 0;
-    width: min(320px, 90vw) !important;
+    width: min(320px, 90vw);
   }
   .workspace .right-panel {
     right: 0;
-    width: min(440px, 94vw) !important;
+    width: min(440px, 94vw);
   }
   .workspace-shade {
     display: block;
@@ -218,4 +228,9 @@
     z-index: 29;
     border-radius: 0;
   }
+}
+
+/* Embedded viewers must not capture the pointer during a library-owned drag. */
+.workspace:has([data-separator="active"]) iframe {
+  pointer-events: none;
 }
