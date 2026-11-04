@@ -116,12 +116,15 @@ export function ConversationExport({
             <Button
               variant="ghost"
               color="gray"
-              disabled={busy || Boolean(replacement) || !conversations.length}
+              disabled={busy || Boolean(replacement) || !shown.length}
               onClick={() =>
-                setSelected(new Set(conversations.map((item) => item.id)))
+                setSelected(
+                  (current) =>
+                    new Set([...current, ...shown.map((item) => item.id)]),
+                )
               }
             >
-              全选
+              {search.trim() ? "全选当前结果" : "全选"}
             </Button>
             <Button
               variant="ghost"

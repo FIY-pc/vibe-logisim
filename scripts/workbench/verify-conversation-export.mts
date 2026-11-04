@@ -222,6 +222,22 @@ try {
   assert(
     await dialog.getByRole("button", { name: "导出会话（0）" }).isDisabled(),
   );
+  const search = dialog.getByRole("textbox", { name: "查找要导出的会话" });
+  await search.fill("重复标题");
+  await dialog
+    .getByRole("button", { name: "全选当前结果", exact: true })
+    .click();
+  assert.equal(
+    await dialog.getByRole("checkbox", { checked: true }).count(),
+    2,
+  );
+  await search.fill("");
+  assert.equal(
+    await dialog.getByRole("checkbox", { checked: true }).count(),
+    2,
+    "Selecting search results must not export hidden unmatched conversations",
+  );
+  await dialog.getByRole("button", { name: "取消全选", exact: true }).click();
   await dialog
     .getByRole("checkbox", { name: "长记录：600 回合", exact: true })
     .check();
