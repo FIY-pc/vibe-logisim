@@ -63,6 +63,21 @@ PDFs use Mozilla's complete generic viewer, pinned by version and SHA-256 in `co
 
 Material tabs stay open beside the circuit or expand into the editor area. Quotes retain the file revision, page and normalized region; conversation links reopen the source, or show the saved quotation if the source is gone. The runtime's `read_material` tool reads and searches the original PDF independently of the visible page, and renders diagrams or pages without text. It does not perform OCR.
 
+### Export conversations
+
+Open the conversation title/history picker and choose **导出会话…** (also available in **对话操作**). Select any number of current-workspace conversations, including archived ones, or use **全选 / 取消全选**. The ZIP contains only checked conversations; each has a readable `conversation.md` and a complete `conversation.json`. Duplicate titles use distinct numbered directories. Content comes from the sidecar's full history and transcript, including complete tool arguments/results and available thinking, regardless of folding or virtualization. In-progress conversations are snapshots of the content available when exported. Account/profile files and service credentials are not included; conversation content itself is preserved.
+
+`node scripts/workbench/verify-conversation-export.mts` runs the actual browser, Rust host and sidecar with synthetic data. Build the host first with `cargo build -p vibe-workbench-host`. It checks the history entry, multi-selection, ZIP download/content and the native file-writing path, using independent temporary ports/state and no model calls. `VIBE_EXPORT_EVIDENCE` optionally keeps the browser screenshot and downloaded ZIP.
+
+For manual checks, create an empty workspace folder and run:
+
+```sh
+mkdir -p /tmp/export-fixture-workspace
+node scripts/workbench/fixtures/conversation-export.mts /tmp/export-fixture-state /tmp/export-fixture-workspace
+```
+
+The state directory must not already exist. Start an independent preview host with `VIBE_WORKBENCH_STATE=/tmp/export-fixture-state`, then open `/tmp/export-fixture-workspace`. The dataset has 24 conversations, a 600-turn history, duplicate titles, archived history, available thinking and long failed-tool output. No personal conversations or credentials are used.
+
 ### Conversation list verification
 
 `npm run test:conversation-browser` runs the real `Chat` in Chromium against a synthetic 600-turn event stream, on a temporary local port. It checks bounded mounted rows, nested disclosures after recycling, reference context, streaming follow and reading position, tab visibility, conversation switching and remount. No host or model is used. Install Chrome, set `BROWSER_PATH` to a Chromium executable, or run `npx playwright install chromium` and set `BROWSER_CHANNEL=chromium`. `CONVERSATION_SCREENSHOT` optionally saves the final view. The regular UI suite uses Virtuoso's official mock measurements for domain/lifecycle assertions; it does not prove scroll geometry.

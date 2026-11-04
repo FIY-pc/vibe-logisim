@@ -665,6 +665,24 @@ export class TurnRunner extends EventEmitter {
     this.conversations.ensure(key);
     return { workspaceKey: key, ...this.conversations.state(key) };
   }
+  exportConversations(key: string, ids: string[]) {
+    return this.conversations.selected(key, ids).map((record) =>
+      key === this.workspaceKey && record.id === this.conversationId
+        ? {
+            ...record,
+            messages: structuredClone(this.history),
+            transcript: structuredClone(
+              this.run && this.agent
+                ? this.agent.state.messages
+                : this.transcript,
+            ),
+            selection: structuredClone(this.selection),
+            checkpoints: structuredClone(this.checkpoints),
+            compactions: structuredClone(this.context.checkpoints),
+          }
+        : record,
+    );
+  }
   /** Loads the active conversation of a scope (the folder id) into memory. */
   async resume(workspaceKey: string) {
     if (this.snapshot().busy) throw new Error("请先停止当前回答");

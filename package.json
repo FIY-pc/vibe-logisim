@@ -42,7 +42,8 @@
     "test:history": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/history-check.mts",
     "showcase": "node packages/showcase/src/main.mts",
     "test:showcase": "node --test packages/showcase/test/*.test.mts",
-    "test:conversation-browser": "node scripts/workbench/verify-conversation-browser.mts"
+    "test:conversation-browser": "node scripts/workbench/verify-conversation-browser.mts",
+    "test:conversation-export": "node scripts/workbench/verify-conversation-export.mts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
