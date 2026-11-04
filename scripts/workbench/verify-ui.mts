@@ -55,12 +55,6 @@ try {
             contents:
               "export const subscribeEvents=(fn)=>globalThis.__subscribe(fn);",
           }));
-          builder.onLoad(
-            { filter: /[\\/]workspace[\\/]FilePreview\.tsx$/ },
-            () => ({
-              contents: "export const FilePreview=()=>null;",
-            }),
-          );
           builder.onLoad({ filter: /[\\/]workspace[\\/]pdf\.ts$/ }, () => ({
             contents:
               "export const openPdf=async()=>{throw new Error('PDF is not rendered under jsdom')};export const pageText=async()=>'';",

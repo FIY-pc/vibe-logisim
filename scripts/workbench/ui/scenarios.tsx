@@ -1,4 +1,5 @@
 import { verifyDocumentWorkspace } from "./document-workspace";
+import { verifyFilePreview } from "./file-preview";
 import { verifySearchControls } from "./search-controls";
 import { verifyMenusUI } from "./menus";
 import { verifySourceEditor } from "./source-editor";
@@ -1366,6 +1367,7 @@ await verifyRestoredInteractions();
 await verifyStraightWires();
 await verifyFilesUI();
 await verifyDocumentWorkspace();
+await verifyFilePreview();
 await verifyReferencesUI();
 await verifyReferenceLinks();
 await verifyDocumentHistory();
