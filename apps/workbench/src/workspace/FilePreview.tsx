@@ -26,6 +26,7 @@ interface Props {
   file: PreviewFile;
   onQuote(reference: ReferenceInput): void;
   onError(error: unknown): void;
+  onActivate?(): void;
   canQuote: boolean;
 }
 const baseReference = (file: PreviewFile) => ({
@@ -38,10 +39,10 @@ const baseReference = (file: PreviewFile) => ({
 });
 
 /** Mozilla owns rendering, selection, search and navigation. */
-function PdfReader({ file, onQuote, onError, canQuote }: Props) {
+function PdfReader({ file, onQuote, onError, onActivate, canQuote }: Props) {
   const frame = useRef<HTMLIFrameElement>(null),
-    callbacks = useRef({ onQuote, onError, file, canQuote });
-  callbacks.current = { onQuote, onError, file, canQuote };
+    callbacks = useRef({ onQuote, onError, onActivate, file, canQuote });
+  callbacks.current = { onQuote, onError, onActivate, file, canQuote };
   const [loaded, setLoaded] = useState(false),
     [capturing, setCapturing] = useState(false);
   const send = (type: string, values = {}) =>
@@ -66,6 +67,7 @@ function PdfReader({ file, onQuote, onError, canQuote }: Props) {
           position: readingPosition(current.file),
         });
       if (data.type === "loaded") setLoaded(true);
+      if (data.type === "activate") current.onActivate?.();
       if (data.type === "position")
         saveReadingPosition(current.file, data.position);
       if (data.type === "capture-ended") setCapturing(false);

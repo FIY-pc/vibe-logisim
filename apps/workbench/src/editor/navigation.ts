@@ -19,6 +19,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
    * the root circuit of a run that is inside an instance takes the run back
    * to its root. */
   const switchCircuit = (view: View, name: string) => {
+    stores.files.getState().showCircuit();
     editor.getState().navigation.next();
     editor.getState().setCircuitName(name);
     editing.select(view, []);
@@ -27,6 +28,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
 
   /** Shows the instance at `path` of the run, whose circuit is `name`. */
   const showInstance = (view: View, name: string, path: string[]) => {
+    stores.files.getState().showCircuit();
     editor.getState().navigation.next();
     editor.getState().showInstance(name, path);
     editing.select(view, []);
@@ -78,13 +80,16 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
 
   /** Shows an open document at its main circuit. */
   const activateDocument = (view: View, d: Document) => {
+    stores.files.getState().showCircuit();
+    shell.getState().closeDrawers();
+    // Returning from a material tab must not reset the selected subcircuit.
+    if (view.doc?.id === d.id) return;
     editor.getState().navigation.next();
     documents.getState().setActive(d.id);
     editor.getState().setPlace(null);
     void command({ op: "activate", id: d.id }).catch(onError);
     editor.getState().setCircuitName(d.main);
     editing.select(view, []);
-    shell.getState().closeDrawers();
   };
 
   /** Shows what the run shows, in its document. */
@@ -99,6 +104,7 @@ export function createNavigation(stores: Stores, editing: EditorActions) {
             item.id === run.documentId && item.revision === run.revision,
         );
     if (!run || !runDoc) return;
+    stores.files.getState().showCircuit();
     editor.getState().navigation.next();
     documents.getState().setActive(runDoc.id);
     editor

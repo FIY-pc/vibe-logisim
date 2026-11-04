@@ -1,0 +1,75 @@
+.document-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.document-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-inline-end: var(--space-2);
+  background: var(--surface-subtle);
+  border-bottom: 1px solid var(--border);
+}
+.document-tabs {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  box-shadow: none;
+  scrollbar-width: thin;
+}
+.document-tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-width: 0;
+  max-width: 260px;
+  border-right: 1px solid var(--border);
+}
+.document-tab:has([data-state="active"]) {
+  background: var(--surface);
+}
+.document-tab [role="tab"] {
+  flex: 1;
+  min-width: 0;
+}
+.document-tab .rt-TabsTriggerInner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.document-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.document-tab svg {
+  flex: none;
+}
+.document-panes {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.document-pane,
+.document-content {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.document-content {
+  display: flex;
+  overflow: hidden;
+}
+.document-content[hidden] {
+  display: none;
+}
+.document-content > .editor {
+  flex: 1;
+}

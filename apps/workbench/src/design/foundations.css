@@ -22,6 +22,7 @@
 @import "../shell/feedback.css" layer(layout);
 @import "../shell/WorkspaceLayout.css" layer(layout);
 @import "../workspace/reader/Reader.css" layer(layout);
+@import "../workspace/DocumentWorkspace.css" layer(layout);
 @import "../workspace/Files.css" layer(layout);
 @import "../workspace/ProjectInfo.css" layer(layout);
 @import "./controls.css" layer(controls);

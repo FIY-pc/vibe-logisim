@@ -1,3 +1,4 @@
+import { verifyDocumentWorkspace } from "./document-workspace";
 import { verifySearchControls } from "./search-controls";
 import { verifyMenusUI } from "./menus";
 import { verifySourceEditor } from "./source-editor";
@@ -1362,6 +1363,7 @@ await verifyDialogFoundation();
 await verifyDialogControls();
 await verifyRestoredInteractions();
 await verifyFilesUI();
+await verifyDocumentWorkspace();
 await verifyReferencesUI();
 await verifyReferenceLinks();
 await verifyDocumentHistory();
