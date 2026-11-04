@@ -1,3 +1,29 @@
+/* Pointer focus still owns keyboard events, but does not need a keyboard ring.
+ * React Aria tracks the interaction mode across controls and portalled layers;
+ * native :focus-visible and Themes keep their indicators for keyboard/AT use.
+ * Text editing retains its field boundary in either mode. Themes draws some
+ * control rings on a pseudo-element or an inner tab label. */
+:root[data-keyboard-focus="false"] {
+  :where(:focus:not(input, textarea, [contenteditable])) {
+    &,
+    &::before,
+    &::after,
+    & .rt-BaseTabListTriggerInner {
+      outline: none;
+    }
+  }
+}
+
+/* WebKit also misses :focus-visible when a roving widget calls focus() after
+ * an arrow key. Supply the Themes ring only when its native selector misses. */
+:root[data-keyboard-focus="true"] {
+  :where(.rt-BaseButton, .rt-SelectTrigger):focus:not(:focus-visible),
+  .rt-BaseTabListTrigger:focus:not(:focus-visible) .rt-BaseTabListTriggerInner {
+    outline: 2px solid var(--focus-8);
+    outline-offset: -2px;
+  }
+}
+
 /* Themes ghost controls align with inline text using negative margins. Our
  * controls live in toolbars and rows: reserve the same 32px box for every
  * emphasis. This is the only geometry adapter; pages must not reskin them. */

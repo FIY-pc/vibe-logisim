@@ -58,7 +58,7 @@ button:disabled {
  * border, scrolling regions inside their edge. It has no specificity, so
  * items that show focus as a highlight instead (menu and list items) turn
  * it off whatever order the style sheets load in. */
-:where(:focus-visible) {
+:where(:focus-visible, :root[data-keyboard-focus="true"] :focus) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
