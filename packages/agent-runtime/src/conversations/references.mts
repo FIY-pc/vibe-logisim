@@ -133,24 +133,24 @@ export async function readReferences(
 ): Promise<StoredReference[]> {
   if (
     !Array.isArray(ids) ||
-    ids.length > 8 ||
     ids.some((id) => typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id))
   )
-    throw new Error("每条问题最多引用 8 处资料或观察");
-  const records = await Promise.all(
-    [...new Set(ids)].map(async (id) => {
-      const record: StoredReference = JSON.parse(
-        await readFile(
-          path.join(directory(state, workspaceKey), id + ".json"),
-          "utf8",
-        ),
-      );
-      if (record.workspaceKey !== workspaceKey || record.id !== id)
-        throw new Error("引用属于另一个工程文件夹");
-      return record;
-    }),
-  );
-  if (records.reduce((sum, r) => sum + (r.image?.length || 0), 0) > 24_000_000)
-    throw new Error("引用图片合计过大，请减少引用后重试");
+    throw new Error("资料引用无效");
+  const records: StoredReference[] = [];
+  let imageSize = 0;
+  for (const id of new Set(ids)) {
+    const record: StoredReference = JSON.parse(
+      await readFile(
+        path.join(directory(state, workspaceKey), id + ".json"),
+        "utf8",
+      ),
+    );
+    if (record.workspaceKey !== workspaceKey || record.id !== id)
+      throw new Error("引用属于另一个工程文件夹");
+    imageSize += record.image?.length || 0;
+    if (imageSize > 24_000_000)
+      throw new Error("引用图片合计过大，请减少引用后重试");
+    records.push(record);
+  }
   return records;
 }

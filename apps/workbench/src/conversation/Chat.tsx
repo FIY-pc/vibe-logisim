@@ -498,7 +498,7 @@ export function Chat({
   );
 
   const send = (text = draft) => {
-    if (!ready || busy || !text.trim() || references.pending) return;
+    if (!ready || busy || !text.trim() || references.unresolved) return;
     const receipt = { key: draftKey, text },
       attachments = references.receipt();
     conversationList.current?.latest();
@@ -814,7 +814,9 @@ export function Chat({
                     key={starter.id}
                     className="conversation-starter"
                     data-tip="立即发送"
-                    disabled={locked || references.pending || !state.available}
+                    disabled={
+                      locked || references.unresolved || !state.available
+                    }
                     onClick={() => {
                       // The ordinary send path keeps the prompt editable if it fails.
                       changeDraft(starter.prompt);
@@ -961,7 +963,7 @@ export function Chat({
               disabled={
                 !ready ||
                 !draft.trim() ||
-                references.pending ||
+                references.unresolved ||
                 pending ||
                 !state?.available
               }

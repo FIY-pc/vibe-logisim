@@ -596,8 +596,6 @@ function FolderFiles({
       document.querySelector('dialog[open],[aria-modal="true"]')
     )
       return;
-    if (reference && sources.length > 8)
-      throw new Error("每条问题最多引用 8 处资料或观察");
     const folder_id = folder.id;
     setPending(true);
     try {

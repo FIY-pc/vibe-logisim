@@ -11,7 +11,13 @@ import type {
 import { DialogFrame, DialogBody } from "../shared/Dialog";
 import { useWorkbench } from "../app/provider";
 import type { PreviewFile } from "../workspace/FilePreview";
+import { fileReference } from "../workspace/fileReference";
 
+interface AttachmentJob {
+  key: string;
+  quotation: Quotation;
+  error: string | null;
+}
 interface Receipt {
   key: string;
   ids: string[];
@@ -80,13 +86,14 @@ export function useChatReferences({
     key: draftKey,
     references: load(draftKey),
   });
-  const [pending, setPending] = useState(false),
-    [failure, setFailure] = useState(false);
+  const [jobs, setJobs] = useState<AttachmentJob[]>([]);
   const [preview, setPreview] = useState<StoredReference | null>(null);
-  const staging = useRef<string | null>(null);
+  const taken = useRef<string | null>(null);
   const liveKey = useRef(draftKey);
   liveKey.current = draftKey;
   const references = record.key === draftKey ? record.references : [];
+  const currentJobs = jobs.filter((job) => job.key === draftKey);
+  const pending = currentJobs.some((job) => job.error === null);
   const persist = (key: string, refs: ReferenceSummary[]) => {
     localStorage.setItem(keyFor(key), JSON.stringify(refs));
     if (liveKey.current === key) setRecord({ key, references: refs });
@@ -94,43 +101,51 @@ export function useChatReferences({
   useEffect(() => {
     setRecord({ key: draftKey, references: load(draftKey) });
     setPreview(null);
-    setFailure(false);
   }, [draftKey]);
-  const stage = async () => {
+  const stage = async (job: AttachmentJob) => {
+    setJobs((current) =>
+      current.map((item) => (item === job ? { ...item, error: null } : item)),
+    );
+    const matches = (item: AttachmentJob) =>
+      item.key === job.key && item.quotation.id === job.quotation.id;
+    try {
+      const quote = job.quotation;
+      const inputs = quote.files ? [] : quote.references;
+      if (quote.files) {
+        for (const path of quote.files.paths)
+          inputs.push(await fileReference(quote.files.folderId, path));
+      }
+      const added = await runtime<ReferenceSummary[]>("stageReferences", {
+        documentId: quote.documentId,
+        references: inputs,
+      });
+      persist(job.key, [...load(job.key), ...added]);
+      setJobs((current) => current.filter((item) => !matches(item)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJobs((current) =>
+        current.map((item) =>
+          matches(item) ? { ...item, error: message } : item,
+        ),
+      );
+    }
+  };
+  useEffect(() => {
     if (
       !quotation ||
       !ready ||
       !draftKey ||
       quotation.documentId !== documentId ||
-      staging.current === quotation.id
+      taken.current === quotation.id
     )
       return;
-    const captured = { key: draftKey, quotation };
-    staging.current = quotation.id;
-    setPending(true);
-    setFailure(false);
-    try {
-      if (load(captured.key).length + quotation.references.length > 8)
-        throw new Error("每条问题最多引用 8 处资料或观察");
-      const added = await runtime<ReferenceSummary[]>("stageReferences", {
-        documentId,
-        references: quotation.references,
-      });
-      const current = load(captured.key);
-      if (current.length + added.length > 8)
-        throw new Error("每条问题最多引用 8 处资料或观察");
-      persist(captured.key, [...current, ...added]);
-      onQuoted(captured.quotation.id);
-    } catch (error) {
-      setFailure(true);
-      onError(error);
-    } finally {
-      setPending(false);
-      staging.current = null;
-    }
-  };
-  useEffect(() => {
-    void stage();
+    // Take ownership once, while the source draft is known. A later reply or
+    // failure belongs to this draft, even if the visible conversation changes.
+    taken.current = quotation.id;
+    const job = { key: draftKey, quotation, error: null };
+    setJobs((current) => [...current, job]);
+    onQuoted(quotation.id);
+    void stage(job);
   }, [quotation?.id, ready, draftKey, documentId]);
   const open = async (id: string) => {
     const capturedKey = draftKey;
@@ -179,7 +194,7 @@ export function useChatReferences({
       }
       setPreview(ref);
     } catch (error) {
-      onError(error);
+      if (liveKey.current === capturedKey) onError(error);
     }
   };
   const chips = (refs: ReferenceSummary[], removable = false) => (
@@ -238,6 +253,7 @@ export function useChatReferences({
   return {
     references,
     pending,
+    unresolved: currentJobs.length > 0,
     receipt: (): Receipt => ({
       key: draftKey,
       ids: references.map((r) => r.id),
@@ -249,7 +265,7 @@ export function useChatReferences({
       ),
     composer: (
       <>
-        {(references.length > 0 || pending || failure) && (
+        {(references.length > 0 || currentJobs.length > 0) && (
           <MessageComposer.Attachments
             role="region"
             aria-label="待发送引用"
@@ -261,11 +277,43 @@ export function useChatReferences({
                 正在添加引用…
               </Text>
             )}
-            {failure && (
-              <Button variant="ghost" color="gray" onClick={() => void stage()}>
-                重试添加引用
-              </Button>
-            )}
+            {currentJobs
+              .filter((job) => job.error !== null)
+              .map((job) => (
+                <div key={job.quotation.id} className="reference-failure">
+                  <Text as="p" color="red" role="alert">
+                    未能添加引用：{job.error}
+                  </Text>
+                  <div>
+                    <Button
+                      variant="ghost"
+                      color="gray"
+                      disabled={
+                        !ready || job.quotation.documentId !== documentId
+                      }
+                      data-tip={
+                        job.quotation.documentId !== documentId
+                          ? "切回引用所属文档后重试"
+                          : undefined
+                      }
+                      onClick={() => void stage(job)}
+                    >
+                      重试添加引用
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      color="gray"
+                      onClick={() =>
+                        setJobs((current) =>
+                          current.filter((item) => item !== job),
+                        )
+                      }
+                    >
+                      取消添加
+                    </Button>
+                  </div>
+                </div>
+              ))}
           </MessageComposer.Attachments>
         )}
         {preview && (
