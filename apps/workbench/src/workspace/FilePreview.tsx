@@ -279,10 +279,17 @@ function ImageReader({ file, onQuote, canQuote }: Props) {
     </>
   );
 }
-function TextReader({ file, onQuote, canQuote }: Props) {
+function TextReader({ file, onQuote, onError, canQuote }: Props) {
   const body = useRef<HTMLDivElement>(null),
-    [selection, setSelection] = useState("");
-  const markdown = /\.md$/i.test(file.name);
+    [selection, setSelection] = useState(""),
+    [showSource, setShowSource] = useState(false);
+  const markdown =
+    /\.(md|markdown)$/i.test(file.name) ||
+    /^text\/(markdown|x-markdown)(;|$)/i.test(file.mime || "");
+  useEffect(() => {
+    setShowSource(false);
+    setSelection("");
+  }, [file]);
   useEffect(() => {
     if (body.current)
       body.current.scrollTop = readingPosition(file).scroll || 0;
@@ -290,6 +297,18 @@ function TextReader({ file, onQuote, canQuote }: Props) {
   return (
     <>
       <div className="reader-actions">
+        {markdown && (
+          <button
+            aria-pressed={showSource}
+            onClick={() => {
+              setShowSource((value) => !value);
+              setSelection("");
+              window.getSelection()?.removeAllRanges();
+            }}
+          >
+            {showSource ? "查看预览" : "查看源码"}
+          </button>
+        )}
         <button
           disabled={!canQuote}
           onPointerDown={(event) => event.preventDefault()}
@@ -307,7 +326,8 @@ function TextReader({ file, onQuote, canQuote }: Props) {
       <div
         ref={body}
         className={
-          "reader-scroll " + (markdown ? "material-markdown" : "material-text")
+          "reader-scroll " +
+          (markdown && !showSource ? "material-markdown" : "material-text")
         }
         onScroll={(event) =>
           saveReadingPosition(file, { scroll: event.currentTarget.scrollTop })
@@ -315,18 +335,35 @@ function TextReader({ file, onQuote, canQuote }: Props) {
         onPointerUp={() => {
           const selected = window.getSelection();
           setSelection(
-            selected?.anchorNode && body.current?.contains(selected.anchorNode)
+            selected?.anchorNode &&
+              body.current?.contains(selected.anchorNode) &&
+              selected.focusNode &&
+              body.current?.contains(selected.focusNode)
               ? selected.toString()
               : "",
           );
         }}
       >
-        {markdown ? (
+        {markdown && !file.text ? (
+          <p className="muted">此 Markdown 文件为空。</p>
+        ) : markdown && !showSource ? (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ children, href }) => (
-                <a href={href} target="_blank" rel="noreferrer">
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(event) => {
+                    if (desktop() && href) {
+                      event.preventDefault();
+                      void import("@tauri-apps/plugin-opener")
+                        .then(({ openUrl }) => openUrl(href))
+                        .catch(onError);
+                    }
+                  }}
+                >
                   {children}
                 </a>
               ),
