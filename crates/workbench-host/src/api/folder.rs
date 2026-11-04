@@ -373,6 +373,15 @@ mod tests {
         std::fs::create_dir(&project).unwrap();
         let state = temp.path().join("state");
         let host = Host::new(temp.path().into(), state.clone(), None).unwrap();
+        // The UI stops before taking its confirmation snapshot. No sidecar
+        // is installed under this temporary root; stop must still succeed.
+        host.dispatch(crate::AgentRequest::Agent {
+            method: "stop".into(),
+            args: json!({}),
+        })
+        .await
+        .unwrap();
+        assert!(host.agent.lock().await.is_none());
         let folder_id = open_folder(&host, &project).await;
         let clean_path = project.join("clean.circ");
         let mut clean = Document::new("clean.circ".into());

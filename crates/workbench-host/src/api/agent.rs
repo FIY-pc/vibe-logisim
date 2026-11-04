@@ -49,6 +49,15 @@ impl Host {
         let AgentRequest::Agent { method, args } = request;
         let runtime = {
             let mut guard = self.agent.lock().await;
+            // Stopping an absent or exited runtime must not start a new one.
+            if method == "stop"
+                && guard
+                    .as_ref()
+                    .is_none_or(|a| !a.alive.load(Ordering::Acquire))
+            {
+                guard.take();
+                return Ok(serde_json::json!({"interrupted": true}));
+            }
             if guard.is_none()
                 || (method != "events"
                     && guard
