@@ -1,15 +1,11 @@
-.project-info {
-  width: min(540px, calc(100vw - 36px));
-  max-height: calc(100vh - 48px);
-  overflow: auto;
-}
 .project-source {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  font-size: 12px;
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
   color: var(--muted);
-  margin: 6px 0 18px;
+  margin: var(--space-1) 0 var(--space-4);
 }
 .project-source span {
   overflow-wrap: anywhere;
@@ -21,8 +17,7 @@
 .project-info dl {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 9px 18px;
-  font-size: 13px;
+  gap: var(--space-2) var(--space-4);
 }
 .project-info dt {
   color: var(--muted);
@@ -32,8 +27,7 @@
   text-align: right;
 }
 .project-info h3 {
-  font-size: 13px;
-  margin: 20px 0 8px;
+  margin: var(--space-4) 0 var(--space-2);
 }
 .project-info ul {
   list-style: none;
@@ -42,27 +36,20 @@
 }
 .project-info li {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
-  padding: 8px 0;
-  font-size: 13px;
+  padding: var(--space-2) 0;
 }
 .project-info li span {
   overflow-wrap: anywhere;
 }
-.project-info li small {
+.project-info li .rt-Text {
   text-align: right;
 }
-.project-info footer button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
 .project-warning {
-  background: #fff7e5;
-  color: #7e6226;
-  padding: 8px 12px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  padding: var(--space-2) var(--space-3);
   border-radius: 6px;
-  font-size: 12px;
 }

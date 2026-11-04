@@ -2,6 +2,9 @@
 // This adapter only connects a project file, reading position and quotations.
 const send = (type, data = {}) =>
   parent.postMessage({ source: "vibe-pdf", type, ...data }, location.origin);
+// Events inside the viewer do not bubble through the iframe to the workspace.
+document.addEventListener("pointerdown", () => send("activate"), true);
+document.addEventListener("focusin", () => send("activate"));
 const configure = (event) => {
   if (event.detail?.source !== window) return;
   window.PDFViewerApplicationOptions.setAll({

@@ -1,0 +1,14 @@
+.command-list {
+  max-height: min(50dvh, 360px);
+  overflow: auto;
+  scroll-padding-block: var(--space-2);
+  padding: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.command-list [cmdk-item][data-selected="true"] {
+  background: var(--accent-a4);
+}
+.command-list [cmdk-empty] {
+  padding: var(--space-3);
+}

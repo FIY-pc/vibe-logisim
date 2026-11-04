@@ -1,0 +1,22 @@
+/* Only the host's size/scroll boundary; CodeMirror supplies editor and diff layout. */
+.code-editor,
+.code-diff {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.code-editor > .cm-editor,
+.code-diff > .cm-mergeView {
+  height: 100%;
+}
+.code-editor .cm-scroller,
+.code-diff > .cm-mergeView {
+  overflow: auto;
+}
+.code-diff .cm-mergeViewEditor {
+  min-width: 0;
+}
+.code-diff .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-left: 1px solid var(--gray-6);
+}

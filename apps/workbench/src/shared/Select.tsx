@@ -1,5 +1,4 @@
-import * as Radix from "@radix-ui/react-select";
-import { Check, ChevronDown } from "lucide-react";
+import { Select as Radix } from "@radix-ui/themes";
 import { keepKeys, usePortalContainer } from "./layer";
 
 export interface SelectOption {
@@ -19,7 +18,6 @@ export function Select({
   onChange,
   placeholder,
   disabled = false,
-  size,
   variant,
   className,
   title,
@@ -31,25 +29,17 @@ export function Select({
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
-  /** `small` for dense rows (tables, footers). */
-  size?: "small";
   /** `plain` drops the border and background, for toolbars and footers. */
   variant?: "plain";
   className?: string;
   title?: string;
 }) {
   const [trigger, container] = usePortalContainer<HTMLButtonElement>();
-  const classes = [
-    "select-trigger",
-    size && `select-${size}`,
-    variant && `select-${variant}`,
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const classes = ["select-trigger", className].filter(Boolean).join(" ");
   return (
     <Radix.Root
-      value={value || undefined}
+      value={value}
+      size="2"
       onValueChange={onChange}
       disabled={disabled}
     >
@@ -58,37 +48,26 @@ export function Select({
         className={classes}
         aria-label={label}
         data-tip={title}
+        variant={variant === "plain" ? "ghost" : "surface"}
+        placeholder={placeholder}
+      />
+      <Radix.Content
+        container={container}
+        position="popper"
+        collisionPadding={8}
+        style={{ maxWidth: "var(--radix-select-content-available-width)" }}
+        onKeyDown={keepKeys}
       >
-        <Radix.Value placeholder={placeholder} />
-        <Radix.Icon asChild>
-          <ChevronDown size={size === "small" ? 12 : 14} aria-hidden="true" />
-        </Radix.Icon>
-      </Radix.Trigger>
-      <Radix.Portal container={container}>
-        <Radix.Content
-          className="select-content"
-          position="popper"
-          sideOffset={4}
-          collisionPadding={8}
-          onKeyDown={keepKeys}
-        >
-          <Radix.Viewport>
-            {options.map((option) => (
-              <Radix.Item
-                key={option.value}
-                value={option.value}
-                disabled={option.disabled}
-                className="select-item"
-              >
-                <Radix.ItemText>{option.label}</Radix.ItemText>
-                <Radix.ItemIndicator asChild>
-                  <Check size={13} aria-hidden="true" />
-                </Radix.ItemIndicator>
-              </Radix.Item>
-            ))}
-          </Radix.Viewport>
-        </Radix.Content>
-      </Radix.Portal>
+        {options.map((option) => (
+          <Radix.Item
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+          >
+            {option.label}
+          </Radix.Item>
+        ))}
+      </Radix.Content>
     </Radix.Root>
   );
 }

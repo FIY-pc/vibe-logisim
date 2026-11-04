@@ -10,7 +10,7 @@
   gap: 6px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-size-1);
 }
 .document-history > nav > :last-child {
   margin-left: auto;
@@ -41,13 +41,13 @@
   line-height: 1.6;
 }
 .history-entry-title small {
-  font-size: 11px;
+  font-size: var(--font-size-1);
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
 }
 .history-entry time {
-  font-size: 11px;
+  font-size: var(--font-size-1);
   color: var(--muted);
 }

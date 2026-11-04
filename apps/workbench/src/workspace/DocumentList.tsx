@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import { CircuitBoard, X } from "lucide-react";
 import { CircuitList } from "../editor/CircuitList";
 import { useDocuments, useShell, useView } from "../app/hooks";
@@ -15,7 +16,9 @@ export function DocumentList() {
       {docs.map((d) => (
         <div key={d.id}>
           <div className={"document-row " + (d.id === active ? "active" : "")}>
-            <button
+            <Button
+              variant="ghost"
+              color="gray"
               className="document-item"
               onClick={() => actions.navigation.activateDocument(view, d)}
             >
@@ -29,8 +32,8 @@ export function DocumentList() {
                   data-tip="有未保存的修改"
                 />
               )}
-            </button>
-            <button
+            </Button>
+            <IconButton
               className="document-close"
               data-tip={`关闭 ${d.name}`}
               aria-label={`关闭 ${d.name}`}
@@ -38,7 +41,7 @@ export function DocumentList() {
               onClick={() => actions.workspace.requestClose(d)}
             >
               <X size={13} />
-            </button>
+            </IconButton>
           </div>
           {d.id === active && <CircuitList doc={d} />}
         </div>

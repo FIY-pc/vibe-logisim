@@ -3,9 +3,9 @@
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  background: var(--paper);
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-size-1);
 }
 .update-notice > span {
   flex: 1;
@@ -15,39 +15,14 @@
   align-items: center;
   gap: 5px;
 }
-.feedback-dialog {
-  width: min(560px, calc(100vw - 40px));
-}
-.feedback-dialog header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 /* The body lines up with the title and the buttons. */
-.feedback-dialog > p {
-  margin: 0 0 10px;
-  font-size: 13px;
+.feedback-dialog .dialog-body > p {
+  margin: 0 0 var(--space-3);
 }
-.feedback-dialog textarea + p {
-  margin-top: 12px;
-}
-.feedback-dialog textarea {
-  box-sizing: border-box;
-  display: block;
-  width: 100%;
+.feedback-dialog .diagnostic-preview {
   height: 240px;
-  margin: 0;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--paper);
-  color: inherit;
-  font:
-    12px/1.6 ui-monospace,
-    monospace;
+  font-family: var(--code-font-family);
 }
-.feedback-dialog footer button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.feedback-dialog .diagnostic-preview + p {
+  margin-top: 12px;
 }

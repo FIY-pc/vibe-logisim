@@ -1,13 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "../design/ui";
+
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { HistoryEntry } from "../generated/HistoryEntry";
 import type { HistoryReview as Review } from "../generated/HistoryReview";
-import { sourceDiff } from "./sourceDiff";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
-import "./HistoryReview.css";
+import type { CodeEditorHandle } from "../shared/CodeEditor";
 import { Checkbox } from "../shared/Checkbox";
 import { Select } from "../shared/Select";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
+
+const XmlDiff = lazy(() =>
+  import("../shared/CodeEditor").then((module) => ({
+    default: module.XmlDiff,
+  })),
+);
 
 interface Preview {
   image: string | null;
@@ -34,7 +41,7 @@ export function HistoryReview({
   onClose: () => void;
   onDocument: (doc: Document, expectedBaseRevision?: string) => void;
 }) {
-  const dialog = useModal();
+  const editor = useRef<CodeEditorHandle>(null);
   const initial = useRef({ id: doc.id, revision: doc.revision }).current;
   const [mode, setMode] = useState<"change" | "current">(
     entry.beforeRevision ? "change" : "current",
@@ -87,9 +94,9 @@ export function HistoryReview({
     return () => {
       live = false;
     };
-  }, [mode]);
+  }, [entry.id, mode]);
   useEffect(() => {
-    if (!review) return;
+    if (!review || review.mode !== mode || review.entry.id !== entry.id) return;
     let live = true;
     setPreview(null);
     setPreviewError("");
@@ -108,22 +115,7 @@ export function HistoryReview({
     return () => {
       live = false;
     };
-  }, [review, selected, after]);
-  const lines = useMemo(
-    () => (showSource && review ? sourceDiff(review.original, review.xml) : []),
-    [review, showSource],
-  );
-  const shown = useMemo(
-    () =>
-      new Set(
-        lines.flatMap((line, index) =>
-          line.changed
-            ? Array.from({ length: 7 }, (_, offset) => index + offset - 3)
-            : [],
-        ),
-      ),
-    [lines],
-  );
+  }, [review, selected, after, mode, entry.id]);
   const restore = async () => {
     setPending(true);
     setError("");
@@ -143,175 +135,150 @@ export function HistoryReview({
     }
   };
   return (
-    <dialog
-      ref={dialog}
-      className="history-review"
-      aria-label="历史版本"
-      onCancel={(e) => {
-        e.preventDefault();
-        if (!pending) onClose();
-      }}
-    >
-      <header>
-        <h2>
+    <DialogFrame
+      title={
+        <>
           {entry.title}
           <small>
             {doc.name} · {new Date(entry.createdAt).toLocaleString()}
           </small>
-        </h2>
-        <DialogClose disabled={pending} onClick={onClose} />
-      </header>
-      <nav aria-label="对照方式">
-        <Select
-          label="对照方式"
-          size="small"
-          value={mode}
-          options={[
-            {
-              value: "change",
-              label: "这次修改",
-              disabled: !entry.beforeRevision,
-            },
-            { value: "current", label: "与当前工程比较" },
-          ]}
-          onChange={(value) => setMode(value as typeof mode)}
-        />
-        <Select
-          label="电路"
-          size="small"
-          value={selected}
-          options={names.map((name) => ({ value: name, label: name }))}
-          onChange={setSelected}
-        />
-        <button aria-pressed={!after} onClick={() => setAfter(false)}>
-          {beforeLabel}
-        </button>
-        <button aria-pressed={after} onClick={() => setAfter(true)}>
-          {afterLabel}
-        </button>
-      </nav>
-      {stale && (
-        <p className="history-review-note" role="status">
-          文档已有后续修改，这个版本只能查看。
-        </p>
-      )}
-      {error && (
-        <p className="dialog-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="history-review-image">
-        {previewError ? (
-          <p role="alert">预览失败：{previewError}</p>
-        ) : !review ? (
-          <p>{error ? "" : "正在读取…"}</p>
-        ) : preview?.image ? (
-          <img
-            src={preview.image}
-            alt={`${selected} · ${after ? afterLabel : beforeLabel}`}
+        </>
+      }
+      className="history-review"
+      maxWidth="960px"
+      height="min(760px, 90dvh)"
+      aria-label="历史版本"
+      closeDisabled={pending}
+      onClose={onClose}
+      onEscapeKeyDown={(event) => {
+        if (editor.current?.closeSearch()) event.preventDefault();
+      }}
+    >
+      <DialogBody>
+        <nav aria-label="对照方式">
+          <Select
+            label="对照方式"
+            value={mode}
+            options={[
+              {
+                value: "change",
+                label: "这次修改",
+                disabled: !entry.beforeRevision,
+              },
+              { value: "current", label: "与当前工程比较" },
+            ]}
+            onChange={(value) => setMode(value as typeof mode)}
           />
-        ) : preview ? (
-          <p>此版本没有这份电路。</p>
-        ) : (
-          <p>正在生成预览…</p>
+          <Select
+            label="电路"
+            value={selected}
+            options={names.map((name) => ({ value: name, label: name }))}
+            onChange={setSelected}
+          />
+          <Button
+            type="button"
+            variant={!after ? "solid" : "soft"}
+            color={!after ? undefined : "gray"}
+            aria-pressed={!after}
+            onClick={() => setAfter(false)}
+          >
+            {beforeLabel}
+          </Button>
+          <Button
+            type="button"
+            variant={after ? "solid" : "soft"}
+            color={after ? undefined : "gray"}
+            aria-pressed={after}
+            onClick={() => setAfter(true)}
+          >
+            {afterLabel}
+          </Button>
+        </nav>
+        {stale && (
+          <p className="history-review-note" role="status">
+            文档已有后续修改，这个版本只能查看。
+          </p>
         )}
-      </div>
-      {preview?.warnings && preview.warnings.length > 0 && (
-        <details className="history-review-note">
-          <summary>加载提示</summary>
-          <ul>
-            {preview.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      <details
-        className="history-review-source"
-        open={showSource}
-        onToggle={(e) => setShowSource(e.currentTarget.open)}
-      >
-        <summary>
-          原始 XML
-          {showSource && (
-            <label onClick={(e) => e.stopPropagation()}>
-              <Checkbox checked={allLines} onCheckedChange={setAllLines} />
-              显示完整源码
-            </label>
+        {error && (
+          <p className="dialog-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="history-review-image">
+          {previewError ? (
+            <p role="alert">预览失败：{previewError}</p>
+          ) : !review ? (
+            <p>{error ? "" : "正在读取…"}</p>
+          ) : preview?.image ? (
+            <img
+              src={preview.image}
+              alt={`${selected} · ${after ? afterLabel : beforeLabel}`}
+            />
+          ) : preview ? (
+            <p>此版本没有这份电路。</p>
+          ) : (
+            <p>正在生成预览…</p>
           )}
-        </summary>
-        <div className="history-review-source-scroll">
-          <table aria-label="源码对照">
-            <colgroup>
-              <col style={{ width: 38 }} />
-              <col />
-              <col style={{ width: 38 }} />
-              <col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th colSpan={2}>{beforeLabel}</th>
-                <th colSpan={2}>{afterLabel}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line, index) =>
-                !allLines && !shown.has(index) ? (
-                  index === 0 || shown.has(index - 1) ? (
-                    <tr key={index}>
-                      <td className="source-omitted" colSpan={4}>
-                        ⋯ 未改动 ⋯
-                      </td>
-                    </tr>
-                  ) : null
-                ) : (
-                  <tr key={index}>
-                    <td className="source-number">{line.beforeNumber}</td>
-                    <td
-                      className={
-                        line.changed && line.before !== undefined
-                          ? "source-removed"
-                          : ""
-                      }
-                    >
-                      <pre>{line.before}</pre>
-                    </td>
-                    <td className="source-number">{line.afterNumber}</td>
-                    <td
-                      className={
-                        line.changed && line.after !== undefined
-                          ? "source-added"
-                          : ""
-                      }
-                    >
-                      <pre>{line.after}</pre>
-                    </td>
-                  </tr>
-                ),
-              )}
-              {showSource && review && !lines.some((line) => line.changed) && (
-                <tr>
-                  <td className="source-omitted" colSpan={4}>
-                    两个版本的源码相同
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </div>
-      </details>
-      <footer>
+        {preview?.warnings && preview.warnings.length > 0 && (
+          <details className="history-review-note">
+            <summary>加载提示</summary>
+            <ul>
+              {preview.warnings.map((warning, index) => (
+                <li key={index}>{warning}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+        <details
+          className="history-review-source"
+          open={showSource}
+          onToggle={(e) => setShowSource(e.currentTarget.open)}
+        >
+          <summary>
+            原始 XML
+            {showSource && (
+              <label onClick={(e) => e.stopPropagation()}>
+                <Checkbox checked={allLines} onCheckedChange={setAllLines} />
+                显示完整源码
+              </label>
+            )}
+          </summary>
+          {showSource && review && (
+            <>
+              <div className="history-review-source-labels" aria-hidden="true">
+                <span>{beforeLabel}</span>
+                <span>{afterLabel}</span>
+              </div>
+              <Suspense fallback={<p role="status">正在打开源码对照…</p>}>
+                <XmlDiff
+                  ref={editor}
+                  original={review.original}
+                  revised={review.xml}
+                  beforeLabel={beforeLabel}
+                  afterLabel={afterLabel}
+                  allLines={allLines}
+                />
+              </Suspense>
+              {review.original === review.xml && (
+                <p className="quiet-empty">两个版本的源码相同</p>
+              )}
+            </>
+          )}
+        </details>
+      </DialogBody>
+      <DialogFooter>
         <span>恢复会追加一条修改记录，已有历史保留。</span>
-        <button
-          className="primary"
+        <Button
+          type="button"
           disabled={
             pending || stale || !review || entry.revision === doc.revision
           }
           onClick={() => void restore()}
         >
           {pending ? "正在恢复…" : "恢复到这个版本"}
-        </button>
-      </footer>
-    </dialog>
+        </Button>
+      </DialogFooter>
+    </DialogFrame>
   );
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { act, useState } from "react";
+import { createRoot } from "./themed-root";
 import { ProviderSettings } from "../../../apps/workbench/src/conversation/ProviderSettings";
 import { ChatGPTLogin } from "../../../apps/workbench/src/conversation/ChatGPTLogin";
 import { ModelPicker } from "../../../apps/workbench/src/conversation/ModelPicker";
@@ -30,11 +30,29 @@ export async function verifyAISettings() {
     Array.from(document.querySelectorAll("button")).find(
       (element) => element.textContent === text,
     )!;
-  const click = (element: Element) =>
+  const settle = () =>
     act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  const click = async (element: Element) => {
+    await act(async () => {
       assert.ok(element);
       element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    await settle();
+  };
+  const escape = async (element: Element) => {
+    await act(async () =>
+      element.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    await settle();
+  };
   const change = (
     element: HTMLInputElement | HTMLSelectElement,
     value: string,
@@ -67,10 +85,14 @@ export async function verifyAISettings() {
       onClose: () => {},
     };
     await act(async () => root.render(<ProviderSettings {...props} />));
-    assert.equal(document.querySelector("dialog")?.open, true);
+    assert.ok(
+      document.querySelector(
+        '.ai-settings-panel[role="dialog"][data-state="open"]',
+      ),
+    );
     assert.equal(
-      document.querySelector("dialog")?.parentElement,
-      document.body,
+      container.contains(document.querySelector(".ai-settings-panel")),
+      false,
       "Settings remain independent of a collapsed chat sidebar",
     );
     await pickOption("新对话默认服务", "second");
@@ -107,6 +129,14 @@ export async function verifyAISettings() {
     )!;
     assert.equal(key.value, "");
     assert.equal(key.placeholder, "留空保留现有密钥");
+    await pickOption("协议", "Responses");
+    assert.equal(
+      key.placeholder,
+      "",
+      "a new protocol cannot silently reuse the stored key",
+    );
+    await pickOption("协议", "Chat Completions");
+    assert.equal(key.placeholder, "留空保留现有密钥");
     const endpoint = Array.from(document.querySelectorAll("label"))
       .find((label) => label.firstChild?.textContent === "接口地址")!
       .querySelector("input")!;
@@ -135,6 +165,137 @@ export async function verifyAISettings() {
       true,
       "Without a conversation a service can only become the default",
     );
+
+    const subscription = {
+      ...services[0],
+      id: "subscription",
+      name: "Subscription",
+      auth: "chatgpt" as const,
+      account: {
+        email: "tester@example.com",
+        connected: false,
+        planEnabled: false,
+      },
+    };
+    await act(async () =>
+      root.render(
+        <ProviderSettings {...props} services={[...services, subscription]} />,
+      ),
+    );
+    const serviceList = document.querySelector(".ai-service-options")!;
+    assert.ok(
+      serviceList.firstElementChild?.querySelector(".ai-chatgpt"),
+      "subscription and API services share a list with subscription first",
+    );
+    assert.match(
+      serviceList.lastElementChild?.textContent || "",
+      /添加自定义 API/,
+    );
+    const defaultTrigger = document.querySelector<HTMLElement>(
+      '[aria-label="新对话默认服务"]',
+    )!;
+    await act(async () => {
+      defaultTrigger.focus();
+      defaultTrigger.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    assert.equal(
+      document.querySelector('[role="option"]')?.textContent,
+      "Subscription",
+      "default service menu also puts subscription first",
+    );
+    await escape(document.querySelector('[role="listbox"]')!);
+    assert.ok(
+      document.querySelector(".ai-settings-panel"),
+      "Escape in a select keeps settings open",
+    );
+    assert.equal(document.activeElement, defaultTrigger);
+    await act(async () => root.render(<div />));
+    await settle();
+
+    let finishDiscovery: ((result: any) => void) | undefined;
+    const delayedRequest = async (method: string, args: any) =>
+      method === "discover"
+        ? new Promise((resolve) => {
+            finishDiscovery = resolve;
+          })
+        : request(method, args);
+    function SettingsLauncher() {
+      const [open, setOpen] = useState(false);
+      return (
+        <dialog open aria-label="课堂设置">
+          <button onClick={() => setOpen(true)}>打开设置</button>
+          {open && (
+            <ProviderSettings
+              {...props}
+              request={delayedRequest as any}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </dialog>
+      );
+    }
+    await act(async () => root.render(<SettingsLauncher />));
+    const opener = button("打开设置");
+    await act(async () => opener.focus());
+    await click(opener);
+    assert.ok(
+      document
+        .querySelector("dialog[open]")!
+        .contains(document.querySelector(".ai-settings-panel")),
+      "nested settings stay in the native top layer",
+    );
+    await click(document.querySelector('[aria-label="编辑 first"]')!);
+    await click(button("读取模型列表"));
+    assert.ok(button("保存").disabled);
+    assert.ok(
+      document.querySelector<HTMLButtonElement>('[aria-label="关闭 AI 设置"]')!
+        .disabled,
+    );
+    await escape(document.querySelector(".ai-settings-panel")!);
+    assert.ok(
+      document.querySelector(".ai-provider-form"),
+      "Escape cannot discard a pending configuration operation",
+    );
+    await act(async () =>
+      finishDiscovery!({ ok: true, models: ["alpha", "beta"] }),
+    );
+    await click(document.querySelector('[aria-label="展开接口模型"]')!);
+    assert.ok(
+      document
+        .querySelector("dialog[open]")!
+        .contains(document.querySelector(".ai-provider-model-popover")),
+      "nested model popover stays in the native top layer",
+    );
+    await change(
+      document.querySelector('input[aria-label="搜索接口模型"]')!,
+      "beta",
+    );
+    assert.equal(document.querySelectorAll('[role="option"]').length, 1);
+    await escape(document.querySelector(".ai-provider-model-popover")!);
+    assert.ok(document.querySelector(".ai-provider-form"));
+    assert.equal(
+      document.activeElement?.getAttribute("aria-label"),
+      "展开接口模型",
+    );
+    await escape(document.querySelector(".ai-settings-panel")!);
+    assert.equal(
+      document.activeElement?.textContent,
+      "模型服务",
+      "Escape from edit returns to the service heading",
+    );
+    await click(document.querySelector('[aria-label="关闭 AI 设置"]')!);
+    assert.equal(document.querySelector(".ai-settings-panel"), null);
+    assert.equal(
+      document.activeElement,
+      opener,
+      "closing settings restores its opening control",
+    );
+    await click(opener);
+    await escape(document.querySelector(".ai-settings-panel")!);
+    assert.equal(document.querySelector(".ai-settings-panel"), null);
+    assert.equal(document.activeElement, opener);
 
     const listed: boolean[] = [],
       selected: any[] = [];
@@ -178,10 +339,27 @@ export async function verifyAISettings() {
           new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
         );
     });
-    assert.equal(document.activeElement?.getAttribute("role"), "option");
-    await click(document.activeElement!);
+    const modelInput = document.querySelector<HTMLInputElement>(
+      'input[aria-label="搜索模型"]',
+    )!;
+    assert.equal(document.activeElement, modelInput);
+    assert.ok(modelInput.getAttribute("aria-activedescendant"));
+    await act(async () =>
+      modelInput.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    await settle();
     assert.equal(selected[0].model, "beta");
-    assert.equal(document.querySelector("dialog")?.textContent ?? null, null);
+    assert.equal(
+      document.querySelector('.ai-model-popover[role="dialog"]')?.textContent ??
+        null,
+      null,
+    );
     assert.ok(
       document.activeElement ===
         document.querySelector('button[aria-haspopup="dialog"]'),
@@ -202,11 +380,51 @@ export async function verifyAISettings() {
     );
     assert.match(document.body.textContent!, /回答进行中/);
     await act(async () => {
-      document
-        .querySelector("dialog")!
-        .dispatchEvent(new Event("cancel", { cancelable: true }));
+      document.querySelector('.ai-model-popover[role="dialog"]')!.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
     });
-    assert.equal(document.querySelector("dialog")?.textContent ?? null, null);
+    assert.equal(
+      document.querySelector('.ai-model-popover[role="dialog"]')?.textContent ??
+        null,
+      null,
+    );
+    await settle();
+    let finishSelection: (() => void) | undefined;
+    await act(async () =>
+      root.render(
+        <ModelPicker
+          {...modelProps}
+          select={async () =>
+            new Promise<void>((resolve) => {
+              finishSelection = resolve;
+            })
+          }
+        />,
+      ),
+    );
+    await click(document.querySelector('button[aria-haspopup="dialog"]')!);
+    await click(document.querySelector('[role="option"]')!);
+    assert.ok(
+      document.querySelector<HTMLButtonElement>('[aria-label="关闭模型设置"]')!
+        .disabled,
+    );
+    await escape(document.querySelector(".ai-model-popover")!);
+    assert.ok(
+      document.querySelector(".ai-model-popover"),
+      "a pending selection must finish before closing",
+    );
+    await act(async () => finishSelection!());
+    await settle();
+    assert.equal(document.querySelector(".ai-model-popover"), null);
+    assert.equal(
+      document.activeElement,
+      document.querySelector('button[aria-haspopup="dialog"]'),
+    );
     const oldOpen = window.open;
     const opened: string[] = [];
     window.open = ((url: string) => {

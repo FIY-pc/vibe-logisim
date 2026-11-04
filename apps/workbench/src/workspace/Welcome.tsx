@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { FolderOpen } from "lucide-react";
 import { useFiles } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
@@ -18,13 +19,14 @@ export function Welcome() {
       </svg>
       <h1>{folder ? "选择一个电路" : "尚未打开项目"}</h1>
       <div>
-        <button
+        <Button
+          variant="solid"
           className="primary"
           onClick={folder ? openFile : () => void openFolder()}
         >
           <FolderOpen size={17} />
           {folder ? "打开电路" : "打开文件夹"}
-        </button>
+        </Button>
       </div>
     </div>
   );

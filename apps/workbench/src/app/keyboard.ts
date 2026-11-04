@@ -4,6 +4,7 @@ import { canRotate } from "../editor/usePlacement";
 import type { RunAction } from "../simulation/actions";
 import type { Actions, Stores } from "./createWorkbench";
 import { currentView } from "./view";
+import { readerKey } from "../workspace/reader/types";
 
 /** Handles the workbench's keyboard shortcuts on the window, with the state
  * as of each key press. Returns the stop. */
@@ -28,6 +29,17 @@ export function handleShortcuts(stores: Stores, actions: Actions): () => void {
     const shortcut = Object.entries(settings.getState().bindings).find(
       ([, binding]) => binding === key,
     )?.[0];
+    const files = stores.files.getState();
+    if (files.preview && files.editorFocus === "material") {
+      if (key === "Mod+W") {
+        e.preventDefault();
+        files.closeReader(readerKey(files.preview));
+        return;
+      }
+      // Circuit commands must not edit the document behind the selected material.
+      if (shortcut && !["rail", "review"].includes(shortcut)) return;
+      if (["Mod+Shift+S", "Mod+Shift+Z", "Mod+Y"].includes(key)) return;
+    }
     if (shortcut) {
       e.preventDefault();
       if (["select", "wire", "poke", "pan"].includes(shortcut)) {

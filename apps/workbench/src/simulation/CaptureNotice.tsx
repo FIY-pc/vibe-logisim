@@ -1,3 +1,4 @@
+import { Button, IconButton } from "../design/ui";
 import { X } from "lucide-react";
 import { useNotices, useSimulation } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
@@ -11,7 +12,9 @@ export function CaptureNotice() {
   const { setObservations, setLastCapture } = stores.simulation.getState();
   return (
     <div className="capture-notice" role="status">
-      <button
+      <Button
+        variant="ghost"
+        color="gray"
         onClick={() =>
           setObservations({
             documentId: lastCapture.documentId,
@@ -20,10 +23,13 @@ export function CaptureNotice() {
         }
       >
         已留存 · {lastCapture.title}
-      </button>
-      <button aria-label="关闭留存提示" onClick={() => setLastCapture(null)}>
+      </Button>
+      <IconButton
+        aria-label="关闭留存提示"
+        onClick={() => setLastCapture(null)}
+      >
         <X size={13} />
-      </button>
+      </IconButton>
     </div>
   );
 }

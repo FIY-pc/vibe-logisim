@@ -140,8 +140,7 @@ async function dispatch(method: RuntimeMethod, args: any) {
       const folder = await folderOf();
       if (!folder || !binding || args.documentId !== binding.documentId)
         throw new Error("对话已切换，请重新添加引用");
-      if (!Array.isArray(args.references) || args.references.length > 8)
-        throw new Error("每条问题最多引用 8 处资料或观察");
+      if (!Array.isArray(args.references)) throw new Error("资料引用无效");
       const captured = binding;
       const references = await Promise.all(
         args.references.map((input: any) =>

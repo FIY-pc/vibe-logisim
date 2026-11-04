@@ -1,39 +1,43 @@
 .file-drop-target {
-  background: var(--accent-soft, #e7efff);
-  outline: 1px solid var(--accent, #4d75bd);
+  background: var(--accent-soft, var(--accent-soft));
+  outline: 1px solid var(--accent, var(--accent));
   outline-offset: -1px;
 }
 .file-row.file-selected {
-  background: var(--accent-soft, #e7efff);
+  background: var(--accent-soft, var(--accent-soft));
 }
 .file-row.file-current .file-entry {
   font-weight: 600;
 }
 .file-entry:focus-visible {
-  outline: 1px solid var(--accent, #4d75bd);
+  outline: 1px solid var(--accent, var(--accent));
   outline-offset: -1px;
 }
 .file-entry {
   user-select: none;
   touch-action: pan-y;
 }
+.file-tree-search {
+  margin: 6px 8px;
+  min-width: 0;
+}
+.file-search-match .file-entry > span:last-child {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .file-dragging {
   opacity: 0.45;
 }
 .file-drop-root {
-  box-shadow: inset 0 0 0 1px var(--accent, #4d75bd);
+  box-shadow: inset 0 0 0 1px var(--accent, var(--accent));
 }
 .file-working {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-1);
   color: var(--muted);
 }
 .file-import-dialog {
   width: min(600px, 90vw);
-}
-.file-import-items {
-  max-height: 55vh;
-  overflow: auto;
 }
 .file-import-items > div {
   display: flex;
@@ -53,20 +57,12 @@
 }
 .file-history-dialog {
   width: min(1100px, 94vw);
-  height: min(760px, 88vh);
-  padding: 0;
+  height: min(760px, 88dvh);
 }
-.file-history-dialog > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.file-history-body {
+.file-history-body.dialog-body {
   display: grid;
   grid-template-columns: minmax(230px, 30%) minmax(0, 1fr);
-  height: calc(100% - 55px);
+  padding: 0;
 }
 .file-history-empty {
   display: flex;
@@ -74,7 +70,6 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: calc(100% - 55px);
   padding: 24px;
   text-align: center;
   color: var(--muted);
@@ -87,11 +82,11 @@
 .file-history-empty p:first-of-type {
   margin-top: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-size-2);
   font-weight: 600;
 }
 .file-history-empty .muted {
-  font-size: 12px;
+  font-size: var(--font-size-1);
 }
 .file-history-body aside {
   overflow: auto;
@@ -112,11 +107,11 @@
   justify-content: space-between;
   gap: 6px;
   padding-bottom: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-2);
 }
 .file-history-entry time {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-1);
   color: var(--muted);
   margin-top: 3px;
 }
@@ -130,7 +125,7 @@
   gap: 8px;
   text-align: left;
   padding: 5px;
-  font-size: 12px;
+  font-size: var(--font-size-1);
 }
 .file-history-body aside section > button span:last-child {
   overflow-wrap: anywhere;
@@ -140,7 +135,7 @@
   color: var(--muted);
 }
 .file-history-body aside section > button.selected {
-  background: var(--accent-soft, #e7efff);
+  background: var(--accent-soft, var(--accent-soft));
 }
 .file-history-detail {
   min-width: 0;
@@ -149,7 +144,7 @@
 .file-history-detail h3 {
   padding: 10px 14px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-2);
   overflow-wrap: anywhere;
 }
 .file-history-comparison {
@@ -167,10 +162,10 @@
 .file-history-comparison h4 {
   position: sticky;
   top: 0;
-  background: var(--panel, white);
+  background: var(--surface);
   margin: 0;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-1);
   border-bottom: 1px solid var(--border);
 }
 .file-history-comparison pre {
@@ -179,15 +174,15 @@
   overflow-wrap: anywhere;
   padding: 12px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-1);
 }
 .file-history-comparison p {
   padding: 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-size-1);
 }
 @media (max-width: 700px) {
-  .file-history-body {
+  .file-history-body.dialog-body {
     grid-template-columns: minmax(180px, 40%) minmax(0, 1fr);
   }
   .file-history-comparison {

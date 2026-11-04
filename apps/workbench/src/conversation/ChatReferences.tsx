@@ -1,3 +1,4 @@
+import { Button, IconButton, MessageComposer, Text } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, X } from "lucide-react";
 import { command } from "../shared/transport";
@@ -7,14 +8,52 @@ import type {
   ReferenceSummary,
   StoredReference,
 } from "./references";
-import "./ChatReferences.css";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody } from "../shared/Dialog";
 import { useWorkbench } from "../app/provider";
 import type { PreviewFile } from "../workspace/FilePreview";
+import { fileReference } from "../workspace/fileReference";
 
+interface AttachmentJob {
+  key: string;
+  quotation: Quotation;
+  error: string | null;
+}
 interface Receipt {
   key: string;
   ids: string[];
+}
+function referenceLocation(
+  ref: ReferenceSummary,
+  references: ReferenceSummary[],
+) {
+  const parts = ref.page ? [`第 ${ref.page} 页`] : [];
+  if (ref.region) {
+    const key = (item: ReferenceSummary) =>
+      item.region &&
+      [
+        item.region.x,
+        item.region.y,
+        item.region.width,
+        item.region.height,
+      ].join(":");
+    const regions = [
+      ...new Set(
+        references
+          .filter(
+            (item) =>
+              item.region &&
+              item.path === ref.path &&
+              item.folderId === ref.folderId &&
+              item.revision === ref.revision &&
+              item.page === ref.page,
+          )
+          .map(key),
+      ),
+    ];
+    parts.push(`选区 ${regions.indexOf(key(ref)) + 1}`);
+  }
+  if (ref.truncated) parts.push("摘录");
+  return parts.join(" · ");
 }
 const runtime = <T,>(method: string, args: unknown) =>
   command<T>({ op: "agent", method, args: args as JsonValue });
@@ -47,13 +86,14 @@ export function useChatReferences({
     key: draftKey,
     references: load(draftKey),
   });
-  const [pending, setPending] = useState(false),
-    [failure, setFailure] = useState(false);
+  const [jobs, setJobs] = useState<AttachmentJob[]>([]);
   const [preview, setPreview] = useState<StoredReference | null>(null);
-  const staging = useRef<string | null>(null);
+  const taken = useRef<string | null>(null);
   const liveKey = useRef(draftKey);
   liveKey.current = draftKey;
   const references = record.key === draftKey ? record.references : [];
+  const currentJobs = jobs.filter((job) => job.key === draftKey);
+  const pending = currentJobs.some((job) => job.error === null);
   const persist = (key: string, refs: ReferenceSummary[]) => {
     localStorage.setItem(keyFor(key), JSON.stringify(refs));
     if (liveKey.current === key) setRecord({ key, references: refs });
@@ -61,43 +101,51 @@ export function useChatReferences({
   useEffect(() => {
     setRecord({ key: draftKey, references: load(draftKey) });
     setPreview(null);
-    setFailure(false);
   }, [draftKey]);
-  const stage = async () => {
+  const stage = async (job: AttachmentJob) => {
+    setJobs((current) =>
+      current.map((item) => (item === job ? { ...item, error: null } : item)),
+    );
+    const matches = (item: AttachmentJob) =>
+      item.key === job.key && item.quotation.id === job.quotation.id;
+    try {
+      const quote = job.quotation;
+      const inputs = quote.files ? [] : quote.references;
+      if (quote.files) {
+        for (const path of quote.files.paths)
+          inputs.push(await fileReference(quote.files.folderId, path));
+      }
+      const added = await runtime<ReferenceSummary[]>("stageReferences", {
+        documentId: quote.documentId,
+        references: inputs,
+      });
+      persist(job.key, [...load(job.key), ...added]);
+      setJobs((current) => current.filter((item) => !matches(item)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJobs((current) =>
+        current.map((item) =>
+          matches(item) ? { ...item, error: message } : item,
+        ),
+      );
+    }
+  };
+  useEffect(() => {
     if (
       !quotation ||
       !ready ||
       !draftKey ||
       quotation.documentId !== documentId ||
-      staging.current === quotation.id
+      taken.current === quotation.id
     )
       return;
-    const captured = { key: draftKey, quotation };
-    staging.current = quotation.id;
-    setPending(true);
-    setFailure(false);
-    try {
-      if (load(captured.key).length + quotation.references.length > 8)
-        throw new Error("每条问题最多引用 8 处资料或观察");
-      const added = await runtime<ReferenceSummary[]>("stageReferences", {
-        documentId,
-        references: quotation.references,
-      });
-      const current = load(captured.key);
-      if (current.length + added.length > 8)
-        throw new Error("每条问题最多引用 8 处资料或观察");
-      persist(captured.key, [...current, ...added]);
-      onQuoted(captured.quotation.id);
-    } catch (error) {
-      setFailure(true);
-      onError(error);
-    } finally {
-      setPending(false);
-      staging.current = null;
-    }
-  };
-  useEffect(() => {
-    void stage();
+    // Take ownership once, while the source draft is known. A later reply or
+    // failure belongs to this draft, even if the visible conversation changes.
+    taken.current = quotation.id;
+    const job = { key: draftKey, quotation, error: null };
+    setJobs((current) => [...current, job]);
+    onQuoted(quotation.id);
+    void stage(job);
   }, [quotation?.id, ready, draftKey, documentId]);
   const open = async (id: string) => {
     const capturedKey = draftKey;
@@ -146,42 +194,66 @@ export function useChatReferences({
       }
       setPreview(ref);
     } catch (error) {
-      onError(error);
+      if (liveKey.current === capturedKey) onError(error);
     }
   };
   const chips = (refs: ReferenceSummary[], removable = false) => (
-    <div className="reference-chips">
-      {refs.map((ref) => (
-        <span key={ref.id}>
-          <button
-            data-tip={ref.path || ref.label}
-            onClick={() => void open(ref.id)}
-          >
-            <Paperclip size={13} />
-            {ref.label}
-            {ref.page ? ` · 第 ${ref.page} 页` : ""}
-            {ref.truncated ? " · 摘录" : ""}
-          </button>
-          {removable && (
-            <button
-              aria-label={`取消引用 ${ref.label}`}
-              onClick={() =>
-                persist(
-                  draftKey,
-                  references.filter((r) => r.id !== ref.id),
-                )
-              }
+    <div className={"reference-chips" + (removable ? " is-draft" : "")}>
+      {refs.map((ref) => {
+        const location = referenceLocation(ref, refs);
+        const label = [ref.label, location].filter(Boolean).join(" · ");
+        const region = ref.region;
+        const details = [
+          ref.path || ref.label,
+          location,
+          region &&
+            `选区位置：左 ${Math.round(region.x * 100)}%，上 ${Math.round(region.y * 100)}%，宽 ${Math.round(region.width * 100)}%，高 ${Math.round(region.height * 100)}%`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        return (
+          <span key={ref.id}>
+            <Button
+              variant="soft"
+              color="gray"
+              data-tip={details}
+              aria-label={label}
+              onClick={() => void open(ref.id)}
             >
-              <X size={12} />
-            </button>
-          )}
-        </span>
-      ))}
+              <Paperclip size={16} />
+              <span className="reference-label">
+                <span className="reference-name">{ref.label}</span>
+                {location && (
+                  <Text kind="meta" className="reference-location">
+                    {location}
+                  </Text>
+                )}
+              </span>
+            </Button>
+            {removable && (
+              <IconButton
+                variant="ghost"
+                color="gray"
+                aria-label={`取消引用 ${label}`}
+                onClick={() =>
+                  persist(
+                    draftKey,
+                    references.filter((r) => r.id !== ref.id),
+                  )
+                }
+              >
+                <X size={16} />
+              </IconButton>
+            )}
+          </span>
+        );
+      })}
     </div>
   );
   return {
     references,
     pending,
+    unresolved: currentJobs.length > 0,
     receipt: (): Receipt => ({
       key: draftKey,
       ids: references.map((r) => r.id),
@@ -193,9 +265,65 @@ export function useChatReferences({
       ),
     composer: (
       <>
-        {chips(references, true)}
-        {pending && <span role="status">正在添加引用…</span>}
-        {failure && <button onClick={() => void stage()}>重试添加引用</button>}
+        {(references.length > 0 || pending) && (
+          <MessageComposer.Attachments
+            role="region"
+            aria-label="待发送引用"
+            tabIndex={0}
+          >
+            {chips(references, true)}
+            {pending && (
+              <Text kind="meta" role="status">
+                正在添加引用…
+              </Text>
+            )}
+          </MessageComposer.Attachments>
+        )}
+        {currentJobs.some((job) => job.error !== null) && (
+          <div
+            className="reference-failures"
+            role="region"
+            aria-label="引用问题"
+          >
+            {currentJobs
+              .filter((job) => job.error !== null)
+              .map((job) => (
+                <div key={job.quotation.id} className="reference-failure">
+                  <Text as="p" color="red" role="alert">
+                    未能添加引用：{job.error}
+                  </Text>
+                  <div>
+                    <Button
+                      variant="ghost"
+                      color="gray"
+                      disabled={
+                        !ready || job.quotation.documentId !== documentId
+                      }
+                      data-tip={
+                        job.quotation.documentId !== documentId
+                          ? "切回引用所属文档后重试"
+                          : undefined
+                      }
+                      onClick={() => void stage(job)}
+                    >
+                      重试添加引用
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      color="gray"
+                      onClick={() =>
+                        setJobs((current) =>
+                          current.filter((item) => item !== job),
+                        )
+                      }
+                    >
+                      取消添加
+                    </Button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
         {preview && (
           <ReferencePreview
             reference={preview}
@@ -215,27 +343,25 @@ function ReferencePreview({
   reference: StoredReference;
   onClose: () => void;
 }) {
-  const dialog = useModal();
   return (
-    <dialog
+    <DialogFrame
+      title={`${reference.label}${reference.page ? ` · 第 ${reference.page} 页` : ""}`}
       className="reference-preview"
-      ref={dialog}
+      maxWidth="850px"
+      maxHeight="88dvh"
       aria-label={`引用 ${reference.label}`}
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
+      closeLabel="关闭引用"
+      onClose={onClose}
     >
-      <header>
-        <h2>
-          {reference.label}
-          {reference.page ? ` · 第 ${reference.page} 页` : ""}
-        </h2>
-        <DialogClose label="关闭引用" onClick={onClose} />
-      </header>
-      {reference.image && <img src={reference.image} alt={reference.label} />}
-      {reference.text && <pre>{reference.text}</pre>}
-      {reference.truncated && <p>此引用保留前 24,000 个字符。</p>}
-    </dialog>
+      <DialogBody>
+        {reference.image && <img src={reference.image} alt={reference.label} />}
+        {reference.text && <pre>{reference.text}</pre>}
+        {reference.truncated && (
+          <Text as="p" kind="meta">
+            此引用保留前 24,000 个字符。
+          </Text>
+        )}
+      </DialogBody>
+    </DialogFrame>
   );
 }

@@ -230,10 +230,14 @@ export function createEditorActions(stores: Stores) {
       }),
     )
       .then((result) => documents.getState().applyChange(result.change))
-      .then(() => editor.getState().setSource(null))
+      .then(() =>
+        editor
+          .getState()
+          .setSource((current) => (current === source ? null : current)),
+      )
       .catch((error) =>
         editor.getState().setSource((current) =>
-          current?.id === source.id && current.revision === source.revision
+          current === source
             ? {
                 ...current,
                 error: error instanceof Error ? error.message : String(error),

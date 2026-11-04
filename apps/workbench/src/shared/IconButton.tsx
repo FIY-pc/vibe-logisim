@@ -1,5 +1,7 @@
+import { IconButton as ThemesIconButton } from "../design/ui";
 import type { ReactNode } from "react";
-import { tip } from "./Tooltips";
+import { Kbd, Tooltip } from "@radix-ui/themes";
+import { usePortalContainer } from "./layer";
 
 /** A button that shows only an icon; its title is its hint and its accessible
  * name, with the shortcut drawn beside the hint. */
@@ -16,15 +18,33 @@ export function IconButton({
   onClick: () => void;
   disabled?: boolean;
 }) {
+  const [anchor, container] = usePortalContainer<HTMLButtonElement>();
   return (
-    <button
-      className="icon-button"
-      {...tip(title, shortcut)}
-      aria-label={title}
-      onClick={onClick}
-      disabled={disabled}
+    <Tooltip
+      container={container}
+      content={
+        <>
+          {title}
+          {shortcut && (
+            <>
+              {" "}
+              <Kbd size="1">{shortcut}</Kbd>
+            </>
+          )}
+        </>
+      }
     >
-      {icon}
-    </button>
+      <ThemesIconButton
+        ref={anchor}
+        type="button"
+        variant="ghost"
+        color="gray"
+        aria-label={title}
+        onClick={onClick}
+        disabled={disabled}
+      >
+        {icon}
+      </ThemesIconButton>
+    </Tooltip>
   );
 }

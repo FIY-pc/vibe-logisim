@@ -27,6 +27,7 @@ export function createWorkspaceActions(stores: Stores) {
   const onError = (error: unknown) => notices.getState().onError(error);
   /** Shows a document the host opened or created, at its main circuit. */
   const showDocument = (d: Document) => {
+    files.getState().showCircuit();
     documents.getState().update(d);
     editor.getState().setCircuitName(d.main);
   };
@@ -80,6 +81,7 @@ export function createWorkspaceActions(stores: Stores) {
         .then(showDocument)
         .catch(onError);
     // Reopening would reset the view to the main circuit after a slow parse.
+    files.getState().showCircuit();
     if (open.id === active) return;
     editor.getState().navigation.next();
     documents.getState().setActive(open.id);
@@ -146,7 +148,7 @@ export function createWorkspaceActions(stores: Stores) {
   const save = ({ doc }: View, saveAs = false) => {
     if (doc)
       void busy(() => saveDocument(doc, saveAs)).catch((e) => {
-            onError(e);
+        onError(e);
       });
   };
 

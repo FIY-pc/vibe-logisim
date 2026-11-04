@@ -20,20 +20,26 @@ export const railSections = [
   "navigatorCollapsed",
   "inspectorCollapsed",
 ] as const;
-export const clamp = (n: number, min: number, max: number) =>
-  Math.max(min, Math.min(n, max));
 const layoutKey = "vibe.workspace.layout";
 
 function savedLayout(): Layout {
   try {
     const saved = JSON.parse(localStorage.getItem(layoutKey) || "null");
     if (!saved) return { ...layoutDefaults };
+    const positive = (value: unknown, fallback: number) =>
+      Number.isFinite(Number(value)) && Number(value) > 0
+        ? Number(value)
+        : fallback;
+    const fileShare = positive(saved.fileShare, layoutDefaults.fileShare);
+    const navigatorShare = positive(
+      saved.navigatorShare,
+      layoutDefaults.navigatorShare,
+    );
     return {
       ...layoutDefaults,
-      rail: clamp(Number(saved.rail) || 260, 224, 420),
-      review: clamp(Number(saved.review) || 400, 320, 820),
-      fileShare: clamp(Number(saved.fileShare) || 0.32, 0.1, 0.8),
-      navigatorShare: clamp(Number(saved.navigatorShare) || 0.3, 0.1, 0.8),
+      rail: positive(saved.rail, layoutDefaults.rail),
+      review: positive(saved.review, layoutDefaults.review),
+      ...(fileShare + navigatorShare < 1 ? { fileShare, navigatorShare } : {}),
       filesCollapsed: saved.filesCollapsed === true,
       navigatorCollapsed: saved.navigatorCollapsed === true,
       inspectorCollapsed:
@@ -52,8 +58,6 @@ export interface ShellState {
   layout: Layout;
   /** Narrow windows show the rail and the review panel as drawers. */
   narrow: boolean;
-  /** Measured width of the workspace element. */
-  width: number;
   /** Which side panels are shown in a wide window. */
   visible: Record<Side, boolean>;
   /** The open drawer in a narrow window. */
@@ -67,7 +71,6 @@ export interface ShellState {
   setLayout(layout: Update<Layout>): void;
   setSide(side: Side, shown: Update<boolean>): void;
   closeDrawers(): void;
-  changeWidth(side: Side, value: number): void;
   revealFiles(): void;
   revealNavigator(): void;
   revealInspector(): void;
@@ -85,36 +88,13 @@ export const showExplorer = (state: ShellState) =>
 export const showRight = (state: ShellState) =>
   state.narrow ? state.drawer === "review" : state.visible.review;
 
-/** Panel widths: requested widths shrink together when the window is too narrow. */
-export function panelSizes(
-  layout: Layout,
-  visible: Record<Side, boolean>,
-  width: number,
-) {
-  const extra = Math.max(
-    0,
-    width - 440 - (visible.rail ? 224 : 0) - (visible.review ? 320 : 0),
-  );
-  const requested =
-    (visible.rail ? layout.rail - 224 : 0) +
-    (visible.review ? layout.review - 320 : 0);
-  const ratio = requested > extra ? extra / requested : 1;
-  return {
-    rail: 224 + (layout.rail - 224) * ratio,
-    review: 320 + (layout.review - 320) * ratio,
-  };
-}
-
 export function createShellStore() {
   return createStore<ShellState>()((set, get) => {
-    const measure = (node: HTMLDivElement) => {
-      // Reserve the editor width as well as both side panels and resize handles.
+    const measure = () => {
       const narrow = window.innerWidth <= 1000;
-      const width = node.clientWidth || window.innerWidth;
       // Crossing the narrow breakpoint closes any drawer.
       set((state) => ({
         narrow,
-        width,
         drawer: narrow === state.narrow ? state.drawer : null,
       }));
     };
@@ -125,7 +105,6 @@ export function createShellStore() {
     return {
       layout: savedLayout(),
       narrow: window.innerWidth <= 1000,
-      width: window.innerWidth,
       visible: { rail: true, review: true },
       drawer: null,
       right: "chat",
@@ -140,26 +119,16 @@ export function createShellStore() {
         else set({ visible: { ...state.visible, [side]: value } });
       },
       closeDrawers: () => set({ drawer: null }),
-      changeWidth: (side, value) =>
-        set((state) => ({
-          layout: {
-            ...state.layout,
-            [side]: clamp(value, layoutLimits[side][0], layoutLimits[side][1]),
-          },
-        })),
       revealFiles: () => reveal("filesCollapsed"),
       revealNavigator: () => reveal("navigatorCollapsed"),
       revealInspector: () => reveal("inspectorCollapsed"),
       workspaceRef: (node) => {
         if (!node) return;
-        const resize = () => measure(node);
+        const resize = measure;
         window.addEventListener("resize", resize);
-        const observer = new ResizeObserver(resize);
-        observer.observe(node);
         resize();
         return () => {
           window.removeEventListener("resize", resize);
-          observer.disconnect();
         };
       },
       setRight: field(set, "right"),

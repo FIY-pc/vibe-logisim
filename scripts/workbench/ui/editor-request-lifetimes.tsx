@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { EditorView } from "@codemirror/view";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { App } from "../../../apps/workbench/src/App";
 import { clickMenuItem, openMenu } from "./workbench";
 
@@ -182,7 +183,7 @@ export async function verifyEditorRequestLifetimes() {
     await fromMenu("查找元件…");
     await click(
       Array.from(
-        container.querySelectorAll('.find-dialog [role="option"]'),
+        document.querySelectorAll('.find-dialog [role="option"]'),
       ).find((button) => button.querySelector("span")?.textContent === label),
     );
   };
@@ -287,7 +288,7 @@ export async function verifyEditorRequestLifetimes() {
     await settle();
     sourceGate = null;
     assert.equal(
-      container.querySelector('dialog[aria-label="编辑源文件"]')?.textContent ??
+      document.querySelector('[role="dialog"][aria-label="编辑源文件"]')?.textContent ??
         null,
       null,
     );
@@ -295,13 +296,18 @@ export async function verifyEditorRequestLifetimes() {
       container.querySelector(".file-title")!.textContent!,
       /B.circ/,
     );
-    assert.equal(container.querySelector(".error-bar")?.textContent ?? null, null);
+    assert.equal(
+      container.querySelector(".error-bar")?.textContent ?? null,
+      null,
+    );
     await fromMenu("编辑源文件…");
-    const dialog = container.querySelector('dialog[aria-label="编辑源文件"]')!;
+    const dialog = document.querySelector('[role="dialog"][aria-label="编辑源文件"]')!;
     assert.ok(dialog);
     assert.match(dialog.querySelector("header")!.textContent!, /B.circ/);
     assert.equal(
-      dialog.querySelector("textarea")!.value,
+      EditorView.findFromDOM(
+        dialog.querySelector(".cm-editor")!,
+      )!.state.sliceDoc(),
       '<project name="B"/>',
     );
     await click(dialog.querySelector('button[aria-label="关闭"]'));
@@ -317,7 +323,7 @@ export async function verifyEditorRequestLifetimes() {
     await settle();
     sourceGate = null;
     assert.equal(
-      container.querySelector('dialog[aria-label="编辑源文件"]')?.textContent ??
+      document.querySelector('[role="dialog"][aria-label="编辑源文件"]')?.textContent ??
         null,
       null,
     );

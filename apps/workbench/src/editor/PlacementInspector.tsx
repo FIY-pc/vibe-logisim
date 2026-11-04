@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import type { XmlNode } from "../shared/types";
 import type { PlacementState } from "./usePlacement";
@@ -68,7 +69,9 @@ export function PlacementInspector({
           <p className="property-error" role="alert">
             {placement.error}
             {placement.retry && (
-              <button onClick={placement.retry}>重新读取</button>
+              <Button variant="ghost" color="gray" onClick={placement.retry}>
+                重新读取
+              </Button>
             )}
           </p>
         )}

@@ -1,0 +1,73 @@
+/* All styles enter here. Domain styles never depend on JS import order. */
+@layer reset, theme, layout, controls;
+@import "./reset.css" layer(reset);
+@import "@radix-ui/themes/styles.css" layer(theme);
+@import "../style.css" layer(layout);
+@import "../classroom/Classroom.css" layer(layout);
+@import "../classroom/Assessment.css" layer(layout);
+@import "../conversation/ChatReferences.css" layer(layout);
+@import "../conversation/ContextUsageRing.css" layer(layout);
+@import "../shared/command.css" layer(layout);
+@import "../conversation/ConversationContent.css" layer(layout);
+@import "../conversation/ai-settings.css" layer(layout);
+@import "../conversation/Turn.css" layer(layout);
+@import "../editor/editor-controls.css" layer(layout);
+@import "../editor/inspector.css" layer(layout);
+@import "../editor/InterfaceEditor.css" layer(layout);
+@import "../history/DocumentHistory.css" layer(layout);
+@import "../history/HistoryReview.css" layer(layout);
+@import "../shared/CodeEditor.css" layer(layout);
+@import "../shared/Dialog.css" layer(layout);
+@import "../shared/Menu.css" layer(layout);
+@import "../shell/feedback.css" layer(layout);
+@import "../shell/WorkspaceLayout.css" layer(layout);
+@import "../workspace/reader/Reader.css" layer(layout);
+@import "../workspace/DocumentWorkspace.css" layer(layout);
+@import "../workspace/Files.css" layer(layout);
+@import "../workspace/ProjectInfo.css" layer(layout);
+@import "./controls.css" layer(controls);
+@import "./tokens.css";
+
+.workbench-theme {
+  height: 100%;
+  min-height: 0;
+}
+
+/* These are application layouts; surface, typography and control styles come from Themes. */
+.prompt-dialog form,
+.shortcut-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+}
+.prompt-dialog form > footer {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.shortcut-dialog-content .shortcut-list {
+  min-height: 0;
+  overflow: auto;
+}
+.shortcut-dialog-content .shortcut-list label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 180px) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+}
+.shortcut-dialog-content .shortcut-list h3 {
+  margin-block: var(--space-4) var(--space-2);
+}
+.shortcut-dialog-content .shortcut-list section:first-child h3 {
+  margin-top: 0;
+}
+
+@media (max-width: 540px) {
+  .shortcut-dialog-content .shortcut-list label {
+    grid-template-columns: minmax(0, 1fr) minmax(110px, 140px) auto;
+    gap: var(--space-2);
+  }
+}
