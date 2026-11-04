@@ -154,7 +154,7 @@ export async function verifyRestoredInteractions() {
           visible
           doc={doc}
           circuit="main"
-          folder={null}
+          folder={{ id: doc.id, path: "/fixture", name: "fixture" }}
           selection={[]}
           quotation={null}
           onQuoted={() => {}}

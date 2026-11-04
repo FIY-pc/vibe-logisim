@@ -247,6 +247,68 @@ export function createWorkspaceActions(stores: Stores) {
   };
   const openFolderAt = (path: string) =>
     openFolderPath(path, onFolder, onError);
+  /** Stops the current answer before asking about drafts, then closes the
+   * workspace in one host operation. Cancelling never closes a subset. */
+  const closeFolder = () =>
+    busy(async () => {
+      const folder = files.getState().folder;
+      if (!folder) return;
+      await command({ op: "agent", method: "stop", args: {} });
+      await documents.getState().refreshWorkspace();
+      if (files.getState().folder?.id !== folder.id) return;
+      const targets = documents.getState().docs;
+      const finish = async (save: boolean) =>
+        busy(async () => {
+          const expected = {
+            ...Object.fromEntries(targets.map((d) => [d.id, d.revision])),
+          };
+          if (save) {
+            for (const target of targets.filter((d) => d.dirty)) {
+              const saved = await saveDocument(target);
+              // Cancelled Save As, or a browser download: keep every tab open.
+              if (!saved) return false;
+              expected[saved.id] = saved.revision;
+            }
+          }
+          await command({
+            op: "folderClose",
+            folder_id: folder.id,
+            documents: expected,
+            discard: !save,
+          });
+          documents.getState().invalidate();
+          if (files.getState().folder?.id !== folder.id) return;
+          documents.getState().setDocs([]);
+          documents.getState().setActive(null);
+          editor.getState().navigation.next();
+          editor.getState().setPlace(null);
+          editor.getState().setCircuitName("main");
+          files.getState().setFolder(null);
+          files.getState().setNewFilePrompt(false);
+          stores.conversation.getState().setQuotation(null);
+          stores.conversation.getState().setReferenceDrop(false);
+        });
+      const dirty = targets.filter((d) => d.dirty);
+      if (!dirty.length) {
+        await finish(true);
+        return;
+      }
+      notices.getState().setDecision({
+        title: "关闭工作区？",
+        message: `以下文档尚未保存：${dirty.map((d) => d.name).join("、")}。`,
+        actions: [
+          { label: "不保存并关闭", run: () => finish(false) },
+          {
+            label:
+              desktop() || dirty.every((d) => d.path)
+                ? "保存并关闭"
+                : "下载副本",
+            primary: true,
+            run: () => finish(true),
+          },
+        ],
+      });
+    }).catch(onError);
   const openFolder = () =>
     chooseFolder(
       openFolderAt,
@@ -278,6 +340,7 @@ export function createWorkspaceActions(stores: Stores) {
     requestReload,
     onFolder,
     openFolder,
+    closeFolder,
     openFolderAt,
     watchSource,
   };

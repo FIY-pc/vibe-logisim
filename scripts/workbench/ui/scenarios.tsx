@@ -16,6 +16,7 @@ import { verifyDialogControls } from "./dialog-controls";
 import { verifyDocumentHistory } from "./history";
 import { verifyReferenceLinks } from "./reference-links";
 import { verifyReferencesUI } from "./references";
+import { verifyCloseFolder } from "./close-folder";
 import { verifyFilesUI } from "./files";
 import { verifyRestoredInteractions } from "./restored-interactions";
 import assert from "node:assert/strict";
@@ -210,13 +211,15 @@ const input = async (value: string) => {
   });
 };
 const errors: any[] = [];
-const chat = (d: any, visible = true) => (
+const chat = (d: any, visible = true, opened = true) => (
   <Workbench>
     <Chat
       visible={visible}
       doc={d}
       circuit={d.main}
-      folder={null}
+      folder={
+        opened ? { id: d.id, path: `/fixture/${d.id}`, name: d.id } : null
+      }
       selection={[]}
       quotation={null}
       onQuoted={() => {}}
@@ -301,6 +304,15 @@ assert.equal(
 );
 console.log(
   "PASS: document switch waits for binding, restores only matching conversation draft",
+);
+await render(chat(doc("B"), true, false));
+assert.equal(document.querySelector('[aria-label="消息编辑器"]'), null);
+assert(document.body.textContent?.includes("打开文件夹以开始对话"));
+assert.equal(localStorage.getItem("vibe.draft:B:chat-B"), "B own draft");
+await render(chat(doc("B")));
+assert.equal(
+  document.querySelector<HTMLTextAreaElement>("textarea")!.value,
+  "B own draft",
 );
 await act(async () => root.unmount());
 root = createRoot(document.getElementById("root")!);
@@ -1366,6 +1378,7 @@ await verifyDialogControls();
 await verifyRestoredInteractions();
 await verifyStraightWires();
 await verifyFilesUI();
+await verifyCloseFolder();
 await verifyDocumentWorkspace();
 await verifyFilePreview();
 await verifyReferencesUI();

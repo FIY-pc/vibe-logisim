@@ -78,6 +78,7 @@ interface RuntimeState {
   contextUsage?: ContextUsage | null;
 }
 interface Props {
+  onOpenFolder?: () => void;
   visible: boolean;
   doc: Document | null;
   folder: ProjectFolder | null;
@@ -165,6 +166,7 @@ const defaultEfforts = [
 ];
 
 export function Chat({
+  onOpenFolder,
   visible,
   doc,
   folder,
@@ -203,7 +205,8 @@ export function Chat({
   target.current = { scope, documentId: doc?.id };
   // The folder binding keeps the draft; sending and staging references also
   // wait for the current document to be bound.
-  const scopeReady = Boolean(state) && boundTo?.scope === scope;
+  const scopeReady =
+    Boolean(folder) && Boolean(state) && boundTo?.scope === scope;
   const ready = scopeReady && boundTo?.documentId === doc?.id;
   const busy = Boolean(state?.busy);
   useEffect(() => {
@@ -280,11 +283,10 @@ export function Chat({
       conversations: ConversationSummary[];
     } | null>("conversations");
     if (
-      result &&
       listEpoch.current === epoch &&
       bound.current?.scope === target.current.scope
     )
-      setConversations(result.conversations);
+      setConversations(result?.conversations || []);
   };
   applyEvent.current = (e, sequence) => {
     switch (e.type) {
@@ -806,7 +808,11 @@ export function Chat({
         items={turns}
         empty={
           <div className="quiet-empty">
-            {!state ? (
+            {!folder ? (
+              <Button variant="soft" color="gray" onClick={onOpenFolder}>
+                打开文件夹以开始对话
+              </Button>
+            ) : !state ? (
               runtimeError ? (
                 ""
               ) : (
@@ -891,109 +897,117 @@ export function Chat({
           );
         }}
       />
-      <MessageComposer.Root
-        className="composer"
-        aria-label="消息编辑器"
-        data-reference-drop={referenceDrop || undefined}
-      >
-        {references.composer}
-        <MessageComposer.Input
-          ref={composerInput}
-          className="composer-input"
-          value={draft}
-          onChange={(e) => changeDraft(e.target.value)}
-          placeholder="描述你的想法…"
-          aria-label="消息"
-          disabled={!ready}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
-              // While the AI answers, Enter keeps the draft for later.
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        <MessageComposer.Actions>
-          <ModelPicker
-            scope={modelScope}
-            model={state?.model || null}
-            name={currentModel?.name || currentModel?.label}
-            disabled={!ready || pending}
-            busy={busy}
-            configurationError={state?.modelConfigurationError?.message}
-            allowCustom={Boolean(
-              state?.customProvider && state.customProvider.auth !== "chatgpt",
-            )}
-            load={loadModels}
-            select={async (model) => {
-              await runtime("selectModel", {
-                model: model.model,
-                effort: model.efforts
-                  ? model.efforts.some((entry) => entry.value === state?.effort)
-                    ? state?.effort
-                    : (model.defaultEffort ?? null)
-                  : state?.effort || "none",
-              });
-              await refresh();
+      {folder && (
+        <MessageComposer.Root
+          className="composer"
+          aria-label="消息编辑器"
+          data-reference-drop={referenceDrop || undefined}
+        >
+          {references.composer}
+          <MessageComposer.Input
+            ref={composerInput}
+            className="composer-input"
+            value={draft}
+            onChange={(e) => changeDraft(e.target.value)}
+            placeholder="描述你的想法…"
+            aria-label="消息"
+            disabled={!ready}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                // While the AI answers, Enter keeps the draft for later.
+                e.preventDefault();
+                send();
+              }
             }}
           />
-          <Select
-            label="思考深度"
-            variant="plain"
-            className="composer-effort"
-            value={state?.effort || "none"}
-            disabled={locked || !state?.model}
-            options={effortOptions.map(([value, label]) => ({ value, label }))}
-            onChange={(effort) =>
-              void runtime("selectModel", { model: state?.model, effort })
-                .then(() => refresh())
-                .catch(onError)
-            }
-          />
-          <ContextUsageRing usage={scopeReady ? state?.contextUsage : null} />
-          {busy ? (
-            <IconButton
-              variant="solid"
-              className="composer-stop"
-              aria-label="停止回答"
-              data-tip={stopping ? "正在停止…" : "停止回答"}
-              disabled={stopping}
-              onClick={() => {
-                setStopping(true);
-                void runtime("stop")
-                  .then(() => refresh())
-                  .catch((error) => {
-                    setStopping(false);
-                    onError(error);
-                  });
+          <MessageComposer.Actions>
+            <ModelPicker
+              scope={modelScope}
+              model={state?.model || null}
+              name={currentModel?.name || currentModel?.label}
+              disabled={!ready || pending}
+              busy={busy}
+              configurationError={state?.modelConfigurationError?.message}
+              allowCustom={Boolean(
+                state?.customProvider &&
+                state.customProvider.auth !== "chatgpt",
+              )}
+              load={loadModels}
+              select={async (model) => {
+                await runtime("selectModel", {
+                  model: model.model,
+                  effort: model.efforts
+                    ? model.efforts.some(
+                        (entry) => entry.value === state?.effort,
+                      )
+                      ? state?.effort
+                      : (model.defaultEffort ?? null)
+                    : state?.effort || "none",
+                });
+                await refresh();
               }}
-            >
-              <Square size={16} />
-            </IconButton>
-          ) : (
-            <IconButton
-              variant="solid"
-              aria-label="发送"
-              data-tip="发送"
-              data-tip-key="Enter"
-              disabled={
-                !ready ||
-                !draft.trim() ||
-                references.unresolved ||
-                pending ||
-                !state?.available
+            />
+            <Select
+              label="思考深度"
+              variant="plain"
+              className="composer-effort"
+              value={state?.effort || "none"}
+              disabled={locked || !state?.model}
+              options={effortOptions.map(([value, label]) => ({
+                value,
+                label,
+              }))}
+              onChange={(effort) =>
+                void runtime("selectModel", { model: state?.model, effort })
+                  .then(() => refresh())
+                  .catch(onError)
               }
-              onClick={() => send()}
-            >
-              <Send size={16} />
-            </IconButton>
-          )}
-        </MessageComposer.Actions>
-      </MessageComposer.Root>
+            />
+            <ContextUsageRing usage={scopeReady ? state?.contextUsage : null} />
+            {busy ? (
+              <IconButton
+                variant="solid"
+                className="composer-stop"
+                aria-label="停止回答"
+                data-tip={stopping ? "正在停止…" : "停止回答"}
+                disabled={stopping}
+                onClick={() => {
+                  setStopping(true);
+                  void runtime("stop")
+                    .then(() => refresh())
+                    .catch((error) => {
+                      setStopping(false);
+                      onError(error);
+                    });
+                }}
+              >
+                <Square size={16} />
+              </IconButton>
+            ) : (
+              <IconButton
+                variant="solid"
+                aria-label="发送"
+                data-tip="发送"
+                data-tip-key="Enter"
+                disabled={
+                  !ready ||
+                  !draft.trim() ||
+                  references.unresolved ||
+                  pending ||
+                  !state?.available
+                }
+                onClick={() => send()}
+              >
+                <Send size={16} />
+              </IconButton>
+            )}
+          </MessageComposer.Actions>
+        </MessageComposer.Root>
+      )}
     </div>
   );
 }

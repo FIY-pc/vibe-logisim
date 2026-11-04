@@ -709,6 +709,24 @@ export class TurnRunner extends EventEmitter {
     this.emitHistory();
     this.emitStatus();
   }
+  /** Releases the active workspace without deleting its saved conversations. */
+  async detach() {
+    if (this.snapshot().busy) throw new Error("请先停止当前回答");
+    this.persist();
+    this.workspaceKey = null;
+    this.conversationId = null;
+    this.activeTurnId = null;
+    this.selection = null;
+    this.history = [];
+    this.transcript = [];
+    this.checkpoints = {};
+    this.context = new ConversationContext();
+    this.compactContext = null;
+    this.transmission = null;
+    this.agent = undefined;
+    this.emitHistory();
+    await this.start();
+  }
   async changeConversation(key: string, action: string, request: any) {
     if (this.snapshot().busy) throw new Error("请先停止当前回答");
     this.conversations.change(key, action, request);

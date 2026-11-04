@@ -111,6 +111,7 @@ async function dispatch(method: RuntimeMethod, args: any) {
         workspaceKey: folder?.id ?? null,
       };
       if (folder && !runner.snapshot().busy) await runner.resume(folder.id);
+      else if (!folder) await runner.detach();
       return runner.snapshot();
     }
     case "ask": {
