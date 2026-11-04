@@ -1,3 +1,4 @@
+import { Button, IconButton, TextField } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Pause, Play, RotateCcw, StepForward } from "lucide-react";
@@ -11,8 +12,7 @@ import {
 import type { Tool } from "../shared/types";
 import type { RunAction } from "./actions";
 import type { SimulationStatus } from "./store";
-import "../editor/editor-controls.css";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 import { tip } from "../shared/Tooltips";
 
 interface SimulationProps {
@@ -92,7 +92,7 @@ export function SimulationMenu({
         onOpenChange={setOpen}
         trigger={
           <>
-            仿真 <ChevronDown size={14} aria-hidden="true" />
+            仿真 <ChevronDown size={16} aria-hidden="true" />
           </>
         }
       >
@@ -177,7 +177,6 @@ function SimulationSettings({
   onApply: (value: number) => Promise<void>;
   onClose: () => void;
 }) {
-  const dialog = useModal();
   const alive = useRef(true);
   const [value, setValue] = useState(String(frequency));
   const [pending, setPending] = useState(false);
@@ -189,23 +188,15 @@ function SimulationSettings({
     };
   }, []);
   return (
-    <dialog
-      ref={dialog}
+    <DialogFrame
+      title="仿真设置"
       className="simulation-settings"
+      maxWidth="380px"
       aria-label="仿真设置"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!pending) onClose();
-      }}
+      closeLabel="关闭仿真设置"
+      closeDisabled={pending}
+      onClose={onClose}
     >
-      <header>
-        <h2>仿真设置</h2>
-        <DialogClose
-          label="关闭仿真设置"
-          disabled={pending}
-          onClick={onClose}
-        />
-      </header>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -227,39 +218,47 @@ function SimulationSettings({
             });
         }}
       >
-        <label className="simulation-frequency">
-          时钟频率{" "}
-          <span>
-            <input
-              data-autofocus
-              type="number"
-              min="0.25"
-              max="4096"
-              step="any"
-              required
-              disabled={pending}
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-            />
-            tick/s
-          </span>
-        </label>
-        <p>高、低电平各 1 tick 时，2 tick/s 为每秒一个完整周期。</p>
-        {error && (
-          <p className="dialog-error" role="alert">
-            {error}
-          </p>
-        )}
-        <footer>
-          <button type="button" disabled={pending} onClick={onClose}>
+        <DialogBody>
+          <label className="simulation-frequency">
+            时钟频率{" "}
+            <span>
+              <TextField.Root
+                data-autofocus
+                type="number"
+                min="0.25"
+                max="4096"
+                step="any"
+                required
+                disabled={pending}
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+              />
+              tick/s
+            </span>
+          </label>
+          <p>高、低电平各 1 tick 时，2 tick/s 为每秒一个完整周期。</p>
+          {error && (
+            <p className="dialog-error" role="alert">
+              {error}
+            </p>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button
+            variant="soft"
+            color="gray"
+            type="button"
+            disabled={pending}
+            onClick={onClose}
+          >
             取消
-          </button>
-          <button className="primary" type="submit" disabled={pending}>
+          </Button>
+          <Button type="submit" disabled={pending}>
             {pending ? "应用中…" : "应用"}
-          </button>
-        </footer>
+          </Button>
+        </DialogFooter>
       </form>
-    </dialog>
+    </DialogFrame>
   );
 }
 
@@ -295,24 +294,25 @@ export function SimulationTransport({
         {text}
       </output>
       {status.stale ? (
-        <button
+        <Button
+          variant="soft"
           className="runtime-restart"
           disabled={disabled}
           onClick={() => dispatch("start")}
         >
           重新仿真
-        </button>
+        </Button>
       ) : (
         <>
-          <button
+          <IconButton
             aria-label={running ? "暂停时钟" : "运行时钟"}
             {...tip(running ? "暂停时钟" : "运行时钟", shortcuts.clock)}
             disabled={disabled}
             onClick={() => dispatch("toggle-clock")}
           >
-            {running ? <Pause size={15} /> : <Play size={15} />}
-          </button>
-          <button
+            {running ? <Pause size={16} /> : <Play size={16} />}
+          </IconButton>
+          <IconButton
             aria-label="时钟一步"
             {...(running
               ? tip("先暂停时钟，再逐步推进")
@@ -320,16 +320,16 @@ export function SimulationTransport({
             disabled={disabled || running || !active}
             onClick={() => dispatch("tick")}
           >
-            <StepForward size={15} />
-          </button>
-          <button
+            <StepForward size={16} />
+          </IconButton>
+          <IconButton
             aria-label="复位仿真"
             {...tip("复位仿真", shortcuts.reset)}
             disabled={disabled || !active}
             onClick={() => dispatch("reset")}
           >
-            <RotateCcw size={15} />
-          </button>
+            <RotateCcw size={16} />
+          </IconButton>
         </>
       )}
     </div>

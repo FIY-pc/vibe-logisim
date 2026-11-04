@@ -1,3 +1,5 @@
+import { Button, TextArea } from "../design/ui";
+
 import { useEffect, useRef, useState } from "react";
 import { command, desktop } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
@@ -9,8 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
-import "./feedback.css";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 
 const RELEASES = "https://github.com/FIY-pc/vibe-logisim/releases";
 const ISSUES =
@@ -157,7 +158,7 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
   return (
     <>
       <MenuItem
-        icon={<MessageSquare size={14} />}
+        icon={<MessageSquare size={16} />}
         onSelect={() => feedback.setDialogOpen(true)}
       >
         反馈问题…
@@ -171,7 +172,7 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
         自动检查更新
       </MenuCheckboxItem>
       <MenuItem
-        icon={<RefreshCw size={14} />}
+        icon={<RefreshCw size={16} />}
         disabled={feedback.checking || status?.forcedOff}
         onSelect={() => void feedback.checkNow()}
       >
@@ -179,7 +180,7 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
       </MenuItem>
       <MenuSeparator />
       <MenuItem
-        trailing={<ExternalLink size={13} aria-hidden="true" />}
+        trailing={<ExternalLink size={16} aria-hidden="true" />}
         onSelect={() => void feedback.openRelease()}
       >
         关于 Vibe Logisim {status?.current || ""}
@@ -199,13 +200,12 @@ export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
         data-tip="关闭"
         aria-label="关闭更新提示"
       >
-        <X size={14} />
+        <X size={16} />
       </button>
     </aside>
   );
 }
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {
-  const dialog = useModal();
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -291,50 +291,62 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
     }
   };
   return (
-    <dialog
-      ref={dialog}
-      className="text-prompt feedback-dialog"
+    <DialogFrame
+      title="反馈问题"
+      className="feedback-dialog"
+      maxWidth="560px"
+      onClose={onClose}
+      closeLabel="关闭反馈"
+      closeDisabled={busy}
       aria-label="反馈问题"
-      onCancel={(event) => {
-        event.preventDefault();
-        if (!busy) onClose();
-      }}
     >
-      <header>
-        <h2>反馈问题</h2>
-        <DialogClose label="关闭反馈" disabled={busy} onClick={onClose} />
-      </header>
-      <p>诊断文件只包含下方内容。</p>
-      <textarea
-        readOnly
-        aria-label="诊断预览"
-        value={report ? text : "正在生成预览…"}
-      />
-      {error && (
-        <p className="dialog-error" role="alert">
-          {error}
-        </p>
-      )}
+      <DialogBody>
+        <p>诊断文件只包含下方内容。</p>
+        <TextArea
+          className="diagnostic-preview"
+          resize="none"
+          readOnly
+          aria-label="诊断预览"
+          value={report ? text : "正在生成预览…"}
+        />
+        {error && (
+          <p className="dialog-error" role="alert">
+            {error}
+          </p>
+        )}
+      </DialogBody>
       {replacement ? (
         <>
           <p>目标文件已存在。确认后将替换它。</p>
-          <footer>
-            <button disabled={busy} onClick={() => setReplacement(null)}>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="soft"
+              color="gray"
+              disabled={busy}
+              onClick={() => setReplacement(null)}
+            >
               取消
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              type="button"
               disabled={busy}
               onClick={() => void replace()}
             >
               替换文件
-            </button>
-          </footer>
+            </Button>
+          </DialogFooter>
         </>
       ) : (
-        <footer>
-          <button disabled={!report || busy} onClick={() => void save()}>
-            <Download size={15} />
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="soft"
+            color="gray"
+            disabled={!report || busy}
+            onClick={() => void save()}
+          >
+            <Download size={16} />
             {busy
               ? "正在保存…"
               : desktop()
@@ -344,9 +356,9 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
                 : saved
                   ? "再次下载诊断"
                   : "下载诊断"}
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            type="button"
             disabled={!saved || busy}
             data-tip={saved ? undefined : "先检查并保存诊断文件"}
             onClick={() =>
@@ -356,10 +368,10 @@ export function FeedbackDialog({ onClose }: { onClose: () => void }) {
             }
           >
             前往反馈页
-            <ExternalLink size={14} />
-          </button>
-        </footer>
+            <ExternalLink size={16} />
+          </Button>
+        </DialogFooter>
       )}
-    </dialog>
+    </DialogFrame>
   );
 }

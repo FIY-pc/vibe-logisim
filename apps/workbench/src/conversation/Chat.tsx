@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import {
+  ActionRow,
+  Button,
+  IconButton,
+  MessageComposer,
+  TextArea,
+} from "../design/ui";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   BookOpen,
@@ -23,14 +30,16 @@ import { ContextUsageRing, type ContextUsage } from "./ContextUsageRing";
 import {
   ConversationPicker,
   CopyButton,
-  FollowLatest,
   mergeActivity,
-  useConversationScroll,
   type ConversationSummary,
   type Message,
 } from "./ConversationContent";
 import { Turn, type TurnChange } from "./Turn";
 import { segments } from "./turns";
+import {
+  ConversationList,
+  type ConversationListHandle,
+} from "./ConversationList";
 import type { ProjectFolder } from "../workspace/Files";
 import {
   ModelPicker,
@@ -44,6 +53,7 @@ import {
 import { TextPrompt } from "../shared/TextPrompt";
 import { Select } from "../shared/Select";
 import { useAutoSize } from "../shared/useAutoSize";
+import { ConversationExport } from "./ConversationExport";
 export type { Message } from "./ConversationContent";
 
 /** The sidecar's `status` snapshot; the host adds `eventCursor`. Only
@@ -170,6 +180,7 @@ export function Chat({
   const [state, setState] = useState<RuntimeState | null>(null),
     [messages, setMessages] = useState<Message[]>([]),
     [conversations, setConversations] = useState<ConversationSummary[]>([]),
+    [exportOpen, setExportOpen] = useState(false),
     [models, setModels] = useState<ModelOption[]>([]);
   const [draftRecord, setDraftRecord] = useState({ key: "", text: "" }),
     [configure, setConfigure] = useState(false),
@@ -198,7 +209,7 @@ export function Chat({
   useEffect(() => {
     if (!busy) setStopping(false);
   }, [busy]);
-  const scroller = useRef<HTMLDivElement>(null);
+  const conversationList = useRef<ConversationListHandle>(null);
   const composerInput = useRef<HTMLTextAreaElement>(null);
   const editInput = useRef<HTMLTextAreaElement>(null);
 
@@ -483,13 +494,16 @@ export function Chat({
     setEditedText("");
     setRuntimeError("");
   }, [scope, state?.conversationId]);
-  const scroll = useConversationScroll(scroller, draftKey, visible, messages);
+  const turns = useMemo(
+    () => (scopeReady ? segments(messages) : []),
+    [scopeReady, messages],
+  );
 
   const send = (text = draft) => {
-    if (!ready || busy || !text.trim() || references.pending) return;
+    if (!ready || busy || !text.trim() || references.unresolved) return;
     const receipt = { key: draftKey, text },
       attachments = references.receipt();
-    scroll.latest();
+    conversationList.current?.latest();
     void act(async () => {
       await runtime("ask", {
         question: text,
@@ -508,7 +522,7 @@ export function Chat({
    * after the turn failed. */
   const resubmit = (message: Message, text: string) => {
     if (!ready || !text.trim() || busy) return;
-    scroll.latest();
+    conversationList.current?.latest();
     void act(async () => {
       await runtime("ask", {
         question: text,
@@ -597,8 +611,9 @@ export function Chat({
     <div className="message user">
       {editingMessage?.id === m.id ? (
         <div className="message-edit">
-          <textarea
+          <TextArea
             ref={editInput}
+            className="message-edit-input"
             aria-label="编辑消息"
             value={editedText}
             onChange={(e) => setEditedText(e.target.value)}
@@ -614,16 +629,21 @@ export function Chat({
             }}
           />
           <div className="message-edit-actions">
-            <button disabled={pending} onClick={cancelEdit}>
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={pending}
+              onClick={cancelEdit}
+            >
               取消
-            </button>
-            <button
-              className="primary"
+            </Button>
+            <Button
+              variant="solid"
               disabled={pending || !editedText.trim()}
               onClick={() => resubmit(m, editedText)}
             >
               重新发送
-            </button>
+            </Button>
           </div>
         </div>
       ) : (
@@ -634,7 +654,9 @@ export function Chat({
         <div className="message-actions">
           <CopyButton text={m.text || ""} onError={onError} />
           {!busy && m.canEdit && (
-            <button
+            <IconButton
+              variant="ghost"
+              color="gray"
               data-tip="编辑并重新发送"
               aria-label="编辑并重新发送"
               disabled={pending}
@@ -643,8 +665,8 @@ export function Chat({
                 setEditedText(m.text || "");
               }}
             >
-              <Pencil size={12} />
-            </button>
+              <Pencil size={16} />
+            </IconButton>
           )}
         </div>
       )}
@@ -674,6 +696,15 @@ export function Chat({
           }}
         />
       )}
+      {exportOpen && folder && (
+        <ConversationExport
+          key={folder.id}
+          workspaceKey={folder.id}
+          workspaceName={folder.name}
+          conversations={conversations}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       <div className="chat-header">
         <ConversationPicker
           conversations={conversations}
@@ -681,16 +712,27 @@ export function Chat({
           disabled={locked}
           onSelect={(id) => switchConversation("select", id)}
           onRestore={(id) => switchConversation("restore", id)}
+          onExport={
+            scopeReady && folder ? () => setExportOpen(true) : undefined
+          }
         />
-        <button
+        <IconButton
+          variant="ghost"
+          color="gray"
           data-tip="新建对话"
           aria-label="新建对话"
           disabled={locked}
           onClick={() => switchConversation("new")}
         >
-          <Plus size={15} />
-        </button>
+          <Plus size={16} />
+        </IconButton>
         <Menu label="对话操作">
+          <MenuItem
+            disabled={!scopeReady || !folder}
+            onSelect={() => setExportOpen(true)}
+          >
+            导出会话…
+          </MenuItem>
           <MenuItem
             disabled={locked || !state?.conversationId}
             onSelect={() => setRenameConversation(true)}
@@ -706,13 +748,15 @@ export function Chat({
             归档
           </MenuItem>
         </Menu>
-        <button
+        <IconButton
+          variant="ghost"
+          color="gray"
           data-tip="AI 设置"
           aria-label="AI 设置"
           onClick={() => setConfigure(!configure)}
         >
-          <Settings2 size={15} />
-        </button>
+          <Settings2 size={16} />
+        </IconButton>
       </div>
       {(runtimeError || state?.detail || state?.modelConfigurationError) && (
         <div className="error-bar" role="alert">
@@ -720,11 +764,21 @@ export function Chat({
             state?.modelConfigurationError?.message ||
             state?.detail}
           {!runtimeError && state?.modelConfigurationError ? (
-            <button onClick={() => setConfigure(true)}>
+            <Button
+              variant="ghost"
+              color="gray"
+              onClick={() => setConfigure(true)}
+            >
               {state.services.length ? "选择模型服务" : "添加模型服务"}
-            </button>
+            </Button>
           ) : (
-            <button onClick={() => void reconnect()}>重新连接</button>
+            <Button
+              variant="ghost"
+              color="gray"
+              onClick={() => void reconnect()}
+            >
+              重新连接
+            </Button>
           )}
         </div>
       )}
@@ -745,110 +799,107 @@ export function Chat({
           onClose={() => setConfigure(false)}
         />
       )}
-      <div
-        ref={scroller}
-        className="messages"
-        tabIndex={0}
-        onScroll={scroll.onScroll}
-        onWheel={scroll.onWheel}
-        onKeyDown={scroll.onKeyDown}
-        onClickCapture={scroll.onClickCapture}
-      >
-        <div className="messages-content">
-          {(!scopeReady || !messages.length) && (
-            <div className="quiet-empty">
-              {!state ? (
-                runtimeError ? (
-                  ""
-                ) : (
-                  "正在连接 AI…"
-                )
-              ) : !state.services.length ? (
-                <div className="chat-card">
-                  <span>登录 ChatGPT 或添加 API 服务后开始对话。</span>
-                  <button
-                    className="primary"
-                    onClick={() => setConfigure(true)}
-                  >
-                    连接 AI
-                  </button>
-                </div>
-              ) : draft.trim() ? (
-                "描述要完成的电路，或选中元件后提问。"
+      <ConversationList
+        key={draftKey}
+        ref={conversationList}
+        visible={visible}
+        items={turns}
+        empty={
+          <div className="quiet-empty">
+            {!state ? (
+              runtimeError ? (
+                ""
               ) : (
-                <div className="conversation-starters">
-                  {starterActions(
-                    Boolean(shown) && !readable,
-                    readable,
-                    selection.length > 0,
-                  ).map((starter) => (
-                    <button
-                      key={starter.id}
-                      className="conversation-starter"
-                      data-tip="立即发送"
-                      disabled={
-                        locked || references.pending || !state.available
-                      }
-                      onClick={() => {
-                        // The ordinary send path keeps the prompt editable if it fails.
-                        changeDraft(starter.prompt);
-                        send(starter.prompt);
-                      }}
-                    >
-                      <starter.icon size={16} />
-                      <span>{starter.label}</span>
-                      <ArrowUpRight size={14} />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {(scopeReady ? segments(messages) : []).map((segment, index, all) => {
-            const live =
-              busy &&
-              index === all.length - 1 &&
-              (!segment.turn || segment.turn.status === "running");
-            const user = segment.user;
-            return (
-              <Fragment key={segment.key}>
-                {user && userMessage(user)}
-                <Turn
-                  segment={segment}
-                  live={live}
-                  notice={
-                    live && state?.transmission?.phase === "retrying"
-                      ? state.transmission.message
-                      : null
-                  }
-                  locked={pending || busy}
-                  onUndo={undoFiles}
-                  onRetry={
-                    user?.canEdit && segment.turn?.status === "failed"
-                      ? () => resubmit(user, user.text || "")
-                      : undefined
-                  }
-                  onError={onError}
-                  onFollowReference={
-                    onFollowReference
-                      ? (href, item) =>
-                          onFollowReference(href, {
-                            ...item,
-                            context: item.context || user?.context,
-                          })
-                      : undefined
-                  }
-                />
-              </Fragment>
-            );
-          })}
-        </div>
-      </div>
-      {!scroll.following && <FollowLatest onClick={scroll.latest} />}
-      <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
+                "正在连接 AI…"
+              )
+            ) : !state.services.length ? (
+              <div className="chat-card">
+                <span>登录 ChatGPT 或添加 API 服务后开始对话。</span>
+                <Button variant="solid" onClick={() => setConfigure(true)}>
+                  连接 AI
+                </Button>
+              </div>
+            ) : draft.trim() ? (
+              "描述要完成的电路，或选中元件后提问。"
+            ) : (
+              <div className="conversation-starters">
+                {starterActions(
+                  Boolean(shown) && !readable,
+                  readable,
+                  selection.length > 0,
+                ).map((starter) => (
+                  <ActionRow
+                    variant="soft"
+                    color="gray"
+                    key={starter.id}
+                    className="conversation-starter"
+                    data-tip="立即发送"
+                    disabled={
+                      locked || references.unresolved || !state.available
+                    }
+                    onClick={() => {
+                      // The ordinary send path keeps the prompt editable if it fails.
+                      changeDraft(starter.prompt);
+                      send(starter.prompt);
+                    }}
+                  >
+                    <starter.icon size={16} />
+                    <span>{starter.label}</span>
+                    <ArrowUpRight size={16} />
+                  </ActionRow>
+                ))}
+              </div>
+            )}
+          </div>
+        }
+        renderItem={(segment, index) => {
+          const live =
+            busy &&
+            index === turns.length - 1 &&
+            (!segment.turn || segment.turn.status === "running");
+          const user = segment.user;
+          return (
+            <Fragment key={segment.key}>
+              {user && userMessage(user)}
+              <Turn
+                segment={segment}
+                live={live}
+                notice={
+                  live && state?.transmission?.phase === "retrying"
+                    ? state.transmission.message
+                    : null
+                }
+                locked={pending || busy}
+                onUndo={undoFiles}
+                onRetry={
+                  user?.canEdit && segment.turn?.status === "failed"
+                    ? () => resubmit(user, user.text || "")
+                    : undefined
+                }
+                onError={onError}
+                onFollowReference={
+                  onFollowReference
+                    ? (href, item) =>
+                        onFollowReference(href, {
+                          ...item,
+                          context: item.context || user?.context,
+                        })
+                    : undefined
+                }
+              />
+            </Fragment>
+          );
+        }}
+      />
+      <MessageComposer.Root
+        className="composer"
+        aria-label="消息编辑器"
+        data-reference-drop={referenceDrop || undefined}
+      >
         {references.composer}
-        <textarea
+        <MessageComposer.Input
           ref={composerInput}
+          className="composer-input"
           value={draft}
           onChange={(e) => changeDraft(e.target.value)}
           placeholder="描述你的想法…"
@@ -866,7 +917,7 @@ export function Chat({
             }
           }}
         />
-        <footer>
+        <MessageComposer.Actions>
           <ModelPicker
             scope={modelScope}
             model={state?.model || null}
@@ -874,6 +925,9 @@ export function Chat({
             disabled={!ready || pending}
             busy={busy}
             configurationError={state?.modelConfigurationError?.message}
+            allowCustom={Boolean(
+              state?.customProvider && state.customProvider.auth !== "chatgpt",
+            )}
             load={loadModels}
             select={async (model) => {
               await runtime("selectModel", {
@@ -889,7 +943,6 @@ export function Chat({
           />
           <Select
             label="思考深度"
-            size="small"
             variant="plain"
             className="composer-effort"
             value={state?.effort || "none"}
@@ -903,8 +956,9 @@ export function Chat({
           />
           <ContextUsageRing usage={scopeReady ? state?.contextUsage : null} />
           {busy ? (
-            <button
-              className="primary composer-stop"
+            <IconButton
+              variant="solid"
+              className="composer-stop"
               aria-label="停止回答"
               data-tip={stopping ? "正在停止…" : "停止回答"}
               disabled={stopping}
@@ -918,28 +972,28 @@ export function Chat({
                   });
               }}
             >
-              <Square size={12} />
-            </button>
+              <Square size={16} />
+            </IconButton>
           ) : (
-            <button
-              className="primary"
+            <IconButton
+              variant="solid"
               aria-label="发送"
               data-tip="发送"
               data-tip-key="Enter"
               disabled={
                 !ready ||
                 !draft.trim() ||
-                references.pending ||
+                references.unresolved ||
                 pending ||
                 !state?.available
               }
               onClick={() => send()}
             >
-              <Send size={15} />
-            </button>
+              <Send size={16} />
+            </IconButton>
           )}
-        </footer>
-      </div>
+        </MessageComposer.Actions>
+      </MessageComposer.Root>
     </div>
   );
 }

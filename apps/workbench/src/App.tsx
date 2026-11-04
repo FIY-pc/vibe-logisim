@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect } from "react";
+import { WorkbenchTheme } from "./design/Theme";
 import { UpdateNotice, useFeedback } from "./shell/Feedback";
-import { useWorkspaceLayout } from "./shell/WorkspaceLayout";
+import { useWorkspaceLayout, WorkspacePanels } from "./shell/WorkspaceLayout";
 import { usePlacement } from "./editor/usePlacement";
 import { Breadcrumbs } from "./editor/Breadcrumbs";
 import { CanvasRegion } from "./editor/CanvasRegion";
@@ -22,7 +23,7 @@ import { SimulationAlerts } from "./simulation/SimulationAlerts";
 import { SimulationDock } from "./simulation/SimulationDock";
 import { SimulationTransportRegion } from "./simulation/SimulationTransportRegion";
 import { FeedbackDialogRegion } from "./shell/FeedbackDialogRegion";
-import { FilePreviewRegion, ReaderRecall } from "./workspace/FilePreviewRegion";
+import { DocumentWorkspace } from "./workspace/DocumentWorkspace";
 import { FolderPrompt } from "./workspace/FolderPrompt";
 import { NewFilePrompt } from "./workspace/NewFilePrompt";
 import { ProjectInfoRegion } from "./workspace/ProjectInfoRegion";
@@ -42,10 +43,12 @@ export function App() {
   useEffect(() => workbench.start(), [workbench]);
   useEffect(withoutPageMenu, []);
   return (
-    <WorkbenchProvider value={workbench}>
-      <Shell />
-      <Tooltips />
-    </WorkbenchProvider>
+    <WorkbenchTheme>
+      <WorkbenchProvider value={workbench}>
+        <Shell />
+        <Tooltips />
+      </WorkbenchProvider>
+    </WorkbenchTheme>
   );
 }
 
@@ -88,8 +91,6 @@ function Shell() {
   const { stores } = useWorkbench();
   const { doc, circuit } = useView();
   const folder = useFiles((state) => state.folder);
-  const reading = useFiles((state) => !!state.preview);
-  const readerMode = useFiles((state) => state.readerMode);
   const place = useEditor((state) => state.place);
   const placement = usePlacement(doc, circuit, place);
   useLayoutEffect(() => {
@@ -108,23 +109,13 @@ function Shell() {
       <UploadInput />
       <Titlebar feedback={feedback} />
       <UpdateNotice feedback={feedback} />
-      <div className="workspace" ref={layout.workspace}>
-        {layout.narrow && (layout.showExplorer || layout.showRight) && (
-          <button
-            className="workspace-shade"
-            aria-label="关闭侧栏"
-            onClick={layout.closeDrawers}
-          />
-        )}
-        <Rail placement={placement} />
-        <div
-          className={
-            "editor-group" +
-            (reading && (readerMode === "focus" || !doc) ? " reader-focus" : "")
-          }
-        >
+      <WorkspacePanels
+        layout={layout}
+        rail={<Rail placement={placement} />}
+        review={<Aside />}
+      >
+        <DocumentWorkspace>
           <main className="editor">
-            <ReaderRecall />
             {doc && circuit ? (
               <>
                 <SourceNotices />
@@ -148,10 +139,8 @@ function Shell() {
               </>
             )}
           </main>
-          <FilePreviewRegion />
-        </div>
-        <Aside />
-      </div>
+        </DocumentWorkspace>
+      </WorkspacePanels>
       <ErrorBar />
       <FeedbackDialogRegion feedback={feedback} />
       <DecisionRegion />

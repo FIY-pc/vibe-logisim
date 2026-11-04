@@ -232,11 +232,38 @@ export function templateGeometry(reply: any) {
   };
 }
 
-/**
- * Finds which library offers a tool name when the model omitted it: the
- * one group of the catalog that lists it. The group with the empty id is
- * this file's own subcircuits.
- */
+/** Names and availability from the same native catalog the component picker uses. */
+async function componentCatalog(
+  context: ToolContext,
+  document: DocumentRef,
+  circuit: string,
+) {
+  const reply = await context.host.call<any>({
+    op: "catalog",
+    id: document.id,
+    revision: document.revision,
+    circuit,
+  });
+  context.assertCurrent();
+  return (reply?.children ?? [])
+    .filter((group: any) => group.tag === "group")
+    .map((group: any) => ({
+      library: group.attributes.id ?? "",
+      name: group.attributes.name,
+      label: group.attributes.label,
+      components: (group.children ?? [])
+        .filter((entry: any) => entry.tag === "tool")
+        .map((entry: any) => ({
+          name: entry.attributes.name,
+          factory: entry.attributes.factory,
+          label: entry.attributes.label,
+          ...(entry.attributes.disabled
+            ? { unavailable: entry.attributes.disabled }
+            : {}),
+        })),
+    }));
+}
+
 /**
  * Resolves component names to their library ids for one revision, reading
  * the catalog once, and only when a name comes without its library.
@@ -246,38 +273,29 @@ export function libraryResolver(
   document: DocumentRef,
   circuit: string,
 ) {
-  let catalog: Promise<any> | null = null;
+  let catalog: ReturnType<typeof componentCatalog> | null = null;
   return async (
     tool: string,
     library: string | null | undefined,
   ): Promise<string> => {
     if (library !== undefined && library !== null) return library;
-    catalog ??= context.host.call<any>({
-      op: "catalog",
-      id: document.id,
-      revision: document.revision,
-      circuit,
-    });
+    catalog ??= componentCatalog(context, document, circuit);
+    const libraries = await catalog;
     const hits: { id: string; name: string }[] = [];
-    for (const group of (await catalog)?.children || [])
-      if (group.tag === "group")
-        for (const entry of group.children || [])
-          if (
-            entry.tag === "tool" &&
-            (entry.attributes?.name === tool ||
-              entry.attributes?.factory === tool)
-          )
-            hits.push({
-              id: group.attributes.id ?? "",
-              name: group.attributes.name,
-            });
+    for (const group of libraries)
+      if (
+        group.components.some(
+          (entry: any) => entry.name === tool || entry.factory === tool,
+        )
+      )
+        hits.push({ id: group.library, name: group.name });
     if (hits.length === 1) return hits[0].id;
     if (!hits.length)
       throw new CircuitToolError(
         "COMPONENT_NOT_FOUND",
         "当前文件的组件库里没有这个元件：" + tool,
         {
-          hint: "元件名是 Logisim 的原生名称（如 AND Gate、Register、Pin）；子电路用定义名并把 library 设为空字符串。",
+          hint: "调用 describe_component 不传 tool 可查看当前文件的组件目录。library 省略时按唯一名称查找；同名元件需要指定库，当前文件的子电路使用空字符串。",
         },
       );
     throw new CircuitToolError(
@@ -306,6 +324,27 @@ export async function describeComponent(
   args: Record<string, any>,
 ) {
   const { document, circuit } = await context.target(args);
+  if (args.tool === undefined) {
+    if (Object.keys(args.attributes ?? {}).length)
+      throw new CircuitToolError(
+        "INVALID_ARGUMENT",
+        "查询属性配置时需要指定 tool。",
+      );
+    const libraries = await componentCatalog(context, document, circuit);
+    const selected =
+      args.library === undefined
+        ? libraries
+        : libraries.filter((group: any) => group.library === args.library);
+    if (!selected.length)
+      throw new CircuitToolError(
+        "LIBRARY_NOT_FOUND",
+        "当前文件没有这个组件库。",
+        {
+          context: { libraries },
+        },
+      );
+    return { ...context.identity(document, circuit), libraries: selected };
+  }
   const library = await resolveLibrary(
     context,
     document,

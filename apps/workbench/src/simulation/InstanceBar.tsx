@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { live } from "./store";
 import { useSimulationState, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
@@ -8,9 +9,13 @@ export function ParentInstanceButton() {
   const view = useView();
   if (!view.instance.length) return null;
   return (
-    <button onClick={() => actions.navigation.leaveInstance(view)}>
+    <Button
+      variant="ghost"
+      color="gray"
+      onClick={() => actions.navigation.leaveInstance(view)}
+    >
       ↑ 返回上层实例
-    </button>
+    </Button>
   );
 }
 

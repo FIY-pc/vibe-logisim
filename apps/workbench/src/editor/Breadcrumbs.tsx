@@ -14,8 +14,6 @@ export function Breadcrumbs({ placement }: { placement: PlacementState }) {
   if (!doc || !circuit) return null;
   return (
     <div className="breadcrumbs">
-      <span>{doc.name}</span>
-      <span>/</span>
       <ParentInstanceButton />
       <strong>{circuit.name}</strong>
       <InstanceStatus />

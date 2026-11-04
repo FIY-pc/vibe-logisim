@@ -1,3 +1,4 @@
+import { Button, Text } from "../design/ui";
 import { memo, useEffect, useRef, useState } from "react";
 import { ChevronRight, RotateCcw, Undo2 } from "lucide-react";
 import { ChatMarkdown, CopyButton, type Message } from "./ConversationContent";
@@ -9,7 +10,7 @@ import {
   toolState,
   type Segment,
 } from "./turns";
-import "./Turn.css";
+import { useTurnDisclosure } from "./TurnExpansion";
 
 /** The files a turn changed, as the folder history recorded them. */
 export interface TurnChange {
@@ -65,14 +66,11 @@ export function Turn({
     : turn?.status === "running"
       ? "unfinished"
       : turn?.status || "completed";
-  const [open, setOpen] = useState(status !== "completed");
-  // A finished turn folds in the same render that ends it, without a frame
-  // of the open steps in between.
-  const [wasLive, setWasLive] = useState(live);
-  if (wasLive !== live) {
-    setWasLive(live);
-    if (!live) setOpen(status !== "completed");
-  }
+  const [open, setOpen] = useTurnDisclosure(
+    JSON.stringify([segment.key, "turn"]),
+    status,
+    status !== "completed",
+  );
   // Items render through stable callbacks so a status snapshot, which
   // replaces every message object, re-renders only what changed.
   const handlers = useRef({ onError, onFollowReference });
@@ -89,20 +87,23 @@ export function Turn({
   return (
     <div className="turn" data-status={status}>
       {!live && process.length > 0 && (
-        <button
+        <Button
+          variant="ghost"
+          color="gray"
           className="turn-summary"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          <ChevronRight size={13} aria-hidden />
+          <ChevronRight size={16} aria-hidden />
           <span>{summarize(process, turn?.elapsedMs)}</span>
-        </button>
+        </Button>
       )}
       {segment.items.map((item, index) =>
         !live && !open && index < process.length ? null : (
           <TurnItem
             key={item.id}
             item={item}
+            disclosureKey={JSON.stringify([segment.key, item.id])}
             live={live}
             answer={!live && index >= process.length}
             onError={stable.error}
@@ -120,10 +121,15 @@ export function Turn({
         <div className="turn-end" data-status="failed">
           <span>{turn?.error || "回答没有完成"}</span>
           {onRetry && (
-            <button disabled={locked} onClick={onRetry}>
-              <RotateCcw size={12} aria-hidden />
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={locked}
+              onClick={onRetry}
+            >
+              <RotateCcw size={16} aria-hidden />
               重试
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -139,23 +145,29 @@ export function Turn({
             <ul>
               {change.files.map((file) => (
                 <li key={file.path}>
-                  <small>{KINDS[file.kind] || file.kind}</small>
+                  <Text kind="meta" asChild>
+                    <small>{KINDS[file.kind] || file.kind}</small>
+                  </Text>
                   {file.path}
                 </li>
               ))}
             </ul>
           </span>
           {change.undone ? (
-            <small>已撤销</small>
+            <Text kind="meta" color="gray" asChild>
+              <small>已撤销</small>
+            </Text>
           ) : (
-            <button
+            <Button
+              variant="ghost"
+              color="gray"
               disabled={locked || !change.undoable}
               data-tip={change.undoable ? undefined : "包含未保留内容的大文件"}
               onClick={() => onUndo(change)}
             >
-              <Undo2 size={13} aria-hidden />
+              <Undo2 size={16} aria-hidden />
               撤销
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -177,21 +189,31 @@ const sameItem = (a: Message, b: Message) =>
 const TurnItem = memo(
   function TurnItem({
     item,
+    disclosureKey,
     live,
     answer,
     onError,
     onFollowReference,
   }: {
     item: Message;
+    disclosureKey: string;
     live: boolean;
     /** Part of the finished turn's answer: it can be copied. */
     answer: boolean;
     onError: (error: unknown) => void;
     onFollowReference?: (href: string, message: Message) => void;
   }) {
-    if (item.type === "activity") return <ToolRow item={item} />;
+    if (item.type === "activity")
+      return <ToolRow item={item} disclosureKey={disclosureKey} />;
     if (item.type === "reasoning")
-      return <Thought text={item.text || ""} live={live} onError={onError} />;
+      return (
+        <Thought
+          text={item.text || ""}
+          live={live}
+          onError={onError}
+          disclosureKey={disclosureKey}
+        />
+      );
     if (item.type !== "assistant") return null;
     return (
       <div className="message assistant">
@@ -213,6 +235,7 @@ const TurnItem = memo(
     );
   },
   (a, b) =>
+    a.disclosureKey === b.disclosureKey &&
     a.live === b.live &&
     a.answer === b.answer &&
     a.onFollowReference === b.onFollowReference &&
@@ -231,24 +254,26 @@ const toggle =
 
 /** Reasoning: open while the turn runs, a one-line disclosure afterwards. */
 function Thought({
+  disclosureKey,
   text,
   live,
   onError,
 }: {
+  disclosureKey: string;
   text: string;
   live: boolean;
   onError: (error: unknown) => void;
 }) {
-  const [open, setOpen] = useState(live);
-  // It closes when the turn ends, as a reloaded window shows it.
-  const [wasLive, setWasLive] = useState(live);
-  if (wasLive !== live) {
-    setWasLive(live);
-    if (!live) setOpen(false);
-  }
+  const [open, setOpen] = useTurnDisclosure(
+    disclosureKey,
+    live ? "live" : "finished",
+    live,
+  );
   return (
     <details className="turn-thought" open={open}>
-      <summary onClick={toggle(open, setOpen)}>思考</summary>
+      <Button asChild variant="ghost" color="gray">
+        <summary onClick={toggle(open, setOpen)}>思考</summary>
+      </Button>
       {open && (
         <div className="turn-thought-text">
           <ChatMarkdown text={text} onError={onError} />
@@ -259,8 +284,14 @@ function Thought({
 }
 
 /** One tool call: what it did and on what; the input and output inside. */
-function ToolRow({ item }: { item: Message }) {
-  const [open, setOpen] = useState(false);
+function ToolRow({
+  item,
+  disclosureKey,
+}: {
+  item: Message;
+  disclosureKey: string;
+}) {
+  const [open, setOpen] = useTurnDisclosure(disclosureKey, "tool", false);
   const output = item.toolOutput;
   const state = toolState(item);
   const input = output?.input ? { ...output.input } : null;
@@ -271,14 +302,20 @@ function ToolRow({ item }: { item: Message }) {
     (typeof output?.input?.circuit === "string" ? output.input.circuit : "");
   return (
     <details className="turn-tool" data-state={state} open={open}>
-      <summary onClick={toggle(open, setOpen)}>
-        {state === "running" && <span className="spinner" aria-hidden />}
-        <span className="turn-tool-label">
-          {item.label || toolName(item) || "工具调用"}
-        </span>
-        {target && <span className="turn-tool-target">{target}</span>}
-        {STATES[state] && <small>{STATES[state]}</small>}
-      </summary>
+      <Button asChild variant="ghost" color="gray">
+        <summary onClick={toggle(open, setOpen)}>
+          {state === "running" && <span className="spinner" aria-hidden />}
+          <span className="turn-tool-label">
+            {item.label || toolName(item) || "工具调用"}
+          </span>
+          {target && <span className="turn-tool-target">{target}</span>}
+          {STATES[state] && (
+            <Text kind="meta" className="turn-tool-status" asChild>
+              <small>{STATES[state]}</small>
+            </Text>
+          )}
+        </summary>
+      </Button>
       {open && (
         <div className="turn-tool-detail">
           {input &&
@@ -292,11 +329,11 @@ function ToolRow({ item }: { item: Message }) {
             <pre>{item.detail}</pre>
           ) : null}
           {output?.exitCode != null && output.exitCode !== 0 && (
-            <small>退出码 {output.exitCode}</small>
+            <Text kind="meta">退出码 {output.exitCode}</Text>
           )}
-          {output?.truncated && <small>输出已截断</small>}
+          {output?.truncated && <Text kind="meta">输出已截断</Text>}
           {state === "unknown" && (
-            <small>调用没有确认结束，请先检查工作区</small>
+            <Text kind="meta">调用没有确认结束，请先检查工作区</Text>
           )}
         </div>
       )}
@@ -320,15 +357,21 @@ function LiveLine({
   }, []);
   if (notice)
     return (
-      <div className="turn-live" data-notice="" role="status">
+      <Text
+        as="p"
+        kind="meta"
+        className="turn-live"
+        data-notice=""
+        role="status"
+      >
         {notice}
-      </div>
+      </Text>
     );
   const elapsed = now - (since ?? mounted);
   return (
-    <div className="turn-live">
+    <Text as="p" kind="meta" className="turn-live">
       <span className="turn-working">正在处理</span>
       {elapsed >= 1000 && <span aria-hidden> · {formatDuration(elapsed)}</span>}
-    </div>
+    </Text>
   );
 }

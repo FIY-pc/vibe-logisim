@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { optionLabels, propertyLabels } from "../editor/componentLabels";
 import type { XmlNode } from "./types";
-import "../editor/inspector.css";
 import { Select } from "./Select";
+import { TextArea, TextField } from "../design/ui";
 
 interface Props {
   field: XmlNode;
@@ -121,7 +121,7 @@ export function PropertyField({
             }}
           />
         ) : multiline ? (
-          <textarea
+          <TextArea
             {...common}
             rows={5}
             placeholder={placeholder}
@@ -129,7 +129,7 @@ export function PropertyField({
             onChange={(e) => setValue(e.target.value)}
           />
         ) : (
-          <input
+          <TextField.Root
             {...common}
             placeholder={placeholder}
             autoComplete="off"

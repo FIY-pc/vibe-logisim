@@ -1,3 +1,5 @@
+import { Button, Heading } from "../design/ui";
+
 import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { TextPrompt } from "../shared/TextPrompt";
 import { useEffect, useState } from "react";
@@ -7,7 +9,7 @@ import type { ReferenceInput } from "../conversation/references";
 import { command } from "../shared/transport";
 import { busValue, Waveform } from "./Waveform";
 import { Checkbox } from "../shared/Checkbox";
-import { DialogClose, useModal } from "../shared/Dialog";
+import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 import { Menu, MenuItem } from "../shared/Menu";
 import { fullText } from "../shared/Tooltips";
 
@@ -27,7 +29,6 @@ export function Observations({
   initial?: string;
   onQuote: (references: ReferenceInput[]) => void;
 }) {
-  const dialog = useModal();
   const [renaming, setRenaming] = useState<ObservationSummary | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [records, setRecords] = useState<ObservationSummary[]>([]),
@@ -73,144 +74,147 @@ export function Observations({
     .map((id) => shown[id])
     .filter((record): record is ObservationRecord => !!record);
   return (
-    <dialog
-      ref={dialog}
+    <DialogFrame
+      title="留存观察"
       className="observations-dialog"
+      maxWidth="1100px"
+      onClose={onClose}
+      closeLabel="关闭留存观察"
+      height="min(780px, 88dvh)"
       aria-label="留存观察"
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
     >
-      <header>
-        <h2>留存观察</h2>
-        <DialogClose label="关闭留存观察" onClick={onClose} />
-      </header>
-      {error && (
-        <p role="alert" className="dialog-error">
-          {error}
-        </p>
-      )}
-      <div className="observations-body">
-        <div className="observation-list">
-          {records.length ? (
-            records.map((record) => (
-              <div key={record.id}>
-                <label>
-                  <Checkbox
-                    disabled={Boolean(record.damaged)}
-                    checked={selection.includes(record.id)}
-                    onCheckedChange={(checked) =>
-                      setSelection((old) =>
-                        checked
-                          ? [...old.slice(-1), record.id]
-                          : old.filter((id) => id !== record.id),
-                      )
-                    }
-                  />
-                  <span>
-                    <span
-                      className="observation-title"
-                      {...fullText(record.title)}
-                    >
-                      {record.title}
+      <DialogBody scroll={false}>
+        {error && (
+          <p role="alert" className="dialog-error">
+            {error}
+          </p>
+        )}
+        <div className="observations-body">
+          <div className="observation-list">
+            {records.length ? (
+              records.map((record) => (
+                <div key={record.id}>
+                  <label>
+                    <Checkbox
+                      disabled={Boolean(record.damaged)}
+                      checked={selection.includes(record.id)}
+                      onCheckedChange={(checked) =>
+                        setSelection((old) =>
+                          checked
+                            ? [...old.slice(-1), record.id]
+                            : old.filter((id) => id !== record.id),
+                        )
+                      }
+                    />
+                    <span>
+                      <span
+                        className="observation-title"
+                        {...fullText(record.title)}
+                      >
+                        {record.title}
+                      </span>
+                      <small>
+                        {record.damaged
+                          ? record.damaged
+                          : new Date(record.createdAt).toLocaleString()}
+                      </small>
                     </span>
-                    <small>
-                      {record.damaged
-                        ? record.damaged
-                        : new Date(record.createdAt).toLocaleString()}
-                    </small>
-                  </span>
-                </label>
-                <Menu label={`${record.title} 的操作`}>
-                  <MenuItem
-                    disabled={Boolean(record.damaged)}
-                    onSelect={() => setRenaming(record)}
-                  >
-                    重命名…
-                  </MenuItem>
-                  <MenuItem
-                    danger
-                    onSelect={() =>
-                      setDecision({
-                        title: `删除 ${record.title}？`,
-                        message: "这条观察记录删除后无法恢复。",
-                        actions: [
-                          {
-                            label: "删除",
-                            run: async () => {
-                              await command({
-                                op: "observationDelete",
-                                record: record.id,
-                              });
-                              setRecords((old) =>
-                                old.filter((item) => item.id !== record.id),
-                              );
-                              setSelection((old) =>
-                                old.filter((id) => id !== record.id),
-                              );
+                  </label>
+                  <Menu label={`${record.title} 的操作`}>
+                    <MenuItem
+                      disabled={Boolean(record.damaged)}
+                      onSelect={() => setRenaming(record)}
+                    >
+                      重命名…
+                    </MenuItem>
+                    <MenuItem
+                      danger
+                      onSelect={() =>
+                        setDecision({
+                          title: `删除 ${record.title}？`,
+                          message: "这条观察记录删除后无法恢复。",
+                          actions: [
+                            {
+                              label: "删除",
+                              run: async () => {
+                                await command({
+                                  op: "observationDelete",
+                                  record: record.id,
+                                });
+                                setRecords((old) =>
+                                  old.filter((item) => item.id !== record.id),
+                                );
+                                setSelection((old) =>
+                                  old.filter((id) => id !== record.id),
+                                );
+                              },
                             },
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    删除…
-                  </MenuItem>
-                </Menu>
-              </div>
-            ))
-          ) : (
-            <p className="quiet-empty">在仿真菜单中留存此刻（F6）</p>
-          )}
-        </div>
-        <div className="observation-viewer">
-          {records.length > 0 && !selection.length && (
-            <p className="quiet-empty">勾选左侧的观察查看，勾选两条可以对比</p>
-          )}
-          {selected.length === 2 && <Comparison records={selected} />}
-          {selected.map((record) => (
-            <article key={record.id}>
-              <h3>{record.title}</h3>
-              <p className="muted">
-                {record.rootCircuit}
-                {record.instancePath.length
-                  ? ` › ${record.circuit} (${record.instancePath.join(" / ")})`
-                  : ""}{" "}
-                · 修订 {record.revision.slice(0, 8)}
+                          ],
+                        })
+                      }
+                    >
+                      删除…
+                    </MenuItem>
+                  </Menu>
+                </div>
+              ))
+            ) : (
+              <p className="quiet-empty">在仿真菜单中留存此刻（F6）</p>
+            )}
+          </div>
+          <div className="observation-viewer">
+            {records.length > 0 && !selection.length && (
+              <p className="quiet-empty">
+                勾选左侧的观察查看，勾选两条可以对比
               </p>
-              <Picture record={record} />
-              {record.signals.length > 0 && (
-                <table>
-                  <tbody>
-                    {record.signals.map((signal) => (
-                      <tr key={signal.key}>
-                        <th>{signal.label}</th>
-                        <td>
-                          <code data-tip={signal.bits}>
-                            {busValue(signal.bits)}
-                          </code>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {record.trace && (
-                <Waveform
-                  trace={record.trace}
-                  labels={Object.fromEntries(
-                    record.signals.map((signal) => [signal.key, signal.label]),
-                  )}
-                />
-              )}
-            </article>
-          ))}
+            )}
+            {selected.length === 2 && <Comparison records={selected} />}
+            {selected.map((record) => (
+              <article key={record.id}>
+                <Heading as="h3">{record.title}</Heading>
+                <p className="muted">
+                  {record.rootCircuit}
+                  {record.instancePath.length
+                    ? ` › ${record.circuit} (${record.instancePath.join(" / ")})`
+                    : ""}{" "}
+                  · 修订 {record.revision.slice(0, 8)}
+                </p>
+                <Picture record={record} />
+                {record.signals.length > 0 && (
+                  <table>
+                    <tbody>
+                      {record.signals.map((signal) => (
+                        <tr key={signal.key}>
+                          <th>{signal.label}</th>
+                          <td>
+                            <code data-tip={signal.bits}>
+                              {busValue(signal.bits)}
+                            </code>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {record.trace && (
+                  <Waveform
+                    trace={record.trace}
+                    labels={Object.fromEntries(
+                      record.signals.map((signal) => [
+                        signal.key,
+                        signal.label,
+                      ]),
+                    )}
+                  />
+                )}
+              </article>
+            ))}
+          </div>
         </div>
-      </div>
-      <footer>
-        <button
-          className="primary"
+      </DialogBody>
+      <DialogFooter>
+        <Button
+          type="button"
           disabled={!selected.length}
           onClick={() => {
             onQuote(
@@ -224,8 +228,8 @@ export function Observations({
           }}
         >
           {selected.length === 2 ? "引用两条观察" : "引用到对话"}
-        </button>
-      </footer>
+        </Button>
+      </DialogFooter>
       {renaming && (
         <TextPrompt
           title="重命名观察"
@@ -253,7 +257,7 @@ export function Observations({
       {decision && (
         <DecisionDialog decision={decision} onClose={() => setDecision(null)} />
       )}
-    </dialog>
+    </DialogFrame>
   );
 }
 

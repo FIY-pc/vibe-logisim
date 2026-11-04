@@ -1,0 +1,89 @@
+/* Themes ghost controls align with inline text using negative margins. Our
+ * controls live in toolbars and rows: reserve the same 32px box for every
+ * emphasis. This is the only geometry adapter; pages must not reskin them. */
+.ui-button.rt-variant-ghost,
+.ui-icon-button.rt-variant-ghost,
+.select-trigger.rt-variant-ghost {
+  box-sizing: border-box;
+  height: var(--control-height);
+  margin: 0;
+  padding: 0 var(--space-3);
+}
+.ui-icon-button {
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+}
+.ui-icon-button.rt-variant-ghost {
+  padding: 0;
+}
+.ui-button > svg,
+.ui-icon-button > svg,
+.ui-action-row > svg {
+  width: var(--space-4);
+  height: var(--space-4);
+  flex: none;
+}
+.ui-action-row {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: var(--control-height);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  justify-content: space-between;
+  gap: var(--space-3);
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.ui-button[data-pressed="true"],
+.ui-icon-button[aria-pressed="true"],
+.ui-button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ui-message-composer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+}
+.ui-message-composer:focus-within,
+.ui-message-composer[data-reference-drop="true"] {
+  outline: 2px solid var(--focus-8);
+  outline-offset: -1px;
+}
+.ui-message-composer-input.rt-TextAreaRoot {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.ui-message-composer-input > textarea {
+  min-height: 88px;
+  max-height: min(28dvh, 240px);
+  padding: var(--space-3);
+  line-height: var(--line-height-3);
+}
+.ui-message-composer-attachments {
+  min-height: 0;
+  max-height: min(20dvh, 144px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-3) 0;
+}
+.ui-message-composer-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}

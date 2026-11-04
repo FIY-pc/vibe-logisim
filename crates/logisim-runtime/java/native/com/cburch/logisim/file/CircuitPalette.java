@@ -196,7 +196,15 @@ public final class CircuitPalette {
         attrs=component.getAttributeSet();checkOverrides(attrs,expected);
         Bounds bounds=component.getBounds();
         if(placing) {
-            if(bounds.getX()<0||bounds.getY()<0)throw new IllegalArgumentException("请将整个元件放在画布的非负坐标区域");
+            if(bounds.getX()<0||bounds.getY()<0) {
+                int dx=Math.max(0,-bounds.getX()),dy=Math.max(0,-bounds.getY());
+                boolean snap=!Boolean.FALSE.equals(factory.getFeature(ComponentFactory.SHOULD_SNAP,attrs));
+                int suggestedX=x+(snap?((dx+9)/10)*10:dx),suggestedY=y+(snap?((dy+9)/10)*10:dy);
+                throw new IllegalArgumentException("请将整个元件放在画布的非负坐标区域；"+factory.getName()
+                    +" 锚点 ("+x+", "+y+")，实际边界 (x="+bounds.getX()+", y="+bounds.getY()
+                    +", width="+bounds.getWidth()+", height="+bounds.getHeight()+")；"
+                    +"请向右至少移动 "+dx+"、向下至少移动 "+dy+"；可将锚点改为 ("+suggestedX+", "+suggestedY+") 后重试");
+            }
             if(circuit.hasConflict(component))throw new IllegalArgumentException("此位置与已有元件冲突，请换一个位置");
             for(com.cburch.logisim.comp.Component c:circuit.getNonWires())
                 if(c.getFactory().getName().equals(factory.getName())&&c.getLocation().equals(component.getLocation()))throw new IllegalArgumentException("此位置已有相同元件");

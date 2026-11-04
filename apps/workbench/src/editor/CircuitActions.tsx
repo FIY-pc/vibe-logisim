@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { useSettings, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import { tip } from "../shared/Tooltips";
@@ -11,17 +12,21 @@ export function CircuitActions() {
   const { setInterfaceTarget, setFind } = stores.editor.getState();
   return (
     <div className="circuit-actions">
-      <button
+      <Button
+        variant="ghost"
+        color="gray"
         onClick={() => setInterfaceTarget({ doc, circuit: circuit.name })}
       >
         封装与接口…
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        color="gray"
         onClick={() => setFind("component")}
         {...tip("查找元件", shortcuts.find)}
       >
         查找元件…
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import { Ellipsis, FolderOpen } from "lucide-react";
+import { Button } from "../design/ui";
+import { FolderOpen } from "lucide-react";
 import { FeedbackMenu, type FeedbackController } from "../shell/Feedback";
 import { Menu, MenuItem, MenuSeparator, MenuSub } from "../shared/Menu";
 import { bindingLabel } from "../shared/shortcuts";
@@ -22,14 +23,15 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
   const busy = Boolean(pending);
   return (
     <>
-      <button className="open-folder" onClick={() => void openFolder()}>
-        <FolderOpen size={16} /> 打开文件夹
-      </button>
-      <Menu
-        label="更多"
-        title="更多：文件、查找、设置与帮助"
-        trigger={<Ellipsis size={16} aria-hidden="true" />}
+      <Button
+        variant="ghost"
+        color="gray"
+        className="open-folder"
+        onClick={() => void openFolder()}
       >
+        <FolderOpen size={16} /> 打开文件夹
+      </Button>
+      <Menu label="更多" title="更多：文件、查找、设置与帮助">
         <MenuItem
           shortcut={bindingLabel("Mod+N")}
           onSelect={() => void newFile()}

@@ -372,7 +372,7 @@ fn save_as_rebases_external_libraries_and_history_without_changing_original() {
     let path = original.join("main.circ");
     let xml = vibe_circuit_document::EMPTY_CIRCUIT.replace(
         "<main name=\"main\"/>",
-        "<lib name=\"6\" desc=\"file#parts/logic.circ\"/><lib name=\"7\" desc=\"jar#parts/devices.jar#example.Devices\"/><main name=\"main\"/>",
+        "<lib name=\"100\" desc=\"file#parts/logic.circ\"/><lib name=\"101\" desc=\"jar#parts/devices.jar#example.Devices\"/><main name=\"main\"/>",
     );
     std::fs::write(&path, &xml).unwrap();
     let mut d = Document::open(&path).unwrap();
@@ -396,7 +396,7 @@ fn save_as_rebases_external_libraries_and_history_without_changing_original() {
             .descriptor
     };
     assert_eq!(
-        library(&d, "6"),
+        library(&d, "100"),
         format!(
             "file#{}",
             std::path::Path::new("..")
@@ -406,13 +406,13 @@ fn save_as_rebases_external_libraries_and_history_without_changing_original() {
                 .display()
         )
     );
-    assert!(library(&d, "7").ends_with("#example.Devices"));
-    let reference = library(&d, "6");
+    assert!(library(&d, "101").ends_with("#example.Devices"));
+    let reference = library(&d, "100");
     d.undo(&d.revision()).unwrap();
-    assert_eq!(library(&d, "6"), reference);
+    assert_eq!(library(&d, "100"), reference);
     assert!(d.view().unwrap().circuits[0].wires.is_empty());
     d.redo(&d.revision()).unwrap();
-    assert_eq!(library(&d, "6"), reference);
+    assert_eq!(library(&d, "100"), reference);
     assert_eq!(d.view().unwrap().circuits[0].wires.len(), 1);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), xml);
 }

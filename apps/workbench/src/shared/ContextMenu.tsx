@@ -1,7 +1,13 @@
 import { useRef, type ReactElement, type ReactNode } from "react";
-import * as Context from "@radix-ui/react-context-menu";
+import { ContextMenu as Context } from "@radix-ui/themes";
 import { MenuScope } from "./Menu";
-import { keepKeys, keepMovedFocus, usePortalContainer } from "./layer";
+import { focusOrigin } from "./Dialog";
+import {
+  keepKeys,
+  keepMovedFocus,
+  rememberFocusOrigin,
+  usePortalContainer,
+} from "./layer";
 
 /** A menu drawn by the app at the pointer when `children` is right-clicked
  * or long-pressed (a `contextmenu` event dispatched on it from the keyboard
@@ -26,28 +32,28 @@ export function ContextMenu({
     <Context.Root
       onOpenChange={(open) => {
         if (open) {
-          const focused = document.activeElement;
-          opener.current = focused instanceof HTMLElement ? focused : null;
+          opener.current = focusOrigin(document.activeElement) ?? anchor.current;
         }
         onOpenChange?.(open);
       }}
     >
-      <Context.Trigger ref={anchor} asChild disabled={disabled}>
+      <Context.Trigger ref={anchor} disabled={disabled}>
         {children}
       </Context.Trigger>
-      <Context.Portal container={container}>
-        <Context.Content
-          className="menu-content"
-          collisionPadding={8}
-          loop
-          onCloseAutoFocus={(event) => keepMovedFocus(event, opener.current)}
-          onKeyDown={keepKeys}
-        >
-          <MenuScope kind="context" container={container}>
-            {content}
-          </MenuScope>
-        </Context.Content>
-      </Context.Portal>
+      <Context.Content
+        ref={(node) => rememberFocusOrigin(node, opener.current)}
+        container={container}
+        size="2"
+        className="app-menu-content"
+        collisionPadding={8}
+        loop
+        onCloseAutoFocus={(event) => keepMovedFocus(event, opener.current)}
+        onKeyDown={keepKeys}
+      >
+        <MenuScope kind="context" container={container}>
+          {content}
+        </MenuScope>
+      </Context.Content>
     </Context.Root>
   );
 }

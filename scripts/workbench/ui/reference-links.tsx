@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import {
   locateCircuitReference,
@@ -167,6 +167,9 @@ export async function verifyReferenceLinks() {
         />
       </Workbench>,
     );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
     await act(async () =>
       node.querySelector<HTMLButtonElement>(".message-reference")!.click(),
     );

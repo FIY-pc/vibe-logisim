@@ -5,8 +5,10 @@ export type {
   ReferenceRegion,
 } from "../../../../packages/agent-runtime/src/conversations/reference-types";
 import type { ReferenceInput } from "../../../../packages/agent-runtime/src/conversations/reference-types";
-export interface Quotation {
+export type Quotation = {
   id: string;
   documentId: string;
-  references: ReferenceInput[];
-}
+} & (
+  | { references: ReferenceInput[]; files?: never }
+  | { files: { folderId: string; paths: string[] }; references?: never }
+);

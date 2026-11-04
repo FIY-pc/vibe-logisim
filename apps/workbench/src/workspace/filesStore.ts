@@ -8,15 +8,17 @@ import { readerKey } from "./reader/types";
 export interface FilesState {
   /** The open project folder. */
   folder: ProjectFolder | null;
-  /** The active material tab. */
+  /** The selected material; it stays mounted when the circuit tab is shown. */
   preview: PreviewFile | null;
   readers: PreviewFile[];
-  readerMode: "split" | "focus";
-  readerWidth: number;
+  editorFocus: "circuit" | "material";
+  readerMode: "single" | "split";
+  readerShare: number;
   closeReader(key: string): void;
-  hideReader(): void;
-  setReaderMode(mode: "split" | "focus"): void;
-  setReaderWidth(width: number): void;
+  showCircuit(): void;
+  setEditorFocus(focus: "circuit" | "material"): void;
+  setReaderMode(mode: "single" | "split"): void;
+  setReaderShare(share: number): void;
   /** The document whose information and export dialog is open. */
   infoTarget: string | null;
   /** Whether the prompt for a folder path is open (outside the desktop app). */
@@ -40,9 +42,11 @@ export function createFilesStore() {
     folder: null,
     preview: null,
     readers: [],
-    readerMode: "split",
-    readerWidth: 560,
-    hideReader: () => set({ preview: null }),
+    editorFocus: "circuit",
+    readerMode: "single",
+    readerShare: 50,
+    showCircuit: () => set({ editorFocus: "circuit" }),
+    setEditorFocus: (editorFocus) => set({ editorFocus }),
     closeReader(key) {
       const state = get(),
         readers = state.readers.filter((file) => readerKey(file) !== key);
@@ -52,11 +56,14 @@ export function createFilesStore() {
           state.preview && readerKey(state.preview) === key
             ? readers.at(-1) || null
             : state.preview,
+        ...(!readers.length
+          ? { editorFocus: "circuit", readerMode: "single" }
+          : {}),
       });
     },
     setReaderMode: (readerMode) => set({ readerMode }),
-    setReaderWidth: (width) =>
-      set({ readerWidth: Math.max(360, Math.min(1400, width)) }),
+    setReaderShare: (share) =>
+      set({ readerShare: Math.max(25, Math.min(75, share)) }),
     infoTarget: null,
     folderPrompt: false,
     newFilePrompt: false,
@@ -67,7 +74,12 @@ export function createFilesStore() {
       set({
         folder,
         ...(folder?.id !== get().folder?.id
-          ? { readers: [], preview: null }
+          ? {
+              readers: [],
+              preview: null,
+              editorFocus: "circuit",
+              readerMode: "single",
+            }
           : {}),
       });
     },
@@ -75,7 +87,12 @@ export function createFilesStore() {
       const preview =
         typeof value === "function" ? value(get().preview) : value;
       if (!preview) {
-        set({ preview: null, readers: [] });
+        set({
+          preview: null,
+          readers: [],
+          editorFocus: "circuit",
+          readerMode: "single",
+        });
         return;
       }
       const readers = get().readers.filter(
@@ -86,7 +103,7 @@ export function createFilesStore() {
       );
       const { page: _page, region: _region, ...tab } = preview;
       readers.splice(index < 0 ? readers.length : index, 0, tab);
-      set({ preview, readers });
+      set({ preview, readers, editorFocus: "material" });
     },
     setInfoTarget: field(set, "infoTarget"),
     setFolderPrompt: field(set, "folderPrompt"),

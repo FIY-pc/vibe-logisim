@@ -71,8 +71,8 @@ pub fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
             try {
               settings.click();
               await frame(); await frame();
-              const dialog = document.querySelector('.ai-settings-dialog[open]');
-              const content = dialog?.querySelector('.ai-settings-content');
+              const dialog = document.querySelector('.ai-settings-panel[role="dialog"][data-state="open"]');
+              const content = dialog;
               if (!content || content.clientHeight < content.scrollHeight - 1)
                 throw new Error('AI settings service list is clipped in the installed WebView');
               if (dialog.getBoundingClientRect().bottom > innerHeight)

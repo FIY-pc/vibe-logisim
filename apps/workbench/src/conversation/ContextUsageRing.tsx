@@ -1,5 +1,4 @@
 import { tip } from "../shared/Tooltips";
-import "./ContextUsageRing.css";
 
 /** Context usage from the runtime's status snapshot. */
 export interface ContextUsage {
@@ -57,7 +56,7 @@ export function ContextUsageRing({ usage }: { usage?: ContextUsage | null }) {
       aria-valuetext={percent === null ? undefined : summary}
       {...tip(details)}
     >
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
         <circle className="context-usage-track" cx="10" cy="10" r="7.5" />
         {ratio !== null && (
           <circle

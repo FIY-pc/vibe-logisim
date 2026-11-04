@@ -1,3 +1,4 @@
+import { Button } from "../design/ui";
 import { RotateCw, X } from "lucide-react";
 import { Checkbox } from "../shared/Checkbox";
 import { IconButton } from "../shared/IconButton";
@@ -30,10 +31,15 @@ export function PlacementControls({
         />
         连续放置
       </label>
-      <button className="placing" onClick={() => setPlace(null)}>
+      <Button
+        variant="ghost"
+        color="gray"
+        className="placing"
+        onClick={() => setPlace(null)}
+      >
         {place.label}
         <X size={12} />
-      </button>
+      </Button>
     </>
   );
 }

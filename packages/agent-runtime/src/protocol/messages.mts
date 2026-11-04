@@ -25,6 +25,7 @@ export type WorkerMessage =
 export type RuntimeMethod =
   | "status"
   | "history"
+  | "exportConversations"
   | "bind"
   | "ask"
   | "stop"

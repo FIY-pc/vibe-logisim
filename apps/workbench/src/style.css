@@ -1,411 +1,3 @@
-:root {
-  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI", sans-serif;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #20242b;
-  background: #f4f5f7;
-  font-synthesis: none;
-  --paper: #fff;
-  --workspace-surface: #f4f5f7;
-  --text: #20242b;
-  --border: #e3e6ec;
-  --muted: #737c8a;
-  --accent: #315efb;
-  --accent-soft: #eef1ff;
-  --hover: #eceff4;
-  --danger: #b42318;
-  --warning: #a16207;
-  --selection-fill: #315efb18;
-  --grid: #d3d8e1;
-  /* Menus, lists, popovers and tooltips: one shadow, one fade. */
-  --layer-shadow: 0 8px 28px #2026341a, 0 1px 3px #20263412;
-  --layer-fade: 140ms;
-  /* Dialogs: one surface over one backdrop. */
-  --dialog-shadow: 0 16px 48px #1a22331f, 0 2px 6px #1a223314;
-  --backdrop: #1a223338;
-  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 18 6-6-6-6'/%3E%3C/svg%3E");
-  color-scheme: light;
-}
-@keyframes layer-in {
-  from {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --layer-fade: 0s;
-  }
-}
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-}
-button,
-input,
-textarea,
-select {
-  font: inherit;
-  color: inherit;
-}
-button {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border-radius: 6px;
-  padding: 7px 10px;
-  white-space: nowrap;
-}
-/* Buttons answer hover and press; disabled ones answer neither. The state
- * test adds no specificity, so components keep their own hover colours. */
-button:hover:where(:not(:disabled)) {
-  background: #eceff4;
-}
-button:active:where(:not(:disabled)) {
-  background: #e2e6ed;
-}
-button > svg {
-  flex-shrink: 0;
-}
-button:disabled {
-  opacity: 0.38;
-  cursor: default;
-}
-/* Small print uses the smallest size of the scale rather than the browser's
- * "smaller", which lands between sizes and shrinks again when nested. */
-:where(small) {
-  font-size: 11px;
-}
-/* One focus ring for everything focusable; text fields draw it on their
- * border, scrolling regions inside their edge. It has no specificity, so
- * items that show focus as a highlight instead (menu and list items) turn
- * it off whatever order the style sheets load in. */
-:where(:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-:is(input, textarea):focus-visible {
-  outline-offset: -1px;
-}
-.messages:focus-visible,
-.chat-table:focus-visible {
-  outline-offset: -2px;
-}
-/* Native control parts follow the platform theme and differ between
- * WebView engines, so the app draws its own. */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  min-height: 32px;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background-clip: padding-box;
-  background-color: #c5cbd5;
-}
-::-webkit-scrollbar-thumb:hover {
-  background-color: #a6aebb;
-}
-textarea {
-  resize: none;
-}
-input[type="number"] {
-  appearance: textfield;
-}
-input::-webkit-inner-spin-button,
-input::-webkit-outer-spin-button,
-input::-webkit-search-cancel-button,
-input::-webkit-search-decoration {
-  -webkit-appearance: none;
-  appearance: none;
-  margin: 0;
-}
-input[type="search"] {
-  -webkit-appearance: none;
-  appearance: none;
-}
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  cursor: pointer;
-}
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: #dfe3ea;
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  margin-top: -5px;
-  border: 2px solid var(--paper);
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px #20263424;
-}
-input[type="range"]:focus-visible {
-  outline-offset: 0;
-  border-radius: 8px;
-}
-/* Disclosure rows draw one chevron everywhere: engines disagree on the
- * built-in marker (WebKit keeps it on flex rows, Chromium drops it). */
-summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  list-style: none;
-  cursor: pointer;
-  user-select: none;
-}
-summary::-webkit-details-marker {
-  display: none;
-}
-summary::before {
-  content: "";
-  flex: none;
-  align-self: center;
-  width: 12px;
-  height: 12px;
-  background: currentColor;
-  opacity: 0.65;
-  -webkit-mask: var(--chevron) center / contain no-repeat;
-  mask: var(--chevron) center / contain no-repeat;
-  transition: transform var(--layer-fade) ease-out;
-}
-details[open] > summary::before {
-  transform: rotate(90deg);
-}
-/* Every dialog shares one surface, backdrop and fade; each dialog sets its
- * own size and layout. Titles are `h2`. */
-dialog {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--paper);
-  color: var(--text);
-  box-shadow: var(--dialog-shadow);
-}
-dialog[open],
-dialog[open]::backdrop {
-  animation: layer-in var(--layer-fade) ease-out;
-}
-dialog::backdrop {
-  background: var(--backdrop);
-}
-dialog:focus-visible {
-  outline: none;
-}
-dialog h2 {
-  min-width: 0;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Dialogs whose content grows and shrinks (search results, pages) hang
- * from a fixed top instead of re-centring on every change. */
-.find-dialog,
-.shortcut-settings,
-.ai-settings-dialog {
-  margin-top: min(12vh, 96px);
-  margin-bottom: auto;
-  max-height: calc(100dvh - min(12vh, 96px) - 24px);
-}
-.dialog-close {
-  flex: none;
-  margin-left: auto;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--muted);
-}
-.dialog-close:hover {
-  color: var(--text);
-}
-input,
-textarea,
-select {
-  border: 1px solid var(--border);
-  background: var(--paper);
-  border-radius: 5px;
-  padding: 7px;
-  min-width: 0;
-}
-/* shared/Select.tsx: the trigger is sized like an input; the list is the app's own. */
-.select-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  border: 1px solid var(--border);
-  background: var(--paper);
-  border-radius: 5px;
-  padding: 7px 8px;
-  min-width: 0;
-  text-align: left;
-  white-space: nowrap;
-  font: inherit;
-  color: inherit;
-}
-.select-trigger:hover {
-  background: var(--paper);
-  border-color: #c9cfd9;
-}
-.select-trigger[data-placeholder] {
-  color: var(--muted);
-}
-.select-trigger > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.select-trigger > svg {
-  flex: none;
-  color: var(--muted);
-}
-.select-trigger.select-small {
-  padding: 4px 6px;
-  font-size: 11px;
-}
-.select-trigger.select-plain,
-.select-trigger.select-plain:hover {
-  border-color: transparent;
-  background: transparent;
-}
-.select-trigger.select-plain:hover {
-  background: #eceff4;
-}
-/* Floating layers drawn by the app share one surface, shadow and fade. */
-.menu-content,
-.select-content,
-.conversation-popover {
-  z-index: 200;
-  background: var(--paper);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--layer-shadow);
-  color: var(--text);
-  font-size: 12px;
-  outline: none;
-  animation: layer-in var(--layer-fade) ease-out;
-}
-.select-content {
-  min-width: var(--radix-select-trigger-width);
-  max-height: var(--radix-select-content-available-height);
-  overflow: hidden;
-  padding: 4px;
-}
-.select-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: 5px;
-  cursor: default;
-  user-select: none;
-  outline: none;
-}
-.select-item[data-highlighted] {
-  background: #eceff4;
-}
-.select-item[data-state="checked"] {
-  color: var(--accent);
-}
-.select-item[data-disabled] {
-  opacity: 0.38;
-}
-.select-item > svg {
-  flex: none;
-}
-/* shared/Checkbox.tsx */
-.checkbox {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  border: 1px solid #b4bcc8;
-  border-radius: 4px;
-  background: var(--paper);
-  color: white;
-}
-.checkbox:hover {
-  background: var(--paper);
-  border-color: #8f99a8;
-}
-.checkbox[data-state="checked"] {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.checkbox-mark {
-  display: flex;
-}
-/* Key labels are set in the app's font, quieter than the text they follow. */
-kbd {
-  font: inherit;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-button.primary {
-  background: var(--accent);
-  color: white;
-}
-button.primary:hover:where(:not(:disabled)) {
-  background: #2652ea;
-}
-button.primary:active:where(:not(:disabled)) {
-  background: #1f46d2;
-}
-/* The one tooltip (shared/Tooltips.tsx): dark, small, under its element. */
-.app-tooltip {
-  position: fixed;
-  z-index: 2147483000;
-  visibility: hidden;
-  max-width: min(320px, calc(100vw - 12px));
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: #23272f;
-  color: #f4f5f7;
-  font-size: 12px;
-  line-height: 1.5;
-  box-shadow: 0 4px 14px #1a22332e;
-  pointer-events: none;
-  overflow-wrap: anywhere;
-  animation: layer-in var(--layer-fade) ease-out;
-}
-.app-tooltip-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.app-tooltip kbd {
-  margin-left: auto;
-  color: #a9b0bc;
-}
-.app-tooltip-detail {
-  margin-top: 2px;
-  color: #c4c9d2;
-  white-space: pre-line;
-}
 .app {
   height: 100dvh;
   display: flex;
@@ -413,23 +5,23 @@ button.primary:active:where(:not(:disabled)) {
   overflow: hidden;
 }
 .titlebar {
-  height: 54px;
   flex: none;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
-  padding: 0 18px;
-  background: var(--paper);
-  gap: 12px;
+  background: var(--surface);
+  height: calc(var(--control-height) + var(--space-4));
+  padding: 0 var(--space-3);
+  gap: var(--space-3);
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: -0.4px;
+  font-size: var(--font-size-3);
   white-space: nowrap;
+  font-weight: 600;
+  gap: var(--space-2);
+  letter-spacing: normal;
 }
 .brand svg {
   color: var(--accent);
@@ -443,8 +35,8 @@ button.primary:active:where(:not(:disabled)) {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #686e78;
-  font-size: 12px;
+  color: var(--muted);
+  font-size: var(--font-size-2);
   min-width: 0;
 }
 .file-title > button {
@@ -461,19 +53,17 @@ button.primary:active:where(:not(:disabled)) {
   width: 6px;
   height: 6px;
   flex: none;
-  background: #6f7787;
+  background: var(--muted);
   border-radius: 50%;
 }
 .title-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
   margin-left: auto;
   flex-shrink: 0;
-}
-/* Every title bar control sits on one 32 px line whatever its text size. */
+  gap: var(--space-2);
+} /* Every title bar control sits on one 32 px line whatever its text size. */
 .titlebar button {
-  min-height: 32px;
 }
 .app[data-workspace="empty"]
   :is(.workspace-rail, .project-toggle, .open-folder),
@@ -483,13 +73,13 @@ button.primary:active:where(:not(:disabled)) {
 .welcome .empty-symbol {
   width: 180px;
   height: 120px;
-  fill: var(--paper);
+  fill: var(--surface);
   stroke: var(--accent);
   stroke-width: 2;
   opacity: 0.5;
 }
 .welcome h1 {
-  font-size: 20px;
+  font-size: var(--font-size-5);
   font-weight: 500;
 }
 @media (max-width: 640px) {
@@ -508,7 +98,10 @@ button.primary:active:where(:not(:disabled)) {
   }
 }
 .icon-button {
-  padding: 6px;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  flex: none;
 }
 .workspace {
   display: flex;
@@ -521,37 +114,38 @@ button.primary:active:where(:not(:disabled)) {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  background: #f8f9fb;
+  background: var(--surface-subtle);
 }
 .panel-heading {
-  height: 42px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  font-size: 12px;
+  font-size: var(--font-size-2);
   font-weight: 500;
+  height: var(--section-height);
+  padding: 0 var(--space-3);
 }
 .panel-heading > div {
   display: flex;
-  gap: 2px;
+  gap: var(--space-1);
 }
 .panel-heading > span {
-  font-size: 11px;
+  font-size: var(--font-size-2);
   color: var(--muted);
   font-weight: 400;
 }
 .document-list {
   max-height: 34%;
   overflow: auto;
-  padding: 0 7px 9px;
+  padding: 0 var(--space-2) var(--space-2);
 }
 .document-item {
   width: 100%;
   justify-content: start;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--font-size-2);
+  min-height: var(--control-height);
 }
 .document-item > span:first-of-type {
   flex: 1;
@@ -559,36 +153,38 @@ button.primary:active:where(:not(:disabled)) {
   text-overflow: ellipsis;
 }
 .document-row.active {
-  background: #e9edf6;
-  color: #354d88;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 .circuit-list {
-  padding: 4px 0 3px 21px;
+  padding: var(--space-1) 0 var(--space-1) var(--space-5);
 }
 .circuit-list > button,
 .circuit-row > button:first-child {
   display: flex;
   width: 100%;
   justify-content: start;
-  padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--font-size-2);
+  height: var(--control-height);
+  padding: 0 var(--space-2);
 }
 .circuit-row > button.active {
   color: var(--accent);
   font-weight: 600;
-}
-/* Search fields with a leading icon and a trailing shortcut hint. */
+} /* Search fields with a leading icon and a trailing shortcut hint. */
 .palette-search,
 .circuit-search {
+  flex: none;
   display: flex;
   align-items: center;
-  margin: 7px 12px 12px;
-  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--paper);
-  gap: 6px;
+  background: var(--surface);
   color: var(--muted);
+  height: var(--control-height);
+  margin: var(--space-2) var(--space-3);
+  padding: 0 var(--space-2);
+  gap: var(--space-2);
 }
 .palette-search:focus-within,
 .circuit-search:focus-within {
@@ -610,9 +206,11 @@ button.primary:active:where(:not(:disabled)) {
   width: 100%;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
-  padding: 7px 0;
+  font-size: var(--font-size-2);
   outline: none;
+  height: 100%;
+  padding: 0;
+  min-width: 0;
 }
 .palette {
   overflow: auto;
@@ -620,16 +218,16 @@ button.primary:active:where(:not(:disabled)) {
   padding: 0 7px 12px;
 }
 .palette summary {
-  font-size: 11px;
-  color: #6d7380;
-  padding: 9px 8px;
+  font-size: var(--font-size-2);
+  padding: var(--space-2);
+  color: var(--muted);
 }
 .palette button {
   width: 100%;
   justify-content: start;
   text-align: left;
-  height: 33px;
-  font-size: 12px;
+  font-size: var(--font-size-2);
+  height: var(--control-height);
 }
 .palette img {
   width: 22px;
@@ -637,7 +235,7 @@ button.primary:active:where(:not(:disabled)) {
   object-fit: contain;
 }
 .palette button.selected {
-  background: #e5eafa;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .editor {
@@ -645,7 +243,7 @@ button.primary:active:where(:not(:disabled)) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: var(--surface);
 }
 .editor-toolbar {
   display: flex;
@@ -667,7 +265,7 @@ button.primary:active:where(:not(:disabled)) {
   padding: 6px;
 }
 .tool-group button[aria-pressed="true"] {
-  background: #e9edf7;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .simulation-controls {
@@ -677,27 +275,27 @@ button.primary:active:where(:not(:disabled)) {
   gap: 1px;
 }
 .simulation {
-  font-size: 12px;
+  font-size: var(--font-size-2);
   padding: 5px 8px;
 }
 .simulation.active {
   color: var(--accent);
-  background: #edf1fa;
+  background: var(--accent-soft);
 }
 .breadcrumbs {
-  min-height: 46px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 10px;
-  font-size: 11px;
+  font-size: var(--font-size-2);
   color: var(--muted);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-height: var(--section-height);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
 }
 .breadcrumbs strong {
   font-weight: 500;
-  color: #555e6c;
+  color: var(--text);
 }
 .breadcrumbs strong,
 .breadcrumbs .muted {
@@ -712,24 +310,24 @@ button.primary:active:where(:not(:disabled)) {
 .circuit-actions {
   display: flex;
   flex-shrink: 0;
-  gap: 2px;
+  gap: var(--space-2);
 }
 .circuit-actions button {
-  font-size: 11px;
-  padding: 4px 6px;
 }
 .breadcrumbs {
   flex-wrap: wrap;
-  gap: 5px;
   padding-block: 5px;
+  min-height: var(--section-height);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
 }
 .breadcrumbs > .muted {
-  font-size: 11px;
+  font-size: var(--font-size-2);
 }
 .placing {
-  font-size: 11px;
+  font-size: var(--font-size-2);
   padding: 2px 7px;
-  background: #edf1fa;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 .canvas {
@@ -766,24 +364,24 @@ button.primary:active:where(:not(:disabled)) {
   flex: none;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: var(--surface);
   border-left: 1px solid var(--border);
   min-height: 0;
 }
 .panel-tabs {
-  height: 45px;
   display: flex;
-  gap: 12px;
   border-bottom: 1px solid var(--border);
-  padding: 0 13px;
   flex: none;
+  height: var(--section-height);
+  padding: 0 var(--space-3);
+  gap: var(--space-3);
 }
 .panel-tabs button {
   border-radius: 0;
-  font-size: 12px;
+  font-size: var(--font-size-2);
   position: relative;
-  padding: 5px 3px;
   color: var(--muted);
+  padding: 0 var(--space-1);
 }
 .panel-tabs button:hover,
 .resource-tabs > button:hover {
@@ -813,23 +411,20 @@ button.primary:active:where(:not(:disabled)) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
   margin-bottom: 8px;
-  font-size: 11px;
+  font-size: var(--font-size-2);
+  gap: var(--space-2);
 }
-.inspector label span {
+.inspector label > span:first-child {
   max-width: 45%;
   overflow-wrap: anywhere;
 }
 .inspector input,
 .inspector .select-trigger {
-  width: 54%;
-  font-size: 11px;
-  padding: 6px;
 }
 .small-button {
-  background: #eef1f6;
-  font-size: 11px;
+  background: var(--gray-3);
+  font-size: var(--font-size-2);
   float: right;
 }
 .inspector form:after {
@@ -844,7 +439,7 @@ button.primary:active:where(:not(:disabled)) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--font-size-2);
   gap: 10px;
   padding: 6px 0;
 }
@@ -853,7 +448,7 @@ button.primary:active:where(:not(:disabled)) {
   font-family: monospace;
 }
 .signal code {
-  color: #4d68a2;
+  color: var(--accent);
 }
 .welcome {
   flex: 1;
@@ -862,13 +457,13 @@ button.primary:active:where(:not(:disabled)) {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: #929bab;
+  color: var(--muted);
   padding-bottom: 80px;
 }
 .welcome h1 {
-  font-size: 20px;
+  font-size: var(--font-size-5);
   font-weight: 500;
-  color: #555e6b;
+  color: var(--text);
   margin: 0;
 }
 .welcome > div {
@@ -876,15 +471,15 @@ button.primary:active:where(:not(:disabled)) {
   gap: 10px;
 }
 .welcome button {
-  font-size: 12px;
+  font-size: var(--font-size-2);
   border: 1px solid var(--border);
   padding: 9px 14px;
 }
 .quiet-empty {
-  padding: 30px 18px;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.8;
+  font-size: var(--font-size-2);
+  padding: var(--space-5) var(--space-4);
+  line-height: var(--line-height-3);
 }
 .muted {
   color: var(--muted);
@@ -895,10 +490,10 @@ button.primary:active:where(:not(:disabled)) {
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  background: #fff2ec;
-  border-top: 1px solid #f3d6c8;
-  color: #985734;
-  font-size: 12px;
+  background: var(--danger-soft);
+  border-top: 1px solid var(--red-6);
+  color: var(--danger);
+  font-size: var(--font-size-2);
   max-height: 96px;
   overflow: auto;
 }
@@ -909,7 +504,7 @@ button.primary:active:where(:not(:disabled)) {
 .spinner {
   width: 12px;
   height: 12px;
-  border: 1.5px solid #c3cbe0;
+  border: 1.5px solid var(--gray-6);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -920,52 +515,19 @@ button.primary:active:where(:not(:disabled)) {
     transform: rotate(360deg);
   }
 }
-.source-dialog {
-  width: min(950px, 90vw);
-  height: 80vh;
-  padding: 0;
-  overflow: hidden;
-}
-.source-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-.source-dialog header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 10px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.source-dialog textarea {
-  flex: 1;
-  resize: none;
-  border: 0;
-  border-radius: 0;
-  font:
-    12px/1.7 ui-monospace,
-    monospace;
-  padding: 18px;
-  outline: none;
-}
-.source-dialog footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
-}
 .chat {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
 }
 .chat-header {
   display: flex;
-  gap: 5px;
-  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  gap: var(--space-2);
 }
 .messages {
   flex: 1;
@@ -973,13 +535,12 @@ button.primary:active:where(:not(:disabled)) {
   padding: 16px;
 }
 .message {
-  line-height: 1.7;
-  font-size: 12px;
+  font-size: var(--font-size-2);
   margin-bottom: 16px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-/* A question is a bubble at the right that fits its text; editing it takes
+  line-height: var(--line-height-3);
+} /* A question is a bubble at the right that fits its text; editing it takes
  * the full width, like the composer. */
 .message.user {
   position: relative;
@@ -987,46 +548,30 @@ button.primary:active:where(:not(:disabled)) {
   max-width: calc(100% - 26px);
   margin-left: auto;
   margin-bottom: 42px;
-  background: #eff2f7;
+  background: var(--gray-3);
   padding: 8px 12px;
   border-radius: 12px 12px 3px 12px;
 }
 .message.user:has(> .message-edit) {
   width: auto;
   margin-left: 26px;
-}
-/* A question's copy and edit commands sit under its bubble, not inside it. */
+} /* A question's copy and edit commands sit under its bubble, not inside it. */
 .message.user > .message-actions {
   position: absolute;
   top: calc(100% + 2px);
   right: 0;
 }
 .composer {
-  margin: 0 12px 12px;
-  border: 1px solid #dce0e9;
-  border-radius: 10px;
-  overflow: hidden;
-  background: white;
+  margin: 0 var(--space-3) var(--space-3);
 }
-.composer textarea {
-  display: block;
-  border: 0;
-  outline: none;
-  width: 100%;
-  min-height: 88px;
-  max-height: min(40vh, 320px);
-  padding: 12px;
-  font-size: 12px;
-  background: transparent;
+.composer .ai-model-trigger {
+  flex: 0 1 auto;
+  justify-content: flex-start;
 }
-.composer footer {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 7px;
-}
-.composer footer .composer-effort {
+.composer .composer-effort {
   max-width: 125px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 .composer-stop svg {
   fill: currentColor;
@@ -1039,7 +584,7 @@ button.primary:active:where(:not(:disabled)) {
   margin-bottom: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-2);
 }
 .chat-card > span {
   flex: 1;
@@ -1050,9 +595,9 @@ button.primary:active:where(:not(:disabled)) {
   margin: 6px 0 0;
   padding: 0;
   color: var(--muted);
-  font-size: 11px;
   line-height: 1.7;
   overflow-wrap: anywhere;
+  font-size: var(--font-size-1);
 }
 .chat-card li small {
   display: inline-block;
@@ -1061,22 +606,6 @@ button.primary:active:where(:not(:disabled)) {
 }
 .chat-card > small {
   color: var(--muted);
-}
-.provider-form {
-  padding: 14px;
-  overflow: auto;
-}
-.provider-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 11px;
-  margin-bottom: 13px;
-  color: #6b7381;
-}
-.provider-form button:not(.checkbox) {
-  background: #edf1fa;
-  color: var(--accent);
 }
 @media (max-width: 1100px) {
   .explorer {
@@ -1122,7 +651,6 @@ button.primary:active:where(:not(:disabled)) {
     padding: 5px;
   }
 }
-
 .files {
   border-bottom: 1px solid var(--border);
   max-height: 30%;
@@ -1130,20 +658,22 @@ button.primary:active:where(:not(:disabled)) {
   flex-direction: column;
 }
 .files .panel-heading {
-  height: 32px;
-  font-size: 11px;
+  height: var(--control-height);
 }
 .file-tree {
   overflow: auto;
   padding-bottom: 7px;
+  overflow-x: hidden;
 }
 .file-entry {
   display: flex;
   width: 100%;
   justify-content: flex-start;
-  padding: 6px;
-  gap: 5px;
-  font-size: 11px;
+  font-size: var(--font-size-2);
+  height: var(--control-height);
+  padding: 0 var(--space-2);
+  gap: var(--space-2);
+  min-width: 0;
 }
 .file-entry > span:last-child {
   overflow: hidden;
@@ -1152,10 +682,9 @@ button.primary:active:where(:not(:disabled)) {
 .tree-spacer {
   width: 12px;
   flex: none;
-}
-/* The file tree's open-folder button; the title bar's keeps the control size. */
+} /* The file tree's open-folder button; the title bar's keeps the control size. */
 .files > .open-folder {
-  font-size: 11px;
+  font-size: var(--font-size-2);
   justify-content: start;
   margin: 0 8px 8px;
 }
@@ -1166,32 +695,8 @@ button.primary:active:where(:not(:disabled)) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-/* The plain dialog: title, body, buttons. Dialogs built on it set their own
+} /* The plain dialog: title, body, buttons. Dialogs built on it set their own
  * width, which wins whatever order the style sheets load in. */
-:where(.text-prompt) {
-  width: 360px;
-}
-.text-prompt {
-  padding: 20px;
-}
-.text-prompt header,
-.text-prompt footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.text-prompt header {
-  margin-bottom: 18px;
-}
-.text-prompt input {
-  width: 100%;
-}
-.text-prompt footer {
-  justify-content: end;
-  margin-top: 20px;
-}
 .message.assistant {
   white-space: normal;
 }
@@ -1204,11 +709,11 @@ button.primary:active:where(:not(:disabled)) {
 .message.assistant pre {
   overflow: auto;
   padding: 10px;
-  background: #eff2f7;
+  background: var(--gray-3);
   border-radius: 6px;
 }
 .message.assistant code {
-  font-size: 11px;
+  font-size: var(--font-size-2);
 }
 .message.assistant table {
   border-collapse: collapse;
@@ -1228,14 +733,9 @@ button.primary:active:where(:not(:disabled)) {
 .message.assistant img {
   max-width: 100%;
 }
-.inspector textarea {
-  width: 100%;
-  font: 11px monospace;
-}
 .canvas svg image {
   mix-blend-mode: multiply;
 }
-
 .document-row {
   display: flex;
   align-items: center;
@@ -1248,8 +748,10 @@ button.primary:active:where(:not(:disabled)) {
 .document-close {
   flex-shrink: 0;
   opacity: 0;
-  padding: 5px;
-  margin-right: 3px;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  margin-right: 0;
 }
 .document-row:hover .document-close,
 .document-row:focus-within .document-close,
@@ -1262,9 +764,9 @@ button.primary:active:where(:not(:disabled)) {
   flex-wrap: wrap;
   gap: 8px;
   padding: 7px 14px;
-  background: #fff7df;
-  border-bottom: 1px solid #e9d9ab;
-  font-size: 12px;
+  background: var(--warning-soft);
+  border-bottom: 1px solid var(--amber-6);
+  font-size: var(--font-size-2);
 }
 .source-notice > span {
   flex: 1;
@@ -1272,20 +774,19 @@ button.primary:active:where(:not(:disabled)) {
 }
 .source-notice button {
   padding: 4px 8px;
-  background: #ffffff88;
+  background: var(--surface);
 }
 .decision-dialog {
   width: min(440px, calc(100vw - 32px));
 }
 .decision-dialog p {
-  font-size: 13px;
+  font-size: var(--font-size-2);
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
 .dialog-error {
-  color: #a63733;
+  color: var(--danger);
 }
-
 .circuit-row {
   display: flex;
   align-items: center;
@@ -1312,7 +813,7 @@ button.primary:active:where(:not(:disabled)) {
 }
 .quiet-button {
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-2);
   color: var(--muted);
 }
 .quiet-button:hover {
@@ -1340,7 +841,7 @@ button.primary:active:where(:not(:disabled)) {
   gap: 6px;
 }
 .signal-ports code {
-  font-size: 11px;
+  font-size: var(--font-size-1);
 }
 .signal-ports button {
   padding: 4px;
@@ -1357,7 +858,7 @@ button.primary:active:where(:not(:disabled)) {
   max-height: 34%;
   overflow: auto;
   border-top: 1px solid var(--border);
-  background: var(--paper);
+  background: var(--surface);
 }
 .memory-panel > header,
 .simulation-dock > header {
@@ -1367,7 +868,7 @@ button.primary:active:where(:not(:disabled)) {
   padding: 5px 12px;
   position: sticky;
   top: 0;
-  background: var(--paper);
+  background: var(--surface);
   z-index: 1;
 }
 .memory-panel > header button,
@@ -1384,7 +885,7 @@ button.primary:active:where(:not(:disabled)) {
   padding: 0 12px 5px;
   flex-wrap: wrap;
 }
-.memory-navigation input {
+.memory-navigation .rt-TextFieldRoot {
   width: 86px;
   font-family: ui-monospace, monospace;
 }
@@ -1400,15 +901,12 @@ button.primary:active:where(:not(:disabled)) {
   align-items: center;
 }
 .memory-grid code {
-  font-size: 11px;
   color: var(--muted);
+  font-size: var(--font-size-1);
 }
-.memory-grid input {
+.memory-grid .rt-TextFieldRoot {
   width: 100%;
-  font:
-    12px ui-monospace,
-    monospace;
-  padding: 5px;
+  font-family: var(--code-font-family);
 }
 .memory-state {
   margin-left: auto;
@@ -1416,7 +914,7 @@ button.primary:active:where(:not(:disabled)) {
 .memory-panel > header .memory-state + button {
   margin-left: 0;
 }
-.memory-grid label[data-changed] input {
+.memory-grid label[data-changed] .rt-TextFieldRoot {
   background: var(--selection-fill);
   border-color: var(--accent);
 }
@@ -1426,8 +924,7 @@ button.primary:active:where(:not(:disabled)) {
   align-items: center;
   padding: 8px 12px 12px;
   color: var(--muted);
-}
-/* Signal names take a share of the panel's width, so wide panels show
+} /* Signal names take a share of the panel's width, so wide panels show
  * longer names before cutting them short. */
 .waveform {
   container-type: inline-size;
@@ -1437,9 +934,9 @@ button.primary:active:where(:not(:disabled)) {
 .waveform-caption {
   display: flex;
   gap: 12px;
-  font-size: 11px;
   color: var(--muted);
   margin-bottom: 4px;
+  font-size: var(--font-size-1);
 }
 .waveform-scroll {
   overflow: auto;
@@ -1449,7 +946,7 @@ button.primary:active:where(:not(:disabled)) {
   display: flex;
   height: 32px;
   align-items: stretch;
-  border-bottom: 1px solid #f0f2f5;
+  border-bottom: 1px solid var(--border);
 }
 .waveform-sheet {
   min-width: calc(var(--waveform-width) + var(--waveform-label));
@@ -1463,9 +960,9 @@ button.primary:active:where(:not(:disabled)) {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--paper);
+  background: var(--surface);
   padding: 0 10px 0 2px;
-  font-size: 11px;
+  font-size: var(--font-size-2);
 }
 .waveform-label > span {
   flex: 1;
@@ -1483,6 +980,7 @@ button.primary:active:where(:not(:disabled)) {
   font:
     11px ui-monospace,
     monospace;
+  font-size: var(--font-size-1);
 }
 .waveform-row svg {
   flex: none;
@@ -1505,37 +1003,12 @@ button.primary:active:where(:not(:disabled)) {
   fill: var(--text);
 }
 .waveform-cursor {
-  fill: #315efb14;
+  fill: var(--accent-soft);
 }
 .waveform-scroll input[type="range"] {
   display: block;
   width: calc(100% - var(--waveform-label));
   margin: 6px 0 0 var(--waveform-label);
-}
-.observations-dialog {
-  width: min(1100px, 94vw);
-  height: min(780px, 88vh);
-  padding: 0;
-}
-/* Header and footer keep their height; the list and viewer scroll between. */
-.observations-dialog[open] {
-  display: flex;
-  flex-direction: column;
-}
-.observations-dialog > header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--border);
-}
-.observations-dialog > footer {
-  display: flex;
-  flex: none;
-  justify-content: flex-end;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
 }
 .observations-body {
   display: flex;
@@ -1577,9 +1050,8 @@ button.primary:active:where(:not(:disabled)) {
   display: block;
   color: var(--muted);
   margin-top: 2px;
-  font-size: 11px;
-}
-/* A row's menu button shows on hover, on focus and while its menu is open. */
+  font-size: var(--font-size-1);
+} /* A row's menu button shows on hover, on focus and while its menu is open. */
 .observation-list .menu-trigger {
   flex: none;
   padding: 4px;
@@ -1603,12 +1075,12 @@ button.primary:active:where(:not(:disabled)) {
 }
 .observation-viewer h3 {
   margin: 0 0 2px;
-  font-size: 13px;
+  font-size: var(--font-size-2);
   font-weight: 600;
 }
 .observation-viewer article > .muted {
   margin: 0 0 10px;
-  font-size: 12px;
+  font-size: var(--font-size-2);
 }
 .observation-viewer table {
   width: 100%;
@@ -1620,10 +1092,10 @@ button.primary:active:where(:not(:disabled)) {
   text-align: left;
   padding: 5px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--font-size-2);
 }
 .observation-viewer .changed {
-  background: #ffedc780;
+  background: var(--warning-soft);
 }
 .observation-image {
   max-width: 100%;
@@ -1635,8 +1107,7 @@ button.primary:active:where(:not(:disabled)) {
   .observation-list {
     width: 160px;
   }
-}
-/* Toasts sit over the canvas just above its toolbar (editor-controls.css),
+} /* Toasts sit over the canvas just above its toolbar (editor-controls.css),
  * so they cover neither the toolbar nor the error bar; on the start page, at
  * its bottom. */
 .toasts {
@@ -1663,7 +1134,7 @@ button.primary:active:where(:not(:disabled)) {
 .capture-notice {
   display: flex;
   max-width: 100%;
-  background: var(--paper);
+  background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--layer-shadow);
   border-radius: 8px;
@@ -1673,12 +1144,12 @@ button.primary:active:where(:not(:disabled)) {
 .file-row {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 .file-row .file-entry {
   flex: 1;
   min-width: 0;
-}
-/* A row's menu button shows on hover, on focus and while its menu is open. */
+} /* A row's menu button shows on hover, on focus and while its menu is open. */
 .file-row > .menu-trigger {
   flex: none;
   padding: 4px;
@@ -1689,48 +1160,6 @@ button.primary:active:where(:not(:disabled)) {
 .file-row:focus-within > .menu-trigger,
 .file-row > .menu-trigger[data-state="open"] {
   opacity: 1;
-}
-.file-preview {
-  width: min(1000px, 94vw);
-  height: min(850px, 90vh);
-  padding: 0;
-}
-.file-preview header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-}
-.file-preview header h2 {
-  margin-right: auto;
-}
-.file-preview header input {
-  width: 64px;
-}
-.file-preview-body {
-  height: calc(100% - 110px);
-  overflow: auto;
-  padding: 16px;
-  text-align: center;
-  background: #f3f4f6;
-}
-.file-preview-body canvas,
-.file-preview-body img {
-  max-width: 100%;
-  height: auto;
-}
-.file-preview-body textarea {
-  display: block;
-  margin: 12px auto 0;
-  width: 100%;
-  min-height: 240px;
-  white-space: pre-wrap;
-}
-.file-preview footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px;
 }
 .file-preview-unavailable {
   width: min(400px, calc(100vw - 32px));
@@ -1745,12 +1174,12 @@ button.primary:active:where(:not(:disabled)) {
 }
 .file-preview-reason p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-2);
   color: var(--text);
   overflow-wrap: anywhere;
 }
 .file-preview-reason p.muted {
-  font-size: 12px;
+  font-size: var(--font-size-2);
   line-height: 1.6;
   color: var(--muted);
 }
@@ -1802,119 +1231,6 @@ button.primary:active:where(:not(:disabled)) {
   margin-top: 8px;
   white-space: normal;
 }
-
-.shortcut-settings {
-  width: min(600px, calc(100vw - 40px));
-  padding: 0;
-}
-.shortcut-settings[open] {
-  display: flex;
-  flex-direction: column;
-}
-.shortcut-settings > header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 12px 8px 20px;
-}
-.shortcut-settings > input {
-  margin: 0 20px 4px;
-}
-.shortcut-list {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 0 20px 12px;
-}
-.shortcut-list h3 {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  margin: 14px 0 4px;
-}
-.shortcut-list label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-}
-.shortcut-list label span {
-  flex: 1;
-}
-.shortcut-list label input {
-  width: 145px;
-  padding: 4px 8px;
-  font-size: 12px;
-  text-align: center;
-  cursor: pointer;
-}
-.shortcut-list label button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--muted);
-}
-.shortcut-list .quiet-empty {
-  padding: 24px 0;
-}
-.shortcut-settings > .dialog-error {
-  margin: 0 20px 8px;
-}
-.shortcut-settings > footer {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-}
-.find-dialog {
-  width: min(500px, calc(100vw - 40px));
-  padding: 18px;
-}
-.find-dialog header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.find-dialog > input {
-  width: 100%;
-}
-.find-results {
-  max-height: 50vh;
-  overflow: auto;
-  margin-top: 10px;
-}
-.find-results button {
-  width: 100%;
-  justify-content: space-between;
-  text-align: left;
-}
-.find-results button[aria-selected="true"] {
-  background: var(--selection-fill);
-}
-.find-results small {
-  color: var(--muted);
-  margin-left: 12px;
-}
-.provider-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.provider-advanced {
-  margin: 8px 0;
-}
-.provider-advanced summary {
-  color: var(--muted);
-  padding: 6px 0;
-}
-.provider-form .provider-check {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
-}
 .right-panel > [aria-label="信号追踪"] {
   overflow: auto;
   flex: 1;
@@ -1951,17 +1267,12 @@ button.primary:active:where(:not(:disabled)) {
   align-items: center;
   gap: 5px;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--font-size-2);
 }
 .placement-inspector > p {
   margin: 8px 14px;
 }
-
 .capture-notice > span {
   align-self: center;
   padding: 7px 10px;
-}
-.composer.is-reference-drop {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }

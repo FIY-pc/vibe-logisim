@@ -1,0 +1,241 @@
+@keyframes layer-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --layer-fade: 0s;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: var(--font-size-2);
+  line-height: var(--line-height-2);
+  min-height: var(--control-height);
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-2);
+} /* Buttons answer hover and press; disabled ones answer neither. The state
+ * test adds no specificity, so components keep their own hover colours. */
+button:hover:where(:not(:disabled)) {
+  background: var(--hover);
+}
+button:active:where(:not(:disabled)) {
+  background: var(--gray-4);
+}
+button > svg {
+  flex-shrink: 0;
+}
+button:disabled {
+  cursor: default;
+  color: var(--gray-a8);
+} /* Small print uses the smallest size of the scale rather than the browser's
+ * "smaller", which lands between sizes and shrinks again when nested. */
+:where(small) {
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
+} /* One focus ring for everything focusable; text fields draw it on their
+ * border, scrolling regions inside their edge. It has no specificity, so
+ * items that show focus as a highlight instead (menu and list items) turn
+ * it off whatever order the style sheets load in. */
+:where(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:is(input, textarea):focus-visible {
+  outline-offset: -1px;
+}
+.messages:focus-visible,
+.chat-table:focus-visible {
+  outline-offset: -2px;
+} /* Native control parts follow the platform theme and differ between
+ * WebView engines, so the app draws its own. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--gray-7);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--gray-8);
+}
+textarea {
+  resize: none;
+}
+input[type="number"] {
+  appearance: textfield;
+}
+input::-webkit-inner-spin-button,
+input::-webkit-outer-spin-button,
+input::-webkit-search-cancel-button,
+input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--gray-6);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--gray-a4);
+}
+input[type="range"]:focus-visible {
+  outline-offset: 0;
+  border-radius: 8px;
+} /* Disclosure rows draw one chevron everywhere: engines disagree on the
+ * built-in marker (WebKit keeps it on flex rows, Chromium drops it). */
+summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+summary::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  opacity: 0.65;
+  -webkit-mask: var(--chevron) center / contain no-repeat;
+  mask: var(--chevron) center / contain no-repeat;
+  transition: transform var(--layer-fade) ease-out;
+}
+details[open] > summary::before {
+  transform: rotate(90deg);
+} /* Every dialog shares one surface, backdrop and fade; each dialog sets its
+ * own size and layout. Titles are `h2`. */
+dialog:focus-visible {
+  outline: none;
+}
+input,
+textarea,
+select {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 5px;
+  padding: 7px;
+  min-width: 0;
+} /* Floating layers drawn by the app share one surface, shadow and fade. */
+.conversation-popover {
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--layer-shadow);
+  color: var(--text);
+  font-size: var(--font-size-2);
+  outline: none;
+  animation: layer-in var(--layer-fade) ease-out;
+} /* Key labels are set in the app's font, quieter than the text they follow. */
+kbd {
+  font: inherit;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
+}
+button.primary {
+  background: var(--accent);
+  color: white;
+}
+button.primary:hover:where(:not(:disabled)) {
+  background: var(--indigo-10);
+}
+button.primary:active:where(:not(:disabled)) {
+  background: var(--indigo-11);
+} /* The one tooltip (shared/Tooltips.tsx): dark, small, under its element. */
+.app-tooltip {
+  position: fixed;
+  z-index: 2147483000;
+  visibility: hidden;
+  max-width: min(320px, calc(100vw - 12px));
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--gray-12);
+  color: var(--gray-1);
+  font-size: var(--font-size-2);
+  line-height: 1.5;
+  box-shadow: var(--layer-shadow);
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  animation: layer-in var(--layer-fade) ease-out;
+}
+.app-tooltip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.app-tooltip kbd {
+  margin-left: auto;
+  color: var(--gray-8);
+}
+.app-tooltip-detail {
+  margin-top: 2px;
+  color: var(--gray-5);
+  white-space: pre-line;
+}
+button.primary:disabled {
+  color: var(--gray-a8);
+  background: var(--gray-a3);
+}

@@ -1,3 +1,4 @@
+import { IconButton } from "../design/ui";
 import { PanelLeft, PanelRight } from "lucide-react";
 import { ClassroomEntry } from "../classroom/Classroom";
 import type { FeedbackController } from "./Feedback";
@@ -15,7 +16,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
   const shortcuts = useSettings((state) => state.labels);
   return (
     <header className="titlebar">
-      <button
+      <IconButton
         className="icon-button project-toggle"
         {...tip("展开 / 收起项目栏", shortcuts.rail)}
         aria-label="展开 / 收起项目栏"
@@ -24,7 +25,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
         onClick={() => setShowExplorer((shown) => !shown)}
       >
         <PanelLeft size={16} />
-      </button>
+      </IconButton>
       <div className="brand">
         <svg aria-hidden="true" viewBox="0 0 38 38">
           <path d="M4 10h10v9h10v9h10" />
@@ -40,7 +41,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
         <ClassroomEntry />
         <SimulationMenuRegion />
         <FileMenu feedback={feedback} />
-        <button
+        <IconButton
           className="icon-button"
           {...tip("展开 / 收起工作栏", shortcuts.review)}
           aria-label="展开 / 收起工作栏"
@@ -49,7 +50,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
           onClick={() => setShowRight((shown) => !shown)}
         >
           <PanelRight size={16} />
-        </button>
+        </IconButton>
       </div>
     </header>
   );

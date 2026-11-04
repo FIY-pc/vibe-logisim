@@ -1,5 +1,4 @@
-import * as Primitive from "@radix-ui/react-checkbox";
-import { Check } from "lucide-react";
+import { Checkbox as ThemesCheckbox } from "@radix-ui/themes";
 
 /** A check box drawn by the app. Put it inside a `<label>` with its text, or
  * name it with `label`. */
@@ -17,16 +16,13 @@ export function Checkbox({
   className?: string;
 }) {
   return (
-    <Primitive.Root
+    <ThemesCheckbox
+      size="2"
       className={className ? `checkbox ${className}` : "checkbox"}
       checked={checked}
       onCheckedChange={(value) => onCheckedChange(value === true)}
       disabled={disabled}
       aria-label={label}
-    >
-      <Primitive.Indicator className="checkbox-mark">
-        <Check size={11} strokeWidth={3} aria-hidden="true" />
-      </Primitive.Indicator>
-    </Primitive.Root>
+    />
   );
 }

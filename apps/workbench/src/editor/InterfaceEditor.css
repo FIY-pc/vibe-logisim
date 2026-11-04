@@ -1,54 +1,30 @@
-.interface-editor {
-  width: min(1140px, calc(100vw - 32px));
-  max-width: none;
-  padding: 0;
-  max-height: calc(100vh - 32px);
-}
-.interface-editor[open] {
-  display: flex;
-  flex-direction: column;
-}
-.interface-editor > header,
-.interface-editor > footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 20px;
-  flex-shrink: 0;
-}
-.interface-editor > header {
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-}
 .interface-editor h3 {
-  font-size: 13px;
   margin: 0;
-}
-.interface-editor > footer {
-  border-top: 1px solid var(--border);
 }
 .interface-editor > footer > span {
   flex: 1;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
 }
 .symbol-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 365px;
-  min-height: 0;
-  height: min(650px, calc(100vh - 200px));
+  grid-template-columns: minmax(0, 1fr) 420px;
+  height: min(650px, calc(100dvh - 176px));
+  min-height: 360px;
 }
 .symbol-drawing {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #f8faff;
+  background: var(--surface-subtle);
 }
 .symbol-toolbar {
   display: flex;
-  gap: 5px;
-  padding: 10px 14px;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
 }
 .symbol-toolbar button:nth-last-child(2) {
   margin-left: auto;
@@ -68,16 +44,16 @@
 }
 .symbol-port {
   fill: white;
-  stroke: #4567d8;
+  stroke: var(--accent);
   stroke-width: 1.5;
   cursor: grab;
 }
 .symbol-port.selected {
-  fill: #4569ff;
-  stroke: #244abf;
+  fill: var(--accent);
+  stroke: var(--accent);
 }
 .symbol-selected {
-  filter: drop-shadow(0 0 2px #4569ff);
+  filter: drop-shadow(0 0 2px var(--accent));
 }
 .symbol-properties {
   border: 0;
@@ -87,8 +63,8 @@
   display: flex;
   flex-wrap: wrap;
   align-content: start;
-  gap: 10px;
-  padding: 14px 20px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   max-height: 156px;
   overflow: auto;
   flex-shrink: 0;
@@ -96,22 +72,22 @@
 .symbol-properties label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--space-1);
   color: var(--muted);
 }
-.symbol-properties input {
-  width: 75px;
+.symbol-properties .symbol-field {
+  width: 96px;
 }
-.symbol-properties input[aria-label="文字内容"] {
-  width: 210px;
+.symbol-properties .symbol-field-text {
+  width: 240px;
 }
 .symbol-properties p {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
 }
 .symbol-ports {
-  padding: 16px 14px;
+  padding: var(--space-4) var(--space-3);
   border-left: 1px solid var(--border);
   overflow: auto;
 }
@@ -119,19 +95,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .symbol-port-row,
 .symbol-port-columns {
   display: grid;
-  grid-template-columns: 24px minmax(80px, 1fr) 64px 46px 24px;
-  gap: 5px;
-  padding: 10px 5px;
+  grid-template-columns: 32px minmax(96px, 1fr) 88px 64px 32px;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
   border: 0;
   margin: 0;
 }
 .symbol-port-row.selected {
-  background: #edf1ff;
+  background: var(--accent-soft);
   border-radius: 6px;
 }
 .symbol-port-row label {
@@ -141,35 +117,30 @@
 .symbol-port-row label > span {
   display: none;
 }
-.symbol-port-row input,
+.symbol-port-row .symbol-field,
 .symbol-port-row .select-trigger {
   width: 100%;
   min-width: 0;
-  padding: 6px;
-}
-.symbol-port-row button {
-  padding: 0;
 }
 .symbol-port-columns {
-  font-size: 11px;
   color: var(--muted);
-  padding-bottom: 3px;
+  padding-bottom: var(--space-1);
 }
 .symbol-impact {
   border-top: 1px solid var(--border);
-  margin-top: 16px;
-  padding-top: 14px;
-  font-size: 12px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-1);
 }
 .symbol-impact > div {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: center;
   justify-content: space-between;
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .symbol-impact button {
-  font-size: 11px;
   flex-shrink: 0;
 }
 .symbol-parent-preview {
@@ -179,7 +150,7 @@
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 30px #17223520;
+  box-shadow: var(--layer-shadow);
 }
 .symbol-parent-preview button {
   position: sticky;
@@ -194,8 +165,7 @@
   .symbol-workspace {
     grid-template-columns: minmax(0, 1fr);
     height: auto;
-    max-height: calc(100vh - 180px);
-    overflow: auto;
+    min-height: 0;
   }
   .interface-editor .symbol-canvas {
     height: 280px;

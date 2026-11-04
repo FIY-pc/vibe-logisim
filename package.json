@@ -41,13 +41,16 @@
     "test:interfaces": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/interface-check.mts",
     "test:history": "cargo build -p vibe-workbench-host --bin vibe-workbench-host && node scripts/workbench/history-check.mts",
     "showcase": "node packages/showcase/src/main.mts",
-    "test:showcase": "node --test packages/showcase/test/*.test.mts"
+    "test:showcase": "node --test packages/showcase/test/*.test.mts",
+    "test:conversation-browser": "node scripts/workbench/verify-conversation-browser.mts",
+    "test:conversation-export": "node scripts/workbench/verify-conversation-export.mts"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "esbuild": "^0.28.2",
-    "fflate": "^0.8.2",
+    "fflate": "^0.8.3",
     "jsdom": "29.1.1",
+    "playwright": "1.64.1",
     "prettier": "^3.9.10",
     "resedit": "3.1.0",
     "typescript": "^7.0.2"

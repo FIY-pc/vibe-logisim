@@ -55,12 +55,6 @@ try {
             contents:
               "export const subscribeEvents=(fn)=>globalThis.__subscribe(fn);",
           }));
-          builder.onLoad(
-            { filter: /[\\/]workspace[\\/]FilePreview\.tsx$/ },
-            () => ({
-              contents: "export const FilePreview=()=>null;",
-            }),
-          );
           builder.onLoad({ filter: /[\\/]workspace[\\/]pdf\.ts$/ }, () => ({
             contents:
               "export const openPdf=async()=>{throw new Error('PDF is not rendered under jsdom')};export const pageText=async()=>'';",
@@ -81,7 +75,13 @@ globalThis.PointerEvent=dom.window.PointerEvent;
 Object.defineProperty(globalThis,'navigator',{value:dom.window.navigator,configurable:true});
 // A context menu anchors to a rectangle at the pointer.
 globalThis.DOMRect=dom.window.DOMRect;
-globalThis.ResizeObserver=class{constructor(fn){this.fn=fn}observe(){this.fn([{contentRect:{width:600,height:400}}])}unobserve(){}disconnect(){}};
+globalThis.NodeFilter=dom.window.NodeFilter;
+globalThis.Window=dom.window.Window;
+globalThis.innerHeight=dom.window.innerHeight;
+// jsdom has no text layout; these stubs support lifecycle tests, not geometry proof.
+dom.window.Range.prototype.getClientRects=()=>[];
+dom.window.Range.prototype.getBoundingClientRect=()=>new DOMRect();
+globalThis.ResizeObserver=dom.window.ResizeObserver=class{constructor(fn){this.fn=fn}observe(target){this.fn([{target,contentRect:{width:600,height:400},borderBoxSize:[{inlineSize:0,blockSize:0}]}])}unobserve(){}disconnect(){}};
 // Radix measures form controls through window's animation frames.
 dom.window.requestAnimationFrame=globalThis.requestAnimationFrame;dom.window.cancelAnimationFrame=globalThis.cancelAnimationFrame;
 // The editor picture paints through Canvas2D, which jsdom does not have.

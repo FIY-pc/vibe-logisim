@@ -1,3 +1,8 @@
+import { verifyDocumentWorkspace } from "./document-workspace";
+import { verifyFilePreview } from "./file-preview";
+import { verifySearchControls } from "./search-controls";
+import { verifyMenusUI } from "./menus";
+import { verifySourceEditor } from "./source-editor";
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
 import { verifyStraightWires } from "./straight-wires";
 import { verifyClassroomUI } from "./classroom";
@@ -6,6 +11,8 @@ import { verifyConversationSummaries } from "./conversation-summaries";
 import { verifyConversationTurns } from "./conversation-turns";
 import { verifyContextUsage } from "./context-usage";
 import { verifyProjectInfoUI } from "./project-info";
+import { verifyDialogFoundation } from "./dialog-foundation";
+import { verifyDialogControls } from "./dialog-controls";
 import { verifyDocumentHistory } from "./history";
 import { verifyReferenceLinks } from "./reference-links";
 import { verifyReferencesUI } from "./references";
@@ -13,7 +20,7 @@ import { verifyFilesUI } from "./files";
 import { verifyRestoredInteractions } from "./restored-interactions";
 import assert from "node:assert/strict";
 import { act, useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { App } from "../../../apps/workbench/src/App";
 import { Canvas } from "../../../apps/workbench/src/editor/Canvas";
@@ -224,6 +231,30 @@ assert.equal(
   false,
 );
 await input("submitted");
+const beforeComposition = calls.filter((call) => call.method === "ask").length;
+await act(async () => {
+  const editor =
+    document.querySelector<HTMLTextAreaElement>('[aria-label="消息"]')!;
+  editor.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      isComposing: true,
+      bubbles: true,
+    }),
+  );
+  editor.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      shiftKey: true,
+      bubbles: true,
+    }),
+  );
+});
+assert.equal(
+  calls.filter((call) => call.method === "ask").length,
+  beforeComposition,
+  "IME confirmation and Shift+Enter keep the draft without sending",
+);
 askGate = defer();
 await click(document.querySelector('[aria-label="发送"]'));
 await input("new draft while waiting");
@@ -441,7 +472,7 @@ assert.equal(
   "ancestor",
 );
 await appKey("f", { ctrlKey: true });
-assert.ok(document.querySelector('dialog[aria-label="查找元件"]'));
+assert.ok(document.querySelector('.find-dialog[role="dialog"]'));
 await click(document.querySelector('.find-dialog [aria-label="关闭"]'));
 console.log(
   "PASS: editor keyboard dispatch toggles grid and opens actionable circuit/component search",
@@ -454,7 +485,7 @@ assert.equal(document.querySelector(".error-bar")?.textContent ?? null, null);
 await openMenu("更多");
 await clickMenuItem("帮助与反馈");
 await clickMenuItem("反馈问题…");
-assert.ok(document.querySelector('dialog[aria-label="反馈问题"]'));
+assert.ok(document.querySelector('[role="dialog"][aria-label="反馈问题"]'));
 assert.match(
   document.querySelector<HTMLTextAreaElement>('[aria-label="诊断预览"]')!.value,
   /nativeRuntimeAvailable/,
@@ -554,7 +585,7 @@ await act(async () => {
 });
 await act(async () =>
   document
-    .querySelector('dialog[aria-label="重命名"] form')!
+    .querySelector('[role="dialog"][aria-label="重命名"] form')!
     .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
 );
 await settle();
@@ -572,7 +603,8 @@ await settle();
 assert.equal(statusReads, 4);
 assert.ok(document.querySelector(".file-title .dirty-dot"));
 assert.equal(
-  document.querySelector('dialog[aria-label="重命名"]')?.textContent ?? null,
+  document.querySelector('[role="dialog"][aria-label="重命名"]')?.textContent ??
+    null,
   null,
 );
 
@@ -1280,7 +1312,10 @@ assert.equal(
   "false",
 );
 await inputValue(field("接口地址"), "http://fixture.invalid/v1");
-await inputValue(field("模型"), "fixture");
+await inputValue(
+  document.querySelector('input[aria-label="模型"]')!,
+  "fixture",
+);
 await click(
   [...document.querySelectorAll("button")].find(
     (n) => n.textContent === "读取模型列表",
@@ -1291,6 +1326,7 @@ assert.equal(
   document.querySelector('[role="option"]')!.textContent,
   "fixture-new",
 );
+await click(document.querySelector('[role="option"]')!);
 await click(
   [...document.querySelectorAll("button")].find(
     (n) => n.textContent === "检测连接",
@@ -1324,9 +1360,14 @@ console.log(
 );
 await act(async () => root.unmount());
 assert.deepEqual(errors, []);
+await verifyMenusUI();
+await verifyDialogFoundation();
+await verifyDialogControls();
 await verifyRestoredInteractions();
 await verifyStraightWires();
 await verifyFilesUI();
+await verifyDocumentWorkspace();
+await verifyFilePreview();
 await verifyReferencesUI();
 await verifyReferenceLinks();
 await verifyDocumentHistory();
@@ -1335,6 +1376,8 @@ await verifyConversationSummaries();
 await verifyConversationTurns();
 await verifyContextUsage();
 await verifyAISettings();
+await verifySearchControls();
+await verifySourceEditor();
 await verifyEditorRequestLifetimes();
 await verifyClassroomUI();
 console.log("All focused UI lifecycle checks passed");

@@ -5,11 +5,12 @@
  * stdout carries nothing else; diagnostics go to stderr.
  */
 import { createInterface } from "node:readline";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { TurnRunner } from "./turn/runner.mts";
 import { storeReference, readReferences } from "./conversations/references.mts";
+import { exportRecord, conversationMarkdown } from "./conversations/export.mts";
 import { closeNetwork } from "./network/fetch.mts";
 import { readMaterial } from "./materials/read.mts";
 import { resolveFile } from "./tools/files.mts";
@@ -63,6 +64,42 @@ async function dispatch(method: RuntimeMethod, args: any) {
       return runner.snapshot();
     case "history":
       return runner.historySnapshot();
+    case "exportConversations": {
+      const folder = await folderOf();
+      if (!folder || folder.id !== args.workspaceKey)
+        throw new Error("工作区已切换，请重新选择要导出的会话");
+      if (
+        typeof args.exportId !== "string" ||
+        !/^[a-f0-9-]{36}$/.test(args.exportId)
+      )
+        throw new Error("导出请求无效");
+      const conversations = runner
+        .exportConversations(folder.id, args.ids)
+        .map((record) => {
+          const conversation = exportRecord(record);
+          return { conversation, markdown: conversationMarkdown(conversation) };
+        });
+      // Large histories must not travel through the JSONL reply's size limit.
+      // This one-use file stays in app state; the host consumes and removes it.
+      const directory = path.join(state, "conversation-exports");
+      const file = path.join(directory, args.exportId + ".json");
+      await mkdir(directory, { recursive: true });
+      try {
+        await writeFile(
+          file,
+          JSON.stringify({
+            exportedAt: new Date().toISOString(),
+            conversations,
+          }),
+          { flag: "wx", mode: 0o600 },
+        );
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST")
+          await rm(file, { force: true });
+        throw error;
+      }
+      return { exportId: args.exportId };
+    }
     case "bind": {
       const folder = await folderOf();
       // A running turn keeps its conversation: another document of the same
@@ -140,8 +177,7 @@ async function dispatch(method: RuntimeMethod, args: any) {
       const folder = await folderOf();
       if (!folder || !binding || args.documentId !== binding.documentId)
         throw new Error("对话已切换，请重新添加引用");
-      if (!Array.isArray(args.references) || args.references.length > 8)
-        throw new Error("每条问题最多引用 8 处资料或观察");
+      if (!Array.isArray(args.references)) throw new Error("资料引用无效");
       const captured = binding;
       const references = await Promise.all(
         args.references.map((input: any) =>

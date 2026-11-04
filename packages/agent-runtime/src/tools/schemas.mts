@@ -70,7 +70,7 @@ const COORDINATE = int({ multipleOf: 10 });
 const LOCATION = object({ x: COORDINATE, y: COORDINATE }, ["x", "y"]);
 const ATTRIBUTES = map(
   str(),
-  "Native attribute names and values, only those that differ from the defaults.",
+  "Native editable attribute names and values, only those that differ from the defaults. describe_component reports their names, allowed values and read-only status.",
 );
 const PART = object(
   {
@@ -198,23 +198,20 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "describe_component",
     label: "查阅原生元件",
     description:
-      "A native component as this file's runtime places it: default attributes with allowed values, body bounds and ports relative to the anchor. With attributes, the ports those values give.",
-    parameters: object(
-      {
-        path: PATH,
-        circuit: CIRCUIT,
-        tool: str("Native component name, or a definition of this file."),
-        library: PART.properties.library,
-        attributes: map(str()),
-      },
-      ["tool"],
-    ),
+      "Omit tool to list this file's available component names and library ids. With tool, return native attributes with allowed values and editable status, body bounds and ports relative to the anchor. With attributes, return that configuration; unsupported attributes are rejected with the native explanation.",
+    parameters: object({
+      path: PATH,
+      circuit: CIRCUIT,
+      tool: str("Native component name, or a definition of this file."),
+      library: PART.properties.library,
+      attributes: map(str()),
+    }),
   },
   place_component: {
     name: "place_component",
     label: "放置元件",
     description:
-      "Place components or subcircuit instances with their anchors at grid points; each is addressable as c<x>_<y> at once. Places nothing and names the first conflict on a body overlap or an occupied anchor.",
+      "Place components or subcircuit instances with their anchors at grid points; each is addressable as c<x>_<y> at once. The whole body, not just its anchor, must lie within nonnegative coordinates; describe_component returns its relative bounds. Validation failure identifies the offending edit and places nothing; correct it and resubmit the batch.",
     parameters: object(
       { path: PATH, circuit: CIRCUIT, components: array(PART, 80) },
       ["components"],

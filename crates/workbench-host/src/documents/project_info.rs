@@ -22,7 +22,7 @@ struct Package {
     depth: usize,
     main: String,
 }
-fn filename(name: &str, fallback: &str) -> String {
+pub(crate) fn filename(name: &str, fallback: &str) -> String {
     let name = name.rsplit(['/', '\\']).next().unwrap_or(fallback);
     let mut safe: String = name
         .chars()
@@ -371,23 +371,7 @@ impl Host {
         if doc.path.as_ref() == Some(&path) || package.known.contains_key(&path) {
             return Err("不能覆盖工程源文件或组件库".into());
         }
-        let check = || -> Result<()> {
-            if export_target(&path)?["revision"].as_str() != expected_revision {
-                return Err("目标文件已存在或已经改变，请重新选择保存位置".into());
-            }
-            Ok(())
-        };
-        check()?;
-        let mut temp = crate::staged_user_file(&parent).map_err(|_| "无法创建工程包文件")?;
-        temp.write_all(&bytes).map_err(|_| "无法写入工程包")?;
-        temp.as_file().sync_all().map_err(|_| "无法写入工程包")?;
-        check()?;
-        if expected_revision.is_some() {
-            temp.persist(&path).map_err(|_| "无法替换工程包")?;
-        } else {
-            temp.persist_noclobber(&path)
-                .map_err(|_| "目标文件已出现，请重新选择保存位置")?;
-        }
+        crate::app::exports::save_archive(&path, &bytes, expected_revision)?;
         Ok(json!({"saved":true,"name":name,"bytes":bytes.len(),"entry":package.main}))
     }
 }

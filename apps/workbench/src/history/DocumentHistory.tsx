@@ -6,7 +6,6 @@ import { subscribeEvents } from "../shared/events";
 import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import { HistoryReview } from "./HistoryReview";
-import "./DocumentHistory.css";
 
 /** The active document's history; an entry opens its review. */
 export function DocumentHistory({

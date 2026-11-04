@@ -101,6 +101,21 @@ class ConversationStore {
       w = data.workspaces[key];
     return w ? structuredClone(w.conversations[w.activeId]) : null;
   }
+  /** Explicit selection only; exporting never activates or creates a conversation. */
+  selected(key: string, ids: string[]): ConversationRecord[] {
+    const workspace = this.read().workspaces[key];
+    if (!Array.isArray(ids) || !ids.length)
+      throw new Error("请选择要导出的会话");
+    return [...new Set(ids)].map((id) => {
+      if (
+        typeof id !== "string" ||
+        !workspace ||
+        !Object.hasOwn(workspace.conversations, id)
+      )
+        throw new Error("所选会话不属于此工作区");
+      return structuredClone(workspace.conversations[id]);
+    });
+  }
   state(key: string) {
     const data = this.read(),
       w = this.workspace(data, key);

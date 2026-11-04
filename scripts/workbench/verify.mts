@@ -15,6 +15,7 @@ import { agentScript, verifyAgentTurn } from "./agent-scenarios.mts";
 import { scriptedProfile, startScriptedModel } from "./scripted-model.mts";
 import { documentViews } from "./document-views.mts";
 import { verifyAtomicConnect } from "./connect-native-scenarios.mts";
+import { verifyToolDiscovery } from "./tool-discovery-scenarios.mts";
 const root = path.resolve(import.meta.dirname, "../..");
 const state = await mkdtemp(path.join(tmpdir(), "vibe-native-check-"));
 // The sidecar reads its model services at start: point them at a scripted model.
@@ -453,6 +454,7 @@ try {
   );
   await verifyAgentTurn(command, stream!, state);
   await verifyAtomicConnect(post);
+  await verifyToolDiscovery(post);
   console.log(
     "Verified: native placement and property rejection; NOT simulation; isolated vector comparisons and tick traces; transient stimuli; recovery and undo; folder auto-save and external explicit save; Save As identity; external reload and undo; guarded close and simulation cleanup; a scripted AI turn's edit, folder checkpoint and undo; a turn that rewrites the open file reads it again.",
   );
