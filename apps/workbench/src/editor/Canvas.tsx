@@ -29,7 +29,14 @@ import {
   type ConnectionPeer,
   type SignalTarget,
 } from "./connectivity";
-import { fitView, hitTest, insideBox, type View } from "./geometry";
+import {
+  fitView,
+  hitTest,
+  insideBox,
+  selectionBounds,
+  straightWireGroups,
+  type View,
+} from "./geometry";
 import { buildScene, program, type Frame, type Live } from "./paint";
 import { symbolId, templateKey, useSymbols, type SymbolEntry } from "./symbols";
 import { useMovePreview } from "./useMovePreview";
@@ -215,6 +222,11 @@ export function Canvas({
     return built;
     // `symbols.version` changes with every answer.
   }, [doc, circuit, symbols.version, symbols.widthErrors]);
+  const wireGroups = useMemo(() => straightWireGroups(scene), [scene]);
+  const selectionBoxes = useMemo(
+    () => selectionBounds(scene, selection, wireGroups),
+    [scene, selection, wireGroups],
+  );
   // The first picture of a circuit waits until all its kinds are known.
   const shown = useRef(false);
   if (symbols.ready) shown.current = true;
@@ -817,18 +829,16 @@ export function Canvas({
           }
           return;
         }
-        const ids = target
-          ? e.shiftKey
-            ? [...new Set([...selection, target])]
-            : selection.includes(target)
-              ? selection
-              : [target]
-          : [];
+        const targets = target ? (wireGroups.get(target) ?? [target]) : [];
+        const ids =
+          target && (e.shiftKey || selection.includes(target))
+            ? [...new Set([...selection, ...targets])]
+            : targets;
         selectObjects(ids);
         setDelta(still);
         e.currentTarget.setPointerCapture(e.pointerId);
         const selectedWire =
-          ids.length === 1
+          ids.length && ids.every((id) => targets.includes(id))
             ? circuit.wires.find((wire) => wire.id === ids[0])
             : null;
         setDrag({
@@ -1054,13 +1064,12 @@ export function Canvas({
             />
           );
         })}
-        {selection.map((id) => {
-          const b = scene.bounds.get(id);
-          if (!b) return null;
+        {[...selectionBoxes].map(([id, b]) => {
           const offset = displaced?.has(id) ? overlay!.delta : still;
           return (
             <rect
               key={id}
+              className="selection-outline"
               x={b.x - 4 + offset.x}
               y={b.y - 4 + offset.y}
               width={b.width + 8}

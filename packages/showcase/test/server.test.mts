@@ -92,6 +92,22 @@ test("public feedback requires consent, moderation, administrator ownership, and
     assert.match(login.r.headers.get("set-cookie")!, /HttpOnly/);
     assert.match(login.r.headers.get("set-cookie")!, /SameSite=Strict/);
     const queue = (await call("/api/admin/comments", "GET", undefined, true)).d;
+    for (const offset of ["0.5", "NaN", "Infinity", "-1", "100001"]) {
+      await call(
+        "/api/comments?offset=" + offset,
+        "GET",
+        undefined,
+        false,
+        400,
+      );
+      await call(
+        "/api/admin/comments?offset=" + offset,
+        "GET",
+        undefined,
+        true,
+        400,
+      );
+    }
     assert.equal(queue.comments[0].source, "visitor");
     assert.ok(!JSON.stringify(queue).includes("ip_hash"));
     await call(

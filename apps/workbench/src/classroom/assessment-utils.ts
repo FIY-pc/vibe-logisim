@@ -17,8 +17,21 @@ export function templatePins(xml: string, circuit: string) {
     (c) => c.getAttribute("name") === main,
   );
   if (!selected) throw Error("模板中找不到待评测电路");
+  const wiring = new Set(
+    [...doc.documentElement.children]
+      .filter(
+        (c) => c.tagName === "lib" && c.getAttribute("desc") === "#Wiring",
+      )
+      .map((c) => c.getAttribute("name") || ""),
+  );
+  wiring.delete("");
   const pins = [...selected.children]
-    .filter((c) => c.tagName === "comp" && c.getAttribute("name") === "Pin")
+    .filter(
+      (c) =>
+        c.tagName === "comp" &&
+        c.getAttribute("name") === "Pin" &&
+        wiring.has(c.getAttribute("lib") || ""),
+    )
     .map((c) => {
       const attrs = Object.fromEntries(
         [...c.children]

@@ -6,6 +6,7 @@ import { ClassroomEntry } from "../../../apps/workbench/src/classroom/Classroom"
 import { useWorkbench } from "../../../apps/workbench/src/app/provider";
 import { createClassroomServer } from "../../../packages/classroom/src/server.mts";
 import { Workbench, pickOption } from "./workbench";
+import { templatePins } from "../../../apps/workbench/src/classroom/assessment-utils";
 
 export async function verifyClassroomUI() {
   const provider = createServer(async (req, res) => {
@@ -291,6 +292,23 @@ export async function verifyClassroomUI() {
   // LessonEditor parses uploaded templates with the browser XML parser.
   (globalThis as any).DOMParser = window.DOMParser;
   try {
+    const namedSubcircuit = templateXml
+      .replaceAll('lib="0"', 'lib="wiring"')
+      .replace('name="0"', 'name="wiring"')
+      .replace(
+        "</circuit>",
+        '<comp name="Pin" loc="(200,200)"><a name="label" val="helper"/></comp></circuit><circuit name="Pin"/>',
+      );
+    const parsedPins = templatePins(namedSubcircuit, "main");
+    assert.deepEqual(
+      parsedPins.inputs.map((p) => p.name),
+      ["A", "B"],
+      "a subcircuit named Pin is not an input terminal",
+    );
+    assert.deepEqual(
+      parsedPins.outputs.map((p) => p.name),
+      ["Y"],
+    );
     localStorage.removeItem("vibe.classroom.session");
     sessionStorage.setItem(
       "vibe.classroom.session",
@@ -632,6 +650,18 @@ export async function verifyClassroomUI() {
     assert.ok(!studentResult.includes("教师私有场景"));
     await wait(() => Boolean(container.textContent?.includes("我的提交记录")));
     assert.ok(container.textContent?.includes("通过 2/2"));
+    const formulaStudent = await api("/auth/register", "", {
+      username: "student-formula",
+      password: "test-password",
+      name: "=1+1",
+      studentNo: "=2+2",
+      role: "student",
+    });
+    const latestRoom = (await api(`/classrooms/${room.id}`, teacher.token))
+      .classroom;
+    await api("/classrooms/join", formulaStudent.token, {
+      code: latestRoom.code,
+    });
     // —— The teacher reviews the whole class and one student's attempts. ——
     await act(async () => root.unmount());
     root = createRoot(container);
@@ -677,6 +707,10 @@ export async function verifyClassroomUI() {
     const csv = container.querySelector(".assessment-report-csv")!.textContent!;
     assert.ok(csv.includes("异或门关卡（20分）"), "score sheet header");
     assert.ok(csv.includes("张同学") && csv.includes('"20","20"'), csv);
+    assert.ok(
+      csv.includes('"\t=1+1","\t=2+2"'),
+      "student names and numbers are exported as text, not spreadsheet formulas",
+    );
     await clickContaining("已通过");
     await wait(() =>
       Boolean(container.textContent?.includes("张同学的提交记录")),

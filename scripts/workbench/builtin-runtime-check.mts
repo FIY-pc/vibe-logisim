@@ -1,7 +1,6 @@
 /**
  * The built-in runtime's instructions per platform, read_file paging,
- * which is the only way to read a large file where no shell exists, and how
- * a long conversation stays inside the model's context.
+ * and the command environment available on each supported platform.
  */
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -22,8 +21,9 @@ for (const text of [linux, windows]) {
 }
 assert.match(linux, /Shell cwd is \/tmp\/workspace/);
 assert.ok(linux.includes(SANDBOX_REFERENCE), "the sandbox path is named");
-assert.match(windows, /No shell is available/);
-assert.doesNotMatch(windows, /Shell cwd/);
+assert.match(windows, /Windows PowerShell 5\.1/);
+assert.match(windows, /bundled Node\.js/);
+assert.doesNotMatch(windows, /No shell is available|\/tmp\/workspace/);
 // The references are readable at the sandbox path the prompt gives.
 assert.ok(linux.includes("index.md"), "the prompt names the reference index");
 assert.equal(

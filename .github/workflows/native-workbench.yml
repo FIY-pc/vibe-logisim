@@ -21,10 +21,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run test:runtime
       - run: cargo test -p vibe-circuit-document
       - run: npm run check
       - run: npm run test:arranger
-      - run: npm run test:runtime
       - run: npm run test:classroom
       - run: npm run test:showcase
       - run: npm run test:ui
