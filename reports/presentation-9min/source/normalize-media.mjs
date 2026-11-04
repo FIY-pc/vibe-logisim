@@ -1,4 +1,0 @@
-import fs from 'node:fs/promises';import JSZip from 'jszip';
-const b=(process.env.REPORT_WORKSPACE||'D:/project/vibe-logisim/.workbench-cache/report-dynamic')+'/build';const zip=await JSZip.loadAsync(await fs.readFile(b+'/candidate-media.pptx'));let normalized=0;
-for(const n of [4,5,7]){const part=`ppt/slides/slide${n}.xml`;let xml=await zip.file(part).async('string');xml=xml.replace(/<a:hlinkClick\b[^>]*>/g,tag=>{if(tag.includes('action="ppaction://media"')&&tag.includes('r:id=""')){normalized++;return tag.replace(/\s+r:id=""/,'')}return tag});zip.file(part,xml)}
-if(normalized!==3)throw Error('Unexpected PowerPoint media hyperlink structure');await fs.writeFile(b+'/candidate-normalized.pptx',await zip.generateAsync({type:'nodebuffer',compression:'DEFLATE'}));console.log('Removed three optional empty hyperlink relationship attributes; embedded media references unchanged.');

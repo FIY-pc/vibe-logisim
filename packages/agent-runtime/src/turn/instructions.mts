@@ -33,7 +33,9 @@ export function systemInstructions(
   const shell =
     platform === "linux"
       ? `Shell cwd is /tmp/workspace; file tools use folder-relative paths. In the shell the bundled reference directory is ${SANDBOX_REFERENCE} (read_file accepts that path too).`
-      : "No shell is available; file tools use folder-relative paths.";
+      : platform === "win32"
+        ? "exec_command runs Windows PowerShell 5.1 in the open project folder, with UTF-8 output and no profile. Use PowerShell syntax; node runs JavaScript files using the app's bundled Node.js, so no separate installation is needed. java is available in packaged builds. Reference and runtime paths are $env:VIBE_CIRCUIT_REFERENCE and $env:VIBE_RUNTIME. The shell has the current user's filesystem permissions; work on the project and materials the user requested. File tools use folder-relative paths."
+        : "No shell is available; file tools use folder-relative paths.";
   return (
     INSTRUCTIONS +
     `\nRespond in the user language. Send concise progress messages before tool work. Use the provided tools directly. ${shell} Do not claim success without tool evidence.`

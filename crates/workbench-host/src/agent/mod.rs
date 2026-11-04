@@ -79,6 +79,10 @@ impl Agent {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .kill_on_drop(true);
+        let runtimes = root.join("runtimes");
+        if runtimes.is_dir() && std::env::var_os("VIBE_LOGISIM_RUNTIME_ROOT").is_none() {
+            command.env("VIBE_LOGISIM_RUNTIME_ROOT", runtimes);
+        }
         // The release app has no console; without this flag Node opens its own window.
         #[cfg(windows)]
         command.creation_flags(0x0800_0000);

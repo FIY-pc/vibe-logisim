@@ -362,7 +362,10 @@ export function Curriculum({
         oscillating: boolean;
         outputs: Record<string, { value?: number }>;
       }[];
-    }>(`/lessons/${lesson.id}/preview`, "POST", { xml: await file.text() });
+    }>(`/lessons/${lesson.id}/preview`, "POST", {
+      version: lesson.version,
+      xml: await file.text(),
+    });
     const passed = lesson.tests.filter(
       (t, i) =>
         !answer.rows[i].oscillating &&
@@ -390,7 +393,15 @@ export function Curriculum({
     earned(lessons).reduce((a, b) => a + b, 0);
   const reportCsv = () => {
     if (!progress) return "";
-    const q = (v: string) => `"${v.replaceAll('"', '""')}"`;
+    const q = (v: string) => {
+      // Spreadsheet-facing CSV: quote fields and keep user text from becoming a formula.
+      // https://community.owasp.org/attacks/CSV_Injection
+      const text =
+        /^[\s\u0000]*[=+\-@＝＋－＠]/u.test(v) || /^[\t\r\n]/u.test(v)
+          ? "\t" + v
+          : v;
+      return `"${text.replaceAll('"', '""')}"`;
+    };
     const head = [
       "学生",
       "学号",

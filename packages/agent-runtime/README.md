@@ -70,7 +70,11 @@ Works end to end: a real-model turn on a large project (rename a pin label in a 
 
 Context configuration accepts the supplied positive integer without silently clamping it to 32K–2M. Turns have no application-level duration or tool-step ceiling. The 64-token / 30-second connection probe is separate from normal generation. HTTP startup, retry, document-operation, pagination and process-memory bounds serve their respective operations rather than limiting an entire AI task.
 
-On Linux, `exec_command.timeout` defaults to 120 seconds, accepts longer durations, and accepts `0` to run until completion or user cancellation. Both the process timer and systemd deadline follow it; memory and filesystem isolation remain in force.
+On Linux and Windows, `exec_command.timeout` defaults to 120 seconds, accepts longer durations, and accepts `0` to run until completion or user cancellation. Linux uses a systemd sandbox. Windows runs PowerShell 5.1 without a profile, in the open project folder; its PATH contains the bundled Node.js, bundled Java when available, and Windows tools. No separate shell, Python or Node installation is required. Commands are passed through a temporary UTF-8 script, so non-ASCII text and long scripts do not depend on console encoding or command-line length. Output retains the last 64,000 characters and reports truncation on Windows.
+
+Windows commands use the current user's filesystem permissions: setting the working directory is not filesystem isolation. The environment is built from OS essentials and product paths, without inheriting provider keys, account state, proxy credentials, `NODE_OPTIONS`, or user profiles. A Windows Job Object owns PowerShell and its ordinary descendants, with the same 6 GiB / 512-process resource limits as Linux. Completion, cancellation and timeout end those descendants as well. This is process/resource management, not a security sandbox; it does not confine filesystem access or broker-launched processes. Model instructions describe the actual boundary.
+
+`node scripts/workbench/windows-command-check.mts` exercises the real Windows tool with Unicode paths and XML, long commands, exit codes, environment isolation, cancellation/timeout, and descendant cleanup. It runs in Windows regression CI; it skips on other platforms. Packaging also runs it with the relocated bundled Node and runtime paths.
 
 ## Context management
 
