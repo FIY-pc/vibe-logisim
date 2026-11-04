@@ -31,6 +31,7 @@ export function FilesRegion() {
       version={version}
       activePath={doc?.path || null}
       onFolder={actions.workspace.onFolder}
+      onCloseFolder={() => void actions.workspace.closeFolder()}
       onRename={() => refreshWorkspace()}
       onOpen={actions.workspace.openDocument}
       onPreview={stores.files.getState().setPreview}

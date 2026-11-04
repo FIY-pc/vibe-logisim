@@ -247,6 +247,19 @@ export function createWorkspaceActions(stores: Stores) {
   };
   const openFolderAt = (path: string) =>
     openFolderPath(path, onFolder, onError);
+  /** Detaches the folder while keeping open documents and their drafts. */
+  const closeFolder = () =>
+    busy(async () => {
+      const folder = files.getState().folder;
+      if (!folder) return;
+      await command({ op: "folderClose", folder_id: folder.id });
+      documents.getState().invalidate();
+      if (files.getState().folder?.id !== folder.id) return;
+      files.getState().setFolder(null);
+      files.getState().setPreview(null);
+      files.getState().setNewFilePrompt(false);
+      stores.conversation.getState().setReferenceDrop(false);
+    }).catch(onError);
   const openFolder = () =>
     chooseFolder(
       openFolderAt,
@@ -278,6 +291,7 @@ export function createWorkspaceActions(stores: Stores) {
     requestReload,
     onFolder,
     openFolder,
+    closeFolder,
     openFolderAt,
     watchSource,
   };

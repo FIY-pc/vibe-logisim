@@ -141,6 +141,7 @@ interface Props {
   /** Changes whenever the tree should be listed again. */
   version?: number;
   onFolder: (f: ProjectFolder) => void;
+  onCloseFolder?: () => void;
   onOpen: (path: string) => void;
   onPreview: (file: PreviewFile) => void;
   onError: (e: unknown) => void;
@@ -186,6 +187,7 @@ function FolderFiles({
   activePath,
   version,
   onFolder,
+  onCloseFolder,
   onOpen,
   onPreview,
   onError,
@@ -995,6 +997,14 @@ function FolderFiles({
           刷新文件夹
         </MenuItem>
         <MenuItem onSelect={() => setHistory(true)}>文件改动…</MenuItem>
+        {!entry && onCloseFolder && (
+          <>
+            <MenuSeparator />
+            <MenuItem disabled={pending} onSelect={onCloseFolder}>
+              关闭文件夹
+            </MenuItem>
+          </>
+        )}
       </>
     );
   };

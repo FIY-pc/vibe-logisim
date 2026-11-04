@@ -4,7 +4,13 @@ import { FeedbackMenu, type FeedbackController } from "../shell/Feedback";
 import { Menu, MenuItem, MenuSeparator, MenuSub } from "../shared/Menu";
 import { bindingLabel } from "../shared/shortcuts";
 import { desktop } from "../shared/transport";
-import { useNotices, useSettings, useShell, useView } from "../app/hooks";
+import {
+  useFiles,
+  useNotices,
+  useSettings,
+  useShell,
+  useView,
+} from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 
 /** The open-folder button and the menu of file, search and app commands. */
@@ -13,6 +19,7 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
   const view = useView();
   const { doc } = view;
   const pending = useShell((state) => state.pending);
+  const folder = useFiles((state) => state.folder);
   const shortcuts = useSettings((state) => state.labels);
   const onError = useNotices((state) => state.onError);
   const { workspace, editor: editing } = actions;
@@ -42,6 +49,12 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
           打开…
         </MenuItem>
         <MenuItem onSelect={() => void openFolder()}>打开文件夹…</MenuItem>
+        <MenuItem
+          disabled={!folder || busy}
+          onSelect={() => void workspace.closeFolder()}
+        >
+          关闭文件夹
+        </MenuItem>
         <MenuSeparator />
         <MenuItem
           shortcut={shortcuts.save}

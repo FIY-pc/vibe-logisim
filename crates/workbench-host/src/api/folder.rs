@@ -17,6 +17,9 @@ pub enum FolderRequest {
     FolderOpen {
         path: PathBuf,
     },
+    FolderClose {
+        folder_id: String,
+    },
     FolderList {
         #[serde(default)]
         path: String,
@@ -99,6 +102,7 @@ pub enum FolderRequest {
 impl FolderRequest {
     pub(crate) const OPS: &[&str] = &[
         "folderOpen",
+        "folderClose",
         "folderList",
         "folderRead",
         "folderPreview",
@@ -117,9 +121,10 @@ impl FolderRequest {
     pub(crate) fn meta(&self) -> Meta {
         match self {
             // Opening a folder writes its own pointer file; it changes no document.
-            Self::FolderOpen { .. } | Self::FolderPreview { .. } | Self::FolderResolve { .. } => {
-                Meta::new(Read).stage(Stage::Files)
-            }
+            Self::FolderOpen { .. }
+            | Self::FolderClose { .. }
+            | Self::FolderPreview { .. }
+            | Self::FolderResolve { .. } => Meta::new(Read).stage(Stage::Files),
             Self::FolderRead { .. } => Meta::new(Read).stage(Stage::Files).agent(),
             Self::FolderList { .. } | Self::FolderHistory { .. } => Meta::new(Read).agent(),
             Self::FolderImportPrepare { .. }
@@ -141,6 +146,7 @@ impl Host {
     pub(crate) async fn folder_request(&self, request: FolderRequest) -> Result<Value> {
         match request {
             FolderRequest::FolderOpen { path } => {
+                let mut current = self.folder.lock().await;
                 let folder = vibe_circuit_document::Folder::open(&path)?;
                 std::fs::create_dir_all(&self.state)?;
                 std::fs::write(
@@ -154,8 +160,21 @@ impl Host {
                 if let Some(warning) = history_warning {
                     result["historyWarning"] = json!(warning);
                 }
-                *self.folder.lock().await = Some(folder);
+                *current = Some(folder);
                 Ok(result)
+            }
+            FolderRequest::FolderClose { folder_id } => {
+                let mut current = self.folder.lock().await;
+                if current.as_ref().map(|folder| folder.id.as_str()) != Some(folder_id.as_str()) {
+                    return Err("文件夹已改变，请刷新后重试".into());
+                }
+                match std::fs::remove_file(self.state.join("folder.json")) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+                *current = None;
+                Ok(json!({}))
             }
             FolderRequest::FolderList { path } => {
                 let guard = self.folder.lock().await;
@@ -265,5 +284,49 @@ impl Host {
                 self.trash_project_entry(&folder_id, &path).await
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn close_folder_clears_restore_pointer_and_rejects_stale_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        std::fs::write(project.join("keep.txt"), "keep").unwrap();
+        let state = temp.path().join("state");
+        let host = Host::new(temp.path().into(), state.clone(), None).unwrap();
+        let folder = host
+            .dispatch(FolderRequest::FolderOpen {
+                path: project.clone(),
+            })
+            .await
+            .unwrap();
+        assert!(
+            host.dispatch(FolderRequest::FolderClose {
+                folder_id: "stale".into()
+            })
+            .await
+            .is_err()
+        );
+        assert!(state.join("folder.json").exists());
+        assert!(host.folder.lock().await.is_some());
+        host.dispatch(FolderRequest::FolderClose {
+            folder_id: folder["id"].as_str().unwrap().into(),
+        })
+        .await
+        .unwrap();
+        assert!(host.folder.lock().await.is_none());
+        assert!(!state.join("folder.json").exists());
+        assert_eq!(
+            std::fs::read_to_string(project.join("keep.txt")).unwrap(),
+            "keep"
+        );
+        drop(host);
+        let restored = Host::new(temp.path().into(), state, None).unwrap();
+        assert!(restored.folder.lock().await.is_none());
     }
 }
