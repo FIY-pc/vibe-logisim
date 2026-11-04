@@ -1,0 +1,252 @@
+.editor-group {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+.editor-group > .editor {
+  flex: 1;
+  min-width: 0;
+}
+.editor-group.reader-focus > .editor {
+  display: none;
+}
+.document-reader {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 360px;
+  max-width: calc(100% - 445px);
+  flex-shrink: 0;
+  background: var(--paper);
+  border-left: 1px solid var(--border);
+}
+.reader-focus > .document-reader {
+  max-width: none;
+  flex: 1;
+  border: 0;
+}
+.reader-header {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  flex-shrink: 0;
+  background: var(--workspace-surface);
+  border-bottom: 1px solid var(--border);
+}
+.reader-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.reader-tab {
+  display: flex;
+  align-items: center;
+  max-width: 240px;
+  min-width: 110px;
+  border-right: 1px solid var(--border);
+  border-top: 2px solid transparent;
+}
+.reader-tab.active {
+  background: var(--paper);
+  border-top-color: var(--accent);
+}
+.reader-tab > button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13px;
+  min-width: 0;
+}
+.reader-tab > button[role="tab"] {
+  flex: 1;
+}
+.reader-tab > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reader-tab > button svg {
+  flex-shrink: 0;
+}
+.reader-tab .reader-tab-close {
+  padding: 0 6px;
+}
+.reader-layout {
+  border: none;
+  border-radius: 0;
+  padding: 0 10px;
+  background: transparent;
+}
+.reader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--paper);
+}
+.reader-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 5px 8px;
+  font-size: 13px;
+}
+.reader-actions button:hover,
+.reader-actions button[aria-pressed="true"],
+.reader-layout:hover,
+.reader-tab button:hover {
+  background: var(--hover);
+}
+.pdf-reader {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  background: var(--workspace-surface);
+}
+.reader-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--border);
+  outline-offset: -2px;
+}
+.reader-resizer:hover,
+.reader-resizer:focus {
+  background: var(--accent);
+}
+.reader-scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 24px;
+}
+.material-text pre {
+  margin: 0;
+  font:
+    14px/1.65 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.material-markdown {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text);
+}
+.material-markdown h1 {
+  font-size: 25px;
+}
+.material-markdown h2 {
+  font-size: 20px;
+}
+.material-markdown img {
+  max-width: 100%;
+}
+.material-markdown pre {
+  overflow-x: auto;
+  background: var(--workspace-surface);
+  padding: 16px;
+  border-radius: 6px;
+}
+.material-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.material-markdown td,
+.material-markdown th {
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+.image-reader {
+  background: var(--workspace-surface);
+  padding: 16px;
+}
+.image-stage {
+  position: relative;
+  min-width: 25%;
+  margin: auto;
+  line-height: 0;
+}
+.image-stage img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.image-stage.capturing {
+  cursor: crosshair;
+  touch-action: none;
+}
+.image-selection {
+  position: absolute;
+  border: 2px solid #345bff;
+  background: var(--selection-fill);
+  pointer-events: none;
+}
+.reader-unavailable {
+  margin: auto;
+  padding: 32px;
+  text-align: center;
+}
+@container (max-width: 880px) {
+  .editor-group:has(.document-reader) > .editor {
+    display: none;
+  }
+  .reader-resizer {
+    display: none;
+  }
+  .document-reader {
+    min-width: 0;
+    width: 100% !important;
+    max-width: none;
+    flex: 1;
+  }
+}
+
+.reader-back {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 0 10px;
+}
+.reader-recall {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.reader-recall button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+}
+@container (max-width: 880px) {
+  .reader-back {
+    display: inline-flex;
+  }
+  .reader-layout {
+    display: none;
+  }
+}

@@ -27,7 +27,7 @@ export async function verifyAISettings() {
     return { ok: true };
   };
   const button = (text: string) =>
-    Array.from(container.querySelectorAll("button")).find(
+    Array.from(document.querySelectorAll("button")).find(
       (element) => element.textContent === text,
     )!;
   const click = (element: Element) =>
@@ -67,7 +67,12 @@ export async function verifyAISettings() {
       onClose: () => {},
     };
     await act(async () => root.render(<ProviderSettings {...props} />));
-    assert.equal(container.querySelector("dialog")?.open, true);
+    assert.equal(document.querySelector("dialog")?.open, true);
+    assert.equal(
+      document.querySelector("dialog")?.parentElement,
+      document.body,
+      "Settings remain independent of a collapsed chat sidebar",
+    );
     await pickOption("新对话默认服务", "second");
     assert.deepEqual(calls.at(-1), {
       method: "defaultProvider",
@@ -79,7 +84,7 @@ export async function verifyAISettings() {
     );
     await click(button("用于此对话"));
     assert.match(
-      container.textContent!,
+      document.body.textContent!,
       /已有历史将随下一次提问发送给这个服务/,
     );
     assert.equal(
@@ -96,19 +101,19 @@ export async function verifyAISettings() {
         conversationId: "history-A",
       },
     });
-    await click(container.querySelector('button[aria-label="编辑 first"]')!);
-    const key = container.querySelector<HTMLInputElement>(
+    await click(document.querySelector('button[aria-label="编辑 first"]')!);
+    const key = document.querySelector<HTMLInputElement>(
       'input[type="password"]',
     )!;
     assert.equal(key.value, "");
     assert.equal(key.placeholder, "留空保留现有密钥");
-    const endpoint = Array.from(container.querySelectorAll("label"))
+    const endpoint = Array.from(document.querySelectorAll("label"))
       .find((label) => label.firstChild?.textContent === "接口地址")!
       .querySelector("input")!;
     await change(endpoint, "https://third.invalid/v1");
     assert.equal(key.placeholder, "");
     await act(async () => {
-      container
+      document
         .querySelector("form")!
         .dispatchEvent(
           new Event("submit", { bubbles: true, cancelable: true }),
@@ -158,16 +163,16 @@ export async function verifyAISettings() {
       },
     };
     await act(async () => root.render(<ModelPicker {...modelProps} />));
-    await click(container.querySelector('button[aria-haspopup="dialog"]')!);
+    await click(document.querySelector('button[aria-haspopup="dialog"]')!);
     assert.deepEqual(listed, [false]);
-    assert.match(container.textContent!, /128K 上下文 · 图片输入/);
+    assert.match(document.body.textContent!, /128K 上下文 · 图片输入/);
     await change(
-      container.querySelector('input[aria-label="搜索模型"]')!,
+      document.querySelector('input[aria-label="搜索模型"]')!,
       "beta",
     );
-    assert.equal(container.querySelectorAll('[role="option"]').length, 1);
+    assert.equal(document.querySelectorAll('[role="option"]').length, 1);
     await act(async () => {
-      container
+      document
         .querySelector('input[aria-label="搜索模型"]')!
         .dispatchEvent(
           new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
@@ -176,32 +181,32 @@ export async function verifyAISettings() {
     assert.equal(document.activeElement?.getAttribute("role"), "option");
     await click(document.activeElement!);
     assert.equal(selected[0].model, "beta");
-    assert.equal(container.querySelector("dialog")?.textContent ?? null, null);
+    assert.equal(document.querySelector("dialog")?.textContent ?? null, null);
     assert.ok(
       document.activeElement ===
-        container.querySelector('button[aria-haspopup="dialog"]'),
+        document.querySelector('button[aria-haspopup="dialog"]'),
       `focus is on ${document.activeElement?.outerHTML.slice(0, 120)}`,
     );
-    await click(container.querySelector('button[aria-haspopup="dialog"]')!);
+    await click(document.querySelector('button[aria-haspopup="dialog"]')!);
     await click(button("刷新列表"));
     assert.equal(listed.at(-1), true);
     assert.match(
-      container.querySelector('[role="alert"]')!.textContent!,
+      document.querySelector('[role="alert"]')!.textContent!,
       /刷新失败/,
     );
     await act(async () => root.render(<ModelPicker {...modelProps} busy />));
     assert.ok(
       Array.from(
-        container.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+        document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
       ).every((option) => option.disabled),
     );
-    assert.match(container.textContent!, /回答进行中/);
+    assert.match(document.body.textContent!, /回答进行中/);
     await act(async () => {
-      container
+      document
         .querySelector("dialog")!
         .dispatchEvent(new Event("cancel", { cancelable: true }));
     });
-    assert.equal(container.querySelector("dialog")?.textContent ?? null, null);
+    assert.equal(document.querySelector("dialog")?.textContent ?? null, null);
     const oldOpen = window.open;
     const opened: string[] = [];
     window.open = ((url: string) => {
@@ -239,7 +244,7 @@ export async function verifyAISettings() {
       await act(async () => root.render(<ChatGPTLogin {...loginProps} />));
       await click(button("使用 ChatGPT 订阅"));
       assert.equal(opened.length, 1);
-      assert.match(container.textContent!, /浏览器中完成登录/);
+      assert.match(document.body.textContent!, /浏览器中完成登录/);
       await click(button("取消登录"));
       assert.equal(loginCalls.at(-1)?.method, "cancelChatGPTLogin");
       assert.equal(saved, 0);
@@ -261,7 +266,7 @@ export async function verifyAISettings() {
       );
       await click(button("退出登录"));
       assert.equal(loginCalls.at(-1)?.method, "logoutChatGPT");
-      assert.match(container.textContent!, /未确认远端撤销/);
+      assert.match(document.body.textContent!, /未确认远端撤销/);
       loginStatus = "pending";
       await click(button("使用 ChatGPT 订阅"));
       await act(async () => root.render(<div />));

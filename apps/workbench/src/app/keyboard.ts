@@ -13,6 +13,7 @@ export function handleShortcuts(stores: Stores, actions: Actions): () => void {
   const onError = (error: unknown) => notices.getState().onError(error);
   const listener = (e: KeyboardEvent) => {
     if (document.querySelector('dialog[open],[aria-modal="true"]')) return;
+    if ((e.target as HTMLElement).closest(".document-reader")) return;
     // Typing goes to fields; keys in a menu, list or popover belong to it.
     if (
       (e.target as HTMLElement).closest(

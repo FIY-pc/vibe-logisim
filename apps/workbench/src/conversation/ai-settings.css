@@ -25,8 +25,9 @@
 }
 .ai-settings-content {
   min-width: 0;
-  min-height: 320px;
-  flex: 1;
+  min-height: 0;
+  /* Keep intrinsic content height in an auto-sized dialog, then scroll at its viewport limit. */
+  flex: 1 1 auto;
   overflow: auto;
   padding: 20px 24px;
   scroll-padding: 20px;
@@ -233,7 +234,7 @@
   overflow: auto;
   min-height: 80px;
   padding: 0 6px;
-  flex: 1;
+  flex: 1 1 auto;
 }
 .ai-model-option {
   display: flex;

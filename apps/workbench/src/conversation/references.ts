@@ -2,6 +2,7 @@ export type {
   ReferenceInput,
   ReferenceSummary,
   StoredReference,
+  ReferenceRegion,
 } from "../../../../packages/agent-runtime/src/conversations/reference-types";
 import type { ReferenceInput } from "../../../../packages/agent-runtime/src/conversations/reference-types";
 export interface Quotation {

@@ -1,3 +1,9 @@
+export interface ReferenceRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 export type ReferenceInput =
   | {
       kind: "material";
@@ -7,6 +13,7 @@ export type ReferenceInput =
       folderId?: string;
       pathVersion?: number;
       page?: number;
+      region?: ReferenceRegion;
       text?: string;
       image?: string;
     }
@@ -21,6 +28,7 @@ export interface ReferenceSummary {
   folderId?: string;
   pathVersion?: number;
   page?: number;
+  region?: ReferenceRegion;
   truncated?: boolean;
   hasImage: boolean;
 }

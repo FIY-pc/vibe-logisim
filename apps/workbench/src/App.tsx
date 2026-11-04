@@ -22,7 +22,7 @@ import { SimulationAlerts } from "./simulation/SimulationAlerts";
 import { SimulationDock } from "./simulation/SimulationDock";
 import { SimulationTransportRegion } from "./simulation/SimulationTransportRegion";
 import { FeedbackDialogRegion } from "./shell/FeedbackDialogRegion";
-import { FilePreviewRegion } from "./workspace/FilePreviewRegion";
+import { FilePreviewRegion, ReaderRecall } from "./workspace/FilePreviewRegion";
 import { FolderPrompt } from "./workspace/FolderPrompt";
 import { NewFilePrompt } from "./workspace/NewFilePrompt";
 import { ProjectInfoRegion } from "./workspace/ProjectInfoRegion";
@@ -88,6 +88,8 @@ function Shell() {
   const { stores } = useWorkbench();
   const { doc, circuit } = useView();
   const folder = useFiles((state) => state.folder);
+  const reading = useFiles((state) => !!state.preview);
+  const readerMode = useFiles((state) => state.readerMode);
   const place = useEditor((state) => state.place);
   const placement = usePlacement(doc, circuit, place);
   useLayoutEffect(() => {
@@ -115,30 +117,39 @@ function Shell() {
           />
         )}
         <Rail placement={placement} />
-        <main className="editor">
-          {doc && circuit ? (
-            <>
-              <SourceNotices />
-              <Breadcrumbs placement={placement} />
-              <div className="canvas-surface">
-                <div className="canvas-bottom">
-                  <Toasts />
-                  <EditorToolbarRegion />
+        <div
+          className={
+            "editor-group" +
+            (reading && (readerMode === "focus" || !doc) ? " reader-focus" : "")
+          }
+        >
+          <main className="editor">
+            <ReaderRecall />
+            {doc && circuit ? (
+              <>
+                <SourceNotices />
+                <Breadcrumbs placement={placement} />
+                <div className="canvas-surface">
+                  <div className="canvas-bottom">
+                    <Toasts />
+                    <EditorToolbarRegion />
+                  </div>
+                  <SimulationTransportRegion />
+                  <CanvasRegion placement={placement} />
                 </div>
-                <SimulationTransportRegion />
-                <CanvasRegion placement={placement} />
-              </div>
-              <SimulationAlerts />
-              <SimulationDock />
-              <MemoryRegion />
-            </>
-          ) : (
-            <>
-              <Welcome />
-              <Toasts />
-            </>
-          )}
-        </main>
+                <SimulationAlerts />
+                <SimulationDock />
+                <MemoryRegion />
+              </>
+            ) : (
+              <>
+                <Welcome />
+                <Toasts />
+              </>
+            )}
+          </main>
+          <FilePreviewRegion />
+        </div>
         <Aside />
       </div>
       <ErrorBar />
@@ -147,7 +158,6 @@ function Shell() {
       <ObservationsRegion />
       <InterfaceEditorRegion />
       <CircuitPrompts />
-      <FilePreviewRegion />
       <SourceDialog />
       <FindRegion />
       <ProjectInfoRegion />

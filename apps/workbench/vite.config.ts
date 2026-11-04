@@ -3,11 +3,16 @@ import react from "@vitejs/plugin-react";
 import { createRequire } from "node:module";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { pdfViewerFiles } from "../../scripts/workbench/pdf-viewer.mts";
 // Serve the same offline PDF resources in development and packaged builds.
 const pdfRoot = path.dirname(
   createRequire(import.meta.url).resolve("pdfjs-dist/package.json"),
 );
 const pdfFiles = new Map<string, string>();
+for (const [name, file] of await pdfViewerFiles(
+  path.resolve(import.meta.dirname, "../.."),
+))
+  pdfFiles.set(name, file);
 for (const directory of ["cmaps", "standard_fonts", "wasm"]) {
   for (const entry of await readdir(path.join(pdfRoot, directory), {
     withFileTypes: true,
@@ -32,9 +37,18 @@ export default defineConfig({
             .then((bytes) => {
               res.setHeader(
                 "Content-Type",
-                file.endsWith(".wasm")
-                  ? "application/wasm"
-                  : "application/octet-stream",
+                (
+                  {
+                    ".wasm": "application/wasm",
+                    ".html": "text/html; charset=utf-8",
+                    ".mjs": "text/javascript",
+                    ".css": "text/css",
+                    ".json": "application/json",
+                    ".svg": "image/svg+xml",
+                    ".png": "image/png",
+                    ".ftl": "text/plain; charset=utf-8",
+                  } as Record<string, string>
+                )[path.extname(file)] || "application/octet-stream",
               );
               res.end(bytes);
             })

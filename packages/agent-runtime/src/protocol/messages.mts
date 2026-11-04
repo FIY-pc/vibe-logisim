@@ -44,7 +44,9 @@ export type RuntimeMethod =
   | "defaultProvider"
   | "bindProvider"
   | "stageReferences"
-  | "readReferences";
+  | "readReferences"
+  | "readMaterial";
+// Material reads do not start or consume a model turn.
 
 /**
  * Methods that change which conversation or service is current. They run one

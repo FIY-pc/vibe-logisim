@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { spawn, execFile } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { readMaterial } from "../materials/read.mts";
 import { windowsCommand } from "./windows-command.mts";
 /**
  * The bundled circuit-knowledge directory. In development it sits two levels
@@ -217,7 +218,7 @@ function command(
  * list_files and exec_command (Linux systemd sandbox / Windows PowerShell). Paths are
  * folder-relative; the bundled references are readable too.
  */
-function fileTools({ root, runtimeRoot, assertCurrent }: any) {
+function fileTools({ root, runtimeRoot, assertCurrent, vision = true }: any) {
   const versions = new Map<string, string | null>();
   const digestFile = async (file: string) => {
     try {
@@ -237,6 +238,54 @@ function fileTools({ root, runtimeRoot, assertCurrent }: any) {
   });
   const string = { type: "string" };
   const tools: AgentTool<any, any>[] = [
+    {
+      name: "read_material",
+      label: "读取资料",
+      description:
+        "Read a project PDF or image independently of the user's viewer. PDF: page is 1-based; omit it for page 1, page count and outline. query searches 20 pages from startPage and returns nextPage to continue. render includes the page image (diagrams/tables); pages without text return an image automatically, not OCR. Long page text returns nextOffset to continue. Images return a fitted image. Use read_file for text. A quoted page or region is a focus, not a limit on reading.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          page: { type: "integer", minimum: 1 },
+          query: { type: "string" },
+          startPage: { type: "integer", minimum: 1 },
+          render: { type: "boolean" },
+          offset: { type: "integer", minimum: 0 },
+        },
+        required: ["path"],
+        additionalProperties: false,
+      },
+      execute: async (_id: any, args: any, signal: any) => {
+        assertCurrent();
+        const file = await resolveFile(root, args.path);
+        const { image, ...value } = await readMaterial(file, args, signal);
+        assertCurrent();
+        signal?.throwIfAborted();
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(value) },
+            ...(image
+              ? vision
+                ? [
+                    {
+                      type: "image" as const,
+                      data: image.split(",")[1],
+                      mimeType: "image/png",
+                    },
+                  ]
+                : [
+                    {
+                      type: "text" as const,
+                      text: "此页含图片；当前模型未启用图片输入，不能声称已看图。",
+                    },
+                  ]
+              : []),
+          ],
+          details: null,
+        };
+      },
+    },
     {
       name: "read_file",
       label: "读取文件",
