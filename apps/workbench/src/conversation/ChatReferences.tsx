@@ -265,7 +265,7 @@ export function useChatReferences({
       ),
     composer: (
       <>
-        {(references.length > 0 || currentJobs.length > 0) && (
+        {(references.length > 0 || pending) && (
           <MessageComposer.Attachments
             role="region"
             aria-label="待发送引用"
@@ -277,6 +277,14 @@ export function useChatReferences({
                 正在添加引用…
               </Text>
             )}
+          </MessageComposer.Attachments>
+        )}
+        {currentJobs.some((job) => job.error !== null) && (
+          <div
+            className="reference-failures"
+            role="region"
+            aria-label="引用问题"
+          >
             {currentJobs
               .filter((job) => job.error !== null)
               .map((job) => (
@@ -314,7 +322,7 @@ export function useChatReferences({
                   </div>
                 </div>
               ))}
-          </MessageComposer.Attachments>
+          </div>
         )}
         {preview && (
           <ReferencePreview

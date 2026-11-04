@@ -55,8 +55,15 @@
   overflow-wrap: anywhere;
 }
 
-.reference-failure {
+.reference-failures {
+  max-height: min(20dvh, 144px);
+  overflow: auto;
+  padding: var(--space-2) var(--space-3) 0;
+}
+.reference-failure + .reference-failure {
   margin-top: var(--space-2);
+}
+.reference-failure {
   overflow-wrap: anywhere;
 }
 .reference-failure p {
