@@ -225,6 +225,13 @@ impl Host {
             let closing = matches!(&request, Request::Folder(FolderRequest::FolderClose { .. }));
             let meta = request.meta();
             let outcome: Result<Reply> = async {
+                // A stale close request must not interrupt the newly opened folder's turn.
+                if let Request::Folder(FolderRequest::FolderClose { folder_id, .. }) = &request {
+                    if self.folder.lock().await.as_ref().map(|folder| &folder.id) != Some(folder_id)
+                    {
+                        return Err("文件夹已改变，请刷新后重试".into());
+                    }
+                }
                 // Clone the existing process only: closing a workspace never starts one.
                 let runtime = if closing {
                     let mut runtime = self.agent.lock().await;

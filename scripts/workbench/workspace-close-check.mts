@@ -76,6 +76,20 @@ try {
   });
   await edited.promise;
   assert.equal((await agent("status")).busy, true);
+  await assert.rejects(
+    command({
+      op: "folderClose",
+      folder_id: "previous-workspace",
+      documents: {},
+      discard: true,
+    }),
+    /文件夹已改变/,
+  );
+  assert.equal(
+    (await agent("status")).busy,
+    true,
+    "a stale close must not interrupt the active workspace",
+  );
   await command({
     op: "folderClose",
     folder_id: folder.id,
