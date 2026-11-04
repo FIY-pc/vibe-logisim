@@ -43,3 +43,47 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+.ui-message-composer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+}
+.ui-message-composer:focus-within,
+.ui-message-composer[data-reference-drop="true"] {
+  outline: 2px solid var(--focus-8);
+  outline-offset: -1px;
+}
+.ui-message-composer-input.rt-TextAreaRoot {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.ui-message-composer-input > textarea {
+  min-height: 88px;
+  max-height: min(28dvh, 240px);
+  padding: var(--space-3);
+  line-height: var(--line-height-3);
+}
+.ui-message-composer-attachments {
+  min-height: 0;
+  max-height: min(20dvh, 144px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-3) 0;
+}
+.ui-message-composer-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}

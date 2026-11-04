@@ -228,6 +228,30 @@ assert.equal(
   false,
 );
 await input("submitted");
+const beforeComposition = calls.filter((call) => call.method === "ask").length;
+await act(async () => {
+  const editor =
+    document.querySelector<HTMLTextAreaElement>('[aria-label="消息"]')!;
+  editor.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      isComposing: true,
+      bubbles: true,
+    }),
+  );
+  editor.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      shiftKey: true,
+      bubbles: true,
+    }),
+  );
+});
+assert.equal(
+  calls.filter((call) => call.method === "ask").length,
+  beforeComposition,
+  "IME confirmation and Shift+Enter keep the draft without sending",
+);
 askGate = defer();
 await click(document.querySelector('[aria-label="发送"]'));
 await input("new draft while waiting");

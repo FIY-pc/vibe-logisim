@@ -1,4 +1,10 @@
-import { ActionRow, Button, IconButton, TextArea } from "../design/ui";
+import {
+  ActionRow,
+  Button,
+  IconButton,
+  MessageComposer,
+  TextArea,
+} from "../design/ui";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -863,9 +869,13 @@ export function Chat({
           );
         }}
       />
-      <div className={"composer" + (referenceDrop ? " is-reference-drop" : "")}>
+      <MessageComposer.Root
+        className="composer"
+        aria-label="消息编辑器"
+        data-reference-drop={referenceDrop || undefined}
+      >
         {references.composer}
-        <TextArea
+        <MessageComposer.Input
           ref={composerInput}
           className="composer-input"
           value={draft}
@@ -885,7 +895,7 @@ export function Chat({
             }
           }}
         />
-        <footer>
+        <MessageComposer.Actions>
           <ModelPicker
             scope={modelScope}
             model={state?.model || null}
@@ -960,8 +970,8 @@ export function Chat({
               <Send size={16} />
             </IconButton>
           )}
-        </footer>
-      </div>
+        </MessageComposer.Actions>
+      </MessageComposer.Root>
     </div>
   );
 }

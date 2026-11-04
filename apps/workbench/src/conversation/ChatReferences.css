@@ -7,8 +7,17 @@
 .reference-chips:empty {
   display: none;
 }
-.composer > .reference-chips {
-  margin: var(--space-3) var(--space-3) 0;
+.reference-chips.is-draft {
+  margin: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.reference-chips.is-draft > span {
+  width: 100%;
+}
+.reference-chips.is-draft .ui-button {
+  flex: 1;
+  justify-content: flex-start;
 }
 .reference-chips > span {
   display: flex;
@@ -21,9 +30,19 @@
   min-width: 0;
 }
 .reference-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.reference-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reference-location {
+  flex: none;
   white-space: nowrap;
 }
 .reference-preview img {

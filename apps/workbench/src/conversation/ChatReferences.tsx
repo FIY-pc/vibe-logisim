@@ -1,4 +1,4 @@
-import { Button, IconButton, Text } from "../design/ui";
+import { Button, IconButton, MessageComposer, Text } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { Paperclip, X } from "lucide-react";
 import { command } from "../shared/transport";
@@ -15,6 +15,39 @@ import type { PreviewFile } from "../workspace/FilePreview";
 interface Receipt {
   key: string;
   ids: string[];
+}
+function referenceLocation(
+  ref: ReferenceSummary,
+  references: ReferenceSummary[],
+) {
+  const parts = ref.page ? [`第 ${ref.page} 页`] : [];
+  if (ref.region) {
+    const key = (item: ReferenceSummary) =>
+      item.region &&
+      [
+        item.region.x,
+        item.region.y,
+        item.region.width,
+        item.region.height,
+      ].join(":");
+    const regions = [
+      ...new Set(
+        references
+          .filter(
+            (item) =>
+              item.region &&
+              item.path === ref.path &&
+              item.folderId === ref.folderId &&
+              item.revision === ref.revision &&
+              item.page === ref.page,
+          )
+          .map(key),
+      ),
+    ];
+    parts.push(`选区 ${regions.indexOf(key(ref)) + 1}`);
+  }
+  if (ref.truncated) parts.push("摘录");
+  return parts.join(" · ");
 }
 const runtime = <T,>(method: string, args: unknown) =>
   command<T>({ op: "agent", method, args: args as JsonValue });
@@ -150,39 +183,56 @@ export function useChatReferences({
     }
   };
   const chips = (refs: ReferenceSummary[], removable = false) => (
-    <div className="reference-chips">
-      {refs.map((ref) => (
-        <span key={ref.id}>
-          <Button
-            variant="soft"
-            color="gray"
-            data-tip={ref.path || ref.label}
-            onClick={() => void open(ref.id)}
-          >
-            <Paperclip size={16} />
-            <span className="reference-label">
-              {ref.label}
-              {ref.page ? ` · 第 ${ref.page} 页` : ""}
-              {ref.truncated ? " · 摘录" : ""}
-            </span>
-          </Button>
-          {removable && (
-            <IconButton
-              variant="ghost"
+    <div className={"reference-chips" + (removable ? " is-draft" : "")}>
+      {refs.map((ref) => {
+        const location = referenceLocation(ref, refs);
+        const label = [ref.label, location].filter(Boolean).join(" · ");
+        const region = ref.region;
+        const details = [
+          ref.path || ref.label,
+          location,
+          region &&
+            `选区位置：左 ${Math.round(region.x * 100)}%，上 ${Math.round(region.y * 100)}%，宽 ${Math.round(region.width * 100)}%，高 ${Math.round(region.height * 100)}%`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+        return (
+          <span key={ref.id}>
+            <Button
+              variant="soft"
               color="gray"
-              aria-label={`取消引用 ${ref.label}`}
-              onClick={() =>
-                persist(
-                  draftKey,
-                  references.filter((r) => r.id !== ref.id),
-                )
-              }
+              data-tip={details}
+              aria-label={label}
+              onClick={() => void open(ref.id)}
             >
-              <X size={16} />
-            </IconButton>
-          )}
-        </span>
-      ))}
+              <Paperclip size={16} />
+              <span className="reference-label">
+                <span className="reference-name">{ref.label}</span>
+                {location && (
+                  <Text kind="meta" className="reference-location">
+                    {location}
+                  </Text>
+                )}
+              </span>
+            </Button>
+            {removable && (
+              <IconButton
+                variant="ghost"
+                color="gray"
+                aria-label={`取消引用 ${label}`}
+                onClick={() =>
+                  persist(
+                    draftKey,
+                    references.filter((r) => r.id !== ref.id),
+                  )
+                }
+              >
+                <X size={16} />
+              </IconButton>
+            )}
+          </span>
+        );
+      })}
     </div>
   );
   return {
@@ -199,16 +249,24 @@ export function useChatReferences({
       ),
     composer: (
       <>
-        {chips(references, true)}
-        {pending && (
-          <Text kind="meta" role="status">
-            正在添加引用…
-          </Text>
-        )}
-        {failure && (
-          <Button variant="ghost" color="gray" onClick={() => void stage()}>
-            重试添加引用
-          </Button>
+        {(references.length > 0 || pending || failure) && (
+          <MessageComposer.Attachments
+            role="region"
+            aria-label="待发送引用"
+            tabIndex={0}
+          >
+            {chips(references, true)}
+            {pending && (
+              <Text kind="meta" role="status">
+                正在添加引用…
+              </Text>
+            )}
+            {failure && (
+              <Button variant="ghost" color="gray" onClick={() => void stage()}>
+                重试添加引用
+              </Button>
+            )}
+          </MessageComposer.Attachments>
         )}
         {preview && (
           <ReferencePreview

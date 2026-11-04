@@ -70,6 +70,67 @@ export function TextArea(
   return <RadixTextArea {...props} size="2" />;
 }
 
+/** A message is one field: attachments, text and actions share its frame and
+ * focus boundary. The embedded input never creates a second surface. */
+function MessageComposerRoot({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      role="group"
+      {...props}
+      className={["ui-message-composer", className].filter(Boolean).join(" ")}
+    />
+  );
+}
+function MessageComposerInput({
+  className,
+  ...props
+}: Omit<
+  ComponentProps<typeof RadixTextArea>,
+  "size" | "variant" | "color" | "radius"
+>) {
+  return (
+    <RadixTextArea
+      {...props}
+      size="2"
+      className={["ui-message-composer-input", className]
+        .filter(Boolean)
+        .join(" ")}
+    />
+  );
+}
+function MessageComposerAttachments({
+  className,
+  ...props
+}: ComponentProps<"div">) {
+  return (
+    <div
+      {...props}
+      className={["ui-message-composer-attachments", className]
+        .filter(Boolean)
+        .join(" ")}
+    />
+  );
+}
+function MessageComposerActions({
+  className,
+  ...props
+}: ComponentProps<"footer">) {
+  return (
+    <footer
+      {...props}
+      className={["ui-message-composer-actions", className]
+        .filter(Boolean)
+        .join(" ")}
+    />
+  );
+}
+export const MessageComposer = {
+  Root: MessageComposerRoot,
+  Input: MessageComposerInput,
+  Attachments: MessageComposerAttachments,
+  Actions: MessageComposerActions,
+};
+
 /** Only metadata is smaller than normal text. Headings get their scale from
  * their semantic role, so a field label cannot silently become a page title. */
 type TextProps<T> = T extends unknown ? Omit<T, "size" | "color"> : never;

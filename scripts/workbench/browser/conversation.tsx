@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Theme } from "@radix-ui/themes";
-import "@radix-ui/themes/styles.css";
-import "../../../apps/workbench/src/style.css";
+import "../../../apps/workbench/src/design/foundations.css";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import type { Message } from "../../../apps/workbench/src/conversation/ConversationContent";
 import {
@@ -164,6 +163,8 @@ function Fixture() {
         <div
           style={{
             width: 440,
+            minWidth: 0,
+            maxWidth: "100%",
             height: "100%",
             display: "flex",
             background: "white",

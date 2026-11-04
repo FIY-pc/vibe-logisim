@@ -520,6 +520,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
 }
 .chat-header {
   display: flex;
@@ -561,32 +562,15 @@
   right: 0;
 }
 .composer {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-4);
-  background: var(--surface);
   margin: 0 var(--space-3) var(--space-3);
 }
-.composer textarea {
-  display: block;
-  border: 0;
-  outline: none;
-  width: 100%;
-  min-height: 88px;
-  max-height: min(40vh, 320px);
-  font-size: var(--font-size-2);
-  background: transparent;
-  padding: var(--space-3);
-  line-height: var(--line-height-3);
+.composer .ai-model-trigger {
+  flex: 1;
 }
-.composer footer {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-}
-.composer footer .composer-effort {
+.composer .composer-effort {
   max-width: 125px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 .composer-stop svg {
   fill: currentColor;
@@ -1290,8 +1274,4 @@
 .capture-notice > span {
   align-self: center;
   padding: 7px 10px;
-}
-.composer.is-reference-drop {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }

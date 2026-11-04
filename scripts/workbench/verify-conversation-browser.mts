@@ -104,7 +104,112 @@ const choose = async (id: string) => {
     .click();
 };
 try {
+  await page.addInitScript(() => {
+    if (
+      localStorage.getItem("vibe.draft:fixture-folder:long:references") !== null
+    )
+      return;
+    localStorage.setItem(
+      "vibe.draft:fixture-folder:long:references",
+      JSON.stringify(
+        Array.from({ length: 8 }, (_, i) => ({
+          id: `reference-${i}`,
+          kind: "material",
+          label: "Reference document.pdf",
+          path: "reference.pdf",
+          page: 20,
+          region: { x: 0.1, y: i / 10, width: 0.5, height: 0.08 },
+          hasImage: true,
+        })),
+      ),
+    );
+  });
   await page.goto(`http://127.0.0.1:${address.port}`);
+  await page.locator('[data-segment="q-599"]').waitFor();
+  await page.setViewportSize({ width: 360, height: 640 });
+  const composer = page.getByRole("group", { name: "消息编辑器" });
+  const editor = page.getByRole("textbox", { name: "消息", exact: true });
+  await editor.fill("Review the selected regions.\n".repeat(40));
+  await editor.press("Shift+Enter");
+  const geometry = await composer.evaluate((root) => {
+    const attachments = root.querySelector<HTMLElement>(
+      ".ui-message-composer-attachments",
+    )!;
+    const input = root.querySelector<HTMLTextAreaElement>("textarea")!;
+    const field = input.parentElement!;
+    const actions = root.querySelector("footer")!;
+    return {
+      frame: getComputedStyle(root).outlineWidth,
+      inputShadow: getComputedStyle(field).boxShadow,
+      inputOutline: getComputedStyle(field).outlineStyle,
+      attachmentOverflow: attachments.scrollHeight > attachments.clientHeight,
+      inputOverflow: input.scrollHeight > input.clientHeight,
+      separate:
+        attachments.getBoundingClientRect().bottom <=
+          input.getBoundingClientRect().top &&
+        input.getBoundingClientRect().bottom <=
+          actions.getBoundingClientRect().top,
+      contained:
+        root.getBoundingClientRect().left >= 0 &&
+        root.getBoundingClientRect().right <= innerWidth &&
+        actions.getBoundingClientRect().bottom <= innerHeight,
+    };
+  });
+  assert.deepEqual(
+    geometry,
+    {
+      frame: "2px",
+      inputShadow: "none",
+      inputOutline: "none",
+      attachmentOverflow: true,
+      inputOverflow: true,
+      separate: true,
+      contained: true,
+    },
+    JSON.stringify(
+      await composer.evaluate((node) =>
+        [node, node.parentElement!, node.parentElement!.parentElement!].map(
+          (element) => ({
+            className: element.className,
+            bounds: element.getBoundingClientRect().toJSON(),
+            minWidth: getComputedStyle(element).minWidth,
+          }),
+        ),
+      ),
+    ),
+  );
+  assert(
+    (await editor.inputValue()).endsWith("\n\n"),
+    "Shift+Enter inserts a newline without sending",
+  );
+  const attachments = composer.getByRole("region", { name: "待发送引用" });
+  await attachments.focus();
+  await attachments.press("End");
+  await page.waitForFunction(
+    () =>
+      document.querySelector(".ui-message-composer-attachments")!.scrollTop > 0,
+  );
+  await composer.getByRole("button", { name: "发送", exact: true }).focus();
+  assert.equal(
+    await composer.evaluate((node) => getComputedStyle(node).outlineWidth),
+    "2px",
+    "Action focus retains the whole field boundary",
+  );
+  if (process.env.COMPOSER_SCREENSHOT)
+    await page.screenshot({ path: process.env.COMPOSER_SCREENSHOT });
+  while (await composer.getByRole("button", { name: /^取消引用/ }).count())
+    await composer
+      .getByRole("button", { name: /^取消引用/ })
+      .first()
+      .click();
+  await editor.fill("");
+  await page.setViewportSize({ width: 1000, height: 900 });
+  console.log(
+    "PASS: message composer has one focus boundary; eight distinct regions and long text scroll independently without covering actions at 360×640.",
+  );
+  // Start history checks with settled initial geometry, independent of the
+  // composer scenario's viewport and input-height changes.
+  await page.reload();
   await page.locator('[data-segment="q-599"]').waitFor();
   await bottom();
   const mounted = await page.locator("[data-segment]").count();

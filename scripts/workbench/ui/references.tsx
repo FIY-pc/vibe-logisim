@@ -103,6 +103,65 @@ export async function verifyReferencesUI() {
     )!;
     await act(async () => remove.click());
     assert.deepEqual(api.references, []);
+    const selections = [
+      {
+        ...first,
+        id: "upper",
+        label: "notes.pdf",
+        path: "notes.pdf",
+        page: 20,
+        region: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 },
+      },
+      {
+        ...first,
+        id: "lower",
+        label: "notes.pdf",
+        path: "notes.pdf",
+        page: 20,
+        region: { x: 0.1, y: 0.6, width: 0.3, height: 0.2 },
+      },
+      {
+        ...first,
+        id: "upper-again",
+        label: "notes.pdf",
+        path: "notes.pdf",
+        page: 20,
+        region: { x: 0.1, y: 0.1, width: 0.3, height: 0.2 },
+      },
+    ];
+    localStorage.setItem(
+      "references-regions:references",
+      JSON.stringify(selections),
+    );
+    await act(async () =>
+      root.render(<Fixture draftKey="references-regions" />),
+    );
+    assert.deepEqual(
+      api.references,
+      selections,
+      "Identical labels must not discard distinct reference records",
+    );
+    const labels = Array.from(
+      container.querySelectorAll(".reference-chips .ui-button"),
+      (node) => node.getAttribute("aria-label"),
+    );
+    assert.deepEqual(labels, [
+      "notes.pdf · 第 20 页 · 选区 1",
+      "notes.pdf · 第 20 页 · 选区 2",
+      "notes.pdf · 第 20 页 · 选区 1",
+    ]);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="取消引用 notes.pdf · 第 20 页 · 选区 2"]',
+        )!
+        .click(),
+    );
+    assert.deepEqual(
+      api.references.map((ref: any) => ref.id),
+      ["upper", "upper-again"],
+      "Remove only the selected reference ID",
+    );
     assert.deepEqual(errors, []);
     console.log(
       "PASS: reference drafts survive conversation switches and only the acknowledged snapshot is consumed",
@@ -113,6 +172,7 @@ export async function verifyReferencesUI() {
     (globalThis as any).__command = old;
     localStorage.removeItem("references-A:references");
     localStorage.removeItem("references-B:references");
+    localStorage.removeItem("references-regions:references");
   }
   await verifyDocumentReferenceBinding();
 }
