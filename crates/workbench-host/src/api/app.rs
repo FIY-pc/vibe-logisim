@@ -20,6 +20,16 @@ pub enum AppRequest {
         version: String,
     },
     Diagnostics,
+    ConversationExport {
+        workspace_key: String,
+        ids: Vec<String>,
+        #[serde(default)]
+        #[ts(optional)]
+        path: Option<PathBuf>,
+        #[serde(default)]
+        #[ts(optional)]
+        expected_revision: Option<String>,
+    },
     DiagnosticsExport {
         path: PathBuf,
         report: Value,
@@ -36,6 +46,7 @@ impl AppRequest {
         "feedbackPreference",
         "feedbackDismiss",
         "diagnostics",
+        "conversationExport",
         "diagnosticsExport",
     ];
     pub(crate) fn meta(&self) -> Meta {
@@ -45,6 +56,7 @@ impl AppRequest {
             | Self::FeedbackPreference { .. }
             | Self::FeedbackDismiss { .. }
             | Self::Diagnostics
+            | Self::ConversationExport { .. }
             | Self::DiagnosticsExport { .. } => Meta::new(Read),
         }
     }
@@ -62,6 +74,15 @@ impl Host {
             }
             AppRequest::FeedbackDismiss { version } => self.feedback.lock().await.dismiss(version),
             AppRequest::Diagnostics => Ok(self.diagnostics().await),
+            AppRequest::ConversationExport {
+                workspace_key,
+                ids,
+                path,
+                expected_revision,
+            } => {
+                self.conversation_export(workspace_key, ids, path, expected_revision)
+                    .await
+            }
             AppRequest::DiagnosticsExport {
                 path,
                 report,
