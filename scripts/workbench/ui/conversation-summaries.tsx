@@ -91,7 +91,7 @@ export async function verifyConversationSummaries() {
                 circuits: [],
               } as any
             }
-            folder={null}
+            folder={{ id, path: `/fixture/${id}`, name: id }}
             circuit="main"
             selection={[]}
             quotation={null}

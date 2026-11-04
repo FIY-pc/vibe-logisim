@@ -68,7 +68,7 @@ export async function verifyContextUsage() {
           <Chat
             visible
             doc={null}
-            folder={null}
+            folder={{ id: "global", path: "/fixture", name: "fixture" }}
             circuit={null}
             selection={[]}
             quotation={null}

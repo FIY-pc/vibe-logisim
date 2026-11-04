@@ -111,6 +111,7 @@ function Shell() {
       <UpdateNotice feedback={feedback} />
       <WorkspacePanels
         layout={layout}
+        railAvailable={Boolean(doc || folder)}
         rail={<Rail placement={placement} />}
         review={<Aside />}
       >

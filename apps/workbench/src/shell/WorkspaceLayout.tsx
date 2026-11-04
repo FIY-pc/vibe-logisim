@@ -44,11 +44,13 @@ export type WorkspaceLayout = ReturnType<typeof useWorkspaceLayout>;
 export function WorkspacePanels({
   layout,
   rail,
+  railAvailable = true,
   children,
   review,
 }: {
   layout: WorkspaceLayout;
   rail: ReactNode;
+  railAvailable?: boolean;
   children: ReactNode;
   review: ReactNode;
 }) {
@@ -56,17 +58,18 @@ export function WorkspacePanels({
   const group = useRef<HTMLDivElement>(null);
   const groupApi = useGroupRef();
   const previousFrame = useRef("");
-  const railOpen = !layout.narrow && layout.showExplorer;
+  const railOpen = railAvailable && !layout.narrow && layout.showExplorer;
   const reviewOpen = !layout.narrow && layout.showRight;
   return (
     <div className="workspace" ref={layout.workspace}>
-      {layout.narrow && (layout.showExplorer || layout.showRight) && (
-        <button
-          className="workspace-shade"
-          aria-label="关闭侧栏"
-          onClick={layout.closeDrawers}
-        />
-      )}
+      {layout.narrow &&
+        ((railAvailable && layout.showExplorer) || layout.showRight) && (
+          <button
+            className="workspace-shade"
+            aria-label="关闭侧栏"
+            onClick={layout.closeDrawers}
+          />
+        )}
       <Group
         id="workspace-columns"
         elementRef={group}
