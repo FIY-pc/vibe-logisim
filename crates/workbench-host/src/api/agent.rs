@@ -21,6 +21,25 @@ impl AgentRequest {
             Self::Agent { .. } => Meta::new(Read).stage(Stage::Agent),
         }
     }
+    /// Keep in step with the worker's TRANSITIONS. Stop and host callbacks must
+    /// remain outside this gate so a closing workspace can drain the turn.
+    pub(crate) fn changes_session(&self) -> bool {
+        let Self::Agent { method, .. } = self;
+        matches!(
+            method.as_str(),
+            "bind"
+                | "ask"
+                | "conversations"
+                | "loginChatGPT"
+                | "logoutChatGPT"
+                | "configure"
+                | "removeProvider"
+                | "selectModel"
+                | "bindProvider"
+                | "defaultProvider"
+                | "reconnect"
+        )
+    }
 }
 
 impl Host {

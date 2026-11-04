@@ -41,6 +41,8 @@ pub fn timing_label(request: &Value) -> String {
 
 #[derive(Clone)]
 pub struct Host {
+    /// Folder/session transitions are serialized outside history and document locks.
+    lifecycle: Arc<Mutex<()>>,
     history_gate: Arc<Mutex<()>>,
     pub workspace: Arc<Mutex<Workspace>>,
     pub native: Arc<Mutex<Native>>,
@@ -168,6 +170,7 @@ impl Host {
             root,
             agent: Arc::new(Mutex::new(None)),
             recovery_error,
+            lifecycle: Arc::new(Mutex::new(())),
             history_gate: Arc::new(Mutex::new(())),
             events: tokio::sync::broadcast::channel(512).0,
             stopping: tokio::sync::watch::channel(false).0,
@@ -207,8 +210,64 @@ impl Host {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Reply>> + Send + '_>> {
         let request = request.into();
         Box::pin(async move {
+            let transition = match &request {
+                Request::Folder(
+                    FolderRequest::FolderOpen { .. } | FolderRequest::FolderClose { .. },
+                ) => true,
+                Request::Agent(request) => request.changes_session(),
+                _ => false,
+            };
+            let _lifecycle = if transition {
+                Some(self.lifecycle.lock().await)
+            } else {
+                None
+            };
+            let closing = matches!(&request, Request::Folder(FolderRequest::FolderClose { .. }));
             let meta = request.meta();
-            let outcome = self.apply(request, &meta).await;
+            let outcome: Result<Reply> = async {
+                // Clone the existing process only: closing a workspace never starts one.
+                let runtime = if closing {
+                    let mut runtime = self.agent.lock().await;
+                    if runtime.as_ref().is_some_and(|agent| {
+                        !agent.alive.load(std::sync::atomic::Ordering::Acquire)
+                    }) {
+                        runtime.take();
+                    }
+                    runtime.clone()
+                } else {
+                    None
+                };
+                if let Some(runtime) = &runtime {
+                    // interrupt waits for the final folderCheckpoint, which needs the
+                    // history, folder and workspace locks. None are held here.
+                    runtime.call("stop", json!({})).await?;
+                }
+                let mut reply = self.apply(request, &meta).await?;
+                if let Some(runtime) = runtime {
+                    if let Err(error) = runtime.call("bind", json!({"documentId": null})).await {
+                        {
+                            let mut current = self.agent.lock().await;
+                            if current
+                                .as_ref()
+                                .is_some_and(|agent| Arc::ptr_eq(agent, &runtime))
+                            {
+                                current.take();
+                            }
+                        }
+                        runtime.shutdown().await;
+                        let message = format!(
+                            "工作区已关闭，AI 会话解绑失败，已断开运行时：{}",
+                            error.message
+                        );
+                        if let Reply::Value(value) = &mut reply {
+                            value["agentWarning"] = json!(message);
+                        }
+                        self.emit(Event::Warning(Warning { message }));
+                    }
+                }
+                Ok(reply)
+            }
+            .await;
             self.reconcile().await;
             if let Some(stage) = meta.stage {
                 match &outcome {
@@ -240,7 +299,9 @@ impl Host {
     /// a folder operation that changed files does so again after it.
     async fn apply(&self, request: Request, meta: &api::Meta) -> Result<Reply> {
         let files = matches!(request, Request::Document(_) | Request::Folder(_));
-        let folder_write = matches!(request, Request::Folder(_)) && meta.effect != Effect::Read;
+        let folder_write = matches!(request, Request::Folder(_))
+            && !matches!(request, Request::Folder(FolderRequest::FolderClose { .. }))
+            && meta.effect != Effect::Read;
         if files {
             self.follow_files(false).await;
         }
@@ -254,6 +315,8 @@ impl Host {
     /// persist the workspace and broadcast what they changed.
     async fn apply_gated(&self, request: Request, meta: &api::Meta) -> Result<Reply> {
         let writes = meta.effect != Effect::Read;
+        let closing_workspace =
+            matches!(&request, Request::Folder(FolderRequest::FolderClose { .. }));
         if writes && let Some(error) = &self.recovery_error {
             return Err(HostError::new(ErrorCode::RecoveryFailed, error.clone()));
         }
@@ -332,7 +395,14 @@ impl Host {
         self.persist(&mut workspace).await;
         self.restamp(&workspace);
         let broadcast = before.map(|(documents, active)| {
-            self.broadcast(&workspace, &documents, &active, target, document)
+            self.broadcast(
+                &workspace,
+                &documents,
+                &active,
+                target,
+                document,
+                closing_workspace,
+            )
         });
         drop(_persist);
         drop(workspace);
@@ -358,6 +428,7 @@ impl Host {
         active: &Option<String>,
         target: Option<&str>,
         reply: &Value,
+        closing_workspace: bool,
     ) -> (Vec<Value>, Option<documents::files::WorkspaceChange>) {
         let from_agent = agent::from_agent();
         let mut changes = Vec::new();
@@ -389,16 +460,15 @@ impl Host {
                 .documents
                 .keys()
                 .any(|id| !before.contains_key(id));
-        let workspace =
-            (from_agent && (opened_or_closed || workspace.active != *active)).then(|| {
-                documents::files::WorkspaceChange {
-                    documents: workspace
-                        .documents
-                        .values()
-                        .map(Document::summary)
-                        .collect(),
-                    active: workspace.active.clone(),
-                }
+        let workspace = (closing_workspace
+            || (from_agent && (opened_or_closed || workspace.active != *active)))
+            .then(|| documents::files::WorkspaceChange {
+                documents: workspace
+                    .documents
+                    .values()
+                    .map(Document::summary)
+                    .collect(),
+                active: workspace.active.clone(),
             });
         (changes, workspace)
     }
