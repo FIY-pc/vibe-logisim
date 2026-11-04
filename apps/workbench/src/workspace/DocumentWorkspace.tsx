@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { Tabs } from "@radix-ui/themes";
+import * as Tabs from "@radix-ui/react-tabs";
 import { Group, Panel, Separator, useGroupRef } from "react-resizable-panels";
 import { CircuitBoard, Columns2, FileText, Square, X } from "lucide-react";
 import { IconButton } from "../design/ui";
@@ -70,7 +70,7 @@ export function DocumentWorkspace({ children }: { children: ReactNode }) {
     >
       {(docs.length > 0 || readers.length > 0) && (
         <header className="document-header">
-          <Tabs.List className="document-tabs" aria-label="打开的文档" size="2">
+          <Tabs.List className="document-tabs" aria-label="打开的文档">
             {docs.map((item) => (
               <div className="document-tab" key={`circuit:${item.id}`}>
                 <Tabs.Trigger

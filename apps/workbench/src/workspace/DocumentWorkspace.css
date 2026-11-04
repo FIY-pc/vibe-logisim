@@ -17,32 +17,49 @@
   border-bottom: 1px solid var(--border);
 }
 .document-tabs {
+  display: flex;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
-  box-shadow: none;
   scrollbar-width: thin;
 }
 .document-tab {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
   min-width: 0;
   max-width: 260px;
+  height: var(--space-7);
   border-right: 1px solid var(--border);
+}
+.document-tab:hover {
+  background: var(--hover);
 }
 .document-tab:has([data-state="active"]) {
   background: var(--surface);
 }
+.document-tab:has([data-state="active"])::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
 .document-tab [role="tab"] {
   flex: 1;
   min-width: 0;
-}
-.document-tab .rt-TabsTriggerInner {
-  display: flex;
-  align-items: center;
+  height: 100%;
+  border-radius: 0;
   gap: var(--space-2);
-  min-width: 0;
+  padding-inline: var(--space-3) var(--space-2);
+  background: transparent;
+  color: var(--muted);
+  outline-offset: -3px;
+}
+.document-tab [role="tab"][data-state="active"] {
+  color: var(--text);
 }
 .document-tab-name {
   overflow: hidden;

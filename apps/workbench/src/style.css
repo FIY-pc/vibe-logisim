@@ -565,7 +565,8 @@
   margin: 0 var(--space-3) var(--space-3);
 }
 .composer .ai-model-trigger {
-  flex: 1;
+  flex: 0 1 auto;
+  justify-content: flex-start;
 }
 .composer .composer-effort {
   max-width: 125px;
