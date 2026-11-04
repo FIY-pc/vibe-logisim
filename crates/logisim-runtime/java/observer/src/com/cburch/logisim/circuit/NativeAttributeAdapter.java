@@ -2,6 +2,7 @@ package com.cburch.logisim.circuit;
 
 import com.cburch.logisim.data.*;
 import java.awt.Color;
+import java.awt.Font;
 import java.math.BigInteger;
 import java.util.*;
 import javax.swing.JComboBox;
@@ -19,7 +20,7 @@ public final class NativeAttributeAdapter {
         Object value=attrs.getValue(attr);
         return !attrs.isReadOnly(attr)&&attrs.isToSave(attr)&&(value instanceof String
             ||value instanceof Number||value instanceof Boolean||value instanceof BitWidth
-            ||value instanceof Direction||value instanceof AttributeOption||value instanceof Color
+            ||value instanceof Direction||value instanceof AttributeOption||value instanceof Color||value instanceof Font
             ||value instanceof com.cburch.hex.HexModel);
     }
 
@@ -130,7 +131,9 @@ public final class NativeAttributeAdapter {
             catch(RuntimeException incompatible) { throw new IllegalArgumentException("属性值与当前配置不兼容: "+name); }
             return attr.toStandardString(attrs.getValue(attrs.getAttribute(name)));
         }
-        if(standard==null||(strict&&!raw.equals(standard)&&!sameInteger(value,raw,standard)))
+        // Font.decode silently supplies Dialog/plain/12 for invalid input.
+        // Require the native saved spelling even for the single-property path.
+        if(standard==null||((strict||value instanceof Font)&&!raw.equals(standard)&&!sameInteger(value,raw,standard)))
             throw invalidValue(attrs,attr,"属性值无效或不是原生标准格式: "+name+"="+raw,standard);
         List<Choice> choices=choices(attrs,attr);
         if(!choices.isEmpty()) {

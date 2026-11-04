@@ -733,7 +733,22 @@ impl Host {
             ) {
                 return Err("批量修改只能包含导线、放置、删除和属性修改，或者只包含移动".into());
             }
-            let (edit, template) = self.resolve_edit(id, revision, circuit, edit).await?;
+            let description = match &edit {
+                Edit::Place { name, location, .. } => {
+                    format!("{name}，锚点 ({}, {})", location.x, location.y)
+                }
+                Edit::Attributes { id, .. } => format!("元件 {id} 的属性"),
+                _ => String::new(),
+            };
+            let (edit, template) = self
+                .resolve_edit(id, revision, circuit, edit)
+                .await
+                .map_err(|mut error| {
+                    // Add context without replacing an existing timeout/exit code.
+                    error.message =
+                        format!("第 {} 项（{}）：{}", index + 1, description, error.message);
+                    error
+                })?;
             if let (Edit::Place { name, location, .. }, Some(template)) = (&edit, &template) {
                 let exclusive: Vec<Point> = template["children"]
                     .as_array()
@@ -750,12 +765,18 @@ impl Host {
                     .collect();
                 for (other, at, ports) in &placed {
                     if other == name && at == location {
-                        return Err(format!("第 {} 项：此位置已有相同元件", index + 1).into());
+                        return Err(format!(
+                            "第 {} 项（{}）：此位置已有相同元件",
+                            index + 1,
+                            description
+                        )
+                        .into());
                     }
                     if exclusive.iter().any(|p| ports.contains(p)) {
                         return Err(format!(
-                            "第 {} 项：此位置与同一批放置的元件冲突，请换一个位置",
-                            index + 1
+                            "第 {} 项（{}）：此位置与同一批放置的元件冲突，请换一个位置",
+                            index + 1,
+                            description
                         )
                         .into());
                     }

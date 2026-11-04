@@ -19,6 +19,7 @@ pub const EMPTY_CIRCUIT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
   <lib desc="#Arithmetic" name="3"/>
   <lib desc="#Memory" name="4"/>
   <lib desc="#I/O" name="5"/>
+  <lib desc="#Base" name="6"/>
   <main name="main"/>
   <options/>
   <mappings/>

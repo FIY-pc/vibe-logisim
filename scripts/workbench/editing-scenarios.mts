@@ -6,12 +6,14 @@ import type { DocumentView as Document } from "../../apps/workbench/src/generate
 import { courseSizeProject } from "./fixtures/course-size.mts";
 import { simulationClient, type Stream } from "./simulation-client.mts";
 import { documentViews } from "./document-views.mts";
+import { verifyNativeComponents } from "./native-component-scenarios.mts";
 type Command = (request: any) => Promise<any>;
 /** Edits, undo and redo answer with what they changed; scripts work with whole views. */
 const documentOf = documentViews();
 
 // Independently constructed circuits. Expected behavior is checked through real native stimuli.
 export async function verifyEditing(command: Command, stream: Stream) {
+  await verifyNativeComponents(command);
   const client = simulationClient(command, stream);
   const project = (body: string) =>
     `<?xml version="1.0"?><project source="2.7.1" version="1.0"><lib desc="#Wiring" name="0"/><main name="main"/><options/><mappings/><toolbar/><circuit name="main">${body}</circuit></project>`;

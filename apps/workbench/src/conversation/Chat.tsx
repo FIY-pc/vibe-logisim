@@ -53,6 +53,7 @@ import {
 import { TextPrompt } from "../shared/TextPrompt";
 import { Select } from "../shared/Select";
 import { useAutoSize } from "../shared/useAutoSize";
+import { ConversationExport } from "./ConversationExport";
 export type { Message } from "./ConversationContent";
 
 /** The sidecar's `status` snapshot; the host adds `eventCursor`. Only
@@ -179,6 +180,7 @@ export function Chat({
   const [state, setState] = useState<RuntimeState | null>(null),
     [messages, setMessages] = useState<Message[]>([]),
     [conversations, setConversations] = useState<ConversationSummary[]>([]),
+    [exportOpen, setExportOpen] = useState(false),
     [models, setModels] = useState<ModelOption[]>([]);
   const [draftRecord, setDraftRecord] = useState({ key: "", text: "" }),
     [configure, setConfigure] = useState(false),
@@ -694,6 +696,15 @@ export function Chat({
           }}
         />
       )}
+      {exportOpen && folder && (
+        <ConversationExport
+          key={folder.id}
+          workspaceKey={folder.id}
+          workspaceName={folder.name}
+          conversations={conversations}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       <div className="chat-header">
         <ConversationPicker
           conversations={conversations}
@@ -701,6 +712,9 @@ export function Chat({
           disabled={locked}
           onSelect={(id) => switchConversation("select", id)}
           onRestore={(id) => switchConversation("restore", id)}
+          onExport={
+            scopeReady && folder ? () => setExportOpen(true) : undefined
+          }
         />
         <IconButton
           variant="ghost"
@@ -713,6 +727,12 @@ export function Chat({
           <Plus size={16} />
         </IconButton>
         <Menu label="对话操作">
+          <MenuItem
+            disabled={!scopeReady || !folder}
+            onSelect={() => setExportOpen(true)}
+          >
+            导出会话…
+          </MenuItem>
           <MenuItem
             disabled={locked || !state?.conversationId}
             onSelect={() => setRenameConversation(true)}

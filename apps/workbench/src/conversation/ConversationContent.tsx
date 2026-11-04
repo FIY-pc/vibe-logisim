@@ -205,12 +205,14 @@ export function ConversationPicker({
   disabled,
   onSelect,
   onRestore,
+  onExport,
 }: {
   conversations: ConversationSummary[];
   active: string | null;
   disabled: boolean;
   onSelect: (id: string) => void | Promise<void>;
   onRestore: (id: string) => void | Promise<void>;
+  onExport?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -371,6 +373,19 @@ export function ConversationPicker({
             </Command.Empty>
           </Command.List>
         </Command>
+        {onExport && (
+          <Button
+            variant="ghost"
+            color="gray"
+            mt="3"
+            onClick={() => {
+              setOpen(false);
+              onExport();
+            }}
+          >
+            导出会话…
+          </Button>
+        )}
         {error && (
           <Callout.Root role="alert" color="red" mt="3">
             <Callout.Text>{error}</Callout.Text>
