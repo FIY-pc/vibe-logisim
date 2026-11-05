@@ -28,6 +28,12 @@ try {
       {
         name: "host-fixture",
         setup(builder) {
+          // Keep OOXML's optional native modules out of the jsdom bundle;
+          // navigation uses the real installed key/wheel helpers.
+          builder.onResolve({ filter: /^ooxml-ui\/pptx$/ }, () => ({
+            path: fileURLToPath(import.meta.resolve("ooxml-ui/pptx")),
+            external: true,
+          }));
           // A module worker has no meaning in jsdom: scenarios never arrange.
           builder.onResolve({ filter: /\?worker&url$/ }, () => ({
             path: "arrange-worker",

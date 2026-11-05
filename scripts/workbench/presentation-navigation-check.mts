@@ -1,0 +1,126 @@
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import { bindPresentationNavigation } from "../../apps/workbench/src/workspace/reader/presentationNavigation.ts";
+
+const { JSDOM } = createRequire(import.meta.url)("jsdom");
+const dom = new JSDOM(
+  '<div id="canvas" tabindex="0"><div id="viewport"><p>slide text</p></div><input></div><textarea></textarea>',
+);
+const document = dom.window.document as Document;
+const priorElement = globalThis.Element;
+globalThis.Element = dom.window.Element;
+const canvas = document.querySelector<HTMLElement>("#canvas")!;
+const viewport = document.querySelector<HTMLElement>("#viewport")!;
+const slide = document.querySelector<HTMLElement>("p")!;
+let page = 3,
+  enabled = true,
+  bottom = 500;
+viewport.getBoundingClientRect = () => new dom.window.DOMRect(0, 0, 800, 600);
+slide.getBoundingClientRect = () => new dom.window.DOMRect(0, 0, 800, bottom);
+const stop = bindPresentationNavigation(canvas, () => ({
+  enabled,
+  page,
+  count: 20,
+  viewport,
+  slide,
+  goTo(next) {
+    page = Math.max(1, Math.min(20, next));
+  },
+}));
+const key = (
+  key: string,
+  target: Element = canvas,
+  options: KeyboardEventInit = {},
+) => {
+  const event = new dom.window.KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...options,
+  });
+  target.dispatchEvent(event);
+  return event.defaultPrevented;
+};
+const wheel = (time: number, options: WheelEventInit = {}) => {
+  const event = new dom.window.WheelEvent("wheel", {
+    deltaY: 240,
+    bubbles: true,
+    cancelable: true,
+    ...options,
+  });
+  Object.defineProperty(event, "timeStamp", { value: time });
+  slide.dispatchEvent(event);
+  return event.defaultPrevented;
+};
+try {
+  assert(key("ArrowRight"));
+  assert.equal(page, 4);
+  key("PageUp");
+  assert.equal(page, 3);
+  key("End");
+  key("ArrowRight");
+  assert.equal(page, 20);
+  key("Home");
+  key("ArrowLeft");
+  assert.equal(page, 1);
+  key(" ");
+  key(" ", canvas, { shiftKey: true });
+  assert.equal(page, 1);
+  key("ArrowRight", canvas, { repeat: true });
+  assert.equal(page, 1);
+  for (const options of [
+    { ctrlKey: true },
+    { altKey: true },
+    { metaKey: true },
+    { shiftKey: true },
+    { isComposing: true },
+  ])
+    assert.equal(key("ArrowRight", canvas, options), false);
+  assert.equal(key("ArrowRight", document.querySelector("input")!), false);
+  assert.equal(key("ArrowRight", document.querySelector("textarea")!), false);
+  const range = document.createRange();
+  range.selectNodeContents(slide);
+  document.getSelection()!.addRange(range);
+  assert.equal(key("ArrowRight"), false);
+  document.getSelection()!.removeAllRanges();
+  assert.equal(page, 1);
+
+  assert(wheel(1000));
+  assert.equal(page, 2);
+  for (const time of [1010, 1040, 1100, 1250]) wheel(time);
+  assert.equal(page, 2, "Trackpad inertia must not skip a run of slides");
+  wheel(1500);
+  assert.equal(page, 3);
+  wheel(1510, { deltaY: -240 });
+  assert.equal(page, 2);
+  assert.equal(wheel(1800, { ctrlKey: true }), false);
+  assert.equal(wheel(2000, { deltaX: 300 }), false);
+  assert.equal(page, 2, "Zoom and horizontal panning belong to the renderer");
+
+  bottom = 900;
+  assert.equal(
+    wheel(2500),
+    false,
+    "A zoomed slide must scroll before it turns",
+  );
+  bottom = 500;
+  assert(wheel(2550));
+  assert.equal(page, 2);
+  wheel(2800);
+  assert.equal(page, 3, "A new gesture at the edge turns the page");
+  enabled = false;
+  assert.equal(key("PageDown"), false);
+  assert.equal(wheel(3200), false);
+  enabled = true;
+  stop();
+  key("PageDown");
+  wheel(4000);
+  assert.equal(page, 3);
+  console.log(
+    "PPTX navigation: scoped keys, selection, wheel momentum, zoom scrolling and cleanup passed",
+  );
+} finally {
+  stop();
+  globalThis.Element = priorElement;
+  dom.window.close();
+}

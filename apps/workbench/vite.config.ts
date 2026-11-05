@@ -31,6 +31,7 @@ export default defineConfig({
       "pptx-react-viewer",
       "pptx-react-viewer/i18n/zh-CN",
       "ooxml-core/pptx",
+      "ooxml-ui/pptx",
     ],
   },
   plugins: [

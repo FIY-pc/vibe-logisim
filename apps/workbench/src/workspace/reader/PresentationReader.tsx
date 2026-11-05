@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button, IconButton, TextField } from "../../design/ui";
 import type { ReferenceInput } from "../../conversation/references";
+import { bindPresentationNavigation } from "./presentationNavigation";
 import {
   readingPosition,
   saveReadingPosition,
@@ -52,6 +53,7 @@ function PresentationPages({
   onActivate,
 }: Props) {
   const handle = useRef<PowerPointViewerHandle>(null);
+  const canvas = useRef<HTMLDivElement>(null);
   const content = useMemo(
     () => Uint8Array.from(atob(file.data || ""), (c) => c.charCodeAt(0)),
     [file.data],
@@ -90,6 +92,39 @@ function PresentationPages({
       : page;
     handle.current?.goTo(target - 1);
     setPageInput(String(target));
+    if (target !== page)
+      canvasProps.zoom.canvasViewportRef.current?.scrollTo({ top: 0, left: 0 });
+  };
+  const navigation = useRef({ ready, capturing, page, count, goTo });
+  navigation.current = { ready, capturing, page, count, goTo };
+  useEffect(() => {
+    const surface = canvas.current;
+    if (!ready || !surface) return;
+    const stop = bindPresentationNavigation(surface, () => ({
+      enabled: navigation.current.ready && !navigation.current.capturing,
+      page: navigation.current.page,
+      count: navigation.current.count,
+      viewport: canvasProps.zoom.canvasViewportRef.current,
+      slide: canvasProps.zoom.canvasStageRef.current,
+      goTo: navigation.current.goTo,
+    }));
+    // Opening a document transfers keyboard navigation from the file tree/tab.
+    // A reader that finishes loading while someone types must not steal focus.
+    const focused = document.activeElement;
+    if (
+      focused === document.body ||
+      focused?.closest('[role="tree"],[role="tablist"]')
+    )
+      surface.focus({ preventScroll: true });
+    return stop;
+  }, [
+    ready,
+    canvasProps.zoom.canvasViewportRef,
+    canvasProps.zoom.canvasStageRef,
+  ]);
+  const turnPage = (delta: number) => {
+    goTo(page + delta);
+    canvas.current?.focus({ preventScroll: true });
   };
   useEffect(() => {
     if (ready && file.page) handle.current?.goTo(file.page - 1);
@@ -135,8 +170,9 @@ function PresentationPages({
       <div className="reader-actions">
         <IconButton
           aria-label="上一张幻灯片"
+          aria-keyshortcuts="ArrowLeft PageUp"
           disabled={!ready || page <= 1 || capturing}
-          onClick={() => goTo(page - 1)}
+          onClick={() => turnPage(-1)}
         >
           <ChevronLeft size={16} />
         </IconButton>
@@ -160,8 +196,9 @@ function PresentationPages({
         <span aria-live="polite">/ {count || "—"}</span>
         <IconButton
           aria-label="下一张幻灯片"
+          aria-keyshortcuts="ArrowRight PageDown"
           disabled={!ready || page >= count || capturing}
-          onClick={() => goTo(page + 1)}
+          onClick={() => turnPage(1)}
         >
           <ChevronRight size={16} />
         </IconButton>
@@ -206,13 +243,41 @@ function PresentationPages({
           正在加载演示文稿…
         </div>
       ) : (
-        <div className="presentation-canvas">
+        <div
+          ref={canvas}
+          className="presentation-canvas"
+          role="region"
+          aria-label="幻灯片画布"
+          tabIndex={0}
+          onFocusCapture={onActivate}
+          onWheelCapture={onActivate}
+        >
           <SlideCanvas
             {...canvasProps}
             showRulers={false}
             showGrid={false}
             guides={[]}
           />
+          <IconButton
+            className="presentation-page-turn previous"
+            variant="soft"
+            aria-label="上一页"
+            data-tip="上一页（← / PageUp）"
+            disabled={!ready || page <= 1 || capturing}
+            onClick={() => turnPage(-1)}
+          >
+            <ChevronLeft size={20} />
+          </IconButton>
+          <IconButton
+            className="presentation-page-turn next"
+            variant="soft"
+            aria-label="下一页"
+            data-tip="下一页（→ / PageDown）"
+            disabled={!ready || page >= count || capturing}
+            onClick={() => turnPage(1)}
+          >
+            <ChevronRight size={20} />
+          </IconButton>
         </div>
       )}
     </section>
