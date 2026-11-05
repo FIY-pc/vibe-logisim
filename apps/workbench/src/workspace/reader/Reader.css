@@ -126,6 +126,8 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  /* Keep keyboard focus inside the reading surface, not under its toolbar. */
+  outline-offset: -2px;
 }
 .presentation-page-turn {
   position: absolute;
