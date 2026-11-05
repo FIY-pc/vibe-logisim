@@ -77,10 +77,7 @@ export function bindPresentationNavigation(
     if (event.button === 0 && !isControl(event.target))
       canvas.focus({ preventScroll: true });
   };
-  let buffer = createWheelStepBuffer();
-  let lastWheel = -Infinity;
-  let direction = 0;
-  let consumed = false;
+  const buffer = createWheelStepBuffer();
   const wheel = (event: WheelEvent) => {
     const state = current();
     if (
@@ -94,32 +91,18 @@ export function bindPresentationNavigation(
       Math.abs(event.deltaY) <= Math.abs(event.deltaX)
     )
       return;
-    const nextDirection = Math.sign(event.deltaY);
-    // Trackpad momentum belongs to the same gesture, not a queue of page turns.
-    if (event.timeStamp - lastWheel > 180 || nextDirection !== direction) {
-      buffer = createWheelStepBuffer();
-      consumed = false;
-    }
-    lastWheel = event.timeStamp;
-    direction = nextDirection;
     const viewport = state.viewport?.getBoundingClientRect();
     const slide = state.slide?.getBoundingClientRect();
     if (!viewport || !slide) return;
     const canScroll =
-      direction > 0
+      event.deltaY > 0
         ? slide.bottom > viewport.bottom + 1
         : slide.top < viewport.top - 1;
     const mapped = mapEditingWheel(event, buffer, canScroll);
-    if (mapped.intent === "scroll") {
-      // After inspecting a zoomed page, start a fresh gesture to leave it.
-      consumed = true;
-      return;
-    }
+    if (mapped.intent === "scroll") return;
     event.preventDefault();
     event.stopPropagation();
-    if (consumed) return;
     if (mapped.intent === "next-slide" || mapped.intent === "previous-slide") {
-      consumed = true;
       state.goTo(state.page + (mapped.intent === "next-slide" ? 1 : -1));
     }
   };

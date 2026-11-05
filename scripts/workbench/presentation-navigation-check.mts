@@ -88,14 +88,32 @@ try {
   assert(wheel(1000));
   assert.equal(page, 2);
   for (const time of [1010, 1040, 1100, 1250]) wheel(time);
-  assert.equal(page, 2, "Trackpad inertia must not skip a run of slides");
+  assert.equal(
+    page,
+    6,
+    "Continued scrolling must keep turning pages without a pause",
+  );
   wheel(1500);
-  assert.equal(page, 3);
+  assert.equal(page, 7);
   wheel(1510, { deltaY: -240 });
-  assert.equal(page, 2);
+  assert.equal(page, 6);
+  for (let time = 1520; time <= 1620; time += 10) wheel(time, { deltaY: 10 });
+  assert.equal(
+    page,
+    6,
+    "Fine trackpad movement must accumulate rather than flip on every event",
+  );
+  wheel(1630, { deltaY: 10 });
+  assert.equal(page, 7);
+  for (let time = 1640; time <= 1750; time += 10) wheel(time, { deltaY: 10 });
+  assert.equal(
+    page,
+    8,
+    "A second accumulated step turns again in the same gesture",
+  );
   assert.equal(wheel(1800, { ctrlKey: true }), false);
   assert.equal(wheel(2000, { deltaX: 300 }), false);
-  assert.equal(page, 2, "Zoom and horizontal panning belong to the renderer");
+  assert.equal(page, 8, "Zoom and horizontal panning belong to the renderer");
 
   bottom = 900;
   assert.equal(
@@ -105,19 +123,42 @@ try {
   );
   bottom = 500;
   assert(wheel(2550));
-  assert.equal(page, 2);
-  wheel(2800);
-  assert.equal(page, 3, "A new gesture at the edge turns the page");
+  assert.equal(
+    page,
+    9,
+    "Continued scrolling at the edge turns without a fresh gesture",
+  );
+  wheel(2560);
+  assert.equal(page, 10);
+  key("End");
+  wheel(2600);
+  assert.equal(page, 20, "Continued scrolling must stop at the last page");
+  key("Home");
+  wheel(2700, { deltaY: -240 });
+  assert.equal(page, 1, "Continued scrolling must stop at the first page");
+  wheel(2800, { deltaY: 3, deltaMode: 1 });
+  wheel(2810, { deltaY: 3, deltaMode: 1 });
+  assert.equal(page, 1);
+  wheel(2820, { deltaY: 3, deltaMode: 1 });
+  assert.equal(
+    page,
+    2,
+    "Line-based mouse wheels use the same accumulated navigation",
+  );
+  wheel(3000, { deltaY: 3, deltaMode: 1 });
+  wheel(3500, { deltaY: 3, deltaMode: 1 });
+  wheel(4000, { deltaY: 3, deltaMode: 1 });
+  assert.equal(page, 3, "Slow wheel notches must accumulate too");
   enabled = false;
   assert.equal(key("PageDown"), false);
-  assert.equal(wheel(3200), false);
+  assert.equal(wheel(4200), false);
   enabled = true;
   stop();
   key("PageDown");
-  wheel(4000);
+  wheel(4500);
   assert.equal(page, 3);
   console.log(
-    "PPTX navigation: scoped keys, selection, wheel momentum, zoom scrolling and cleanup passed",
+    "PPTX navigation: scoped keys, selection, continuous wheel paging, zoom scrolling and cleanup passed",
   );
 } finally {
   stop();
