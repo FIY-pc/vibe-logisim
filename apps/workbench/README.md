@@ -65,6 +65,8 @@ PPTX files use the lazy-loaded `pptx-react-viewer` canvas and OOXML parser, pinn
 
 Material tabs stay open beside the circuit or expand into the editor area. Quotes retain the file revision, page and normalized region; conversation links reopen the source, or show the saved quotation if the source is gone. The runtime's `read_material` tool reads and searches the original PDF independently of the visible page, and renders diagrams or pages without text. It does not perform OCR.
 
+The pinned viewer has a small `patch-package` fix in `patches/pptx-react-viewer+4.64.0.patch`: a host that explicitly disables editing skips whole-document undo snapshots during page navigation. The renderer, document loader and editable history behavior remain upstream implementations. `npm ci` applies the patch; review or remove it when upgrading the viewer.
+
 `read_material` currently handles PDF and images, not PPTX. PPTX page quotations carry the captured image and text directly into the conversation; they do not require that tool.
 
 ### Export conversations

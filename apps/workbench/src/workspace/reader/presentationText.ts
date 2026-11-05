@@ -1,8 +1,9 @@
+import { decodeBase64 } from "../binary.ts";
 import { PptxHandler, findText } from "ooxml-core/pptx";
 
 /** File quotations contain extractable text; page quotations also carry the rendered diagram. */
 export async function presentationText(base64: string): Promise<string> {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const bytes = decodeBase64(base64);
   const handler = new PptxHandler();
   try {
     const data = await handler.load(bytes.buffer, {

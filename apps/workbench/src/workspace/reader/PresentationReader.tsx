@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button, IconButton, TextField } from "../../design/ui";
 import type { ReferenceInput } from "../../conversation/references";
+import { decodeBase64 } from "../binary";
 import { bindPresentationNavigation } from "./presentationNavigation";
 import {
   readingPosition,
@@ -54,10 +55,7 @@ function PresentationPages({
 }: Props) {
   const handle = useRef<PowerPointViewerHandle>(null);
   const canvas = useRef<HTMLDivElement>(null);
-  const content = useMemo(
-    () => Uint8Array.from(atob(file.data || ""), (c) => c.charCodeAt(0)),
-    [file.data],
-  );
+  const content = useMemo(() => decodeBase64(file.data || ""), [file.data]);
   const initialPage = useRef(readingPosition(file).page || 1);
   const [page, setPage] = useState(initialPage.current);
   const [pageInput, setPageInput] = useState(String(page));

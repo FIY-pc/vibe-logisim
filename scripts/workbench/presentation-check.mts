@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { decodeBase64 } from "../../apps/workbench/src/workspace/binary.ts";
 import { Presentation } from "ooxml-core/pptx";
 import { presentationText } from "../../apps/workbench/src/workspace/reader/presentationText.ts";
+
+const binary = Uint8Array.from({ length: 256 }, (_, i) => i);
+assert.deepEqual(decodeBase64(Buffer.from(binary).toString("base64")), binary);
+assert.equal(decodeBase64("").length, 0);
+assert.throws(() => decodeBase64("not-base64"));
 
 // Build two slides in memory, then reorder them to exercise presentation order.
 const deck = await Presentation.create();

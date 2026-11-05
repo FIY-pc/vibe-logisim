@@ -1,3 +1,4 @@
+import { decodeBase64 } from "./binary";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -10,7 +11,7 @@ export async function openPdf(data: string): Promise<PDFDocumentProxy> {
     cMapPacked: true,
     standardFontDataUrl: "/pdfjs/standard_fonts/",
     wasmUrl: "/pdfjs/wasm/",
-    data: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)),
+    data: decodeBase64(data),
   }).promise;
 }
 
