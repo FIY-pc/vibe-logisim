@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "./themed-root";
 import { Files } from "../../../apps/workbench/src/workspace/Files";
+import { PPTX_MIME } from "../../../apps/workbench/src/workspace/materialPreview";
 import { clickMenuItem, openMenu, pickOption } from "./workbench";
 
 export async function verifyFilesUI() {
@@ -23,7 +24,12 @@ export async function verifyFilesUI() {
     size: 0,
   });
   const rows: Record<string, any[]> = {
-    "": [entry("dir", true), entry("main.circ"), entry("readme.txt")],
+    "": [
+      entry("dir", true),
+      entry("main.circ"),
+      entry("slides.PPTX"),
+      entry("readme.txt"),
+    ],
     dir: [entry("child.circ", false, "dir")],
   };
   const calls: any[] = [],
@@ -90,6 +96,15 @@ export async function verifyFilesUI() {
         after: { kind: "text", text: "after fixture" },
       };
     if (request.op === "folderHistoryUndo") return {};
+    if (request.op === "folderPreview")
+      return {
+        path: request.path,
+        folderId: folder.id,
+        revision: "slides-v1",
+        pathVersion: 7,
+        mime: PPTX_MIME,
+        data: "cHJlc2VudGF0aW9u",
+      };
     if (request.op === "folderRead")
       return {
         path: "/fixture/project/readme.txt",
@@ -339,6 +354,15 @@ export async function verifyFilesUI() {
     assert.equal(previews.at(-1).revision, "immutable-digest");
     assert.equal(previews.at(-1).path, "readme.txt");
     assert.equal(previews.at(-1).folderId, folder.id);
+    await act(async () => row("slides.PPTX").click());
+    assert.deepEqual(calls.at(-1), {
+      op: "folderPreview",
+      folder_id: folder.id,
+      path: "slides.PPTX",
+    });
+    assert.equal(previews.at(-1).mime, PPTX_MIME);
+    assert.equal(previews.at(-1).data, "cHJlc2VudGF0aW9u");
+    assert.equal(previews.at(-1).pathVersion, 7);
     await openMenu("文件夹操作", node);
     await clickMenuItem("文件改动…");
     await click("修改dir/new.circ");

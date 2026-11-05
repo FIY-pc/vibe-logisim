@@ -109,3 +109,24 @@
   padding: 32px;
   text-align: center;
 }
+.presentation-reader {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.presentation-page {
+  width: 4.5rem;
+}
+.presentation-canvas {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.presentation-canvas [aria-roledescription="slide"] {
+  /* Office slides may contain off-page objects; a reading view crops them. */
+  overflow: clip;
+}

@@ -3,6 +3,7 @@ import { command } from "../shared/transport";
 import type { Document } from "../shared/types";
 import type { ProjectFolder } from "../workspace/Files";
 import type { PreviewFile } from "../workspace/FilePreview";
+import { usesFolderPreview } from "../workspace/materialPreview";
 export interface ReferenceContext {
   projectId?: string;
   revisionId?: string;
@@ -181,7 +182,7 @@ export function useConversationReferences({
         throw new Error("工程文件夹已改变，请重新打开引用");
       const path = relativePath(resolved.path),
         name = path.split("/").at(-1)!;
-      if (/\.(pdf|png|jpe?g|webp)$/i.test(name)) {
+      if (usesFolderPreview(name)) {
         const result = await command<PreviewFile & { folderId: string }>({
           op: "folderPreview",
           folder_id: folder.id,

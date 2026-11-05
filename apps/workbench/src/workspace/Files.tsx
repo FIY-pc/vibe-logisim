@@ -1,4 +1,5 @@
 import type { PreviewFile } from "./FilePreview";
+import { usesFolderPreview } from "./materialPreview";
 import { TextPrompt } from "../shared/TextPrompt";
 import { DecisionDialog } from "../shared/DecisionDialog";
 import { useEffect, useRef, useState } from "react";
@@ -106,7 +107,7 @@ function EntryIcon({
   const Icon =
     extension === "circ"
       ? CircuitBoard
-      : /^(pdf|md|txt|text|csv|tsv|log)$/.test(extension)
+      : /^(pdf|pptx|md|txt|text|csv|tsv|log)$/.test(extension)
         ? FileText
         : /^(png|jpe?g|webp|gif|bmp|svg)$/.test(extension)
           ? FileImage
@@ -123,7 +124,9 @@ function EntryIcon({
 }
 const unreadable = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  return /UTF-8/.test(message) ? "应用内只能查看文本、PDF 和图片。" : message;
+  return /UTF-8/.test(message)
+    ? "应用内可查看文本、PDF、PPTX 和图片。"
+    : message;
 };
 export const absolutePath = (folderPath: string, relative: string) => {
   const base = folderPath
@@ -558,7 +561,7 @@ function FolderFiles({
       return;
     }
     try {
-      if (/\.(pdf|png|jpe?g|webp)$/i.test(entry.name)) {
+      if (usesFolderPreview(entry.name)) {
         const result = await command<PreviewFile>({
           op: "folderPreview",
           folder_id: folderId,

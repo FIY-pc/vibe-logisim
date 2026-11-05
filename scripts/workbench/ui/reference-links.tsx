@@ -8,6 +8,7 @@ import {
   useConversationReferences,
 } from "../../../apps/workbench/src/conversation/conversationReferences";
 import { Workbench } from "./workbench";
+import { PPTX_MIME } from "../../../apps/workbench/src/workspace/materialPreview";
 export async function verifyReferenceLinks() {
   const node = document.createElement("div");
   document.body.append(node);
@@ -66,7 +67,22 @@ export async function verifyReferenceLinks() {
         ? new Promise((resolve) => {
             gate = resolve;
           })
-        : { folderId: folder.id, path: "renamed/notes.txt", pathVersion: 1 };
+        : {
+            folderId: folder.id,
+            path:
+              request.path === "slides.PPTX"
+                ? "renamed/slides.PPTX"
+                : "renamed/notes.txt",
+            pathVersion: 1,
+          };
+    if (request.op === "folderPreview")
+      return {
+        folderId: folder.id,
+        data: "cHJlc2VudGF0aW9u",
+        mime: PPTX_MIME,
+        revision: "slides-v1",
+        pathVersion: 1,
+      };
     if (request.op === "folderRead")
       return {
         folderId: folder.id,
@@ -247,6 +263,21 @@ export async function verifyReferenceLinks() {
         path_version: 7,
       },
       "Host-generated links use their own durable path version",
+    );
+    await act(async () =>
+      follow!("workspace://slides.PPTX?pathVersion=7&page=3", context),
+    );
+    assert.deepEqual(calls.at(-1), {
+      op: "folderPreview",
+      folder_id: folder.id,
+      path: "renamed/slides.PPTX",
+    });
+    assert.equal(previews.at(-1).path, "renamed/slides.PPTX");
+    assert.equal(previews.at(-1).mime, PPTX_MIME);
+    assert.equal(
+      previews.at(-1).page,
+      3,
+      "Follow the referenced slide after resolving a moved file",
     );
     const count = previews.length;
     delayed = true;

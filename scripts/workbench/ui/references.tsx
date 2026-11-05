@@ -4,12 +4,15 @@ import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { useChatReferences } from "../../../apps/workbench/src/conversation/ChatReferences";
 import { Workbench } from "./workbench";
+import { useWorkbench } from "../../../apps/workbench/src/app/provider";
+import { PPTX_MIME } from "../../../apps/workbench/src/workspace/materialPreview";
 export async function verifyReferencesUI() {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   const old = (globalThis as any).__command;
   let api: any, resolve: any, reject: any;
+  let workbench: ReturnType<typeof useWorkbench>;
   const staged: any[][] = [];
   let readFailure = false;
   const errors: unknown[] = [];
@@ -35,6 +38,7 @@ export async function verifyReferencesUI() {
     draftKey: string;
     quotation?: any;
   }) {
+    workbench = useWorkbench();
     api = useChatReferences({
       draftKey,
       documentId: "doc",
@@ -265,6 +269,62 @@ export async function verifyReferencesUI() {
     );
     assert.equal(api.references.length, 14);
     assert.deepEqual(errors, []);
+    const slide = {
+      id: "slide-reference",
+      kind: "material",
+      label: "slides.PPTX",
+      path: "slides.PPTX",
+      folderId: "slides-folder",
+      revision: "slides-v1",
+      page: 3,
+      hasImage: true,
+    };
+    const previewCalls: any[] = [];
+    let revision = slide.revision;
+    (globalThis as any).__command = async (request: any) => {
+      if (request.method === "readReferences") return [slide];
+      assert.equal(request.op, "folderPreview");
+      previewCalls.push(request);
+      return {
+        path: slide.path,
+        folderId: slide.folderId,
+        revision,
+        mime: PPTX_MIME,
+        data: "cHJlc2VudGF0aW9u",
+      };
+    };
+    localStorage.setItem("references-pptx:references", JSON.stringify([slide]));
+    await act(async () => root.render(<Fixture draftKey="references-pptx" />));
+    await act(async () =>
+      workbench!.stores.files.getState().setFolder({
+        id: slide.folderId,
+        path: "/fixture",
+        name: "fixture",
+      }),
+    );
+    const openSlide = () =>
+      act(async () => {
+        const chip =
+          container.querySelector<HTMLButtonElement>("button[data-tip]");
+        assert(chip);
+        chip.click();
+      });
+    await openSlide();
+    assert.deepEqual(previewCalls.at(-1), {
+      op: "folderPreview",
+      folder_id: slide.folderId,
+      path: slide.path,
+    });
+    assert.equal(workbench!.stores.files.getState().preview?.page, 3);
+    assert.equal(workbench!.stores.files.getState().preview?.mime, PPTX_MIME);
+    revision = "slides-v2";
+    await openSlide();
+    assert.equal(
+      workbench!.stores.files.getState().preview?.page,
+      undefined,
+      "A changed presentation must not reuse the quoted slide location",
+    );
+    assert.deepEqual(errors, []);
     console.log(
       "PASS: 12-file reference intake, draft-scoped late failures, retry/cancel, and snapshot ACK preservation",
     );
@@ -275,6 +335,7 @@ export async function verifyReferencesUI() {
     localStorage.removeItem("references-A:references");
     localStorage.removeItem("references-B:references");
     localStorage.removeItem("references-regions:references");
+    localStorage.removeItem("references-pptx:references");
   }
   await verifyDocumentReferenceBinding();
 }

@@ -61,7 +61,11 @@ npm run desktop        # Tauri window
 
 PDFs use Mozilla's complete generic viewer, pinned by version and SHA-256 in `config/pdf-viewer.json`. Vite downloads it once into `.workbench-cache` and includes the viewer, fonts, locales and worker in the offline application. `reader/pdf-bridge.mjs` connects project bytes, saved reading position and citations; the upstream viewer owns search, selection, page navigation and zoom.
 
+PPTX files use the lazy-loaded `pptx-react-viewer` canvas and OOXML parser, pinned in the npm lockfile. Slides render locally without Office, LibreOffice or a document upload. The workspace provides page navigation, zoom, saved reading position and page quotations (text plus a PNG). Whole-file quotations extract slide text through the same parser. The viewer runs without editing, recovery autosave, remote fonts or linked external media. Embedded fonts and EMF/WMF images are handled by the upstream renderer; layout may differ when fonts are missing or a PowerPoint effect is unsupported. This is a static reading view, not a slideshow player or editor. Legacy `.ppt` is not enabled.
+
 Material tabs stay open beside the circuit or expand into the editor area. Quotes retain the file revision, page and normalized region; conversation links reopen the source, or show the saved quotation if the source is gone. The runtime's `read_material` tool reads and searches the original PDF independently of the visible page, and renders diagrams or pages without text. It does not perform OCR.
+
+`read_material` currently handles PDF and images, not PPTX. PPTX page quotations carry the captured image and text directly into the conversation; they do not require that tool.
 
 ### Export conversations
 

@@ -7,6 +7,7 @@
 | Tauri 2                                   | 桌面窗口与系统集成，MIT / Apache-2.0                          | Rust 依赖遵循 Cargo 锁文件；源码中的许可证声明保留              |
 | React、Lucide、react-markdown、remark-gfm | 界面、图标和 Markdown 显示，各依赖保留原有 MIT / ISC 等许可证 | `third-party/frontend/` 包含前端依赖信息与许可证                |
 | PDF.js                                    | 本地 PDF 阅读，Apache-2.0                                     | 前端资源随应用提供，许可证位于 `third-party/frontend/`          |
+| pptx-react-viewer、OOXML Core/UI | 本地 PPTX 阅读，Apache-2.0；字体解压依赖 mtx-decompressor 为 MPL-2.0 | `third-party/frontend/` 保留 LICENSE、NOTICE 和依赖许可；[字体解压器源码](https://github.com/ChristopherVR/mtx-decompressor) |
 | Node.js                                   | 独立 AI 运行时进程，MIT 及其包含的第三方许可                  | `runtimes/node/LICENSE`                                         |
 | Pi SDK                                    | 内置模型协议与工具回合，MIT                                   | `third-party/node/` 中的包信息和许可证                          |
 | Models.dev                                | 模型名称与能力元数据，MIT                                     | 随 AI 运行时保留快照与许可证；不决定模型服务实际可用的模型      |

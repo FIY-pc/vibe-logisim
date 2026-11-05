@@ -12,6 +12,7 @@ import { DialogFrame, DialogBody } from "../shared/Dialog";
 import { useWorkbench } from "../app/provider";
 import type { PreviewFile } from "../workspace/FilePreview";
 import { fileReference } from "../workspace/fileReference";
+import { usesFolderPreview } from "../workspace/materialPreview";
 
 interface AttachmentJob {
   key: string;
@@ -162,9 +163,8 @@ export function useChatReferences({
         (!ref.folderId || ref.folderId === folder.id)
       ) {
         try {
-          const binary = /\.(pdf|png|jpe?g|webp)$/i.test(ref.path);
           const file = await command<PreviewFile>({
-            op: binary ? "folderPreview" : "folderRead",
+            op: usesFolderPreview(ref.path) ? "folderPreview" : "folderRead",
             folder_id: folder.id,
             path: ref.path,
           });
