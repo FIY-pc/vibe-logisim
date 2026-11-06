@@ -9,6 +9,7 @@
     "@earendil-works/pi-coding-agent": "1.5.0",
     "@napi-rs/canvas": "1.0.11",
     "jose": "^6.2.15",
+    "openai": "7.19.0",
     "pdfjs-dist": "6.3.289",
     "undici": "^8.12.2"
   },

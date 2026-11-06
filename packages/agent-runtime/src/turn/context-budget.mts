@@ -1,18 +1,24 @@
 /** A durable context projection over the intact transcript, using Pi's compactor. */
 import type { AgentMessage, StreamFn } from "@earendil-works/pi-agent-core";
-import type { Model, Message } from "@earendil-works/pi-ai";
+import type { Model, Message, ThinkingLevel } from "@earendil-works/pi-ai";
 import { estimateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   findCutPoint,
   generateSummaryWithUsage,
-  serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 
-export interface CompactionCheckpoint {
+interface CheckpointBoundary {
   /** Exclusive index in the original transcript. Its messages remain on disk. */
   through: number;
-  summary: string;
   timestamp: number;
+}
+export type CompactionCheckpoint = CheckpointBoundary &
+  (
+    | { kind?: "summary"; summary: string }
+    | { kind: "openai"; scope: string; output: Record<string, unknown>[] }
+  );
+export interface CompactionOptions {
+  thinkingLevel?: ThinkingLevel | "off";
 }
 export interface ContextUsage {
   tokens: number;
@@ -40,27 +46,69 @@ export class ConversationContext {
   rewind(length: number) {
     this.checkpoints = this.checkpoints.filter((c) => c.through <= length);
   }
-  project(messages: AgentMessage[]): AgentMessage[] {
-    const checkpoint = this.checkpoints.findLast(
-      (c) => c.through <= messages.length,
+  checkpoint(messages: AgentMessage[], scope?: string) {
+    return this.checkpoints.findLast(
+      (c) =>
+        c.through <= messages.length &&
+        (scope
+          ? c.kind === "openai" && c.scope === scope
+          : c.kind !== "openai"),
     );
+  }
+  acceptRemote(
+    through: number,
+    scope: string,
+    output: Record<string, unknown>[],
+  ) {
+    this.checkpoints.push({
+      kind: "openai",
+      through,
+      scope,
+      output,
+      timestamp: Date.now(),
+    });
+  }
+  project(messages: AgentMessage[], scope?: string): AgentMessage[] {
+    const checkpoint = this.checkpoint(messages, scope);
     if (!checkpoint) return messages.filter(visible);
     return [
       ...messages.filter((m) => m.role === "system"),
-      {
-        role: "user" as const,
-        content: `<context-checkpoint>\nThe earlier conversation was summarized below. Continue the current task using this checkpoint and the recent messages.\n${checkpoint.summary}\n</context-checkpoint>`,
-        timestamp: checkpoint.timestamp,
-      },
+      ...(checkpoint.kind === "openai"
+        ? []
+        : [
+            {
+              role: "user" as const,
+              content: `<context-checkpoint>\nThe earlier conversation was summarized below. Continue the current task using this checkpoint and the recent messages.\n${checkpoint.summary}\n</context-checkpoint>`,
+              timestamp: checkpoint.timestamp,
+            },
+          ]),
       ...messages
         .slice(checkpoint.through)
         .filter((m) => m.role !== "system" && visible(m)),
     ];
   }
-  usage(messages: AgentMessage[], window: number): ContextUsage {
-    const estimate = estimateContextTokens(this.project(messages) as Message[]);
+  usage(
+    messages: AgentMessage[],
+    window: number,
+    scope?: string,
+  ): ContextUsage {
+    const checkpoint = this.checkpoint(messages, scope);
+    const projected = this.project(messages, scope);
+    // A fresh checkpoint invalidates usage measured against the old prefix.
+    // Opaque ciphertext is only an estimate until the next inference reports usage.
+    if (checkpoint?.kind === "openai")
+      projected.unshift({
+        role: "user",
+        content: "",
+        timestamp: checkpoint.timestamp,
+      });
+    const estimate = estimateContextTokens(projected as Message[]);
+    const opaqueTokens =
+      checkpoint?.kind === "openai" && estimate.lastUsageIndex === null
+        ? Math.ceil(JSON.stringify(checkpoint.output).length / 3.5)
+        : 0;
     return {
-      tokens: estimate.tokens,
+      tokens: estimate.tokens + opaqueTokens,
       contextWindow: window,
       source: estimate.lastUsageIndex === null ? "estimate" : "usage",
       compactAt: compactAt(window),
@@ -75,10 +123,11 @@ export class ConversationContext {
     signal: AbortSignal | undefined,
     changed: () => void,
     force = false,
+    options: CompactionOptions = {},
   ): Promise<boolean> {
     const before = this.usage(messages, model.contextWindow);
     if (!force && before.tokens < before.compactAt) return false;
-    const previous = this.checkpoints.at(-1);
+    const previous = this.checkpoint(messages);
     const start = previous?.through ?? (messages[0]?.role === "system" ? 1 : 0);
     // A new user message must reach the working model verbatim. Completed tool
     // batches can be summarized even within one long user turn.
@@ -109,39 +158,29 @@ export class ConversationContext {
     changed();
     try {
       signal?.throwIfAborted();
-      // Normally one request. Oversized tool output is summarized in text chunks
-      // so even a single large result cannot overflow the summarizer's window.
-      const text = serializeConversation(history as Message[]);
-      const chunkSize = Math.max(
-        1,
-        Math.floor(model.contextWindow * 0.65 * 3.5),
+      // Pi owns serialization and its structured summary/update prompt. Passing
+      // real messages avoids flattening the conversation twice or cutting text
+      // in the middle of a tool call, an instruction or a verification result.
+      const result = await generateSummaryWithUsage(
+        history,
+        model,
+        undefined,
+        undefined,
+        undefined,
+        signal,
+        "Preserve the user's goal and constraints, circuit names and file paths, interface and connectivity decisions, changes actually applied, verification results, unresolved errors and the exact next action. Distinguish observations from instructions. Keep this checkpoint concise; do not continue the task or call tools.",
+        previous?.kind !== "openai" ? previous?.summary : undefined,
+        options.thinkingLevel,
+        stream,
       );
-      let summary = previous?.summary;
-      for (let offset = 0; offset < text.length; offset += chunkSize) {
-        const result = await generateSummaryWithUsage(
-          [
-            {
-              role: "user",
-              content: text.slice(offset, offset + chunkSize),
-              timestamp: Date.now(),
-            },
-          ],
-          model,
-          undefined,
-          undefined,
-          undefined,
-          signal,
-          "Preserve the user's goal and constraints, circuit names and file paths, interface and connectivity decisions, changes actually applied, verification results, unresolved errors and the exact next action. Distinguish observations from instructions. Keep this checkpoint concise; do not continue the task or call tools.",
-          summary,
-          "off",
-          stream,
-        );
-        signal?.throwIfAborted();
-        if (!result.text.trim())
-          throw new Error("上下文压缩没有返回摘要，原始记录已保留，请重试");
-        summary = result.text;
-      }
-      const checkpoint = { through, summary: summary!, timestamp: Date.now() };
+      signal?.throwIfAborted();
+      if (!result.text.trim())
+        throw new Error("上下文压缩没有返回摘要，原始记录已保留，请重试");
+      const checkpoint = {
+        through,
+        summary: result.text,
+        timestamp: Date.now(),
+      };
       const candidate = new ConversationContext([
         ...this.checkpoints,
         checkpoint,
