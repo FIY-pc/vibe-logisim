@@ -51,6 +51,12 @@ jobs:
           rustup show
           npm ci
           npm run setup
+      - name: Enable user namespaces for Linux sandbox tests
+        run: |
+          # The ephemeral Ubuntu runner restricts unprivileged user namespaces
+          # by default. The command sandbox needs them for its private mounts.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          systemd-run --user --wait --pipe --property=PrivateUsers=yes --property=PrivateTmp=yes /usr/bin/true
       - name: Check document and generated contracts
         run: |
           cargo fmt --all --check
@@ -79,6 +85,11 @@ jobs:
         run: |
           npm run bundle:agent
           VIBE_LOGISIM_AGENT_ROOT="$PWD/.workbench-cache/agent-product" node scripts/workbench/verify.mts
+      - name: Show sandbox startup diagnostics
+        if: failure()
+        run: |
+          journalctl --user --no-pager --since '-20 minutes' --unit='vibe-builtin-*'
+          sudo journalctl -k --no-pager --since '-20 minutes' --grep='apparmor|DENIED'
 
   desktop-package:
     strategy:

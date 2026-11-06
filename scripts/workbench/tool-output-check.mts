@@ -3,7 +3,10 @@ import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { ToolOutputStore } from "../../packages/agent-runtime/src/tools/output-store.mts";
+import {
+  ToolOutputStore,
+  OUTPUT_MOUNT,
+} from "../../packages/agent-runtime/src/tools/output-store.mts";
 import {
   preserveResult,
   preserveToolOutput,
@@ -40,7 +43,13 @@ try {
 
   const other = new ToolOutputStore(path.join(root, "other"));
   await other.ensure();
-  await assert.rejects(other.resolve(artifact.path));
+  // Absolute paths outside this store are not claimed. A sandbox alias is
+  // resolved within this conversation, where the other output does not exist.
+  assert.equal(await other.resolve(path.join(store.root, artifact.id)), null);
+  await assert.rejects(other.resolve(`${OUTPUT_MOUNT}/${artifact.id}`), {
+    code: "ENOENT",
+  });
+  await assert.rejects(other.read(artifact.id), { code: "ENOENT" });
   if (process.platform !== "win32") {
     const id = `${randomUUID()}.txt`;
     await symlink(path.join(root, "outside.txt"), path.join(store.root, id));
