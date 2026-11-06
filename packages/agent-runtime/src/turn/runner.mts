@@ -398,6 +398,12 @@ export class TurnRunner extends EventEmitter {
   messages() {
     return this.history.map((m) => ({
       ...m,
+      ...(m.type === "activity"
+        ? {
+            workspaceKey: this.workspaceKey ?? undefined,
+            conversationId: this.conversationId ?? undefined,
+          }
+        : {}),
       canEdit: m.type === "user" && Boolean(this.checkpoints[m.id]),
     }));
   }

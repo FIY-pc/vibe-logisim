@@ -105,6 +105,21 @@ try {
   const saved = await store.resolve(envelope.fullOutput.path);
   assert.deepEqual(JSON.parse(await readFile(saved!, "utf8")), large);
   assert.ok((await readFile(saved!, "utf8")).includes('\n  "rows": ['));
+  const unavailable = new ToolOutputStore(path.join(root, "unavailable"));
+  unavailable.write = async () => {
+    throw new Error("ENOSPC");
+  };
+  const completed = { ...input, isError: false };
+  const fallback = await preserveResult(completed, unavailable);
+  assert.equal(
+    fallback.isError,
+    false,
+    "storage failure must not change the operation outcome",
+  );
+  assert.deepEqual(fallback.content.slice(1), completed.content);
+  assert.equal(fallback.details.diagnostic, "original");
+  assert.equal(fallback.details.outputPersistenceError, "ENOSPC");
+  assert.match((fallback.content[0] as { text: string }).text, /操作已经执行/);
   console.log(
     "Verified complete tool outputs, UTF-8 paging, restart, scope isolation, JSON recovery, image/error preservation and one execution.",
   );

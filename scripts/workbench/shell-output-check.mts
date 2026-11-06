@@ -22,6 +22,7 @@ import {
   OUTPUT_MOUNT,
 } from "../../packages/agent-runtime/src/tools/output-store.mts";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import { serializeConversation } from "@earendil-works/pi-coding-agent";
 
 if (process.platform !== "linux") {
   console.log("Linux shell output checks run on Linux.");
@@ -88,6 +89,19 @@ if (process.platform !== "linux") {
       expected,
     );
     assert.ok(text(value).includes(artifact.path));
+    assert.ok(
+      serializeConversation([
+        {
+          role: "toolResult",
+          toolCallId: "shell-check",
+          toolName: "exec_command",
+          content: value.content,
+          isError: !!value.isError,
+          timestamp: 0,
+        },
+      ]).includes(artifact.path),
+      "the compaction input must retain the full-output reference",
+    );
     assert.ok(text(value).includes("END"));
     assert.ok(!text(value).includes("BEGIN"));
     assert.ok(!text(value).includes("\uFFFD"));
@@ -223,6 +237,33 @@ if (process.platform !== "linux") {
       await readFile((await outputs.resolve(artifact.path))!),
       original,
     );
+    const importFile = outputs.importFile.bind(outputs);
+    let failedSource: string | undefined;
+    outputs.importFile = async (source) => {
+      failedSource = source;
+      throw new Error("ENOSPC");
+    };
+    try {
+      const fallback = await run("printf once >> executions; cat long.txt");
+      assert.equal(fallback.details.exitCode, 0);
+      assert.ok(!fallback.isError);
+      assert.match(text(fallback), /保存失败/);
+      assert.match(text(fallback), /END/);
+      assert.equal(fallback.details.outputPersistenceError, "ENOSPC");
+      assert.deepEqual(fallback.details.outputArtifacts, []);
+      assert.equal(
+        await readFile(path.join(root, "executions"), "utf8"),
+        "once",
+      );
+      assert.deepEqual(
+        await readFile(failedSource!),
+        original,
+        "failed import must retain the temporary log",
+      );
+    } finally {
+      outputs.importFile = importFile;
+      if (failedSource) await rm(failedSource, { force: true });
+    }
     console.log(
       `Verified real Linux sandbox: ${original.length} UTF-8 bytes retained; first/middle reads, grep, exit 7, timeout/cancel logs and descendants, readonly paths, long lines, and 510 directory entries.`,
     );

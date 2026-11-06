@@ -11,7 +11,11 @@ import {
   createReadTool,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
-import { ToolOutputStore, OUTPUT_MOUNT } from "./output-store.mts";
+import {
+  ToolOutputStore,
+  OUTPUT_MOUNT,
+  type OutputArtifact,
+} from "./output-store.mts";
 import { shellCommand } from "./shell-command.mts";
 /**
  * The bundled circuit-knowledge directory. In development it sits two levels
@@ -210,22 +214,41 @@ async function command(
     value.details?.fullOutputPath ?? partial?.details?.fullOutputPath;
   const structured = value.structuredContent as
     { exit_code?: number } | undefined;
-  const artifact = source ? await outputs.importFile(source) : undefined;
+  let artifact: OutputArtifact | undefined;
+  let outputPersistenceError: string | undefined;
+  if (source) {
+    try {
+      artifact = await outputs.importFile(source);
+    } catch (error) {
+      outputPersistenceError =
+        error instanceof Error ? error.message : String(error);
+    }
+  }
   // Copying only after execute settles includes buffered bytes on timeout/stop.
   // A failed temporary-file cleanup must not discard the persisted result.
-  if (source) await fs.rm(source, { force: true }).catch(() => {});
+  if (source && artifact) await fs.rm(source, { force: true }).catch(() => {});
   const content = value.content.map((block) =>
-    block.type === "text" && artifact && source
-      ? { ...block, text: block.text.replaceAll(source, artifact.path) }
+    block.type === "text" && source
+      ? {
+          ...block,
+          text: block.text.replaceAll(
+            source,
+            artifact?.path ?? "(完整日志未持久保存)",
+          ),
+        }
       : block,
   );
-  if (
-    artifact &&
-    !content.some(
-      (block) => block.type === "text" && block.text.includes(artifact.path),
-    )
-  )
-    content.push({ type: "text", text: `Full output: ${artifact.path}` });
+  // Pi's compaction serializer keeps the beginning of each tool result.
+  if (artifact)
+    content.unshift({
+      type: "text",
+      text: `Full output: ${artifact.path}\nRead with read_file or search with exec_command.`,
+    });
+  if (outputPersistenceError)
+    content.unshift({
+      type: "text",
+      text: `完整输出保存失败：${outputPersistenceError}。命令已经执行，以下保留原输出预览及执行状态；不要仅因保存失败重复执行命令。`,
+    });
   return {
     content,
     details: {
@@ -236,6 +259,7 @@ async function command(
         ? { exitCode: structured.exit_code }
         : {}),
       outputArtifacts: artifact ? [artifact] : [],
+      ...(outputPersistenceError ? { outputPersistenceError } : {}),
     },
     ...(value.isError ? { isError: true } : {}),
   };

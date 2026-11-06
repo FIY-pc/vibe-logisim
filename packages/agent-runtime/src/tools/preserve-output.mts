@@ -35,7 +35,25 @@ export async function preserveResult(
     full = JSON.stringify(JSON.parse(text), null, 2);
     extension = "json";
   } catch {}
-  const artifact = await store.write(full, extension);
+  let artifact;
+  try {
+    artifact = await store.write(full, extension);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Execution may already have mutated the circuit. Never replace its
+    // outcome with a storage exception or prompt a repeat of that operation.
+    return {
+      ...result,
+      content: [
+        {
+          type: "text" as const,
+          text: `完整输出保存失败：${message}。操作已经执行，以下保留原始结果；不要仅因保存失败重复执行操作。`,
+        },
+        ...result.content,
+      ],
+      details: { ...result.details, outputPersistenceError: message },
+    };
+  }
   const envelope = JSON.stringify({
     truncated: true,
     fullOutput: artifact,

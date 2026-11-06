@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { TurnRunner } from "../../packages/agent-runtime/src/turn/runner.mts";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -55,6 +56,15 @@ try {
     transcript: [structuredClone(raw) as any],
   };
   const original = JSON.stringify(record);
+  const [visible] = TurnRunner.prototype.messages.call({
+    history: record.messages,
+    workspaceKey: "folder",
+    conversationId: record.id,
+    checkpoints: {},
+  } as any);
+  assert.equal(visible.workspaceKey, "folder");
+  assert.equal(visible.conversationId, record.id);
+  assert.equal(JSON.stringify(record), original);
   const exported = exportRecord(record);
   assert.equal(
     exported.outputArtifacts.length,
