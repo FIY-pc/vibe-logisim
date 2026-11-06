@@ -53,19 +53,16 @@ try {
   assert.equal(await readText(small, {}), "a\nb\nc\nd\ne\n");
   assert.equal(
     await readText(small, { offset: 2, limit: 2 }),
-    "b\nc\n[lines 2-3 of 5; 10 bytes total. Continue with offset=4.]",
+    "b\nc\n\n[3 more lines in file. Use offset=4 to continue.]",
   );
-  assert.equal(
-    await readText(small, { offset: 4 }),
-    "d\ne\n[lines 4-5 of 5; 10 bytes total.]",
-  );
+  assert.equal(await readText(small, { offset: 4 }), "d\ne\n");
   await assert.rejects(
-    readText(small, { offset: 6 }),
-    /offset 6 超出文件行数 5/,
+    readText(small, { offset: 7 }),
+    /Offset 7 is beyond end of file/,
   );
   assert.equal(await readText(await file("empty.txt", ""), { limit: 5 }), "");
 
-  // 2000 lines of 400 bytes with newlines: one call holds 1280 of them.
+  // Pi bounds the model page to 50 KiB: 128 lines of 400 bytes.
   const line = "x".repeat(399);
   const large = await file(
     "large.txt",
@@ -74,21 +71,18 @@ try {
   const first = await readText(large, {});
   assert.match(
     first,
-    /\[lines 1-1280 of 2000; 799999 bytes total\. Continue with offset=1281\.\]$/,
+    /\[Showing lines 1-128 of 2000 \(50.0KB limit\)\. Use offset=129 to continue\.\]$/,
   );
-  assert.ok(Buffer.byteLength(first) < 512000 + 200);
+  assert.ok(Buffer.byteLength(first) < 51200 + 200);
   assert.match(
-    await readText(large, { offset: 1281 }),
-    /\[lines 1281-2000 of 2000; 799999 bytes total\.\]$/,
+    await readText(large, { offset: 129 }),
+    /Use offset=257 to continue/,
   );
   const wide = await file("wide.txt", "short\n" + "y".repeat(600000) + "\n");
-  await assert.rejects(
-    readText(wide, { offset: 2 }),
-    /第 2 行超过单次读取上限 512000 字节/,
-  );
+  assert.match(await readText(wide, { offset: 2 }), /Use exec_command/);
   assert.equal(
     await readText(wide, { limit: 1 }),
-    "short\n[lines 1-1 of 2; 600007 bytes total. Continue with offset=2.]",
+    "short\n\n[2 more lines in file. Use offset=2 to continue.]",
   );
 } finally {
   await rm(directory, { recursive: true, force: true });
