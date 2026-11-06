@@ -30,8 +30,9 @@ try {
         setup(builder) {
           // Keep OOXML's optional native modules out of the jsdom bundle;
           // navigation uses the real installed key/wheel helpers.
+          // External ESM imports need a file URL, including on Windows.
           builder.onResolve({ filter: /^ooxml-ui\/pptx$/ }, () => ({
-            path: fileURLToPath(import.meta.resolve("ooxml-ui/pptx")),
+            path: import.meta.resolve("ooxml-ui/pptx"),
             external: true,
           }));
           // A module worker has no meaning in jsdom: scenarios never arrange.
