@@ -12,6 +12,9 @@ read_material reads PDF pages and images directly from the project folder, indep
 
 The user's project folder is open in the app. Its .circ files are the project: the file tools read and write them in place, and the circuit tools edit the document that is open on the user's canvas. Every circuit edit lands immediately, is saved to the file and is visible to the user; one turn of edits becomes one step the user can undo. References under ${referenceRoot}/index.md are read-only.
 
+Large tool results
+Long command output and other oversized text results are saved with the conversation. A preview includes the complete output path; read_file can read it in pages, and exec_command can search it. These saved outputs are read-only evidence, outside the project. Retrieving an existing output does not require repeating the original operation.
+
 Working on a file
 open_circuit makes a .circ the current document; create_circuit makes a new one; define_circuit adds, renames or removes definitions. Tools take an optional path (relative to the folder) and otherwise work on the current document, and an optional circuit and otherwise work on the current definition. inspect_circuit reads one definition as the native Logisim runtime loads it, one bounded view per call; render_circuit returns a PNG; describe_component lists available component names when no tool is given, or gives one component's editable attributes, bounds and ports. place_component, set_attributes, connect, move_components and delete_objects change the circuit; an editing tool's reply carries the new revision, the ids it placed or removed, the width conflicts it introduced and any save or history failure. arrange_circuit re-lays out one definition and applies it only when the netlist is equivalent and it reads more clearly. undo_edit reverts the latest edit. simulate_circuit propagates input vectors and trace_circuit runs ticks with watched ports, each in an isolated runtime from fresh state, never the user's live simulation. read_observation returns moments the user kept from live simulation.
 
@@ -32,7 +35,7 @@ export function systemInstructions(
   if (override) return override;
   const shell =
     platform === "linux"
-      ? `Shell cwd is /tmp/workspace; file tools use folder-relative paths. In the shell the bundled reference directory is ${SANDBOX_REFERENCE} (read_file accepts that path too).`
+      ? `Shell cwd is /tmp/workspace; file tools use folder-relative paths. Files in unmounted /tmp locations are private to each command and disappear when it ends; put scripts or results needed by later commands in the project folder. In the shell the bundled reference directory is ${SANDBOX_REFERENCE} (read_file accepts that path too).`
       : platform === "win32"
         ? "exec_command runs Windows PowerShell 5.1 in the open project folder, with UTF-8 output and no profile. Use PowerShell syntax; node runs JavaScript files using the app's bundled Node.js, so no separate installation is needed. java is available in packaged builds. Reference and runtime paths are $env:VIBE_CIRCUIT_REFERENCE and $env:VIBE_RUNTIME. The shell has the current user's filesystem permissions; work on the project and materials the user requested. File tools use folder-relative paths."
         : "No shell is available; file tools use folder-relative paths.";

@@ -1,4 +1,3 @@
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { spawn, execFile } from "node:child_process";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { existsSync, rmSync } from "node:fs";
@@ -110,6 +109,7 @@ function environment(
   temporary: string,
   referenceRoot: string,
   runtimeRoot?: string | null,
+  outputRoot?: string,
 ) {
   // Rust's canonical paths may have an extended-length prefix. PATH lookup
   // and Windows PowerShell's providers expect ordinary drive/UNC spellings.
@@ -135,6 +135,7 @@ function environment(
     TMP: temporary,
     VIBE_PROJECT_ROOT: ordinaryPath(root),
     VIBE_CIRCUIT_REFERENCE: referenceRoot,
+    ...(outputRoot ? { VIBE_TOOL_OUTPUT: ordinaryPath(outputRoot) } : {}),
     ...(runtimeRoot ? { VIBE_RUNTIME: runtimeRoot } : {}),
   };
 }
@@ -147,10 +148,23 @@ export async function windowsCommand(
     runtimeRoot?: string | null;
     signal?: AbortSignal;
     timeout: number;
+    outputRoot: string;
+    onData: (data: Buffer) => void;
   },
-): Promise<AgentToolResult<any>> {
-  const { root, referenceRoot, runtimeRoot, signal, timeout } = options;
-  signal?.throwIfAborted();
+): Promise<{ exitCode: number | null }> {
+  const {
+    root,
+    referenceRoot,
+    runtimeRoot,
+    signal,
+    timeout,
+    outputRoot,
+    onData,
+  } = options;
+  const checkAbort = () => {
+    if (signal?.aborted) throw new Error("aborted");
+  };
+  checkAbort();
   const temporary = await mkdtemp(path.join(tmpdir(), "vibe-command-"));
   try {
     // -File avoids Windows' command-line length limit and quoting rules. A BOM
@@ -166,15 +180,21 @@ export async function windowsCommand(
         "\n}\n$vibeCommandSucceeded = $?\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\nif (-not $vibeCommandSucceeded) { exit 1 }\nexit 0\n",
       "utf8",
     );
-    signal?.throwIfAborted();
-    const env = environment(root, temporary, referenceRoot, runtimeRoot);
+    checkAbort();
+    const env = environment(
+      root,
+      temporary,
+      referenceRoot,
+      runtimeRoot,
+      outputRoot,
+    );
     const commandEnv = {
       ...env,
       VIBE_COMMAND_JOB_ASSEMBLY: assembly,
     };
-    signal?.throwIfAborted();
+    checkAbort();
     const system32 = path.join(env.SystemRoot, "System32");
-    return await new Promise<AgentToolResult<any>>((resolve, reject) => {
+    return await new Promise<{ exitCode: number | null }>((resolve, reject) => {
       const child = spawn(
         path.join(system32, "WindowsPowerShell/v1.0/powershell.exe"),
         [
@@ -193,16 +213,10 @@ export async function windowsCommand(
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
-      let output = "",
-        truncated = false,
-        stopped = false;
+      let stopped: "aborted" | `timeout:${number}` | undefined;
       let stopTimer: ReturnType<typeof setInterval> | undefined;
-      const append = (text: string) => {
-        truncated ||= output.length + text.length > 64000;
-        output = (output + text).slice(-64000);
-      };
-      child.stdout.setEncoding("utf8").on("data", append);
-      child.stderr.setEncoding("utf8").on("data", append);
+      child.stdout.on("data", onData);
+      child.stderr.on("data", onData);
       const kill = () => {
         if (child.pid)
           execFile(
@@ -212,18 +226,22 @@ export async function windowsCommand(
             () => {},
           );
       };
-      const stop = () => {
-        stopped = true;
+      const stop = (reason: "aborted" | `timeout:${number}`) => {
+        stopped ??= reason;
         kill();
         stopTimer ||= setInterval(kill, 100);
       };
-      const timer = timeout > 0 ? setTimeout(stop, timeout * 1000) : undefined;
-      signal?.addEventListener("abort", stop, { once: true });
-      if (signal?.aborted) stop();
+      const abort = () => stop("aborted");
+      const timer =
+        timeout > 0
+          ? setTimeout(() => stop(`timeout:${timeout}`), timeout * 1000)
+          : undefined;
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
       const cleanup = () => {
         clearTimeout(timer);
         clearInterval(stopTimer);
-        signal?.removeEventListener("abort", stop);
+        signal?.removeEventListener("abort", abort);
       };
       child.on("error", (error) => {
         cleanup();
@@ -231,17 +249,8 @@ export async function windowsCommand(
       });
       child.on("close", (code) => {
         cleanup();
-        if (stopped) reject(new Error("命令已停止或超时"));
-        else
-          resolve({
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ exitCode: code, output, truncated }),
-              },
-            ],
-            details: null,
-          });
+        if (stopped) reject(new Error(stopped));
+        else resolve({ exitCode: code });
       });
     });
   } finally {

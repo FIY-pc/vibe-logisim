@@ -11,6 +11,7 @@ import {
   type Segment,
 } from "./turns";
 import { useTurnDisclosure } from "./TurnExpansion";
+import { ToolOutputAccess } from "./ToolOutput";
 
 /** The files a turn changed, as the folder history recorded them. */
 export interface TurnChange {
@@ -184,6 +185,9 @@ const sameItem = (a: Message, b: Message) =>
     a.resultStatus === b.resultStatus &&
     a.label === b.label &&
     a.detail === b.detail &&
+    a.workspaceKey === b.workspaceKey &&
+    a.conversationId === b.conversationId &&
+    a.itemId === b.itemId &&
     JSON.stringify(a.toolOutput) === JSON.stringify(b.toolOutput));
 
 const TurnItem = memo(
@@ -331,7 +335,8 @@ function ToolRow({
           {output?.exitCode != null && output.exitCode !== 0 && (
             <Text kind="meta">退出码 {output.exitCode}</Text>
           )}
-          {output?.truncated && <Text kind="meta">输出已截断</Text>}
+          {output?.truncated && <Text kind="meta">仅显示部分输出</Text>}
+          <ToolOutputAccess item={item} />
           {state === "unknown" && (
             <Text kind="meta">调用没有确认结束，请先检查工作区</Text>
           )}

@@ -211,7 +211,7 @@ export async function verifyRestoredInteractions() {
       container.querySelector(
         '.turn-tool[data-state="failed"] .turn-tool-detail',
       )!.textContent!,
-      /expected 1, observed 0.*退出码 3.*输出已截断/,
+      /expected 1, observed 0.*退出码 3.*仅显示部分输出/,
     );
     await click('.turn-tool[data-state="unknown"] > summary');
     assert.equal(

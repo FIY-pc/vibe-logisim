@@ -26,6 +26,7 @@ export type RuntimeMethod =
   | "status"
   | "history"
   | "exportConversations"
+  | "readToolOutput"
   | "bind"
   | "ask"
   | "stop"

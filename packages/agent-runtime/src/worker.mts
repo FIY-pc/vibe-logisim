@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { TurnRunner } from "./turn/runner.mts";
 import { storeReference, readReferences } from "./conversations/references.mts";
 import { exportRecord, conversationMarkdown } from "./conversations/export.mts";
+import { readToolOutput } from "./conversations/tool-output.mts";
 import { closeNetwork } from "./network/fetch.mts";
 import { readMaterial } from "./materials/read.mts";
 import { resolveFile } from "./tools/files.mts";
@@ -64,6 +65,16 @@ async function dispatch(method: RuntimeMethod, args: any) {
       return runner.snapshot();
     case "history":
       return runner.historySnapshot();
+    case "readToolOutput": {
+      const folder = await folderOf();
+      if (!folder || folder.id !== args.workspaceKey)
+        throw new Error("工作区已切换，请重新打开工具输出");
+      const store = runner.outputStore(folder.id, args.conversationId);
+      const [record] = runner.exportConversations(folder.id, [
+        args.conversationId,
+      ]);
+      return readToolOutput(record, store, args);
+    }
     case "exportConversations": {
       const folder = await folderOf();
       if (!folder || folder.id !== args.workspaceKey)
@@ -73,12 +84,24 @@ async function dispatch(method: RuntimeMethod, args: any) {
         !/^[a-f0-9-]{36}$/.test(args.exportId)
       )
         throw new Error("导出请求无效");
-      const conversations = runner
-        .exportConversations(folder.id, args.ids)
-        .map((record) => {
+      const conversations = await Promise.all(
+        runner.exportConversations(folder.id, args.ids).map(async (record) => {
           const conversation = exportRecord(record);
+          const store = runner.outputStore(folder.id, record.id);
+          for (const artifact of conversation.outputArtifacts) {
+            try {
+              const saved = await store.describe(artifact.id);
+              if (saved.bytes !== artifact.bytes)
+                throw new Error("size changed");
+            } catch {
+              throw new Error(
+                `无法导出会话「${record.title}」：工具输出 ${artifact.id} 缺失或已改变`,
+              );
+            }
+          }
           return { conversation, markdown: conversationMarkdown(conversation) };
-        });
+        }),
+      );
       // Large histories must not travel through the JSONL reply's size limit.
       // This one-use file stays in app state; the host consumes and removes it.
       const directory = path.join(state, "conversation-exports");

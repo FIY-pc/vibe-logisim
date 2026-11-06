@@ -77,6 +77,15 @@
   padding-left: var(--space-3);
   border-left: 1px solid var(--border);
 }
+.tool-output-body {
+  min-height: 160px;
+  height: 55vh;
+}
+.tool-output-body pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .turn-tool-detail pre {
   margin: 0;
   max-height: 240px;
