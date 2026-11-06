@@ -39,7 +39,7 @@ export async function preserveResult(
   const envelope = JSON.stringify({
     truncated: true,
     fullOutput: artifact,
-    preview: truncateHead(full, { maxLines: 80, maxBytes: 8192 }).content,
+    preview: truncateHead(full).content,
     continuation: { tool: "read_file", path: artifact.path, offset: 1 },
   });
   let replaced = false;
