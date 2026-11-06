@@ -1,3 +1,115 @@
+import { createHash } from "node:crypto";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Model } from "@earendil-works/pi-ai";
+import { Stream } from "openai/core/streaming";
+import { convertResponsesMessages } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import type { ServiceConfig, ServiceSelection } from "./types.mts";
+
+/** Encrypted checkpoints belong to one account, endpoint and model. */
+export function chatgptContextScope(
+  config: Pick<ServiceConfig, "id" | "auth" | "baseUrl" | "model"> | null,
+  selection?: ServiceSelection | null,
+) {
+  if (config?.auth !== "chatgpt") return undefined;
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        config.id,
+        config.baseUrl,
+        selection?.model ?? config.model,
+      ]),
+    )
+    .digest("hex");
+}
+
+/** This account uses native Responses IDs even though its provider key is scoped. */
+export function chatgptInput(model: Model<any>, messages: AgentMessage[]) {
+  return convertResponsesMessages(
+    model,
+    { messages } as any,
+    new Set([model.provider]),
+    { supportsMidConvoSystemMessages: false },
+  );
+}
+
+/** Prepend the canonical server prefix to the converted recent messages. */
+export function compactedChatGPTInput(
+  input: any[],
+  checkpoint:
+    { through: number; output: Record<string, unknown>[] } | undefined,
+) {
+  if (!checkpoint) return input;
+  const system = input[0]?.role === "developer" ? [input[0]] : [];
+  return [...system, ...checkpoint.output, ...input.slice(system.length)];
+}
+
+/** Observe official SSE items without replacing Pi's transport or agent loop.
+ * The SDK parser handles framing and UTF-8. Only a completed response is eligible
+ * for installation; the caller commits it together with the assistant message.
+ */
+export function observeChatGPTCompaction(
+  request: typeof fetch,
+  observer: {
+    started(): void;
+    completed(output: Record<string, unknown>[]): void;
+  },
+): typeof fetch {
+  return async (input, init) => {
+    const response = await request(input, init);
+    if (!response.ok || !response.body) return response;
+    const controller = new AbortController();
+    const events = Stream.fromSSEResponse<any>(response, controller)[
+      Symbol.asyncIterator
+    ]();
+    const encoder = new TextEncoder();
+    let output: Record<string, any>[] = [];
+    const body = new ReadableStream<Uint8Array>({
+      async pull(target) {
+        try {
+          const next = await events.next();
+          if (next.done) {
+            target.close();
+            return;
+          }
+          const event = next.value;
+          if (event.type === "response.output_item.done") {
+            output.push(event.item);
+            if (event.item.type === "compaction") observer.started();
+          }
+          if (event.type === "response.completed") {
+            // Some subscription streams leave response.output empty and deliver
+            // the canonical items solely via output_item.done.
+            if (!output.length) output = event.response.output || [];
+            const index = output.findLastIndex(
+              (item) =>
+                item.type === "compaction" &&
+                typeof item.encrypted_content === "string" &&
+                item.encrypted_content.length,
+            );
+            if (index >= 0) observer.completed(output.slice(index));
+          }
+          target.enqueue(
+            encoder.encode(
+              `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+            ),
+          );
+        } catch (error) {
+          target.error(error);
+        }
+      },
+      async cancel() {
+        controller.abort();
+        await events.return?.();
+      },
+    });
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
 /** Adapt the existing Responses transport to the ChatGPT plan route. */
 export function chatgptPayload(payload: any) {
   const next = { ...payload, store: false, stream: true };

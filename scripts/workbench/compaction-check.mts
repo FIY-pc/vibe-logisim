@@ -30,6 +30,11 @@ const model = await startScriptedModel(({ request }) => {
     )
   ) {
     summaries++;
+    assert.equal(
+      request.reasoning_effort,
+      "high",
+      "summarization inherits the selected reasoning effort",
+    );
     assert.equal(request.tools, undefined, "summary cannot execute tools");
     assert.match(JSON.stringify(request.messages), /preserve|checkpoint/i);
     return {
@@ -72,7 +77,7 @@ new ServiceStore(options.profileDir).save({
   model: "fixture/tool-model",
   api: "openai-completions",
   contextWindow: 64000,
-  effort: "none",
+  effort: "high",
   vision: false,
 });
 let runner = new TurnRunner(options);
@@ -237,7 +242,9 @@ try {
     api.streamSimple(m, c, { ...o, apiKey: "fixture-only", maxRetries: 0 });
   failSummary = true;
   await assert.rejects(
-    context.prepare(full, modelFor(config), stream, undefined, () => {}, true),
+    context.prepare(full, modelFor(config), stream, undefined, () => {}, true, {
+      thinkingLevel: "high",
+    }),
     /没有返回摘要/,
   );
   assert.equal(context.checkpoints.length, 0);
@@ -252,6 +259,7 @@ try {
     controller.signal,
     () => {},
     true,
+    { thinkingLevel: "high" },
   );
   setTimeout(() => controller.abort(), 50);
   await assert.rejects(pending);

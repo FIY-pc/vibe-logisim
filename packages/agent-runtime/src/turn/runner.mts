@@ -21,7 +21,14 @@ import {
   providerFor,
 } from "../models/catalog.mts";
 import { ChatGPTAccounts } from "../models/chatgpt.mts";
-import { chatgptFetch, chatgptPayload } from "../models/chatgpt-responses.mts";
+import {
+  chatgptFetch,
+  chatgptPayload,
+  chatgptInput,
+  chatgptContextScope,
+  compactedChatGPTInput,
+  observeChatGPTCompaction,
+} from "../models/chatgpt-responses.mts";
 import { discoverModels } from "../models/probe.mts";
 import { loadSdk } from "../models/sdk-loader.mts";
 import {
@@ -43,7 +50,7 @@ import { fileTools } from "../tools/files.mts";
 import { circuitTools, TOOL_LABELS } from "../tools/index.mts";
 import { ToolContext } from "../tools/context.mts";
 import { toolActivity } from "./activity.mts";
-import { ConversationContext } from "./context-budget.mts";
+import { ConversationContext, compactAt } from "./context-budget.mts";
 import { systemInstructions } from "./instructions.mts";
 import type {
   FolderChange,
@@ -306,6 +313,11 @@ export class TurnRunner extends EventEmitter {
   checkpoints: Record<string, { raw: number; history: number }> = {};
   selection: ServiceSelection | null = null;
   private context = new ConversationContext();
+  private remoteCompaction: {
+    scope: string;
+    through: number;
+    output: Record<string, unknown>[];
+  } | null = null;
   private compactContext: ((force?: boolean) => Promise<boolean>) | null = null;
   /** The stream retry notice while the model service is busy; null otherwise. */
   transmission: { phase: string; message: string | null } | null = null;
@@ -366,7 +378,11 @@ export class TurnRunner extends EventEmitter {
       network: this.network,
       transmission: this.transmission,
       contextUsage: selected?.contextWindow
-        ? this.context.usage(this.transcript, selected.contextWindow)
+        ? this.context.usage(
+            this.transcript,
+            selected.contextWindow,
+            chatgptContextScope(config, this.selection),
+          )
         : null,
       modelConfigurationError: issue,
       modelCatalog:
@@ -927,9 +943,31 @@ export class TurnRunner extends EventEmitter {
       ];
       const instructions = systemInstructions(this.instructionsOverride);
       const metadata = this.catalog.metadataFor(config, config.model);
+      const remoteScope = chatgptContextScope(config);
+      let remoteThrough = 0;
       const onPayload =
         config.auth === "chatgpt"
-          ? chatgptPayload
+          ? (payload: any, messages: AgentMessage[]) => {
+              const next = chatgptPayload({
+                ...payload,
+                input: chatgptInput(model, messages),
+              });
+              const checkpoint = this.context.checkpoint(
+                this.transcript,
+                remoteScope!,
+              );
+              next.input = compactedChatGPTInput(
+                next.input,
+                checkpoint?.kind === "openai" ? checkpoint : undefined,
+              );
+              next.context_management = [
+                {
+                  type: "compaction",
+                  compact_threshold: compactAt(model.contextWindow),
+                },
+              ];
+              return next;
+            }
           : generationPayload(config, metadata);
       if (this.transcript[0]?.role === "system") {
         const system = createInitialSystemMessage(
@@ -979,6 +1017,10 @@ export class TurnRunner extends EventEmitter {
       this.history.push(record);
       this.emitMessage(record);
       const model = modelFor(config, metadata);
+      const compactionOptions = {
+        thinkingLevel:
+          config.effort === "none" ? ("off" as const) : config.effort,
+      };
       const streamFn = (model: any, ctx: any, opts: any) =>
         retryingStream(
           () =>
@@ -986,9 +1028,23 @@ export class TurnRunner extends EventEmitter {
               ...opts,
               apiKey:
                 config.auth === "chatgpt" ? "chatgpt-session" : config.apiKey,
-              fetch,
+              fetch: remoteScope
+                ? observeChatGPTCompaction(fetch, {
+                    started: () => {
+                      this.context.compacting = true;
+                      this.emitStatus();
+                    },
+                    completed: (output) => {
+                      this.remoteCompaction = {
+                        scope: remoteScope,
+                        through: remoteThrough,
+                        output,
+                      };
+                    },
+                  })
+                : fetch,
               maxRetries: config.auth === "chatgpt" ? 0 : 8,
-              onPayload,
+              onPayload: (payload: any) => onPayload(payload, ctx.messages),
             }),
           sdk,
           opts?.signal,
@@ -1020,6 +1076,11 @@ export class TurnRunner extends EventEmitter {
         sessionId: this.conversationId!,
         prepareRequest: async ({ context: requestContext }, signal) => {
           this.transcript = requestContext.messages;
+          if (remoteScope) {
+            // Freeze the boundary before streaming mutates Pi's transcript.
+            remoteThrough = requestContext.messages.length + 1;
+            return;
+          }
           await this.context.prepare(
             requestContext.messages,
             model,
@@ -1031,23 +1092,29 @@ export class TurnRunner extends EventEmitter {
               this.persist();
               this.emitStatus();
             },
+            false,
+            compactionOptions,
           );
           this.emitStatus();
         },
-        transformContext: async (messages) => this.context.project(messages),
+        transformContext: async (messages) =>
+          this.context.project(messages, remoteScope),
       });
       this.compactContext = (force = false) =>
-        this.context.prepare(
-          this.agent!.state.messages,
-          model,
-          streamFn,
-          this.turnAbort!.signal,
-          () => {
-            this.persist();
-            this.emitStatus();
-          },
-          force,
-        );
+        remoteScope
+          ? Promise.resolve(false)
+          : this.context.prepare(
+              this.agent!.state.messages,
+              model,
+              streamFn,
+              this.turnAbort!.signal,
+              () => {
+                this.persist();
+                this.emitStatus();
+              },
+              force,
+              compactionOptions,
+            );
       this.agent.subscribe((e: any) => {
         if (this.pending === pending && this.activeTurnId === pending.turnId)
           this.onAgentEvent(e);
@@ -1168,6 +1235,18 @@ export class TurnRunner extends EventEmitter {
     }
     if (e.type === "message_end") {
       if (e.message.role === "assistant") {
+        const remote = this.remoteCompaction;
+        if (
+          remote &&
+          !["error", "aborted", "length"].includes(e.message.stopReason)
+        )
+          this.context.acceptRemote(
+            remote.through,
+            remote.scope,
+            remote.output,
+          );
+        this.remoteCompaction = null;
+        this.context.compacting = false;
         const thought = this.history.find(
           (m) => m.id === this.messageId + ":reasoning",
         );
