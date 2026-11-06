@@ -12,6 +12,9 @@
  */
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { ToolOutputStore } from "../tools/output-store.mts";
+import { preserveToolOutput } from "../tools/preserve-output.mts";
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { ServiceStore, modelFor, transport } from "../models/services.mts";
 import { generationPayload } from "../models/generation.mts";
@@ -699,6 +702,18 @@ export class TurnRunner extends EventEmitter {
         : record,
     );
   }
+  outputStore(workspaceKey: string, conversationId: string) {
+    this.conversations.selected(workspaceKey, [conversationId]);
+    if (!/^[a-f0-9-]{36}$/.test(conversationId))
+      throw new Error("会话编号无效");
+    return new ToolOutputStore(
+      path.join(
+        path.dirname(this.conversations.file!),
+        "tool-outputs",
+        conversationId,
+      ),
+    );
+  }
   /** Loads the active conversation of a scope (the folder id) into memory. */
   async resume(workspaceKey: string) {
     if (this.snapshot().busy) throw new Error("请先停止当前回答");
@@ -932,15 +947,20 @@ export class TurnRunner extends EventEmitter {
         userCircuit: request.circuit,
         documents: status.documents,
       });
+      const outputs = this.outputStore(
+        status.folder.id,
+        pending.conversationId,
+      );
       const tools = [
         ...fileTools({
+          outputs,
           root: status.folder.path,
           runtimeRoot: this.runtimeRoot,
           vision: config.vision,
           assertCurrent,
         }),
         ...circuitTools({ context, vision: config.vision }),
-      ];
+      ].map((tool) => preserveToolOutput(tool, outputs));
       const instructions = systemInstructions(this.instructionsOverride);
       const metadata = this.catalog.metadataFor(config, config.model);
       const remoteScope = chatgptContextScope(config);
@@ -1222,7 +1242,10 @@ export class TurnRunner extends EventEmitter {
         e.type !== "tool_execution_end"
       )
         return;
-      Object.assign(activity, toolActivity(e, existing));
+      Object.assign(activity, toolActivity(e, existing), {
+        workspaceKey: this.workspaceKey,
+        conversationId: this.conversationId,
+      });
       if (existing) Object.assign(existing, activity);
       else this.history.push(activity);
       this.persistSoon();
