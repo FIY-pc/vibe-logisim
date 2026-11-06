@@ -20,6 +20,7 @@ import { fullText } from "../shared/Tooltips";
 
 export interface Message {
   id: string;
+  itemId?: string;
   type: string;
   text?: string;
   phase?: string;
@@ -29,6 +30,8 @@ export interface Message {
   kind?: string;
   resultStatus?: string | null;
   activityKey?: string;
+  workspaceKey?: string;
+  conversationId?: string;
   toolOutput?: {
     type?: string;
     target?: string;
@@ -36,6 +39,12 @@ export interface Message {
     text?: string;
     exitCode?: number | null;
     truncated?: boolean;
+    outputArtifacts?: {
+      id: string;
+      path: string;
+      bytes: number;
+      mimeType: string;
+    }[];
   } | null;
   context?: ReferenceContext & { references?: ReferenceSummary[] };
   canEdit?: boolean;

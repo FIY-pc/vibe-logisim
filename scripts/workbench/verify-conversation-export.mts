@@ -23,6 +23,9 @@ import {
   conversationExportFixture,
   fixtureId,
   fullOutput,
+  savedOutput,
+  outputId,
+  writeConversationOutputs,
 } from "./fixtures/conversation-export.mts";
 import { exportRecord } from "../../packages/agent-runtime/src/conversations/export.mts";
 
@@ -95,6 +98,7 @@ try {
   const opened = await command({ op: "folderOpen", path: folder });
   const workspaceKey = opened.id;
   const fixture = conversationExportFixture(workspaceKey);
+  await writeConversationOutputs(state);
   await writeFile(
     path.join(state, "conversations.json"),
     JSON.stringify(fixture),
@@ -116,7 +120,14 @@ try {
       name.endsWith("/conversation.json"),
     );
     assert.equal(records.length, ids.length);
-    assert.equal(Object.keys(archive).length, ids.length * 2 + 1);
+    assert.equal(
+      Object.keys(archive).length,
+      ids.length * 2 +
+        1 +
+        ids.filter((id) =>
+          [fixtureId(0), fixtureId(1), fixtureId(2)].includes(id),
+        ).length,
+    );
     assert(
       !Object.keys(archive).some(
         (name) => name.includes("profile") || name.includes(".."),
@@ -137,13 +148,25 @@ try {
       );
       assert(markdown.includes("ARGUMENT_END_"), "Full tool arguments");
       assert(markdown.includes("Available reasoning summary"));
+      for (const artifact of record.outputArtifacts) {
+        assert.equal(
+          strFromU8(
+            archive[
+              name.replace("conversation.json", `outputs/${artifact.id}`)
+            ],
+          ),
+          savedOutput,
+        );
+        assert(markdown.includes(`](outputs/${artifact.id})`));
+        assert(!markdown.includes(savedOutput), "Saved blobs stay in files");
+      }
       assert(!strFromU8(bytes).includes("not-exported"));
       return record.id;
     });
     assert.deepEqual(found, ids);
     assert(
       !Object.values(archive).some((bytes) =>
-        /OTHER_WORKSPACE_NOT_SELECTED|PROFILE_MUST_NOT_BE_EXPORTED/.test(
+        /OTHER_WORKSPACE_NOT_SELECTED|PROFILE_MUST_NOT_BE_EXPORTED|UNREFERENCED_OUTPUT_MUST_NOT_BE_EXPORTED/.test(
           strFromU8(bytes),
         ),
       ),
@@ -152,6 +175,51 @@ try {
   };
   const exported = await command(request);
   verify(Buffer.from(exported.data, "base64"), request.ids);
+  const read = (args: Record<string, unknown>) =>
+    command({
+      op: "agent",
+      method: "readToolOutput",
+      args: { workspaceKey, conversationId: fixtureId(0), ...args },
+    });
+  let offset = 0,
+    reconstructed = "";
+  do {
+    const page = await read({ id: outputId(0), offset });
+    assert(Buffer.byteLength(page.text) <= 64 * 1024);
+    reconstructed += page.text;
+    offset = page.nextOffset;
+  } while (offset !== undefined);
+  assert.equal(
+    reconstructed,
+    savedOutput,
+    "UTF-8 pages reproduce the saved output after process startup",
+  );
+  assert.equal(
+    (await read({ toolCallId: "tool-0-598" })).text,
+    fullOutput,
+    "UI-only clipping reads the original transcript",
+  );
+  await assert.rejects(read({ id: outputId(1) }), /没有引用/);
+  await assert.rejects(read({ id: outputId(999) }), /没有引用/);
+  await assert.rejects(
+    read({ id: outputId(0), workspaceKey: "other-workspace" }),
+    /工作区已切换/,
+  );
+  await assert.rejects(
+    read({ id: outputId(0), conversationId: "other-workspace" }),
+    /不属于/,
+  );
+  await assert.rejects(read({ id: outputId(0), limit: 10000000 }), /范围无效/);
+  const outputFile = path.join(
+    state,
+    "tool-outputs",
+    fixtureId(0),
+    outputId(0),
+  );
+  await rm(outputFile);
+  await assert.rejects(read({ id: outputId(0) }), /丢失|移除/);
+  await assert.rejects(command(request), /缺失|改变/);
+  await writeFile(outputFile, savedOutput);
   const saved = path.join(directory, "selected.zip");
   await command({ ...request, ids: [fixtureId(1), fixtureId(2)], path: saved });
   verify(await readFile(saved), [fixtureId(1), fixtureId(2)]);
@@ -206,6 +274,75 @@ try {
     (await page.locator(".conversation-segment").count()) < 100,
     "Only a fraction of the 600-turn history is mounted",
   );
+  const last = page.locator('[data-segment="q-0-599"]');
+  await last.locator(".turn-summary").click();
+  await last.locator(".turn-tool summary").click();
+  await last.getByRole("button", { name: "查看完整输出", exact: true }).click();
+  const outputDialog = page.getByRole("dialog", {
+    name: "完整工具输出",
+    exact: true,
+  });
+  await outputDialog.locator("pre").waitFor();
+  assert(
+    (await outputDialog.locator("pre").innerText()).startsWith("保存的输出"),
+  );
+  assert(
+    await outputDialog.getByRole("button", { name: "上一页" }).isDisabled(),
+  );
+  await outputDialog.getByRole("button", { name: "下一页" }).click();
+  await outputDialog
+    .getByRole("status")
+    .filter({ hasText: "第 2 页 ·" })
+    .waitFor();
+  await outputDialog.getByRole("button", { name: "上一页" }).click();
+  await outputDialog
+    .getByRole("status")
+    .filter({ hasText: "第 1 页 ·" })
+    .waitFor();
+  await page.setViewportSize({ width: 640, height: 720 });
+  const bounds = await outputDialog.boundingBox();
+  assert(
+    bounds &&
+      bounds.x >= 0 &&
+      bounds.x + bounds.width <= 640 &&
+      bounds.height <= 720,
+  );
+  if (process.env.VIBE_EXPORT_EVIDENCE) {
+    await mkdir(process.env.VIBE_EXPORT_EVIDENCE, { recursive: true });
+    await page.screenshot({
+      path: path.join(process.env.VIBE_EXPORT_EVIDENCE, "tool-output-page.png"),
+    });
+  }
+  await outputDialog.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await rm(outputFile);
+  await last.getByRole("button", { name: "查看完整输出", exact: true }).click();
+  await outputDialog.getByRole("alert").filter({ hasText: "丢失" }).waitFor();
+  assert.equal(
+    await outputDialog.locator("pre").count(),
+    0,
+    "A missing file must not display a preview as full output",
+  );
+  await writeFile(outputFile, savedOutput);
+  await outputDialog.getByRole("button", { name: "重试", exact: true }).click();
+  await outputDialog.locator("pre").waitFor();
+  await outputDialog.getByRole("button", { name: "关闭", exact: true }).click();
+  const inline = page.locator('[data-segment="q-0-598"]');
+  await inline.locator(".turn-summary").click();
+  await inline.locator(".turn-tool summary").click();
+  await inline
+    .getByRole("button", { name: "查看完整输出", exact: true })
+    .click();
+  await outputDialog.locator("pre").waitFor();
+  assert.equal(
+    await outputDialog.locator("pre").textContent(),
+    fullOutput,
+    "The UI-only preview opens the full persisted transcript text",
+  );
+  assert(
+    await outputDialog.getByRole("button", { name: "下一页" }).isDisabled(),
+  );
+  await outputDialog.getByRole("button", { name: "关闭", exact: true }).click();
   await page.locator(".conversation-picker").click();
   await page.getByRole("button", { name: "导出会话…", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "导出会话", exact: true });
@@ -275,7 +412,7 @@ try {
     "Export does not change saved histories",
   );
   console.log(
-    "PASS: real history picker, 24-way select/clear, keyboard multi-select and browser ZIP download; 600 turns, duplicate titles, archived history, full arguments/results/errors/thinking preserved; only selected workspace histories included; native save and replacement path verified.",
+    "PASS: scoped UTF-8 output pages and inline transcript fallback; expanded tool row, narrow dialog, previous/next, missing-file retry; selected ZIP includes referenced output bytes and portable links only; 600-turn history, duplicate titles, archived/errors/thinking, browser download and native replacement preserved.",
   );
 } finally {
   await browser?.close();

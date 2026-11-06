@@ -102,8 +102,8 @@ export function ConversationExport({
         <Flex direction="column" gap="3">
           <Text>当前工作区：{workspaceName}</Text>
           <Text color="gray">
-            仅导出勾选的会话，包含消息、思考摘要及完整工具记录。每条会话提供
-            Markdown 和 JSON，共同保存为一个 ZIP。
+            仅导出勾选的会话，包含消息、思考摘要、工具记录及已保存的完整输出。每条会话提供
+            Markdown、JSON 和输出文件，共同保存为一个 ZIP。
           </Text>
           <TextField.Root
             aria-label="查找要导出的会话"

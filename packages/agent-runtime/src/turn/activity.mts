@@ -5,6 +5,7 @@ function toolActivity(event: any, previous: any = {}) {
     start = event.type === "tool_execution_start";
   const args = start ? event.args : previous.toolOutput?.input;
   const result = done ? event.result : event.partialResult;
+  const details = result?.details;
   const text = (result?.content || [])
     .map((c: any) =>
       c.type === "text" ? c.text : `[${c.mimeType || "image"}]`,
@@ -22,11 +23,13 @@ function toolActivity(event: any, previous: any = {}) {
         : "tool";
   const exitCode =
     type === "command"
-      ? Number.isInteger(data?.exitCode)
-        ? data.exitCode
-        : Number.isInteger(data?.exit_code)
-          ? data.exit_code
-          : null
+      ? Number.isInteger(details?.exitCode)
+        ? details.exitCode
+        : Number.isInteger(data?.exitCode)
+          ? data.exitCode
+          : Number.isInteger(data?.exit_code)
+            ? data.exit_code
+            : null
       : null;
   const failed =
     done &&
@@ -43,6 +46,8 @@ function toolActivity(event: any, previous: any = {}) {
     text: start ? "" : clip(outputText),
     exitCode,
     truncated: outputText.length > LIMIT,
+    outputArtifacts:
+      details?.outputArtifacts ?? previous.toolOutput?.outputArtifacts,
   };
   const input = start ? clip(JSON.stringify(event.args)) : previous.input;
   return {

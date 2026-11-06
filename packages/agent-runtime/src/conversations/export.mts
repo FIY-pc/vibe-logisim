@@ -1,8 +1,45 @@
 import type { ConversationRecord } from "./types.mts";
+import type { OutputArtifact } from "../tools/output-store.mts";
+
+/** Only references in this conversation, including earlier raw tool results. */
+export function outputArtifacts(
+  record: Pick<ConversationRecord, "messages" | "transcript">,
+): OutputArtifact[] {
+  const artifacts = new Map<string, OutputArtifact>();
+  const add = (items: OutputArtifact[] | undefined) => {
+    for (const item of items || []) artifacts.set(item.id, item);
+  };
+  for (const message of record.messages)
+    add(message.toolOutput?.outputArtifacts);
+  for (const message of record.transcript || []) {
+    if (message.role === "toolResult")
+      add(
+        (message.details as { outputArtifacts?: OutputArtifact[] } | undefined)
+          ?.outputArtifacts,
+      );
+  }
+  return [...artifacts.values()];
+}
 
 /** No service registry or account/profile data is part of a conversation export. */
 export function exportRecord(record: ConversationRecord) {
   const selection = record.selection;
+  // Rewrite file references only in the exported copy. The model transcript
+  // (including its original plain-text output) remains untouched.
+  const copy = structuredClone({
+    messages: record.messages,
+    transcript: record.transcript,
+  });
+  for (const message of copy.messages)
+    for (const artifact of message.toolOutput?.outputArtifacts || [])
+      artifact.path = `outputs/${artifact.id}`;
+  for (const message of copy.transcript || []) {
+    if (message.role !== "toolResult") continue;
+    const details = message.details as
+      { outputArtifacts?: OutputArtifact[] } | undefined;
+    for (const artifact of details?.outputArtifacts || [])
+      artifact.path = `outputs/${artifact.id}`;
+  }
   return {
     id: record.id,
     title: record.title,
@@ -11,8 +48,9 @@ export function exportRecord(record: ConversationRecord) {
     archived: record.archived,
     customTitle: record.customTitle,
     titleGenerated: record.titleGenerated,
-    messages: record.messages,
-    transcript: record.transcript,
+    messages: copy.messages,
+    transcript: copy.transcript,
+    outputArtifacts: outputArtifacts(copy),
     compactions: record.compactions,
     checkpoints: record.checkpoints,
     selection: selection
@@ -66,11 +104,18 @@ export function conversationMarkdown(record: ReturnType<typeof exportRecord>) {
       if (message.detail) lines.push(block(message.detail));
     }
   }
-  // UI activity previews can be truncated; the original transcript is the
-  // authoritative source for complete tool arguments, results and their order.
+  if (record.outputArtifacts.length) {
+    lines.push("## 保存的工具输出");
+    for (const artifact of record.outputArtifacts)
+      lines.push(
+        `- [${artifact.id}](outputs/${artifact.id})（${artifact.bytes} 字节）`,
+      );
+  }
+  // The transcript preserves what the model saw, which can be a bounded
+  // preview. Full saved output is linked above, not duplicated into Markdown.
   lines.push(
-    "## 完整工具记录",
-    "以下保留原始记录顺序，包含完整工具参数、结果和错误；不受界面折叠或预览截断影响。",
+    "## 模型工具记录",
+    "以下保留模型收到的工具参数、结果和错误及其顺序。长输出可能是预览；已保存的完整输出见上方文件链接。",
   );
   for (const [index, message] of (record.transcript || []).entries()) {
     if (message.role === "assistant") {

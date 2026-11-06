@@ -3,6 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ProtocolObject } from "../protocol/types.mts";
 import type { ServiceSelection } from "../models/types.mts";
 import type { FolderChange } from "../protocol/host.mts";
+import type { OutputArtifact } from "../tools/output-store.mts";
 
 /** One entry of the conversation the UI shows: user, assistant, reasoning, activity or turn. */
 export interface RuntimeMessage {
@@ -20,6 +21,17 @@ export interface RuntimeMessage {
   kind?: string;
   label?: string;
   activityKey?: string;
+  workspaceKey?: string;
+  conversationId?: string;
+  toolOutput?: {
+    type?: string;
+    target?: string;
+    input?: Record<string, unknown> | null;
+    text?: string;
+    exitCode?: number | null;
+    truncated?: boolean;
+    outputArtifacts?: OutputArtifact[];
+  } | null;
   detail?: string | null;
   resultStatus?: string;
   canEdit?: boolean;

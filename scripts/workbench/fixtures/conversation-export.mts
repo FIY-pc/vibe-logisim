@@ -23,6 +23,9 @@ export const fixtureId = (i: number) =>
   `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
 export const fullOutput =
   "完整工具结果\n" + "0123456789abcdef\n".repeat(1600) + "FULL_TOOL_RESULT_END";
+export const savedOutput =
+  "保存的输出\n" + "中文🙂abcdef\n".repeat(24000) + "SAVED_OUTPUT_END";
+export const outputId = (i: number) => fixtureId(100 + i) + ".txt";
 export function conversationExportFixture(
   workspaceKey: string,
 ): ConversationIndex {
@@ -60,7 +63,19 @@ export function conversationExportFixture(
       const text = `Question ${id}\r\n保留空格  和换行。\n\n\`\`\`text\n原文代码块\n\`\`\``;
       const thought = `Available reasoning summary ${id}`;
       const failed = i === 1;
-      const output = turn === 0 ? fullOutput : `Tool result ${id}`;
+      const output =
+        turn === 0 || turn === 598 ? fullOutput : `Tool result ${id}`;
+      const artifacts =
+        i < 3 && (turn === 0 || turn === 599)
+          ? [
+              {
+                id: outputId(i),
+                path: `/tmp/vibe-tool-output/${outputId(i)}`,
+                bytes: Buffer.byteLength(savedOutput),
+                mimeType: "text/plain",
+              },
+            ]
+          : [];
       const args = {
         path: "example.txt",
         input: "argument ".repeat(turn === 0 ? 1600 : 1),
@@ -83,6 +98,15 @@ export function conversationExportFixture(
           activityKey: "tool:read_file",
           label: "读取文件",
           detail: "界面预览，不是完整结果",
+          workspaceKey,
+          conversationId: record.id,
+          toolOutput: {
+            type: "file",
+            target: "example.txt",
+            text: output.slice(0, 6000),
+            truncated: output.length > 6000,
+            outputArtifacts: artifacts,
+          },
         },
         { id: `answer-${id}`, type: "assistant", text: `Answer ${id}` },
       );
@@ -111,9 +135,12 @@ export function conversationExportFixture(
           toolCallId: callId,
           toolName: "read_file",
           content: [{ type: "text", text: output }],
-          details: failed
-            ? { code: "SYNTHETIC_FAILURE", message: "Synthetic tool failure" }
-            : { complete: true },
+          details: {
+            ...(failed
+              ? { code: "SYNTHETIC_FAILURE", message: "Synthetic tool failure" }
+              : { complete: true }),
+            outputArtifacts: artifacts,
+          },
           isError: failed,
           timestamp: turn,
         },
@@ -151,6 +178,19 @@ export function conversationExportFixture(
   };
 }
 
+export async function writeConversationOutputs(state: string) {
+  for (let i = 0; i < 3; i++) {
+    const directory = path.join(state, "tool-outputs", fixtureId(i));
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, outputId(i)), savedOutput);
+  }
+  // A file in the selected conversation's store is not enough to include it.
+  await writeFile(
+    path.join(state, "tool-outputs", fixtureId(0), outputId(999)),
+    "UNREFERENCED_OUTPUT_MUST_NOT_BE_EXPORTED",
+  );
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const [directory, folder] = process.argv.slice(2);
   if (!directory || !folder)
@@ -166,6 +206,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
     JSON.stringify(conversationExportFixture(workspaceKey)),
     { flag: "wx", mode: 0o600 },
   );
+  await writeConversationOutputs(directory);
   console.log(
     `Created 24 synthetic conversations (600-turn history, duplicate titles, archived and failed-tool records). Open ${canonical} with VIBE_WORKBENCH_STATE=${path.resolve(directory)}.`,
   );
