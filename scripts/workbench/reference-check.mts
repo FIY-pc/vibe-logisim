@@ -222,8 +222,8 @@ async function verifyWorkerReferences(directory: string) {
     await call("bind", { documentId: "document" });
     const inputs = Array.from({ length: 12 }, (_, i) => ({
       kind: "material",
-      path: "notes.pdf",
-      label: "notes.pdf",
+      path: i % 2 ? "slides.PPTX" : "notes.pdf",
+      label: i % 2 ? "slides.PPTX" : "notes.pdf",
       page: i + 1,
       text: `Reference evidence ${i + 1}`,
       image:
@@ -266,6 +266,16 @@ async function verifyWorkerReferences(directory: string) {
     assert.deepEqual(
       context.references.map((item: any) => item.text),
       inputs.map((item) => item.text),
+    );
+    assert.deepEqual(
+      context.references.map((item: any) => [item.path, item.page]),
+      inputs.map((item) => [item.path, item.page]),
+    );
+    assert.deepEqual(
+      content
+        .filter((part: any) => part.type === "image_url")
+        .map((part: any) => part.image_url.url),
+      inputs.map((item) => item.image),
     );
     const history = await call("history");
     assert.equal(

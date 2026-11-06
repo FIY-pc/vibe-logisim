@@ -1,0 +1,120 @@
+diff --git a/node_modules/pptx-react-viewer/dist/chunk-73SDWM6K.js b/node_modules/pptx-react-viewer/dist/chunk-73SDWM6K.js
+index 7b30c2b..67e54f5 100644
+--- a/node_modules/pptx-react-viewer/dist/chunk-73SDWM6K.js
++++ b/node_modules/pptx-react-viewer/dist/chunk-73SDWM6K.js
+@@ -644,6 +644,7 @@ function usePointerReleaseWakeup(hasActivePointerInteraction) {
+ // src/viewer/hooks/useEditorHistory.ts
+ function useEditorHistory(input) {
+   const {
++    enabled = true,
+     slides,
+     canvasSize,
+     activeSlideIndex,
+@@ -676,6 +677,14 @@ function useEditorHistory(input) {
+   const { pointerReleaseNonce, deferUntilPointerReleased } = usePointerReleaseWakeup(
+     hasActivePointerInteraction
+   );
++  // A read-only host does not need whole-deck undo snapshots on navigation.
++  React17.useEffect(() => {
++    if (enabled) return;
++    history.clear();
++    lastHistorySnapshotRef.current = null;
++    lastHistorySerializedRef.current = "";
++    lastCheapHashRef.current = "";
++  }, [enabled, history]);
+   React17.useEffect(() => {
+     if (maxHistoryEntries !== void 0) {
+       history.setMaxDepth(maxHistoryEntries);
+@@ -834,7 +843,7 @@ function useEditorHistory(input) {
+     };
+   }, []);
+   React17.useEffect(() => {
+-    if (loading || error) {
++    if (!enabled || loading || error) {
+       return;
+     }
+     if (isApplyingHistoryRef.current || trackingHeldRef.current) {
+@@ -874,6 +883,7 @@ function useEditorHistory(input) {
+     lastHistorySerializedRef.current = serialized;
+     lastCheapHashRef.current = cheapHash;
+   }, [
++    enabled,
+     activeSlideIndex,
+     buildHistorySnapshot,
+     canvasSize.height,
+@@ -12715,6 +12725,7 @@ function useViewerBuildingBlocksCore(input) {
+     setIsDirty(true);
+   }, [setIsDirty]);
+   const history = useEditorHistory({
++    enabled: input.canEdit !== false,
+     slides,
+     canvasSize,
+     activeSlideIndex,
+@@ -13160,6 +13171,7 @@ function useViewerBuildingBlocks(input) {
+   }, []);
+   const core = useViewerBuildingBlocksCore({
+     content,
++    canEdit: requestedCanEdit,
+     fitPadding: input.fitPadding,
+     maxFitScale: input.maxFitScale
+   });
+diff --git a/node_modules/pptx-react-viewer/dist/chunk-FYYQ4OGF.mjs b/node_modules/pptx-react-viewer/dist/chunk-FYYQ4OGF.mjs
+index b8e0017..8248120 100644
+--- a/node_modules/pptx-react-viewer/dist/chunk-FYYQ4OGF.mjs
++++ b/node_modules/pptx-react-viewer/dist/chunk-FYYQ4OGF.mjs
+@@ -639,6 +639,7 @@ function usePointerReleaseWakeup(hasActivePointerInteraction) {
+ // src/viewer/hooks/useEditorHistory.ts
+ function useEditorHistory(input) {
+   const {
++    enabled = true,
+     slides,
+     canvasSize,
+     activeSlideIndex,
+@@ -671,6 +672,14 @@ function useEditorHistory(input) {
+   const { pointerReleaseNonce, deferUntilPointerReleased } = usePointerReleaseWakeup(
+     hasActivePointerInteraction
+   );
++  // A read-only host does not need whole-deck undo snapshots on navigation.
++  useEffect(() => {
++    if (enabled) return;
++    history.clear();
++    lastHistorySnapshotRef.current = null;
++    lastHistorySerializedRef.current = "";
++    lastCheapHashRef.current = "";
++  }, [enabled, history]);
+   useEffect(() => {
+     if (maxHistoryEntries !== void 0) {
+       history.setMaxDepth(maxHistoryEntries);
+@@ -829,7 +838,7 @@ function useEditorHistory(input) {
+     };
+   }, []);
+   useEffect(() => {
+-    if (loading || error) {
++    if (!enabled || loading || error) {
+       return;
+     }
+     if (isApplyingHistoryRef.current || trackingHeldRef.current) {
+@@ -869,6 +878,7 @@ function useEditorHistory(input) {
+     lastHistorySerializedRef.current = serialized;
+     lastCheapHashRef.current = cheapHash;
+   }, [
++    enabled,
+     activeSlideIndex,
+     buildHistorySnapshot,
+     canvasSize.height,
+@@ -12710,6 +12720,7 @@ function useViewerBuildingBlocksCore(input) {
+     setIsDirty(true);
+   }, [setIsDirty]);
+   const history = useEditorHistory({
++    enabled: input.canEdit !== false,
+     slides,
+     canvasSize,
+     activeSlideIndex,
+@@ -13155,6 +13166,7 @@ function useViewerBuildingBlocks(input) {
+   }, []);
+   const core = useViewerBuildingBlocksCore({
+     content,
++    canEdit: requestedCanEdit,
+     fitPadding: input.fitPadding,
+     maxFitScale: input.maxFitScale
+   });

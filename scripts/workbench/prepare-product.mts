@@ -99,7 +99,7 @@ async function copyFrontendNotices(destination: string) {
     string,
     { name: string; version: string; license?: string; repository?: unknown }
   >();
-  async function visit(name: string, from: string) {
+  async function visit(name: string, from: string, optional = false) {
     let directory = from;
     let packageRoot = "";
     while (true) {
@@ -112,6 +112,7 @@ async function copyFrontendNotices(destination: string) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
       const parent = path.dirname(directory);
+      if (parent === directory && optional) return;
       if (parent === directory)
         throw new Error("Missing frontend dependency: " + name);
       directory = parent;
@@ -131,13 +132,24 @@ async function copyFrontendNotices(destination: string) {
     await mkdir(notices, { recursive: true });
     for (const file of await readdir(packageRoot)) {
       if (
-        /^(licen[sc]e|copying|notice)/i.test(file) &&
+        /^(licen[sc]e|copying|notice|third[-_]party[-_]licen[sc]es)/i.test(
+          file,
+        ) &&
         (await stat(path.join(packageRoot, file))).isFile()
       )
         await cp(path.join(packageRoot, file), path.join(notices, file));
     }
     for (const dependency of Object.keys(info.dependencies || {}))
       await visit(dependency, packageRoot);
+    // Viewer packages also ship runtime peers (fonts, icons, canvas export).
+    for (const peer of Object.keys(info.peerDependencies || {}))
+      await visit(
+        peer,
+        packageRoot,
+        !!info.peerDependenciesMeta?.[peer]?.optional,
+      );
+    for (const dependency of Object.keys(info.optionalDependencies || {}))
+      await visit(dependency, packageRoot, true);
   }
   const frontend = path.join(root, "apps/workbench");
   const info = JSON.parse(

@@ -7,6 +7,7 @@
 | Tauri 2                                   | 桌面窗口与系统集成，MIT / Apache-2.0                          | Rust 依赖遵循 Cargo 锁文件；源码中的许可证声明保留              |
 | React、Lucide、react-markdown、remark-gfm | 界面、图标和 Markdown 显示，各依赖保留原有 MIT / ISC 等许可证 | `third-party/frontend/` 包含前端依赖信息与许可证                |
 | PDF.js                                    | 本地 PDF 阅读，Apache-2.0                                     | 前端资源随应用提供，许可证位于 `third-party/frontend/`          |
+| pptx-react-viewer、OOXML Core/UI | 本地 PPTX 阅读，Apache-2.0；字体解压依赖 mtx-decompressor 为 MPL-2.0 | `third-party/frontend/` 保留 LICENSE、NOTICE 和依赖许可；[字体解压器源码](https://github.com/ChristopherVR/mtx-decompressor) |
 | Node.js                                   | 独立 AI 运行时进程，MIT 及其包含的第三方许可                  | `runtimes/node/LICENSE`                                         |
 | Pi SDK                                    | 内置模型协议与工具回合，MIT                                   | `third-party/node/` 中的包信息和许可证                          |
 | Models.dev                                | 模型名称与能力元数据，MIT                                     | 随 AI 运行时保留快照与许可证；不决定模型服务实际可用的模型      |
@@ -14,6 +15,8 @@
 | Eclipse Temurin                           | Java 运行时，GPL-2.0 with Classpath Exception 及其第三方许可  | 裁剪后的 `runtimes/java/legal/`                                 |
 | Logisim-ITA 2.16.2.2                      | 电路加载、绘制与仿真，GPL-3.0                                 | `native/Logisim-ITA.jar` 与 `third-party/logisim/source.tar.gz` |
 | HUST 2020 版 Logisim（2.15.0.2）          | 加载与仿真由 2.15 版保存的电路，原样附带                      | `native/logisim-ita-cn-20200118.exe`                            |
+
+本发行版对 `pptx-react-viewer` 4.64.0 应用只读预览性能补丁，关闭翻页时不需要的撤销快照；完整修改保存在源码仓库的 `patches/pptx-react-viewer+4.64.0.patch`。
 
 上表中的路径相对于应用的 `workbench` 资源目录。Windows 便携包将其放在 `resources/workbench`；安装程序使用系统应用资源目录。第三方 Node 依赖的版本和许可证信息分别列于 `third-party/node/packages.json` 与 `third-party/frontend/packages.json`。
 

@@ -109,3 +109,54 @@
   padding: 32px;
   text-align: center;
 }
+.presentation-reader {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.presentation-page {
+  width: 4.5rem;
+}
+.presentation-canvas {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  /* Keep keyboard focus inside the reading surface, not under its toolbar. */
+  outline-offset: -2px;
+}
+.presentation-page-turn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+.presentation-page-turn::after {
+  /* Keep the shared control size while extending the page-edge hit target. */
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--space-4)) 0;
+}
+.presentation-page-turn.previous {
+  left: 0;
+}
+.presentation-page-turn.next {
+  right: 0;
+}
+.presentation-canvas:hover .presentation-page-turn:not(:disabled),
+.presentation-page-turn:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .presentation-page-turn:not(:disabled) {
+    opacity: 1;
+  }
+}
+.presentation-canvas [aria-roledescription="slide"] {
+  /* Office slides may contain off-page objects; a reading view crops them. */
+  overflow: clip;
+}

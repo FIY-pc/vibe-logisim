@@ -1,6 +1,7 @@
 import { Button, IconButton } from "../design/ui";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { desktop } from "../shared/transport";
+import { PPTX_MIME } from "./materialPreview";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -21,6 +22,7 @@ import {
   type PreviewFile,
 } from "./reader/types";
 export type { PreviewFile } from "./reader/types";
+const PresentationReader = lazy(() => import("./reader/PresentationReader"));
 
 interface Props {
   file: PreviewFile;
@@ -420,6 +422,18 @@ export function FilePreview(props: Props) {
       </div>
     );
   if (props.file.mime === "application/pdf") return <PdfReader {...props} />;
+  if (props.file.mime === PPTX_MIME)
+    return (
+      <Suspense
+        fallback={
+          <div className="reader-unavailable" role="status">
+            正在加载演示文稿…
+          </div>
+        }
+      >
+        <PresentationReader {...props} />
+      </Suspense>
+    );
   if (props.file.mime?.startsWith("image/")) return <ImageReader {...props} />;
   return <TextReader {...props} />;
 }

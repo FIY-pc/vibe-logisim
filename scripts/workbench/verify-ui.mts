@@ -16,6 +16,9 @@ try {
     format: "esm",
     platform: "node",
     jsx: "automatic",
+    // Includes styles imported by lazy readers. jsdom checks behavior only;
+    // CSS, slide rendering and geometry are verified in the browser.
+    loader: { ".css": "empty" },
     nodePaths: [
       path.join(root, "apps/workbench/node_modules"),
       path.join(root, "node_modules"),
@@ -25,6 +28,13 @@ try {
       {
         name: "host-fixture",
         setup(builder) {
+          // Keep OOXML's optional native modules out of the jsdom bundle;
+          // navigation uses the real installed key/wheel helpers.
+          // External ESM imports need a file URL, including on Windows.
+          builder.onResolve({ filter: /^ooxml-ui\/pptx$/ }, () => ({
+            path: import.meta.resolve("ooxml-ui/pptx"),
+            external: true,
+          }));
           // A module worker has no meaning in jsdom: scenarios never arrange.
           builder.onResolve({ filter: /\?worker&url$/ }, () => ({
             path: "arrange-worker",
@@ -59,6 +69,29 @@ try {
             contents:
               "export const openPdf=async()=>{throw new Error('PDF is not rendered under jsdom')};export const pageText=async()=>'';",
           }));
+          // Routing fixtures carry opaque bytes, not presentation packages.
+          // Real text extraction is checked separately with a valid PPTX.
+          builder.onLoad(
+            { filter: /[\\/]reader[\\/]presentationText\.ts$/ },
+            () => ({
+              contents:
+                "export const presentationText=async()=>{throw new Error('PPTX text extraction is not exercised under jsdom; use a valid PPTX parser fixture')};",
+            }),
+          );
+          // Keep the lazy reader module and CSS imports in the bundle, but do
+          // not load the viewer's optional AI or native canvas dependencies.
+          // Any attempt to render slides here must fail, not fake visual proof.
+          builder.onResolve({ filter: /^pptx-react-viewer$/ }, () => ({
+            path: "pptx-react-viewer",
+            namespace: "presentation-renderer",
+          }));
+          builder.onLoad(
+            { filter: /.*/, namespace: "presentation-renderer" },
+            () => ({
+              contents:
+                "const unavailable=()=>{throw new Error('PPTX is not rendered under jsdom; verify in a browser')};export {unavailable as useViewerBuildingBlocks,unavailable as SlideCanvas,unavailable as renderToCanvas,unavailable as PptxI18nProvider};",
+            }),
+          );
         },
       },
     ],

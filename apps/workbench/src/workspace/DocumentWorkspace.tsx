@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { Group, Panel, Separator, useGroupRef } from "react-resizable-panels";
 import { CircuitBoard, Columns2, FileText, Square, X } from "lucide-react";
@@ -7,6 +7,13 @@ import { useDocuments, useFiles, useShell, useView } from "../app/hooks";
 import { useWorkbench } from "../app/provider";
 import { FilePreviewRegion } from "./FilePreviewRegion";
 import { readerKey } from "./reader/types";
+
+function revealTab(element: Element | null) {
+  element?.closest(".document-tab")?.scrollIntoView({
+    block: "nearest",
+    inline: "nearest",
+  });
+}
 
 /** Files are peers; subcircuits remain navigation within a circuit document.
  * Focus and split layout are explicit state, independent of viewport width. */
@@ -22,6 +29,7 @@ export function DocumentWorkspace({ children }: { children: ReactNode }) {
   const pending = useShell((state) => state.pending);
   const files = stores.files.getState();
   const group = useGroupRef();
+  const tabList = useRef<HTMLDivElement>(null);
   const split = mode === "split" && !!doc && !!preview;
   const materialActive = !!preview && (focus === "material" || !doc);
   const showCircuit = split || !materialActive;
@@ -30,6 +38,40 @@ export function DocumentWorkspace({ children }: { children: ReactNode }) {
   const materialKey = preview
     ? `material:${readerKey(preview)}`
     : "material:empty";
+  const activeKey = materialActive ? materialKey : circuitKey;
+
+  useEffect(() => {
+    const tabs = tabList.current;
+    if (!tabs) return;
+    const revealActive = () =>
+      revealTab(tabs.querySelector('[role="tab"][data-state="active"]'));
+    revealActive();
+    const resize = new ResizeObserver(revealActive);
+    resize.observe(tabs);
+    // Compact tab strips scroll without a track over their labels. Support
+    // both a mouse wheel and a trackpad; leave browser zoom gestures alone.
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return;
+      const delta =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      const unit =
+        event.deltaMode === 1
+          ? parseFloat(getComputedStyle(tabs).lineHeight) || 16
+          : event.deltaMode === 2
+            ? tabs.clientWidth
+            : 1;
+      const before = tabs.scrollLeft;
+      tabs.scrollLeft += delta * unit;
+      if (tabs.scrollLeft !== before) event.preventDefault();
+    };
+    tabs.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      resize.disconnect();
+      tabs.removeEventListener("wheel", wheel);
+    };
+  }, [activeKey, docs.length, readers.length]);
 
   useEffect(() => {
     let current = true;
@@ -63,14 +105,19 @@ export function DocumentWorkspace({ children }: { children: ReactNode }) {
   return (
     <Tabs.Root
       className="document-workspace"
-      value={materialActive ? materialKey : circuitKey}
+      value={activeKey}
       onValueChange={activate}
       activationMode="manual"
       data-layout={split ? "split" : "single"}
     >
       {(docs.length > 0 || readers.length > 0) && (
         <header className="document-header">
-          <Tabs.List className="document-tabs" aria-label="打开的文档">
+          <Tabs.List
+            ref={tabList}
+            className="document-tabs"
+            aria-label="打开的文档"
+            onFocusCapture={(event) => revealTab(event.target)}
+          >
             {docs.map((item) => (
               <div className="document-tab" key={`circuit:${item.id}`}>
                 <Tabs.Trigger

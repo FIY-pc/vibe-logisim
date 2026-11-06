@@ -1,6 +1,7 @@
 import { command } from "../shared/transport";
 import { openPdf } from "./pdf";
 import type { ReferenceInput } from "../conversation/references";
+import { PPTX_MIME, usesFolderPreview } from "./materialPreview";
 
 interface Read {
   revision?: string;
@@ -14,13 +15,17 @@ export async function fileReference(
 ): Promise<ReferenceInput> {
   const label = path.split("/").at(-1) || path;
   const base = { kind: "material", label, path, folderId } as const;
-  if (/\.(pdf|png|jpe?g|webp)$/i.test(label)) {
+  if (usesFolderPreview(label)) {
     const file = await command<Read & { data: string; mime: string }>({
       op: "folderPreview",
       folder_id: folderId,
       path,
     });
     const read = { revision: file.revision, pathVersion: file.pathVersion };
+    if (file.mime === PPTX_MIME) {
+      const { presentationText } = await import("./reader/presentationText");
+      return { ...base, ...read, text: await presentationText(file.data) };
+    }
     if (file.mime !== "application/pdf")
       return {
         ...base,

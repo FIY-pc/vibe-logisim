@@ -95,6 +95,27 @@ export async function verifyDocumentWorkspace() {
       "switching to the circuit keeps the reader mounted",
     );
     await choose("notes.md");
+    const otherDoc = { ...doc, id: "other-document", name: "other.circ" };
+    await act(async () => {
+      stores.documents.getState().setDocs([doc, otherDoc]);
+      stores.documents.getState().setActive(otherDoc.id);
+    });
+    await act(async () => {
+      const quote = [
+        ...node.querySelectorAll<HTMLButtonElement>("button"),
+      ].find((button) => button.textContent?.trim() === "引用文件");
+      assert(quote);
+      quote.click();
+    });
+    assert.equal(
+      stores.conversation.getState().quotation?.documentId,
+      otherDoc.id,
+      "a retained reader sends its quotation to the newly active document",
+    );
+    await act(async () => {
+      stores.documents.getState().setActive(doc.id);
+      stores.documents.getState().setDocs([doc]);
+    });
     await click("并排查看电路与资料");
     assert.equal(panels().filter((item) => !item.hidden).length, 2);
     await act(async () => {

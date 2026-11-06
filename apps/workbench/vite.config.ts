@@ -25,6 +25,15 @@ for (const directory of ["cmaps", "standard_fonts", "wasm"]) {
   }
 }
 export default defineConfig({
+  // Lazy readers must not trigger a dependency reload halfway through adding a reference.
+  optimizeDeps: {
+    include: [
+      "pptx-react-viewer",
+      "pptx-react-viewer/i18n/zh-CN",
+      "ooxml-core/pptx",
+      "ooxml-ui/pptx",
+    ],
+  },
   plugins: [
     react(),
     {

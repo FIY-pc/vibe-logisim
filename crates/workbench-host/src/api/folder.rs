@@ -263,6 +263,9 @@ impl Host {
                     .to_ascii_lowercase();
                 let mime = match extension.as_str() {
                     "pdf" => "application/pdf",
+                    "pptx" => {
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    }
                     "png" => "image/png",
                     "jpg" | "jpeg" => "image/jpeg",
                     "webp" => "image/webp",
@@ -364,6 +367,113 @@ mod tests {
             )
             .unwrap();
         document
+    }
+
+    #[tokio::test]
+    async fn presentation_preview_preserves_bytes_revisions_and_file_boundaries() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        let host = Host::new(temp.path().into(), temp.path().join("state"), None).unwrap();
+        let folder_id = open_folder(&host, &project).await;
+        let path = project.join("slides.PPTX");
+        // Deliberately malformed binary: like PDF/image previews, the host transports
+        // the source unchanged and leaves format/load errors to the client renderer.
+        let original = b"PK\x03\x04\x00\xffsynthetic presentation";
+        std::fs::write(&path, original).unwrap();
+        let preview = |path: &str| FolderRequest::FolderPreview {
+            path: path.into(),
+            folder_id: Some(folder_id.clone()),
+        };
+        let listed = host
+            .dispatch(FolderRequest::FolderList { path: "".into() })
+            .await
+            .unwrap();
+        assert!(listed["entries"].as_array().unwrap().iter().any(|entry| {
+            entry["path"] == "slides.PPTX"
+                && entry["directory"] == false
+                && entry["size"] == original.len()
+        }));
+        let first = host.dispatch(preview("slides.PPTX")).await.unwrap();
+        assert_eq!(
+            first["mime"],
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        );
+        assert_eq!(
+            B64.decode(first["data"].as_str().unwrap()).unwrap(),
+            original
+        );
+        assert_eq!(first["revision"], vibe_circuit_document::digest(original));
+        assert_eq!(first["folderId"], folder_id);
+        assert_eq!(first["path"], "slides.PPTX");
+        assert_eq!(first["relativePath"], "slides.PPTX");
+        let version = first["pathVersion"].as_u64().unwrap() as u32;
+        assert_eq!(
+            first["url"],
+            format!("workspace://slides.PPTX?pathVersion={version}")
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+
+        // An in-place change keeps the file identity but gets a new content revision.
+        let changed = b"PK\x03\x04\x00\xfesynthetic presentation";
+        std::fs::write(&path, changed).unwrap();
+        let next = host.dispatch(preview("slides.PPTX")).await.unwrap();
+        assert_eq!(B64.decode(next["data"].as_str().unwrap()).unwrap(), changed);
+        assert_eq!(next["revision"], vibe_circuit_document::digest(changed));
+        assert_ne!(next["revision"], first["revision"]);
+        let resolve = || FolderRequest::FolderResolve {
+            folder_id: folder_id.clone(),
+            path: "slides.PPTX".into(),
+            path_version: Some(version),
+        };
+        assert_eq!(
+            host.dispatch(resolve()).await.unwrap()["path"],
+            "slides.PPTX"
+        );
+        // A replacement at the same path must not take over an earlier reference.
+        std::fs::rename(&path, project.join("original.PPTX")).unwrap();
+        std::fs::write(&path, original).unwrap();
+        assert!(
+            host.dispatch(resolve())
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("文件身份已改变")
+        );
+
+        let oversized = std::fs::File::create(project.join("large.pptx")).unwrap();
+        oversized.set_len(24 * 1024 * 1024 + 1).unwrap();
+        std::fs::create_dir(project.join("directory.pptx")).unwrap();
+        std::fs::write(temp.path().join("outside.pptx"), original).unwrap();
+        for (request, message) in [
+            (preview("large.pptx"), "文件超过 24 MB"),
+            (preview("directory.pptx"), "请选择普通文件"),
+            (preview("../outside.pptx"), "路径不在当前工程内"),
+            (preview("slides.ppt"), "不支持这个文件的预览"),
+            (
+                FolderRequest::FolderPreview {
+                    path: "slides.PPTX".into(),
+                    folder_id: Some("other".into()),
+                },
+                "工程文件夹已改变",
+            ),
+        ] {
+            let error = host.dispatch(request).await.unwrap_err().to_string();
+            assert!(error.contains(message), "{error}");
+        }
+        assert!(host.dispatch(preview("missing.pptx")).await.is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(temp.path().join("outside.pptx"), project.join("link.pptx"))
+                .unwrap();
+            assert!(
+                host.dispatch(preview("link.pptx"))
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("链接指向当前工程之外")
+            );
+        }
     }
 
     #[tokio::test]
