@@ -36,7 +36,8 @@ import { ContextMenu } from "../shared/ContextMenu";
 import { Menu, MenuItem, MenuSeparator } from "../shared/Menu";
 import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
-import { Select } from "../shared/Select";
+import { Checkbox } from "../shared/Checkbox";
+import { nativeDropPoint, useFileDragHover } from "./useFileDragHover";
 import { DialogBody, DialogFooter, DialogFrame } from "../shared/Dialog";
 import { Button, IconButton, ActionRow } from "../design/ui";
 import { fullText } from "../shared/Tooltips";
@@ -673,6 +674,19 @@ function FolderFiles({
       ? (node.dataset.fileTarget ?? null)
       : null;
   };
+  const dragHover = useFileDragHover(filesRef, (x, y) => {
+    const drag = pointer.current;
+    const reference = referenceZoneAt(x, y);
+    hoverReference(reference && !drag?.entry.directory);
+    const parent = targetAt(x, y);
+    setDropTarget(
+      drag &&
+        (parent === drag.entry.path ||
+          parent?.startsWith(drag.entry.path + "/"))
+        ? null
+        : parent,
+    );
+  });
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
       if (
@@ -707,23 +721,10 @@ function FolderFiles({
       drag.started = true;
       event.preventDefault();
       setDragging(drag.entry.path);
-      hoverReference(
-        !drag.entry.directory && referenceZoneAt(event.clientX, event.clientY),
-      );
-      const parent = targetAt(event.clientX, event.clientY);
-      setDropTarget(
-        parent === drag.entry.path || parent?.startsWith(drag.entry.path + "/")
-          ? null
-          : parent,
-      );
-      const tree = filesRef.current?.querySelector(".file-tree");
-      if (tree) {
-        const rect = tree.getBoundingClientRect();
-        if (event.clientY < rect.top + 24) tree.scrollTop -= 8;
-        else if (event.clientY > rect.bottom - 24) tree.scrollTop += 8;
-      }
+      dragHover.update(event.clientX, event.clientY);
     };
     const finish = (event: PointerEvent) => {
+      dragHover.cancel();
       const drag = pointer.current;
       pointer.current = null;
       setDragging(null);
@@ -751,20 +752,27 @@ function FolderFiles({
       void move(drag.entry, join(parent, drag.entry.name)).catch(onError);
     };
     const cancel = () => {
+      dragHover.cancel();
       pointer.current = null;
       setDragging(null);
       setDropTarget(null);
       hoverReference(false);
     };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancel();
+    };
     window.addEventListener("pointermove", update, { passive: false });
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", cancel);
     window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", escape);
     return () => {
+      dragHover.cancel();
       window.removeEventListener("pointermove", update);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", escape);
     };
   }, [folder?.id, pending]);
   useEffect(() => {
@@ -776,15 +784,16 @@ function FolderFiles({
         const stop = await getCurrentWebview().onDragDropEvent((event) => {
           const payload = event.payload;
           if (payload.type === "leave") {
+            dragHover.cancel();
             setDropTarget(null);
             hoverReference(false);
             return;
           }
-          const x = payload.position.x / window.devicePixelRatio,
-            y = payload.position.y / window.devicePixelRatio;
+          const { x, y } = nativeDropPoint(payload.position);
           const parent = targetAt(x, y),
             reference = referenceZoneAt(x, y);
           if (payload.type === "drop") {
+            dragHover.cancel();
             setDropTarget(null);
             hoverReference(false);
             // Files dropped on the conversation land in the project root.
@@ -796,8 +805,7 @@ function FolderFiles({
             !pending &&
             !document.querySelector('dialog[open],[aria-modal="true"]')
           ) {
-            setDropTarget(parent);
-            hoverReference(reference);
+            dragHover.update(x, y);
           }
         });
         if (disposed) stop();
@@ -1208,23 +1216,31 @@ function ImportDialog({
   folderId: string;
   onClose: () => void;
   onChanged: (path?: string, warning?: string | null) => Promise<void>;
-  /** The imported files, and the existing ones kept instead of a copy. */
   onImported?: (paths: string[]) => void;
 }) {
   const [pending, setPending] = useState(false),
     [error, setError] = useState("");
   const [choices, setChoices] = useState<Record<number, ImportAction>>(() =>
-    Object.fromEntries(plan.items.map((item) => [item.index, "keepBoth"])),
+    Object.fromEntries(
+      plan.items
+        .filter((item) => !item.conflict)
+        .map((item) => [item.index, "keepBoth"]),
+    ),
   );
-  useEffect(() => {
-    return () => {
+  const [applyRemaining, setApplyRemaining] = useState(false);
+  const conflicts = plan.items.filter((item) => item.conflict);
+  const remaining = conflicts.filter((item) => !choices[item.index]);
+  const current = remaining[0];
+  useEffect(
+    () => () => {
       void command({
         op: "folderImportCancel",
         folder_id: folderId,
         plan_id: plan.id,
       }).catch(() => {});
-    };
-  }, []);
+    },
+    [],
+  );
   const close = async () => {
     await command({
       op: "folderImportCancel",
@@ -1233,53 +1249,106 @@ function ImportDialog({
     });
     onClose();
   };
+  const apply = async (selected: Record<number, ImportAction>) => {
+    if (pending) return;
+    setPending(true);
+    setError("");
+    try {
+      const result = await command<OperationResult & { imported: string[] }>({
+        op: "folderImportApply",
+        folder_id: folderId,
+        plan_id: plan.id,
+        choices: plan.items.map((item) => ({
+          index: item.index,
+          action: selected[item.index],
+        })),
+      });
+      await onChanged(result.imported[0], result.historyWarning);
+      onImported?.([
+        ...plan.items
+          .filter((item) => selected[item.index] === "skip")
+          .map((item) => item.path),
+        ...result.imported,
+      ]);
+      onClose();
+    } catch (e) {
+      setError(message(e));
+      await onChanged();
+    } finally {
+      setPending(false);
+    }
+  };
+  const choose = (action: ImportAction) => {
+    if (!current || pending) return;
+    const selected = { ...choices, [current.index]: action };
+    if (applyRemaining) {
+      // A batch replacement cannot replace one destination twice, or replace
+      // a directory/large file that the host cannot recover in file history.
+      const replaced = new Set(
+        plan.items
+          .filter((item) => selected[item.index] === "replace")
+          .map((item) => item.path),
+      );
+      for (const item of remaining.slice(1)) {
+        if (
+          action === "replace" &&
+          (!item.replaceable || replaced.has(item.path))
+        )
+          continue;
+        selected[item.index] = action;
+        if (action === "replace") replaced.add(item.path);
+      }
+    }
+    if (conflicts.some((item) => !selected[item.index])) {
+      setChoices(selected);
+      setApplyRemaining(false);
+    } else {
+      // Keep the last question visible if publication fails, so retry/cancel
+      // remain explicit. Nothing is copied until all conflicts are resolved.
+      void apply(selected);
+    }
+  };
+  if (!current) return null;
   return (
     <DialogFrame
       className="file-import-dialog"
-      title="导入文件"
-      aria-label="导入文件"
+      title={current.replaceable ? "替换现有文件？" : "存在同名项目"}
+      aria-label="文件同名冲突"
       onClose={() => void close().catch((e) => setError(message(e)))}
       closeDisabled={pending}
-      maxWidth="600px"
+      maxWidth="480px"
     >
       <DialogBody>
-        <div className="file-import-items">
-          {plan.items.map((item) => (
-            <div key={item.index}>
-              <span {...fullText(item.path)}>
-                <EntryIcon
-                  name={item.path}
-                  directory={item.directory}
-                  size={15}
-                />{" "}
-                {item.path}
-              </span>
-              {item.conflict ? (
-                <Select
-                  label={`${item.name} 的重名处理`}
-
-                  value={choices[item.index]}
-                  disabled={pending}
-                  options={[
-                    { value: "keepBoth", label: "保留两者" },
-                    ...(item.replaceable
-                      ? [{ value: "replace", label: "覆盖现有文件" }]
-                      : []),
-                    { value: "skip", label: "跳过" },
-                  ]}
-                  onChange={(value) =>
-                    setChoices((previous) => ({
-                      ...previous,
-                      [item.index]: value as ImportAction,
-                    }))
-                  }
-                />
-              ) : (
-                <span>新增</span>
-              )}
-            </div>
-          ))}
-        </div>
+        <p>目标文件夹中已存在“{current.name}”。</p>
+        <p className="file-import-path" {...fullText(current.path)}>
+          <EntryIcon
+            name={current.name}
+            directory={current.directory}
+            size={16}
+          />
+          <span>{current.path}</span>
+        </p>
+        <p className="file-import-detail">
+          {current.replaceable
+            ? "替换会覆盖现有内容；保留两者会为导入的文件添加编号。"
+            : "此项目不能直接替换。保留两者会为导入的项目添加编号。"}
+        </p>
+        {conflicts.length > 1 && (
+          <p className="file-import-detail">
+            第 {conflicts.length - remaining.length + 1} 个，共{" "}
+            {conflicts.length} 个冲突
+          </p>
+        )}
+        {remaining.length > 1 && (
+          <label className="file-import-remaining">
+            <Checkbox
+              checked={applyRemaining}
+              disabled={pending}
+              onCheckedChange={setApplyRemaining}
+            />
+            对其余可同样处理的冲突应用此选择
+          </label>
+        )}
         {error && (
           <p role="alert" className="dialog-error">
             {error}
@@ -1291,44 +1360,37 @@ function ImportDialog({
           variant="soft"
           color="gray"
           disabled={pending}
+          data-autofocus
           onClick={() => void close().catch((e) => setError(message(e)))}
         >
           取消
         </Button>
+        {plan.items.length > 1 && (
+          <Button
+            variant="soft"
+            color="gray"
+            disabled={pending}
+            onClick={() => choose("skip")}
+          >
+            跳过
+          </Button>
+        )}
         <Button
-          variant="solid"
+          variant={current.replaceable ? "soft" : "solid"}
           disabled={pending}
-          onClick={() => {
-            setPending(true);
-            setError("");
-            void command<OperationResult & { imported: string[] }>({
-              op: "folderImportApply",
-              folder_id: folderId,
-              plan_id: plan.id,
-              choices: plan.items.map((item) => ({
-                index: item.index,
-                action: choices[item.index],
-              })),
-            })
-              .then(async (result) => {
-                await onChanged(result.imported[0], result.historyWarning);
-                onImported?.([
-                  ...plan.items
-                    .filter((item) => choices[item.index] === "skip")
-                    .map((item) => item.path),
-                  ...result.imported,
-                ]);
-                onClose();
-              })
-              .catch(async (e) => {
-                setError(message(e));
-                await onChanged();
-              })
-              .finally(() => setPending(false));
-          }}
+          onClick={() => choose("keepBoth")}
         >
-          {pending ? "正在导入…" : "导入"}
+          保留两者
         </Button>
+        {current.replaceable && (
+          <Button
+            variant="solid"
+            disabled={pending}
+            onClick={() => choose("replace")}
+          >
+            {pending ? "正在导入…" : "替换"}
+          </Button>
+        )}
       </DialogFooter>
     </DialogFrame>
   );

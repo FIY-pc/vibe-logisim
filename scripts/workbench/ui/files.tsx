@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "./themed-root";
 import { Files } from "../../../apps/workbench/src/workspace/Files";
 import { PPTX_MIME } from "../../../apps/workbench/src/workspace/materialPreview";
-import { clickMenuItem, openMenu, pickOption } from "./workbench";
+import { clickMenuItem, openMenu } from "./workbench";
 
 export async function verifyFilesUI() {
   const node = document.createElement("div");
@@ -38,6 +38,7 @@ export async function verifyFilesUI() {
     errors: unknown[] = [],
     references: string[][] = [];
   let conflict = true;
+  let extraImportItems: any[] = [];
   g.__desktop = true;
   g.__command = async (request: any) => {
     calls.push(request);
@@ -72,6 +73,7 @@ export async function verifyFilesUI() {
             conflict,
             replaceable: true,
           },
+          ...extraImportItems,
         ],
       };
     if (request.op === "folderImportApply") {
@@ -305,22 +307,249 @@ export async function verifyFilesUI() {
     const prepare = calls.find((c) => c.op === "folderImportPrepare");
     assert.equal(prepare.destination, "dir");
     assert.deepEqual(prepare.sources, ["/outside/new.circ"]);
-    const select = document.querySelector<HTMLButtonElement>(
-      '[role="combobox"][aria-label="new.circ 的重名处理"]',
-    );
-    assert(select);
-    assert.equal(select.textContent?.trim(), "保留两者");
+    const dialog = document.querySelector('[aria-label="文件同名冲突"]');
+    assert(dialog?.textContent?.includes("替换现有文件？"));
+    assert(dialog?.textContent?.includes("dir/new.circ"));
+    assert(!dialog?.querySelector('[role="combobox"]'));
+    assert.equal(document.activeElement?.textContent, "取消");
     assert(
       !calls.some((c) => c.op === "folderImportApply"),
-      "Conflicts must wait for explicit choice",
+      "Conflicts must wait for an explicit action",
     );
-    await pickOption("new.circ 的重名处理", "覆盖现有文件");
-    await click("导入");
+    await click("替换");
     await flush();
     assert.equal(
       calls.find((c) => c.op === "folderImportApply").choices[0].action,
       "replace",
     );
+    // Retina Mac drops are AppKit points, not physical pixels. Test the actual
+    // native subscription, so a double scale cannot accidentally pass hit testing.
+    const oldPlatform = navigator.platform;
+    Object.defineProperty(navigator, "platform", {
+      value: "MacIntel",
+      configurable: true,
+    });
+    Object.defineProperty(window, "devicePixelRatio", {
+      value: 2,
+      configurable: true,
+    });
+    document.elementFromPoint = (x, y) => {
+      position = [x, y];
+      return x === 40 && y === 80 ? row("dir") : null;
+    };
+    await act(async () =>
+      g.__fileDropHandler({
+        payload: {
+          type: "drop",
+          paths: ["/outside/new.circ"],
+          position: { x: 40, y: 80 },
+        },
+      }),
+    );
+    assert.deepEqual(position, [40, 80]);
+    assert(document.querySelector('[aria-label="文件同名冲突"]'));
+    await click("取消");
+    Object.defineProperty(navigator, "platform", {
+      value: oldPlatform,
+      configurable: true,
+    });
+    Object.defineProperty(window, "devicePixelRatio", {
+      value: oldScale,
+      configurable: true,
+    });
+
+    document.elementFromPoint = () => row("dir");
+    const drop = async () => {
+      await act(async () =>
+        g.__fileDropHandler({
+          payload: {
+            type: "drop",
+            paths: ["/outside/new.circ"],
+            position: { x: 40, y: 80 },
+          },
+        }),
+      );
+      await flush();
+    };
+    extraImportItems = [
+      {
+        index: 1,
+        name: "other.circ",
+        path: "dir/other.circ",
+        conflict: true,
+        replaceable: true,
+        directory: false,
+      },
+      {
+        index: 2,
+        name: "folder",
+        path: "dir/folder",
+        conflict: true,
+        replaceable: false,
+        directory: true,
+      },
+      {
+        index: 3,
+        name: "fresh.txt",
+        path: "dir/fresh.txt",
+        conflict: false,
+        replaceable: false,
+        directory: false,
+      },
+    ];
+    await drop();
+    const applyCount = calls.filter((c) => c.op === "folderImportApply").length;
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click(),
+    );
+    await click("替换");
+    assert.equal(
+      calls.filter((c) => c.op === "folderImportApply").length,
+      applyCount,
+      "No file is published while a conflict remains unresolved",
+    );
+    assert(
+      document
+        .querySelector('[aria-label="文件同名冲突"]')
+        ?.textContent?.includes("dir/folder"),
+    );
+    assert(
+      ![...document.querySelectorAll("button")].some(
+        (b) => b.textContent === "替换",
+      ),
+      "Unsupported replacements are not offered",
+    );
+    await click("跳过");
+    await flush();
+    assert.deepEqual(
+      calls.filter((c) => c.op === "folderImportApply").at(-1).choices,
+      [
+        { index: 0, action: "replace" },
+        { index: 1, action: "replace" },
+        { index: 2, action: "skip" },
+        { index: 3, action: "keepBoth" },
+      ],
+    );
+    await drop();
+    await click("保留两者");
+    await click("取消");
+    assert.equal(
+      calls.filter((c) => c.op === "folderImportApply").length,
+      applyCount + 1,
+      "Cancelling after an earlier choice cancels the entire staged batch",
+    );
+    await drop();
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click(),
+    );
+    await click("保留两者");
+    await flush();
+    assert(
+      calls
+        .filter((c) => c.op === "folderImportApply")
+        .at(-1)
+        .choices.every((choice: any) => choice.action === "keepBoth"),
+    );
+    extraImportItems = [];
+
+    // A stationary pointer must continue scrolling in either direction. Use a
+    // deterministic animation clock, not repeated pointermove events.
+    const oldRAF = globalThis.requestAnimationFrame,
+      oldCancelRAF = globalThis.cancelAnimationFrame;
+    const frames = new Map<number, FrameRequestCallback>();
+    let frameId = 0,
+      time = 0;
+    globalThis.requestAnimationFrame = (callback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    };
+    globalThis.cancelAnimationFrame = (id) => {
+      frames.delete(id);
+    };
+    const tick = async () =>
+      act(async () => {
+        time += 16;
+        const callbacks = [...frames.values()];
+        frames.clear();
+        callbacks.forEach((callback) => callback(time));
+      });
+    const tree = node.querySelector<HTMLElement>(".file-tree")!;
+    const oldRect = tree.getBoundingClientRect;
+    tree.getBoundingClientRect = () => new DOMRect(0, 100, 200, 300);
+    tree.scrollTop = 500;
+    try {
+      await act(async () =>
+        row("readme.txt").dispatchEvent(
+          new MouseEvent("pointerdown", {
+            button: 0,
+            clientX: 20,
+            clientY: 300,
+            bubbles: true,
+          }),
+        ),
+      );
+      await act(async () =>
+        window.dispatchEvent(
+          new MouseEvent("pointermove", {
+            clientX: 20,
+            clientY: 101,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      );
+      await tick();
+      await tick();
+      const firstScroll = tree.scrollTop;
+      await tick();
+      await tick();
+      assert(
+        tree.scrollTop < firstScroll && firstScroll < 500,
+        "Held drag keeps scrolling upwards",
+      );
+      await act(async () =>
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        ),
+      );
+      const cancelledScroll = tree.scrollTop;
+      await tick();
+      assert.equal(tree.scrollTop, cancelledScroll, "Escape stops scrolling");
+      assert(!node.querySelector(".file-dragging"));
+      await act(async () =>
+        g.__fileDropHandler({
+          payload: { type: "over", position: { x: 20, y: 399 } },
+        }),
+      );
+      await tick();
+      await tick();
+      await tick();
+      assert(
+        tree.scrollTop > cancelledScroll,
+        "A held native drag keeps scrolling downwards",
+      );
+      await act(async () =>
+        g.__fileDropHandler({
+          payload: { type: "over", position: { x: 250, y: 399 } },
+        }),
+      );
+      const outsideScroll = tree.scrollTop;
+      await tick();
+      await tick();
+      assert.equal(
+        tree.scrollTop,
+        outsideScroll,
+        "Dragging beside the tree does not scroll it",
+      );
+      await act(async () =>
+        g.__fileDropHandler({ payload: { type: "leave" } }),
+      );
+      assert.equal(frames.size, 0, "Leaving tears down the animation loop");
+    } finally {
+      globalThis.requestAnimationFrame = oldRAF;
+      globalThis.cancelAnimationFrame = oldCancelRAF;
+      tree.getBoundingClientRect = oldRect;
+    }
     const prepared = calls.filter((c) => c.op === "folderImportPrepare").length;
     document.elementFromPoint = () => null;
     await act(async () =>
