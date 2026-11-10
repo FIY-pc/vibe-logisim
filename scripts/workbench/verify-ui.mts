@@ -55,6 +55,20 @@ try {
             }),
           );
           builder.onLoad(
+            { filter: /@tauri-apps[\\/]api[\\/]core\.js$/ },
+            () => ({
+              contents:
+                "export const invoke=(name,args)=>globalThis.__nativeInvoke ? globalThis.__nativeInvoke(name,args) : window.__TAURI_INTERNALS__.invoke(name,args);",
+            }),
+          );
+          builder.onLoad(
+            { filter: /@tauri-apps[\\/]api[\\/]event\.js$/ },
+            () => ({
+              contents:
+                "export const listen=async(name,handler)=>globalThis.__nativeListen?.(name,handler)??(()=>{});",
+            }),
+          );
+          builder.onLoad(
             { filter: /@tauri-apps[\\/]api[\\/]webview\.js$/ },
             () => ({
               contents:

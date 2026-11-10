@@ -28,6 +28,9 @@
 .file-dragging {
   opacity: 0.45;
 }
+.file-cut > .file-entry {
+  opacity: 0.5;
+}
 .file-drop-root {
   box-shadow: inset 0 0 0 1px var(--accent, var(--accent));
 }
@@ -36,24 +39,31 @@
   font-size: var(--font-size-1);
   color: var(--muted);
 }
-.file-import-dialog {
-  width: min(600px, 90vw);
-}
-.file-import-items > div {
+.file-import-path {
   display: flex;
   align-items: center;
-  gap: 12px;
-  justify-content: space-between;
-  padding: 8px 0;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
 }
-.file-import-items span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-wrap: anywhere;
-}
-.file-import-items .select-trigger {
+.file-import-path svg {
   flex-shrink: 0;
+}
+.file-import-path span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.file-import-detail {
+  color: var(--muted);
+  font-size: var(--font-size-1);
+}
+.file-import-remaining {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-1);
 }
 .file-history-dialog {
   width: min(1100px, 94vw);
