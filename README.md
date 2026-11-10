@@ -2,101 +2,32 @@
 
 **和 AI 一起搭电路、跑仿真、找问题。**
 
-Vibe Logisim 是一个支持 AI 协作的数字电路工作台。你可以自己画图，也可以把需求和资料交给内置 AI，让它实现电路、解释原理、排查错误，再和你一起把结果改好。
+一个数字电路工作台：画图、仿真、看资料、和 AI 对话都在同一个窗口里。你可以自己画，也可以把需求说给 AI，让它实现电路、解释原理、排查错误，改动随时可以撤销。成果是普通的 `.circ` 文件，Logisim-ITA 2.16 和 HUST 2020 版的电路都能直接打开。
 
-电路编辑、资料阅读、AI 对话和仿真在同一个窗口里完成。成果保存在你自己的文件夹中，是可以继续编辑和运行的 `.circ` 文件。
-
-[下载](https://github.com/FIY-pc/vibe-logisim/releases/latest) · [产品介绍](https://lovej.site/vibe-logisim/) · [反馈问题](https://github.com/FIY-pc/vibe-logisim/issues/new/choose) · [参与开发](docs/development.md)
-
-## 用它做什么
-
-**构建电路。** 从一个全加器、计数器到由多个子电路组成的数据通路，可以手工放置元件、连线、修改属性，也可以用自然语言让 AI 实现。已有工程可以直接打开继续做，不必从空白开始。
-
-**运行与调试。** 切换输入、推进时钟、观察信号，用实际结果判断电路行为。选中相关部分，让 AI 解释连接关系，或结合测试输入查找错误。遇到跨线和隧道，可以追踪信号来源、使用位置及总线位段。
-
-**整理与理解。** 让 AI 按功能和数据流组织复杂图面，保留指定面板与接口；再根据你的阅读习惯调整。图面、连接和仿真结果都可以用来讨论问题，你也能随时接手编辑。
-
-**在工程旁边阅读资料。** 把需求文档、参考资料和组件库放进工作文件夹，在工作台里查看 PDF、PPTX、图片和文本，引用资料并继续讨论。AI 修改后可以查看改动、核对或撤销，不需要在聊天窗口和电路软件之间反复搬运文件。
+[下载](https://github.com/FIY-pc/vibe-logisim/releases/latest) · [产品介绍](https://lovej.site/vibe-logisim/) · [反馈问题](https://github.com/FIY-pc/vibe-logisim/issues/new/choose)
 
 [![电路图面示例：按阶段组织的数据通路与控制逻辑](docs/images/circuit-example.png)](docs/images/circuit-example.png)
 
-## 下载与启动
+- **用自然语言搭电路。** 「搭一个一位全加器，验证真值表，解释进位怎么产生」，AI 直接改在画布上。
+- **边跑边查。** 切输入、推时钟、追踪信号来源；选中一块电路让 AI 解释连接或找错。
+- **资料就在手边。** 把需求文档、组件库放进工程文件夹，PDF、PPT、图片在工作台里看，直接引用进对话。
 
-从 [Releases](https://github.com/FIY-pc/vibe-logisim/releases) 下载 Windows 或 Linux 安装包。Mac 版可按[构建说明](docs/distribution.md#构建与产物)生成应用。安装包已包含所需运行时，无需另外安装 Java 或 Node.js。
+## 安装
 
-| 系统 | 获取方式 | 启动方式 |
+到 [Releases](https://github.com/FIY-pc/vibe-logisim/releases/latest) 下载对应系统的包。包里已带 Java 和 Node.js，不用另装。
+
+| 系统 | 下载 | 打开 |
 | --- | --- | --- |
-| Windows 10/11 x64 | 安装程序（`.exe`） | 安装后从开始菜单打开 |
-| Windows 10/11 x64 便携版 | 便携包（`.zip`） | 解压后运行 `start.cmd`；需要 WebView2 |
-| Linux x64 | `.deb` 安装包或 `.tar.gz` 便携包 | 安装 deb，或解压后运行 `start.sh`；需要 GTK3 与 WebKitGTK 4.1 |
-| macOS 13.5+，Apple Silicon / Intel | [构建 Mac 版](docs/distribution.md#构建与产物) | 将 `Vibe Logisim.app` 放入“应用程序”，双击打开 |
+| Windows 10/11 x64 | `…-win32-x64-setup.exe` | 安装后从开始菜单打开 |
+| Windows 便携版 | `…-win32-x64.zip` | 解压，运行 `start.cmd`（需要 WebView2） |
+| Linux x64 | `…-linux-x64.deb` 或 `…-linux-x64.tar.gz` | 安装 deb，或解压后运行 `start.sh`（需要 GTK3、WebKitGTK 4.1） |
+| macOS 13.5+ | 暂无安装包，按[构建说明](docs/distribution.md#构建与产物)自行生成 | 把 `Vibe Logisim.app` 放入「应用程序」 |
 
-**绘图和仿真可以直接使用，AI 功能需要连接模型服务。**
+打开就能画图和仿真。要用 AI，在右侧「连接 AI」登录 ChatGPT 或填自己的 API 服务。
 
-## 开始使用
+## 参与开发
 
-1. **打开电路。** 在欢迎页选择“新建电路”，或用“打开电路”继续编辑已有的 `.circ` 文件。需要一起管理多个电路、组件库和参考资料时，选择“打开项目文件夹”。
-2. **连接 AI（可选）。** 点击右侧“连接 AI”或“AI 设置”，登录 ChatGPT，或添加自己的 API 服务并选择模型。
-3. **描述想做的事。** 可以直接输入需求，也可以从 AI 栏的示例任务开始。AI 的修改会出现在画布上，你可以继续编辑、运行仿真或撤销。
-
-新建的电路和单独打开的 `.circ` 都能使用 AI，无需先保存或创建项目文件夹。单电路编辑由你决定何时保存；项目文件夹中的电路会自动保存，改动可查看和撤销。
-
-试着输入：
-
-> 在当前电路中搭建一个一位全加器，标出输入与输出，验证真值表，并解释进位是怎样产生的。
-
-也可以选中一部分电路，让 AI 解释连接关系、排查异常，或根据项目中的资料补全设计。告诉它需要保留的接口、测试输入和预期输出，有助于核对结果。
-
-文件名旁的圆点表示有未保存的修改。保存使用 `Ctrl+S`，撤销使用 `Ctrl+Z`；Mac 对应 `⌘S` 和 `⌘Z`。对话记录保存在本机，重新打开电路后可继续；最近打开的项目可以从欢迎页或“更多 → 打开最近的项目”进入。
-
-## 编辑与仿真
-
-| 操作 | 快捷键 |
-| --- | --- |
-| 选择、布线、操作输入、平移 | `1`、`2`、`3`、`4` |
-| 添加元件 | `A` |
-| 运行 / 暂停时钟 | `Ctrl+K` |
-| 时钟前进一步 | `Ctrl+T` |
-| 追踪隧道、端口或导线的信号 | `Ctrl+点击` |
-| 返回上个位置 | `Alt+←` |
-
-Mac 使用 `⌘` 代替表中的 `Ctrl`。可在“更多 → 快捷键”查看和修改键位。
-
-运行时可以切换输入、推进时钟并观察信号变化。浏览其他电路不会结束原有仿真；主动运行另一个电路时会切换仿真对象。复杂电路建议结合测试输入和预期结果验证，再继续调整设计。
-
-## 课堂协作
-
-点击标题栏“课堂”进入学生端或教师端。教师可以创建课堂、分享课堂码并配置模型服务；学生加入并选择课堂后，绑定项目的电路和 AI 对话会自动同步给教师，供查看和教学反馈。
-
-此功能需要独立部署课堂服务，启动、模型配置和数据边界见 [课堂服务说明](docs/classroom.md)。
-
-## 电路与 AI 接口的兼容性
-
-支持 **Logisim-ITA 2.16** 与 **HUST 2020 版**的 `.circ` 电路，可在对应版本的 Logisim 中继续使用。打开已有工程时需保留所用的组件库。
-
-AI 可以通过 ChatGPT 登录使用，也支持流式 **Chat Completions、Responses 和 Anthropic Messages** API。账号与密钥保存在本机，可在“AI 设置”中管理。ChatGPT 可用模型和额度取决于账号权限，可在 [ChatGPT 设置](https://chatgpt.com/settings/usage) 中查看。
-
-API 服务没有返回模型列表时，可以手动填写模型名；图片输入需按模型能力在高级设置中开启。更换已有对话的服务时，应用会先确认历史记录将发送到哪里。
-
-应用读取系统 HTTP 代理或 `HTTPS_PROXY`。连接失败时可在 AI 设置中重新检测；调整代理后重启应用，或使用错误提示中的“重新连接”。纯 SOCKS 地址不支持，可使用代理软件的 HTTP 或混合端口。
-
-## 常见问题与反馈
-
-| 遇到的问题      | 可以怎么处理                                                               |
-| --------------- | -------------------------------------------------------------------------- |
-| 电路提示缺少库  | 保持原目录结构，确认 `cs3410.jar`、`riscv-probe.jar` 等实际依赖齐全        |
-| AI 接口连接失败 | 在 AI 设置中重新检测；检查地址、模型名、接口类型和代理状态                 |
-| 长任务中途报错  | 检查当前电路和对话中的错误提示，再继续提问；新建对话时说明已完成内容 |
-
-遇到问题可通过右上角“…”→“反馈问题…”保存诊断包、复制摘要并打开 [GitHub Issues](https://github.com/FIY-pc/vibe-logisim/issues/new/choose)。诊断包不包含 API 密钥、登录信息或对话全文；当前电路默认不附带。公开提交前请查看预览，检查文件名、标签和附件中的个人信息。
-
-应用会检查新版本并提示，不会自动下载安装；可在“…”菜单关闭“自动检查更新”。各版本的变化见 [发布说明](https://github.com/FIY-pc/vibe-logisim/releases)。
-
-## 从源码运行
-
-工作台使用 **Rust、Tauri 2、React 19 和 TypeScript**，欢迎参与开发。
-
-准备 Node.js 24、rustup、JDK 17+ 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)，然后运行：
+Rust、Tauri 2、React 19、TypeScript。装好 Node.js 24、rustup、JDK 17+ 和 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)，然后：
 
 ```sh
 npm ci
@@ -104,10 +35,8 @@ npm run setup
 npm run desktop
 ```
 
-`setup` 下载并校验兼容运行时；浏览器开发使用 `npm run dev`。状态目录和模块说明见 [工作台开发参考](docs/native-workbench.md)。
-
-[开发说明](docs/development.md) · [分发构建](docs/distribution.md) · [架构](docs/architecture.md)
+从 [开发说明](docs/development.md) 开始；[架构](docs/architecture.md)、[分发构建](docs/distribution.md)、[课堂服务](docs/classroom.md) 在 docs/。
 
 ## 许可
 
-项目源码以 [GPL-3.0](LICENSE) 发布。安装包内的第三方组件保留各自许可证，见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+[GPL-3.0](LICENSE)。安装包内第三方组件的许可见 [THIRD_PARTY.md](THIRD_PARTY.md)。
