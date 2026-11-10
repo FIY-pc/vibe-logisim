@@ -53,6 +53,7 @@ fn generate(root: &Path) -> Result<()> {
     vibe_workbench_host::ObservationSummary::export_all(&config)?;
     vibe_logisim_runtime::simulation::SimulationEvent::export_all(&config)?;
     vibe_workbench_host::HistoryList::export_all(&config)?;
+    vibe_workbench_host::RecentProject::export_all(&config)?;
     vibe_workbench_host::HistoryReview::export_all(&config)?;
     vibe_workbench_host::EditResult::export_all(&config)?;
     vibe_workbench_host::MovePreview::export_all(&config)?;

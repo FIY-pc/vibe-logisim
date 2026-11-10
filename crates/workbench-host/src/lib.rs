@@ -17,6 +17,7 @@ pub use documents::{
     ButtonEvent, HistoryList, HistoryReview, InputEvent, InterfaceImpact, InterfacePreview,
     InterfaceRead, TestVector, TraceWatch,
 };
+pub use folder::recent::RecentProject;
 pub use folder::{ImportAction, ImportChoice};
 use serde::Serialize;
 use serde_json::{Value, json};

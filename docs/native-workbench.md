@@ -4,7 +4,7 @@ The workbench uses React for the editor, Tauri for the desktop shell, and Rust f
 
 ## Start here
 
-Install Node.js 24, rustup, and JDK 17 or newer. Rust uses the version in `rust-toolchain.toml`. Tauri additionally needs the platform prerequisites in [its development guide](https://v2.tauri.app/start/prerequisites/): WebView2 and MSVC on Windows; GTK3 and WebKit2GTK 4.1 on Linux.
+Install Node.js 24, rustup, and JDK 17 or newer. Rust uses the version in `rust-toolchain.toml`. Tauri additionally needs the platform prerequisites in [its development guide](https://v2.tauri.app/start/prerequisites/): WebView2 and MSVC on Windows; GTK3 and WebKit2GTK 4.1 on Linux; Xcode Command Line Tools on macOS.
 
 From the repository root:
 
@@ -64,7 +64,9 @@ Project folders contain text, image and PDF previews. PDF character maps, fonts 
 
 File-tree menus provide path copying, revealing files in the system file manager, renaming, moving, and moving to the system trash. External imports preview conflicts before applying keep-both, replace or skip choices. File-operation history stores bounded content snapshots; undo checks for later edits before restoring anything. Issued file references retain a logical identity across app-controlled moves, saves and restores, and reject unconfirmed external replacements. Dragging within the tree moves an entry into a folder. Mutations carry the project identity, reject existing destinations and self-descendant moves, and retain open document identity when paths change. Trashing a directory with an unsaved open draft is rejected; clean open documents close only after the OS trash operation succeeds. A symlink is moved or trashed as an entry without moving its target. Windows recycling explicitly requests `FOFX_RECYCLEONDELETE`; it does not fall back to permanent deletion.
 
-The editor keeps file and component resources, the circuit list and properties on the left, alongside the conversation on the right. Regions can be resized or collapsed; narrow windows use drawers. Tool shortcuts 1–4, A for the palette, the document dirty indicator, nearby undo controls and current-circuit simulation commands remain available. Memory, trace and observation controls remain adjacent to the editing and simulation tasks they serve.
+With no document or project open, a full-width welcome page offers new circuit, open circuit and open project actions. The first standalone circuit opens the component palette. The welcome page and file menu share a host-owned recent-project list: at most ten canonical folder paths, ordered by successful opens, persisted atomically in `recent-projects.json` beside the session data. The previous `folder.json` pointer is retained on migration; closing a workspace does not erase recent projects. Missing folders remain visible, and forgetting a shortcut never deletes project content. These app-level commands are not available to the AI.
+
+The editor keeps file and component resources, the circuit list and properties on the left, alongside the conversation on the right. Regions can be resized or collapsed; narrow windows use drawers. The welcome page hides both side regions without overwriting the user's pane preferences. Tool shortcuts 1–4, A for the palette, the document dirty indicator, nearby undo controls and current-circuit simulation commands remain available. Memory, trace and observation controls remain adjacent to the editing and simulation tasks they serve.
 
 The right-hand history panel lists the immutable document history. Historical restoration appends a change and remains undoable; unavailable dependencies remain visible.
 
@@ -114,7 +116,7 @@ See [distribution](distribution.md) for package names, resource layout, system r
 
 `VIBE_WORKBENCH_RESOURCES` selects an assembled resource directory. Packaged Tauri builds otherwise use the application resource directory; debug builds use the checkout. The Java bridge can reuse precompiled classes for the pinned jar or compile the included sources against another configured jar.
 
-The sidecar reads proxy environment variables first, then Windows Internet Settings or manual KDE/GNOME proxy settings. Model discovery, connection tests and model requests share the same HTTP proxy transport. Automatic proxy scripts are reported as unsupported. Native system settings are read at connection time, without changing OS settings.
+The sidecar reads proxy environment variables first, then Windows Internet Settings, macOS effective HTTP/HTTPS proxy settings, or manual KDE/GNOME proxy settings. Model discovery, connection tests and model requests share the same HTTP proxy transport. Automatic proxy scripts are reported as unsupported. Native system settings are read at connection time, without changing OS settings.
 
 ## Validation boundaries
 

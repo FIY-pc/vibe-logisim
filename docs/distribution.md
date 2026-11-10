@@ -1,6 +1,6 @@
 # 分发构建
 
-Windows x64 提供当前用户 NSIS 安装程序与便携 zip；Linux x64 提供 Debian 安装包与便携 tar.gz。包内包含 Node.js、裁剪 Java、Logisim-ITA、已编译桥接和内置 AI 运行时。人工编辑和仿真不需要模型服务。
+Windows x64 提供当前用户 NSIS 安装程序与便携 zip；Linux x64 提供 Debian 安装包与便携 tar.gz；macOS Apple Silicon / Intel 提供 DMG 和包含 `.app` 的 ZIP。包内包含 Node.js、裁剪 Java、Logisim-ITA、已编译桥接和内置 AI 运行时。人工编辑和仿真不需要模型服务。
 
 ## 构建与产物
 
@@ -21,10 +21,18 @@ npm run test:desktop
 | Windows | `vibe-logisim-<版本>-win32-x64.zip`       | 解压后运行 `start.cmd`     |
 | Linux   | `vibe-logisim-<版本>-linux-x64.deb`       | 通过系统包管理器安装后打开 |
 | Linux   | `vibe-logisim-<版本>-linux-x64.tar.gz`    | 解压后运行 `./start.sh`    |
+| macOS Apple Silicon | `vibe-logisim-<版本>-darwin-arm64.dmg` / `.zip` | 拖入“应用程序”后打开 `.app` |
+| macOS Intel | `vibe-logisim-<版本>-darwin-x64.dmg` / `.zip` | 拖入“应用程序”后打开 `.app` |
 
 每个平台另生成 `SHA256SUMS-<平台>.txt`。Tauri 原始安装包保存在 `target/release/bundle/`；本地桌面检查使用 `.workbench-cache/Vibe-Logisim-<平台>` 及同名归档。
 
-Windows 安装程序可安装 WebView2；便携包需要系统已安装 WebView2。Windows 10 1903 及以后支持包内 Java 使用的 UTF-8 进程代码页。Linux CI 在 Ubuntu 24.04 上构建，目标系统需要 GTK 3、WebKitGTK 4.1 和兼容 glibc。Linux AI 命令隔离需要 systemd 用户会话。macOS 暂无分发包。
+Windows 安装程序可安装 WebView2；便携包需要系统已安装 WebView2。Windows 10 1903 及以后支持包内 Java 使用的 UTF-8 进程代码页。Linux CI 在 Ubuntu 24.04 上构建，目标系统需要 GTK 3、WebKitGTK 4.1 和兼容 glibc。Linux AI 命令隔离需要 systemd 用户会话。
+
+macOS 目标为 13.5 及以上（与内置 Node.js 24 的最低系统版本一致），使用系统 WKWebView，按架构分别构建，不能只交叉编译外壳后混用另一架构的 Node/Java。Temurin 的 `Contents/Home` 被裁剪为独立运行时；包内 Mach-O（Node、Java、原生扩展）先签名，Tauri 再签名整个 `.app`。默认使用 ad-hoc 本地签名，适用于开发预览，不等于 Developer ID 签名或 Apple 公证。从网络下载的预览包可能需要在“系统设置 → 隐私与安全性”中批准打开。
+
+正式签名可通过 `APPLE_SIGNING_IDENTITY` 指定已导入当前钥匙串的 Developer ID 证书；应用与所有内置运行时使用同一身份。公证使用 Tauri 的 Apple 公证环境配置，需另行准备凭据并验证 Gatekeeper。当前改动只交付本地预览，不宣称已完成正式签名或公证。
+
+macOS 的 AI 命令使用 `/bin/bash --noprofile --norc`，优先使用包内 Node/Java，不继承模型凭据或 shell 配置。与 Windows 一样，这不是文件系统沙箱；命令拥有当前用户的文件权限。取消、超时和正常退出会结束命令进程组，命令不得自行脱离进程组成为后台服务。系统 HTTP/HTTPS 代理通过 `scutil --proxy` 读取，支持排除列表；PAC/WPAD 和纯 SOCKS 配置会给出不支持的提示。
 
 ## 资源与状态
 
@@ -50,6 +58,8 @@ Java 桥接以 JAR 分发，避免“完整运行时摘要 + Java 包目录”�
 
 `test:desktop` 解压便携包到含空格与非 ASCII 字符的路径，在独立状态中启动实际 Tauri 窗口。它检查前端挂载、IPC、原生逻辑门测试、内置运行时启动和关闭重开后的草稿身份。Linux 需要显示服务，CI 使用 Xvfb。这些检查不发送远端模型请求，也不代替交互体验检查。
 
+macOS 检查从 ZIP 解压 `.app`，验证签名，并在不设置资源路径覆盖的情况下启动真正的包内程序，验证 `Contents/Resources/workbench` 定位。`npm run test:desktop -- --dmg` 另将实际 DMG 只读挂载、复制应用、卸载镜像，再验证启动和恢复。`node scripts/workbench/macos-command-check.mts` 检查真实 bash、中文路径、脚本修改、输出保存和取消/超时；资源构建也会用包内 Node/Java 再运行此检查。
+
 Windows CI 还运行 `node scripts/workbench/verify-portable-paths.mts`，通过 Windows 自带 ZIP 组件将便携包解压到较深的目录，检查内部路径预算及 JAR 分发，再验证解压后的应用启动、仿真与重启恢复。
 
 Windows CI 另从相同源码构建版本 `0.0.0` 的安装器，实际安装、升级到当前版本、重开、检查草稿恢复并卸载。检查使用正常资源查找，不覆盖用户的安装与状态目录。此脚本只能在临时 Windows CI 环境运行：
@@ -63,7 +73,7 @@ npm run test:windows-install
 
 ## CI 与发布
 
-[Workbench 工作流](../.github/workflows/native-workbench.yml) 是唯一构建与发布入口。PR 和主分支推送执行契约、Rust、TypeScript、UI、原生工具和双平台打包检查，保留可下载包与精简检查报告；不发布 Release，也不使用付费模型。
+[Workbench 工作流](../.github/workflows/native-workbench.yml) 是唯一构建与发布入口。PR 和主分支推送执行契约、Rust、TypeScript、UI、原生工具和 Windows、Linux、macOS 双架构打包检查，保留可下载包与精简检查报告；不发布 Release，也不使用付费模型。
 
 版本采用 `年.月.当月发布序号`，例如 `26.11.1`、`26.11.2`、`26.12.1`。每次发布递增序号，新功能和修复可以在同一版本交付。常规发布不使用 beta 或 rc 后缀；开发预览使用 PR 构建产物。
 
@@ -77,6 +87,6 @@ npm run release:version -- --check
 
 该命令统一更新所有 npm 工作区、npm/Cargo 锁文件、Rust 工作区和 Tauri 配置。发布说明以最近一次发行版为比较基线，按“新增、改进、修复、升级说明”组织；没有内容的栏目省略。说明用户可见的变化、适用范围和必要的升级操作，避免内部实现过程、未经验证的效果描述及宣传用语。
 
-版本提交合入主分支后，推送指向该提交的 `v<版本>` 标签。工作流检查版本一致性和发布说明，在集成、桌面启动、重启与安装升级检查通过后发布四个安装/便携产物与 `SHA256SUMS`。只有标签推送触发发布，手动运行工作流只构建和检查。已发布的标签和同名附件不覆盖，后续修复使用新版本。
+版本提交合入主分支后，推送指向该提交的 `v<版本>` 标签。工作流检查版本一致性和发布说明，在集成、桌面启动、重启与安装升级检查通过后发布八个安装/归档产物与 `SHA256SUMS`。只有标签推送触发发布，手动运行工作流只构建和检查。已发布的标签和同名附件不覆盖，后续修复使用新版本。
 
 每个安装包和便携包都包含 Logisim 对应源码与依赖许可证，详见 [第三方组件](../THIRD_PARTY.md)。历史版本的实现与说明保存在对应 Git 标签。

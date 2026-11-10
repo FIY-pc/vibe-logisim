@@ -34,6 +34,15 @@ class ConversationStore {
         typeof data.workspaces !== "object"
       )
         throw new Error("Unknown schema");
+      if (
+        data.documentScopes &&
+        (typeof data.documentScopes !== "object" ||
+          Array.isArray(data.documentScopes) ||
+          Object.values(data.documentScopes).some(
+            (key) => typeof key !== "string",
+          ))
+      )
+        throw new Error("Invalid document scopes");
       for (const workspace of Object.values(
         data.workspaces,
       ) as ConversationWorkspace[]) {
@@ -77,8 +86,28 @@ class ConversationStore {
       messages: [],
     };
   }
+  documentKey(document: { id: string; path: string | null }): string {
+    const data = this.read();
+    const scopes = data.documentScopes || {};
+    const id = "id:" + document.id;
+    const file = document.path
+      ? "path:" +
+        (process.platform === "win32"
+          ? document.path.toLowerCase()
+          : document.path)
+      : null;
+    const key =
+      scopes[id] || (file && scopes[file]) || "document:" + document.id;
+    if (scopes[id] !== key || (file && scopes[file] !== key)) {
+      scopes[id] = key;
+      if (file) scopes[file] = key;
+      data.documentScopes = scopes;
+      this.write(data);
+    }
+    return key;
+  }
   workspace(data: ConversationIndex, key: string): ConversationWorkspace {
-    if (typeof key !== "string" || !key) throw new Error("请先打开文件夹");
+    if (typeof key !== "string" || !key) throw new Error("请先新建或打开电路");
     if (!Object.hasOwn(data.workspaces, key)) {
       const first = this.blank();
       data.workspaces[key] = {
@@ -159,7 +188,7 @@ class ConversationStore {
       w.activeId = record.id;
     } else {
       if (!Object.hasOwn(w.conversations, request.id || ""))
-        throw new Error("对话不属于当前文件夹");
+        throw new Error("对话不属于当前工作区");
       record = w.conversations[request.id!];
       if (action === "select") {
         if (record.archived) throw new Error("请先恢复这条已归档对话");

@@ -42,7 +42,7 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
         <SimulationMenuRegion />
         <FileMenu feedback={feedback} />
         <IconButton
-          className="icon-button"
+          className="icon-button review-toggle"
           {...tip("展开 / 收起工作栏", shortcuts.review)}
           aria-label="展开 / 收起工作栏"
           aria-controls="workspace-review"

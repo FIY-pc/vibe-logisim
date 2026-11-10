@@ -48,7 +48,7 @@ const result = (text: string): AgentToolResult<any> => ({
   details: null,
 });
 async function resolveFile(
-  root: string,
+  root: string | null,
   value: any,
   write = false,
   outputs?: ToolOutputStore,
@@ -58,7 +58,10 @@ async function resolveFile(
     if (write) throw new Error("工具输出是只读的");
     return output;
   }
-  const target = path.resolve(root, fromSandbox(String(value)));
+  const target = path.resolve(
+    root || referenceRoot,
+    fromSandbox(String(value)),
+  );
   const outputRoot = outputs
     ? await fs.realpath(outputs.root).catch((error) => {
         if (error.code === "ENOENT") return outputs.root;
@@ -74,11 +77,12 @@ async function resolveFile(
   };
   writable(target);
   const allowed =
-    inside(root, target) || (!write && inside(referenceRoot, target));
+    (root && inside(root, target)) || (!write && inside(referenceRoot, target));
   if (!allowed) throw new Error("路径不在工作区或内置参考目录中");
-  const base = inside(root, target)
-    ? await fs.realpath(root)
-    : await fs.realpath(referenceRoot);
+  const base =
+    root && inside(root, target)
+      ? await fs.realpath(root)
+      : await fs.realpath(referenceRoot);
   const parent = await fs.realpath(path.dirname(target));
   writable(parent);
   if (!inside(base, parent)) throw new Error("链接指向工作区之外");
@@ -172,7 +176,7 @@ async function command(
           onData: options.onData,
           signal: options.signal,
           timeout: options.timeout,
-          // Deliberately do not inherit Pi's env: both backends build a clean one.
+          // Deliberately do not inherit Pi's env: each backend builds a clean one.
         }),
     },
   });
@@ -278,7 +282,7 @@ function fileTools({
     path.join(tmpdir(), `vibe-tool-output-${randomUUID()}`),
   ),
 }: {
-  root: string;
+  root: string | null;
   runtimeRoot?: string | null;
   assertCurrent: () => void;
   vision?: boolean;
@@ -378,7 +382,7 @@ function fileTools({
               ? path.join(SANDBOX_REFERENCE, path.relative(referenceRoot, file))
               : inside(outputs.root, file)
                 ? `${OUTPUT_MOUNT}/${path.basename(file)}`
-                : path.join("/tmp/workspace", path.relative(root, file));
+                : path.join("/tmp/workspace", path.relative(root!, file));
         const text = await readText(file, args, signal, shellPath);
         if (version !== (await digestFile(file)))
           throw new Error("文件在读取时发生变化，请重新读取");
@@ -443,6 +447,7 @@ function fileTools({
       execute: async (_id: any, args: any, signal: any) => {
         assertCurrent();
         signal?.throwIfAborted();
+        if (!root) throw new Error("单电路模式不提供工程文件列表");
         const requested = path.resolve(root, args.path);
         const file =
           requested === root
@@ -460,16 +465,18 @@ function fileTools({
       },
     },
   ];
-  if (process.platform === "linux" || process.platform === "win32")
+  if (root && ["linux", "win32", "darwin"].includes(process.platform))
     tools.push({
       name: "exec_command",
       label: "执行命令",
       description:
         process.platform === "win32"
           ? "Run Windows PowerShell 5.1 in the open project folder. Commands and scripts edit the user's files directly. node is the app's bundled Node.js; java is available in packaged builds. Use PowerShell syntax, not bash; for large scripts, write a .mjs file then run node ./script.mjs. For PowerShell file cmdlets use absolute -LiteralPath (Join-Path $env:VIBE_PROJECT_ROOT 'file') to handle brackets in directory names. References: $env:VIBE_CIRCUIT_REFERENCE; runtimes: $env:VIBE_RUNTIME. The shell has the current user's filesystem permissions, not a filesystem sandbox; operate on the project and requested materials. No user profile or inherited model credentials. Saved command outputs are in $env:VIBE_TOOL_OUTPUT. Output shows the last 2000 lines or 50 KiB; if shortened, the full log path is returned for read_file or shell searches."
-          : "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at " +
-            SANDBOX_REFERENCE +
-            ". Saved outputs are read-only at /tmp/vibe-tool-output. No model credentials or user home access. Output shows the last 2000 lines or 50 KiB; if shortened, the full log path is returned for read_file or shell searches.",
+          : process.platform === "darwin"
+            ? "Run macOS bash in the open project folder, without shell profiles or inherited model credentials. node is the app's bundled Node.js; java is available in packaged builds. Use $VIBE_CIRCUIT_REFERENCE for references, $VIBE_RUNTIME for runtimes, and $VIBE_TOOL_OUTPUT for saved outputs. The shell has the current user's filesystem permissions, not a filesystem sandbox; operate on the project and requested materials. Commands must stay in their process group; do not daemonize. Output shows the last 2000 lines or 50 KiB; if shortened, the full log path is returned for read_file or shell searches."
+            : "Run bash in a sandbox whose working directory /tmp/workspace is the open folder itself: files written there are the user's files. Bundled references are read-only at " +
+              SANDBOX_REFERENCE +
+              ". Saved outputs are read-only at /tmp/vibe-tool-output. No model credentials or user home access. Output shows the last 2000 lines or 50 KiB; if shortened, the full log path is returned for read_file or shell searches.",
       parameters: schema({
         command: string,
         timeout: {
@@ -491,7 +498,7 @@ function fileTools({
         });
       },
     });
-  return tools;
+  return root ? tools : tools.filter((tool) => tool.name === "read_file");
 }
 export {
   fileTools,

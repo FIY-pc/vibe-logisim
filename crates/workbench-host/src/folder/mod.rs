@@ -1,5 +1,6 @@
 pub(crate) mod file_history;
 pub(crate) mod file_references;
+pub(crate) mod recent;
 mod recycle;
 use crate::{Host, Result};
 use file_history::{History, Version, replace_checked, version, write_new};

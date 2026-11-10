@@ -89,7 +89,7 @@ export interface AskRequest {
 interface PendingTurn {
   turnId: string;
   conversationId: string;
-  folder: HostFolder;
+  folder: HostFolder | null;
 }
 
 /** Called in `ask` from the model transcript so an interrupted call never looks finished. */
@@ -307,8 +307,16 @@ export class TurnRunner extends EventEmitter {
   private readonly instructionsOverride: string | null;
 
   status: "idle" | "ready" | "auth-required" | "busy" | "stopped" = "idle";
-  /** The conversation scope the UI bound: the folder id. */
+  /** The conversation scope the UI bound: a project or standalone circuit. */
   workspaceKey: string | null = null;
+  workspace(status: HostStatus, documentId: string | null) {
+    if (status.folder)
+      return { key: status.folder.id, name: status.folder.name };
+    const document = status.documents.find((doc) => doc.id === documentId);
+    return document
+      ? { key: this.conversations.documentKey(document), name: document.name }
+      : null;
+  }
   conversationId: string | null = null;
   activeTurnId: string | null = null;
   history: RuntimeMessage[] = [];
@@ -818,7 +826,12 @@ export class TurnRunner extends EventEmitter {
       folder: status.folder
         ? { path: status.folder.path, name: status.folder.name }
         : null,
-      openDocuments: status.documents.map((d) => ({
+      openDocuments: (status.folder
+        ? status.documents
+        : current
+          ? [current]
+          : []
+      ).map((d) => ({
         id: d.id,
         path: d.path,
         name: d.name,
@@ -868,10 +881,11 @@ export class TurnRunner extends EventEmitter {
       op: "status",
       summary: true,
     });
-    if (!status.folder) throw new Error("请先打开工作文件夹");
+    const workspace = this.workspace(status, request.documentId);
+    if (!workspace) throw new Error("请先新建或打开电路");
     const images = this.referenceImages(request.references);
     if (this.snapshot().busy) throw new Error("请先等待或停止当前回答");
-    const workspaceKey = status.folder.id;
+    const workspaceKey = workspace.key;
     if (
       this.workspaceKey !== workspaceKey ||
       this.conversationId !== this.conversations.ensure(workspaceKey).id
@@ -924,13 +938,14 @@ export class TurnRunner extends EventEmitter {
       }
       // The user's own edits before this turn get their own history entry so
       // the turn's checkpoint holds only what the AI changed.
-      await this.host
-        .call({
-          op: "folderCheckpoint",
-          folder_id: status.folder.id,
-          title: "文件改动",
-        })
-        .catch(() => undefined);
+      if (status.folder)
+        await this.host
+          .call({
+            op: "folderCheckpoint",
+            folder_id: status.folder.id,
+            title: "文件改动",
+          })
+          .catch(() => undefined);
       const turnId = randomUUID();
       const pending: PendingTurn = {
         turnId,
@@ -953,21 +968,22 @@ export class TurnRunner extends EventEmitter {
         userCircuit: request.circuit,
         documents: status.documents,
       });
-      const outputs = this.outputStore(
-        status.folder.id,
-        pending.conversationId,
-      );
+      const outputs = this.outputStore(workspaceKey, pending.conversationId);
       const tools = [
         ...fileTools({
           outputs,
-          root: status.folder.path,
+          root: status.folder?.path || null,
           runtimeRoot: this.runtimeRoot,
           vision: config.vision,
           assertCurrent,
         }),
         ...circuitTools({ context, vision: config.vision }),
       ].map((tool) => preserveToolOutput(tool, outputs));
-      const instructions = systemInstructions(this.instructionsOverride);
+      const instructions = systemInstructions(
+        this.instructionsOverride,
+        process.platform,
+        status.folder ? "folder" : "document",
+      );
       const metadata = this.catalog.metadataFor(config, config.model);
       const remoteScope = chatgptContextScope(config);
       let remoteThrough = 0;
@@ -1412,13 +1428,16 @@ export class TurnRunner extends EventEmitter {
         this.transcript = [...this.agent.state.messages];
         this.persist();
         // Everything the turn changed on disk becomes one undoable entry.
-        const recorded = await this.host.call<{ change: FolderChange | null }>({
-          op: "folderCheckpoint",
-          folder_id: pending.folder.id,
-          title: question.replace(/\s+/g, " ").trim().slice(0, 40) || "AI 修改",
-        });
+        const recorded = pending.folder
+          ? await this.host.call<{ change: FolderChange | null }>({
+              op: "folderCheckpoint",
+              folder_id: pending.folder.id,
+              title:
+                question.replace(/\s+/g, " ").trim().slice(0, 40) || "AI 修改",
+            })
+          : null;
         change = recorded?.change ?? null;
-        if (change)
+        if (change && pending.folder)
           this.emitEvent({
             type: "files-changed",
             folderId: pending.folder.id,

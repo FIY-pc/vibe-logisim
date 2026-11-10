@@ -4748,6 +4748,7 @@ name = "vibe-circuit-document"
 version = "26.11.3"
 dependencies = [
  "crc32fast",
+ "libc",
  "quick-xml",
  "rustix",
  "schemars 1.2.2",

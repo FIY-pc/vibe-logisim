@@ -2,12 +2,16 @@ import { createRef, type RefObject } from "react";
 import { createStore } from "zustand/vanilla";
 import type { PreviewFile } from "./FilePreview";
 import type { ProjectFolder } from "./Files";
+import type { RecentProject } from "../generated/RecentProject";
 import { field, type Update } from "../shared/setter";
 import { readerKey } from "./reader/types";
 
 export interface FilesState {
   /** The open project folder. */
   folder: ProjectFolder | null;
+  recentProjects: RecentProject[];
+  recentError: string;
+  recentLoading: boolean;
   /** The selected material; it stays mounted when the circuit tab is shown. */
   preview: PreviewFile | null;
   readers: PreviewFile[];
@@ -40,6 +44,9 @@ export interface FilesState {
 export function createFilesStore() {
   return createStore<FilesState>()((set, get) => ({
     folder: null,
+    recentProjects: [],
+    recentError: "",
+    recentLoading: true,
     preview: null,
     readers: [],
     editorFocus: "circuit",

@@ -97,6 +97,53 @@ export async function systemProxy(
         ? proxy(rules.socks, true)
         : "DIRECT";
   }
+  if (platform === "darwin") {
+    const output = await run("/usr/sbin/scutil", ["--proxy"]);
+    // Only the top-level effective settings; scoped network entries may differ.
+    const fields: Record<string, string> = {};
+    const exceptions: string[] = [];
+    let depth = 0;
+    let inExceptions = false;
+    for (const line of output.split(/\r?\n/)) {
+      const field = line.trim().match(/^(\w+)\s+:\s+(.*)$/);
+      if (depth === 1 && field) {
+        fields[field[1]] = field[2];
+        inExceptions = field[1] === "ExceptionsList";
+      } else if (depth === 2 && inExceptions && field) {
+        exceptions.push(field[2]);
+      }
+      if (line.trim().endsWith("{")) depth++;
+      if (line.trim() === "}") {
+        depth--;
+        if (depth === 1) inExceptions = false;
+      }
+    }
+    if (fields.ExcludeSimpleHostnames === "1") exceptions.push("<local>");
+    if (excluded(host, exceptions)) return "DIRECT";
+    if (
+      fields.ProxyAutoConfigEnable === "1" ||
+      fields.ProxyAutoDiscoveryEnable === "1"
+    )
+      throw autoError();
+    const scheme = url.protocol === "https:" ? "HTTPS" : "HTTP";
+    const addressFor = (name: string) => {
+      const address = fields[name + "Proxy"],
+        port = Number(fields[name + "Port"]);
+      if (
+        fields[name + "Enable"] !== "1" ||
+        !address ||
+        !Number.isInteger(port) ||
+        port < 1 ||
+        port > 65535
+      )
+        return "";
+      return `${address.includes(":") && !address.startsWith("[") ? `[${address}]` : address}:${port}`;
+    };
+    const address = addressFor(scheme);
+    if (address) return proxy(address);
+    const socks = addressFor("SOCKS");
+    return socks ? proxy(socks, true) : "DIRECT";
+  }
   if (platform !== "linux") return "DIRECT";
   if (/kde/i.test(options.desktop ?? process.env.XDG_CURRENT_DESKTOP ?? "")) {
     const value = (key: string) =>

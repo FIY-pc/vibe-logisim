@@ -40,7 +40,7 @@ const BATCHED = new Set<Edit["kind"]>([
 
 export interface ToolContextOptions {
   host: HostClient;
-  folder: HostFolder;
+  folder: HostFolder | null;
   emit: (event: RuntimeEvent) => void;
   /** Throws once the turn is stopped or superseded; every tool calls it before and after host work. */
   assertCurrent: () => void;
@@ -88,7 +88,7 @@ export interface EditNotes {
 
 export class ToolContext {
   readonly host: HostClient;
-  readonly folder: HostFolder;
+  readonly folder: HostFolder | null;
   readonly emit: (event: RuntimeEvent) => void;
   readonly assertCurrent: () => void;
   /** The document tools work on when no path is given. */
@@ -131,6 +131,12 @@ export class ToolContext {
 
   /** Folder-relative path → absolute path inside the folder, or INVALID_ARGUMENT. */
   absolute(relative: string): string {
+    if (!this.folder)
+      throw new CircuitToolError(
+        "INVALID_ARGUMENT",
+        "当前是单电路模式，请直接操作当前电路，不要使用工程文件路径。",
+        { hint: "省略 path；使用 define_circuit 可添加子电路。" },
+      );
     const target = path.resolve(this.folder.path, relative);
     const root = path.resolve(this.folder.path);
     if (target !== root && !target.startsWith(root + path.sep))
@@ -159,6 +165,21 @@ export class ToolContext {
     all = false,
   ): Promise<DocumentRef> {
     const content = all ? undefined : [];
+    if (!this.folder) {
+      if (!this.userDocumentId)
+        throw new CircuitToolError(
+          "NO_DOCUMENT_OPEN",
+          "当前电路已关闭，请重新打开后继续",
+        );
+      const document = await this.read(this.userDocumentId, content);
+      if (relative && relative !== document.path && relative !== document.name)
+        throw new CircuitToolError(
+          "INVALID_ARGUMENT",
+          "单电路对话只能操作当前电路",
+          { hint: "省略 path，或在当前文档内添加子电路。" },
+        );
+      return document;
+    }
     if (relative) {
       const target = this.absolute(relative);
       const known = this.byPath.get(target);
@@ -322,9 +343,10 @@ export class ToolContext {
   ) {
     return {
       documentId: document.id,
-      path: document.path
-        ? path.relative(this.folder.path, document.path)
-        : null,
+      path:
+        document.path && this.folder
+          ? path.relative(this.folder.path, document.path)
+          : document.path,
       revision: document.revision,
       circuit,
     };

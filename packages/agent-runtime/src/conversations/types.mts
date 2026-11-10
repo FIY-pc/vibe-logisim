@@ -60,6 +60,8 @@ export interface ConversationWorkspace {
 export interface ConversationIndex {
   schema: string;
   workspaces: Record<string, ConversationWorkspace>;
+  /** Stable conversation scope across an untitled document's Save As and later reopen. */
+  documentScopes?: Record<string, string>;
 }
 export interface ConversationChange {
   id?: string;

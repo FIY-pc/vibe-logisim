@@ -45,12 +45,14 @@ export function WorkspacePanels({
   layout,
   rail,
   railAvailable = true,
+  reviewAvailable = true,
   children,
   review,
 }: {
   layout: WorkspaceLayout;
   rail: ReactNode;
   railAvailable?: boolean;
+  reviewAvailable?: boolean;
   children: ReactNode;
   review: ReactNode;
 }) {
@@ -59,11 +61,12 @@ export function WorkspacePanels({
   const groupApi = useGroupRef();
   const previousFrame = useRef("");
   const railOpen = railAvailable && !layout.narrow && layout.showExplorer;
-  const reviewOpen = !layout.narrow && layout.showRight;
+  const reviewOpen = reviewAvailable && !layout.narrow && layout.showRight;
   return (
     <div className="workspace" ref={layout.workspace}>
       {layout.narrow &&
-        ((railAvailable && layout.showExplorer) || layout.showRight) && (
+        ((railAvailable && layout.showExplorer) ||
+          (reviewAvailable && layout.showRight)) && (
           <button
             className="workspace-shade"
             aria-label="关闭侧栏"
@@ -156,7 +159,11 @@ export function WorkspacePanels({
         <Panel
           id="review"
           className="workspace-side"
-          style={{ overflow: "visible" }}
+          style={{
+            overflow: "visible",
+            visibility: reviewAvailable ? undefined : "hidden",
+          }}
+          inert={!reviewAvailable}
           defaultSize={initial.review}
           minSize={reviewOpen ? limits.review[0] : 0}
           maxSize={reviewOpen ? limits.review[1] : 0}
