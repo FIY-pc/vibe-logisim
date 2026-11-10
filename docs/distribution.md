@@ -30,7 +30,7 @@ Windows 安装程序可安装 WebView2；便携包需要系统已安装 WebView2
 
 macOS 目标为 13.5 及以上（与内置 Node.js 24 的最低系统版本一致），使用系统 WKWebView，按架构分别构建，不能只交叉编译外壳后混用另一架构的 Node/Java。Temurin 的 `Contents/Home` 被裁剪为独立运行时；包内 Mach-O（Node、Java、原生扩展）先签名，Tauri 再签名整个 `.app`。默认使用 ad-hoc 本地签名，适用于开发预览，不等于 Developer ID 签名或 Apple 公证。从网络下载的预览包可能需要在“系统设置 → 隐私与安全性”中批准打开。
 
-正式签名可通过 `APPLE_SIGNING_IDENTITY` 指定已导入当前钥匙串的 Developer ID 证书；应用与所有内置运行时使用同一身份。公证使用 Tauri 的 Apple 公证环境配置，需另行准备凭据并验证 Gatekeeper。当前改动只交付本地预览，不宣称已完成正式签名或公证。
+正式签名可通过 `APPLE_SIGNING_IDENTITY` 指定已导入当前钥匙串的 Developer ID 证书；应用与所有内置运行时使用同一身份。公证使用 Tauri 的 Apple 公证环境配置。发布正式 macOS 安装包前，应完成 Developer ID 签名、公证，并在下载后的应用上验证 Gatekeeper。
 
 macOS 的 AI 命令使用 `/bin/bash --noprofile --norc`，优先使用包内 Node/Java，不继承模型凭据或 shell 配置。与 Windows 一样，这不是文件系统沙箱；命令拥有当前用户的文件权限。取消、超时和正常退出会结束命令进程组，命令不得自行脱离进程组成为后台服务。系统 HTTP/HTTPS 代理通过 `scutil --proxy` 读取，支持排除列表；PAC/WPAD 和纯 SOCKS 配置会给出不支持的提示。
 
