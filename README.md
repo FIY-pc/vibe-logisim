@@ -21,7 +21,8 @@
 | Windows 10/11 x64 | `…-win32-x64-setup.exe` | 安装后从开始菜单打开 |
 | Windows 便携版 | `…-win32-x64.zip` | 解压，运行 `start.cmd`（需要 WebView2） |
 | Linux x64 | `…-linux-x64.deb` 或 `…-linux-x64.tar.gz` | 安装 deb，或解压后运行 `start.sh`（需要 GTK3、WebKitGTK 4.1） |
-| macOS 13.5+ | 暂无安装包，按[构建说明](docs/distribution.md#构建与产物)自行生成 | 把 `Vibe Logisim.app` 放入「应用程序」 |
+| macOS 13.5+（Apple Silicon） | `…-darwin-arm64.dmg` 或 `…-darwin-arm64.zip` | 把 `Vibe Logisim.app` 放入「应用程序」 |
+| macOS 13.5+（Intel） | `…-darwin-x64.dmg` 或 `…-darwin-x64.zip` | 把 `Vibe Logisim.app` 放入「应用程序」 |
 
 打开就能画图和仿真。要用 AI，在右侧「连接 AI」登录 ChatGPT 或填自己的 API 服务。
 
