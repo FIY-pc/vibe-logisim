@@ -75,56 +75,62 @@ export function circuitTools({
   context: ToolContext;
   vision: boolean;
 }): AgentTool<any, any>[] {
-  return Object.values(TOOL_SPECS).map((spec) => ({
-    name: spec.name,
-    label: spec.label,
-    description: spec.description,
-    parameters: spec.parameters as any,
-    execute: async (
-      _callId: string,
-      args: any,
-      signal?: AbortSignal,
-    ): Promise<AgentToolResult<any>> => {
-      try {
-        context.assertCurrent();
-        signal?.throwIfAborted();
-        const value = await HANDLERS[spec.name](context, args ?? {}, signal);
-        context.assertCurrent();
-        signal?.throwIfAborted();
-        const { publicResult, modelContentItems } = splitModelContent(value);
-        return {
-          content: [
-            { type: "text", text: JSON.stringify(publicResult) },
-            ...modelContentItems.map((item: any) =>
-              vision
-                ? {
-                    type: "image" as const,
-                    data: item.imageData,
-                    mimeType: item.mimeType,
-                  }
-                : {
-                    type: "text" as const,
-                    text: "工具返回了图片；当前模型服务未启用图片输入，不能声称已看图。",
-                  },
-            ),
-          ],
-          details: null,
-        };
-      } catch (error) {
-        const failure = toolErrorFromException(spec.name, error);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                error: { ...failure.toolError, schema: ERROR_SCHEMA },
-              }),
-            },
-          ],
-          details: null,
-          isError: true,
-        };
-      }
-    },
-  }));
+  return Object.values(TOOL_SPECS)
+    .filter(
+      (spec) =>
+        context.folder ||
+        !["open_circuit", "create_circuit"].includes(spec.name),
+    )
+    .map((spec) => ({
+      name: spec.name,
+      label: spec.label,
+      description: spec.description,
+      parameters: spec.parameters as any,
+      execute: async (
+        _callId: string,
+        args: any,
+        signal?: AbortSignal,
+      ): Promise<AgentToolResult<any>> => {
+        try {
+          context.assertCurrent();
+          signal?.throwIfAborted();
+          const value = await HANDLERS[spec.name](context, args ?? {}, signal);
+          context.assertCurrent();
+          signal?.throwIfAborted();
+          const { publicResult, modelContentItems } = splitModelContent(value);
+          return {
+            content: [
+              { type: "text", text: JSON.stringify(publicResult) },
+              ...modelContentItems.map((item: any) =>
+                vision
+                  ? {
+                      type: "image" as const,
+                      data: item.imageData,
+                      mimeType: item.mimeType,
+                    }
+                  : {
+                      type: "text" as const,
+                      text: "工具返回了图片；当前模型服务未启用图片输入，不能声称已看图。",
+                    },
+              ),
+            ],
+            details: null,
+          };
+        } catch (error) {
+          const failure = toolErrorFromException(spec.name, error);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: { ...failure.toolError, schema: ERROR_SCHEMA },
+                }),
+              },
+            ],
+            details: null,
+            isError: true,
+          };
+        }
+      },
+    }));
 }

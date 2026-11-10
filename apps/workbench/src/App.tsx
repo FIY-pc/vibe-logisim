@@ -112,6 +112,7 @@ function Shell() {
       <WorkspacePanels
         layout={layout}
         railAvailable={Boolean(doc || folder)}
+        reviewAvailable={Boolean(doc || folder)}
         rail={<Rail placement={placement} />}
         review={<Aside />}
       >

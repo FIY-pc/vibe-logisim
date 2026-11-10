@@ -63,12 +63,26 @@ pub fn page_loaded(webview: &tauri::Webview, payload: &PageLoadPayload<'_>) {
         let _ = webview.eval(
             r#"(() => {
           const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+          let startedCircuit = false;
           const timer = setInterval(async () => {
+            if (!window.__TAURI_INTERNALS__) return;
+            if (document.querySelector('.app[data-workspace="empty"]')) {
+              const create = document.querySelector('button[data-action="new-circuit"]');
+              if (create && !create.disabled && !startedCircuit) {
+                startedCircuit = true;
+                create.click();
+              }
+              return;
+            }
             const settings = document.querySelector('button[aria-label="AI 设置"]');
             if (!settings || !window.__TAURI_INTERNALS__) return;
             clearInterval(timer);
             let error = null;
             try {
+              await frame(); await frame();
+              const composer = document.querySelector('textarea[aria-label="消息"]');
+              if (!composer || composer.getBoundingClientRect().height > 100)
+                throw new Error('Empty AI composer is oversized in the installed WebView: ' + composer?.getBoundingClientRect().height);
               settings.click();
               await frame(); await frame();
               const dialog = document.querySelector('.ai-settings-panel[role="dialog"][data-state="open"]');

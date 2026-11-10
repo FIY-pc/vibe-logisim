@@ -14,7 +14,11 @@ export async function verifyJavaRuntime(directory: string, label: string) {
         "bin/server/jvm.dll",
         "lib/modules",
       ]
-    : ["bin/java", "lib/server/libjvm.so", "lib/modules"];
+    : [
+        "bin/java",
+        `lib/server/libjvm.${process.platform === "darwin" ? "dylib" : "so"}`,
+        "lib/modules",
+      ];
   for (const file of required) {
     if (!(await stat(path.join(directory, file))).isFile())
       throw new Error(`${label}: missing runtime member ${file}`);

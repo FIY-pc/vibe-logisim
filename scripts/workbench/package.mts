@@ -13,13 +13,14 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { verifyJavaRelocation } from "./verify-java.mts";
 const root = path.resolve(import.meta.dirname, "../..");
-if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64")
-  throw new Error("Packaging supports Linux and Windows x64");
 const windows = process.platform === "win32";
+const mac = process.platform === "darwin";
 const tar = windows
   ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/tar.exe")
   : "tar";
 const target = `${process.platform}-${process.arch}`;
+if (!["linux-x64", "win32-x64", "darwin-arm64", "darwin-x64"].includes(target))
+  throw new Error("Unsupported package target: " + target);
 const version: string = JSON.parse(
   await readFile(
     path.join(root, "apps/workbench/src-tauri/tauri.conf.json"),
@@ -58,8 +59,17 @@ await writeFile(
       ...(baseline ? { version: "0.0.0" } : {}),
       bundle: {
         active: true,
-        targets: [windows ? "nsis" : "deb"],
-        icon: ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+        targets: mac ? ["app", "dmg"] : [windows ? "nsis" : "deb"],
+        icon: [
+          "icons/32x32.png",
+          "icons/128x128.png",
+          "icons/icon.ico",
+          "icons/icon.icns",
+        ],
+        macOS: {
+          minimumSystemVersion: "13.5",
+          signingIdentity: process.env.APPLE_SIGNING_IDENTITY || "-",
+        },
         windows: {
           nsis: {
             installMode: "currentUser",
@@ -122,68 +132,83 @@ if (baseline) {
   process.exit(0);
 }
 const portable = path.join(cache, `Vibe-Logisim-${target}`);
-await rm(portable, { recursive: true, force: true });
-await mkdir(path.join(portable, "resources"), { recursive: true });
-await cp(product, path.join(portable, "resources/workbench"), {
-  recursive: true,
-  dereference: true,
-});
-await cp(
-  path.join(root, "target/release/vibe-logisim-app" + (windows ? ".exe" : "")),
-  path.join(portable, "vibe-logisim" + (windows ? ".exe" : "")),
-);
-if (windows) {
-  // Leave room for the destination directory added by Explorer's Extract All.
-  const inspect = async (directory: string): Promise<void> => {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
-      const file = path.join(directory, entry.name);
-      if (entry.isDirectory()) await inspect(file);
-      else if (path.relative(cache, file).length > 140)
-        throw new Error(
-          `Portable path exceeds Windows extraction budget: ${path.relative(cache, file)}`,
-        );
-    }
-  };
-  await inspect(portable);
-  await writeFile(
-    path.join(portable, "start.cmd"),
-    '@echo off\r\nset "VIBE_WORKBENCH_RESOURCES=%~dp0resources\\workbench"\r\nstart "" "%~dp0vibe-logisim.exe" %*\r\n',
-  );
-  await writeFile(
-    path.join(portable, "README.txt"),
-    "Run start.cmd. Microsoft Edge WebView2 is required. Node.js and Java are included.\r\n",
-  );
-  await run(tar, [
-    "-a",
-    "-cf",
-    path.join(cache, `Vibe-Logisim-${target}.zip`),
-    "-C",
-    cache,
-    path.basename(portable),
+if (mac) {
+  // Keep the actual application bundle intact, including its signature and modes.
+  await run("/usr/bin/ditto", [
+    "-c",
+    "-k",
+    "--sequesterRsrc",
+    "--keepParent",
+    path.join(root, "target/release/bundle/macos/Vibe Logisim.app"),
+    portable + ".zip",
   ]);
 } else {
-  await writeFile(
-    path.join(portable, "start.sh"),
-    '#!/bin/sh\nset -eu\napp_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexport VIBE_WORKBENCH_RESOURCES="$app_dir/resources/workbench"\nexec "$app_dir/vibe-logisim" "$@"\n',
+  await rm(portable, { recursive: true, force: true });
+  await mkdir(path.join(portable, "resources"), { recursive: true });
+  await cp(product, path.join(portable, "resources/workbench"), {
+    recursive: true,
+    dereference: true,
+  });
+  await cp(
+    path.join(
+      root,
+      "target/release/vibe-logisim-app" + (windows ? ".exe" : ""),
+    ),
+    path.join(portable, "vibe-logisim" + (windows ? ".exe" : "")),
   );
-  await chmod(path.join(portable, "start.sh"), 0o755);
-  await writeFile(
-    path.join(portable, "README.txt"),
-    "Run ./start.sh. Linux requires WebKitGTK 4.1 and GTK 3. Node.js and Java are included.\n",
-  );
-  await run(tar, [
-    "-czf",
-    path.join(cache, `Vibe-Logisim-${target}.tar.gz`),
-    "-C",
-    cache,
-    path.basename(portable),
-  ]);
+  if (windows) {
+    // Leave room for the destination directory added by Explorer's Extract All.
+    const inspect = async (directory: string): Promise<void> => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) await inspect(file);
+        else if (path.relative(cache, file).length > 140)
+          throw new Error(
+            `Portable path exceeds Windows extraction budget: ${path.relative(cache, file)}`,
+          );
+      }
+    };
+    await inspect(portable);
+    await writeFile(
+      path.join(portable, "start.cmd"),
+      '@echo off\r\nset "VIBE_WORKBENCH_RESOURCES=%~dp0resources\\workbench"\r\nstart "" "%~dp0vibe-logisim.exe" %*\r\n',
+    );
+    await writeFile(
+      path.join(portable, "README.txt"),
+      "Run start.cmd. Microsoft Edge WebView2 is required. Node.js and Java are included.\r\n",
+    );
+    await run(tar, [
+      "-a",
+      "-cf",
+      path.join(cache, `Vibe-Logisim-${target}.zip`),
+      "-C",
+      cache,
+      path.basename(portable),
+    ]);
+  } else {
+    await writeFile(
+      path.join(portable, "start.sh"),
+      '#!/bin/sh\nset -eu\napp_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexport VIBE_WORKBENCH_RESOURCES="$app_dir/resources/workbench"\nexec "$app_dir/vibe-logisim" "$@"\n',
+    );
+    await chmod(path.join(portable, "start.sh"), 0o755);
+    await writeFile(
+      path.join(portable, "README.txt"),
+      "Run ./start.sh. Linux requires WebKitGTK 4.1 and GTK 3. Node.js and Java are included.\n",
+    );
+    await run(tar, [
+      "-czf",
+      path.join(cache, `Vibe-Logisim-${target}.tar.gz`),
+      "-C",
+      cache,
+      path.basename(portable),
+    ]);
+  }
 }
 // Keep stable local paths for desktop checks and versioned copies for distribution.
 const release = path.join(cache, "release");
 await rm(release, { recursive: true, force: true });
 await mkdir(release, { recursive: true });
-const extension = windows ? "zip" : "tar.gz";
+const extension = windows || mac ? "zip" : "tar.gz";
 const archive = `vibe-logisim-${version}-${target}.${extension}`;
 await cp(
   path.join(cache, `Vibe-Logisim-${target}.${extension}`),
@@ -192,15 +217,16 @@ await cp(
 const installers = path.join(
   root,
   "target/release/bundle",
-  windows ? "nsis" : "deb",
+  mac ? "dmg" : windows ? "nsis" : "deb",
 );
 const installerFiles = (await readdir(installers)).filter(
   (name) =>
-    name.includes(`_${version}_`) && name.endsWith(windows ? ".exe" : ".deb"),
+    name.includes(`_${version}_`) &&
+    name.endsWith(mac ? ".dmg" : windows ? ".exe" : ".deb"),
 );
 if (installerFiles.length !== 1)
   throw new Error("Expected one installer for the current version");
-const installer = `vibe-logisim-${version}-${target}${windows ? "-setup.exe" : ".deb"}`;
+const installer = `vibe-logisim-${version}-${target}${mac ? ".dmg" : windows ? "-setup.exe" : ".deb"}`;
 await cp(
   path.join(installers, installerFiles[0]),
   path.join(release, installer),

@@ -17,6 +17,24 @@
     }
   },
   "targets": {
+    "darwin-arm64": {
+      "artifacts": {
+        "java": {
+          "version": "Temurin 21.0.12.1+1",
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "3623232f33a9c3baadf304480b2535f9a3cba8a58d42ecbb438ba267315d9998"
+        }
+      }
+    },
+    "darwin-x64": {
+      "artifacts": {
+        "java": {
+          "version": "Temurin 21.0.12.1+1",
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_mac_hotspot_21.0.12.1_1.tar.gz",
+          "sha256": "44db0f08196daf19a47f90d13388b0c943b67663cb537f998fe29e836fa842ce"
+        }
+      }
+    },
     "linux-x64": {
       "artifacts": {
         "java": {

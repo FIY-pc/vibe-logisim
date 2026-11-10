@@ -94,6 +94,7 @@
   outline: none;
 }
 .ui-message-composer-input > textarea {
+  flex: none;
   min-height: 88px;
   max-height: min(28dvh, 240px);
   padding: var(--space-3);

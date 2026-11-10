@@ -41,6 +41,11 @@ export async function createCircuit(
   context: ToolContext,
   args: Record<string, any>,
 ) {
+  if (!context.folder)
+    throw new CircuitToolError(
+      "INVALID_ARGUMENT",
+      "请在当前电路中添加子电路，或由用户新建文档后继续。",
+    );
   if (!/\.circ$/i.test(args.path))
     throw new CircuitToolError(
       "INVALID_ARGUMENT",

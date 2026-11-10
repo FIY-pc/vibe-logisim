@@ -13,6 +13,8 @@ export async function openFolderPath(
   onFolder(folder);
   if (folder.historyWarning)
     onError(`文件夹已打开；文件历史暂不可用：${folder.historyWarning}`);
+  if (folder.recentWarning)
+    onError(`文件夹已打开；最近项目未能保存：${folder.recentWarning}`);
 }
 
 /** Lets the user choose a folder: the system dialog in the desktop app,

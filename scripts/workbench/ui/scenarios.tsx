@@ -1,3 +1,4 @@
+import { verifyWelcome } from "./welcome";
 import { verifyDocumentWorkspace } from "./document-workspace";
 import { verifyFilePreview } from "./file-preview";
 import { verifySearchControls } from "./search-controls";
@@ -106,6 +107,7 @@ const state = () => ({
   return () => subscribers.delete(fn);
 };
 (globalThis as any).__command = async (request: any) => {
+  if (request.op === "folderRecent") return [];
   calls.push(request);
   if (request.op === "agent") {
     if (request.method === "bind") runtimeDoc = request.args.documentId;
@@ -306,8 +308,21 @@ console.log(
   "PASS: document switch waits for binding, restores only matching conversation draft",
 );
 await render(chat(doc("B"), true, false));
-assert.equal(document.querySelector('[aria-label="消息编辑器"]'), null);
-assert(document.body.textContent?.includes("打开文件夹以开始对话"));
+assert(document.querySelector('[aria-label="消息编辑器"]'));
+assert(document.body.textContent?.includes("当前电路 · B.circ"));
+assert.equal(
+  document.querySelector<HTMLTextAreaElement>("textarea")!.disabled,
+  false,
+);
+assert.equal(
+  document.querySelector<HTMLTextAreaElement>("textarea")!.value,
+  "",
+);
+await input("standalone draft");
+assert.equal(
+  localStorage.getItem("vibe.draft:document:B:chat-B"),
+  "standalone draft",
+);
 assert.equal(localStorage.getItem("vibe.draft:B:chat-B"), "B own draft");
 await render(chat(doc("B")));
 assert.equal(
@@ -557,6 +572,7 @@ const auditSnapshot = () => ({
     if (auditActive === request.id) auditActive = auditDocs[0]?.id || "";
     return { closed: true };
   }
+  if (request.op === "folderRecent") return [];
   if (request.op === "folderList")
     return {
       folder: auditFolder,
@@ -1379,6 +1395,7 @@ await verifyRestoredInteractions();
 await verifyStraightWires();
 await verifyFilesUI();
 await verifyCloseFolder();
+await verifyWelcome();
 await verifyDocumentWorkspace();
 await verifyFilePreview();
 await verifyReferencesUI();

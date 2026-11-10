@@ -1,6 +1,7 @@
 import { spawn, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { windowsCommand } from "./windows-command.mts";
+import { macosCommand } from "./macos-command.mts";
 import { OUTPUT_MOUNT } from "./output-store.mts";
 
 // Process isolation and lifetime only; Pi owns output accumulation and UTF-8.
@@ -32,6 +33,16 @@ export async function shellCommand(
       signal,
       timeout,
       outputRoot,
+      onData,
+    });
+  if (process.platform === "darwin")
+    return macosCommand(commandText, {
+      root,
+      referenceRoot,
+      runtimeRoot,
+      outputRoot,
+      signal,
+      timeout,
       onData,
     });
   if (process.platform !== "linux")

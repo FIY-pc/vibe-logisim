@@ -54,12 +54,14 @@ import { TextPrompt } from "../shared/TextPrompt";
 import { Select } from "../shared/Select";
 import { useAutoSize } from "../shared/useAutoSize";
 import { ConversationExport } from "./ConversationExport";
+import { ChatEmpty } from "./ChatEmpty";
 export type { Message } from "./ConversationContent";
 
 /** The sidecar's `status` snapshot; the host adds `eventCursor`. Only
  * `history` carries the conversation (`messages`). */
 interface RuntimeState {
   eventCursor: number;
+  workspaceKey?: string | null;
   status: string;
   detail?: string | null;
   available: boolean;
@@ -78,7 +80,7 @@ interface RuntimeState {
   contextUsage?: ContextUsage | null;
 }
 interface Props {
-  onOpenFolder?: () => void;
+  onNewCircuit?: () => void;
   visible: boolean;
   doc: Document | null;
   folder: ProjectFolder | null;
@@ -101,6 +103,7 @@ function starterActions(
   emptyOpen: boolean,
   readable: boolean,
   selected: boolean,
+  standalone: boolean,
 ) {
   const adder = {
     id: "build",
@@ -109,7 +112,9 @@ function starterActions(
     prompt:
       (emptyOpen
         ? "在当前打开的这个空电路里构建一个全加器，输入为 A、B、Cin，输出为 Sum、Cout。"
-        : "帮我在工作区中新建一份全加器电路，输入为 A、B、Cin，输出为 Sum、Cout。保留已有文件。") +
+        : standalone
+          ? "请在当前文档中添加一个新的全加器子电路，保留已有定义，输入为 A、B、Cin，输出为 Sum、Cout。"
+          : "帮我在工作区中新建一份全加器电路，输入为 A、B、Cin，输出为 Sum、Cout。保留已有文件。") +
       STARTER_HOW +
       "最后简要说明原理和如何操作它。",
   };
@@ -166,7 +171,7 @@ const defaultEfforts = [
 ];
 
 export function Chat({
-  onOpenFolder,
+  onNewCircuit,
   visible,
   doc,
   folder,
@@ -192,21 +197,30 @@ export function Chat({
     [renameConversation, setRenameConversation] = useState(false),
     [editingMessage, setEditingMessage] = useState<Message | null>(null),
     [editedText, setEditedText] = useState("");
-  // Conversations live per folder in the sidecar; without a folder the open
-  // document scopes the local draft only (sending needs a folder).
-  const scope = folder ? folder.id : doc?.id || "global";
+  // Projects share a conversation; standalone circuits retain their own scope.
+  const scope = folder ? folder.id : doc ? "document:" + doc.id : "global";
+  const workspaceKey = state?.workspaceKey || scope;
   const [boundTo, setBoundTo] = useState<{
     scope: string;
     documentId?: string;
+    documentPath?: string | null;
   } | null>(null);
   const [connection, setConnection] = useState(0);
-  const bound = useRef<{ scope: string; documentId?: string } | null>(null);
-  const target = useRef({ scope, documentId: doc?.id });
-  target.current = { scope, documentId: doc?.id };
+  const bound = useRef<{
+    scope: string;
+    documentId?: string;
+    documentPath?: string | null;
+  } | null>(null);
+  const target = useRef({
+    scope,
+    documentId: doc?.id,
+    documentPath: doc?.path,
+  });
+  target.current = { scope, documentId: doc?.id, documentPath: doc?.path };
   // The folder binding keeps the draft; sending and staging references also
   // wait for the current document to be bound.
   const scopeReady =
-    Boolean(folder) && Boolean(state) && boundTo?.scope === scope;
+    Boolean(folder || doc) && Boolean(state) && boundTo?.scope === scope;
   const ready = scopeReady && boundTo?.documentId === doc?.id;
   const busy = Boolean(state?.busy);
   useEffect(() => {
@@ -370,7 +384,7 @@ export function Chat({
         break;
       case "conversations-changed":
         // Lists are per folder; one for a folder this view has left is stale.
-        if (e.workspaceKey && e.workspaceKey !== target.current.scope) break;
+        if (e.workspaceKey && e.workspaceKey !== workspaceKey) break;
         listEpoch.current++;
         setConversations(e.conversations || []);
         break;
@@ -413,7 +427,8 @@ export function Chat({
     const wanted = target.current;
     if (
       bound.current?.scope === wanted.scope &&
-      bound.current.documentId === wanted.documentId
+      bound.current.documentId === wanted.documentId &&
+      bound.current.documentPath === wanted.documentPath
     )
       return;
     if (busy && boundTo && boundTo.scope !== wanted.scope) return;
@@ -426,15 +441,15 @@ export function Chat({
       setBoundTo((old) => (old?.scope === wanted.scope ? old : null));
       await runtime("bind", { documentId: wanted.documentId });
       bound.current = wanted;
-      setBoundTo(wanted);
       await refresh(true);
+      setBoundTo(wanted);
       await loadConversations();
     }).catch(async (error) => {
       // Another folder's turn is still running; the binding follows its end.
       const next = await refresh().catch(() => null);
       if (!next?.busy) setRuntimeError(errorText(error));
     });
-  }, [doc?.id, folder?.id, busy, connection]);
+  }, [doc?.id, doc?.path, folder?.id, busy, connection]);
   const reconnect = () =>
     runtime("reconnect")
       .then(() => {
@@ -445,7 +460,7 @@ export function Chat({
       .catch(onError);
 
   const draftKey = scopeReady
-    ? "vibe.draft:" + scope + ":" + (state?.conversationId || "")
+    ? "vibe.draft:" + workspaceKey + ":" + (state?.conversationId || "")
     : "";
   const draft = draftRecord.key === draftKey ? draftRecord.text : "";
   useAutoSize(composerInput, draft);
@@ -698,11 +713,11 @@ export function Chat({
           }}
         />
       )}
-      {exportOpen && folder && (
+      {exportOpen && scopeReady && (
         <ConversationExport
-          key={folder.id}
-          workspaceKey={folder.id}
-          workspaceName={folder.name}
+          key={workspaceKey}
+          workspaceKey={workspaceKey}
+          workspaceName={folder?.name || doc?.name || "电路"}
           conversations={conversations}
           onClose={() => setExportOpen(false)}
         />
@@ -714,9 +729,7 @@ export function Chat({
           disabled={locked}
           onSelect={(id) => switchConversation("select", id)}
           onRestore={(id) => switchConversation("restore", id)}
-          onExport={
-            scopeReady && folder ? () => setExportOpen(true) : undefined
-          }
+          onExport={scopeReady ? () => setExportOpen(true) : undefined}
         />
         <IconButton
           variant="ghost"
@@ -729,10 +742,7 @@ export function Chat({
           <Plus size={16} />
         </IconButton>
         <Menu label="对话操作">
-          <MenuItem
-            disabled={!scopeReady || !folder}
-            onSelect={() => setExportOpen(true)}
-          >
+          <MenuItem disabled={!scopeReady} onSelect={() => setExportOpen(true)}>
             导出会话…
           </MenuItem>
           <MenuItem
@@ -807,32 +817,31 @@ export function Chat({
         visible={visible}
         items={turns}
         empty={
-          <div className="quiet-empty">
-            {!folder ? (
-              <Button variant="soft" color="gray" onClick={onOpenFolder}>
-                打开文件夹以开始对话
-              </Button>
-            ) : !state ? (
-              runtimeError ? (
-                ""
-              ) : (
-                "正在连接 AI…"
-              )
-            ) : !state.services.length ? (
-              <div className="chat-card">
-                <span>登录 ChatGPT 或添加 API 服务后开始对话。</span>
-                <Button variant="solid" onClick={() => setConfigure(true)}>
-                  连接 AI
-                </Button>
-              </div>
-            ) : draft.trim() ? (
-              "描述要完成的电路，或选中元件后提问。"
-            ) : (
+          <ChatEmpty
+            phase={
+              !folder && !doc
+                ? "start"
+                : runtimeError
+                  ? "error"
+                  : !ready
+                    ? "connecting"
+                    : !state?.services.length
+                      ? "configure"
+                      : "ready"
+            }
+            documentName={doc?.name}
+            standalone={!folder}
+            onStart={onNewCircuit}
+            onConfigure={() => setConfigure(true)}
+            onReconnect={() => void reconnect()}
+          >
+            {!draft.trim() && (
               <div className="conversation-starters">
                 {starterActions(
                   Boolean(shown) && !readable,
                   readable,
                   selection.length > 0,
+                  !folder,
                 ).map((starter) => (
                   <ActionRow
                     variant="soft"
@@ -841,10 +850,9 @@ export function Chat({
                     className="conversation-starter"
                     data-tip="立即发送"
                     disabled={
-                      locked || references.unresolved || !state.available
+                      locked || references.unresolved || !state?.available
                     }
                     onClick={() => {
-                      // The ordinary send path keeps the prompt editable if it fails.
                       changeDraft(starter.prompt);
                       send(starter.prompt);
                     }}
@@ -856,7 +864,7 @@ export function Chat({
                 ))}
               </div>
             )}
-          </div>
+          </ChatEmpty>
         }
         renderItem={(segment, index) => {
           const live =
@@ -897,7 +905,7 @@ export function Chat({
           );
         }}
       />
-      {folder && (
+      {(folder || doc) && (
         <MessageComposer.Root
           className="composer"
           aria-label="消息编辑器"

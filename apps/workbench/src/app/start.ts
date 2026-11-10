@@ -13,6 +13,7 @@ export function startWorkbench({ stores, actions }: Workbench): () => void {
     showChatWithoutDocument(stores),
     actions.workspace.watchSource(),
   ];
+  void actions.workspace.refreshRecentProjects();
   void stores.documents
     .getState()
     .refreshWorkspace(true)

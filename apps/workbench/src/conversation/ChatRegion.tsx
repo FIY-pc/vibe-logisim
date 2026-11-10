@@ -35,7 +35,7 @@ export function ChatRegion() {
   });
   return (
     <Chat
-      onOpenFolder={actions.workspace.openFolder}
+      onNewCircuit={() => void actions.workspace.newFile()}
       visible={visible}
       doc={doc}
       circuit={circuit?.name || null}

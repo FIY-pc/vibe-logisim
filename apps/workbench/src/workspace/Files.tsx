@@ -42,6 +42,7 @@ import { Button, IconButton, ActionRow } from "../design/ui";
 import { fullText } from "../shared/Tooltips";
 export interface ProjectFolder {
   historyWarning?: string;
+  recentWarning?: string;
   id: string;
   path: string;
   name: string;

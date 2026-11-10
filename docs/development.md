@@ -6,6 +6,8 @@
 
 安装 Node.js 24、rustup 和 JDK 17+，以及 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。Rust 版本由 `rust-toolchain.toml` 固定。
 
+macOS 开发需要 Xcode Command Line Tools（`xcode-select --install`）。Apple Silicon 和 Intel 分别在对应架构的 Mac 上构建；`npm run package:desktop` 自行下载锁定的 JDK 和 Node.js，分发包不依赖用户安装这些运行时。
+
 ```sh
 npm ci
 npm run setup

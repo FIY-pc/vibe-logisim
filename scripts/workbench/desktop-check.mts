@@ -177,7 +177,13 @@ export async function checkDesktop(options: {
   if (options.portable) env.VIBE_WORKBENCH_RESOURCES = options.resources;
   let failure: unknown;
   try {
-    await run(options.binary, [], { cwd: options.state, env });
+    // macOS tmpdir starts with /var -> /private/var. Tauri deliberately refuses
+    // executable paths containing symlinks; launch the real bundle path.
+    const binary =
+      process.platform === "darwin"
+        ? await realpath(options.binary)
+        : options.binary;
+    await run(binary, [], { cwd: options.state, env });
   } catch (error) {
     failure = error;
   }

@@ -20,6 +20,8 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
   const { doc } = view;
   const pending = useShell((state) => state.pending);
   const folder = useFiles((state) => state.folder);
+  const recentProjects = useFiles((state) => state.recentProjects);
+  const recentError = useFiles((state) => state.recentError);
   const shortcuts = useSettings((state) => state.labels);
   const onError = useNotices((state) => state.onError);
   const { workspace, editor: editing } = actions;
@@ -49,6 +51,28 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
           打开…
         </MenuItem>
         <MenuItem onSelect={() => void openFolder()}>打开文件夹…</MenuItem>
+        <MenuSub label="打开最近的项目">
+          {recentProjects.map((project) => (
+            <MenuItem
+              key={project.path}
+              disabled={busy}
+              onSelect={() =>
+                void workspace.openFolderAt(project.path).catch(onError)
+              }
+            >
+              <span title={project.path}>
+                {project.name}
+                {!project.available && "（路径不可用）"}
+                <small className="recent-menu-path">{project.path}</small>
+              </span>
+            </MenuItem>
+          ))}
+          {!recentProjects.length && (
+            <MenuItem disabled>
+              {recentError ? "最近项目暂不可用" : "暂无最近项目"}
+            </MenuItem>
+          )}
+        </MenuSub>
         <MenuItem
           disabled={!folder || busy}
           onSelect={() => void workspace.closeFolder()}

@@ -20,10 +20,11 @@ import path from "node:path";
 import { verifyNodeRelocation } from "./verify-node.mts";
 import { patchWindowsJava } from "./windows-java-utf8.mts";
 import { retryWindowsFileOperation } from "./windows-file-operation.mts";
+import { signMacosRuntimes } from "./sign-macos.mts";
 const root = path.resolve(import.meta.dirname, "../..");
-if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64")
-  throw new Error("Resource assembly supports Linux and Windows x64");
 const target = `${process.platform}-${process.arch}`;
+if (!["linux-x64", "win32-x64", "darwin-arm64", "darwin-x64"].includes(target))
+  throw new Error("Unsupported resource target: " + target);
 const windows = process.platform === "win32";
 const tar = windows
   ? path.join(process.env.SystemRoot || "C:\\Windows", "System32/tar.exe")
@@ -197,7 +198,11 @@ try {
     path.join(unpack, "node/LICENSE"),
     path.join(runtime, "node/LICENSE"),
   );
-  const jdk = path.join(unpack, "jdk");
+  const jdk = path.join(
+    unpack,
+    "jdk",
+    ...(process.platform === "darwin" ? ["Contents", "Home"] : []),
+  );
   await run(path.join(jdk, "bin", executable("jlink")), [
     "--module-path",
     path.join(jdk, "jmods"),
@@ -278,6 +283,7 @@ try {
     ) + "\n",
   );
   await rm(unpack, { recursive: true });
+  await signMacosRuntimes(stage);
   await verifyNodeRelocation(stage);
   // Tauri overwrites its staged resources on rebuild. Vendor notices may be read-only.
   for (const file of await files(stage))

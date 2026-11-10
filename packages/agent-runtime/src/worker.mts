@@ -54,6 +54,14 @@ let binding: { documentId: string | null; workspaceKey: string | null } | null =
 const folderOf = async () =>
   (await host.call<HostStatus>({ op: "status", summary: true })).folder;
 
+const workspaceOf = async (
+  documentId: string | null = binding?.documentId ?? null,
+) =>
+  runner.workspace(
+    await host.call<HostStatus>({ op: "status", summary: true }),
+    documentId,
+  );
+
 async function dispatch(method: RuntimeMethod, args: any) {
   switch (method) {
     case "readMaterial": {
@@ -66,18 +74,18 @@ async function dispatch(method: RuntimeMethod, args: any) {
     case "history":
       return runner.historySnapshot();
     case "readToolOutput": {
-      const folder = await folderOf();
-      if (!folder || folder.id !== args.workspaceKey)
+      const workspace = await workspaceOf();
+      if (!workspace || workspace.key !== args.workspaceKey)
         throw new Error("工作区已切换，请重新打开工具输出");
-      const store = runner.outputStore(folder.id, args.conversationId);
-      const [record] = runner.exportConversations(folder.id, [
+      const store = runner.outputStore(workspace.key, args.conversationId);
+      const [record] = runner.exportConversations(workspace.key, [
         args.conversationId,
       ]);
       return readToolOutput(record, store, args);
     }
     case "exportConversations": {
-      const folder = await folderOf();
-      if (!folder || folder.id !== args.workspaceKey)
+      const workspace = await workspaceOf();
+      if (!workspace || workspace.key !== args.workspaceKey)
         throw new Error("工作区已切换，请重新选择要导出的会话");
       if (
         typeof args.exportId !== "string" ||
@@ -85,22 +93,27 @@ async function dispatch(method: RuntimeMethod, args: any) {
       )
         throw new Error("导出请求无效");
       const conversations = await Promise.all(
-        runner.exportConversations(folder.id, args.ids).map(async (record) => {
-          const conversation = exportRecord(record);
-          const store = runner.outputStore(folder.id, record.id);
-          for (const artifact of conversation.outputArtifacts) {
-            try {
-              const saved = await store.describe(artifact.id);
-              if (saved.bytes !== artifact.bytes)
-                throw new Error("size changed");
-            } catch {
-              throw new Error(
-                `无法导出会话「${record.title}」：工具输出 ${artifact.id} 缺失或已改变`,
-              );
+        runner
+          .exportConversations(workspace.key, args.ids)
+          .map(async (record) => {
+            const conversation = exportRecord(record);
+            const store = runner.outputStore(workspace.key, record.id);
+            for (const artifact of conversation.outputArtifacts) {
+              try {
+                const saved = await store.describe(artifact.id);
+                if (saved.bytes !== artifact.bytes)
+                  throw new Error("size changed");
+              } catch {
+                throw new Error(
+                  `无法导出会话「${record.title}」：工具输出 ${artifact.id} 缺失或已改变`,
+                );
+              }
             }
-          }
-          return { conversation, markdown: conversationMarkdown(conversation) };
-        }),
+            return {
+              conversation,
+              markdown: conversationMarkdown(conversation),
+            };
+          }),
       );
       // Large histories must not travel through the JSONL reply's size limit.
       // This one-use file stays in app state; the host consumes and removes it.
@@ -124,26 +137,33 @@ async function dispatch(method: RuntimeMethod, args: any) {
       return { exportId: args.exportId };
     }
     case "bind": {
-      const folder = await folderOf();
+      const workspace = await workspaceOf(args.documentId ?? null);
       // A running turn keeps its conversation: another document of the same
       // folder, or a reloaded window, binds without stopping it.
-      if (runner.snapshot().busy && folder?.id !== runner.workspaceKey)
+      if (runner.snapshot().busy && workspace?.key !== runner.workspaceKey)
         throw new Error("请先停止当前回答");
       binding = {
         documentId: args.documentId ?? null,
-        workspaceKey: folder?.id ?? null,
+        workspaceKey: workspace?.key ?? null,
       };
-      if (folder && !runner.snapshot().busy) await runner.resume(folder.id);
-      else if (!folder) await runner.detach();
+      if (workspace && !runner.snapshot().busy)
+        await runner.resume(workspace.key);
+      else if (!workspace) await runner.detach();
       return runner.snapshot();
     }
     case "ask": {
-      const folder = await folderOf();
-      if (!folder) throw new Error("请先打开工作文件夹");
+      const workspace = await workspaceOf(args.documentId ?? null);
+      if (!workspace) throw new Error("请先新建或打开电路");
+      if (
+        !binding ||
+        binding.workspaceKey !== workspace.key ||
+        binding.documentId !== (args.documentId ?? null)
+      )
+        throw new Error("当前电路已切换，请重新发送");
       if (args.startupEpoch !== stopEpoch) throw new Error("已停止");
       const references = await readReferences(
         state,
-        folder.id,
+        workspace.key,
         args.references || [],
       );
       await runner.start();
@@ -164,13 +184,13 @@ async function dispatch(method: RuntimeMethod, args: any) {
     case "reconnect":
       return runner.reconnect();
     case "conversations": {
-      const folder = await folderOf();
-      if (!folder) return null;
+      const workspace = await workspaceOf();
+      if (!workspace) return null;
       if (args?.action) {
         if (runner.snapshot().busy) throw new Error("请先停止当前回答");
-        await runner.changeConversation(folder.id, args.action, args);
+        await runner.changeConversation(workspace.key, args.action, args);
       }
-      return runner.conversationState(folder.id);
+      return runner.conversationState(workspace.key);
     }
     case "models":
       return runner.listModels(Boolean(args?.refresh));
@@ -198,15 +218,24 @@ async function dispatch(method: RuntimeMethod, args: any) {
     case "bindProvider":
       return runner.bindService(args);
     case "stageReferences": {
-      const folder = await folderOf();
-      if (!folder || !binding || args.documentId !== binding.documentId)
+      const workspace = await workspaceOf();
+      if (
+        !workspace ||
+        !binding ||
+        workspace.key !== binding.workspaceKey ||
+        (args.documentId ?? null) !== binding.documentId
+      )
         throw new Error("对话已切换，请重新添加引用");
       if (!Array.isArray(args.references)) throw new Error("资料引用无效");
       const captured = binding;
       const references = await Promise.all(
         args.references.map((input: any) =>
-          storeReference(state, folder.id, args.documentId, input, (request) =>
-            host.call(request as Request),
+          storeReference(
+            state,
+            workspace.key,
+            args.documentId,
+            input,
+            (request) => host.call(request as Request),
           ),
         ),
       );
@@ -215,9 +244,9 @@ async function dispatch(method: RuntimeMethod, args: any) {
       return references;
     }
     case "readReferences": {
-      const folder = await folderOf();
-      if (!folder) throw new Error("引用属于另一个工程文件夹");
-      return readReferences(state, folder.id, args.ids);
+      const workspace = await workspaceOf();
+      if (!workspace) throw new Error("当前电路已关闭，请重新打开引用");
+      return readReferences(state, workspace.key, args.ids);
     }
     default:
       throw new Error("未知运行时请求");

@@ -3,7 +3,7 @@ use crate::{
     ErrorCode, Host, HostError, Result,
     app::diagnostics::Stage,
     documents::history::Action,
-    folder::{ImportChoice, file_history, file_references},
+    folder::{ImportChoice, file_history, file_references, recent},
     value,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
@@ -14,6 +14,10 @@ use std::{collections::BTreeMap, path::PathBuf};
 #[derive(Debug, Deserialize, Serialize, ts_rs::TS)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum FolderRequest {
+    FolderRecent,
+    FolderForget {
+        path: PathBuf,
+    },
     FolderOpen {
         path: PathBuf,
     },
@@ -104,6 +108,8 @@ pub enum FolderRequest {
 
 impl FolderRequest {
     pub(crate) const OPS: &[&str] = &[
+        "folderRecent",
+        "folderForget",
         "folderOpen",
         "folderClose",
         "folderList",
@@ -124,9 +130,11 @@ impl FolderRequest {
     pub(crate) fn meta(&self) -> Meta {
         match self {
             // Opening a folder writes its own pointer file; it changes no document.
-            Self::FolderOpen { .. } | Self::FolderPreview { .. } | Self::FolderResolve { .. } => {
-                Meta::new(Read).stage(Stage::Files)
-            }
+            Self::FolderOpen { .. }
+            | Self::FolderRecent
+            | Self::FolderForget { .. }
+            | Self::FolderPreview { .. }
+            | Self::FolderResolve { .. } => Meta::new(Read).stage(Stage::Files),
             Self::FolderClose { .. } => Meta::new(Write).stage(Stage::Files),
             Self::FolderRead { .. } => Meta::new(Read).stage(Stage::Files).agent(),
             Self::FolderList { .. } | Self::FolderHistory { .. } => Meta::new(Read).agent(),
@@ -148,9 +156,19 @@ impl FolderRequest {
 impl Host {
     pub(crate) async fn folder_request(&self, request: FolderRequest) -> Result<Value> {
         match request {
+            FolderRequest::FolderRecent => {
+                let _current = self.folder.lock().await;
+                value(recent::list(&self.state)?)
+            }
+            FolderRequest::FolderForget { path } => {
+                let _current = self.folder.lock().await;
+                recent::forget(&self.state, &path)?;
+                value(recent::list(&self.state)?)
+            }
             FolderRequest::FolderOpen { path } => {
                 let mut current = self.folder.lock().await;
                 let folder = vibe_circuit_document::Folder::open(&path)?;
+                let previous = recent::load(&self.state);
                 std::fs::create_dir_all(&self.state)?;
                 std::fs::write(
                     self.state.join("folder.json"),
@@ -160,6 +178,11 @@ impl Host {
                     .err()
                     .map(|error| error.to_string());
                 let mut result = value(&folder)?;
+                if let Err(warning) =
+                    previous.and_then(|paths| recent::remember(&self.state, paths, &folder.path))
+                {
+                    result["recentWarning"] = json!(warning.to_string());
+                }
                 if let Some(warning) = history_warning {
                     result["historyWarning"] = json!(warning);
                 }
@@ -198,6 +221,7 @@ impl Host {
                         ));
                     }
                 }
+                recent::preserve_legacy(&self.state)?;
                 match std::fs::remove_file(self.state.join("folder.json")) {
                     Ok(()) => {}
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}

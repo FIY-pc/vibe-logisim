@@ -1,5 +1,6 @@
 import { absolutePath, type ProjectFolder } from "./Files";
 import type { SourceStatus } from "../generated/SourceStatus";
+import type { RecentProject } from "../generated/RecentProject";
 import { command, desktop, openPath, savePath } from "../shared/transport";
 import type { Document } from "../shared/types";
 import { chooseFolder, openFolderPath } from "./useFolderPicker";
@@ -25,8 +26,40 @@ export function createWorkspaceActions(stores: Stores) {
   const { documents, editor, files, notices, shell } = stores;
   const busy = <T>(action: () => Promise<T>) => shell.getState().busy(action);
   const onError = (error: unknown) => notices.getState().onError(error);
+  let recentRequest = 0;
+  const refreshRecentProjects = async () => {
+    const request = ++recentRequest;
+    files.setState({ recentLoading: true });
+    try {
+      const recentProjects = await command<RecentProject[]>({
+        op: "folderRecent",
+      });
+      if (request === recentRequest)
+        files.setState({
+          recentProjects,
+          recentError: "",
+          recentLoading: false,
+        });
+    } catch (error) {
+      if (request === recentRequest)
+        files.setState({ recentError: String(error), recentLoading: false });
+    }
+  };
+  const forgetRecentProject = (path: string) =>
+    busy(async () => {
+      ++recentRequest;
+      await command({ op: "folderForget", path });
+      await refreshRecentProjects();
+    }).catch((error) => {
+      files.setState({ recentLoading: false });
+      onError(error);
+    });
   /** Shows a document the host opened or created, at its main circuit. */
   const showDocument = (d: Document) => {
+    if (!files.getState().folder && !documents.getState().docs.length) {
+      shell.getState().setResourceTab("components");
+      shell.getState().revealFiles();
+    }
     files.getState().showCircuit();
     documents.getState().update(d);
     editor.getState().setCircuitName(d.main);
@@ -153,6 +186,8 @@ export function createWorkspaceActions(stores: Stores) {
   };
 
   const closeDocument = async (target: Document, discard = false) => {
+    if (!files.getState().folder && documents.getState().active === target.id)
+      await command({ op: "agent", method: "stop", args: {} });
     await busy(() =>
       command({
         op: "close",
@@ -240,13 +275,14 @@ export function createWorkspaceActions(stores: Stores) {
   const onFolder = (next: ProjectFolder) => {
     documents.getState().invalidate();
     files.getState().setFolder(next);
+    void refreshRecentProjects();
     shell.getState().revealFiles();
     for (const doc of documents.getState().docs)
       if (doc.path && !doc.dirty && !within(next.path, doc.path))
         void closeDocument(doc).catch(onError);
   };
   const openFolderAt = (path: string) =>
-    openFolderPath(path, onFolder, onError);
+    busy(() => openFolderPath(path, onFolder, onError));
   /** Stops the current answer before asking about drafts, then closes the
    * workspace in one host operation. Cancelling never closes a subset. */
   const closeFolder = () =>
@@ -339,6 +375,8 @@ export function createWorkspaceActions(stores: Stores) {
     requestClose,
     requestReload,
     onFolder,
+    refreshRecentProjects,
+    forgetRecentProject,
     openFolder,
     closeFolder,
     openFolderAt,

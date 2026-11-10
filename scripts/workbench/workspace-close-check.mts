@@ -106,7 +106,7 @@ try {
   assert.deepEqual(detached.messages, []);
   await assert.rejects(
     agent("ask", { question: "Must not start.", references: [] }),
-    /打开工作文件夹/,
+    /新建或打开电路/,
   );
   assert.equal(
     await readFile(path.join(project, "note.txt"), "utf8"),

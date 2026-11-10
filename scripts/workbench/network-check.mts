@@ -8,6 +8,64 @@ import {
 } from "../../packages/agent-runtime/src/network/fetch.mts";
 import { resolveSystemProxy } from "../../packages/agent-runtime/src/network/system-proxy.mts";
 const registry = `ProxyEnable REG_DWORD 0x1\nProxyServer REG_SZ http=127.0.0.1:8080;https=127.0.0.1:8443\nProxyOverride REG_SZ *.internal;<local>`;
+const macSettings = `<dictionary> {
+  ExceptionsList : <array> {
+    0 : *.internal
+    1 : 10.0.0.0/8
+  }
+  ExcludeSimpleHostnames : 1
+  HTTPEnable : 1
+  HTTPProxy : 127.0.0.1
+  HTTPPort : 8080
+  HTTPSEnable : 1
+  HTTPSProxy : ::1
+  HTTPSPort : 8443
+  __SCOPED__ : <dictionary> {
+    en0 : <dictionary> {
+      HTTPPort : 9999
+    }
+  }
+}`;
+const mac = {
+  platform: "darwin",
+  read: async (program: string, args: string[]) => {
+    assert.equal(program, "/usr/sbin/scutil");
+    assert.deepEqual(args, ["--proxy"]);
+    return macSettings;
+  },
+};
+assert.equal(
+  await systemProxy("https://service.example/", mac),
+  "PROXY [::1]:8443",
+);
+assert.equal(
+  await systemProxy("http://service.example/", mac),
+  "PROXY 127.0.0.1:8080",
+);
+for (const host of ["local.internal", "intranet", "10.2.3.4", "localhost"])
+  assert.equal(await systemProxy(`https://${host}/`, mac), "DIRECT");
+assert.equal(
+  await systemProxy("https://service.example/", {
+    platform: "darwin",
+    read: async () => "<dictionary> {\n}\n",
+  }),
+  "DIRECT",
+);
+await assert.rejects(
+  systemProxy("https://service.example/", {
+    platform: "darwin",
+    read: async () => "<dictionary> {\n ProxyAutoConfigEnable : 1\n}\n",
+  }),
+  /自动代理脚本/,
+);
+assert.equal(
+  await systemProxy("https://service.example/", {
+    platform: "darwin",
+    read: async () =>
+      "<dictionary> {\n SOCKSEnable : 1\n SOCKSProxy : localhost\n SOCKSPort : 1080\n}\n",
+  }),
+  "SOCKS5 localhost:1080",
+);
 const windows = { platform: "win32", read: async () => registry };
 assert.equal(
   await systemProxy("https://service.example/", windows),
