@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod file_clipboard;
 mod installation_check;
 use std::sync::Mutex;
 use tauri::{Manager, async_runtime::JoinHandle, ipc::Channel};
@@ -45,6 +46,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            file_clipboard::setup(app)?;
             let root = std::env::var_os("VIBE_WORKBENCH_RESOURCES")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| {
@@ -80,8 +82,13 @@ fn main() {
             app.manage(Stream::default());
             Ok(())
         })
-        .on_page_load(installation_check::page_loaded)
+        .on_menu_event(file_clipboard::menu_event)
+        .on_page_load(|window, payload| {
+            let _ = file_clipboard::file_clipboard_focus(window.app_handle().clone(), false);
+            installation_check::page_loaded(window, payload);
+        })
         .invoke_handler(tauri::generate_handler![
+            file_clipboard::file_clipboard_focus,
             command,
             events,
             installation_check::installation_ready

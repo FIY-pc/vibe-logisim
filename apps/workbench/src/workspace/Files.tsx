@@ -1,7 +1,7 @@
 import type { PreviewFile } from "./FilePreview";
 import { usesFolderPreview } from "./materialPreview";
 import { TextPrompt } from "../shared/TextPrompt";
-import { DecisionDialog } from "../shared/DecisionDialog";
+import { DecisionDialog, type Decision } from "../shared/DecisionDialog";
 import { useEffect, useRef, useState } from "react";
 import { useTree } from "@headless-tree/react";
 import {
@@ -38,6 +38,7 @@ import { useFolderPicker } from "./useFolderPicker";
 import type { ImportAction } from "../generated/ImportAction";
 import { Checkbox } from "../shared/Checkbox";
 import { nativeDropPoint, useFileDragHover } from "./useFileDragHover";
+import { useFileClipboardMenu } from "./useFileClipboardMenu";
 import { DialogBody, DialogFooter, DialogFrame } from "../shared/Dialog";
 import { Button, IconButton, ActionRow } from "../design/ui";
 import { fullText } from "../shared/Tooltips";
@@ -56,6 +57,11 @@ interface Entry {
 }
 interface OperationResult {
   historyWarning?: string | null;
+}
+interface FileClipboard {
+  entry: Entry;
+  cut: boolean;
+  text: string;
 }
 interface ImportPlan {
   id: string;
@@ -211,6 +217,11 @@ function FolderFiles({
   /** The entry the context menu was opened on; null for the folder. */
   const [contextEntry, setContextEntry] = useState<Entry | null>(null);
   const [pending, setPending] = useState(false);
+  const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
+  const clipboardRef = useRef(clipboard);
+  clipboardRef.current = clipboard;
+  const [pasteConflict, setPasteConflict] = useState<Decision | null>(null);
+  const pasteBusy = useRef(false);
   const previewRequest = useRef(0);
   const selectedPath = useRef<string | null>(null);
   const alive = useRef(true);
@@ -376,14 +387,6 @@ function FolderFiles({
       customContextMenuShift: {
         hotkey: "Shift+F10",
         handler: () => openContextMenu(),
-      },
-      customCopy: {
-        hotkey: "MetaOrControl+KeyC",
-        handler: (_event, tree) => {
-          const item = tree.getFocusedItem();
-          if (item)
-            void navigator.clipboard.writeText(item.getId()).catch(onError);
-        },
       },
       // A file-tree key must never undo the active circuit.
       customUndo: { hotkey: "MetaOrControl+KeyZ", handler: () => {} },
@@ -596,6 +599,7 @@ function FolderFiles({
     sources: string[],
     destination: string,
     reference = false,
+    duplicate = false,
   ) => {
     if (
       !folder ||
@@ -625,7 +629,7 @@ function FolderFiles({
         if (refused) throw new Error(refused);
         return;
       }
-      if (plan.items.some((item) => item.conflict))
+      if (!duplicate && plan.items.some((item) => item.conflict))
         setImportPlan({ ...plan, reference });
       else {
         try {
@@ -656,6 +660,123 @@ function FolderFiles({
       setPending(false);
     }
   };
+  const rememberFile = (entry: Entry, cut: boolean, text: string) => {
+    if (!alive.current) return;
+    const next = { entry, cut, text };
+    clipboardRef.current = next;
+    setClipboard(next);
+  };
+  const copyFile = async (entry: Entry, cut: boolean) => {
+    const text = absolute(entry.path);
+    await navigator.clipboard.writeText(text);
+    rememberFile(entry, cut, text);
+  };
+  const pasteFile = async (parent: string, pastedText?: string) => {
+    const copied = clipboardRef.current;
+    if (!folder || !copied || pending || pasteBusy.current) return;
+    pasteBusy.current = true;
+    try {
+      // A text copy in an editor or another app supersedes the file clipboard.
+      const text = pastedText ?? (await navigator.clipboard.readText());
+      if (!alive.current || clipboardRef.current !== copied) return;
+      if (text !== copied.text) {
+        setClipboard(null);
+        return;
+      }
+      const entry = copied.entry;
+      // Pasting a selected folder onto itself duplicates beside it, as in VS Code.
+      if (entry.directory && parent === entry.path) parent = parentOf(parent);
+      if (entry.directory && parent.startsWith(entry.path + "/"))
+        throw new Error("不能粘贴到文件夹自身的子目录");
+      if (!copied.cut) {
+        await importSources([copied.text], parent, false, true);
+        return;
+      }
+      const complete = async (to: string) => {
+        await move(entry, to);
+        // A later Copy/Cut must not be cleared by this operation finishing.
+        if (alive.current && clipboardRef.current === copied)
+          setClipboard(null);
+      };
+      const to = join(parent, entry.name);
+      if (to === entry.path) {
+        setClipboard(null);
+        return;
+      }
+      const listing = await command<{ entries: Entry[] }>({
+        op: "folderList",
+        path: parent,
+      });
+      if (!alive.current) return;
+      const sameName = (name: string) =>
+        listing.entries.some(
+          (item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
+        );
+      if (!sameName(entry.name)) {
+        await complete(to);
+        return;
+      }
+      // Rename is atomic and refuses overwrites. Keep both instead of copying
+      // then deleting: the move must preserve open circuit identity and drafts.
+      setPasteConflict({
+        title: "存在同名项目",
+        message: `目标文件夹中已存在“${entry.name}”。保留两者会为移入的项目添加编号。`,
+        actions: [
+          {
+            label: "保留两者",
+            primary: true,
+            run: async () => {
+              const latest = await command<{ entries: Entry[] }>({
+                op: "folderList",
+                path: parent,
+              });
+              if (!alive.current) return;
+              const dot = entry.name.lastIndexOf(".");
+              const extension =
+                !entry.directory && dot > 0 ? entry.name.slice(dot) : "";
+              const stem = entry.name.slice(
+                0,
+                entry.name.length - extension.length,
+              );
+              let name = entry.name,
+                number = 2;
+              const names = new Set(
+                latest.entries.map((item) => item.name.toLocaleLowerCase()),
+              );
+              while (names.has(name.toLocaleLowerCase()))
+                name = `${stem} (${number++})${extension}`;
+              await complete(join(parent, name));
+            },
+          },
+        ],
+      });
+    } finally {
+      pasteBusy.current = false;
+    }
+  };
+  const ownsClipboardEvent = (target: EventTarget | null) => {
+    if (
+      !(target instanceof HTMLElement) ||
+      pending ||
+      document.querySelector('dialog[open],[aria-modal="true"]') ||
+      target.closest('input,textarea,select,[contenteditable="true"]')
+    )
+      return false;
+    return (
+      target === fileTree.getElement() ||
+      (!!filesRef.current?.contains(target) &&
+        !!target.closest('[role="treeitem"]'))
+    );
+  };
+  useFileClipboardMenu(
+    () => ownsClipboardEvent(document.activeElement),
+    (action) => {
+      if (action === "paste") void pasteFile(selectedParent).catch(onError);
+      else if (selectedEntry)
+        void copyFile(selectedEntry, action === "cut").catch(onError);
+    },
+    onError,
+  );
   const chooseImport = async (directory: boolean, destination: string) => {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const paths = await open({
@@ -864,6 +985,9 @@ function FolderFiles({
         <div
           className={
             "file-row" +
+            (clipboard?.cut && clipboard.entry.path === entry.path
+              ? " file-cut"
+              : "") +
             (item.isSelected() ? " file-selected" : "") +
             (item.isMatchingSearch() ? " file-search-match" : "") +
             (activeRelative === entry.path ? " file-current" : "") +
@@ -970,6 +1094,30 @@ function FolderFiles({
           </>
         )}
         <MenuSeparator />
+        {entry && (
+          <>
+            <MenuItem
+              shortcut={bindingLabel("Mod+X")}
+              onSelect={() => void copyFile(entry, true).catch(onError)}
+            >
+              剪切
+            </MenuItem>
+            <MenuItem
+              shortcut={bindingLabel("Mod+C")}
+              onSelect={() => void copyFile(entry, false).catch(onError)}
+            >
+              复制
+            </MenuItem>
+          </>
+        )}
+        <MenuItem
+          shortcut={bindingLabel("Mod+V")}
+          disabled={!clipboard || pending}
+          onSelect={() => void pasteFile(parent).catch(onError)}
+        >
+          粘贴
+        </MenuItem>
+        <MenuSeparator />
         {desktop() && (
           <MenuItem
             onSelect={() =>
@@ -982,9 +1130,10 @@ function FolderFiles({
           </MenuItem>
         )}
         <MenuItem
-          onSelect={() =>
-            void navigator.clipboard.writeText(path()).catch(onError)
-          }
+          onSelect={() => {
+            setClipboard(null);
+            void navigator.clipboard.writeText(path()).catch(onError);
+          }}
         >
           复制路径
         </MenuItem>
@@ -1030,8 +1179,55 @@ function FolderFiles({
       : (items.find((item) => item.getId() === path)?.getItemData() ?? null);
   };
   return (
-    <div className="files" ref={filesRef}>
+    <div
+      className="files"
+      ref={filesRef}
+      onKeyDownCapture={(event) => {
+        if (!ownsClipboardEvent(event.target)) return;
+        const binding = eventBinding(event.nativeEvent);
+        if (binding === "Escape" && clipboardRef.current?.cut) {
+          setClipboard(null);
+          return;
+        }
+        if (binding !== "Mod+C" && binding !== "Mod+X" && binding !== "Mod+V")
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        if (binding === "Mod+V") void pasteFile(selectedParent).catch(onError);
+        else if (selectedEntry)
+          void copyFile(selectedEntry, binding === "Mod+X").catch(onError);
+      }}
+      onCopy={(event) => {
+        if (!ownsClipboardEvent(event.target) || !selectedEntry) return;
+        event.preventDefault();
+        const text = absolute(selectedEntry.path);
+        event.clipboardData.setData("text/plain", text);
+        rememberFile(selectedEntry, false, text);
+      }}
+      onCut={(event) => {
+        if (!ownsClipboardEvent(event.target) || !selectedEntry) return;
+        event.preventDefault();
+        const text = absolute(selectedEntry.path);
+        event.clipboardData.setData("text/plain", text);
+        rememberFile(selectedEntry, true, text);
+      }}
+      onPaste={(event) => {
+        if (!ownsClipboardEvent(event.target) || !clipboard) return;
+        event.preventDefault();
+        void pasteFile(
+          selectedParent,
+          event.clipboardData.getData("text/plain"),
+        ).catch(onError);
+      }}
+    >
       {folderDialog}
+      {pasteConflict && (
+        <DecisionDialog
+          decision={pasteConflict}
+          onClose={() => setPasteConflict(null)}
+        />
+      )}
       {removing && (
         <DecisionDialog
           decision={{
