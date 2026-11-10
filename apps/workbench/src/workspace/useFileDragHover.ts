@@ -39,14 +39,17 @@ export function useFileDragHover(
           cursor.y >= rect.top &&
           cursor.y <= rect.bottom
         ) {
-          const edge = Math.min(35, rect.height / 3);
+          // Start upward scrolling across roughly two rows, before the drag
+          // reaches the border. Keep a neutral middle area in short panes.
+          const topEdge = Math.min(64, rect.height / 3);
+          const bottomEdge = Math.min(35, rect.height / 3);
           const top = cursor.y - rect.top;
           const bottom = rect.bottom - cursor.y;
           const speed =
-            top < edge
-              ? -(1 - top / edge)
-              : bottom < edge
-                ? 1 - bottom / edge
+            top < topEdge
+              ? -(1 - top / topEdge)
+              : bottom < bottomEdge
+                ? 1 - bottom / bottomEdge
                 : 0;
           tree.scrollTop += (speed * 840 * elapsed) / 1000;
         }

@@ -492,7 +492,7 @@ export async function verifyFilesUI() {
         window.dispatchEvent(
           new MouseEvent("pointermove", {
             clientX: 20,
-            clientY: 101,
+            clientY: 145,
             bubbles: true,
             cancelable: true,
           }),
@@ -505,7 +505,24 @@ export async function verifyFilesUI() {
       await tick();
       assert(
         tree.scrollTop < firstScroll && firstScroll < 500,
-        "Held drag keeps scrolling upwards",
+        "Held drag scrolls upwards before reaching the old 35px edge zone",
+      );
+      await act(async () =>
+        window.dispatchEvent(
+          new MouseEvent("pointermove", {
+            clientX: 20,
+            clientY: 250,
+            bubbles: true,
+          }),
+        ),
+      );
+      const middleScroll = tree.scrollTop;
+      await tick();
+      await tick();
+      assert.equal(
+        tree.scrollTop,
+        middleScroll,
+        "The middle stays available for drops",
       );
       await act(async () =>
         document.body.dispatchEvent(
