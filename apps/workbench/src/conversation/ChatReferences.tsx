@@ -1,5 +1,15 @@
 import { Button, IconButton, MessageComposer, Text } from "../design/ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useExternalStoreRuntime,
+  SimpleImageAttachmentAdapter,
+  MessageNotSentError,
+  type Attachment,
+  type AttachmentAdapter,
+  type CreateAttachment,
+  type ThreadMessageLike,
+} from "@assistant-ui/react";
+import type { Message } from "./ConversationContent";
 import { Paperclip, X } from "lucide-react";
 import { command } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
@@ -14,14 +24,32 @@ import type { PreviewFile } from "../workspace/FilePreview";
 import { fileReference } from "../workspace/fileReference";
 import { usesFolderPreview } from "../workspace/materialPreview";
 
+const EMPTY_MESSAGES: Message[] = [];
+const REFERENCE_MIME = "application/x-vibe-reference";
+const IMAGE_TYPES = "image/png,image/jpeg,image/webp";
+const referenceAttachment = (
+  reference: ReferenceSummary,
+): CreateAttachment => ({
+  id: reference.id,
+  name: reference.label,
+  type: reference.hasImage ? "image" : "document",
+  contentType: REFERENCE_MIME,
+  content: [{ type: "data", name: "vibe-reference", data: reference }],
+});
+const attachmentReference = (
+  attachment: Attachment,
+): ReferenceSummary | undefined => {
+  const part = attachment.content?.find(
+    (part) => part.type === "data" && part.name === "vibe-reference",
+  );
+  return part?.type === "data" ? (part.data as ReferenceSummary) : undefined;
+};
+
 interface AttachmentJob {
   key: string;
   quotation: Quotation;
+  imageFile?: File;
   error: string | null;
-}
-interface Receipt {
-  key: string;
-  ids: string[];
 }
 function referenceLocation(
   ref: ReferenceSummary,
@@ -74,6 +102,10 @@ export function useChatReferences({
   onQuoted,
   onError,
   ready,
+  busy = false,
+  sendDisabled = false,
+  messages = EMPTY_MESSAGES,
+  onSend,
 }: {
   draftKey: string;
   documentId?: string;
@@ -81,12 +113,17 @@ export function useChatReferences({
   onQuoted: (id: string) => void;
   onError: (error: unknown) => void;
   ready: boolean;
+  busy?: boolean;
+  sendDisabled?: boolean;
+  messages?: Message[];
+  onSend?: (text: string, ids: string[]) => Promise<void>;
 }) {
   const workbench = useWorkbench();
   const [record, setRecord] = useState({
     key: draftKey,
     references: load(draftKey),
   });
+  const [text, setText] = useState("");
   const [jobs, setJobs] = useState<AttachmentJob[]>([]);
   const [preview, setPreview] = useState<StoredReference | null>(null);
   const taken = useRef<string | null>(null);
@@ -95,14 +132,165 @@ export function useChatReferences({
   const references = record.key === draftKey ? record.references : [];
   const currentJobs = jobs.filter((job) => job.key === draftKey);
   const pending = currentJobs.some((job) => job.error === null);
+  const callbacks = useRef({ onSend, onError, documentId, draftKey });
+  callbacks.current = { onSend, onError, documentId, draftKey };
+  const stageRef = useRef<(job: AttachmentJob) => Promise<ReferenceSummary[]>>(
+    null!,
+  );
+  const adapter = useMemo<AttachmentAdapter>(
+    () => ({
+      accept: IMAGE_TYPES + "," + REFERENCE_MIME,
+      async add({ file }) {
+        const source = { ...callbacks.current };
+        const job: AttachmentJob = {
+          key: source.draftKey,
+          quotation: {
+            id: crypto.randomUUID(),
+            documentId: source.documentId,
+            references: [],
+          },
+          imageFile: file,
+          error: null,
+        };
+        setJobs((current) => [...current, job]);
+        const [reference] = await stageRef.current(job);
+        return {
+          ...referenceAttachment(reference),
+          id: reference.id,
+          type: "image",
+          file,
+          status: { type: "requires-action", reason: "composer-send" },
+        };
+      },
+      async send(attachment) {
+        return {
+          ...attachment,
+          content: attachment.content || [],
+          status: { type: "complete" },
+        };
+      },
+      async remove() {},
+    }),
+    [],
+  );
+  const uiMessages = useMemo<ThreadMessageLike[]>(
+    () =>
+      messages
+        .filter(
+          (message) => message.type === "user" || message.type === "assistant",
+        )
+        .map((message) => ({
+          id: message.id,
+          role: message.type === "user" ? "user" : "assistant",
+          content: message.text || "",
+          ...(message.type === "user"
+            ? {
+                attachments: message.context?.references?.map((reference) => ({
+                  ...referenceAttachment(reference),
+                  id: reference.id,
+                  type: reference.hasImage ? "image" : "document",
+                  status: { type: "complete" as const },
+                })),
+              }
+            : {}),
+        })),
+    [messages],
+  );
+  const assistant = useExternalStoreRuntime({
+    messages: uiMessages,
+    convertMessage: (message) => message,
+    isRunning: busy,
+    isDisabled: !ready,
+    isSendDisabled: sendDisabled || currentJobs.length > 0,
+    adapters: {
+      attachments: adapter,
+      threadList: { threadId: draftKey || "unbound" },
+    },
+    async onNew(message) {
+      const key = draftKey;
+      const question = message.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n");
+      const refs = (message.attachments || [])
+        .map(attachmentReference)
+        .filter((r): r is ReferenceSummary => !!r);
+      try {
+        await onSend?.(
+          question,
+          refs.map((r) => r.id),
+        );
+      } catch (error) {
+        // The library restores the live draft. A conversation switched during
+        // the host call still needs its persistent draft restored at its own key.
+        if (liveKey.current !== key) {
+          const newer = localStorage.getItem(key) || "";
+          localStorage.setItem(
+            key,
+            [question, newer].filter(Boolean).join("\n"),
+          );
+          localStorage.setItem(
+            keyFor(key),
+            JSON.stringify([...refs, ...load(key)]),
+          );
+        }
+        onError(error);
+        throw new MessageNotSentError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    },
+  });
+  const syncing = useRef(false);
   const persist = (key: string, refs: ReferenceSummary[]) => {
+    if (!key) return;
     localStorage.setItem(keyFor(key), JSON.stringify(refs));
-    if (liveKey.current === key) setRecord({ key, references: refs });
+    if (liveKey.current !== key) return;
+    const composer = assistant.thread.composer;
+    syncing.current = true;
+    const attachments = composer.getState().attachments;
+    // Keep the library as the live attachment owner; localStorage only stores
+    // reference IDs/metadata, never the image bytes or another live state machine.
+    for (let index = attachments.length - 1; index >= 0; index--)
+      if (!refs.some((ref) => ref.id === attachments[index].id))
+        void composer.getAttachmentByIndex(index).remove();
+    const existing = new Set(
+      composer.getState().attachments.map((item) => item.id),
+    );
+    for (const ref of refs)
+      if (!existing.has(ref.id))
+        void composer.addAttachment(referenceAttachment(ref)).catch(onError);
+    syncing.current = false;
+    setRecord({ key, references: refs });
   };
   useEffect(() => {
-    setRecord({ key: draftKey, references: load(draftKey) });
+    if (!draftKey || !ready) return;
+    const composer = assistant.thread.composer;
+    composer.setText(localStorage.getItem(draftKey) || "");
+    persist(draftKey, load(draftKey));
     setPreview(null);
-  }, [draftKey]);
+    const update = () => {
+      if (syncing.current || liveKey.current !== draftKey) return;
+      const state = composer.getState();
+      const refs = state.attachments
+        .map(attachmentReference)
+        .filter((r): r is ReferenceSummary => !!r);
+      setText(state.text);
+      setRecord({ key: draftKey, references: refs });
+      localStorage.setItem(draftKey, state.text);
+      localStorage.setItem(keyFor(draftKey), JSON.stringify(refs));
+    };
+    update();
+    const unsubscribe = composer.subscribe(update);
+    const offError = composer.unstable_on("attachmentAddError", (event) => {
+      if (event.reason !== "adapter-error")
+        onError(new Error("只支持 PNG、JPEG 和 WebP 图片"));
+    });
+    return () => {
+      unsubscribe();
+      offError();
+    };
+  }, [draftKey, ready, assistant]);
   const stage = async (job: AttachmentJob) => {
     setJobs((current) =>
       current.map((item) => (item === job ? { ...item, error: null } : item)),
@@ -111,7 +299,22 @@ export function useChatReferences({
       item.key === job.key && item.quotation.id === job.quotation.id;
     try {
       const quote = job.quotation;
-      const inputs = quote.files ? [] : quote.references;
+      const inputs = quote.files ? [] : [...quote.references];
+      if (job.imageFile) {
+        const file = job.imageFile;
+        if (file.size > 8 * 1024 * 1024)
+          throw new Error("图片超过 8 MB，请缩小后重试");
+        const imageAdapter = new SimpleImageAttachmentAdapter();
+        const image = await imageAdapter.send(await imageAdapter.add({ file }));
+        const part = image.content[0];
+        if (part?.type !== "image") throw new Error("图片读取失败");
+        inputs.push({
+          kind: "material",
+          label: file.name || "截图.png",
+          path: "",
+          image: part.image,
+        });
+      }
       if (quote.files) {
         for (const path of quote.files.paths)
           inputs.push(await fileReference(quote.files.folderId, path));
@@ -122,6 +325,7 @@ export function useChatReferences({
       });
       persist(job.key, [...load(job.key), ...added]);
       setJobs((current) => current.filter((item) => !matches(item)));
+      return added;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setJobs((current) =>
@@ -129,8 +333,10 @@ export function useChatReferences({
           matches(item) ? { ...item, error: message } : item,
         ),
       );
+      throw error;
     }
   };
+  stageRef.current = stage;
   useEffect(() => {
     if (
       !quotation ||
@@ -146,7 +352,7 @@ export function useChatReferences({
     const job = { key: draftKey, quotation, error: null };
     setJobs((current) => [...current, job]);
     onQuoted(quotation.id);
-    void stage(job);
+    void stage(job).catch(() => {});
   }, [quotation?.id, ready, draftKey, documentId]);
   const open = async (id: string) => {
     const capturedKey = draftKey;
@@ -220,7 +426,11 @@ export function useChatReferences({
               aria-label={label}
               onClick={() => void open(ref.id)}
             >
-              <Paperclip size={16} />
+              {ref.hasImage ? (
+                <ReferenceThumbnail id={ref.id} label={ref.label} />
+              ) : (
+                <Paperclip size={16} />
+              )}
               <span className="reference-label">
                 <span className="reference-name">{ref.label}</span>
                 {location && (
@@ -251,18 +461,27 @@ export function useChatReferences({
     </div>
   );
   return {
+    assistant,
+    text,
+    setText: (value: string) => assistant.thread.composer.setText(value),
+    send: () => assistant.thread.composer.send(),
+    addImage: (file: File) => assistant.thread.composer.addAttachment(file),
+    addFiles: (folderId: string, paths: string[]) => {
+      const job: AttachmentJob = {
+        key: draftKey,
+        quotation: {
+          id: crypto.randomUUID(),
+          documentId,
+          files: { folderId, paths },
+        },
+        error: null,
+      };
+      setJobs((current) => [...current, job]);
+      void stage(job).catch(() => {});
+    },
     references,
     pending,
     unresolved: currentJobs.length > 0,
-    receipt: (): Receipt => ({
-      key: draftKey,
-      ids: references.map((r) => r.id),
-    }),
-    acknowledge: (receipt: Receipt) =>
-      persist(
-        receipt.key,
-        load(receipt.key).filter((ref) => !receipt.ids.includes(ref.id)),
-      ),
     composer: (
       <>
         {(references.length > 0 || pending) && (
@@ -304,7 +523,7 @@ export function useChatReferences({
                           ? "切回引用所属文档后重试"
                           : undefined
                       }
-                      onClick={() => void stage(job)}
+                      onClick={() => void stage(job).catch(() => {})}
                     >
                       重试添加引用
                     </Button>
@@ -363,5 +582,26 @@ function ReferencePreview({
         )}
       </DialogBody>
     </DialogFrame>
+  );
+}
+
+function ReferenceThumbnail({ id, label }: { id: string; label: string }) {
+  const [src, setSrc] = useState<string>();
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const [reference] = await runtime<StoredReference[]>("readReferences", {
+        ids: [id],
+      });
+      if (active) setSrc(reference?.image);
+    })().catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [id]);
+  return src ? (
+    <img className="reference-thumbnail" src={src} alt={label} />
+  ) : (
+    <Paperclip size={16} />
   );
 }

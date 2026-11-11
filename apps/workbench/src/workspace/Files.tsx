@@ -159,6 +159,9 @@ interface Props {
   onRename: () => Promise<void>;
   /** Files dropped on the conversation (`[data-reference-drop]`). */
   onReference?: (paths: string[]) => void;
+  onCopyFile?: (
+    file: { folderId: string; path: string; text: string } | null,
+  ) => void;
   onReferenceHover?: (active: boolean) => void;
 }
 const FOLDER_REFERENCE = "请选择文件；文件夹可以在问题中按路径说明";
@@ -204,6 +207,7 @@ function FolderFiles({
   onError,
   onRename,
   onReference,
+  onCopyFile,
   onReferenceHover,
 }: Props) {
   const { openFolder: open, folderDialog } = useFolderPicker(onFolder, onError);
@@ -665,6 +669,11 @@ function FolderFiles({
     const next = { entry, cut, text };
     clipboardRef.current = next;
     setClipboard(next);
+    onCopyFile?.(
+      folder && !entry.directory
+        ? { folderId: folder.id, path: entry.path, text }
+        : null,
+    );
   };
   const copyFile = async (entry: Entry, cut: boolean) => {
     const text = absolute(entry.path);
@@ -918,9 +927,20 @@ function FolderFiles({
             setDropTarget(null);
             hoverReference(false);
             // Files dropped on the conversation land in the project root.
-            if (reference)
-              void importSources(payload.paths, "", true).catch(onError);
-            else if (parent !== null)
+            if (reference) {
+              // Chat owns image drops, including standalone circuits. Only
+              // other materials retain the project's import-and-reference flow.
+              const imageTarget = document
+                .elementFromPoint(x, y)
+                ?.closest("[data-image-drop]");
+              const paths = imageTarget
+                ? payload.paths.filter(
+                    (path) => !/\.(png|jpe?g|webp)$/i.test(path),
+                  )
+                : payload.paths;
+              if (paths.length)
+                void importSources(paths, "", true).catch(onError);
+            } else if (parent !== null)
               void importSources(payload.paths, parent).catch(onError);
           } else if (
             !pending &&
@@ -1132,6 +1152,7 @@ function FolderFiles({
         <MenuItem
           onSelect={() => {
             setClipboard(null);
+            onCopyFile?.(null);
             void navigator.clipboard.writeText(path()).catch(onError);
           }}
         >

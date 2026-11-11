@@ -83,9 +83,10 @@ export async function verifyContextUsage() {
     assert.equal(ring().getAttribute("aria-valuenow"), null);
     assert.equal(fill(), null);
     assert.equal(tooltip(), null);
-    assert.equal(
-      ring().previousElementSibling?.getAttribute("aria-label"),
-      "思考深度",
+    const effort = container.querySelector('[aria-label="思考深度"]')!;
+    assert(
+      effort.compareDocumentPosition(ring()) & Node.DOCUMENT_POSITION_FOLLOWING,
+      "Usage follows effort; Radix may insert its hidden form select between them",
     );
 
     await update(base);

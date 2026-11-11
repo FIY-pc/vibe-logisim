@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createCanvas } from "@napi-rs/canvas";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -137,7 +138,7 @@ async function verifyWorkerReferences(directory: string) {
   const model = await startScriptedModel(() => ({
     text: "References received.",
   }));
-  new ServiceStore(path.join(directory, "profile")).save({
+  const service = new ServiceStore(path.join(directory, "profile")).save({
     name: "Local fixture",
     baseUrl: model.url,
     apiKey: "fixture-only",
@@ -220,14 +221,20 @@ async function verifyWorkerReferences(directory: string) {
   try {
     await ready.promise;
     await call("bind", { documentId: "document" });
+    const canvas = createCanvas(2, 2);
+    canvas.getContext("2d").fillRect(0, 0, 2, 2);
+    const images = [
+      canvas.toDataURL("image/png"),
+      canvas.toDataURL("image/jpeg"),
+      canvas.toDataURL("image/webp"),
+    ];
     const inputs = Array.from({ length: 12 }, (_, i) => ({
       kind: "material",
       path: i % 2 ? "slides.PPTX" : "notes.pdf",
       label: i % 2 ? "slides.PPTX" : "notes.pdf",
       page: i + 1,
       text: `Reference evidence ${i + 1}`,
-      image:
-        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9XkAAAAASUVORK5CYII=",
+      image: images[i % images.length],
     }));
     const staged = await call("stageReferences", {
       documentId: "document",
@@ -241,7 +248,7 @@ async function verifyWorkerReferences(directory: string) {
       inputs.map((item) => item.text),
     );
     await call("ask", {
-      question: "Review these references.",
+      question: "",
       documentId: "document",
       references: ids,
     });
@@ -254,6 +261,13 @@ async function verifyWorkerReferences(directory: string) {
     assert.equal(
       content.filter((part: any) => part.type === "image_url").length,
       12,
+    );
+    assert.deepEqual(
+      content
+        .filter((part: any) => part.type === "image_url")
+        .map((part: any) => part.image_url.url),
+      inputs.map((input) => input.image),
+      "PNG, JPEG and WebP must reach the model with the original MIME and bytes",
     );
     const text = content.find((part: any) => part.type === "text").text;
     const context = JSON.parse(
@@ -283,8 +297,24 @@ async function verifyWorkerReferences(directory: string) {
         .references.length,
       12,
     );
+    const summaries = await call("conversations");
+    assert(summaries.conversations[0].title.startsWith(inputs[0].label));
+    assert(
+      summaries.conversations[0].preview.startsWith(inputs[0].label),
+      "Attachment-only conversations remain recognizable and searchable",
+    );
+    await call("configure", { ...service, vision: false });
+    await assert.rejects(
+      call("ask", { question: "", documentId: "document", references: ids }),
+      /未启用图片输入/,
+    );
+    assert.equal(
+      model.requests.length,
+      1,
+      "Unsupported image input is rejected before a model request",
+    );
     console.log(
-      "PASS: 12 references stage, resolve and reach the SDK request and saved turn through the real sidecar (local fixture only)",
+      "PASS: PNG/JPEG/WebP references reach the SDK and saved turn through the real sidecar; vision-disabled services reject before sending (local fixture only)",
     );
   } finally {
     const exited = once(worker, "exit");

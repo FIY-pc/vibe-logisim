@@ -72,7 +72,7 @@ try {
             { filter: /@tauri-apps[\\/]api[\\/]webview\.js$/ },
             () => ({
               contents:
-                "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{globalThis.__fileDropHandler=handler;return ()=>{if(globalThis.__fileDropHandler===handler)delete globalThis.__fileDropHandler}}});",
+                "export const getCurrentWebview=()=>({onDragDropEvent:async(handler)=>{const handlers=globalThis.__fileDropHandlers??=new Set();handlers.add(handler);globalThis.__fileDropHandler=(event)=>{for(const callback of handlers)callback(event)};return ()=>{handlers.delete(handler);if(!handlers.size)delete globalThis.__fileDropHandler}}});",
             }),
           );
           builder.onLoad({ filter: /[\\/]shared[\\/]events\.ts$/ }, () => ({

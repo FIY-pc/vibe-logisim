@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod chat_image;
 mod file_clipboard;
 mod installation_check;
 use std::sync::Mutex;
@@ -88,6 +89,7 @@ fn main() {
             installation_check::page_loaded(window, payload);
         })
         .invoke_handler(tauri::generate_handler![
+            chat_image::read_chat_image,
             file_clipboard::file_clipboard_focus,
             command,
             events,
