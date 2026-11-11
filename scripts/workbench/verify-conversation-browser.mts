@@ -24,7 +24,7 @@ await build({
     {
       name: "synthetic-runtime",
       setup(builder) {
-        builder.onResolve({ filter: /\?worker&url$/ }, () => ({
+        builder.onResolve({ filter: /\?(?:worker&)?url$/ }, () => ({
           path: "worker",
           namespace: "fixture",
         }));
@@ -127,7 +127,7 @@ try {
   await page.goto(`http://127.0.0.1:${address.port}`);
   await page.locator('[data-segment="q-599"]').waitFor();
   await page.setViewportSize({ width: 360, height: 640 });
-  const composer = page.getByRole("group", { name: "消息编辑器" });
+  const composer = page.getByRole("form", { name: "消息编辑器" });
   const editor = page.getByRole("textbox", { name: "消息", exact: true });
   await editor.fill("Review the selected regions.\n".repeat(40));
   await editor.press("Shift+Enter");
@@ -136,7 +136,7 @@ try {
       ".ui-message-composer-attachments",
     )!;
     const input = root.querySelector<HTMLTextAreaElement>("textarea")!;
-    const field = input.parentElement!;
+    const field = input;
     const actions = root.querySelector("footer")!;
     return {
       frame: getComputedStyle(root).outlineWidth,
@@ -293,6 +293,62 @@ try {
     [],
   );
   assert.deepEqual(errors, []);
+  await choose("review");
+  await page.setViewportSize({ width: 360, height: 760 });
+  const review = page.locator('[data-segment="review-user"]');
+  await review.locator(".turn-answer").waitFor();
+  const summary = review.locator(".turn-summary");
+  assert.equal(await summary.getAttribute("aria-expanded"), "false");
+  const answerNode = await review.locator(".turn-answer").elementHandle();
+  if (process.env.TURN_SCREENSHOT_DIR) {
+    await fs.mkdir(process.env.TURN_SCREENSHOT_DIR, { recursive: true });
+    await page.screenshot({
+      path: path.join(process.env.TURN_SCREENSHOT_DIR, "collapsed.png"),
+    });
+  }
+  await summary.click();
+  assert.equal(
+    await review.locator(".turn-process-body .turn-tool").count(),
+    3,
+  );
+  assert.equal(
+    await review.locator(".turn-process-body .message.assistant").count(),
+    1,
+  );
+  assert(
+    await review
+      .locator(".turn-answer")
+      .evaluate((node, previous) => node === previous, answerNode),
+  );
+  const processGeometry = await review.evaluate((node) => {
+    const duration = node.querySelector(".turn-duration")!;
+    const row = node.querySelector(".turn-summary")!;
+    const body = node.querySelector(".turn-process-body")!;
+    const answer = node.querySelector(".turn-answer")!;
+    return {
+      noWrap: getComputedStyle(duration).whiteSpace === "nowrap",
+      timeFits:
+        duration.getBoundingClientRect().right <=
+        row.getBoundingClientRect().right + 1,
+      separated:
+        body.getBoundingClientRect().bottom <
+        answer.getBoundingClientRect().top,
+      noOverflow: node.scrollWidth <= node.clientWidth,
+    };
+  });
+  assert.deepEqual(processGeometry, {
+    noWrap: true,
+    timeFits: true,
+    separated: true,
+    noOverflow: true,
+  });
+  if (process.env.TURN_SCREENSHOT_DIR)
+    await page.screenshot({
+      path: path.join(process.env.TURN_SCREENSHOT_DIR, "expanded.png"),
+    });
+  console.log(
+    "PASS: completed process and answer stay separate, expanding preserves answer DOM, and the clock fits on one line at 360px.",
+  );
   if (process.env.CONVERSATION_SCREENSHOT)
     await page.screenshot({ path: process.env.CONVERSATION_SCREENSHOT });
   console.log(

@@ -9,9 +9,18 @@ import { build } from "esbuild";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const jsdom = createRequire(path.join(root, "package.json")).resolve("jsdom");
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-ui-check-"));
+const turnsOnly = process.argv.includes("--turns");
 try {
+  const entry = path.join(temp, "entry.tsx");
+  if (turnsOnly)
+    await fs.writeFile(
+      entry,
+      `import { verifyConversationTurns } from ${JSON.stringify(path.join(root, "scripts/workbench/ui/conversation-turns.tsx"))};\nawait verifyConversationTurns();process.exit(0);`,
+    );
   await build({
-    entryPoints: [path.join(root, "scripts/workbench/ui/scenarios.tsx")],
+    entryPoints: [
+      turnsOnly ? entry : path.join(root, "scripts/workbench/ui/scenarios.tsx"),
+    ],
     bundle: true,
     format: "esm",
     platform: "node",
@@ -138,11 +147,18 @@ HTMLDialogElement.prototype.showModal=function(){this.open=true};HTMLDialogEleme
 await import('./scenarios.mjs');
 `,
   );
-  execFileSync(process.execPath, [path.join(temp, "setup.mjs")], {
-    stdio: "inherit",
-    // The classroom scenario waits on a one-second grading poller.
-    timeout: 240000,
-  });
+  // A failed DOM identity assertion can otherwise inspect the entire React
+  // object graph. Keep a bad test from exhausting the developer's machine.
+  execFileSync(
+    process.execPath,
+    ["--max-old-space-size=768", path.join(temp, "setup.mjs")],
+    {
+      stdio: "inherit",
+      // The classroom scenario waits on a one-second grading poller.
+      timeout: turnsOnly ? 60000 : 240000,
+      killSignal: "SIGKILL",
+    },
+  );
 } finally {
   await fs.rm(temp, { recursive: true, force: true });
 }

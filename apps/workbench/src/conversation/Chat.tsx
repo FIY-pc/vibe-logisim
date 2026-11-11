@@ -360,6 +360,7 @@ export function Chat({
                   type:
                     e.type === "reasoning-delta" ? "reasoning" : "assistant",
                   text: e.delta,
+                  phase: "pending",
                 },
               ],
         );

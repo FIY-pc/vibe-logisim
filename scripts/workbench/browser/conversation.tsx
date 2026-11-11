@@ -44,6 +44,45 @@ const histories: Record<string, Message[]> = {
       text: `Answer ${i}\n\n${"A variable length explanation. ".repeat(2 + (i % 8))}\n\n[Open notes](./notes.txt)`,
     },
   ]).flat(),
+  review: [
+    {
+      id: "review-user",
+      type: "user",
+      text: "把非门和输入、输出一起改成 8 位。",
+    },
+    { id: "review-turn", type: "turn", status: "completed", elapsedMs: 21000 },
+    {
+      id: "review-note",
+      type: "assistant",
+      phase: "commentary",
+      text: "我先看看电路，把非门和输入、输出一起改成 8 位。",
+    },
+    ...["查看电路", "修改元件属性", "检查输入输出"].map((label, index) => ({
+      id: "review-tool-" + index,
+      type: "activity",
+      label,
+      status: "completed",
+      resultStatus: "completed",
+      activityKey:
+        "tool:" +
+        ["inspect_circuit", "set_attributes", "simulate_circuit"][index],
+      toolOutput: {
+        type: "tool",
+        target: "main",
+        text: [
+          "输入 A → 非门 → 输出 Y",
+          "A、非门、Y 的位宽已设为 8",
+          "4 组输入输出全部通过",
+        ][index],
+      },
+    })),
+    {
+      id: "review-answer",
+      type: "assistant",
+      phase: "final",
+      text: "已改成 **8 位非门电路**并保存，输入 A、非门和输出 Y 均为 8 位，原有连线保持不变，无位宽冲突。\n\n已通过 4 组仿真测试，例如：\n\n- `00000000` → `11111111`\n- `01010101` → `10101010`\n\n实现的是 **8 位逐位取反**。",
+    },
+  ],
   other: [
     { id: "other-question", type: "user", text: "Another conversation" },
     { id: "other-answer", type: "assistant", text: "Another answer" },
