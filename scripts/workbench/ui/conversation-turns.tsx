@@ -3,11 +3,65 @@ import { act } from "react";
 import { createRoot } from "./themed-root";
 import { Chat } from "../../../apps/workbench/src/conversation/Chat";
 import { Workbench } from "./workbench";
+import {
+  presentTurn,
+  type Segment,
+} from "../../../apps/workbench/src/conversation/turns";
 
 /** A conversation driven the way the runtime drives it: a turn's steps show
  * as they happen, fold into one summary line when it ends, and a window opened
  * from the status snapshot shows exactly what the live one shows. */
 export async function verifyConversationTurns() {
+  const example: Segment = {
+    key: "example",
+    user: null,
+    turn: { id: "turn", type: "turn", status: "interrupted" },
+    items: [
+      {
+        id: "note",
+        type: "assistant",
+        phase: "commentary",
+        text: "先检查电路。",
+      },
+    ],
+  };
+  assert.equal(
+    presentTurn(example, false).answer.length,
+    0,
+    "Stopped commentary is never an answer",
+  );
+  example.items[0].phase = "pending";
+  assert.equal(
+    presentTurn(example, false).answer.length,
+    0,
+    "An interrupted partial paragraph stays in the process",
+  );
+  assert.equal(
+    presentTurn(example, true).answer.length,
+    1,
+    "An undecided streaming paragraph is readable outside the process",
+  );
+  example.turn!.status = "running";
+  assert.equal(presentTurn(example, false).status, "unfinished");
+  assert.equal(
+    presentTurn(example, false).answer.length,
+    0,
+    "Restarted incomplete turns do not claim to have an answer",
+  );
+  example.turn!.status = "completed";
+  example.items[0].phase = undefined;
+  assert.equal(
+    presentTurn(example, false).answer.length,
+    1,
+    "Completed old history still renders its answer",
+  );
+  example.items[0].phase = "incomplete";
+  assert.equal(
+    presentTurn(example, false).answer.length,
+    0,
+    "An incomplete model message is never promoted to an answer",
+  );
+
   const globals = globalThis as any;
   const old = { command: globals.__command, subscribe: globals.__subscribe };
   const listeners = new Set<(event: any) => void>();
@@ -82,7 +136,7 @@ export async function verifyConversationTurns() {
     const itemId = kind === "reasoning" ? id + ":reasoning" : id;
     let item = history.find((m) => m.id === itemId);
     if (!item) {
-      item = { type: kind, id: itemId, text: "" };
+      item = { type: kind, id: itemId, text: "", phase: "pending" };
       history.push(item);
     }
     item.text += delta;
@@ -264,7 +318,12 @@ export async function verifyConversationTurns() {
     const copy = $(".messages-content", container)!.cloneNode(
       true,
     ) as HTMLElement;
-    for (const node of copy.querySelectorAll(".turn-live")) node.remove();
+    for (const node of copy.querySelectorAll(".turn-live, .turn-duration"))
+      node.remove();
+    for (const node of copy.querySelectorAll(".turn-process-body"))
+      node.removeAttribute("id");
+    for (const node of copy.querySelectorAll(".turn-summary"))
+      node.removeAttribute("aria-controls");
     return copy.innerHTML;
   };
   const step = async (work: () => void) => {
@@ -311,8 +370,12 @@ export async function verifyConversationTurns() {
     assert.equal(box().value, "", "The sent draft is consumed");
     assert($('button[aria-label="停止回答"]'), "A running turn can be stopped");
     assert.equal($('button[aria-label="发送"]'), null);
-    assert.match($(".turn-live")!.textContent!, /正在处理/);
-    assert.equal($(".turn-summary"), null, "Steps stay open while running");
+    assert.match($(".turn-summary-label")!.textContent!, /正在处理/);
+    assert.equal(
+      $(".turn-summary")!.getAttribute("aria-expanded"),
+      "true",
+      "Steps start open while running",
+    );
 
     await step(() => {
       say("m1", "先确认", "reasoning");
@@ -324,7 +387,7 @@ export async function verifyConversationTurns() {
       $(".turn-thought[open] .turn-thought-text")!.textContent!,
       /先确认输出引脚。/,
     );
-    const commentary = $(".turn .message.assistant")!;
+    let commentary = $(".turn .message.assistant")!;
     assert.match(commentary.textContent!, /我先看一下电路。/);
     assert.equal(
       $(".message-actions", commentary),
@@ -335,6 +398,9 @@ export async function verifyConversationTurns() {
       finish("m1", "commentary");
       tool("c1", "inspect_circuit", "查看电路", { circuit: "main" });
     });
+    // Once the model confirms a tool call, its provisional text moves into
+    // the process. Later activity must preserve the node in that container.
+    commentary = $(".turn-process-body .message.assistant")!;
     const running = $('.turn-tool[data-state="running"]')!;
     assert(running, "A running tool is one line");
     assert.equal(running.querySelector("summary small")?.textContent, "进行中");
@@ -375,9 +441,8 @@ export async function verifyConversationTurns() {
       1,
       "No empty bubble for a tool-only reply",
     );
-    assert.equal(
-      $(".turn .message.assistant"),
-      commentary,
+    assert.ok(
+      $(".turn .message.assistant") === commentary,
       "Later events do not re-create earlier items",
     );
     await step(() =>
@@ -412,9 +477,8 @@ export async function verifyConversationTurns() {
       "模型服务繁忙，2 秒后重试（1/6）",
     );
     assert.equal(occurrences("模型服务繁忙"), 1, "The retry notice shows once");
-    assert.equal(
-      $(".turn-tool"),
-      row,
+    assert.ok(
+      $(".turn-tool") === row,
       "A status snapshot re-renders only what changed",
     );
     const reloaded = document.createElement("div");
@@ -440,7 +504,7 @@ export async function verifyConversationTurns() {
       null,
       "The notice goes when the retry starts",
     );
-    assert.match($(".turn-live")!.textContent!, /正在处理/);
+    assert.match($(".turn-summary-label")!.textContent!, /正在处理/);
 
     // ---- a missed event: the conversation is loaded again -----------------
     const historyCalls = () =>
@@ -469,9 +533,11 @@ export async function verifyConversationTurns() {
     };
     await step(() => endTurn("completed", null, change));
     assert.equal($$(".turn-summary").length, 1);
+    assert.equal($(".turn-summary-label")!.textContent, "完成了 2 个步骤");
     assert.equal(
-      $(".turn-summary")!.textContent,
-      "查看了电路、修改了 2 个属性 · 47 秒",
+      $(".turn-duration")!.textContent,
+      "47 秒",
+      "The clock is separate from the summary",
     );
     assert.equal($(".turn-summary")!.getAttribute("aria-expanded"), "false");
     assert.equal(
@@ -484,9 +550,8 @@ export async function verifyConversationTurns() {
       1,
       "Only the answer stays",
     );
-    assert.equal(
-      $(".turn .message.assistant"),
-      answer,
+    assert.ok(
+      $(".turn .message.assistant") === answer,
       "The answer is not re-created at the end",
     );
     assert($('[aria-label="复制消息"]', answer), "The answer can be copied");
@@ -499,6 +564,14 @@ export async function verifyConversationTurns() {
     await click(".turn-summary");
     assert.equal($(".turn-summary")!.getAttribute("aria-expanded"), "true");
     assert.equal($$(".turn-tool").length, 2);
+    assert.equal(
+      $(".turn-process-body .message.assistant")?.textContent,
+      "我先看一下电路。",
+    );
+    assert.ok(
+      $(".turn-answer .message.assistant") === answer,
+      "Opening the process does not recreate the answer",
+    );
     assert.equal(
       $(".turn-thought-text"),
       null,
@@ -639,6 +712,41 @@ export async function verifyConversationTurns() {
     assert($('button[aria-label="发送"]'));
     assert.equal(box().value, "等会再问");
     assert.equal(errors.length, 1);
+
+    // A stop before the first tool must not promote commentary to an answer.
+    await type("先检查电路再修改");
+    await enter();
+    await step(() => {
+      say("m7", "我先检查一下电路。");
+      finish("m7", "commentary");
+      endTurn("interrupted", "已停止");
+    });
+    const interrupted = $$(".turn").at(-1)!;
+    assert.equal($(".turn-answer", interrupted)?.textContent, "");
+    assert.match(
+      $(".turn-process-body", interrupted)!.textContent!,
+      /我先检查一下电路/,
+    );
+    assert.ok(
+      !$(".message-actions", interrupted),
+      "An unfinished note has no answer-copy action",
+    );
+    await act(async () => root.unmount());
+    root = await mount(view);
+    const restored = $$(".turn").at(-1)!;
+    assert.equal(
+      $(".turn-answer", restored)?.textContent,
+      "",
+      "Reload preserves the interrupted boundary",
+    );
+    assert.equal(
+      $(".turn-summary", restored)?.getAttribute("aria-expanded"),
+      "true",
+    );
+    assert.equal(
+      $(".turn-summary", restored)?.getAttribute("aria-controls"),
+      $(".turn-process-body", restored)?.id,
+    );
     console.log(
       "PASS: a turn streams its text and tool lines, folds into one summary with the answer and files kept, and a reload replays the same view; retry notice, failure and stop each show once",
     );

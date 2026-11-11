@@ -5,10 +5,12 @@
   margin-bottom: var(--space-3);
 }
 .turn-summary {
-  max-width: 100%;
-  margin-bottom: var(--space-2);
+  width: 100%;
+  margin: 0;
   justify-content: flex-start;
   text-align: left;
+  font-size: var(--font-size-1);
+  gap: var(--space-2);
 }
 .turn-summary svg {
   flex: none;
@@ -17,14 +19,42 @@
 .turn-summary[aria-expanded="true"] svg {
   transform: rotate(90deg);
 }
-.turn-summary span {
+.turn-summary-label {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-duration {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.turn-process {
+  margin-bottom: var(--space-3);
+}
+.turn-process-body {
+  margin: var(--space-2) 0 0 6px;
+  padding: 0 0 0 var(--space-3);
+  border-left: 1px solid var(--border);
+}
+.turn-process-body .message.assistant,
+.turn-thought-text {
+  color: var(--muted);
+  font-size: var(--font-size-2);
+  line-height: var(--line-height-2);
+}
+.turn-process-body > :last-child {
+  margin-bottom: 0;
+}
+.turn-answer:empty {
+  display: none;
 }
 .turn-tool,
 .turn-thought {
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-1);
   color: var(--muted);
 }
 .turn-tool > summary,
@@ -33,13 +63,22 @@
   width: 100%;
   justify-content: flex-start;
   list-style: none;
+  min-height: 28px;
+  font-size: var(--font-size-1);
 }
 .turn-tool > summary::-webkit-details-marker,
 .turn-thought > summary::-webkit-details-marker {
   display: none;
 }
 .turn-tool-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-tool-done {
   flex: none;
+  color: var(--gray-10);
 }
 .turn-tool-target {
   flex: 1;

@@ -36,6 +36,7 @@ export function FilesRegion() {
       onOpen={actions.workspace.openDocument}
       onPreview={stores.files.getState().setPreview}
       onError={onError}
+      onCopyFile={stores.files.getState().setCopiedFile}
       onReference={(paths) => {
         try {
           reference(paths);

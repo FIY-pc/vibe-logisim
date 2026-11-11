@@ -6,7 +6,14 @@ import type { RecentProject } from "../generated/RecentProject";
 import { field, type Update } from "../shared/setter";
 import { readerKey } from "./reader/types";
 
+export interface CopiedFile {
+  folderId: string;
+  path: string;
+  text: string;
+}
 export interface FilesState {
+  copiedFile: CopiedFile | null;
+  setCopiedFile(value: CopiedFile | null): void;
   /** The open project folder. */
   folder: ProjectFolder | null;
   recentProjects: RecentProject[];
@@ -44,6 +51,8 @@ export interface FilesState {
 export function createFilesStore() {
   return createStore<FilesState>()((set, get) => ({
     folder: null,
+    copiedFile: null,
+    setCopiedFile: (copiedFile) => set({ copiedFile }),
     recentProjects: [],
     recentError: "",
     recentLoading: true,
@@ -82,6 +91,7 @@ export function createFilesStore() {
         folder,
         ...(folder?.id !== get().folder?.id
           ? {
+              copiedFile: null,
               readers: [],
               preview: null,
               editorFocus: "circuit",

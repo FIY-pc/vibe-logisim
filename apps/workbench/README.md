@@ -28,7 +28,7 @@ Any rule about documents, saving, history, simulation lifetime or AI scope. If t
 
 ## Dependencies
 
-React 19, Zustand 5, Vite, `@tauri-apps/api` + dialog/opener plugins, `lucide-react` (icons), `react-markdown` + `remark-gfm` (chat), `react-virtuoso` (MIT virtual conversation list), `pdfjs-dist` (file preview), `packages/arranger` (worker), `packages/agent-runtime/src/conversations/reference-types.ts` (type only).
+React 19, Zustand 5, Vite, `@tauri-apps/api` + dialog/opener plugins, `lucide-react` (icons), `react-markdown` + `remark-gfm` (chat), `react-virtuoso` (MIT virtual conversation list), `@assistant-ui/react` (composer and attachment lifecycle), `pdfjs-dist` (file preview), `packages/arranger` (worker), `packages/agent-runtime/src/conversations/reference-types.ts` (type only).
 
 ## Status
 
@@ -37,7 +37,7 @@ Builds, type-checks, 31 UI scenarios pass (`npm run test:ui`, jsdom with a scrip
 ## Remaining tasks
 
 1. Done: the toolbar delete button posts `deleteRequest` on the editor store and the canvas commits it as it does the Delete key (`editor/EditorToolbarRegion.tsx`, `editor/Canvas.tsx`).
-2. Done: the conversation shows one turn per question as the Codex app does (`conversation/Turn.tsx`, `turns.ts`): while it runs, reasoning, text and tool lines appear as they stream; when it ends, everything before the last text folds into one summary line with the elapsed time, the answer and the files card stay, and a failure or stop ends the turn with one line. The turn record from the runtime carries status, error, elapsed time and the file change, so a reload rebuilds the same view from `status`.
+2. Done: the conversation shows one turn per question as the Codex app does (`conversation/Turn.tsx`, `turns.ts`): while it runs, reasoning, text and tool lines appear as they stream; the presentation combines the runtime turn status with explicit message phases (`pending`, `commentary`, `final`, `incomplete`). Process steps have their own compact disclosure and a separate non-wrapping clock; completed answers stay outside it. Failure, stop and unfinished restored turns keep partial text in the expanded process, without answer-copy actions. Older completed histories without phases retain their trailing answer. The turn record from the runtime carries status, error, elapsed time and the file change, so a reload rebuilds the same view from `status`.
 3. Done: the window draws the editor picture itself (`docs/rendering.md`). Panning and zooming repaint at the next animation frame from the cached pictures, with no request and no settle wait; an edit's answer is painted at the next frame after it arrives; showing a circuit costs one `symbols` request for the kinds the document has not seen. `useMovePreview` sends one `movePreview` at a time and, when it returns, the latest offset if the drag moved on; the drag itself never waits for it.
 4. Old UI for reference only: `git show HEAD:apps/workbench/src/components/Canvas.tsx` etc. (132 files under `components/ regions/ stores/ lib/ actions/ workbench/` at `HEAD`). Do not port features back without a user asking.
 5. Check the window in the desktop web views, not only in Chrome: WebKitGTK (Linux) and WebView2 (Windows). Things the browser preview cannot show: hints on disabled buttons (Chrome sends them no pointer events, so they show none), scrollbar styling, the 140 ms layer fade, and focus returning to a menu's button after its dialog closes.
@@ -68,6 +68,14 @@ Material tabs stay open beside the circuit or expand into the editor area. Quote
 The pinned viewer has a small `patch-package` fix in `patches/pptx-react-viewer+4.64.0.patch`: a host that explicitly disables editing skips whole-document undo snapshots during page navigation. The renderer, document loader and editable history behavior remain upstream implementations. `npm ci` applies the patch; review or remove it when upgrading the viewer.
 
 `read_material` currently handles PDF and images, not PPTX. PPTX page quotations carry the captured image and text directly into the conversation; they do not require that tool.
+
+### Chat references and images
+
+Copy a file in the project tree and paste into the message field to attach its saved reference. Ordinary text and the explicit **复制路径** command still paste text. The reference can be opened or removed before sending. Copy identity is scoped to the active project, and quoting does not move a cut file.
+
+Paste a screenshot, choose **添加图片**, or drop a PNG/JPEG/WebP image onto chat. Images show a thumbnail, allow attachment-only messages, and remain readable in saved history. Each new image is limited to 8 MiB; model services must enable vision. Native drops use a bounded Tauri read and do not import the image into the project.
+
+`ChatReferences` adapts immutable reference snapshots to assistant-ui's `ExternalStoreRuntime`. Its composer owns the live text and attachments, including send failure restoration. Local storage persists only text and reference summaries, keyed by workspace/conversation. Project references retain their staging/retry UI; the existing Pi transcript and Virtuoso presentation remain authoritative for history. The previous custom composer input and acknowledgement helpers have been removed.
 
 ### Export conversations
 

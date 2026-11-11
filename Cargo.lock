@@ -4768,6 +4768,7 @@ dependencies = [
 name = "vibe-logisim-app"
 version = "26.11.3"
 dependencies = [
+ "base64 0.22.1",
  "serde_json",
  "tauri",
  "tauri-build",

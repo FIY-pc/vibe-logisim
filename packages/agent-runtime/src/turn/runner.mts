@@ -870,10 +870,13 @@ export class TurnRunner extends EventEmitter {
   private referenceImages(references: StoredReference[]) {
     return references
       .filter((r) => r.image)
-      .map((r) => ({
-        data: r.image!.replace(/^data:image\/png;base64,/, ""),
-        mimeType: "image/png",
-      }));
+      .map((r) => {
+        const match = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(
+          r.image!,
+        );
+        if (!match) throw new Error("引用图片格式无效，请重新添加图片");
+        return { data: match[2], mimeType: match[1] };
+      });
   }
 
   async ask(request: AskRequest) {
@@ -1209,7 +1212,7 @@ export class TurnRunner extends EventEmitter {
             type: "assistant",
             id: this.messageId,
             text: "",
-            phase: "commentary",
+            phase: "pending",
           };
           this.history.push(m);
         }
@@ -1311,7 +1314,9 @@ export class TurnRunner extends EventEmitter {
           (c: any) => c.type === "toolCall",
         )
           ? "commentary"
-          : "final";
+          : ["error", "aborted", "length"].includes(e.message.stopReason)
+            ? "incomplete"
+            : "final";
         if (text) {
           const existing = this.history.find((m) => m.id === this.messageId);
           if (existing) Object.assign(existing, { text, phase });

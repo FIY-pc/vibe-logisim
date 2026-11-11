@@ -11,7 +11,7 @@ export async function verifyReferencesUI() {
   document.body.append(container);
   const root = createRoot(container);
   const old = (globalThis as any).__command;
-  let api: any, resolve: any, reject: any;
+  let api: any, resolve: any, reject: any, acceptSend: () => void;
   let workbench: ReturnType<typeof useWorkbench>;
   const staged: any[][] = [];
   let readFailure = false;
@@ -48,6 +48,10 @@ export async function verifyReferencesUI() {
       },
       onError: (e) => errors.push(e),
       ready: true,
+      onSend: () =>
+        new Promise<void>((resolve) => {
+          acceptSend = resolve;
+        }),
     });
     return <>{api.composer}</>;
   }
@@ -67,7 +71,7 @@ export async function verifyReferencesUI() {
   try {
     localStorage.setItem("references-A:references", JSON.stringify([first]));
     await act(async () => root.render(<Fixture draftKey="references-A" />));
-    const receipt = api.receipt();
+    await act(async () => api.send());
     await act(async () =>
       root.render(
         <Fixture
@@ -104,7 +108,7 @@ export async function verifyReferencesUI() {
       "A late attachment must stay in the conversation where it was added",
     );
     assert.equal(quoted, "incoming");
-    await act(async () => api.acknowledge(receipt));
+    await act(async () => acceptSend());
     assert.deepEqual(
       JSON.parse(localStorage.getItem("references-A:references")!),
       [second],

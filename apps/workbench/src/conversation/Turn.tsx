@@ -1,11 +1,10 @@
 import { Button, Text } from "../design/ui";
-import { memo, useEffect, useRef, useState } from "react";
-import { ChevronRight, RotateCcw, Undo2 } from "lucide-react";
+import { memo, useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronRight, RotateCcw, Undo2 } from "lucide-react";
 import { ChatMarkdown, CopyButton, type Message } from "./ConversationContent";
 import {
   formatDuration,
-  splitAnswer,
-  summarize,
+  presentTurn,
   toolName,
   toolState,
   type Segment,
@@ -62,11 +61,8 @@ export function Turn({
   onFollowReference,
 }: Props) {
   const turn = segment.turn;
-  const status = live
-    ? "running"
-    : turn?.status === "running"
-      ? "unfinished"
-      : turn?.status || "completed";
+  const { status, process, answer, label } = presentTurn(segment, live);
+  const processId = useId();
   const [open, setOpen] = useTurnDisclosure(
     JSON.stringify([segment.key, "turn"]),
     status,
@@ -81,42 +77,80 @@ export function Turn({
     follow: (href: string, message: Message) =>
       handlers.current.onFollowReference?.(href, message),
   }));
-  const { process } = live
-    ? { process: segment.items }
-    : splitAnswer(segment.items);
   const change = turn?.change as TurnChange | undefined;
   return (
     <div className="turn" data-status={status}>
-      {!live && process.length > 0 && (
-        <Button
-          variant="ghost"
-          color="gray"
-          className="turn-summary"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-        >
-          <ChevronRight size={16} aria-hidden />
-          <span>{summarize(process, turn?.elapsedMs)}</span>
-        </Button>
+      {(live || process.length > 0) && (
+        <div className="turn-process">
+          <Button
+            variant="ghost"
+            color="gray"
+            className="turn-summary"
+            aria-expanded={open}
+            aria-controls={processId}
+            onClick={() => setOpen(!open)}
+          >
+            <ChevronRight size={14} aria-hidden />
+            <span
+              className={
+                live ? "turn-summary-label turn-working" : "turn-summary-label"
+              }
+            >
+              {label}
+            </span>
+            <ElapsedTime
+              live={live}
+              since={
+                typeof turn?.startedAt === "number" ? turn.startedAt : null
+              }
+              elapsedMs={turn?.elapsedMs}
+            />
+          </Button>
+          <div
+            id={processId}
+            className="turn-process-body"
+            hidden={!open || !process.length}
+          >
+            {open &&
+              process.map((item) => (
+                <TurnItem
+                  key={item.id}
+                  item={item}
+                  disclosureKey={JSON.stringify([segment.key, item.id])}
+                  live={live}
+                  answer={false}
+                  onError={stable.error}
+                  onFollowReference={
+                    onFollowReference ? stable.follow : undefined
+                  }
+                />
+              ))}
+          </div>
+        </div>
       )}
-      {segment.items.map((item, index) =>
-        !live && !open && index < process.length ? null : (
+      <div className="turn-answer">
+        {answer.map((item) => (
           <TurnItem
             key={item.id}
             item={item}
             disclosureKey={JSON.stringify([segment.key, item.id])}
             live={live}
-            answer={!live && index >= process.length}
+            answer={!live && status === "completed"}
             onError={stable.error}
             onFollowReference={onFollowReference ? stable.follow : undefined}
           />
-        ),
-      )}
-      {live && (
-        <LiveLine
-          since={typeof turn?.startedAt === "number" ? turn.startedAt : null}
-          notice={notice}
-        />
+        ))}
+      </div>
+      {live && notice && (
+        <Text
+          as="p"
+          kind="meta"
+          className="turn-live"
+          data-notice=""
+          role="status"
+        >
+          {notice}
+        </Text>
       )}
       {status === "failed" && (
         <div className="turn-end" data-status="failed">
@@ -309,6 +343,14 @@ function ToolRow({
       <Button asChild variant="ghost" color="gray">
         <summary onClick={toggle(open, setOpen)}>
           {state === "running" && <span className="spinner" aria-hidden />}
+          {state === "done" && (
+            <Check
+              size={14}
+              className="turn-tool-done"
+              aria-label="已完成"
+              role="img"
+            />
+          )}
           <span className="turn-tool-label">
             {item.label || toolName(item) || "工具调用"}
           </span>
@@ -346,37 +388,27 @@ function ToolRow({
   );
 }
 
-/** The last line of a running turn: elapsed time, or the retry notice. */
-function LiveLine({
+/** Keep the ticking clock isolated from the message list. */
+function ElapsedTime({
+  live,
   since,
-  notice,
+  elapsedMs,
 }: {
+  live: boolean;
   since: number | null;
-  notice: string | null;
+  elapsedMs?: number;
 }) {
   const [mounted] = useState(() => Date.now());
   const [now, setNow] = useState(mounted);
   useEffect(() => {
+    if (!live) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
-  if (notice)
-    return (
-      <Text
-        as="p"
-        kind="meta"
-        className="turn-live"
-        data-notice=""
-        role="status"
-      >
-        {notice}
-      </Text>
-    );
-  const elapsed = now - (since ?? mounted);
-  return (
-    <Text as="p" kind="meta" className="turn-live">
-      <span className="turn-working">正在处理</span>
-      {elapsed >= 1000 && <span aria-hidden> · {formatDuration(elapsed)}</span>}
-    </Text>
-  );
+  }, [live]);
+  const elapsed = live ? now - (since ?? mounted) : elapsedMs;
+  return elapsed != null && elapsed >= 1000 ? (
+    <span className="turn-duration" aria-hidden={live || undefined}>
+      {formatDuration(elapsed)}
+    </span>
+  ) : null;
 }

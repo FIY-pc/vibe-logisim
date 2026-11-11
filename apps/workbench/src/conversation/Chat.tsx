@@ -7,10 +7,17 @@ import {
 } from "../design/ui";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AssistantRuntimeProvider,
+  ComposerPrimitive,
+} from "@assistant-ui/react";
+import { useWorkbench } from "../app/provider";
+import { useImageDrop } from "./useImageDrop";
+import {
   ArrowUpRight,
   BookOpen,
   CircuitBoard,
   Pencil,
+  Paperclip,
   Plus,
   ScanSearch,
   Send,
@@ -189,8 +196,7 @@ export function Chat({
     [conversations, setConversations] = useState<ConversationSummary[]>([]),
     [exportOpen, setExportOpen] = useState(false),
     [models, setModels] = useState<ModelOption[]>([]);
-  const [draftRecord, setDraftRecord] = useState({ key: "", text: "" }),
-    [configure, setConfigure] = useState(false),
+  const [configure, setConfigure] = useState(false),
     [pending, setPending] = useState(false),
     [stopping, setStopping] = useState(false),
     [runtimeError, setRuntimeError] = useState(""),
@@ -238,13 +244,17 @@ export function Chat({
     return next;
   };
   const actionPending = useRef(false);
-  const act = async (work: () => Promise<void>) => {
-    if (actionPending.current) return;
+  const act = async (work: () => Promise<void>, propagate = false) => {
+    if (actionPending.current) {
+      if (propagate) throw new Error("上一项操作尚未完成，请稍后重试");
+      return;
+    }
     actionPending.current = true;
     setPending(true);
     try {
       await enqueue(work);
     } catch (e) {
+      if (propagate) throw e;
       onError(e);
     } finally {
       actionPending.current = false;
@@ -350,6 +360,7 @@ export function Chat({
                   type:
                     e.type === "reasoning-delta" ? "reasoning" : "assistant",
                   text: e.delta,
+                  phase: "pending",
                 },
               ],
         );
@@ -462,8 +473,6 @@ export function Chat({
   const draftKey = scopeReady
     ? "vibe.draft:" + workspaceKey + ":" + (state?.conversationId || "")
     : "";
-  const draft = draftRecord.key === draftKey ? draftRecord.text : "";
-  useAutoSize(composerInput, draft);
   useAutoSize(editInput, editedText);
   // Editing a question starts typing at its end, as the composer would.
   useEffect(() => {
@@ -476,28 +485,6 @@ export function Chat({
     setEditingMessage(null);
     requestAnimationFrame(() => composerInput.current?.focus());
   };
-  useEffect(() => {
-    setDraftRecord({
-      key: draftKey,
-      text: draftKey ? localStorage.getItem(draftKey) || "" : "",
-    });
-  }, [draftKey]);
-  const changeDraft = (text: string) => {
-    if (!draftKey) return;
-    setDraftRecord({ key: draftKey, text });
-    localStorage.setItem(draftKey, text);
-  };
-  const acknowledgeDraft = (receipt: { key: string; text: string }) => {
-    // A successful send only consumes the text that was submitted. Typing or
-    // switching conversations while awaiting acknowledgement keeps the new draft.
-    if (localStorage.getItem(receipt.key) === receipt.text)
-      localStorage.removeItem(receipt.key);
-    setDraftRecord((current) =>
-      current.key === receipt.key && current.text === receipt.text
-        ? { key: current.key, text: "" }
-        : current,
-    );
-  };
   const references = useChatReferences({
     draftKey,
     documentId: doc?.id,
@@ -505,7 +492,50 @@ export function Chat({
     onQuoted,
     onError,
     ready: ready && Boolean(state?.conversationId),
+    busy,
+    sendDisabled: pending || !state?.available,
+    messages: scopeReady ? messages : [],
+    onSend: async (question, ids) => {
+      if (!ready || busy) throw new Error("对话尚未就绪，请稍后重试");
+      conversationList.current?.latest();
+      await act(async () => {
+        await runtime("ask", {
+          question,
+          references: ids,
+          documentId: doc?.id,
+          circuit: circuit ?? undefined,
+          selection,
+        });
+      }, true);
+      // A refresh failure cannot turn an accepted request into an unsent draft.
+      void refresh()
+        .then(() => loadConversations())
+        .catch(onError);
+    },
   });
+  const draft = references.text;
+  // Hidden panes have zero width in WebKit; retain the workspace-aware sizing.
+  useAutoSize(composerInput, draft);
+  const changeDraft = references.setText;
+  const workbench = useWorkbench();
+  const nativeImageDrop = useImageDrop(
+    ready,
+    references.addImage,
+    onError,
+    draftKey + ":" + doc?.id,
+  );
+  useEffect(() => {
+    const clearTextCopy = (event: Event) => {
+      if (!event.defaultPrevented)
+        workbench.stores.files.getState().setCopiedFile(null);
+    };
+    window.addEventListener("copy", clearTextCopy);
+    window.addEventListener("cut", clearTextCopy);
+    return () => {
+      window.removeEventListener("copy", clearTextCopy);
+      window.removeEventListener("cut", clearTextCopy);
+    };
+  }, [workbench]);
   useEffect(() => {
     setEditingMessage(null);
     setEditedText("");
@@ -517,28 +547,19 @@ export function Chat({
   );
 
   const send = (text = draft) => {
-    if (!ready || busy || !text.trim() || references.unresolved) return;
-    const receipt = { key: draftKey, text },
-      attachments = references.receipt();
-    conversationList.current?.latest();
-    void act(async () => {
-      await runtime("ask", {
-        question: text,
-        references: attachments.ids,
-        documentId: doc?.id,
-        circuit: circuit ?? undefined,
-        selection,
-      });
-      acknowledgeDraft(receipt);
-      references.acknowledge(attachments);
-      await refresh();
-      await loadConversations();
-    });
+    if (!ready || busy || references.unresolved) return;
+    if (text !== draft) changeDraft(text);
+    references.send();
   };
   /** Sends a question again from where it was asked: an edit, or a retry
    * after the turn failed. */
   const resubmit = (message: Message, text: string) => {
-    if (!ready || !text.trim() || busy) return;
+    if (
+      !ready ||
+      (!text.trim() && !message.context?.references?.length) ||
+      busy
+    )
+      return;
     conversationList.current?.latest();
     void act(async () => {
       await runtime("ask", {
@@ -656,7 +677,10 @@ export function Chat({
             </Button>
             <Button
               variant="solid"
-              disabled={pending || !editedText.trim()}
+              disabled={
+                pending ||
+                (!editedText.trim() && !m.context?.references?.length)
+              }
               onClick={() => resubmit(m, editedText)}
             >
               重新发送
@@ -690,332 +714,356 @@ export function Chat({
     </div>
   );
   return (
-    <div
-      className="chat"
-      style={visible ? undefined : { display: "none" }}
-      // Files dragged from the tree or the desktop become references here.
-      data-reference-drop={ready ? "" : undefined}
-    >
-      {renameConversation && (
-        <TextPrompt
-          title="重命名对话"
-          initial={
-            conversations.find((c) => c.id === state?.conversationId)?.title
-          }
-          onClose={() => setRenameConversation(false)}
-          onSubmit={async (title) => {
-            await runtime("conversations", {
-              action: "rename",
-              id: state?.conversationId,
-              title,
-            });
-            await loadConversations();
-          }}
-        />
-      )}
-      {exportOpen && scopeReady && (
-        <ConversationExport
-          key={workspaceKey}
-          workspaceKey={workspaceKey}
-          workspaceName={folder?.name || doc?.name || "电路"}
-          conversations={conversations}
-          onClose={() => setExportOpen(false)}
-        />
-      )}
-      <div className="chat-header">
-        <ConversationPicker
-          conversations={conversations}
-          active={state?.conversationId || null}
-          disabled={locked}
-          onSelect={(id) => switchConversation("select", id)}
-          onRestore={(id) => switchConversation("restore", id)}
-          onExport={scopeReady ? () => setExportOpen(true) : undefined}
-        />
-        <IconButton
-          variant="ghost"
-          color="gray"
-          data-tip="新建对话"
-          aria-label="新建对话"
-          disabled={locked}
-          onClick={() => switchConversation("new")}
-        >
-          <Plus size={16} />
-        </IconButton>
-        <Menu label="对话操作">
-          <MenuItem disabled={!scopeReady} onSelect={() => setExportOpen(true)}>
-            导出会话…
-          </MenuItem>
-          <MenuItem
-            disabled={locked || !state?.conversationId}
-            onSelect={() => setRenameConversation(true)}
-          >
-            重命名…
-          </MenuItem>
-          <MenuItem
-            disabled={locked || !state?.conversationId}
-            onSelect={() =>
-              switchConversation("archive", state?.conversationId || undefined)
+    <AssistantRuntimeProvider runtime={references.assistant}>
+      <div
+        className="chat"
+        style={visible ? undefined : { display: "none" }}
+        // Files dragged from the tree or the desktop become references here.
+        data-reference-drop={ready ? "" : undefined}
+        data-image-drop={ready ? "" : undefined}
+      >
+        {renameConversation && (
+          <TextPrompt
+            title="重命名对话"
+            initial={
+              conversations.find((c) => c.id === state?.conversationId)?.title
             }
-          >
-            归档
-          </MenuItem>
-        </Menu>
-        <IconButton
-          variant="ghost"
-          color="gray"
-          data-tip="AI 设置"
-          aria-label="AI 设置"
-          onClick={() => setConfigure(!configure)}
-        >
-          <Settings2 size={16} />
-        </IconButton>
-      </div>
-      {(runtimeError || state?.detail || state?.modelConfigurationError) && (
-        <div className="error-bar" role="alert">
-          {runtimeError ||
-            state?.modelConfigurationError?.message ||
-            state?.detail}
-          {!runtimeError && state?.modelConfigurationError ? (
-            <Button
-              variant="ghost"
-              color="gray"
-              onClick={() => setConfigure(true)}
-            >
-              {state.services.length ? "选择模型服务" : "添加模型服务"}
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              color="gray"
-              onClick={() => void reconnect()}
-            >
-              重新连接
-            </Button>
-          )}
-        </div>
-      )}
-      {configure && (
-        <ProviderSettings
-          services={state?.services || []}
-          provider={state?.customProvider || null}
-          defaultServiceId={state?.defaultServiceId}
-          conversationId={ready ? state?.conversationId : null}
-          hasHistory={messages.some((message) => message.type === "user")}
-          configurationError={state?.modelConfigurationError?.message}
-          busy={pending || busy}
-          request={runtime}
-          onSaved={async () => {
-            setModels([]);
-            await refresh();
-          }}
-          onClose={() => setConfigure(false)}
-        />
-      )}
-      <ConversationList
-        key={draftKey}
-        ref={conversationList}
-        visible={visible}
-        items={turns}
-        empty={
-          <ChatEmpty
-            phase={
-              !folder && !doc
-                ? "start"
-                : runtimeError
-                  ? "error"
-                  : !ready
-                    ? "connecting"
-                    : !state?.services.length
-                      ? "configure"
-                      : "ready"
-            }
-            documentName={doc?.name}
-            standalone={!folder}
-            onStart={onNewCircuit}
-            onConfigure={() => setConfigure(true)}
-            onReconnect={() => void reconnect()}
-          >
-            {!draft.trim() && (
-              <div className="conversation-starters">
-                {starterActions(
-                  Boolean(shown) && !readable,
-                  readable,
-                  selection.length > 0,
-                  !folder,
-                ).map((starter) => (
-                  <ActionRow
-                    variant="soft"
-                    color="gray"
-                    key={starter.id}
-                    className="conversation-starter"
-                    data-tip="立即发送"
-                    disabled={
-                      locked || references.unresolved || !state?.available
-                    }
-                    onClick={() => {
-                      changeDraft(starter.prompt);
-                      send(starter.prompt);
-                    }}
-                  >
-                    <starter.icon size={16} />
-                    <span>{starter.label}</span>
-                    <ArrowUpRight size={16} />
-                  </ActionRow>
-                ))}
-              </div>
-            )}
-          </ChatEmpty>
-        }
-        renderItem={(segment, index) => {
-          const live =
-            busy &&
-            index === turns.length - 1 &&
-            (!segment.turn || segment.turn.status === "running");
-          const user = segment.user;
-          return (
-            <Fragment key={segment.key}>
-              {user && userMessage(user)}
-              <Turn
-                segment={segment}
-                live={live}
-                notice={
-                  live && state?.transmission?.phase === "retrying"
-                    ? state.transmission.message
-                    : null
-                }
-                locked={pending || busy}
-                onUndo={undoFiles}
-                onRetry={
-                  user?.canEdit && segment.turn?.status === "failed"
-                    ? () => resubmit(user, user.text || "")
-                    : undefined
-                }
-                onError={onError}
-                onFollowReference={
-                  onFollowReference
-                    ? (href, item) =>
-                        onFollowReference(href, {
-                          ...item,
-                          context: item.context || user?.context,
-                        })
-                    : undefined
-                }
-              />
-            </Fragment>
-          );
-        }}
-      />
-      {(folder || doc) && (
-        <MessageComposer.Root
-          className="composer"
-          aria-label="消息编辑器"
-          data-reference-drop={referenceDrop || undefined}
-        >
-          {references.composer}
-          <MessageComposer.Input
-            ref={composerInput}
-            className="composer-input"
-            value={draft}
-            onChange={(e) => changeDraft(e.target.value)}
-            placeholder="描述你的想法…"
-            aria-label="消息"
-            disabled={!ready}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
-                // While the AI answers, Enter keeps the draft for later.
-                e.preventDefault();
-                send();
-              }
+            onClose={() => setRenameConversation(false)}
+            onSubmit={async (title) => {
+              await runtime("conversations", {
+                action: "rename",
+                id: state?.conversationId,
+                title,
+              });
+              await loadConversations();
             }}
           />
-          <MessageComposer.Actions>
-            <ModelPicker
-              scope={modelScope}
-              model={state?.model || null}
-              name={currentModel?.name || currentModel?.label}
-              disabled={!ready || pending}
-              busy={busy}
-              configurationError={state?.modelConfigurationError?.message}
-              allowCustom={Boolean(
-                state?.customProvider &&
-                state.customProvider.auth !== "chatgpt",
-              )}
-              load={loadModels}
-              select={async (model) => {
-                await runtime("selectModel", {
-                  model: model.model,
-                  effort: model.efforts
-                    ? model.efforts.some(
-                        (entry) => entry.value === state?.effort,
-                      )
-                      ? state?.effort
-                      : (model.defaultEffort ?? null)
-                    : state?.effort || "none",
-                });
-                await refresh();
-              }}
-            />
-            <Select
-              label="思考深度"
-              variant="plain"
-              className="composer-effort"
-              value={state?.effort || "none"}
-              disabled={locked || !state?.model}
-              options={effortOptions.map(([value, label]) => ({
-                value,
-                label,
-              }))}
-              onChange={(effort) =>
-                void runtime("selectModel", { model: state?.model, effort })
-                  .then(() => refresh())
-                  .catch(onError)
+        )}
+        {exportOpen && scopeReady && (
+          <ConversationExport
+            key={workspaceKey}
+            workspaceKey={workspaceKey}
+            workspaceName={folder?.name || doc?.name || "电路"}
+            conversations={conversations}
+            onClose={() => setExportOpen(false)}
+          />
+        )}
+        <div className="chat-header">
+          <ConversationPicker
+            conversations={conversations}
+            active={state?.conversationId || null}
+            disabled={locked}
+            onSelect={(id) => switchConversation("select", id)}
+            onRestore={(id) => switchConversation("restore", id)}
+            onExport={scopeReady ? () => setExportOpen(true) : undefined}
+          />
+          <IconButton
+            variant="ghost"
+            color="gray"
+            data-tip="新建对话"
+            aria-label="新建对话"
+            disabled={locked}
+            onClick={() => switchConversation("new")}
+          >
+            <Plus size={16} />
+          </IconButton>
+          <Menu label="对话操作">
+            <MenuItem
+              disabled={!scopeReady}
+              onSelect={() => setExportOpen(true)}
+            >
+              导出会话…
+            </MenuItem>
+            <MenuItem
+              disabled={locked || !state?.conversationId}
+              onSelect={() => setRenameConversation(true)}
+            >
+              重命名…
+            </MenuItem>
+            <MenuItem
+              disabled={locked || !state?.conversationId}
+              onSelect={() =>
+                switchConversation(
+                  "archive",
+                  state?.conversationId || undefined,
+                )
               }
-            />
-            <ContextUsageRing usage={scopeReady ? state?.contextUsage : null} />
-            {busy ? (
-              <IconButton
-                variant="solid"
-                className="composer-stop"
-                aria-label="停止回答"
-                data-tip={stopping ? "正在停止…" : "停止回答"}
-                disabled={stopping}
-                onClick={() => {
-                  setStopping(true);
-                  void runtime("stop")
-                    .then(() => refresh())
-                    .catch((error) => {
-                      setStopping(false);
-                      onError(error);
-                    });
-                }}
+            >
+              归档
+            </MenuItem>
+          </Menu>
+          <IconButton
+            variant="ghost"
+            color="gray"
+            data-tip="AI 设置"
+            aria-label="AI 设置"
+            onClick={() => setConfigure(!configure)}
+          >
+            <Settings2 size={16} />
+          </IconButton>
+        </div>
+        {(runtimeError || state?.detail || state?.modelConfigurationError) && (
+          <div className="error-bar" role="alert">
+            {runtimeError ||
+              state?.modelConfigurationError?.message ||
+              state?.detail}
+            {!runtimeError && state?.modelConfigurationError ? (
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={() => setConfigure(true)}
               >
-                <Square size={16} />
-              </IconButton>
+                {state.services.length ? "选择模型服务" : "添加模型服务"}
+              </Button>
             ) : (
-              <IconButton
-                variant="solid"
-                aria-label="发送"
-                data-tip="发送"
-                data-tip-key="Enter"
-                disabled={
-                  !ready ||
-                  !draft.trim() ||
-                  references.unresolved ||
-                  pending ||
-                  !state?.available
-                }
-                onClick={() => send()}
+              <Button
+                variant="ghost"
+                color="gray"
+                onClick={() => void reconnect()}
               >
-                <Send size={16} />
-              </IconButton>
+                重新连接
+              </Button>
             )}
-          </MessageComposer.Actions>
-        </MessageComposer.Root>
-      )}
-    </div>
+          </div>
+        )}
+        {configure && (
+          <ProviderSettings
+            services={state?.services || []}
+            provider={state?.customProvider || null}
+            defaultServiceId={state?.defaultServiceId}
+            conversationId={ready ? state?.conversationId : null}
+            hasHistory={messages.some((message) => message.type === "user")}
+            configurationError={state?.modelConfigurationError?.message}
+            busy={pending || busy}
+            request={runtime}
+            onSaved={async () => {
+              setModels([]);
+              await refresh();
+            }}
+            onClose={() => setConfigure(false)}
+          />
+        )}
+        <ConversationList
+          key={draftKey}
+          ref={conversationList}
+          visible={visible}
+          items={turns}
+          empty={
+            <ChatEmpty
+              phase={
+                !folder && !doc
+                  ? "start"
+                  : runtimeError
+                    ? "error"
+                    : !ready
+                      ? "connecting"
+                      : !state?.services.length
+                        ? "configure"
+                        : "ready"
+              }
+              documentName={doc?.name}
+              standalone={!folder}
+              onStart={onNewCircuit}
+              onConfigure={() => setConfigure(true)}
+              onReconnect={() => void reconnect()}
+            >
+              {!draft.trim() && (
+                <div className="conversation-starters">
+                  {starterActions(
+                    Boolean(shown) && !readable,
+                    readable,
+                    selection.length > 0,
+                    !folder,
+                  ).map((starter) => (
+                    <ActionRow
+                      variant="soft"
+                      color="gray"
+                      key={starter.id}
+                      className="conversation-starter"
+                      data-tip="立即发送"
+                      disabled={
+                        locked || references.unresolved || !state?.available
+                      }
+                      onClick={() => {
+                        changeDraft(starter.prompt);
+                        send(starter.prompt);
+                      }}
+                    >
+                      <starter.icon size={16} />
+                      <span>{starter.label}</span>
+                      <ArrowUpRight size={16} />
+                    </ActionRow>
+                  ))}
+                </div>
+              )}
+            </ChatEmpty>
+          }
+          renderItem={(segment, index) => {
+            const live =
+              busy &&
+              index === turns.length - 1 &&
+              (!segment.turn || segment.turn.status === "running");
+            const user = segment.user;
+            return (
+              <Fragment key={segment.key}>
+                {user && userMessage(user)}
+                <Turn
+                  segment={segment}
+                  live={live}
+                  notice={
+                    live && state?.transmission?.phase === "retrying"
+                      ? state.transmission.message
+                      : null
+                  }
+                  locked={pending || busy}
+                  onUndo={undoFiles}
+                  onRetry={
+                    user?.canEdit && segment.turn?.status === "failed"
+                      ? () => resubmit(user, user.text || "")
+                      : undefined
+                  }
+                  onError={onError}
+                  onFollowReference={
+                    onFollowReference
+                      ? (href, item) =>
+                          onFollowReference(href, {
+                            ...item,
+                            context: item.context || user?.context,
+                          })
+                      : undefined
+                  }
+                />
+              </Fragment>
+            );
+          }}
+        />
+        {(folder || doc) && (
+          <ComposerPrimitive.AttachmentDropzone asChild>
+            <ComposerPrimitive.Root
+              className="ui-message-composer composer"
+              aria-label="消息编辑器"
+              data-reference-drop={
+                referenceDrop || nativeImageDrop || undefined
+              }
+            >
+              {references.composer}
+              <ComposerPrimitive.Input
+                ref={composerInput}
+                className="ui-message-composer-input composer-input"
+                placeholder="描述你的想法，或粘贴图片与文件…"
+                aria-label="消息"
+                render={<textarea />}
+                cancelOnEscape={false}
+                unstable_focusOnRunStart={false}
+                unstable_focusOnThreadSwitched={false}
+                onPaste={(event) => {
+                  const files = workbench.stores.files.getState();
+                  const copied = files.copiedFile;
+                  if (!copied || !ready || event.clipboardData.files.length)
+                    return;
+                  if (
+                    copied.text !== event.clipboardData.getData("text/plain") ||
+                    copied.folderId !== folder?.id
+                  ) {
+                    files.setCopiedFile(null);
+                    return;
+                  }
+                  event.preventDefault();
+                  references.addFiles(copied.folderId, [copied.path]);
+                }}
+              />
+              <MessageComposer.Actions>
+                <ComposerPrimitive.AddAttachment asChild>
+                  <IconButton
+                    type="button"
+                    aria-label="添加图片"
+                    data-tip="添加图片（也可粘贴或拖入）"
+                  >
+                    <Paperclip size={16} />
+                  </IconButton>
+                </ComposerPrimitive.AddAttachment>
+                <ModelPicker
+                  scope={modelScope}
+                  model={state?.model || null}
+                  name={currentModel?.name || currentModel?.label}
+                  disabled={!ready || pending}
+                  busy={busy}
+                  configurationError={state?.modelConfigurationError?.message}
+                  allowCustom={Boolean(
+                    state?.customProvider &&
+                    state.customProvider.auth !== "chatgpt",
+                  )}
+                  load={loadModels}
+                  select={async (model) => {
+                    await runtime("selectModel", {
+                      model: model.model,
+                      effort: model.efforts
+                        ? model.efforts.some(
+                            (entry) => entry.value === state?.effort,
+                          )
+                          ? state?.effort
+                          : (model.defaultEffort ?? null)
+                        : state?.effort || "none",
+                    });
+                    await refresh();
+                  }}
+                />
+                <Select
+                  label="思考深度"
+                  variant="plain"
+                  className="composer-effort"
+                  value={state?.effort || "none"}
+                  disabled={locked || !state?.model}
+                  options={effortOptions.map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  onChange={(effort) =>
+                    void runtime("selectModel", { model: state?.model, effort })
+                      .then(() => refresh())
+                      .catch(onError)
+                  }
+                />
+                <ContextUsageRing
+                  usage={scopeReady ? state?.contextUsage : null}
+                />
+                {busy ? (
+                  <IconButton
+                    variant="solid"
+                    className="composer-stop"
+                    aria-label="停止回答"
+                    data-tip={stopping ? "正在停止…" : "停止回答"}
+                    disabled={stopping}
+                    onClick={() => {
+                      setStopping(true);
+                      void runtime("stop")
+                        .then(() => refresh())
+                        .catch((error) => {
+                          setStopping(false);
+                          onError(error);
+                        });
+                    }}
+                  >
+                    <Square size={16} />
+                  </IconButton>
+                ) : (
+                  <ComposerPrimitive.Send asChild>
+                    <IconButton
+                      type="button"
+                      variant="solid"
+                      aria-label="发送"
+                      data-tip="发送"
+                      data-tip-key="Enter"
+                    >
+                      <Send size={16} />
+                    </IconButton>
+                  </ComposerPrimitive.Send>
+                )}
+              </MessageComposer.Actions>
+            </ComposerPrimitive.Root>
+          </ComposerPrimitive.AttachmentDropzone>
+        )}
+      </div>
+    </AssistantRuntimeProvider>
   );
 }

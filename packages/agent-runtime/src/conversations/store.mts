@@ -10,6 +10,27 @@ import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 const SCHEMA = "vibe-logisim.conversations/v2";
 
+/** Attachment-only questions still need a recognizable history title/preview. */
+function firstQuestion(messages: RuntimeMessage[]): string {
+  const first = messages.find((message) => message.type === "user");
+  const references = first?.context?.references;
+  return (
+    first?.text?.trim() ||
+    (Array.isArray(references)
+      ? references
+          .flatMap((ref) =>
+            ref &&
+            typeof ref === "object" &&
+            "label" in ref &&
+            typeof ref.label === "string"
+              ? [ref.label]
+              : [],
+          )
+          .join("、")
+      : "")
+  );
+}
+
 /**
  * Conversations per workspace key (a folder, a lone document or the app), kept
  * as one JSON file. The file is read once; this process is its only writer, so
@@ -157,9 +178,7 @@ class ConversationStore {
           title: c.title,
           updatedAt: c.updatedAt,
           archived: Boolean(c.archived),
-          preview:
-            c.messages.find((m) => m.type === "user")?.text?.slice(0, 160) ||
-            "",
+          preview: firstQuestion(c.messages).slice(0, 160),
         })),
     };
   }
@@ -237,7 +256,7 @@ class ConversationStore {
     Object.assign(record, structuredClone(patch));
     record.messages = structuredClone(messages);
     if (!record.customTitle && !record.titleGenerated) {
-      const first = record.messages.find((m) => m.type === "user")?.text;
+      const first = firstQuestion(record.messages);
       if (first) {
         record.title = first.replace(/\s+/g, " ").trim().slice(0, 60);
         record.titleGenerated = true;
