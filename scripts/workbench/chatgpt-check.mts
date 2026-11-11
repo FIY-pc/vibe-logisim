@@ -20,10 +20,8 @@ import {
   configurationIssue,
   selectionFor,
 } from "../../packages/agent-runtime/src/models/selection.mts";
-import {
-  TurnRunner,
-  retryingStream,
-} from "../../packages/agent-runtime/src/turn/runner.mts";
+import { TurnRunner } from "../../packages/agent-runtime/src/turn/runner.mts";
+import { modelFailure } from "../../packages/agent-runtime/src/turn/recovery.mts";
 import { loadSdk } from "../../packages/agent-runtime/src/models/sdk-loader.mts";
 
 const temp = await mkdtemp(path.join(tmpdir(), "vibe-chatgpt-check-"));
@@ -434,16 +432,14 @@ try {
         },
       );
     };
-    const output =
-      mode === "limit"
-        ? retryingStream(produce, sdk, undefined, {
-            scheduled: () => {},
-            started: () => {},
-          })
-        : await produce();
+    const output = await produce();
     const result = await output.result();
     assert.equal(result.stopReason, "error");
     assert.equal(attempts, 1);
+    assert.equal(
+      modelFailure(result.errorMessage!).retryable,
+      mode !== "limit",
+    );
     assert.match(
       result.errorMessage!,
       mode === "limit"
