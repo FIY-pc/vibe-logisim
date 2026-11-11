@@ -942,6 +942,13 @@ export function Chat({
                       : undefined
                   }
                   onError={onError}
+                  onConfigure={
+                    index === turns.length - 1 &&
+                    segment.turn?.status === "failed" &&
+                    segment.turn.recovery === "settings"
+                      ? () => setConfigure(true)
+                      : undefined
+                  }
                   onFollowReference={
                     onFollowReference
                       ? (href, item) =>

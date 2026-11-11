@@ -95,7 +95,15 @@ export async function verifyConversationTurns() {
     conversationId: "turns",
     model: "fixture",
     effort: null,
-    services: [{ id: "fixture" }],
+    services: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        baseUrl: "http://localhost/v1",
+        api: "openai-completions",
+        models: ["fixture"],
+      },
+    ],
     messages: history.map((m) => ({
       ...JSON.parse(JSON.stringify(m)),
       canEdit: m.type === "user",
@@ -198,7 +206,12 @@ export async function verifyConversationTurns() {
     });
     emit(item);
   };
-  const endTurn = (status: string, error: string | null, change?: any) => {
+  const endTurn = (
+    status: string,
+    error: string | null,
+    change?: any,
+    recovery?: string,
+  ) => {
     if (change)
       emit({
         type: "files-changed",
@@ -211,6 +224,7 @@ export async function verifyConversationTurns() {
     Object.assign(turn, {
       status,
       error,
+      recovery,
       elapsedMs: 47_000,
       ...(change ? { change } : {}),
     });
@@ -468,15 +482,15 @@ export async function verifyConversationTurns() {
     await step(() => {
       transmission = {
         phase: "retrying",
-        message: "模型服务繁忙，2 秒后重试（1/6）",
+        message: "与模型服务的连接中断，2 秒后自动继续（1/6）",
       };
       emitStatus();
     });
     assert.equal(
       $(".turn-live[data-notice]")?.textContent,
-      "模型服务繁忙，2 秒后重试（1/6）",
+      "与模型服务的连接中断，2 秒后自动继续（1/6）",
     );
-    assert.equal(occurrences("模型服务繁忙"), 1, "The retry notice shows once");
+    assert.equal(occurrences("自动继续"), 1, "The retry notice shows once");
     assert.ok(
       $(".turn-tool") === row,
       "A status snapshot re-renders only what changed",
@@ -491,7 +505,7 @@ export async function verifyConversationTurns() {
     );
     assert.equal(
       $(".turn-live[data-notice]", reloaded)?.textContent,
-      "模型服务繁忙，2 秒后重试（1/6）",
+      "与模型服务的连接中断，2 秒后自动继续（1/6）",
     );
     await act(async () => second.unmount());
     reloaded.remove();
@@ -768,6 +782,34 @@ export async function verifyConversationTurns() {
     assert.equal(
       $(".turn-summary", restored)?.getAttribute("aria-controls"),
       $(".turn-process-body", restored)?.id,
+    );
+    await type("检查 API 配置错误");
+    await enter();
+    await step(() =>
+      endTurn(
+        "failed",
+        "模型服务拒绝了 API 密钥，请检查 AI 设置",
+        undefined,
+        "settings",
+      ),
+    );
+    const configurationFailure = $$(".turn").at(-1)!;
+    const configureButton = $$("button", configurationFailure).find(
+      (b) => b.textContent === "检查 AI 设置",
+    );
+    assert.ok(configureButton);
+    assert.ok(
+      $$("button", configurationFailure).some((b) => b.textContent === "继续"),
+      "Continuation remains available after fixing credentials",
+    );
+    assert.equal(
+      $$("button", configurationFailure).some((b) => b.textContent === "重试"),
+      false,
+    );
+    await click(configureButton);
+    assert.ok(
+      document.querySelector('[role="dialog"]'),
+      "Configuration errors open the real settings dialog",
     );
     console.log(
       "PASS: a turn streams its text and tool lines, folds into one summary with the answer and files kept, and a reload replays the same view; retry notice, failure and stop each show once",

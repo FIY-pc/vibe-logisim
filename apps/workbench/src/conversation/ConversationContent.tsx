@@ -53,6 +53,7 @@ export interface Message {
   startedAt?: number;
   elapsedMs?: number;
   error?: string | null;
+  recovery?: "settings" | "continue";
   change?: TurnChange;
 }
 export function mergeActivity(previous: Message, next: Message): Message {

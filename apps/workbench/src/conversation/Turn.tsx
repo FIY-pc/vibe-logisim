@@ -1,6 +1,6 @@
 import { Button, Text } from "../design/ui";
 import { memo, useEffect, useId, useRef, useState } from "react";
-import { Check, ChevronRight, Play, Undo2 } from "lucide-react";
+import { Check, ChevronRight, Play, Settings2, Undo2 } from "lucide-react";
 import { ChatMarkdown, CopyButton, type Message } from "./ConversationContent";
 import {
   formatDuration,
@@ -43,6 +43,7 @@ interface Props {
   onUndo: (change: TurnChange) => void;
   /** Continues from retained progress; only on the latest unfinished turn. */
   onContinue?: () => void;
+  onConfigure?: () => void;
   onError: (error: unknown) => void;
   onFollowReference?: (href: string, message: Message) => void;
 }
@@ -57,6 +58,7 @@ export function Turn({
   locked,
   onUndo,
   onContinue,
+  onConfigure,
   onError,
   onFollowReference,
 }: Props) {
@@ -158,13 +160,28 @@ export function Turn({
           data-status={status === "failed" ? "failed" : "interrupted"}
         >
           <span>{turn?.error || "回答没有完成"}</span>
+          {onConfigure && (
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={locked}
+              onClick={onConfigure}
+            >
+              <Settings2 size={16} aria-hidden />
+              检查 AI 设置
+            </Button>
+          )}
           {onContinue && (
             <Button
               variant="ghost"
               color="gray"
               disabled={locked}
               onClick={onContinue}
-              data-tip="保留已有内容和执行记录，继续完成任务"
+              data-tip={
+                onConfigure
+                  ? "修复服务设置后，保留已有进度继续"
+                  : "保留已有内容和执行记录，继续完成任务"
+              }
             >
               <Play size={16} aria-hidden />
               继续
