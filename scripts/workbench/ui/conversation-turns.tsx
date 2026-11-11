@@ -634,15 +634,17 @@ export async function verifyConversationTurns() {
     assert.equal(asks().length, 3);
     await step(() => {
       say("m4", "检查进位", "reasoning");
-      endTurn("failed", "模型服务拒绝了 API 密钥（401 invalid api key）");
+      say("m4-partial", "已经检查了输入，还需要检查输出。 ");
+      finish("m4-partial", "incomplete");
+      endTurn("failed", "与模型服务的连接中断（connection reset）");
     });
     const [first, failed] = $$(".turn");
     assert.equal($$(".turn").length, 2, "Each question keeps its own turn");
     assert.match(
       $('.turn-end[data-status="failed"]', failed)!.textContent!,
-      /模型服务拒绝了 API 密钥（401 invalid api key）/,
+      /与模型服务的连接中断（connection reset）/,
     );
-    assert.equal(occurrences("invalid api key"), 1, "The failure shows once");
+    assert.equal(occurrences("connection reset"), 1, "The failure shows once");
     assert($(".turn-thought", failed), "A failed turn keeps its steps open");
     assert.equal(
       $(".turn-thought-text", failed),
@@ -651,20 +653,27 @@ export async function verifyConversationTurns() {
     );
     assert.equal($(".turn-files > small", first)?.textContent, "已撤销");
     assert.equal($(".turn-files", failed), null);
-    const retry = $$("button", failed).find((b) => b.textContent === "重试")!;
-    await click(retry);
-    assert.equal(asks().at(-1).args.question, "再检查一下进位");
-    assert.equal(asks().at(-1).args.editMessageId, "user-2");
+    const failedId = history.findLast((m) => m.type === "turn").id;
+    const resume = $$("button", failed).find((b) => b.textContent === "继续")!;
+    await click(resume);
+    assert.equal(asks().at(-1).args.question, "继续");
+    assert.equal(asks().at(-1).args.editMessageId, undefined);
+    assert.equal(asks().at(-1).args.continueTurnId, failedId);
+    assert.match(failed.textContent!, /已经检查了输入/);
+    assert.equal(
+      $$("button", failed).some((b) => b.textContent === "继续"),
+      false,
+    );
     await step(() => {
       say("m5", "进位链没有问题。");
       finish("m5", "final");
       endTurn("completed", null);
     });
-    const retried = $$(".turn")[1];
+    const retried = $$(".turn")[2];
     assert.equal(
       $$(".turn").length,
-      2,
-      "The retried question replaces the failed turn",
+      3,
+      "Continuing preserves the failed turn and appends a new one",
     );
     assert.equal(
       $(".turn-summary", retried),
@@ -696,7 +705,7 @@ export async function verifyConversationTurns() {
     });
     const stopped = $$(".turn").at(-1)!;
     assert.equal(
-      $('.turn-end[data-status="interrupted"]', stopped)?.textContent,
+      $('.turn-end[data-status="interrupted"] > span', stopped)?.textContent,
       "已停止",
     );
     assert.equal(occurrences("已停止"), 1, "The stop shows once");
@@ -712,6 +721,19 @@ export async function verifyConversationTurns() {
     assert($('button[aria-label="发送"]'));
     assert.equal(box().value, "等会再问");
     assert.equal(errors.length, 1);
+    await click($$("button", stopped).find((b) => b.textContent === "继续")!);
+    assert.equal(asks().at(-1).args.question, "继续");
+    assert.equal(asks().at(-1).args.editMessageId, undefined);
+    assert.equal(
+      box().value,
+      "等会再问",
+      "Continue preserves the composer's draft",
+    );
+    await step(() => {
+      say("m6-resumed", "已核对当前电路，可以继续。");
+      finish("m6-resumed", "final");
+      endTurn("completed", null);
+    });
 
     // A stop before the first tool must not promote commentary to an answer.
     await type("先检查电路再修改");

@@ -551,8 +551,7 @@ export function Chat({
     if (text !== draft) changeDraft(text);
     references.send();
   };
-  /** Sends a question again from where it was asked: an edit, or a retry
-   * after the turn failed. */
+  /** Editing intentionally replaces the conversation from this question. */
   const resubmit = (message: Message, text: string) => {
     if (
       !ready ||
@@ -572,6 +571,22 @@ export function Chat({
         editMessageId: message.id,
       });
       setEditingMessage(null);
+      await refresh();
+      await loadConversations();
+    });
+  };
+  const continueTurn = (turnId: string) => {
+    if (!ready || busy || pending) return;
+    conversationList.current?.latest();
+    void act(async () => {
+      await runtime("ask", {
+        question: "继续",
+        references: [],
+        documentId: doc?.id,
+        circuit: circuit ?? undefined,
+        selection,
+        continueTurnId: turnId,
+      });
       await refresh();
       await loadConversations();
     });
@@ -917,9 +932,13 @@ export function Chat({
                   }
                   locked={pending || busy}
                   onUndo={undoFiles}
-                  onRetry={
-                    user?.canEdit && segment.turn?.status === "failed"
-                      ? () => resubmit(user, user.text || "")
+                  onContinue={
+                    index === turns.length - 1 &&
+                    segment.turn &&
+                    ["failed", "interrupted"].includes(
+                      segment.turn.status || "",
+                    )
+                      ? () => continueTurn(segment.turn!.id)
                       : undefined
                   }
                   onError={onError}

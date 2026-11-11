@@ -84,6 +84,8 @@ export interface AskRequest {
   selection: string[];
   /** Resend from this user message: history and transcript are cut back first. */
   editMessageId?: string | null;
+  /** Continue the latest failed/interrupted turn without rewinding any history. */
+  continueTurnId?: string | null;
 }
 
 interface PendingTurn {
@@ -894,6 +896,15 @@ export class TurnRunner extends EventEmitter {
       this.conversationId !== this.conversations.ensure(workspaceKey).id
     )
       await this.resume(workspaceKey);
+    if (request.continueTurnId) {
+      const latest = this.history.findLast((m) => m.type === "turn");
+      if (
+        request.editMessageId ||
+        latest?.id !== request.continueTurnId ||
+        !["failed", "interrupted"].includes(latest.status || "")
+      )
+        throw new Error("会话已变化，只能继续最近一次未完成的回答");
+    }
     const service = this.services.resolve(this.selection);
     const issue = configurationIssue(
       this.selection,
@@ -939,6 +950,7 @@ export class TurnRunner extends EventEmitter {
         );
         this.emitHistory();
       }
+      this.transcript = recoverTranscript(this.transcript);
       // The user's own edits before this turn get their own history entry so
       // the turn's checkpoint holds only what the AI changed.
       if (status.folder)
