@@ -29,6 +29,11 @@ export interface Step {
   delayMs?: number;
   /** A deterministic provider rejection, for overflow/error recovery checks. */
   error?: string;
+  errorStatus?: number;
+  /** Drop the actual response socket after emitting a partial answer. */
+  disconnectAfterMs?: number;
+  /** Keep a partial answer open until the client stops it. */
+  hold?: boolean;
 }
 /** One tool call of the current turn and what it returned. */
 export interface Exchange {
@@ -141,8 +146,11 @@ export async function startScriptedModel(
         `[model] step ${turn.calls.length}: ${step.tool ? step.tool.name + " " + JSON.stringify(step.tool.args).slice(0, 160) : JSON.stringify(step.text ?? "").slice(0, 80)}`,
       );
     if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+    if (res.destroyed) return;
     if (step.error) {
-      res.writeHead(400, { "content-type": "application/json" });
+      res.writeHead(step.errorStatus ?? 400, {
+        "content-type": "application/json",
+      });
       return res.end(JSON.stringify({ error: { message: step.error } }));
     }
     const chunk = (delta: any, finish_reason: string | null = null) =>
@@ -175,6 +183,12 @@ export async function startScriptedModel(
           ],
         }),
       );
+    if (step.disconnectAfterMs !== undefined) {
+      const timer = setTimeout(() => res.destroy(), step.disconnectAfterMs);
+      res.once("close", () => clearTimeout(timer));
+      return;
+    }
+    if (step.hold) return;
     res.write(chunk({}, step.tool ? "tool_calls" : "stop"));
     res.end("data: [DONE]\n\n");
   });
