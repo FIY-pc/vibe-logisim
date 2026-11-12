@@ -3,13 +3,7 @@ import { Button, TextArea } from "../design/ui";
 import { useEffect, useRef, useState } from "react";
 import { command, desktop } from "../shared/transport";
 import type { JsonValue } from "../generated/serde_json/JsonValue";
-import {
-  Download,
-  ExternalLink,
-  MessageSquare,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { Download, ExternalLink, MessageSquare, RefreshCw } from "lucide-react";
 import { MenuCheckboxItem, MenuItem, MenuSeparator } from "../shared/Menu";
 import { DialogFrame, DialogBody, DialogFooter } from "../shared/Dialog";
 
@@ -22,6 +16,7 @@ interface UpdateStatus {
   current: string;
   development: boolean;
   latest: string | null;
+  releaseNotesHtml?: string | null;
   url: string | null;
   lastCheckedAt: number | null;
   newer: boolean;
@@ -59,7 +54,8 @@ export function useFeedback(
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [closedVersion, setClosedVersion] = useState<string | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [revealedVersion, setRevealedVersion] = useState<string | null>(null);
   const callbacks = useRef({ onMessage, onError });
   callbacks.current = { onMessage, onError };
   const mounted = useRef(true);
@@ -99,7 +95,6 @@ export function useFeedback(
       });
       if (!mounted.current) return;
       setStatus(next);
-      setClosedVersion(null);
       if (next.error) throw new Error(next.error);
       if (next.forcedOff) callbacks.current.onMessage("此环境已关闭更新检查");
       else if (next.development)
@@ -108,6 +103,11 @@ export function useFeedback(
         );
       else if (!next.newer)
         callbacks.current.onMessage(`已是最新版本（${next.current}）`);
+      else {
+        // Explicit checks can show a version the user previously ignored.
+        setRevealedVersion(next.latest);
+        setUpdateOpen(true);
+      }
     } catch (error) {
       callbacks.current.onError(error);
     } finally {
@@ -132,6 +132,8 @@ export function useFeedback(
           version: status.latest,
         }),
       );
+      setUpdateOpen(false);
+      setRevealedVersion(null);
     } catch (error) {
       callbacks.current.onError(error);
     }
@@ -147,8 +149,11 @@ export function useFeedback(
     setAutomatic,
     dismiss,
     openRelease,
-    closeNotice: () => setClosedVersion(status?.latest || null),
-    showNotice: Boolean(status?.available && status.latest !== closedVersion),
+    updateOpen,
+    setUpdateOpen,
+    showUpdate: Boolean(
+      status?.newer && (status.available || status.latest === revealedVersion),
+    ),
   };
 }
 export type FeedbackController = ReturnType<typeof useFeedback>;
@@ -186,23 +191,6 @@ export function FeedbackMenu({ feedback }: { feedback: FeedbackController }) {
         关于 Vibe Logisim {status?.current || ""}
       </MenuItem>
     </>
-  );
-}
-export function UpdateNotice({ feedback }: { feedback: FeedbackController }) {
-  if (!feedback.showNotice) return null;
-  return (
-    <aside className="update-notice" aria-label="版本更新">
-      <span>新版本 v{feedback.status?.latest} 可用</span>
-      <button onClick={() => void feedback.openRelease()}>查看更新</button>
-      <button onClick={() => void feedback.dismiss()}>忽略此版本</button>
-      <button
-        onClick={feedback.closeNotice}
-        data-tip="关闭"
-        aria-label="关闭更新提示"
-      >
-        <X size={16} />
-      </button>
-    </aside>
   );
 }
 export function FeedbackDialog({ onClose }: { onClose: () => void }) {

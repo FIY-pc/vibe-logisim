@@ -1,19 +1,68 @@
-.update-notice {
+.update-trigger {
+  margin-right: var(--space-2);
+  white-space: nowrap;
+}
+.update-versions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+.update-versions strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.update-popover {
+  max-width: calc(100vw - 24px);
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+}
+.update-highlights {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--font-size-2);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.update-highlights li + li {
+  margin-top: var(--space-3);
+}
+.update-highlights li::marker {
+  color: var(--muted);
+}
+.update-highlights li > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.update-empty {
+  color: var(--muted);
+  font-size: var(--font-size-2);
+}
+.update-install-note {
+  margin: var(--space-4) 0;
+  color: var(--muted);
   font-size: var(--font-size-1);
+  line-height: 1.5;
 }
-.update-notice > span {
-  flex: 1;
-}
-.update-notice button {
-  display: inline-flex;
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-3);
+}
+@media (max-width: 640px) {
+  .update-trigger > span {
+    display: none;
+  }
+  .update-trigger {
+    width: var(--control-height);
+    padding-inline: 0;
+    margin-right: 0;
+  }
 }
 /* The body lines up with the title and the buttons. */
 .feedback-dialog .dialog-body > p {

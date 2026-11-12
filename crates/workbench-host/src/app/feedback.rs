@@ -13,6 +13,7 @@ use xmltree::{Element, XMLNode};
 const RELEASES: &str = "https://github.com/FIY-pc/vibe-logisim/releases";
 const FEED: &str = "https://github.com/FIY-pc/vibe-logisim/releases.atom";
 const MAX_FEED_BYTES: usize = 2 * 1024 * 1024;
+const MAX_RELEASE_NOTES_BYTES: usize = 64 * 1024;
 const INTERVAL: u64 = 6 * 60 * 60;
 
 #[derive(Default, Deserialize, Serialize)]
@@ -21,6 +22,7 @@ struct Preferences {
     enabled: Option<bool>,
     last_checked_at: Option<u64>,
     latest: Option<String>,
+    release_notes_html: Option<String>,
     dismissed_version: Option<String>,
 }
 pub(crate) struct Feedback {
@@ -50,7 +52,12 @@ fn version(text: &str) -> Option<[u64; 3]> {
         parts[2].parse().ok()?,
     ])
 }
-fn latest_release(bytes: &[u8]) -> Result<String> {
+#[derive(Debug, PartialEq)]
+struct Release {
+    version: String,
+    notes_html: Option<String>,
+}
+fn latest_release(bytes: &[u8]) -> Result<Release> {
     if bytes.len() > MAX_FEED_BYTES {
         return Err("发布列表超过大小限制".into());
     }
@@ -72,13 +79,27 @@ fn latest_release(bytes: &[u8]) -> Result<String> {
             continue;
         };
         if let Some(parsed) = version(tag)
-            && latest.is_none_or(|prior| parsed > prior)
+            && latest.as_ref().is_none_or(|(prior, _)| parsed > *prior)
         {
-            latest = Some(parsed);
+            let notes = entry
+                .get_child("content")
+                .filter(|content| {
+                    content
+                        .attributes
+                        .get("type")
+                        .is_some_and(|kind| kind == "html")
+                })
+                .and_then(Element::get_text)
+                .filter(|text| text.len() <= MAX_RELEASE_NOTES_BYTES)
+                .map(|text| text.into_owned());
+            latest = Some((parsed, notes));
         }
     }
     latest
-        .map(|[a, b, c]| format!("{a}.{b}.{c}"))
+        .map(|([a, b, c], notes_html)| Release {
+            version: format!("{a}.{b}.{c}"),
+            notes_html,
+        })
         .ok_or_else(|| "发布列表中没有可识别的版本".into())
 }
 fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
@@ -114,7 +135,7 @@ impl Feedback {
         let newer = version(current)
             .zip(latest.and_then(version))
             .is_some_and(|(current, latest)| latest > current);
-        json!({"enabled":self.preferences.enabled.unwrap_or(true),"forcedOff":std::env::var("VIBE_LOGISIM_NO_UPDATE_CHECK").is_ok_and(|value|value=="1"),"current":current,"development":development,"latest":latest,"url":latest.map(|tag|format!("{RELEASES}/tag/v{tag}")),"lastCheckedAt":self.preferences.last_checked_at,"dismissedVersion":self.preferences.dismissed_version,"newer":newer,"available":newer && latest != self.preferences.dismissed_version.as_deref(),"error":self.error})
+        json!({"enabled":self.preferences.enabled.unwrap_or(true),"forcedOff":std::env::var("VIBE_LOGISIM_NO_UPDATE_CHECK").is_ok_and(|value|value=="1"),"current":current,"development":development,"latest":latest,"releaseNotesHtml":self.preferences.release_notes_html,"url":latest.map(|tag|format!("{RELEASES}/tag/v{tag}")),"lastCheckedAt":self.preferences.last_checked_at,"dismissedVersion":self.preferences.dismissed_version,"newer":newer,"available":newer && latest != self.preferences.dismissed_version.as_deref(),"error":self.error})
     }
     pub fn preference(&mut self, enabled: bool) -> Result<Value> {
         self.preferences.enabled = Some(enabled);
@@ -144,7 +165,8 @@ impl Feedback {
         self.error = None;
         match download().await.and_then(|bytes| latest_release(&bytes)) {
             Ok(latest) => {
-                self.preferences.latest = Some(latest);
+                self.preferences.latest = Some(latest.version);
+                self.preferences.release_notes_html = latest.notes_html;
                 self.preferences.last_checked_at = Some(now());
                 if let Err(error) = atomic_json(&self.path, &self.preferences) {
                     self.error = Some(error.to_string());
@@ -294,10 +316,54 @@ mod tests {
     #[test]
     fn releases_are_numeric_and_links_are_constructed() {
         let data=br#"<feed><entry><id>tag:github.com,2008:Repository/1/v0.5.0</id></entry><entry><id>tag:github.com,2008:Repository/1/v0.4.2</id></entry><entry><id>tag:github.com,2008:Repository/1/build-inputs</id></entry><entry><id>tag:github.com,2008:Repository/1/v0.6.0-dev</id></entry></feed>"#;
-        assert_eq!(latest_release(data).unwrap(), "0.5.0");
+        assert_eq!(
+            latest_release(data).unwrap(),
+            Release {
+                version: "0.5.0".into(),
+                notes_html: None
+            }
+        );
         assert!(version("0.6.0-dev").is_none());
         assert!(version("1.2.3/../../foo").is_none());
         assert!(latest_release(&vec![b' '; MAX_FEED_BYTES + 1]).is_err());
+    }
+    #[test]
+    fn release_notes_belong_to_the_highest_stable_version_and_survive_restart() {
+        let data = br#"<feed>
+          <entry><id>releases/v1.2.0</id><content type="html">&lt;ul&gt;&lt;li&gt;New &amp;amp; improved&lt;/li&gt;&lt;/ul&gt;</content></entry>
+          <entry><id>releases/v1.1.0</id><content type="html">Old notes</content></entry>
+          <entry><id>releases/v2.0.0-beta</id><content type="html">Preview notes</content></entry>
+        </feed>"#;
+        let release = latest_release(data).unwrap();
+        assert_eq!(release.version, "1.2.0");
+        assert_eq!(
+            release.notes_html.as_deref(),
+            Some("<ul><li>New &amp; improved</li></ul>")
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let mut feedback = Feedback::new(directory.path());
+        feedback.preferences.latest = Some(release.version);
+        feedback.preferences.release_notes_html = release.notes_html;
+        feedback.preference(false).unwrap();
+        let restored = Feedback::new(directory.path());
+        assert_eq!(
+            restored.status()["releaseNotesHtml"],
+            "<ul><li>New &amp; improved</li></ul>"
+        );
+        // An oversized or absent body must not prevent the version check.
+        let large = format!(
+            "<feed><entry><id>releases/v1.3.0</id><content type=\"html\">{}</content></entry></feed>",
+            "x".repeat(MAX_RELEASE_NOTES_BYTES + 1)
+        );
+        assert_eq!(
+            latest_release(large.as_bytes()).unwrap(),
+            Release {
+                version: "1.3.0".into(),
+                notes_html: None
+            }
+        );
+        let legacy: Preferences = serde_json::from_str(r#"{"latest":"1.2.0"}"#).unwrap();
+        assert!(legacy.release_notes_html.is_none());
     }
     #[test]
     fn reports_reject_private_fields_and_changed_targets() {

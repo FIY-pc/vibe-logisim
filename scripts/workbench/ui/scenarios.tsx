@@ -1,4 +1,5 @@
 import { verifyWelcome } from "./welcome";
+import { verifyUpdates } from "./updates";
 import { verifyDocumentWorkspace } from "./document-workspace";
 import { verifyFilePreview } from "./file-preview";
 import { verifySearchControls } from "./search-controls";
@@ -1399,6 +1400,7 @@ await verifyFilesUI();
 await verifyFileClipboard();
 await verifyCloseFolder();
 await verifyWelcome();
+await verifyUpdates();
 await verifyDocumentWorkspace();
 await verifyFilePreview();
 await verifyReferencesUI();
