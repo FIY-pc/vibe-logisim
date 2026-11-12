@@ -10,16 +10,21 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const jsdom = createRequire(path.join(root, "package.json")).resolve("jsdom");
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-ui-check-"));
 const turnsOnly = process.argv.includes("--turns");
+const updatesOnly = process.argv.includes("--updates");
 try {
   const entry = path.join(temp, "entry.tsx");
-  if (turnsOnly)
+  if (turnsOnly || updatesOnly)
     await fs.writeFile(
       entry,
-      `import { verifyConversationTurns } from ${JSON.stringify(path.join(root, "scripts/workbench/ui/conversation-turns.tsx"))};\nawait verifyConversationTurns();process.exit(0);`,
+      updatesOnly
+        ? `import { verifyUpdates } from ${JSON.stringify(path.join(root, "scripts/workbench/ui/updates.tsx"))};\nawait verifyUpdates();process.exit(0);`
+        : `import { verifyConversationTurns } from ${JSON.stringify(path.join(root, "scripts/workbench/ui/conversation-turns.tsx"))};\nawait verifyConversationTurns();process.exit(0);`,
     );
   await build({
     entryPoints: [
-      turnsOnly ? entry : path.join(root, "scripts/workbench/ui/scenarios.tsx"),
+      turnsOnly || updatesOnly
+        ? entry
+        : path.join(root, "scripts/workbench/ui/scenarios.tsx"),
     ],
     bundle: true,
     format: "esm",
@@ -155,7 +160,7 @@ await import('./scenarios.mjs');
     {
       stdio: "inherit",
       // The classroom scenario waits on a one-second grading poller.
-      timeout: turnsOnly ? 60000 : 240000,
+      timeout: turnsOnly || updatesOnly ? 60000 : 240000,
       killSignal: "SIGKILL",
     },
   );

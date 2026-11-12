@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect } from "react";
 import { WorkbenchTheme } from "./design/Theme";
-import { UpdateNotice, useFeedback } from "./shell/Feedback";
+import { useFeedback } from "./shell/Feedback";
 import { useWorkspaceLayout, WorkspacePanels } from "./shell/WorkspaceLayout";
 import { usePlacement } from "./editor/usePlacement";
 import { Breadcrumbs } from "./editor/Breadcrumbs";
@@ -108,7 +108,6 @@ function Shell() {
       <NewFilePrompt />
       <UploadInput />
       <Titlebar feedback={feedback} />
-      <UpdateNotice feedback={feedback} />
       <WorkspacePanels
         layout={layout}
         railAvailable={Boolean(doc || folder)}
