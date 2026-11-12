@@ -6,11 +6,34 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      full_desktop:
+        description: "Run all desktop platforms and Windows installation/upgrade checks"
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.scope.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test scripts/workbench/ci-scope.test.mts
+      - id: scope
+        run: node scripts/workbench/ci-scope.mts
+
   windows-regression:
     runs-on: windows-2025
     timeout-minutes: 20
@@ -20,9 +43,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - run: rustup show
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          cache-on-failure: true
       - run: npm ci
       - run: npm run test:runtime
       - run: cargo test -p vibe-circuit-document
+      - name: Verify Windows state persistence under long Unicode paths
+        run: cargo test -p vibe-workbench-host state_paths -- --nocapture
       - run: npm run check
       - run: npm run test:arranger
       - run: npm run test:classroom
@@ -46,9 +75,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Install pinned toolchain and dependencies
+      - run: rustup show
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          cache-on-failure: true
+      - name: Install project dependencies
         run: |
-          rustup show
           npm ci
           npm run setup
       - name: Enable user namespaces for Linux sandbox tests
@@ -92,18 +124,10 @@ jobs:
           sudo journalctl -k --no-pager --since '-20 minutes' --grep='apparmor|DENIED'
 
   desktop-package:
+    needs: scope
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            target: linux-x64
-          - os: windows-2025
-            target: win32-x64
-          - os: macos-15
-            target: darwin-arm64
-          - os: macos-15-intel
-            target: darwin-x64
+      matrix: ${{ fromJSON(needs.scope.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     defaults:
@@ -121,28 +145,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb
-      - name: Restore Rust compilation cache
-        id: rust_cache
-        uses: actions/cache/restore@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git/db
-            target/debug/deps
-            target/debug/build
-            target/debug/.fingerprint
-            target/release/deps
-            target/release/build
-            target/release/.fingerprint
-          key: native-rust-${{ matrix.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '**/Cargo.toml') }}-${{ github.sha }}
-          restore-keys: native-rust-${{ matrix.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', '**/Cargo.toml') }}-
-      - name: Install toolchain and project dependencies
-        run: |
-          rustup show
-          npm ci
-      - name: Verify Windows state persistence under long Unicode paths
-        if: runner.os == 'Windows'
-        run: cargo test -p vibe-workbench-host state_paths -- --nocapture
+          key: ${{ matrix.target }}
+          cache-on-failure: true
+      - run: npm ci
       - name: Verify macOS runtime and frontend contracts
         if: runner.os == 'macOS'
         run: |
@@ -154,22 +162,6 @@ jobs:
         run: |
           npm run package:desktop
           npm run test:product
-      # Save before desktop checks so a platform failure does not discard the
-      # compiled dependencies. Installers, product resources and state stay uncached.
-      - name: Save Rust compilation cache
-        if: steps.rust_cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git/db
-            target/debug/deps
-            target/debug/build
-            target/debug/.fingerprint
-            target/release/deps
-            target/release/build
-            target/release/.fingerprint
-          key: ${{ steps.rust_cache.outputs.cache-primary-key }}
       - name: Launch Linux portable desktop and verify restart recovery
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:desktop
@@ -208,7 +200,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: [integration, desktop-package]
+    needs: [integration, windows-regression, desktop-package]
     runs-on: ubuntu-latest
     permissions:
       contents: write

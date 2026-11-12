@@ -7,6 +7,7 @@ import {
   rm,
   readFile,
   readdir,
+  access,
 } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
@@ -47,16 +48,32 @@ async function run(command: string, args: string[], cwd = root) {
     );
   });
 }
-await run(process.execPath, ["scripts/workbench/prepare-product.mts"]);
 const cache = path.join(root, ".workbench-cache"),
   product = path.join(cache, "product");
-await verifyJavaRelocation(path.join(product, "runtimes/java"));
+if (baseline) {
+  // The current package must be built and checked first in this same CI job.
+  // Only its version changes; reuse the already verified runtimes and frontend.
+  const prepared = JSON.parse(
+    await readFile(path.join(product, "product.json"), "utf8"),
+  );
+  if (prepared.schema !== 1 || prepared.platform !== target)
+    throw new Error(
+      "Build the current Windows package before its upgrade baseline",
+    );
+  await access(
+    path.join(cache, "release", `vibe-logisim-${version}-${target}-setup.exe`),
+  );
+} else {
+  await run(process.execPath, ["scripts/workbench/prepare-product.mts"]);
+  await verifyJavaRelocation(path.join(product, "runtimes/java"));
+}
 const config = path.join(cache, "tauri-package.json");
 await writeFile(
   config,
   JSON.stringify(
     {
       ...(baseline ? { version: "0.0.0" } : {}),
+      ...(baseline ? { build: { beforeBuildCommand: null } } : {}),
       bundle: {
         active: true,
         targets: mac ? ["app", "dmg"] : [windows ? "nsis" : "deb"],
