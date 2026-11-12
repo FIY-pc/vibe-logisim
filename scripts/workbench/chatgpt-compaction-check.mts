@@ -4,7 +4,11 @@ import { createServer } from "node:http";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { TurnRunner } from "../../packages/agent-runtime/src/turn/runner.mts";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import {
+  TurnRunner,
+  recoverTranscript,
+} from "../../packages/agent-runtime/src/turn/runner.mts";
 import { ChatGPTAccounts } from "../../packages/agent-runtime/src/models/chatgpt.mts";
 import { ServiceStore } from "../../packages/agent-runtime/src/models/services.mts";
 import { ConversationContext } from "../../packages/agent-runtime/src/turn/context-budget.mts";
@@ -42,6 +46,15 @@ const server = createServer(
       for await (const part of req) parts.push(part);
       const p = JSON.parse(Buffer.concat(parts).toString());
       payloads.push(p);
+      const calls = new Set<string>();
+      for (const input of p.input) {
+        if (input.type === "function_call") calls.add(input.call_id);
+        if (input.type === "function_call_output")
+          assert.ok(
+            calls.has(input.call_id),
+            `No tool call found for function call output with call_id ${input.call_id}`,
+          );
+      }
       assert.equal(p.store, false);
       assert.equal(p.stream, true);
       assert.equal(p.reasoning.effort, "high");
@@ -115,6 +128,20 @@ const server = createServer(
         arguments: '{"path":"evidence.txt"}',
         status: "completed",
       };
+      if (mode === "broken-tool") {
+        item({ ...tool, id: "fc_interrupted", call_id: "call_interrupted" }, 0);
+        event("response.failed", {
+          response: {
+            status: "failed",
+            error: {
+              code: "server_error",
+              message: "Fixture stream terminated",
+            },
+          },
+        });
+        res.end();
+        return;
+      }
       if (mode === "tools" && !toolResult) {
         item(first, 0);
         item(tool, 1);
@@ -314,6 +341,69 @@ try {
   );
   assert.equal(runner.snapshot().contextUsage?.source, "usage");
   const count = runner.snapshot().contextUsage!.compactions;
+  mode = "broken-tool";
+  done = await ask();
+  assert.equal(done.status, "failed");
+  const failed = runner.transcript.at(-1)!;
+  assert.ok(failed.role === "assistant" && failed.stopReason === "error");
+  assert.ok(failed.content.some((item) => item.type === "toolCall"));
+  const raw = structuredClone(runner.transcript);
+  assert.deepEqual(
+    recoverTranscript(raw),
+    raw,
+    "failed model responses never receive synthetic tool results on restart",
+  );
+  const legacyResult = {
+    role: "toolResult" as const,
+    toolCallId: "call_interrupted|fc_interrupted",
+    toolName: "read_file",
+    content: [{ type: "text" as const, text: "Interrupted; result unknown." }],
+    isError: true,
+    timestamp: Date.now(),
+  };
+  for (const stopReason of ["error", "aborted"] as const) {
+    const transcript: AgentMessage[] = [
+      { ...failed, stopReason },
+      legacyResult,
+    ];
+    assert.equal(recoverTranscript([transcript[0]]).length, 1);
+    assert.deepEqual(
+      new ConversationContext().project(transcript),
+      [],
+      "failed calls and their results are excluded together without compaction",
+    );
+    assert.deepEqual(transcript[1], legacyResult, "raw evidence stays intact");
+  }
+  const validCall = { ...failed, stopReason: "toolUse" as const };
+  assert.equal(recoverTranscript([validCall]).length, 2);
+  assert.deepEqual(
+    new ConversationContext().project([validCall, legacyResult]),
+    [validCall, legacyResult],
+    "an interrupted tool execution still preserves its call and error result",
+  );
+  // Reopen a record already saved by a version that added the orphan result.
+  await runner.stop();
+  const legacy = JSON.parse(await readFile(file, "utf8"));
+  const workspace = legacy.workspaces.fixture;
+  workspace.conversations[workspace.activeId].transcript.push(legacyResult);
+  await writeFile(file, JSON.stringify(legacy));
+  runner = create();
+  await runner.resume("fixture");
+  mode = "followup";
+  done = await ask({ question: "Continue after the interrupted response." });
+  assert.equal(done.status, "completed", done.error);
+  assert.deepEqual(payloads.at(-1).input.slice(1, 2), finalPrefix);
+  assert.ok(
+    !JSON.stringify(payloads.at(-1).input).includes("call_interrupted"),
+  );
+  assert.ok(
+    runner.transcript.some(
+      (message) =>
+        message.role === "toolResult" &&
+        message.toolCallId === legacyResult.toolCallId,
+    ),
+    "recovery projects valid requests without deleting persisted evidence",
+  );
   mode = "fail";
   done = await ask();
   assert.equal(done.status, "failed");

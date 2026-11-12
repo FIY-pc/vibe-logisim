@@ -92,7 +92,7 @@ interface PendingTurn {
   folder: HostFolder | null;
 }
 
-/** Called in `ask` from the model transcript so an interrupted call never looks finished. */
+/** Recover unfinished tool executions when reopening a conversation. */
 export function recoverTranscript(messages: AgentMessage[]): AgentMessage[] {
   const results = new Set(
     messages
@@ -101,7 +101,7 @@ export function recoverTranscript(messages: AgentMessage[]): AgentMessage[] {
   );
   return messages.flatMap((m: any) => [
     m,
-    ...(m.role === "assistant"
+    ...(m.role === "assistant" && !["error", "aborted"].includes(m.stopReason)
       ? (m.content || [])
           .filter((c: any) => c.type === "toolCall" && !results.has(c.id))
           .map((c: any) => ({
