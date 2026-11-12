@@ -47,7 +47,6 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - run: npm ci
       - run: npm run test:runtime
       - run: cargo test -p vibe-circuit-document
@@ -80,7 +79,6 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: Install project dependencies
         run: |
           npm ci
@@ -152,7 +150,6 @@ jobs:
         with:
           key: ${{ matrix.target }}
           cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - run: npm ci
       - name: Verify macOS runtime and frontend contracts
         if: runner.os == 'macOS'
