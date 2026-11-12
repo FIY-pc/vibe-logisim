@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { act, useLayoutEffect, StrictMode } from "react";
 import { createRoot } from "./themed-root";
-import { ClassroomEntry } from "../../../apps/workbench/src/classroom/Classroom";
+import { FileMenu } from "../../../apps/workbench/src/workspace/FileMenu";
+import { useFeedback } from "../../../apps/workbench/src/shell/Feedback";
 import { useWorkbench } from "../../../apps/workbench/src/app/provider";
 import { createClassroomServer } from "../../../packages/classroom/src/server.mts";
-import { Workbench, pickOption } from "./workbench";
+import {
+  Workbench,
+  pickOption,
+  openMenu,
+  menuItem,
+  clickMenuItem,
+} from "./workbench";
 import { templatePins } from "../../../apps/workbench/src/classroom/assessment-utils";
 
 export async function verifyClassroomUI() {
@@ -156,6 +163,7 @@ export async function verifyClassroomUI() {
   let selected: any = own,
     receivedProxyKey = "";
   (globalThis as any).__command = async (r: any) => {
+    if (r.op === "feedbackStatus") return { enabled: false };
     if (r.op === "status") return { folder: { id: folderId, path: "/work" } };
     if (r.op === "read") {
       captureReads++;
@@ -212,6 +220,13 @@ export async function verifyClassroomUI() {
     }
     throw new Error("Unexpected host request " + r.op);
   };
+  function ClassroomMenu() {
+    const feedback = useFeedback(
+      () => {},
+      () => {},
+    );
+    return <FileMenu feedback={feedback} />;
+  }
   function Fixture() {
     const { stores } = useWorkbench();
     useLayoutEffect(() => {
@@ -222,7 +237,7 @@ export async function verifyClassroomUI() {
         folder: { id: "folder-ui", path: "C:\\work", name: "work" },
       });
     }, [stores]);
-    return <ClassroomEntry />;
+    return <ClassroomMenu />;
   }
   const button = (label: string) => {
     const b = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -236,6 +251,11 @@ export async function verifyClassroomUI() {
     return b;
   };
   const click = async (label: string) => {
+    if (label === "课堂管理") {
+      await openMenu("更多");
+      await clickMenuItem("课堂管理…");
+      return;
+    }
     await act(async () => activate(button(label)));
   };
   const activate = (button: HTMLButtonElement) => {
@@ -300,6 +320,15 @@ export async function verifyClassroomUI() {
     );
     assert(b, `button containing ${text}`);
     await act(async () => activate(b));
+  };
+  const assertSharing = async () => {
+    await openMenu("更多");
+    assert.match(menuItem("课堂管理…").textContent!, /自动同步/);
+    await act(async () =>
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      ),
+    );
   };
   // LessonEditor parses uploaded templates with the browser XML parser.
   (globalThis as any).DOMParser = window.DOMParser;
@@ -371,7 +400,8 @@ export async function verifyClassroomUI() {
     assert.ok(!JSON.stringify(saved).includes("must-not-upload"));
     await wait(() => Boolean(tickSharing));
     await click("关闭课堂管理");
-    assert.ok(button("课堂管理").textContent?.includes("自动同步"));
+    assert.equal(document.activeElement?.getAttribute("aria-label"), "更多");
+    await assertSharing();
     await act(async () => {
       await tickSharing!();
     });
@@ -386,10 +416,7 @@ export async function verifyClassroomUI() {
     await act(async () => {
       await tickSharing!();
     });
-    assert.ok(
-      button("课堂管理").textContent?.includes("自动同步"),
-      "running AI turn waits without disabling sharing",
-    );
+    await assertSharing();
     agentBusy = false;
     await act(async () => {
       await tickSharing!();
@@ -443,7 +470,7 @@ export async function verifyClassroomUI() {
       root.render(
         <StrictMode>
           <Workbench>
-            <ClassroomEntry />
+            <ClassroomMenu />
           </Workbench>
         </StrictMode>,
       ),
@@ -714,7 +741,7 @@ export async function verifyClassroomUI() {
       root.render(
         <StrictMode>
           <Workbench>
-            <ClassroomEntry />
+            <ClassroomMenu />
           </Workbench>
         </StrictMode>,
       ),
@@ -772,7 +799,7 @@ export async function verifyClassroomUI() {
       root.render(
         <StrictMode>
           <Workbench>
-            <ClassroomEntry />
+            <ClassroomMenu />
           </Workbench>
         </StrictMode>,
       ),

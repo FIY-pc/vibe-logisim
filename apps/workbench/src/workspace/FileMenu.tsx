@@ -1,5 +1,6 @@
 import { Button } from "../design/ui";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen, GraduationCap } from "lucide-react";
+import { useClassroom } from "../classroom/Classroom";
 import { FeedbackMenu, type FeedbackController } from "../shell/Feedback";
 import { Menu, MenuItem, MenuSeparator, MenuSub } from "../shared/Menu";
 import { bindingLabel } from "../shared/shortcuts";
@@ -16,6 +17,7 @@ import { useWorkbench } from "../app/provider";
 /** The open-folder button and the menu of file, search and app commands. */
 export function FileMenu({ feedback }: { feedback: FeedbackController }) {
   const { stores, actions } = useWorkbench();
+  const classroom = useClassroom();
   const view = useView();
   const { doc } = view;
   const pending = useShell((state) => state.pending);
@@ -134,6 +136,14 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
         </MenuItem>
         <MenuSeparator />
         <MenuItem
+          icon={<GraduationCap size={16} />}
+          title={classroom.status || undefined}
+          trailing={classroom.sharing ? "自动同步" : undefined}
+          onSelect={classroom.show}
+        >
+          课堂管理…
+        </MenuItem>
+        <MenuItem
           shortcut={bindingLabel("Mod+,")}
           onSelect={() => stores.settings.getState().setOpen(true)}
         >
@@ -143,6 +153,7 @@ export function FileMenu({ feedback }: { feedback: FeedbackController }) {
           <FeedbackMenu feedback={feedback} />
         </MenuSub>
       </Menu>
+      {classroom.dialog}
     </>
   );
 }

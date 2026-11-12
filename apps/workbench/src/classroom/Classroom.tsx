@@ -46,8 +46,8 @@ function savedSession(): ClassroomSession | null {
   }
 }
 
-/** Separate module and one title-bar entry keep upstream editor/conversation changes small. */
-export function ClassroomEntry() {
+/** Keep the session and sharing alive independently of the menu's lifetime. */
+export function useClassroom() {
   const [open, setOpen] = useState(false),
     [session, setSession] = useState<ClassroomSession | null>(savedSession);
   const { doc } = useView();
@@ -58,31 +58,19 @@ export function ClassroomEntry() {
     if (next) localStorage.setItem(sessionKey, JSON.stringify(next));
     else localStorage.removeItem(sessionKey);
   };
-  return (
-    <>
-      <Button
-        variant="soft"
-        color="gray"
-        className={
-          sharing.binding ? "classroom-entry sharing" : "classroom-entry"
-        }
-        onClick={() => setOpen(true)}
-        aria-label="课堂管理"
-        title={sharing.status || "课堂管理"}
-      >
-        <GraduationCap size={16} />
-        <span>课堂{sharing.binding ? " · 自动同步" : ""}</span>
-      </Button>
-      {open && (
-        <ClassroomDialog
-          session={session}
-          onSession={changeSession}
-          sharing={sharing}
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </>
-  );
+  return {
+    show: () => setOpen(true),
+    status: sharing.status,
+    sharing: Boolean(sharing.binding),
+    dialog: open ? (
+      <ClassroomDialog
+        session={session}
+        onSession={changeSession}
+        sharing={sharing}
+        onClose={() => setOpen(false)}
+      />
+    ) : null,
+  };
 }
 
 function ClassroomDialog({

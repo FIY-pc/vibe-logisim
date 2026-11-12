@@ -1,6 +1,5 @@
 import { IconButton } from "../design/ui";
 import { PanelLeft, PanelRight } from "lucide-react";
-import { ClassroomEntry } from "../classroom/Classroom";
 import type { FeedbackController } from "./Feedback";
 import { useWorkspaceLayout } from "./WorkspaceLayout";
 import { SimulationMenuRegion } from "../simulation/SimulationMenuRegion";
@@ -38,7 +37,6 @@ export function Titlebar({ feedback }: { feedback: FeedbackController }) {
       </div>
       <FileTitle />
       <div className="title-actions">
-        <ClassroomEntry />
         <SimulationMenuRegion />
         <FileMenu feedback={feedback} />
         <IconButton

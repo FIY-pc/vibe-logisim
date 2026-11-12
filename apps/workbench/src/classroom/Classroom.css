@@ -1,12 +1,3 @@
-.classroom-entry {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  white-space: nowrap;
-}
-.classroom-entry.sharing {
-  color: var(--success);
-}
 .classroom-dialog.classroom-connected {
   height: min(850px, var(--dialog-max-height));
 }
