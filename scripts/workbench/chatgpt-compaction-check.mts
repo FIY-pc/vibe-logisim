@@ -13,6 +13,7 @@ import { ChatGPTAccounts } from "../../packages/agent-runtime/src/models/chatgpt
 import { ServiceStore } from "../../packages/agent-runtime/src/models/services.mts";
 import { ConversationContext } from "../../packages/agent-runtime/src/turn/context-budget.mts";
 import { closeNetwork } from "../../packages/agent-runtime/src/network/fetch.mts";
+import { RETRY_POLICY } from "../../packages/agent-runtime/src/turn/recovery.mts";
 
 const dir = await mkdtemp(path.join(tmpdir(), "vibe-remote-context-"));
 await writeFile(
@@ -240,6 +241,8 @@ await writeFile(
 const file = path.join(dir, "conversations.json");
 const create = () => {
   const runner = new TurnRunner({
+    // Exercise every retry without waiting through production backoff delays.
+    retryPolicy: { baseDelayMs: 1, maxAgentDelayMs: 1 },
     profileDir: dir,
     conversationsFile: file,
     instructions: "Preserve interface and report verified facts.",
@@ -342,8 +345,13 @@ try {
   assert.equal(runner.snapshot().contextUsage?.source, "usage");
   const count = runner.snapshot().contextUsage!.compactions;
   mode = "broken-tool";
+  const requestsBeforeFailure = payloads.length;
   done = await ask();
   assert.equal(done.status, "failed");
+  assert.equal(
+    payloads.length - requestsBeforeFailure,
+    RETRY_POLICY.maxRetries + 1,
+  );
   const failed = runner.transcript.at(-1)!;
   assert.ok(failed.role === "assistant" && failed.stopReason === "error");
   assert.ok(failed.content.some((item) => item.type === "toolCall"));
