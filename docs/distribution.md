@@ -73,7 +73,17 @@ npm run test:windows-install
 
 ## CI 与发布
 
-[Workbench 工作流](../.github/workflows/native-workbench.yml) 是唯一构建与发布入口。PR 和主分支推送执行契约、Rust、TypeScript、UI、原生工具和 Windows、Linux、macOS 双架构打包检查，保留可下载包与精简检查报告；不发布 Release，也不使用付费模型。
+[Workbench 工作流](../.github/workflows/native-workbench.yml) 是唯一构建与发布入口。所有 PR 和主分支推送都执行契约、Rust、TypeScript、UI、原生工具、Windows 运行时与长路径状态检查；桌面检查按变更范围分层，保留可下载包与精简检查报告，不使用付费模型。
+
+| 变更或触发方式 | 桌面检查 |
+| --- | --- |
+| 仅 `apps/workbench/src/`、`docs/` 或 `README.md` | Linux x64、macOS ARM 打包、资源搬移、真实启动和重启恢复；保留 macOS DMG 检查 |
+| 包含其他路径，包括原生代码、AI 运行时、依赖、构建脚本、CI 配置或未知目录 | 上述检查，加 Windows x64 便携包/安装/升级/卸载与 macOS Intel 完整检查 |
+| 发布标签或默认手动运行 | 四个平台完整检查 |
+
+范围判断读取实际 Git diff，重命名同时考虑旧、新路径，不能取得有效比较基线时使用完整矩阵。手动运行可取消 `full_desktop` 来复现常规两平台流程，但发布标签始终执行完整矩阵。同一 PR 的新提交会取消过期运行；主分支、发布与手动运行不会被自动取消。
+
+Rust 依赖使用 `Swatinem/rust-cache`，缓存按工具链、依赖和平台区分，不再每个提交保存一份完整副本。PR 仅读取缓存，主分支和手动运行更新缓存，避免短期 PR 挤占缓存容量。产品资源、安装包和用户状态均不缓存。首次运行或依赖变化时仍可能冷编译。
 
 版本采用 `年.月.当月发布序号`，例如 `26.11.1`、`26.11.2`、`26.12.1`。每次发布递增序号，新功能和修复可以在同一版本交付。常规发布不使用 beta 或 rc 后缀；开发预览使用 PR 构建产物。
 
