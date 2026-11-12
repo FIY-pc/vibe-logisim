@@ -225,6 +225,7 @@ export async function verifyConversationTurns() {
       status,
       error,
       recovery,
+      stoppedByUser: status === "interrupted",
       elapsedMs: 47_000,
       ...(change ? { change } : {}),
     });
@@ -735,14 +736,20 @@ export async function verifyConversationTurns() {
     assert($('button[aria-label="发送"]'));
     assert.equal(box().value, "等会再问");
     assert.equal(errors.length, 1);
-    await click($$("button", stopped).find((b) => b.textContent === "继续")!);
-    assert.equal(asks().at(-1).args.question, "继续");
-    assert.equal(asks().at(-1).args.editMessageId, undefined);
     assert.equal(
-      box().value,
-      "等会再问",
-      "Continue preserves the composer's draft",
+      $$("button", stopped).some((b) => b.textContent === "继续"),
+      false,
+      "A user stop has no separate continue action",
     );
+    assert.equal(
+      $('button[aria-label="继续回答"]'),
+      null,
+      "A nonempty draft remains a new message",
+    );
+    await click('button[aria-label="发送"]');
+    assert.equal(asks().at(-1).args.question, "等会再问");
+    assert.equal(asks().at(-1).args.editMessageId, undefined);
+    assert.equal(asks().at(-1).args.continueTurnId, undefined);
     await step(() => {
       say("m6-resumed", "已核对当前电路，可以继续。");
       finish("m6-resumed", "final");
@@ -782,6 +789,52 @@ export async function verifyConversationTurns() {
     assert.equal(
       $(".turn-summary", restored)?.getAttribute("aria-controls"),
       $(".turn-process-body", restored)?.id,
+    );
+    assert.ok(
+      $('button[aria-label="继续回答"]'),
+      "Reload remembers an explicit user stop",
+    );
+    assert.equal($('button[aria-label="发送"]'), null);
+    await type("改为检查输出");
+    assert.ok($('button[aria-label="发送"]'));
+    assert.equal($('button[aria-label="继续回答"]'), null);
+    await type("");
+    const continuedId = history.findLast((m) => m.type === "turn").id;
+    await click('button[aria-label="继续回答"]');
+    assert.equal(asks().at(-1).args.continueTurnId, continuedId);
+    assert.equal(asks().at(-1).args.question, "继续");
+    assert.ok($('button[aria-label="停止回答"]'));
+    await step(() => {
+      say("m7-resumed", "继续完成了检查。");
+      finish("m7-resumed", "final");
+      endTurn("completed", null);
+    });
+    assert.equal(
+      $('button[aria-label="继续回答"]'),
+      null,
+      "Completion returns to normal send",
+    );
+    await type("测试空输入回车继续");
+    await enter();
+    await step(() => endTurn("interrupted", "已停止"));
+    const asksBeforeEnter = asks().length;
+    await enter();
+    assert.equal(
+      asks().length,
+      asksBeforeEnter + 1,
+      "Enter continues exactly once",
+    );
+    assert.ok(asks().at(-1).args.continueTurnId);
+    await step(() => {
+      endTurn("interrupted", "应用退出，已有内容已保留。");
+      const last = history.findLast((m) => m.type === "turn");
+      last.stoppedByUser = false;
+      emit({ type: "message", message: last });
+    });
+    assert.equal(
+      $('button[aria-label="继续回答"]'),
+      null,
+      "Unexpected interruption does not masquerade as a user pause",
     );
     await type("检查 API 配置错误");
     await enter();

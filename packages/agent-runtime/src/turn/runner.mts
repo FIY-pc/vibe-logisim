@@ -170,6 +170,7 @@ export class TurnRunner extends EventEmitter {
   private run: Promise<void> | null = null;
   private starting = false;
   private cancelStarting = false;
+  private stoppedByUser = false;
   private messageId = "";
   private partialText = "";
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -286,11 +287,12 @@ export class TurnRunner extends EventEmitter {
   }
   async stop() {
     this.chatgpt.cancel();
-    await this.interrupt();
+    await this.interrupt(false);
     this.status = "stopped";
     this.emitStatus();
   }
-  async interrupt() {
+  async interrupt(byUser = true) {
+    this.stoppedByUser ||= byUser;
     this.cancelStarting = true;
     this.turnAbort?.abort();
     this.agent?.abort();
@@ -754,6 +756,7 @@ export class TurnRunner extends EventEmitter {
       );
     this.starting = true;
     this.cancelStarting = false;
+    this.stoppedByUser = false;
     this.emitStatus();
     try {
       const sdk = await loadSdk();
@@ -1311,6 +1314,7 @@ export class TurnRunner extends EventEmitter {
           error,
           elapsedMs: Date.now() - (turn.startedAt || Date.now()),
           recovery,
+          stoppedByUser: status === "interrupted" && this.stoppedByUser,
           ...(change ? { change } : {}),
         });
         this.emitMessage(turn);

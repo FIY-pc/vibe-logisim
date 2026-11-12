@@ -262,6 +262,18 @@ export async function verifyChatAttachments() {
       1,
       "Reopened history resolves the saved image from its reference ID",
     );
+    messages.push({
+      type: "turn",
+      id: "paused",
+      status: "interrupted",
+      stoppedByUser: true,
+    });
+    await render(2);
+    await settle();
+    assert(
+      container.querySelector('[aria-label="继续回答"]'),
+      "An empty user-paused composer offers continue",
+    );
     // Native drop and DOM paste must use the same staging path, without importing to the project.
     document.elementFromPoint = () => input();
     await act(async () =>
@@ -275,6 +287,12 @@ export async function verifyChatAttachments() {
     );
     await settle();
     assert(container.querySelector('[aria-label="取消引用 native.png"]'));
+    assert.equal(
+      container.querySelector('[aria-label="继续回答"]'),
+      null,
+      "An image alone switches back to sending a new message",
+    );
+    assert.equal(send().disabled, false);
     assert(
       !calls.some((call) => call.op === "folderImportPrepare"),
       "Chat image drops do not write project files",
@@ -285,7 +303,11 @@ export async function verifyChatAttachments() {
         .click(),
     );
     await settle();
-    assert.equal(send().disabled, true);
+    assert(
+      container.querySelector('[aria-label="继续回答"]'),
+      "Removing the last attachment restores continue",
+    );
+    assert.equal(container.querySelector('[aria-label="发送"]'), null);
     console.log(
       "PASS: file-tree copy becomes a chat reference; screenshot and native image drop share attachments, image-only sends recover on failure and survive history reload without project writes",
     );

@@ -19,6 +19,7 @@ import {
   Pencil,
   Paperclip,
   Plus,
+  Play,
   ScanSearch,
   Send,
   Settings2,
@@ -545,6 +546,16 @@ export function Chat({
     () => (scopeReady ? segments(messages) : []),
     [scopeReady, messages],
   );
+  const latestTurn = turns.at(-1)?.turn;
+  const resumeTurnId =
+    !busy &&
+    latestTurn?.status === "interrupted" &&
+    latestTurn.stoppedByUser === true &&
+    !draft.trim() &&
+    references.references.length === 0 &&
+    !references.unresolved
+      ? latestTurn.id
+      : null;
 
   const send = (text = draft) => {
     if (!ready || busy || references.unresolved) return;
@@ -935,9 +946,9 @@ export function Chat({
                   onContinue={
                     index === turns.length - 1 &&
                     segment.turn &&
-                    ["failed", "interrupted"].includes(
-                      segment.turn.status || "",
-                    )
+                    (segment.turn.status === "failed" ||
+                      (segment.turn.status === "interrupted" &&
+                        !segment.turn.stoppedByUser))
                       ? () => continueTurn(segment.turn!.id)
                       : undefined
                   }
@@ -982,6 +993,17 @@ export function Chat({
                 cancelOnEscape={false}
                 unstable_focusOnRunStart={false}
                 unstable_focusOnThreadSwitched={false}
+                onKeyDown={(event) => {
+                  if (
+                    resumeTurnId &&
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    continueTurn(resumeTurnId);
+                  }
+                }}
                 onPaste={(event) => {
                   const files = workbench.stores.files.getState();
                   const copied = files.copiedFile;
@@ -1071,6 +1093,18 @@ export function Chat({
                     }}
                   >
                     <Square size={16} />
+                  </IconButton>
+                ) : resumeTurnId ? (
+                  <IconButton
+                    type="button"
+                    variant="solid"
+                    aria-label="继续回答"
+                    data-tip="继续回答"
+                    data-tip-key="Enter"
+                    disabled={!ready || pending}
+                    onClick={() => continueTurn(resumeTurnId)}
+                  >
+                    <Play size={16} />
                   </IconButton>
                 ) : (
                   <ComposerPrimitive.Send asChild>

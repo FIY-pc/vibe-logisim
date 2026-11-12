@@ -182,10 +182,27 @@ try {
   const stopped = await ask();
   runner.off("event", interrupt);
   assert.equal(stopped.status, "interrupted");
+  assert.equal(
+    runner.history.find((m) => m.id === stopped.turnId)?.stoppedByUser,
+    true,
+  );
   mode = "complete";
   assert.equal(
     (await ask({ question: "继续", continueTurnId: stopped.turnId })).status,
     "completed",
+  );
+  mode = "stop";
+  const shutDown = (event: any) => {
+    if (event.type === "assistant-delta") void runner.stop();
+  };
+  runner.on("event", shutDown);
+  const exited = await ask();
+  runner.off("event", shutDown);
+  assert.equal(exited.status, "interrupted");
+  assert.equal(
+    runner.history.find((m) => m.id === exited.turnId)?.stoppedByUser,
+    false,
+    "App shutdown is distinct from an explicit user stop",
   );
   const call: any = {
     role: "assistant",

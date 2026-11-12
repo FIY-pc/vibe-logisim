@@ -34,7 +34,7 @@ const script: Script = ({ question, calls, request }) => {
   }
   if (question.includes("停止继续"))
     return {
-      text: "这段内容会保留。请点击输入框旁的停止按钮，再点击本轮下方的“继续”。",
+      text: "这段内容会保留。点击输入框右下角的停止按钮后，空输入框会显示继续图标；输入新内容则恢复发送。",
       hold: true,
     };
   if (!question.includes("断线恢复") && !question.includes("限流恢复"))

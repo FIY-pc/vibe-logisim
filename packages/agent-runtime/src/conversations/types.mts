@@ -16,6 +16,7 @@ export interface RuntimeMessage {
   elapsedMs?: number;
   error?: string | null;
   recovery?: "settings" | "continue";
+  stoppedByUser?: boolean;
   context?: ProtocolObject;
   turnId?: string | null;
   itemId?: string;
