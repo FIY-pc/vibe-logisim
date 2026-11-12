@@ -24,6 +24,8 @@
 | macOS 13.5+（Apple Silicon） | `…-darwin-arm64.dmg` 或 `…-darwin-arm64.zip` | 把 `Vibe Logisim.app` 放入「应用程序」 |
 | macOS 13.5+（Intel） | `…-darwin-x64.dmg` 或 `…-darwin-x64.zip` | 把 `Vibe Logisim.app` 放入「应用程序」 |
 
+macOS 包目前作为预览提供，使用开发签名，尚未完成 Developer ID 签名和 Apple 公证；首次打开可能受到系统安全限制。
+
 打开就能画图和仿真。要用 AI，在右侧「连接 AI」登录 ChatGPT 或填自己的 API 服务。
 
 ## 参与开发
