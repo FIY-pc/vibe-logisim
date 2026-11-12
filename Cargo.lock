@@ -4745,7 +4745,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibe-circuit-document"
-version = "26.11.3"
+version = "26.11.4"
 dependencies = [
  "crc32fast",
  "libc",
@@ -4766,7 +4766,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-logisim-app"
-version = "26.11.3"
+version = "26.11.4"
 dependencies = [
  "base64 0.22.1",
  "serde_json",
@@ -4780,7 +4780,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-logisim-runtime"
-version = "26.11.3"
+version = "26.11.4"
 dependencies = [
  "base64 0.22.1",
  "quick-xml",
@@ -4796,7 +4796,7 @@ dependencies = [
 
 [[package]]
 name = "vibe-workbench-host"
-version = "26.11.3"
+version = "26.11.4"
 dependencies = [
  "axum",
  "base64 0.22.1",
