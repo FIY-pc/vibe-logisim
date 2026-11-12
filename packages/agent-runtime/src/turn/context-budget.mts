@@ -37,6 +37,22 @@ const visible = (m: AgentMessage) =>
     (m.stopReason === "error" || m.stopReason === "aborted")
   );
 
+/** Pi omits failed assistant responses; their results must be omitted too.
+ * Inspect the intact transcript before slicing at a checkpoint. Results whose
+ * calls live in a canonical remote prefix must still pass through unchanged.
+ */
+function replayFilter(messages: AgentMessage[]) {
+  const failedCalls = new Set(
+    messages.flatMap((m) =>
+      m.role === "assistant" && !visible(m)
+        ? m.content.flatMap((c) => (c.type === "toolCall" ? [c.id] : []))
+        : [],
+    ),
+  );
+  return (m: AgentMessage) =>
+    visible(m) && !(m.role === "toolResult" && failedCalls.has(m.toolCallId));
+}
+
 export class ConversationContext {
   checkpoints: CompactionCheckpoint[];
   compacting = false;
@@ -70,7 +86,8 @@ export class ConversationContext {
   }
   project(messages: AgentMessage[], scope?: string): AgentMessage[] {
     const checkpoint = this.checkpoint(messages, scope);
-    if (!checkpoint) return messages.filter(visible);
+    const include = replayFilter(messages);
+    if (!checkpoint) return messages.filter(include);
     return [
       ...messages.filter((m) => m.role === "system"),
       ...(checkpoint.kind === "openai"
@@ -84,7 +101,7 @@ export class ConversationContext {
           ]),
       ...messages
         .slice(checkpoint.through)
-        .filter((m) => m.role !== "system" && visible(m)),
+        .filter((m) => m.role !== "system" && include(m)),
     ];
   }
   usage(
@@ -150,9 +167,10 @@ export class ConversationContext {
     // If a single tool batch fills the window, summarize that completed batch.
     const through =
       cut.firstKeptEntryIndex > start ? cut.firstKeptEntryIndex : end;
+    const include = replayFilter(messages);
     const history = messages
       .slice(start, through)
-      .filter((m) => m.role !== "system" && visible(m));
+      .filter((m) => m.role !== "system" && include(m));
     if (!history.length) return false;
     this.compacting = true;
     changed();
