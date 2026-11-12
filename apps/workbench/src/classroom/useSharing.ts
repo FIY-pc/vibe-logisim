@@ -116,7 +116,7 @@ export function useSharing(
     };
     immediate.current = sync;
     void sync();
-    const timer = setInterval(() => void sync(), 15000);
+    const timer = setInterval(sync, 15000);
     return () => {
       ++generation.current;
       clearInterval(timer);

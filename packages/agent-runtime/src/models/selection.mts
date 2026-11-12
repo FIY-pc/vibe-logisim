@@ -50,6 +50,7 @@ function recoverHistory(history: RuntimeMessage[]): RuntimeMessage[] {
       ? {
           ...m,
           status: "interrupted",
+          stoppedByUser: false,
           error: "应用在回答结束前退出，已有内容已保留。",
           elapsedMs: m.elapsedMs || 0,
         }

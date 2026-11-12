@@ -12,6 +12,9 @@
  */
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
+import { retryDelayMs } from "@earendil-works/pi-ai/utils/retry";
+import { modelFailure, RETRY_POLICY, type RetryPolicy } from "./recovery.mts";
 import path from "node:path";
 import { ToolOutputStore } from "../tools/output-store.mts";
 import { preserveToolOutput } from "../tools/preserve-output.mts";
@@ -73,6 +76,8 @@ export interface RunnerOptions {
   runtimeRoot?: string | null;
   /** Replaces the system prompt entirely (tests). */
   instructions?: string | null;
+  /** Bounded overrides for local fault-injection tests. */
+  retryPolicy?: Partial<RetryPolicy>;
 }
 
 /** What the UI asked, with everything the turn needs resolved. */
@@ -84,6 +89,8 @@ export interface AskRequest {
   selection: string[];
   /** Resend from this user message: history and transcript are cut back first. */
   editMessageId?: string | null;
+  /** Continue the latest failed/interrupted turn without rewinding any history. */
+  continueTurnId?: string | null;
 }
 
 interface PendingTurn {
@@ -119,182 +126,6 @@ export function recoverTranscript(messages: AgentMessage[]): AgentMessage[] {
           }))
       : []),
   ]);
-}
-
-/** Relay overload answers come back as HTTP 400; make them retryable 503s for pi's retry loop. */
-export function retryableFetch(
-  fetch: typeof globalThis.fetch,
-): typeof globalThis.fetch {
-  return async (input, init) => {
-    const response = await fetch(input, init);
-    if (response.status !== 400) return response;
-    const text = await response.clone().text();
-    if (
-      !/overloaded|rate limit|too many requests|try again later|繁忙|稍后/i.test(
-        text,
-      )
-    )
-      return response;
-    console.error("[model] overloaded answer, retrying: " + text.slice(0, 200));
-    return new Response(text, {
-      status: 503,
-      statusText: "Service Unavailable",
-      headers: response.headers,
-    });
-  };
-}
-
-type Sdk = Awaited<ReturnType<typeof loadSdk>>;
-const STREAM_RETRY = {
-  enabled: true,
-  maxRetries: 6,
-  baseDelayMs: 2000,
-  maxAgentDelayMs: 30_000,
-};
-
-/** A gateway that loses its upstream answers HTTP 200 and then an error event
- * inside the stream, which no HTTP-level retry sees and the Agent reports as
- * a failed turn. Restart the request with backoff while nothing but the
- * opening event has reached the UI; an error after visible text is passed
- * through as before, so no text is shown twice. */
-export function retryingStream(
-  produce: () => AsyncIterable<any> | Promise<AsyncIterable<any>>,
-  sdk: Pick<
-    Sdk,
-    "AssistantMessageEventStream" | "isRetryableAssistantError" | "retryDelayMs"
-  >,
-  signal: AbortSignal | undefined,
-  report: {
-    scheduled(attempt: number, max: number, delayMs: number): void;
-    started(): void;
-  },
-) {
-  const out = new sdk.AssistantMessageEventStream();
-  (async () => {
-    let started = false;
-    for (let attempt = 0; ; attempt++) {
-      let visible = false;
-      let final: any = null;
-      try {
-        for await (const event of await produce()) {
-          if (event.type === "start") {
-            if (!started) {
-              started = true;
-              out.push(event);
-            }
-            continue;
-          }
-          if (event.type === "done" || event.type === "error") {
-            final = event;
-            break;
-          }
-          visible = true;
-          out.push(event);
-        }
-      } catch (e: any) {
-        final = {
-          type: "error",
-          reason: "error",
-          error: {
-            role: "assistant",
-            content: [],
-            stopReason: "error",
-            errorMessage: e?.message || String(e),
-            timestamp: Date.now(),
-          },
-        };
-      }
-      if (!final) {
-        out.end();
-        return;
-      }
-      const message = final.type === "done" ? final.message : final.error;
-      if (
-        final.type !== "error" ||
-        visible ||
-        signal?.aborted ||
-        attempt >= STREAM_RETRY.maxRetries ||
-        /subscription_sharing_(usage_limit_exceeded|user_not_eligible|unsupported_capability|route_not_supported|invalid_user)|chatpass_v2_/.test(
-          message.errorMessage || "",
-        ) ||
-        !sdk.isRetryableAssistantError(message)
-      ) {
-        out.push(final);
-        out.end();
-        return;
-      }
-      const delayMs = sdk.retryDelayMs(STREAM_RETRY, attempt + 1);
-      report.scheduled(attempt + 1, STREAM_RETRY.maxRetries, delayMs);
-      const aborted = await new Promise<boolean>((resolve) => {
-        const timer = setTimeout(() => resolve(false), delayMs);
-        signal?.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            resolve(true);
-          },
-          { once: true },
-        );
-      });
-      report.started();
-      if (aborted) {
-        const { errorMessage: _e, ...rest } = message;
-        out.push({
-          type: "error",
-          reason: "aborted",
-          error: { ...rest, stopReason: "aborted" },
-        });
-        out.end();
-        return;
-      }
-    }
-  })();
-  return out;
-}
-
-/** SDK and transport failures arrive in English. Say what went wrong in
- * Chinese and keep the original text after it for diagnosis. */
-const FAILURES: [RegExp, string][] = [
-  [
-    /subscription_sharing_usage_limit_exceeded/,
-    "ChatGPT 使用额度已达上限，请打开 ChatGPT 用量设置查看",
-  ],
-  [
-    /subscription_sharing_user_not_eligible/,
-    "这个账号或工作区暂不能在此应用使用 ChatGPT 订阅额度",
-  ],
-  [
-    /\b401\b|unauthori[sz]ed|invalid.*(api[ _-]?key|token)|incorrect api key|authentication/i,
-    "模型服务拒绝了 API 密钥",
-  ],
-  [/\b403\b|forbidden|permission denied/i, "模型服务拒绝了这次请求"],
-  [
-    /\b404\b|does not exist|not found|no such model|unknown model/i,
-    "模型服务找不到这个模型或接口",
-  ],
-  [
-    /\b429\b|rate limit|too many requests|quota|insufficient/i,
-    "模型服务限流或额度不足",
-  ],
-  [
-    /overloaded|\b5\d\d\b|service unavailable|bad gateway|server error/i,
-    "模型服务暂时不可用",
-  ],
-  [/timed? ?out|timeout|ETIMEDOUT/i, "模型服务响应超时"],
-  [
-    /terminated|socket|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed|network|connection/i,
-    "与模型服务的连接中断",
-  ],
-];
-function failureText(message: string, chatgpt = false) {
-  if (
-    chatgpt &&
-    /\b401\b|unauthori[sz]ed|invalid.*token|authentication/i.test(message)
-  )
-    return `ChatGPT 登录未被接受，请在 AI 设置中重新登录（${message}）`;
-  if (/[\u4e00-\u9fff]/.test(message)) return message;
-  const known = FAILURES.find(([pattern]) => pattern.test(message));
-  return known ? `${known[1]}（${message}）` : message;
 }
 
 export class TurnRunner extends EventEmitter {
@@ -339,13 +170,17 @@ export class TurnRunner extends EventEmitter {
   private run: Promise<void> | null = null;
   private starting = false;
   private cancelStarting = false;
+  private stoppedByUser = false;
   private messageId = "";
   private partialText = "";
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private runError: string | null = null;
+  private retryAttempt = 0;
+  private readonly retryPolicy: RetryPolicy;
 
   constructor(options: RunnerOptions) {
     super();
+    this.retryPolicy = { ...RETRY_POLICY, ...options.retryPolicy };
     this.host = options.host;
     this.runtimeRoot = options.runtimeRoot ?? null;
     this.instructionsOverride = options.instructions ?? null;
@@ -452,11 +287,12 @@ export class TurnRunner extends EventEmitter {
   }
   async stop() {
     this.chatgpt.cancel();
-    await this.interrupt();
+    await this.interrupt(false);
     this.status = "stopped";
     this.emitStatus();
   }
-  async interrupt() {
+  async interrupt(byUser = true) {
+    this.stoppedByUser ||= byUser;
     this.cancelStarting = true;
     this.turnAbort?.abort();
     this.agent?.abort();
@@ -894,6 +730,15 @@ export class TurnRunner extends EventEmitter {
       this.conversationId !== this.conversations.ensure(workspaceKey).id
     )
       await this.resume(workspaceKey);
+    if (request.continueTurnId) {
+      const latest = this.history.findLast((m) => m.type === "turn");
+      if (
+        request.editMessageId ||
+        latest?.id !== request.continueTurnId ||
+        !["failed", "interrupted"].includes(latest.status || "")
+      )
+        throw new Error("会话已变化，只能继续最近一次未完成的回答");
+    }
     const service = this.services.resolve(this.selection);
     const issue = configurationIssue(
       this.selection,
@@ -911,6 +756,7 @@ export class TurnRunner extends EventEmitter {
       );
     this.starting = true;
     this.cancelStarting = false;
+    this.stoppedByUser = false;
     this.emitStatus();
     try {
       const sdk = await loadSdk();
@@ -924,7 +770,7 @@ export class TurnRunner extends EventEmitter {
               () => this.chatgpt.access(config.id),
               baseFetch,
             )
-          : retryableFetch(baseFetch);
+          : baseFetch;
       if (this.cancelStarting) throw new Error("已停止");
       if (request.editMessageId) {
         const point = this.checkpoints[request.editMessageId];
@@ -939,6 +785,7 @@ export class TurnRunner extends EventEmitter {
         );
         this.emitHistory();
       }
+      this.transcript = recoverTranscript(this.transcript);
       // The user's own edits before this turn get their own history entry so
       // the turn's checkpoint holds only what the AI changed.
       if (status.folder)
@@ -1067,46 +914,28 @@ export class TurnRunner extends EventEmitter {
           config.effort === "none" ? ("off" as const) : config.effort,
       };
       const streamFn = (model: any, ctx: any, opts: any) =>
-        retryingStream(
-          () =>
-            api.streamSimple(model, ctx, {
-              ...opts,
-              apiKey:
-                config.auth === "chatgpt" ? "chatgpt-session" : config.apiKey,
-              fetch: remoteScope
-                ? observeChatGPTCompaction(fetch, {
-                    started: () => {
-                      this.context.compacting = true;
-                      this.emitStatus();
-                    },
-                    completed: (output) => {
-                      this.remoteCompaction = {
-                        scope: remoteScope,
-                        through: remoteThrough,
-                        output,
-                      };
-                    },
-                  })
-                : fetch,
-              maxRetries: config.auth === "chatgpt" ? 0 : 8,
-              onPayload: (payload: any) => onPayload(payload, ctx.messages),
-            }),
-          sdk,
-          opts?.signal,
-          {
-            scheduled: (attempt, max, delayMs) => {
-              this.transmission = {
-                phase: "retrying",
-                message: `模型服务繁忙，${Math.ceil(delayMs / 1000)} 秒后重试（${attempt}/${max}）`,
-              };
-              this.emitStatus();
-            },
-            started: () => {
-              this.transmission = null;
-              this.emitStatus();
-            },
-          },
-        );
+        api.streamSimple(model, ctx, {
+          ...opts,
+          apiKey: config.auth === "chatgpt" ? "chatgpt-session" : config.apiKey,
+          fetch: remoteScope
+            ? observeChatGPTCompaction(fetch, {
+                started: () => {
+                  this.context.compacting = true;
+                  this.emitStatus();
+                },
+                completed: (output) => {
+                  this.remoteCompaction = {
+                    scope: remoteScope,
+                    through: remoteThrough,
+                    output,
+                  };
+                },
+              })
+            : fetch,
+          // The turn owns retries, including mid-stream disconnects.
+          maxRetries: 0,
+          onPayload: (payload: any) => onPayload(payload, ctx.messages),
+        });
       this.agent = new Agent({
         initialState: {
           model,
@@ -1338,8 +1167,10 @@ export class TurnRunner extends EventEmitter {
         if (
           e.message.stopReason !== "error" &&
           e.message.stopReason !== "aborted"
-        )
+        ) {
           this.runError = null;
+          this.retryAttempt = 0;
+        }
         if (["error", "aborted", "length"].includes(e.message.stopReason))
           this.runError =
             e.message.errorMessage ||
@@ -1385,48 +1216,63 @@ export class TurnRunner extends EventEmitter {
     this.runError = null;
     let status = "completed";
     let error: string | null = null;
+    let recovery: "settings" | "continue" | undefined;
     try {
+      this.retryAttempt = 0;
+      let compacted = false;
       await this.agent.prompt(prompt);
-      this.turnAbort?.signal.throwIfAborted();
-      if (
-        this.runError &&
-        /context.{0,30}(length|window|limit)|too many tokens|prompt.{0,20}too long/i.test(
-          this.runError,
-        )
-      ) {
-        // Provider tokenizers can disagree with estimates. Compact once and
-        // resume the same run; retain the failed response in the local history.
-        const failed = this.agent.state.messages.at(-1);
-        // Pi continuation starts from the pending user/tool result. A rejected
-        // request produced no content and must not become an assistant turn.
+      while (this.runError) {
+        this.turnAbort!.signal.throwIfAborted();
+        const failure = this.runError;
         if (
-          failed?.role === "assistant" &&
-          failed.stopReason === "error" &&
-          !failed.content.length
+          !compacted &&
+          /context.{0,30}(length|window|limit)|too many tokens|prompt.{0,20}too long/i.test(
+            failure,
+          )
         ) {
-          this.agent.state.messages = this.agent.state.messages.slice(0, -1);
-          this.transcript = this.agent.state.messages;
+          compacted = true;
+          if (await this.compactContext?.(true)) {
+            this.turnAbort!.signal.throwIfAborted();
+            this.runError = null;
+            await this.agent.prompt([]);
+            continue;
+          }
         }
-        if (await this.compactContext?.(true)) {
-          this.turnAbort?.signal.throwIfAborted();
-          this.runError = null;
-          await this.agent.continue();
-          this.turnAbort?.signal.throwIfAborted();
-        }
+        const problem = modelFailure(failure);
+        if (
+          !problem.retryable ||
+          this.retryAttempt >= this.retryPolicy.maxRetries
+        )
+          throw new Error(failure);
+        const delayMs = retryDelayMs(this.retryPolicy, ++this.retryAttempt);
+        this.transmission = {
+          phase: "retrying",
+          message: `${problem.reason}，${Math.ceil(delayMs / 1000)} 秒后自动继续（${this.retryAttempt}/${this.retryPolicy.maxRetries}）`,
+        };
+        this.persist();
+        this.emitStatus();
+        await sleep(delayMs, undefined, { signal: this.turnAbort!.signal });
+        this.transmission = null;
+        this.emitStatus();
+        this.runError = null;
+        // An empty prompt appends no user message. Pi sees our valid context
+        // projection; failed attempts remain in raw history and in the UI.
+        await this.agent.prompt([]);
       }
-      if (this.runError) throw new Error(this.runError);
+      this.turnAbort!.signal.throwIfAborted();
     } catch (e: any) {
       status =
-        this.agent.signal?.aborted || this.cancelStarting
+        this.turnAbort?.signal.aborted ||
+        this.agent.signal?.aborted ||
+        this.cancelStarting
           ? "interrupted"
           : "failed";
-      error =
-        status === "interrupted"
-          ? "已停止"
-          : failureText(
-              e.message,
-              this.services.resolve(this.selection)?.auth === "chatgpt",
-            );
+      const problem = modelFailure(
+        e.message,
+        this.services.resolve(this.selection)?.auth === "chatgpt",
+      );
+      error = status === "interrupted" ? "已停止" : problem.message;
+      recovery = status === "interrupted" ? "continue" : problem.action;
     } finally {
       let change: FolderChange | null = null;
       try {
@@ -1467,6 +1313,8 @@ export class TurnRunner extends EventEmitter {
           status,
           error,
           elapsedMs: Date.now() - (turn.startedAt || Date.now()),
+          recovery,
+          stoppedByUser: status === "interrupted" && this.stoppedByUser,
           ...(change ? { change } : {}),
         });
         this.emitMessage(turn);

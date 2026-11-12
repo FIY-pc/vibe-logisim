@@ -1,6 +1,6 @@
 import { Button, Text } from "../design/ui";
 import { memo, useEffect, useId, useRef, useState } from "react";
-import { Check, ChevronRight, RotateCcw, Undo2 } from "lucide-react";
+import { Check, ChevronRight, Play, Settings2, Undo2 } from "lucide-react";
 import { ChatMarkdown, CopyButton, type Message } from "./ConversationContent";
 import {
   formatDuration,
@@ -38,11 +38,12 @@ interface Props {
   live: boolean;
   /** The runtime's retry notice while the model service is busy. */
   notice: string | null;
-  /** Another action or turn is in flight: undo and retry wait. */
+  /** Another action or turn is in flight: undo and continue wait. */
   locked: boolean;
   onUndo: (change: TurnChange) => void;
-  /** Sends the question again; only for a failed turn that can be resent. */
-  onRetry?: () => void;
+  /** Continues from retained progress; only on the latest unfinished turn. */
+  onContinue?: () => void;
+  onConfigure?: () => void;
   onError: (error: unknown) => void;
   onFollowReference?: (href: string, message: Message) => void;
 }
@@ -56,7 +57,8 @@ export function Turn({
   notice,
   locked,
   onUndo,
-  onRetry,
+  onContinue,
+  onConfigure,
   onError,
   onFollowReference,
 }: Props) {
@@ -152,25 +154,39 @@ export function Turn({
           {notice}
         </Text>
       )}
-      {status === "failed" && (
-        <div className="turn-end" data-status="failed">
+      {["failed", "interrupted", "unfinished"].includes(status) && (
+        <div
+          className="turn-end"
+          data-status={status === "failed" ? "failed" : "interrupted"}
+        >
           <span>{turn?.error || "回答没有完成"}</span>
-          {onRetry && (
+          {onConfigure && (
             <Button
               variant="ghost"
               color="gray"
               disabled={locked}
-              onClick={onRetry}
+              onClick={onConfigure}
             >
-              <RotateCcw size={16} aria-hidden />
-              重试
+              <Settings2 size={16} aria-hidden />
+              检查 AI 设置
             </Button>
           )}
-        </div>
-      )}
-      {(status === "interrupted" || status === "unfinished") && (
-        <div className="turn-end" data-status="interrupted">
-          {turn?.error || "回答没有完成"}
+          {onContinue && (
+            <Button
+              variant="ghost"
+              color="gray"
+              disabled={locked}
+              onClick={onContinue}
+              data-tip={
+                onConfigure
+                  ? "修复服务设置后，保留已有进度继续"
+                  : "保留已有内容和执行记录，继续完成任务"
+              }
+            >
+              <Play size={16} aria-hidden />
+              继续
+            </Button>
+          )}
         </div>
       )}
       {change && change.files.length > 0 && (

@@ -95,7 +95,15 @@ export async function verifyConversationTurns() {
     conversationId: "turns",
     model: "fixture",
     effort: null,
-    services: [{ id: "fixture" }],
+    services: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        baseUrl: "http://localhost/v1",
+        api: "openai-completions",
+        models: ["fixture"],
+      },
+    ],
     messages: history.map((m) => ({
       ...JSON.parse(JSON.stringify(m)),
       canEdit: m.type === "user",
@@ -198,7 +206,12 @@ export async function verifyConversationTurns() {
     });
     emit(item);
   };
-  const endTurn = (status: string, error: string | null, change?: any) => {
+  const endTurn = (
+    status: string,
+    error: string | null,
+    change?: any,
+    recovery?: string,
+  ) => {
     if (change)
       emit({
         type: "files-changed",
@@ -211,6 +224,8 @@ export async function verifyConversationTurns() {
     Object.assign(turn, {
       status,
       error,
+      recovery,
+      stoppedByUser: status === "interrupted",
       elapsedMs: 47_000,
       ...(change ? { change } : {}),
     });
@@ -468,15 +483,15 @@ export async function verifyConversationTurns() {
     await step(() => {
       transmission = {
         phase: "retrying",
-        message: "模型服务繁忙，2 秒后重试（1/6）",
+        message: "与模型服务的连接中断，2 秒后自动继续（1/6）",
       };
       emitStatus();
     });
     assert.equal(
       $(".turn-live[data-notice]")?.textContent,
-      "模型服务繁忙，2 秒后重试（1/6）",
+      "与模型服务的连接中断，2 秒后自动继续（1/6）",
     );
-    assert.equal(occurrences("模型服务繁忙"), 1, "The retry notice shows once");
+    assert.equal(occurrences("自动继续"), 1, "The retry notice shows once");
     assert.ok(
       $(".turn-tool") === row,
       "A status snapshot re-renders only what changed",
@@ -491,7 +506,7 @@ export async function verifyConversationTurns() {
     );
     assert.equal(
       $(".turn-live[data-notice]", reloaded)?.textContent,
-      "模型服务繁忙，2 秒后重试（1/6）",
+      "与模型服务的连接中断，2 秒后自动继续（1/6）",
     );
     await act(async () => second.unmount());
     reloaded.remove();
@@ -634,15 +649,17 @@ export async function verifyConversationTurns() {
     assert.equal(asks().length, 3);
     await step(() => {
       say("m4", "检查进位", "reasoning");
-      endTurn("failed", "模型服务拒绝了 API 密钥（401 invalid api key）");
+      say("m4-partial", "已经检查了输入，还需要检查输出。 ");
+      finish("m4-partial", "incomplete");
+      endTurn("failed", "与模型服务的连接中断（connection reset）");
     });
     const [first, failed] = $$(".turn");
     assert.equal($$(".turn").length, 2, "Each question keeps its own turn");
     assert.match(
       $('.turn-end[data-status="failed"]', failed)!.textContent!,
-      /模型服务拒绝了 API 密钥（401 invalid api key）/,
+      /与模型服务的连接中断（connection reset）/,
     );
-    assert.equal(occurrences("invalid api key"), 1, "The failure shows once");
+    assert.equal(occurrences("connection reset"), 1, "The failure shows once");
     assert($(".turn-thought", failed), "A failed turn keeps its steps open");
     assert.equal(
       $(".turn-thought-text", failed),
@@ -651,20 +668,27 @@ export async function verifyConversationTurns() {
     );
     assert.equal($(".turn-files > small", first)?.textContent, "已撤销");
     assert.equal($(".turn-files", failed), null);
-    const retry = $$("button", failed).find((b) => b.textContent === "重试")!;
-    await click(retry);
-    assert.equal(asks().at(-1).args.question, "再检查一下进位");
-    assert.equal(asks().at(-1).args.editMessageId, "user-2");
+    const failedId = history.findLast((m) => m.type === "turn").id;
+    const resume = $$("button", failed).find((b) => b.textContent === "继续")!;
+    await click(resume);
+    assert.equal(asks().at(-1).args.question, "继续");
+    assert.equal(asks().at(-1).args.editMessageId, undefined);
+    assert.equal(asks().at(-1).args.continueTurnId, failedId);
+    assert.match(failed.textContent!, /已经检查了输入/);
+    assert.equal(
+      $$("button", failed).some((b) => b.textContent === "继续"),
+      false,
+    );
     await step(() => {
       say("m5", "进位链没有问题。");
       finish("m5", "final");
       endTurn("completed", null);
     });
-    const retried = $$(".turn")[1];
+    const retried = $$(".turn")[2];
     assert.equal(
       $$(".turn").length,
-      2,
-      "The retried question replaces the failed turn",
+      3,
+      "Continuing preserves the failed turn and appends a new one",
     );
     assert.equal(
       $(".turn-summary", retried),
@@ -696,7 +720,7 @@ export async function verifyConversationTurns() {
     });
     const stopped = $$(".turn").at(-1)!;
     assert.equal(
-      $('.turn-end[data-status="interrupted"]', stopped)?.textContent,
+      $('.turn-end[data-status="interrupted"] > span', stopped)?.textContent,
       "已停止",
     );
     assert.equal(occurrences("已停止"), 1, "The stop shows once");
@@ -712,6 +736,25 @@ export async function verifyConversationTurns() {
     assert($('button[aria-label="发送"]'));
     assert.equal(box().value, "等会再问");
     assert.equal(errors.length, 1);
+    assert.equal(
+      $$("button", stopped).some((b) => b.textContent === "继续"),
+      false,
+      "A user stop has no separate continue action",
+    );
+    assert.equal(
+      $('button[aria-label="继续回答"]'),
+      null,
+      "A nonempty draft remains a new message",
+    );
+    await click('button[aria-label="发送"]');
+    assert.equal(asks().at(-1).args.question, "等会再问");
+    assert.equal(asks().at(-1).args.editMessageId, undefined);
+    assert.equal(asks().at(-1).args.continueTurnId, undefined);
+    await step(() => {
+      say("m6-resumed", "已核对当前电路，可以继续。");
+      finish("m6-resumed", "final");
+      endTurn("completed", null);
+    });
 
     // A stop before the first tool must not promote commentary to an answer.
     await type("先检查电路再修改");
@@ -746,6 +789,80 @@ export async function verifyConversationTurns() {
     assert.equal(
       $(".turn-summary", restored)?.getAttribute("aria-controls"),
       $(".turn-process-body", restored)?.id,
+    );
+    assert.ok(
+      $('button[aria-label="继续回答"]'),
+      "Reload remembers an explicit user stop",
+    );
+    assert.equal($('button[aria-label="发送"]'), null);
+    await type("改为检查输出");
+    assert.ok($('button[aria-label="发送"]'));
+    assert.equal($('button[aria-label="继续回答"]'), null);
+    await type("");
+    const continuedId = history.findLast((m) => m.type === "turn").id;
+    await click('button[aria-label="继续回答"]');
+    assert.equal(asks().at(-1).args.continueTurnId, continuedId);
+    assert.equal(asks().at(-1).args.question, "继续");
+    assert.ok($('button[aria-label="停止回答"]'));
+    await step(() => {
+      say("m7-resumed", "继续完成了检查。");
+      finish("m7-resumed", "final");
+      endTurn("completed", null);
+    });
+    assert.equal(
+      $('button[aria-label="继续回答"]'),
+      null,
+      "Completion returns to normal send",
+    );
+    await type("测试空输入回车继续");
+    await enter();
+    await step(() => endTurn("interrupted", "已停止"));
+    const asksBeforeEnter = asks().length;
+    await enter();
+    assert.equal(
+      asks().length,
+      asksBeforeEnter + 1,
+      "Enter continues exactly once",
+    );
+    assert.ok(asks().at(-1).args.continueTurnId);
+    await step(() => {
+      endTurn("interrupted", "应用退出，已有内容已保留。");
+      const last = history.findLast((m) => m.type === "turn");
+      last.stoppedByUser = false;
+      emit({ type: "message", message: last });
+    });
+    assert.equal(
+      $('button[aria-label="继续回答"]'),
+      null,
+      "Unexpected interruption does not masquerade as a user pause",
+    );
+    await type("检查 API 配置错误");
+    await enter();
+    await step(() =>
+      endTurn(
+        "failed",
+        "模型服务拒绝了 API 密钥，请检查 AI 设置",
+        undefined,
+        "settings",
+      ),
+    );
+    const configurationFailure = $$(".turn").at(-1)!;
+    const configureButton = $$("button", configurationFailure).find(
+      (b) => b.textContent === "检查 AI 设置",
+    );
+    assert.ok(configureButton);
+    assert.ok(
+      $$("button", configurationFailure).some((b) => b.textContent === "继续"),
+      "Continuation remains available after fixing credentials",
+    );
+    assert.equal(
+      $$("button", configurationFailure).some((b) => b.textContent === "重试"),
+      false,
+    );
+    await click(configureButton);
+    assert.ok(
+      document.querySelector('[role="dialog"]'),
+      "Configuration errors open the real settings dialog",
     );
     console.log(
       "PASS: a turn streams its text and tool lines, folds into one summary with the answer and files kept, and a reload replays the same view; retry notice, failure and stop each show once",

@@ -19,6 +19,7 @@ import {
   Pencil,
   Paperclip,
   Plus,
+  Play,
   ScanSearch,
   Send,
   Settings2,
@@ -545,14 +546,23 @@ export function Chat({
     () => (scopeReady ? segments(messages) : []),
     [scopeReady, messages],
   );
+  const latestTurn = turns.at(-1)?.turn;
+  const resumeTurnId =
+    !busy &&
+    latestTurn?.status === "interrupted" &&
+    latestTurn.stoppedByUser === true &&
+    !draft.trim() &&
+    references.references.length === 0 &&
+    !references.unresolved
+      ? latestTurn.id
+      : null;
 
   const send = (text = draft) => {
     if (!ready || busy || references.unresolved) return;
     if (text !== draft) changeDraft(text);
     references.send();
   };
-  /** Sends a question again from where it was asked: an edit, or a retry
-   * after the turn failed. */
+  /** Editing intentionally replaces the conversation from this question. */
   const resubmit = (message: Message, text: string) => {
     if (
       !ready ||
@@ -572,6 +582,22 @@ export function Chat({
         editMessageId: message.id,
       });
       setEditingMessage(null);
+      await refresh();
+      await loadConversations();
+    });
+  };
+  const continueTurn = (turnId: string) => {
+    if (!ready || busy || pending) return;
+    conversationList.current?.latest();
+    void act(async () => {
+      await runtime("ask", {
+        question: "继续",
+        references: [],
+        documentId: doc?.id,
+        circuit: circuit ?? undefined,
+        selection,
+        continueTurnId: turnId,
+      });
       await refresh();
       await loadConversations();
     });
@@ -917,12 +943,23 @@ export function Chat({
                   }
                   locked={pending || busy}
                   onUndo={undoFiles}
-                  onRetry={
-                    user?.canEdit && segment.turn?.status === "failed"
-                      ? () => resubmit(user, user.text || "")
+                  onContinue={
+                    index === turns.length - 1 &&
+                    segment.turn &&
+                    (segment.turn.status === "failed" ||
+                      (segment.turn.status === "interrupted" &&
+                        !segment.turn.stoppedByUser))
+                      ? () => continueTurn(segment.turn!.id)
                       : undefined
                   }
                   onError={onError}
+                  onConfigure={
+                    index === turns.length - 1 &&
+                    segment.turn?.status === "failed" &&
+                    segment.turn.recovery === "settings"
+                      ? () => setConfigure(true)
+                      : undefined
+                  }
                   onFollowReference={
                     onFollowReference
                       ? (href, item) =>
@@ -956,6 +993,17 @@ export function Chat({
                 cancelOnEscape={false}
                 unstable_focusOnRunStart={false}
                 unstable_focusOnThreadSwitched={false}
+                onKeyDown={(event) => {
+                  if (
+                    resumeTurnId &&
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    continueTurn(resumeTurnId);
+                  }
+                }}
                 onPaste={(event) => {
                   const files = workbench.stores.files.getState();
                   const copied = files.copiedFile;
@@ -1045,6 +1093,18 @@ export function Chat({
                     }}
                   >
                     <Square size={16} />
+                  </IconButton>
+                ) : resumeTurnId ? (
+                  <IconButton
+                    type="button"
+                    variant="solid"
+                    aria-label="继续回答"
+                    data-tip="继续回答"
+                    data-tip-key="Enter"
+                    disabled={!ready || pending}
+                    onClick={() => continueTurn(resumeTurnId)}
+                  >
+                    <Play size={16} />
                   </IconButton>
                 ) : (
                   <ComposerPrimitive.Send asChild>

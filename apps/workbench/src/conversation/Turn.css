@@ -179,6 +179,7 @@
 }
 .turn-end {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-1) 0 var(--space-3);

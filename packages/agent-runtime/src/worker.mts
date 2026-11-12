@@ -175,6 +175,7 @@ async function dispatch(method: RuntimeMethod, args: any) {
         circuit: args.circuit ?? null,
         selection: Array.isArray(args.selection) ? args.selection : [],
         editMessageId: args.editMessageId || null,
+        continueTurnId: args.continueTurnId || null,
       });
     }
     case "stop":

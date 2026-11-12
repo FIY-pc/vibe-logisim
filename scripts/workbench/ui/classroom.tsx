@@ -107,13 +107,14 @@ export async function verifyClassroomUI() {
   let root = createRoot(container);
   const oldCommand = (globalThis as any).__command;
   const originalInterval = globalThis.setInterval;
-  let tickSharing: (() => void) | undefined;
+  let tickSharing: (() => Promise<void>) | undefined;
   let folderId = "folder-ui",
     agentBusy = false,
     captureReads = 0,
+    captureDelayMs = 0,
     conversationId = "conversation-ui";
   (globalThis as any).setInterval = (
-    callback: () => void,
+    callback: () => Promise<void>,
     delay: number,
     ...args: any[]
   ) => {
@@ -158,6 +159,8 @@ export async function verifyClassroomUI() {
     if (r.op === "status") return { folder: { id: folderId, path: "/work" } };
     if (r.op === "read") {
       captureReads++;
+      if (captureDelayMs)
+        await new Promise((resolve) => setTimeout(resolve, captureDelayMs));
       return doc;
     }
     if (r.op === "source")
@@ -370,8 +373,7 @@ export async function verifyClassroomUI() {
     await click("关闭课堂管理");
     assert.ok(button("课堂管理").textContent?.includes("自动同步"));
     await act(async () => {
-      tickSharing!();
-      await new Promise((r) => setTimeout(r, 40));
+      await tickSharing!();
     });
     assert.equal(
       (await api(`/classrooms/${room.id}`, teacher.token)).members[0]
@@ -382,8 +384,7 @@ export async function verifyClassroomUI() {
     doc.revision = "r2";
     agentBusy = true;
     await act(async () => {
-      tickSharing!();
-      await new Promise((r) => setTimeout(r, 40));
+      await tickSharing!();
     });
     assert.ok(
       button("课堂管理").textContent?.includes("自动同步"),
@@ -391,8 +392,7 @@ export async function verifyClassroomUI() {
     );
     agentBusy = false;
     await act(async () => {
-      tickSharing!();
-      await new Promise((r) => setTimeout(r, 80));
+      await tickSharing!();
     });
     assert.equal(
       (await api(`/classrooms/${room.id}`, teacher.token)).members[0]
@@ -401,10 +401,12 @@ export async function verifyClassroomUI() {
       "explicit sharing survives closing the dialog",
     );
     conversationId = "another-conversation";
+    // A capture can outlive the old 100 ms sleep on a busy Windows runner.
+    captureDelayMs = 200;
     await act(async () => {
-      tickSharing!();
-      await new Promise((r) => setTimeout(r, 100));
+      await tickSharing!();
     });
+    captureDelayMs = 0;
     assert.equal(
       (await api(`/classrooms/${room.id}`, teacher.token)).members[0]
         .submissionCount,
@@ -414,8 +416,7 @@ export async function verifyClassroomUI() {
     const beforeSwitch = captureReads;
     folderId = "other-folder";
     await act(async () => {
-      tickSharing!();
-      await new Promise((r) => setTimeout(r, 40));
+      await tickSharing!();
     });
     assert.equal(
       captureReads,
