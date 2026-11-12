@@ -71,6 +71,9 @@ export async function verifyRestoredInteractions() {
     calls.push(request);
     if (request.op === "agent") {
       if (request.method === "conversations") return { conversations };
+      // History loading and the virtual list can outlive a single UI tick.
+      if (request.method === "history")
+        await new Promise((resolve) => setTimeout(resolve, 100));
       return {
         eventCursor: sequence,
         runtime: "builtin",
@@ -125,8 +128,14 @@ export async function verifyRestoredInteractions() {
       await new Promise((resolve) => setTimeout(resolve, 5));
     });
   const click = async (selector: string) => {
-    const button = container.querySelector<HTMLElement>(selector);
-    assert(button, selector);
+    let button = container.querySelector<HTMLElement>(selector);
+    for (let i = 0; !button && i < 100; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      button = container.querySelector<HTMLElement>(selector);
+    }
+    assert(button, `Timed out waiting for ${selector}`);
     await act(async () => button.click());
   };
   const input = async (selector: string, value: string) => {
@@ -163,9 +172,6 @@ export async function verifyRestoredInteractions() {
         />
       </Workbench>,
     );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-    });
     await click('[aria-label="复制代码"]');
     assert.equal(copied, "const value = 1;");
     await click('[aria-label="复制消息"]');
