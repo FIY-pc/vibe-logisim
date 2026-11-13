@@ -6,6 +6,7 @@ import { verifySearchControls } from "./search-controls";
 import { verifyMenusUI } from "./menus";
 import { verifySourceEditor } from "./source-editor";
 import { verifyEditorRequestLifetimes } from "./editor-request-lifetimes";
+import { verifyDocumentLoadError } from "./document-load-error";
 import { verifyStraightWires } from "./straight-wires";
 import { verifyClassroomUI } from "./classroom";
 import { verifyAISettings } from "./ai-settings";
@@ -1415,6 +1416,7 @@ await verifyAISettings();
 await verifySearchControls();
 await verifySourceEditor();
 await verifyEditorRequestLifetimes();
+await verifyDocumentLoadError();
 await verifyClassroomUI();
 console.log("All focused UI lifecycle checks passed");
 

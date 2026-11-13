@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionPoint } from "../generated/ConnectionPoint";
 import { HostError } from "../shared/host-error";
+import type { DocumentRevision } from "../shared/notices";
 import { command } from "../shared/transport";
 import type { Circuit, Document } from "../shared/types";
 import { mergeFocus, type ConnectionFocus } from "./connectivity";
@@ -54,7 +55,7 @@ export function useConnections(
   doc: Document,
   circuit: Circuit,
   seeds: ConnectionSeeds,
-  onError: (error: unknown) => void,
+  onError: (error: unknown, about?: DocumentRevision) => void,
   onStale: () => void,
 ): Connections {
   const scope = `${doc.id}:${doc.revision}:${circuit.name}`;
@@ -118,7 +119,10 @@ export function useConnections(
           for (const token of asked) failed.set(token, message);
           return { ...base, failed };
         });
-        callbacks.current.onError(error);
+        callbacks.current.onError(error, {
+          id: doc.id,
+          revision: doc.revision,
+        });
       })
       .finally(() => {
         if (pending.current.scope === scope)

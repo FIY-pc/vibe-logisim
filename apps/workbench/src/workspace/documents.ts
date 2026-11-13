@@ -28,7 +28,8 @@ export interface DocumentsState {
   saveFailures: Record<string, string>;
   /** What the host last said about each document's file, by document id. */
   sourceStatuses: Record<string, SourceStatus>;
-  /** Replaces the documents; shows their history and reference warnings once each. */
+  /** Replaces the documents; shows their history and reference warnings once
+   * each, and drops an error about a revision no document is at anymore. */
   setDocs(docs: Update<Document[]>): void;
   setActive(id: string | null): void;
   /** Makes workspace snapshots requested before now stale. */
@@ -98,6 +99,8 @@ export function createDocumentsStore({
           }),
         ),
       }));
+      // A failed read of a revision says nothing about the next one.
+      notices.getState().dropOutdatedError(next);
       for (const doc of next) {
         const result = doc as DocumentResult;
         const message = [result.historyWarning, result.referenceWarning]
