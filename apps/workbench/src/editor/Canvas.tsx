@@ -17,6 +17,7 @@ import type {
   Tool,
   XmlNode,
 } from "../shared/types";
+import type { DocumentRevision } from "../shared/notices";
 import { CanvasPicture } from "./CanvasPicture";
 import { Connections } from "./Connections";
 import { SelectionConnections } from "./SelectionConnections";
@@ -64,7 +65,9 @@ interface Props {
   onPoke: (component: Component, point: Point) => void;
   onPress: (component: Component) => void;
   onRelease: () => void;
-  onError: (e: unknown) => void;
+  /** Shows a failure; a failed picture or connection read names the
+   * document revision it read, so the failure goes when the document moves on. */
+  onError: (e: unknown, about?: DocumentRevision) => void;
   /** A picture or connection read was refused because the host's document
    * moved on (another revision exists); read the workspace again. */
   onStale?: () => void;

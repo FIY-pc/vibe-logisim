@@ -4,7 +4,9 @@ import com.cburch.logisim.data.Location;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import javax.swing.filechooser.FileFilter;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
@@ -237,7 +239,7 @@ public final class NativeCircuitLoader {
                 WorkerTiming.mark("logisim");
             } catch (Exception error) {
                 if (reported.isEmpty()) throw error;
-                throw new IllegalStateException("Logisim 无法载入这个文件：" + String.join("；", reported), error);
+                throw new IllegalStateException("Logisim 无法载入这个文件：" + summary(reported), error);
             }
             loaded.setName(name.toLowerCase(java.util.Locale.ROOT).endsWith(".circ")
                 ? name.substring(0, name.length() - 5) : name);
@@ -245,11 +247,33 @@ public final class NativeCircuitLoader {
                 String loss = coverageLoss(loaded, new InputSource(new ByteArrayInputStream(text)));
                 if (loss != null) {
                     throw new IllegalStateException(
-                        "Logisim 无法载入这个文件：" + String.join("；", reported) + "（" + loss + "）");
+                        "Logisim 无法载入这个文件：" + summary(reported) + "（" + loss + "）");
                 }
                 WorkerTiming.mark("coverage");
             }
             return loaded;
+        }
+
+        /**
+         * The reports as one line: each distinct problem once, in the order
+         * first reported, with how often it came. Logisim reports one line per
+         * element, several lines to a report, so a mistake repeated across a
+         * circuit (every circ-port of an appearance written the same wrong
+         * way) would otherwise fill the message.
+         */
+        static String summary(List<String> reports) {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (String report : reports) {
+                for (String line : report.split("\\R")) {
+                    if (!line.trim().isEmpty()) counts.merge(line.trim(), 1, Integer::sum);
+                }
+            }
+            List<String> parts = new ArrayList<>();
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                parts.add(entry.getValue() == 1 ? entry.getKey()
+                    : entry.getKey() + "（共 " + entry.getValue() + " 处）");
+            }
+            return String.join("；", parts);
         }
 
         /** The directory of the file being read: a nested library's while it loads, the document's otherwise. */

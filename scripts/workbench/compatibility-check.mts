@@ -201,6 +201,39 @@ try {
     true,
     "Switching back to a 2.16 file must restart on the 2.16 runtime",
   );
+  // A script outside the app rewrites an open file with appearance ports
+  // written "(x,y)": the host takes the new content (it is well-formed XML),
+  // Logisim reports each port and puts default ones in their place, which
+  // split a wire the custom ports did not touch, so the revision does not
+  // load; the same report reads once. The file fixed on disk loads again.
+  const goodXml = project(
+    inverter("child").replace('x="26" y="46"', 'x="46" y="36"') +
+      `<circuit name="main"><comp name="child" loc="(300,100)"/>${wire(200, 100, 280, 100)}</circuit>`,
+  );
+  const brokenXml = goodXml.replace(/pin="(\d+,\d+)"/g, 'pin="($1)"');
+  const followed = await open("followed.circ", goodXml);
+  const reread = async () =>
+    (await command({ op: "status" })).documents.find(
+      (d: any) => d.id === followed.id,
+    );
+  await writeFile(followed.path, brokenXml);
+  const broken = await reread();
+  assert.notEqual(
+    broken.revision,
+    followed.revision,
+    "the host takes the file",
+  );
+  const failure = await command({ op: "observe", ...scope(broken) }).then(
+    () => assert.fail("a broken appearance must not load"),
+    (error: Error) => error.message,
+  );
+  assert.match(failure, /无法载入这个文件/);
+  assert.match(failure, /circ-port[^；]*（共 2 处）/, failure);
+  assert.equal(failure.match(/circ-port 时出错/g)?.length, 1, failure);
+  await writeFile(followed.path, goodXml);
+  const fixed = await reread();
+  assert.notEqual(fixed.revision, broken.revision);
+  await command({ op: "observe", ...scope(fixed) });
   // Loading splits a wire where another wire ends or a port sits on it, on
   // both runtimes; a '+' crossing stays two separate signals.
   const junctions = `<circuit name="main">${pin(100, 100, "a")}${pin(400, 100, "y", true)}${pin(500, 120, "b", true)}${wire(100, 100, 400, 100)}${wire(200, 100, 200, 160)}${wire(300, 40, 300, 200)}${wire(500, 40, 500, 200)}</circuit>`;

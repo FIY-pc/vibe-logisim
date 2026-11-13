@@ -20,6 +20,7 @@ import type {
   XmlNode,
 } from "../shared/types";
 import { HostError } from "../shared/host-error";
+import type { DocumentRevision } from "../shared/notices";
 import { command } from "../shared/transport";
 
 /** One recorded drawing op; `editor/paint.ts` replays it. */
@@ -178,7 +179,7 @@ export function useSymbols(
   doc: Document,
   circuit: Circuit,
   extra: SymbolKey[],
-  onError: (error: unknown) => void,
+  onError: (error: unknown, about?: DocumentRevision) => void,
   onStale: () => void,
 ): Symbols {
   const cache = documentSymbols(doc);
@@ -258,7 +259,7 @@ export function useSymbols(
         if (current.id !== doc.id || current.revision !== revision) return;
         if (HostError.from(error).code === "STALE_REVISION")
           callbacks.current.onStale();
-        else callbacks.current.onError(error);
+        else callbacks.current.onError(error, { id: doc.id, revision });
       })
       .finally(() => {
         for (const [id] of asked) cache.pending.delete(id);
