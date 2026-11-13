@@ -229,7 +229,12 @@ try {
   );
   assert.match(failure, /无法载入这个文件/);
   assert.match(failure, /circ-port[^；]*（共 2 处）/, failure);
-  assert.equal(failure.match(/circ-port 时出错/g)?.length, 1, failure);
+  // Logisim words the report in the runtime's locale; its element tag is fixed.
+  assert.equal(
+    failure.match(/\[child\.appear\.circ-port\]/g)?.length,
+    1,
+    failure,
+  );
   await writeFile(followed.path, goodXml);
   const fixed = await reread();
   assert.notEqual(fixed.revision, broken.revision);

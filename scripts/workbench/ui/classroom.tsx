@@ -400,7 +400,10 @@ export async function verifyClassroomUI() {
     assert.ok(!JSON.stringify(saved).includes("must-not-upload"));
     await wait(() => Boolean(tickSharing));
     await click("关闭课堂管理");
-    assert.equal(document.activeElement?.getAttribute("aria-label"), "更多");
+    // Radix hands focus back to the opener on a later tick of the unmount.
+    await wait(
+      () => document.activeElement?.getAttribute("aria-label") === "更多",
+    );
     await assertSharing();
     await act(async () => {
       await tickSharing!();
