@@ -8,7 +8,6 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { ERROR_SCHEMA, toolErrorFromException } from "./errors.mts";
 import { splitModelContent } from "./output.mts";
 import { TOOL_SPECS, type ToolName } from "./schemas.mts";
-import { arrangeCircuit } from "./arrange.mts";
 import {
   createCircuit,
   defineCircuit,
@@ -49,7 +48,6 @@ export const HANDLERS: Record<ToolName, ToolHandler> = {
   connect,
   move_components: moveComponents,
   delete_objects: deleteObjects,
-  arrange_circuit: arrangeCircuit,
   simulate_circuit: simulateCircuit,
   trace_circuit: traceCircuit,
   undo_edit: undoEdit,

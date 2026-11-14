@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { compareReadability, readability } from "../src/index.mts";
-import type { Focus, READABILITY_WEIGHTS } from "../src/index.mts";
+import { readability, READABILITY_WEIGHTS } from "../src/index.mts";
+import type { Focus } from "../src/index.mts";
 
 type Measure = keyof typeof READABILITY_WEIGHTS;
 const here = fileURLToPath(new URL("./fixtures/readability/", import.meta.url));
@@ -42,17 +42,12 @@ describe("readability", () => {
       const clean = readability(after);
       assert.equal(messy[measure], count);
       assert.equal(clean[measure], 0);
-      // Only this measure differs: the clean drawing reads more clearly, and
-      // the messy one would be refused in its place, naming the measure.
-      assert.deepEqual(compareReadability(messy, clean), {
-        clearer: true,
-        worse: [],
-        better: [measure],
-      });
-      assert.deepEqual(compareReadability(clean, messy), {
-        clearer: false,
-        worse: [measure],
-        better: [],
-      });
+      // The fixture changes this measure without changing the other counts.
+      assert.deepEqual(
+        (Object.keys(READABILITY_WEIGHTS) as Measure[]).filter(
+          (key) => messy[key] !== clean[key],
+        ),
+        [measure],
+      );
     });
 });

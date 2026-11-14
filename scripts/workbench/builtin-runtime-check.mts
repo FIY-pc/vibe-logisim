@@ -30,7 +30,7 @@ assert.equal(
   await resolveFile("/nonexistent-folder", SANDBOX_REFERENCE + "/index.md"),
   path.join(referenceRoot, "index.md"),
 );
-for (const name of ["digital-design.md", "java-runtime.md", "arrangement.md"])
+for (const name of ["digital-design.md", "java-runtime.md"])
   assert.equal(
     await resolveFile("/nonexistent-folder", SANDBOX_REFERENCE + "/" + name),
     path.join(referenceRoot, name),

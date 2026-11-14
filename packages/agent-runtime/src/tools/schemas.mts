@@ -18,7 +18,6 @@ export type ToolName =
   | "connect"
   | "move_components"
   | "delete_objects"
-  | "arrange_circuit"
   | "simulate_circuit"
   | "trace_circuit"
   | "undo_edit"
@@ -90,20 +89,6 @@ const PAGE = {
   maxBytes: int({ minimum: 1024, maximum: 32000 }),
   cursor: str(),
 };
-const LAYOUT_OPTIONS = {
-  pinnedComponentIds: array(str(), 2048, "Parts that stay where they are."),
-  panelBelowY: int({
-    description:
-      "Parts whose top edge is above this y stay where they are; omitted, a panel on top is detected on sheets of 40 or more parts.",
-  }),
-  keepTunnels: array(str(), 256, "Tunnel labels that stay Tunnels."),
-  localiseConstants: {
-    ...bool,
-    description:
-      "Give each port a Constant drives its own copy (default true).",
-  },
-};
-
 export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
   open_circuit: {
     name: "open_circuit",
@@ -136,7 +121,7 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
     name: "inspect_circuit",
     label: "查看电路",
     description:
-      "Read one definition as the native Logisim runtime loads it, one view per call. No filter: bounds, counts, pins, tunnels, state elements, width conflicts and a first page of components. componentIds: those parts' attributes with allowed values and their ports with position, width, direction and bit nets. componentDirectory: every part, a page per call. portConnections: what the listed ports connect to. includeWires: wire ids and geometry, paged by wireOffset and wireLimit. layoutContext: the parts, contacts and net graph arrange_circuit's organization refers to. layoutReview: the readability measures arrange_circuit compares (lower reads more easily) and the ones that are not zero.",
+      "Read one definition as the native Logisim runtime loads it, one view per call. No filter: bounds, counts, pins, tunnels, state elements, width conflicts and a first page of components. componentIds: those parts' attributes with allowed values and their ports with position, width, direction and bit nets. componentDirectory: every part, a page per call. portConnections: what the listed ports connect to. includeWires: wire ids and geometry, paged by wireOffset and wireLimit. layoutReview: read-only geometric readability measures and their nonzero counts; heuristic review candidates, not a guarantee of visual quality.",
     parameters: object({
       path: PATH,
       circuit: CIRCUIT,
@@ -158,19 +143,6 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
       includeWires: bool,
       wireOffset: int(),
       wireLimit: int({ minimum: 1, maximum: 256 }),
-      layoutContext: object(
-        Object.fromEntries(
-          Object.entries(LAYOUT_OPTIONS).map(([key, value]) => {
-            const { description: _, ...schema } = value as Record<
-              string,
-              unknown
-            >;
-            return [key, schema];
-          }),
-        ),
-        [],
-        "{} for the defaults; the options as arrange_circuit takes them.",
-      ),
       layoutReview: object({}),
     }),
   },
@@ -293,67 +265,6 @@ export const TOOL_SPECS: Record<ToolName, ToolSpec> = {
       circuit: CIRCUIT,
       componentIds: IDS,
       wireIds: array(str(), 512),
-    }),
-  },
-  arrange_circuit: {
-    name: "arrange_circuit",
-    label: "整理布局与连线",
-    description:
-      "Lay one definition out again from its netlist: parts in columns by signal flow, input pins left, output pins right, wires with Tunnels where the sheet uses them, for controls reaching many ports and where a wire cannot reach cleanly. With organization, each group is a box under its numbered heading, groups of a row side by side, rows from the top, nets between rows as Tunnels. Applied only when the netlist is proven equivalent and the readability score drops; every other definition stays byte-identical. Returns applied, the readability before and after and the measures that got better or worse. The organization fields are explained in the reference arrangement.md.",
-    parameters: object({
-      path: PATH,
-      circuit: CIRCUIT,
-      ...LAYOUT_OPTIONS,
-      organization: object(
-        {
-          groups: array(
-            object(
-              {
-                id: str(),
-                label: str(),
-                row: int({ minimum: 0, maximum: 64 }),
-                componentIds: IDS,
-              },
-              ["id", "label", "row", "componentIds"],
-            ),
-            64,
-          ),
-          namedLinks: array(
-            object({ componentId: str(), port: int(), label: str() }, [
-              "componentId",
-              "port",
-              "label",
-            ]),
-            256,
-          ),
-          localSignals: array(str(), 256),
-          stages: array(
-            object(
-              {
-                id: str(),
-                label: str(),
-                groups: array(str()),
-                mainPath: array(str()),
-                row: int({ minimum: 0, maximum: 64 }),
-              },
-              ["id", "label", "groups", "mainPath"],
-            ),
-            32,
-          ),
-          annotations: array(
-            object(
-              {
-                componentId: str(),
-                role: { type: "string", enum: ["heading", "overview"] },
-                groupId: str(),
-              },
-              ["componentId", "role"],
-            ),
-            2048,
-          ),
-        },
-        ["groups"],
-      ),
     }),
   },
   simulate_circuit: {

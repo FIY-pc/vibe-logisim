@@ -11,10 +11,10 @@
 | [crates/workbench-host](../crates/workbench-host/README.md)     | Rust                     | 唯一拥有工作区的进程：请求词汇与规则、状态目录、事件、AI 进程的生命周期         |
 | [apps/workbench](../apps/workbench/README.md)                   | TypeScript、React、Tauri | 窗口：按领域分文件夹的界面状态与交互，不含任何业务规则                          |
 | [packages/agent-runtime](../packages/agent-runtime/README.md)   | TypeScript、Node         | AI 回合：模型服务、按文件夹的对话、工具；每个工具调用都是一次宿主请求           |
-| [packages/arranger](../packages/arranger/README.md)             | TypeScript               | 纯函数布局：放置、布线、等价检查，不做 I/O                                      |
+| [packages/circuit-diagnostics](../packages/circuit-diagnostics/README.md)             | TypeScript               | 只读电路几何诊断，不做布局、不修改文件                                      |
 | [scripts/workbench](../scripts/workbench/README.md)             | TypeScript               | 开发、验证、打包脚本                                                            |
 
-依赖只向下：`circuit-document` ← `logisim-runtime` ← `workbench-host` ← Tauri 壳；窗口和 AI 进程通过传输层调用宿主；AI 进程和窗口各自在 worker 里调用 `arranger`。没有模块依赖窗口或 AI 进程。
+依赖只向下：`circuit-document` ← `logisim-runtime` ← `workbench-host` ← Tauri 壳；窗口和 AI 进程通过传输层调用宿主；AI 进程调用 `circuit-diagnostics` 读取布局检查指标。没有模块依赖窗口或 AI 进程。
 
 ## 四条数据流
 

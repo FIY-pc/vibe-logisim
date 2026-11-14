@@ -16,7 +16,7 @@ The one process that owns the user's workspace. The window (Tauri or the Vite de
 
 ## Does not own
 
-Rendering widgets, conversation history, model services, prompts, tools (sidecar), layout algorithms (arranger), file-format details (document crate), Logisim semantics (runtime crate).
+Rendering widgets, conversation history, model services, prompts, tools (sidecar), file-format details (document crate), Logisim semantics (runtime crate).
 
 ## Public interface
 
@@ -84,7 +84,7 @@ Done and exercised end to end on the course project (open, edit, AI turn, apply,
 
 ## Remaining tasks
 
-1. Done: `observeXml {id, revision, circuit, xml}` (agent-callable, Read) observes what `edit replace` with that whole-file XML would make of the revision (`Document::preview`), without applying it, and answers like `observe`. The proposal goes to the worker as the document's next revision, so applying the same XML afterwards sends nothing new. The AI arranger verifies with it before applying.
+1. Done: `observeXml {id, revision, circuit, xml}` (agent-callable, Read) observes what `edit replace` with that whole-file XML would make of the revision (`Document::preview`), without applying it, and answers like `observe`. The proposal goes to the worker as the document's next revision, so applying the same XML afterwards sends nothing new. It supports read-only validation of proposed whole-file edits.
 2. Done: an edit no longer reloads the file in Java or answers with the whole document. Rust sends the worker each new revision's per-circuit difference with the request that needs it (`Revision::changes`, `crates/logisim-runtime/README.md`), and `edit`, `undo` and `redo` answer with the changed circuits only (`DocumentChange`); the sidecar reads `status {summary: true}`. Numbers from before the difference came from Rust: Release build, p50 from sending the edit to the new picture: on the synthetic course-size page (350 components, `scripts/workbench/editing-latency.mts`) move 60, wire 45, place 56, delete 44, attributes 53 ms (before: 125, 104, 110, 59, 109); on a page of about 700 components and 1000 wires move 79, wire 51, place 55, delete 48, attributes 58 ms (before: 150, 104, 135, 63, 118).
 3. Ad-hoc string errors: much of `crates/workbench-host/src` still returns `Result<_, String>` (167 `map_err(|e| e.to_string())` sites, e.g. `lib.rs::revision_at`, `documents/history.rs`), which reaches the caller as `UNKNOWN`. Give each failure its `ErrorCode` where it is made.
 

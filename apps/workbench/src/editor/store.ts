@@ -68,8 +68,6 @@ export interface EditorState {
   /** The circuit list's filter. */
   circuitSearch: string;
   showGrid: boolean;
-  /** Whether an arrangement of the shown circuit is running. */
-  arranging: boolean;
   /** The open find dialog. */
   find: FindMode | null;
   focusTarget: FocusTarget | null;
@@ -110,7 +108,6 @@ export interface EditorState {
   setSignalView(view: ReactNode): void;
   setCircuitSearch(search: Update<string>): void;
   setShowGrid(shown: Update<boolean>): void;
-  setArranging(running: Update<boolean>): void;
   setFind(find: Update<FindMode | null>): void;
   setFocusTarget(target: Update<FocusTarget | null>): void;
   setCircuitPrompt(open: Update<boolean>): void;
@@ -136,7 +133,6 @@ export function createEditorStore() {
     signalView: null,
     circuitSearch: "",
     showGrid: false,
-    arranging: false,
     find: null,
     focusTarget: null,
     circuitPrompt: false,
@@ -174,7 +170,6 @@ export function createEditorStore() {
     setSignalView: (signalView) => set({ signalView }),
     setCircuitSearch: field(set, "circuitSearch"),
     setShowGrid: field(set, "showGrid"),
-    setArranging: field(set, "arranging"),
     setFind: field(set, "find"),
     setFocusTarget: field(set, "focusTarget"),
     setCircuitPrompt: field(set, "circuitPrompt"),

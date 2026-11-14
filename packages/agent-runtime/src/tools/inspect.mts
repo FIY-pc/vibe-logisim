@@ -4,7 +4,7 @@
  * is placed). All answers are identified by document, revision and circuit so
  * the model can tell stale pages from current ones.
  */
-import { organizationContext, readability } from "@vibe-logisim/arranger";
+import { readability } from "@vibe-logisim/circuit-diagnostics";
 import { CircuitToolError } from "./errors.mts";
 import {
   inspectKind,
@@ -13,16 +13,6 @@ import {
   type ObservationView,
 } from "./observe.mts";
 import type { DocumentRef, ToolContext } from "./context.mts";
-
-const DETAIL_KEYS = [
-  "componentIds",
-  "componentDirectory",
-  "portConnections",
-  "includeWires",
-  "wireOffset",
-  "wireLimit",
-  "layoutReview",
-];
 
 /** The readability measures that are not zero, worst first. */
 const PROBLEMS = [
@@ -43,32 +33,6 @@ export async function inspectCircuit(
 ) {
   const { document, circuit } = await context.target(args);
   const identity = context.identity(document, circuit);
-  if (args.layoutContext !== undefined) {
-    if (DETAIL_KEYS.some((k) => args[k] !== undefined))
-      throw new CircuitToolError(
-        "INVALID_ARGUMENT",
-        "layoutContext 与其他明细筛选冲突。",
-        {
-          hint: "查看布局时只保留 circuit 和 layoutContext；不要同时请求 componentIds、portConnections、includeWires 等。",
-        },
-      );
-    const source = await context.host.call<{ xml: string }>({
-      op: "source",
-      id: document.id,
-      revision: document.revision,
-    });
-    const { raw } = await context.observe(document, circuit);
-    return {
-      ...identity,
-      authority: "exact-runtime",
-      layoutContext: organizationContext(
-        source.xml,
-        circuit,
-        raw.focus,
-        args.layoutContext || {},
-      ),
-    };
-  }
   if (args.layoutReview !== undefined) {
     const { raw } = await context.observe(document, circuit);
     const measures = readability(raw.focus);
@@ -87,7 +51,7 @@ export async function inspectCircuit(
             .filter((name: unknown) => typeof name === "string"),
         ),
       ].sort(),
-      // Lower reads more easily; arranging keeps a layout only when this drops.
+      // Heuristic review signals; they never apply or approve a layout.
       readability: measures,
       problems,
     };

@@ -12,7 +12,6 @@ import {
   Minus,
   Plus,
   Grid2X2,
-  LayoutTemplate,
 } from "lucide-react";
 import type { CatalogTool, Tool } from "../shared/types";
 import { bindingLabel } from "../shared/shortcuts";
@@ -28,7 +27,6 @@ interface Props {
   hasSelection: boolean;
   zoom: number;
   showGrid: boolean;
-  arranging: boolean;
   onTool: (tool: Tool) => void;
   onCancelPlace: () => void;
   onHistory: (op: "undo" | "redo") => void;
@@ -36,7 +34,6 @@ interface Props {
   onFit: () => void;
   onZoom: (factor: number) => void;
   onToggleGrid: () => void;
-  onArrange: () => void;
 }
 const actionButton = (
   label: string,
@@ -66,7 +63,6 @@ export function EditorToolbar({
   hasSelection,
   zoom,
   showGrid,
-  arranging,
   onTool,
   onCancelPlace,
   onHistory,
@@ -74,7 +70,6 @@ export function EditorToolbar({
   onFit,
   onZoom,
   onToggleGrid,
-  onArrange,
 }: Props) {
   return (
     <div className="editor-toolbar canvas-tools" aria-label="画布工具">
@@ -134,14 +129,6 @@ export function EditorToolbar({
           <Trash2 size={16} />,
           onDelete,
           !hasSelection || Boolean(pending),
-        )}
-        {actionButton(
-          "整理布局",
-          "整理布局\n按信号流重新摆放元件并重连导线，保留行为；比现在清楚才应用，可撤销",
-          undefined,
-          <LayoutTemplate size={16} />,
-          onArrange,
-          arranging || Boolean(pending) || (!canUndo && false),
         )}
       </div>
       <div className="canvas-tool-actions" role="group" aria-label="画布视图">

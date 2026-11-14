@@ -79,7 +79,7 @@ Done and stable. Unit tests in `patch.rs` and `splice.rs` (an incremental index 
 
 None required for the rewrite. Candidates when the host needs them:
 
-- `Edit::Replace` re-parses the whole file; if the AI arranger's replace of a 1 MB file shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
+- `Edit::Replace` re-parses the whole file; if whole-file replacement shows up in profiles, add a per-circuit replace (`replaceCircuit { name, xml }`) that splices only that `<circuit>` element.
 
 ## Verify
 

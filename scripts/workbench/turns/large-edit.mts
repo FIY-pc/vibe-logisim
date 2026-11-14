@@ -3,12 +3,11 @@
  * chosen from observations only, so it runs on any project. Reads the
  * definition, places an AND gate and an output pin beside it, wires two
  * existing one-bit outputs into the gate and the gate to the pin, moves the
- * gate, then arranges the whole definition and compares the netlist
- * signature before and after. A failed call ends the turn with its error.
+ * gate, then inspects and renders the result. A failed call ends the turn
+ * with its error.
  *
  *   node scripts/workbench/scripted-model.mts --port 8903 --script scripts/workbench/turns/large-edit.mts
  *
- * "不整理" in the question stops before arranging.
  */
 import type { Exchange, Script, Step } from "../scripted-model.mts";
 
@@ -19,8 +18,6 @@ const inspect = (args: Record<string, unknown> = {}): Step["tool"] => ({
 });
 
 let phase = "read";
-let signature = "";
-let unchanged = false;
 let pages: any[] = [];
 
 function plan(overview: any) {
@@ -30,7 +27,11 @@ function plan(overview: any) {
     .flatMap((c: any) =>
       c.ends
         .filter((e: any) => e.direction === "output" && e.width === 1)
-        .map((e: any) => ({ component: c.componentId, port: e.index, at: e.location })),
+        .map((e: any) => ({
+          component: c.componentId,
+          port: e.index,
+          at: e.location,
+        })),
     )
     .sort((a: any, b: any) => b.at.x - a.at.x);
   const a = outputs[0];
@@ -47,7 +48,7 @@ function plan(overview: any) {
 }
 let chosen: ReturnType<typeof plan> = null;
 
-const script: Script = ({ question, calls }) => {
+const script: Script = ({ calls }) => {
   const last: Exchange | undefined = calls.at(-1);
   if (!last) {
     phase = "read";
@@ -55,17 +56,22 @@ const script: Script = ({ question, calls }) => {
     return { text: "先读一遍当前电路。", tool: inspect() };
   }
   if (last.error)
-    return { text: `${last.name} 失败：${last.error.code} ${last.error.message}` };
+    return {
+      text: `${last.name} 失败：${last.error.code} ${last.error.message}`,
+    };
   const r = last.result;
   switch (phase) {
     case "read": {
       pages.push(r);
       if (r.page?.nextCursor)
         return {
-          tool: inspect({ componentDirectory: { maxBytes: 32000, cursor: r.page.nextCursor } }),
+          tool: inspect({
+            componentDirectory: { maxBytes: 32000, cursor: r.page.nextCursor },
+          }),
         };
       chosen = plan(calls[0].result);
-      if (!chosen) return { text: "这个电路里找不到两个一位输出端口，没法演示连线。" };
+      if (!chosen)
+        return { text: "这个电路里找不到两个一位输出端口，没法演示连线。" };
       phase = "place";
       const { gate, pin } = chosen;
       return {
@@ -74,8 +80,16 @@ const script: Script = ({ question, calls }) => {
           name: "place_component",
           args: {
             components: [
-              { factory: "AND Gate", location: gate, attributes: { facing: "east" } },
-              { factory: "Pin", location: pin, attributes: { output: "true", facing: "west", label: "probe" } },
+              {
+                factory: "AND Gate",
+                location: gate,
+                attributes: { facing: "east" },
+              },
+              {
+                factory: "Pin",
+                location: pin,
+                attributes: { output: "true", facing: "west", label: "probe" },
+              },
             ],
           },
         },
@@ -91,9 +105,18 @@ const script: Script = ({ question, calls }) => {
           name: "connect",
           args: {
             connections: [
-              { from: { component: a.component, port: a.port }, to: { component: g, port: 1 } },
-              { from: { component: b.component, port: b.port }, to: { component: g, port: 2 } },
-              { from: { component: g, port: 0 }, to: { component: `c${pin.x}_${pin.y}`, port: 0 } },
+              {
+                from: { component: a.component, port: a.port },
+                to: { component: g, port: 1 },
+              },
+              {
+                from: { component: b.component, port: b.port },
+                to: { component: g, port: 2 },
+              },
+              {
+                from: { component: g, port: 0 },
+                to: { component: `c${pin.x}_${pin.y}`, port: 0 },
+              },
             ],
           },
         },
@@ -106,33 +129,25 @@ const script: Script = ({ question, calls }) => {
         text: "把与门往下挪 40。",
         tool: {
           name: "move_components",
-          args: { componentIds: [`c${gate.x}_${gate.y}`], delta: { x: 0, y: 40 } },
+          args: {
+            componentIds: [`c${gate.x}_${gate.y}`],
+            delta: { x: 0, y: 40 },
+          },
         },
       };
     }
     case "move":
-      phase = "before";
-      return { text: "记下整理前的网表。", tool: inspect() };
-    case "before":
-      signature = r.netlistSignature?.sha256 ?? "";
-      if (question.includes("不整理"))
-        return { text: `连线和移动完成，网表签名 ${signature.slice(0, 12)}。` };
-      phase = "arrange";
-      return { text: "整理整个电路的布局。", tool: { name: "arrange_circuit", args: {} } };
-    case "arrange":
-      phase = "after";
-      return { text: "整理后再读一遍网表。", tool: inspect() };
-    case "after": {
+      phase = "inspect";
+      return { text: "检查修改后的电路。", tool: inspect() };
+    case "inspect":
       phase = "render";
-      const same = (unchanged = r.netlistSignature?.sha256 === signature);
       return {
-        text: same ? "网表签名与整理前一致。" : `网表签名变了：${signature.slice(0, 12)} → ${String(r.netlistSignature?.sha256).slice(0, 12)}`,
+        text: "查看修改后的图面。",
         tool: { name: "render_circuit", args: {} },
       };
-    }
     default:
       return {
-        text: `大改动完成：放置、连线、移动、整理都已执行，网表签名在整理前后${unchanged ? "一致" : "不一致"}。`,
+        text: "大改动完成：放置、连线和移动都已执行。",
       };
   }
 };
