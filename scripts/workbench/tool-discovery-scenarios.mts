@@ -24,6 +24,7 @@ export async function verifyToolDiscovery(
     userCircuit: "main",
   });
   const tools = circuitTools({ context, vision: false });
+  assert(!tools.some((tool) => tool.name === "arrange_circuit"));
   const call = async (name: string, args: any) => {
     const toolCall = {
       type: "toolCall" as const,
@@ -59,6 +60,15 @@ export async function verifyToolDiscovery(
       value: JSON.parse(content.text),
     };
   };
+  const review = await call("inspect_circuit", { layoutReview: {} });
+  assert(!review.failed);
+  assert.equal(review.value.readability.components, 0);
+  assert.deepEqual(review.value.problems, []);
+  assert.equal(
+    await readFile(file, "utf8"),
+    source,
+    "layout review is read-only",
+  );
   const catalog = (await call("describe_component", {})).value;
   assert(
     catalog.libraries.some(

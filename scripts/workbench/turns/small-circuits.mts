@@ -3,7 +3,7 @@
  * question names, check it with vectors where it is combinational, arrange it,
  * check again and look at the drawing. The parts are placed roughly where a
  * person sketching it would put them and wired with connect, so the drawing
- * before arranging is what the connect router makes of that sketch.
+ * is what the connect router makes of that sketch.
  *
  *   node scripts/workbench/scripted-model.mts --port 8903 --script scripts/workbench/turns/small-circuits.mts
  *
@@ -376,8 +376,6 @@ function steps(build: Build): Step[] {
       },
     },
     ...check,
-    { text: "整理布局。", tool: { name: "arrange_circuit", args: {} } },
-    ...check.map((s) => ({ ...s, text: "整理后再检查一次。" })),
     { text: "看一下图面。", tool: { name: "render_circuit", args: {} } },
   ];
 }
@@ -393,9 +391,6 @@ const script: Script = ({ question, calls }) => {
     };
   if (last?.name === "simulate_circuit" && last.result.failed)
     return { text: `真值表有 ${last.result.failed} 行不对。` };
-  const arrangeAt = plan.findIndex((s) => s.tool?.name === "arrange_circuit");
-  if (question.includes("不整理") && calls.length === arrangeAt)
-    return { text: `${build.file} 已连好。` };
-  return plan[calls.length] ?? { text: `${build.file} 已完成，布局已整理。` };
+  return plan[calls.length] ?? { text: `${build.file} 已完成。` };
 };
 export default script;

@@ -1,9 +1,5 @@
-// How easy a drawing is to read, measured on the drawing as Logisim loads
-// it: the native observation of a definition, or the observation an arranged
-// file is predicted to load as. Every measure counts something a reader trips
-// over in a Logisim schematic; `score` weighs them into one number, lower is
-// clearer. Arranging uses it twice: to choose among candidate layouts, and to
-// keep a layout only when it reads better than the drawing it replaces.
+// Geometric heuristics on the drawing as Logisim loads it. These measures
+// support review; they do not establish overall visual quality or alter a file.
 import { attr, netKey } from "./circuit.mts";
 import type { Point } from "./circuit.mts";
 import type { Bounds, Component, Focus, Wire } from "./types.mts";
@@ -37,7 +33,7 @@ export interface Readability {
   // a Pin facing away from what it connects to: an east-facing Pin (port on
   // its east edge) with a part of its net to its west, and so on
   pinsOffSide: number;
-  // the weighted sum (READABILITY_WEIGHTS, plus one per 200 px of wire)
+  // the legacy weighted heuristic (READABILITY_WEIGHTS, plus one per 200 px of wire)
   score: number;
 }
 
@@ -395,26 +391,6 @@ export function readability(focus: Focus): Readability {
     },
     ...measures,
     score: Math.round(score * 10) / 10,
-  };
-}
-
-export interface ReadabilityComparison {
-  // the second drawing scores lower (reads more easily) than the first
-  clearer: boolean;
-  // measures that grew, and that shrank
-  worse: Metric[];
-  better: Metric[];
-}
-
-export function compareReadability(
-  before: Readability,
-  after: Readability,
-): ReadabilityComparison {
-  const names = Object.keys(READABILITY_WEIGHTS) as Metric[];
-  return {
-    clearer: after.score < before.score,
-    worse: names.filter((k) => after[k] > before[k]),
-    better: names.filter((k) => after[k] < before[k]),
   };
 }
 

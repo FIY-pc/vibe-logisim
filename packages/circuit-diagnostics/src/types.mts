@@ -1,5 +1,5 @@
 // The observer's view of one circuit definition (run_full "focus"), as far
-// as the layout engine reads it. Unlisted fields pass through untouched.
+// as the diagnostics read it. Unlisted fields pass through untouched.
 
 export interface XY {
   x: number;

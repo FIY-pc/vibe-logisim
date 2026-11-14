@@ -53,7 +53,7 @@ jobs:
       - name: Verify Windows state persistence under long Unicode paths
         run: cargo test -p vibe-workbench-host state_paths -- --nocapture
       - run: npm run check
-      - run: npm run test:arranger
+      - run: npm run test:diagnostics
       - run: npm run test:classroom
       - run: npm run test:showcase
       - run: npm run test:ui
@@ -96,7 +96,7 @@ jobs:
           npm run check:contracts
           npm run test:core
           npm run check
-          npm run test:arranger
+          npm run test:diagnostics
           npm run test:runtime
           npm run test:classroom
           npm run test:showcase

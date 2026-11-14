@@ -49,14 +49,6 @@ try {
             path: import.meta.resolve("ooxml-ui/pptx"),
             external: true,
           }));
-          // A module worker has no meaning in jsdom: scenarios never arrange.
-          builder.onResolve({ filter: /\?worker&url$/ }, () => ({
-            path: "arrange-worker",
-            namespace: "worker-url",
-          }));
-          builder.onLoad({ filter: /.*/, namespace: "worker-url" }, () => ({
-            contents: 'export default "arrange-worker.js";',
-          }));
           builder.onLoad({ filter: /[\\/]shared[\\/]transport\.ts$/ }, () => ({
             contents:
               "export const command=(v)=>globalThis.__command(v);export const desktop=()=>globalThis.__desktop??false;export const openPath=async()=>null;export const savePath=async()=>null;",

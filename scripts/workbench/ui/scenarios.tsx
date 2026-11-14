@@ -347,6 +347,8 @@ await act(async () =>
   hostChange(change({ ...doc("A"), revision: "r2", dirty: true }, "r1")),
 );
 assert.ok(document.querySelector(".file-title .dirty-dot"));
+assert.ok(document.querySelector('.editor-toolbar [aria-label="撤销"]'));
+assert.equal(document.querySelector('[aria-label="整理布局"]'), null);
 await click(
   [...document.querySelectorAll(".panel-tabs button")].find(
     (n) => n.textContent === "对话",

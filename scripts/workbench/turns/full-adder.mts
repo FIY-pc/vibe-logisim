@@ -19,11 +19,17 @@ const port = (component: string, port: number) => ({ component, port });
 const vectors = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => {
   const [a, b, cin] = [(n >> 2) & 1, (n >> 1) & 1, n & 1];
   const sum = a + b + cin;
-  return { inputs: { A: a, B: b, Cin: cin }, expected: { S: sum & 1, Cout: sum >> 1 } };
+  return {
+    inputs: { A: a, B: b, Cin: cin },
+    expected: { S: sum & 1, Cout: sum >> 1 },
+  };
 });
 
 const steps: Step[] = [
-  { text: "新建一个全加器电路。", tool: { name: "create_circuit", args: { path: "full-adder.circ" } } },
+  {
+    text: "新建一个全加器电路。",
+    tool: { name: "create_circuit", args: { path: "full-adder.circ" } },
+  },
   {
     text: "放置输入、门和输出。",
     tool: {
@@ -66,21 +72,21 @@ const steps: Step[] = [
       },
     },
   },
-  { text: "用真值表检查。", tool: { name: "simulate_circuit", args: { vectors } } },
-  { text: "整理布局。", tool: { name: "arrange_circuit", args: {} } },
-  { text: "整理后再检查一次。", tool: { name: "simulate_circuit", args: { vectors } } },
+  {
+    text: "用真值表检查。",
+    tool: { name: "simulate_circuit", args: { vectors } },
+  },
   { text: "看一下图面。", tool: { name: "render_circuit", args: {} } },
 ];
 
-const script: Script = ({ question, calls }) => {
+const script: Script = ({ calls }) => {
   const last = calls.at(-1);
-  // "不整理" stops after the first check, leaving the routed wiring as drawn.
-  if (question.includes("不整理") && calls.length === 4)
-    return { text: "全加器已连好：8 行真值表全部通过。" };
   if (last?.error)
-    return { text: `${last.name} 失败：${last.error.code} ${last.error.message}` };
+    return {
+      text: `${last.name} 失败：${last.error.code} ${last.error.message}`,
+    };
   if (last?.name === "simulate_circuit" && last.result.failed)
     return { text: `真值表有 ${last.result.failed} 行不对。` };
-  return steps[calls.length] ?? { text: "全加器已完成：8 行真值表全部通过，布局已整理。" };
+  return steps[calls.length] ?? { text: "全加器已完成：8 行真值表全部通过。" };
 };
 export default script;

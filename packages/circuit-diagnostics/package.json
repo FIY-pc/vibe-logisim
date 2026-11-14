@@ -1,5 +1,5 @@
 {
-  "name": "@vibe-logisim/arranger",
+  "name": "@vibe-logisim/circuit-diagnostics",
   "version": "26.11.4",
   "private": true,
   "type": "module",
@@ -9,8 +9,5 @@
   "scripts": {
     "check": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.mts"
-  },
-  "dependencies": {
-    "elkjs": "0.12.0"
   }
 }
